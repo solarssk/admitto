@@ -446,9 +446,12 @@ describe("GET /api/admin/events/:eventId/attendees/:id", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       email: string;
+      created_at: string;
       deliveries: { purpose: string; rendered_subject: string | null }[];
     };
     expect(body.email).toBe("anna@example.com");
+    // #365: read off directly from the Attendee row, not derived from action log.
+    expect(new Date(body.created_at).toString()).not.toBe("Invalid Date");
     expect(body.deliveries.length).toBeGreaterThanOrEqual(1);
     expect(body.deliveries[0]!.purpose).toBe("initial");
   });

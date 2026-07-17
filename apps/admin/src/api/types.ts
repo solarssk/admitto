@@ -203,6 +203,7 @@ export interface AttendeeDetailDto {
   status: AttendeeStatus;
   check_in_status: "admitted" | "not_admitted";
   admitted_at: string | null;
+  created_at: string;
   updated_at: string;
   rsvp_status: RsvpStatus;
   rsvp_updated_at: string | null;

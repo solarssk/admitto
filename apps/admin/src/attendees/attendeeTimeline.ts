@@ -1,6 +1,8 @@
+import type { AttendeeStatus } from "@admitto/db/status";
 import type { AttendeeActionLogEntryDto, RsvpStatus } from "../api/types.js";
 import { formatEventDateTime, formatUtcDateTime } from "../utils/event-dates.js";
 import { RSVP_LABELS } from "./rsvpStatusBadge.js";
+import { PASS_STATUS_LABELS } from "./passStatusBadge.js";
 
 /** Event-day operational actions — show in event timezone (Category 1). */
 const EVENT_OPERATIONAL_ACTIONS = new Set([
@@ -38,6 +40,34 @@ function formatRsvpStatus(value: unknown): string {
   if (key in RSVP_LABELS) return RSVP_LABELS[key as RsvpStatus];
   return key;
 }
+
+function formatPassStatus(value: unknown): string {
+  const key = String(value);
+  if (key in PASS_STATUS_LABELS) return PASS_STATUS_LABELS[key as AttendeeStatus];
+  return key;
+}
+
+/** Scalar profile columns get a friendly label; everything else (custom_data source-field keys)
+ * is humanized from its raw key - attendeeTimeline has no access to the event's field registry
+ * (label config lives server-side, this module only sees the action-log entry itself). */
+const PROFILE_FIELD_LABELS: Record<string, string> = {
+  name: "Name",
+  email: "Email",
+  company: "Company",
+  department: "Department",
+  ticket_type: "Ticket type",
+};
+
+export function humanizeFieldKey(key: string): string {
+  const spaced = key.replace(/_/g, " ").trim();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+function fieldChangeLabel(key: string): string {
+  return PROFILE_FIELD_LABELS[key] ?? humanizeFieldKey(key);
+}
+
+const ITEM_STATE_ACTIONS = new Set(["item_issued", "item_returned", "item_revoked"]);
 
 export function getTimelineIcon(actionType: string): string {
   const icons: Record<string, string> = {
@@ -123,14 +153,59 @@ export function getTimelineLabel(entry: AttendeeActionLogEntryDto): string {
   }
 }
 
+/** Human-readable diff for the activity log row, PII-safe by construction: profile edits show
+ * which fields changed, never the old/new values themselves (custom_data can hold sensitive
+ * text like accessibility notes or emergency contacts - #364). */
 export function getTimelineDetail(entry: AttendeeActionLogEntryDto): string {
   const actor = entry.actor_display ?? "System";
-  if (entry.action_type === "rsvp_status_changed" && entry.metadata) {
-    const from = entry.metadata.from;
-    const to = entry.metadata.to;
+  const meta = entry.metadata;
+  if (!meta) return actor;
+
+  if (entry.action_type === "rsvp_status_changed") {
+    const from = meta.from;
+    const to = meta.to;
     if (from != null && to != null) {
       return `${formatRsvpStatus(from)} → ${formatRsvpStatus(to)} · ${actor}`;
     }
   }
+
+  if (entry.action_type === "attendee_edited") {
+    const fields = meta.fields;
+    if (Array.isArray(fields) && fields.length > 0) {
+      return `${fields.map((f) => fieldChangeLabel(String(f))).join(", ")} · ${actor}`;
+    }
+  }
+
+  if (entry.action_type === "pass_revoked" || entry.action_type === "pass_restored") {
+    const from = meta.previous_status;
+    if (from != null) {
+      const to = entry.action_type === "pass_revoked" ? "revoked" : "registered";
+      return `${formatPassStatus(from)} → ${formatPassStatus(to)} · ${actor}`;
+    }
+  }
+
+  if (ITEM_STATE_ACTIONS.has(entry.action_type)) {
+    const itemKey = meta.event_item_key;
+    if (typeof itemKey === "string" && itemKey) {
+      return `${humanizeFieldKey(itemKey)} · ${actor}`;
+    }
+  }
+
   return actor;
+}
+
+/** How this attendee was added, read off the oldest loaded action-log entry (#365). Log rows are
+ * capped at 50/newest-first (server), so a very active attendee's creation event may have scrolled
+ * out of the window - in that case this returns null rather than guessing. */
+const SOURCE_LABELS: Record<string, string> = {
+  attendee_created_manual: "Added manually",
+  attendees_imported: "CSV/XLSX import",
+  attendee_imported: "CSV/XLSX import",
+  attendee_ingested: "Automatic import",
+};
+
+export function deriveAttendeeSource(actionLog: AttendeeActionLogEntryDto[]): string | null {
+  if (actionLog.length === 0) return null;
+  const oldest = actionLog[actionLog.length - 1];
+  return SOURCE_LABELS[oldest.action_type] ?? null;
 }

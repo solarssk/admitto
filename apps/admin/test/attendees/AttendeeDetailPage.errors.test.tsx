@@ -62,6 +62,7 @@ const detail = {
   custom_data: {},
   status: "registered" as const,
   admitted_at: null,
+  created_at: "2026-01-01T00:00:00.000Z",
   updated_at: "2026-01-01T00:00:00.000Z",
   check_in_status: "not_admitted" as const,
   last_mail_status: null,
@@ -103,6 +104,7 @@ describe("AttendeeDetailPage operator errors", () => {
     renderPage();
 
     await waitFor(() => screen.getByRole("heading", { name: "Anna" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     expect(await screen.findByText("Failed to load ticket types.")).toBeTruthy();
 
     vi.mocked(fetchTicketTypes).mockResolvedValueOnce([

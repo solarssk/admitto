@@ -779,10 +779,36 @@
   }
 }
 
-.attendee-detail-side {
+.attendee-detail-side,
+.attendee-detail-main {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+/* Profile / Additional information read-only rows (#361, #365) */
+.attendee-detail-readonly {
+  display: flex;
+  flex-direction: column;
+}
+
+.attendee-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-sm);
+}
+
+.attendee-detail-row:last-child {
+  border-bottom: 0;
+}
+
+.attendee-detail-row > span:first-child {
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .attendee-status-list {

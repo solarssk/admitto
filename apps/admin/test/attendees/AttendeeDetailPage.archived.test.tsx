@@ -61,6 +61,7 @@ function baseDetail(overrides: Partial<Record<string, unknown>> = {}) {
     custom_data: {},
     status: "registered" as const,
     admitted_at: null,
+    created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",
     check_in_status: "not_admitted" as const,
     last_mail_status: null,
@@ -111,12 +112,11 @@ describe("AttendeeDetailPage archived lockdown", () => {
     expectArchivedLock(screen.getByRole("button", { name: "Resend ticket" }));
     expectArchivedLock(screen.getByRole("button", { name: "Revoke" }));
     expectArchivedLock(screen.getByRole("combobox", { name: "RSVP status" }));
-    expectArchivedLock(screen.getByRole("button", { name: "Save changes" }));
-
-    const emailInput = screen.getByLabelText("Email") as HTMLInputElement;
-    expect(emailInput.closest("fieldset")?.disabled).toBe(true);
-    expect(emailInput.closest("fieldset")?.className).toContain("at-tooltip");
-    expect(emailInput.closest("fieldset")?.getAttribute("data-tooltip")).toBe(ARCHIVED_ACTION_TOOLTIP);
+    // Edit mode can't be entered at all on an archived event — the read-only
+    // view stays up, no Save button ever renders (#361).
+    expectArchivedLock(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.queryByLabelText("Email")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
 
     // Back is read-only navigation and must stay usable.
     expect((screen.getByRole("button", { name: "Back" }) as HTMLButtonElement).disabled).toBe(false);

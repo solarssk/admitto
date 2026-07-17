@@ -29,11 +29,24 @@ import {
   toAttendeeForm,
   type AttendeeFormState,
 } from "../attendees/attendeeDetailForm.js";
-import { formatAdmissionDisplay } from "../utils/event-dates.js";
-import { getTimelineDetail, getTimelineIcon, getTimelineLabel, formatActivityTimestamp } from "../attendees/attendeeTimeline.js";
+import { formatAdmissionDisplay, formatUtcDateTime } from "../utils/event-dates.js";
+import {
+  deriveAttendeeSource,
+  getTimelineDetail,
+  getTimelineIcon,
+  getTimelineLabel,
+  formatActivityTimestamp,
+  humanizeFieldKey,
+} from "../attendees/attendeeTimeline.js";
 import { MailStatusBadge } from "../attendees/mailStatusBadge.js";
+import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { CustomDataFieldInput } from "../attendees/CustomDataFieldInput.js";
-import { readCustomDataField, validateCustomFieldsForm } from "../attendees/customData.js";
+import {
+  customDataFieldLabel,
+  leftoverCustomDataEntries,
+  readCustomDataField,
+  validateCustomFieldsForm,
+} from "../attendees/customData.js";
 import type { CustomDataFieldDef } from "../attendees/customData.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { ArchivedGuard, ARCHIVED_ACTION_TOOLTIP, isEventArchived } from "../components/ArchivedGuard.js";
@@ -143,6 +156,10 @@ export function AttendeeDetailPage() {
   const [resending, setResending] = useState(false);
   const [resendError, setResendError] = useState<string | null>(null);
   const [discardOpen, setDiscardOpen] = useState(false);
+  // Which action the pending discard-confirm resolves to: navigating back away from the page,
+  // or just closing edit mode in place (#361) - same dialog, different consequence on confirm.
+  const [discardIntent, setDiscardIntent] = useState<"back" | "cancel-edit">("back");
+  const [editMode, setEditMode] = useState(false);
   // Which of the two "revoke" confirm flows is active — mutually exclusive
   // by construction, replacing six independent booleans that could
   // technically both be true at once (review finding).
@@ -234,9 +251,24 @@ export function AttendeeDetailPage() {
   };
 
   const handleBack = () => {
-    if (isDirty) setDiscardOpen(true);
-    else goBack();
+    if (isDirty) {
+      setDiscardIntent("back");
+      setDiscardOpen(true);
+    } else {
+      goBack();
+    }
   };
+
+  function handleCancelEdit() {
+    if (isDirty) {
+      setDiscardIntent("cancel-edit");
+      setDiscardOpen(true);
+    } else {
+      setEditMode(false);
+      setError(null);
+      setEmailConflict(false);
+    }
+  }
 
   useModalFocusTrap(resendPanelRef, resendOpen, () => setResendOpen(false));
 
@@ -286,7 +318,10 @@ export function AttendeeDetailPage() {
       if (next !== current) customDataPatch[key] = next || null;
     }
     if (Object.keys(customDataPatch).length > 0) patch.custom_data_fields = customDataPatch;
-    if (Object.keys(patch).length === 0) return;
+    if (Object.keys(patch).length === 0) {
+      setEditMode(false);
+      return;
+    }
 
     const customValidation = validateCustomFieldsForm(attributeFields, form.customFields);
     if (customValidation) {
@@ -306,6 +341,7 @@ export function AttendeeDetailPage() {
       setForm(toAttendeeForm(updated, attributeFields));
       setInitialEmail(updated.email);
       setStaleWrite(false);
+      setEditMode(false);
       addToast("Profile saved", "success");
     } catch (err) {
       if (!isStillSelected(target)) return;
@@ -511,6 +547,8 @@ export function AttendeeDetailPage() {
     form.ticket_type && !ticketTypes.some((type) => type.key === form.ticket_type)
       ? form.ticket_type
       : null;
+  const attendeeSource = deriveAttendeeSource(detail.action_log);
+  const leftoverCustomData = leftoverCustomDataEntries(detail.custom_data, attributeFields);
 
   return (
     <div className="attendee-detail-page">
@@ -606,93 +644,173 @@ export function AttendeeDetailPage() {
 
       {tab === "overview" && (
         <div className="attendee-detail-grid">
-          <Card title="Profile" className="attendee-detail-profile">
-            <form className="attendee-form" onSubmit={handleSave}>
-              {staleWrite && (
-                <div className="attendee-form__warn">
-                  <p>Someone else updated this attendee — reload and reapply your edits.</p>
-                  <Button type="button" variant="secondary" size="sm" onClick={() => void handleReload()} disabled={reloading}>
-                    {reloading ? "Reloading…" : "Reload"}
-                  </Button>
-                </div>
-              )}
-              <fieldset
-                className={["attendee-form__fieldset", isEventArchived(event) && "at-tooltip"]
-                  .filter(Boolean)
-                  .join(" ")}
-                data-tooltip={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
-                disabled={isEventArchived(event)}
-              >
-                <Input label="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
-                {emailChanged && (
-                  <p className="attendee-form__warn">
-                    This changes the attendee&apos;s primary address. To send a ticket elsewhere, use Resend ticket.
-                  </p>
-                )}
-                {emailConflict && (
-                  <p className="attendee-form__error">This email is already used by another attendee in this event.</p>
-                )}
-                <Input label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-                <Input label="Company" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} />
-                <Input label="Department" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
-                <Select
-                  label="Ticket type"
-                  value={form.ticket_type}
-                  onChange={(e) => setForm({ ...form, ticket_type: e.target.value })}
-                >
-                  <option value="">—</option>
-                  {orphanedTicketType && (
-                    <option
-                      value={orphanedTicketType}
-                      title="Not in this event's ticket-type catalog — it may have been deleted after being assigned. Picking another option here replaces it."
-                    >
-                      {orphanedTicketType} (not in catalog)
-                    </option>
-                  )}
-                  {ticketTypes.map((type) => (
-                    <option key={type.key} value={type.key}>
-                      {type.label}
-                    </option>
+          <div className="attendee-detail-main">
+            <Card
+              title="Profile"
+              className="attendee-detail-profile"
+              actions={
+                !editMode ? (
+                  <ArchivedGuard event={event} reasonId="edit-profile-reason">
+                    {(guard) => (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        icon={<i className="ti ti-pencil" aria-hidden="true" />}
+                        {...guard}
+                        onClick={() => setEditMode(true)}
+                      >
+                        Edit
+                      </Button>
+                    )}
+                  </ArchivedGuard>
+                ) : undefined
+              }
+            >
+              {!editMode ? (
+                <div className="attendee-detail-readonly">
+                  <div className="attendee-detail-row">
+                    <span>Email</span>
+                    <span className="mono">{detail.email}</span>
+                  </div>
+                  <div className="attendee-detail-row">
+                    <span>Name</span>
+                    <span>{detail.name}</span>
+                  </div>
+                  <div className="attendee-detail-row">
+                    <span>Company</span>
+                    <span>{detail.company ?? "—"}</span>
+                  </div>
+                  <div className="attendee-detail-row">
+                    <span>Department</span>
+                    <span>{detail.department ?? "—"}</span>
+                  </div>
+                  <div className="attendee-detail-row">
+                    <span>Ticket type</span>
+                    <TicketTypeBadge ticketType={detail.ticket_type} catalog={ticketTypes} />
+                  </div>
+                  {attributeFields.map((field) => (
+                    <div className="attendee-detail-row" key={field.source_field}>
+                      <span>{customDataFieldLabel(field)}</span>
+                      <span>{readCustomDataField(detail.custom_data, field.source_field) ?? "—"}</span>
+                    </div>
                   ))}
-                </Select>
-                {ticketTypesError && (
-                  <p className="attendee-form__error">
-                    {ticketTypesError}{" "}
-                    <button type="button" className="link-btn" onClick={loadTicketTypes}>
-                      Retry
-                    </button>
-                  </p>
-                )}
-                {attributeFields.map((field) => (
-                  <CustomDataFieldInput
-                    key={field.source_field}
-                    field={field}
-                    value={form.customFields[field.source_field] ?? ""}
-                    disabled={saving || reloading || staleWrite}
-                    onChange={(next) =>
-                      setForm({
-                        ...form,
-                        customFields: { ...form.customFields, [field.source_field]: next },
-                      })
-                    }
-                  />
-                ))}
-              </fieldset>
-              <div className="attendee-form__actions">
-                <ArchivedGuard
-                  event={event}
-                  reasonId="save-changes-reason"
-                  disabled={saving || reloading || staleWrite || rsvpSaving}
-                >
-                  {(guard) => (
-                    <Button type="submit" variant="primary" {...guard}>
-                      {saving ? "Saving…" : "Save changes"}
-                    </Button>
+                  <div className="attendee-detail-row">
+                    <span>Added on</span>
+                    <span className="mono">{formatUtcDateTime(detail.created_at)}</span>
+                  </div>
+                  {attendeeSource && (
+                    <div className="attendee-detail-row">
+                      <span>Added via</span>
+                      <span>{attendeeSource}</span>
+                    </div>
                   )}
-                </ArchivedGuard>
-              </div>
-            </form>
-          </Card>
+                </div>
+              ) : (
+                <form className="attendee-form" onSubmit={handleSave}>
+                  {staleWrite && (
+                    <div className="attendee-form__warn">
+                      <p>Someone else updated this attendee — reload and reapply your edits.</p>
+                      <Button type="button" variant="secondary" size="sm" onClick={() => void handleReload()} disabled={reloading}>
+                        {reloading ? "Reloading…" : "Reload"}
+                      </Button>
+                    </div>
+                  )}
+                  <fieldset
+                    className={["attendee-form__fieldset", isEventArchived(event) && "at-tooltip"]
+                      .filter(Boolean)
+                      .join(" ")}
+                    data-tooltip={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
+                    disabled={isEventArchived(event)}
+                  >
+                    <Input label="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
+                    {emailChanged && (
+                      <p className="attendee-form__warn">
+                        This changes the attendee&apos;s primary address. To send a ticket elsewhere, use Resend ticket.
+                      </p>
+                    )}
+                    {emailConflict && (
+                      <p className="attendee-form__error">This email is already used by another attendee in this event.</p>
+                    )}
+                    <Input label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+                    <Input label="Company" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} />
+                    <Input label="Department" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
+                    <Select
+                      label="Ticket type"
+                      value={form.ticket_type}
+                      onChange={(e) => setForm({ ...form, ticket_type: e.target.value })}
+                    >
+                      <option value="">—</option>
+                      {orphanedTicketType && (
+                        <option
+                          value={orphanedTicketType}
+                          title="Not in this event's ticket-type catalog — it may have been deleted after being assigned. Picking another option here replaces it."
+                        >
+                          {orphanedTicketType} (not in catalog)
+                        </option>
+                      )}
+                      {ticketTypes.map((type) => (
+                        <option key={type.key} value={type.key}>
+                          {type.label}
+                        </option>
+                      ))}
+                    </Select>
+                    {ticketTypesError && (
+                      <p className="attendee-form__error">
+                        {ticketTypesError}{" "}
+                        <button type="button" className="link-btn" onClick={loadTicketTypes}>
+                          Retry
+                        </button>
+                      </p>
+                    )}
+                    {attributeFields.map((field) => (
+                      <CustomDataFieldInput
+                        key={field.source_field}
+                        field={field}
+                        value={form.customFields[field.source_field] ?? ""}
+                        disabled={saving || reloading || staleWrite}
+                        onChange={(next) =>
+                          setForm({
+                            ...form,
+                            customFields: { ...form.customFields, [field.source_field]: next },
+                          })
+                        }
+                      />
+                    ))}
+                  </fieldset>
+                  <div className="attendee-form__actions">
+                    <Button type="button" variant="secondary" onClick={handleCancelEdit} disabled={saving}>
+                      Cancel
+                    </Button>
+                    <ArchivedGuard
+                      event={event}
+                      reasonId="save-changes-reason"
+                      disabled={saving || reloading || staleWrite || rsvpSaving}
+                    >
+                      {(guard) => (
+                        <Button type="submit" variant="primary" {...guard}>
+                          {saving ? "Saving…" : "Save changes"}
+                        </Button>
+                      )}
+                    </ArchivedGuard>
+                  </div>
+                </form>
+              )}
+            </Card>
+
+            {leftoverCustomData.length > 0 && (
+              <Card title="Additional information">
+                <div className="attendee-detail-readonly">
+                  {leftoverCustomData.map(([key, value]) => (
+                    <div className="attendee-detail-row" key={key}>
+                      <span>{humanizeFieldKey(key)}</span>
+                      <span>{value}</span>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+          </div>
 
           <div className="attendee-detail-side">
             <Card title="Status">
@@ -755,6 +873,34 @@ export function AttendeeDetailPage() {
                   </div>
                 </div>
               </div>
+            </Card>
+
+            <Card title="Mail delivery history">
+              {detail.deliveries.length === 0 ? (
+                <p className="attendee-readonly">No delivery attempts yet.</p>
+              ) : (
+                <ul className="attendee-deliveries">
+                  {detail.deliveries.map((delivery) => (
+                    <li className="attendee-delivery" key={delivery.id}>
+                      <div className="attendee-delivery__subject">
+                        {delivery.rendered_subject ?? "Ticket email"}
+                      </div>
+                      <div className="attendee-delivery__meta">
+                        <MailStatusBadge status={delivery.status} />
+                        <span className="mono">
+                          {formatUtcDateTime(delivery.sent_at ?? delivery.accepted_at ?? delivery.queued_at)}
+                        </span>
+                        {delivery.recipient_email && delivery.recipient_email !== detail.email && (
+                          <span>to {delivery.recipient_email}</span>
+                        )}
+                      </div>
+                      {delivery.error_code && (
+                        <p className="attendee-delivery__error">{delivery.error_code}</p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </Card>
           </div>
         </div>
@@ -824,11 +970,22 @@ export function AttendeeDetailPage() {
       <ConfirmDialog
         open={discardOpen}
         title="Discard unsaved changes?"
-        message="You have unsaved profile edits. Leave without saving?"
-        confirmLabel="Leave"
+        message={
+          discardIntent === "back"
+            ? "You have unsaved profile edits. Leave without saving?"
+            : "You have unsaved profile edits. Discard them?"
+        }
+        confirmLabel={discardIntent === "back" ? "Leave" : "Discard"}
         onConfirm={() => {
           setDiscardOpen(false);
-          goBack();
+          if (discardIntent === "back") {
+            goBack();
+          } else {
+            if (baseline) setForm(baseline);
+            setEditMode(false);
+            setError(null);
+            setEmailConflict(false);
+          }
         }}
         onCancel={() => setDiscardOpen(false)}
       />

@@ -67,6 +67,7 @@ function baseDetail(overrides: Partial<Record<string, unknown>> = {}) {
     custom_data: { dietary: "vegan" },
     status: "registered" as const,
     admitted_at: null,
+    created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",
     check_in_status: "not_admitted" as const,
     last_mail_status: null,
@@ -109,6 +110,7 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     renderPage();
     await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
 
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "anna.b@example.com" } });
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna B." } });
     fireEvent.change(screen.getByLabelText("Company"), { target: { value: "Acme Corp" } });
@@ -142,7 +144,9 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Profile saved/);
     });
-    expect((screen.getByLabelText("Dietary") as HTMLInputElement).disabled).toBe(false);
+    // Save exits edit mode back to the read-only view (#361).
+    expect(screen.queryByLabelText("Dietary")).toBeNull();
+    expect(screen.getByRole("button", { name: "Edit" })).toBeTruthy();
   });
 
   it("shows the email-conflict inline error instead of a toast, without saving", async () => {
@@ -152,6 +156,7 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     renderPage();
     await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
 
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "taken@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
@@ -219,7 +224,10 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     mockLoad(baseDetail({ ticket_type: "vintage" }));
     renderPage();
     await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    // Read-only view renders the orphaned value via TicketTypeBadge's own fail-open fallback.
+    expect(screen.getByText("vintage")).toBeTruthy();
 
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     const select = (await screen.findByLabelText("Ticket type")) as HTMLSelectElement;
     await waitFor(() => {
       expect(select.value).toBe("vintage");
@@ -238,5 +246,214 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
         expect.objectContaining({ ticket_type: "standard" }),
       );
     });
+  });
+});
+
+describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => {
+  it("renders the profile as read-only text by default, with no Save button until Edit is clicked", async () => {
+    mockLoad(baseDetail());
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+
+    expect(screen.queryByLabelText("Email")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+    expect(screen.getByText("anna@example.com")).toBeTruthy();
+    expect(screen.getByText("Acme")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByLabelText("Email")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeTruthy();
+  });
+
+  it("Cancel with no changes exits edit mode immediately, without a confirm dialog", async () => {
+    mockLoad(baseDetail());
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByLabelText("Email")).toBeNull();
+    expect(screen.getByRole("button", { name: "Edit" })).toBeTruthy();
+  });
+
+  it("Cancel with unsaved changes confirms before discarding, and reverts the field on confirm", async () => {
+    mockLoad(baseDetail());
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Someone Else" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toMatch(/Discard unsaved changes\?/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Discard" }));
+
+    await waitFor(() => expect(screen.queryByLabelText("Email")).toBeNull());
+    // Heading still shows the un-reverted name; the reverted Name *row* (not the discarded
+    // "Someone Else") is scoped to the read-only container to avoid matching both.
+    expect(document.querySelector(".attendee-detail-readonly")?.textContent).toContain("Anna");
+    expect(document.querySelector(".attendee-detail-readonly")?.textContent).not.toContain(
+      "Someone Else",
+    );
+    expect(updateAttendee).not.toHaveBeenCalled();
+  });
+
+  it("returns to the read-only view after a successful save", async () => {
+    mockLoad(baseDetail());
+    updateAttendee.mockResolvedValueOnce(baseDetail({ name: "Anna B." }));
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna B." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(screen.queryByLabelText("Email")).toBeNull());
+    expect(screen.getByRole("button", { name: "Edit" })).toBeTruthy();
+  });
+
+  it("clears a leftover save error once the field is reverted and Cancel is clicked (regression)", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockLoad(baseDetail());
+    updateAttendee.mockRejectedValueOnce(new ApiError(500, "boom"));
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna B." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(await screen.findByText("Failed to save changes.")).toBeTruthy();
+
+    // Field reverted back to its saved value -> no longer dirty -> Cancel takes the
+    // immediate (no confirm dialog) path, which must still clear the stale error.
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(screen.queryByLabelText("Email")).toBeNull());
+    expect(screen.queryByText("Failed to save changes.")).toBeNull();
+  });
+
+  it("clears a stale email-conflict error after discarding the edit that caused it (regression)", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockLoad(baseDetail());
+    updateAttendee.mockRejectedValueOnce(new ApiError(409, "email in use", "email_conflict"));
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "taken@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(
+      await screen.findByText("This email is already used by another attendee in this event."),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Discard" }));
+    await waitFor(() => expect(screen.queryByLabelText("Email")).toBeNull());
+
+    // Re-entering edit mode must not resurrect the conflict from the abandoned attempt.
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(
+      screen.queryByText("This email is already used by another attendee in this event."),
+    ).toBeNull();
+  });
+});
+
+describe("AttendeeDetailPage extended guest information (#365)", () => {
+  it("shows Added on / Added via derived from the oldest loaded action-log entry", async () => {
+    mockLoad(
+      baseDetail({
+        created_at: "2026-01-05T09:30:00.000Z",
+        action_log: [
+          {
+            id: "log-2",
+            action_type: "rsvp_status_changed",
+            actor_display: "Anna",
+            metadata: { from: "none", to: "confirmed" },
+            created_at: "2026-01-06T10:00:00.000Z",
+          },
+          {
+            id: "log-1",
+            action_type: "attendees_imported",
+            actor_display: null,
+            metadata: null,
+            created_at: "2026-01-05T09:30:00.000Z",
+          },
+        ],
+      }),
+    );
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+
+    expect(screen.getByText("Added on")).toBeTruthy();
+    expect(screen.getByText("Added via")).toBeTruthy();
+    expect(screen.getByText("CSV/XLSX import")).toBeTruthy();
+  });
+
+  it("omits Added via when the action log doesn't include a creation entry", async () => {
+    mockLoad(baseDetail({ action_log: [] }));
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+
+    expect(screen.getByText("Added on")).toBeTruthy();
+    expect(screen.queryByText("Added via")).toBeNull();
+  });
+
+  it("shows an Additional information card for custom_data keys with no configured attribute field", async () => {
+    mockLoad(baseDetail({ custom_data: { dietary: "vegan", shirt_size: "L" } }));
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+
+    expect(screen.getByText("Additional information")).toBeTruthy();
+    expect(screen.getByText("Shirt size")).toBeTruthy();
+    expect(screen.getByText("L")).toBeTruthy();
+  });
+
+  it("hides the Additional information card when every custom_data key is already a configured field", async () => {
+    mockLoad(baseDetail({ custom_data: { dietary: "vegan" } }));
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+
+    expect(screen.queryByText("Additional information")).toBeNull();
+  });
+
+  it("lists mail delivery history when deliveries exist", async () => {
+    mockLoad(
+      baseDetail({
+        deliveries: [
+          {
+            id: "del-1",
+            purpose: "initial",
+            status: "sent",
+            recipient_email: "anna@example.com",
+            rendered_subject: "Your ticket",
+            queued_at: "2026-01-05T09:31:00.000Z",
+            accepted_at: "2026-01-05T09:31:05.000Z",
+            sent_at: "2026-01-05T09:31:05.000Z",
+            failed_at: null,
+            error_code: null,
+          },
+        ],
+      }),
+    );
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+
+    expect(screen.getByText("Mail delivery history")).toBeTruthy();
+    expect(screen.getByText("Your ticket")).toBeTruthy();
+    expect(screen.queryByText("No delivery attempts yet.")).toBeNull();
+  });
+
+  it("shows an empty state in the Mail delivery history card when nothing was ever sent", async () => {
+    mockLoad(baseDetail({ deliveries: [] }));
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+
+    expect(screen.getByText("Mail delivery history")).toBeTruthy();
+    expect(screen.getByText("No delivery attempts yet.")).toBeTruthy();
   });
 });

@@ -75,6 +75,7 @@ const ATTENDEE_DETAIL_SELECT = {
   status: true,
   admitted_at: true,
   custom_data: true,
+  created_at: true,
   updated_at: true,
   rsvp_status: true,
   rsvp_updated_at: true,
@@ -418,6 +419,7 @@ export type AttendeeDetailDto = {
   status: AttendeeStatus;
   check_in_status: "admitted" | "not_admitted";
   admitted_at: string | null;
+  created_at: string;
   updated_at: string;
   rsvp_status: RsvpStatus;
   rsvp_updated_at: string | null;
@@ -648,6 +650,7 @@ async function buildAttendeeDetailDto(
     status: string;
     admitted_at: Date | null;
     custom_data: unknown;
+    created_at: Date;
     updated_at: Date;
     rsvp_status: string;
     rsvp_updated_at: Date | null;
@@ -672,6 +675,7 @@ async function buildAttendeeDetailDto(
     status: row.status as AttendeeStatus,
     check_in_status: checkInStatus(row.admitted_at),
     admitted_at: row.admitted_at ? row.admitted_at.toISOString() : null,
+    created_at: row.created_at.toISOString(),
     updated_at: row.updated_at.toISOString(),
     rsvp_status: row.rsvp_status as RsvpStatus,
     rsvp_updated_at: row.rsvp_updated_at ? row.rsvp_updated_at.toISOString() : null,
