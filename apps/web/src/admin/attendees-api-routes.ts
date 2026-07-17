@@ -761,6 +761,7 @@ export async function handleListEventAttendees(c: Context, db: PrismaClient): Pr
     rows.map((r) => r.id),
   );
 
+  c.header("Cache-Control", "no-store");
   return c.json({
     items: rows.map((r) => serializeAttendeeRow(r, lastMail)),
     total,
@@ -827,6 +828,8 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": exportContentDisposition(filename),
+        "Cache-Control": "no-store",
+        "Pragma": "no-cache",
       },
     });
   }
@@ -843,6 +846,8 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": exportContentDisposition(filename),
+        "Cache-Control": "no-store",
+        "Pragma": "no-cache",
       },
     });
   }
@@ -854,6 +859,8 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
       "Content-Type":
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition": exportContentDisposition(filename),
+      "Cache-Control": "no-store",
+      "Pragma": "no-cache",
     },
   });
 }
@@ -874,6 +881,7 @@ export async function handleGetEventAttendee(c: Context, db: PrismaClient): Prom
   if (!row) return c.json({ error: "forbidden" }, 403);
 
   const dto = await buildAttendeeDetailDto(db, eventId, row);
+  c.header("Cache-Control", "no-store");
   return c.json(dto);
 }
 

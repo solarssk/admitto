@@ -226,6 +226,9 @@ describe("GET /api/admin/events/:eventId/attendees", () => {
       headers: { Cookie: adminCookie },
     });
     expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(res.headers.get("X-Frame-Options")).toBe("DENY");
     const body = (await res.json()) as {
       items: { status: string; updated_at: string; last_mail_status: string; check_in_status: string }[];
       total: number;
@@ -444,6 +447,7 @@ describe("GET /api/admin/events/:eventId/attendees/:id", () => {
       headers: { Cookie: adminCookie },
     });
     expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
     const body = (await res.json()) as {
       email: string;
       created_at: string;

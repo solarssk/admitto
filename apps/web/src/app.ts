@@ -339,6 +339,13 @@ export function createApp(options: CreateAppOptions = {}) {
   if (options.logHttpRequests ?? resolveLogHttpRequests()) {
     app.use("*", createRequestLogMiddleware());
   }
+  // Applied after next() so it lands on responses handlers build via c.json()/c.body()
+  // AND ones that return a bare `new Response(...)` (e.g. CSV/PDF/XLSX exports) — Hono only
+  // merges pre-next() c.header() calls into responses built through its own c.json()/c.body().
+  app.use("/api/*", async (c, next) => {
+    await next();
+    applyBaselineSecurityHeaders((name, value) => c.header(name, value));
+  });
   const rateLimitStore = options.rateLimitStore ?? createRateLimitStore();
   const opsHealthToken = resolveOpsHealthTokenOption(options.opsHealthToken);
   const readyzRateLimit = rateLimit(rateLimitStore, "ops:readyz");
