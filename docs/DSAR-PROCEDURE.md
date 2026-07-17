@@ -67,6 +67,15 @@ If the API is unavailable, operators may erase by direct database operation. Dep
 removed before the attendee because `EmailDelivery`, `WalletPass`, and `CheckIn` reference attendees
 with `ON DELETE RESTRICT`. Sent delivery rows can include rendered ticket email HTML.
 
+**This bypasses both audit writers the API path uses** (the per-attendee `AttendeeActionLog` entry
+and the central `AdminAuditLog` entry — see
+[DATA-PROTECTION.md](../DATA-PROTECTION.md#central-admin-audit-log-adminauditlog)) — a manual
+erasure with no central audit record is exactly the accountability gap that log exists to close.
+The `INSERT` below writes the same central record by hand; do not skip it. Capture the attendee's
+name/email and the event's title *before* the delete (the `SELECT` in the transaction does this),
+and know your own `user_id` (`SELECT id FROM "User" WHERE email = '...'`) and the event's
+`organization_id` beforehand.
+
 Run the operation in one transaction and scope it to the event and attendee:
 
 ```sql
@@ -75,6 +84,11 @@ BEGIN;
 -- Replace values before execution.
 \set event_id 'evt_...'
 \set attendee_id 'att_...'
+\set actor_user_id 'usr_...'
+
+-- Snapshot identity for the audit record before it's gone.
+SELECT id, name, email FROM "Attendee" WHERE id = :'attendee_id' AND event_id = :'event_id';
+SELECT organization_id, title FROM "Event" WHERE id = :'event_id';
 
 DELETE FROM "EmailDelivery"
 WHERE "event_id" = :'event_id'
@@ -90,6 +104,23 @@ WHERE "event_id" = :'event_id'
 DELETE FROM "Attendee"
 WHERE "event_id" = :'event_id'
   AND "id" = :'attendee_id';
+
+-- Central accountability record — fill in the values from the two SELECTs above.
+INSERT INTO "AdminAuditLog" (id, organization_id, actor_user_id, action_type, metadata, created_at)
+VALUES (
+  gen_random_uuid()::text,
+  '<organization_id from the Event SELECT>',
+  :'actor_user_id',
+  'attendee_erased',
+  jsonb_build_object(
+    'event_id', :'event_id',
+    'event_title', '<title from the Event SELECT>',
+    'attendee_id', :'attendee_id',
+    'attendee_name', '<name from the Attendee SELECT>',
+    'attendee_email', '<email from the Attendee SELECT>'
+  ),
+  now()
+);
 
 COMMIT;
 ```

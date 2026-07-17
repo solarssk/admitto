@@ -406,16 +406,19 @@ export function AttendeeDetailPage() {
 
   async function handleDeleteConfirm() {
     if (!eventId || !attendeeId) return;
+    const target = { eventId, attendeeId };
     setDeleting(true);
     setDeleteError(null);
     try {
       await deleteAttendee(eventId, attendeeId);
+      if (!isStillSelected(target)) return;
       addToast("Attendee permanently deleted", "success");
       navigate(`/admin/events/${eventId}/attendees`);
     } catch (err) {
+      if (!isStillSelected(target)) return;
       setDeleteError(operatorApiErrorMessage(err, "Delete failed"));
     } finally {
-      setDeleting(false);
+      if (isStillSelected(target)) setDeleting(false);
     }
   }
 

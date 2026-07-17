@@ -95,6 +95,7 @@ export type AttendeeActionType =
   | 'rsvp_status_changed'
   | 'attendee_created_manual'
   | 'attendee_erased'
+  | 'attendees_bulk_erased'
   | 'pass_revoked'
   | 'pass_restored';
 
@@ -116,6 +117,7 @@ export const ATTENDEE_ACTION_TYPE = [
   'rsvp_status_changed',
   'attendee_created_manual',
   'attendee_erased',
+  'attendees_bulk_erased',
   'pass_revoked',
   'pass_restored',
 ] as const satisfies AttendeeActionType[];

@@ -667,9 +667,46 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-delete", () => {
     });
   }
 
+  /** Dependent rows on the first of `ids` — proves bulk-delete's cleanup actually runs, not just
+   * that the attendee rows themselves disappear (Codecov review). */
+  async function seedBulkErasableDependents(firstId: string) {
+    await prisma.$transaction([
+      prisma.emailDelivery.create({
+        data: {
+          organization_id: ORG_A,
+          event_id: EVENT_A,
+          attendee_id: firstId,
+          purpose: "initial",
+          provider: "export_only",
+          status: "sent",
+          recipient_email: "bulk-erase-0@example.com",
+          rendered_subject: "Bulk erase ticket",
+          rendered_html: "<p>Bulk Erase ticket</p>",
+        },
+      }),
+      prisma.walletPass.create({
+        data: {
+          attendee_id: firstId,
+          pass_type_id: "pass.example.admitto",
+          serial_number: `bulk-erase-serial-${firstId}`,
+          auth_token: "bulk-erase-auth-token",
+        },
+      }),
+      prisma.checkIn.create({
+        data: {
+          attendee_id: firstId,
+          event_id: EVENT_A,
+          status: "VALID",
+          checked_in_by: adminId,
+        },
+      }),
+    ]);
+  }
+
   it("erases every requested attendee and writes one bulk + one central audit row", async () => {
     const ids = ["att-bulk-erase-1", "att-bulk-erase-2"];
     await seedBulkErasable(ids);
+    await seedBulkErasableDependents(ids[0]!);
 
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-delete`, {
       method: "POST",
@@ -680,14 +717,21 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-delete", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ deletedCount: 2 });
     expect(await prisma.attendee.count({ where: { id: { in: ids } } })).toBe(0);
+    expect(await prisma.emailDelivery.count({ where: { attendee_id: ids[0] } })).toBe(0);
+    expect(await prisma.walletPass.count({ where: { attendee_id: ids[0] } })).toBe(0);
+    expect(await prisma.checkIn.count({ where: { attendee_id: ids[0] } })).toBe(0);
 
     const audit = await prisma.attendeeActionLog.findFirst({
       where: { event_id: EVENT_A, attendee_id: null, action_type: "attendees_bulk_erased" },
       orderBy: { created_at: "desc" },
     });
     expect(audit).not.toBeNull();
-    const meta = audit!.metadata as { attendee_ids?: string[] };
+    const meta = audit!.metadata as {
+      attendee_ids?: string[];
+      removed?: { email_deliveries?: number; wallet_passes?: number; check_ins?: number };
+    };
     expect(meta.attendee_ids?.sort()).toEqual([...ids].sort());
+    expect(meta.removed).toMatchObject({ email_deliveries: 1, wallet_passes: 1, check_ins: 1 });
 
     const adminAudit = await prisma.adminAuditLog.findFirst({
       where: { organization_id: ORG_A, action_type: "attendees_bulk_erased" },

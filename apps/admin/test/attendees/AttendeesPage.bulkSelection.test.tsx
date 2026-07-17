@@ -299,7 +299,7 @@ describe("AttendeesPage bulk delete (#356 follow-up)", () => {
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
   });
 
-  it("toasts an operator-safe error and keeps the selection when bulkDeleteAttendees fails", async () => {
+  it("shows an operator-safe error inside the dialog and keeps the selection when bulkDeleteAttendees fails", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
     bulkDeleteAttendees.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
@@ -313,9 +313,11 @@ describe("AttendeesPage bulk delete (#356 follow-up)", () => {
     const dialog = openAndArmDeleteDialog();
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete attendees" }));
 
-    await waitFor(() => {
-      expect(addToast).toHaveBeenCalledWith("Delete failed.", "error");
-    });
+    // Inline in the dialog, not a toast - matches the attendee detail page's single-delete
+    // flow and the project's own "destructive actions don't also toast" convention.
+    await screen.findByText("Delete failed.");
+    expect(addToast).not.toHaveBeenCalled();
+    expect(screen.getByText("Permanently delete 1 attendee?")).toBeTruthy();
     expect(document.querySelector(".attendees-bulkbar")).toBeTruthy();
   });
 });

@@ -89,8 +89,32 @@ This is a narrower, more deliberate exception than it looks:
   still genuinely gone from every attendee-facing table and surface).
 - **Access:** superadmin-only (`GET /api/admin/organizations`-tier gate), stricter than the
   admin-level access the per-attendee log gets.
-- **Not exempt from the Retention table below** — the IP-address row already applies to this log;
-  the same "operator, 30 days or your policy" expectation covers the name/email fields added here.
+- **Retention — operator-run, not automated (no scheduled purge job exists for this table):** the
+  Retention table below already lists "IP addresses in admin audit log… operator, 30 days or your
+  policy, product does not auto-purge" — the same applies to the name/email fields added here, and
+  is worth being explicit about rather than assuming: run this after your chosen retention window
+  elapses, scoped to just the fields this section is about (never truncate the whole table — that
+  destroys the accountability record itself, defeating the point):
+
+  ```sql
+  -- Single-attendee actions: metadata.attendee_name / .attendee_email.
+  UPDATE "AdminAuditLog"
+  SET metadata = metadata - 'attendee_name' - 'attendee_email'
+  WHERE action_type IN ('attendee_erased', 'attendee_created_manual')
+    AND created_at < now() - interval '30 days';
+
+  -- Bulk erasure: metadata.attendees is an array of {id, name, email} objects.
+  UPDATE "AdminAuditLog"
+  SET metadata = jsonb_set(metadata, '{attendees}', (
+        SELECT jsonb_agg(a - 'name' - 'email')
+        FROM jsonb_array_elements(metadata->'attendees') a
+      ))
+  WHERE action_type = 'attendees_bulk_erased'
+    AND created_at < now() - interval '30 days';
+  ```
+
+  An automated version of this (or of the broader attendee-PII purge already listed below) is
+  v1.0-planned work, not shipped today.
 
 ## Retention
 
