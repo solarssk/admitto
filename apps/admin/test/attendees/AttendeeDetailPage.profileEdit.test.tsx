@@ -203,6 +203,9 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     renderPage();
     await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
 
+    // The RSVP control lives inside the Edit modal - it still saves immediately on
+    // change, unlike the rest of the form which requires Save changes.
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByRole("combobox", { name: "RSVP status" }), {
       target: { value: "declined" },
     });

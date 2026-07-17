@@ -935,6 +935,7 @@
 .attendee-status-chip__body {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 3px;
   min-width: 0;
 }
@@ -953,13 +954,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* The RSVP chip's <Select> replaces the mockup's static text - keep it visually compact
-   enough to still fit the chip. */
-.attendee-status-chip__body .at-select {
-  max-width: none;
-  font-size: var(--fs-sm);
 }
 
 @media (max-width: 900px) {

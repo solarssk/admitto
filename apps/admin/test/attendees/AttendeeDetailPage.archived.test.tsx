@@ -104,18 +104,19 @@ function expectArchivedLock(control: HTMLElement) {
 }
 
 describe("AttendeeDetailPage archived lockdown", () => {
-  it("disables More actions (resend ticket), revoke menu, RSVP select, and Edit for a registered attendee", async () => {
+  it("disables More actions (resend ticket), revoke menu, and Edit for a registered attendee", async () => {
     mockLoad(baseDetail());
     renderPage();
     await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
 
     expectArchivedLock(screen.getByRole("button", { name: "More actions" }));
     expectArchivedLock(screen.getByRole("button", { name: "Revoke" }));
-    expectArchivedLock(screen.getByRole("combobox", { name: "RSVP status" }));
     // Edit mode can't be entered at all on an archived event — the read-only
-    // view stays up, no Save button ever renders (#361).
+    // view stays up, no Save button ever renders, and the RSVP select (now
+    // inside the Edit modal) is unreachable along with the rest of the form (#361).
     expectArchivedLock(screen.getByRole("button", { name: "Edit" }));
     expect(screen.queryByLabelText("Email")).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "RSVP status" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
 
     // Back is read-only navigation and must stay usable.

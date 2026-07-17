@@ -41,6 +41,7 @@ import {
 } from "../attendees/attendeeTimeline.js";
 import { MailStatusBadge } from "../attendees/mailStatusBadge.js";
 import { PassStatusBadge } from "../attendees/passStatusBadge.js";
+import { RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { CustomDataFieldInput } from "../attendees/CustomDataFieldInput.js";
 import {
@@ -727,22 +728,7 @@ export function AttendeeDetailPage() {
           </span>
           <div className="attendee-status-chip__body">
             <strong>Attendance</strong>
-            <ArchivedGuard event={event} reasonId="rsvp-status-reason" disabled={rsvpSaving}>
-              {(guard) => (
-                <Select
-                  label="RSVP status"
-                  value={detail.rsvp_status}
-                  {...guard}
-                  onChange={(e) => void handleRsvpChange(e.target.value as RsvpStatus)}
-                >
-                  <option value="none">Registered</option>
-                  <option value="confirmed">Confirmed</option>
-                  <option value="declined">Declined</option>
-                  <option value="tentative">Tentative</option>
-                  <option value="cancelled">Cancelled</option>
-                </Select>
-              )}
-            </ArchivedGuard>
+            <RsvpStatusBadge status={detail.rsvp_status} />
           </div>
         </div>
         <div className="attendee-status-chip">
@@ -911,6 +897,24 @@ export function AttendeeDetailPage() {
                 </Button>
               </div>
             )}
+            {/* Saves immediately on change, unlike the fields below - same as the RSVP
+                control this replaced in the old sidebar Status card. */}
+            <ArchivedGuard event={event} reasonId="rsvp-status-reason" disabled={rsvpSaving}>
+              {(guard) => (
+                <Select
+                  label="RSVP status"
+                  value={detail.rsvp_status}
+                  {...guard}
+                  onChange={(e) => void handleRsvpChange(e.target.value as RsvpStatus)}
+                >
+                  <option value="none">Registered</option>
+                  <option value="confirmed">Confirmed</option>
+                  <option value="declined">Declined</option>
+                  <option value="tentative">Tentative</option>
+                  <option value="cancelled">Cancelled</option>
+                </Select>
+              )}
+            </ArchivedGuard>
             <fieldset
               className={["attendee-form__fieldset", isEventArchived(event) && "at-tooltip"]
                 .filter(Boolean)
