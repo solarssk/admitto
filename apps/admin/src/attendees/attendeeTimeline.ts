@@ -175,28 +175,35 @@ export function getTimelineLabel(entry: AttendeeActionLogEntryDto): string {
   }
 }
 
-/** Human-readable diff for the activity log row, PII-safe by construction: profile edits show
- * which fields changed, never the old/new values themselves (custom_data can hold sensitive
- * text like accessibility notes or emergency contacts - #364). `customFields` is the event's
- * custom-field registry (same list `allCustomDataEntries` uses) - passing it lets a changed
- * custom field show its real configured label instead of a humanized guess at its slugified
- * source_field key (PO review, see fieldChangeLabel). `eventItems` is the same registry-backed
- * list the Event-day items card renders (detail.event_items) - same reasoning, an item's real
- * configured label (e.g. "Gratis") beats humanizing its raw key. */
+/** Who performed the row's action, shown next to the timestamp rather than mixed into the diff
+ * text below the headline (PO review) - a row with no other detail (e.g. a QR check-in) used to
+ * fall back to showing just this, which is now handled by getTimelineDetail returning "" instead. */
+export function getTimelineActor(entry: AttendeeActionLogEntryDto): string {
+  return entry.actor_display ?? "System";
+}
+
+/** Human-readable diff for the activity log row - who did it is getTimelineActor's job, not
+ * this function's; empty string means there's nothing beyond the headline to show. PII-safe by
+ * construction: profile edits show which fields changed, never the old/new values themselves
+ * (custom_data can hold sensitive text like accessibility notes or emergency contacts - #364).
+ * `customFields` is the event's custom-field registry (same list `allCustomDataEntries` uses) -
+ * passing it lets a changed custom field show its real configured label instead of a humanized
+ * guess at its slugified source_field key (PO review, see fieldChangeLabel). `eventItems` is the
+ * same registry-backed list the Event-day items card renders (detail.event_items) - same
+ * reasoning, an item's real configured label (e.g. "Gratis") beats humanizing its raw key. */
 export function getTimelineDetail(
   entry: AttendeeActionLogEntryDto,
   customFields: CustomDataFieldDef[] = [],
   eventItems: AttendeeDetailItemDto[] = [],
 ): string {
-  const actor = entry.actor_display ?? "System";
   const meta = entry.metadata;
-  if (!meta) return actor;
+  if (!meta) return "";
 
   if (entry.action_type === "rsvp_status_changed") {
     const from = meta.from;
     const to = meta.to;
     if (from != null && to != null) {
-      return `${formatRsvpStatus(from)} → ${formatRsvpStatus(to)} · ${actor}`;
+      return `${formatRsvpStatus(from)} → ${formatRsvpStatus(to)}`;
     }
   }
 
@@ -204,7 +211,7 @@ export function getTimelineDetail(
     const fields = meta.fields;
     if (Array.isArray(fields) && fields.length > 0) {
       const customFieldLabels = new Map(customFields.map((f) => [f.source_field, f.label]));
-      return `${fields.map((f) => fieldChangeLabel(String(f), customFieldLabels)).join(", ")} · ${actor}`;
+      return fields.map((f) => fieldChangeLabel(String(f), customFieldLabels)).join(", ");
     }
   }
 
@@ -212,7 +219,7 @@ export function getTimelineDetail(
     const from = meta.previous_status;
     if (from != null) {
       const to = entry.action_type === "pass_revoked" ? "revoked" : "registered";
-      return `${formatPassStatus(from)} → ${formatPassStatus(to)} · ${actor}`;
+      return `${formatPassStatus(from)} → ${formatPassStatus(to)}`;
     }
   }
 
@@ -220,11 +227,11 @@ export function getTimelineDetail(
     const itemKey = meta.event_item_key;
     if (typeof itemKey === "string" && itemKey) {
       const itemLabels = new Map(eventItems.map((i) => [i.key, i.label]));
-      return `${itemLabels.get(itemKey) ?? humanizeFieldKey(itemKey)} · ${actor}`;
+      return itemLabels.get(itemKey) ?? humanizeFieldKey(itemKey);
     }
   }
 
-  return actor;
+  return "";
 }
 
 /** How this attendee was added, read off the oldest loaded action-log entry (#365). Log rows are

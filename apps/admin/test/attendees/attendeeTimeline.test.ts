@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   formatActivityTimestamp,
+  getTimelineActor,
   getTimelineDetail,
   getTimelineIcon,
   getTimelineLabel,
@@ -59,6 +60,32 @@ describe("item_issued/item_state_changed timeline label (PO review)", () => {
   });
 });
 
+describe("getTimelineActor (PO review — actor moved next to the timestamp)", () => {
+  it("returns the actor's display name", () => {
+    expect(
+      getTimelineActor({
+        id: "log-1",
+        action_type: "check_in",
+        actor_display: "operator 1",
+        metadata: null,
+        created_at: "2026-06-28T13:00:00.000Z",
+      }),
+    ).toBe("operator 1");
+  });
+
+  it("falls back to System when there's no actor_display", () => {
+    expect(
+      getTimelineActor({
+        id: "log-1",
+        action_type: "attendee_ingested",
+        actor_display: null,
+        metadata: null,
+        created_at: "2026-06-28T13:00:00.000Z",
+      }),
+    ).toBe("System");
+  });
+});
+
 describe("getTimelineDetail — pre-existing rsvp_status_changed rendering", () => {
   it("still shows the RSVP transition after the #364 refactor", () => {
     expect(
@@ -69,7 +96,7 @@ describe("getTimelineDetail — pre-existing rsvp_status_changed rendering", () 
         metadata: { from: "none", to: "confirmed" },
         created_at: "2026-06-28T13:00:00.000Z",
       }),
-    ).toBe("Registered → Confirmed · Admin");
+    ).toBe("Registered → Confirmed");
   });
 });
 
@@ -90,7 +117,7 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
       getTimelineDetail(
         entry({ action_type: "attendee_edited", metadata: { fields: ["email", "company"] } }),
       ),
-    ).toBe("Email, Company · operator 1");
+    ).toBe("Email, Company");
   });
 
   it("humanizes an unlabeled custom_data field key for attendee_edited", () => {
@@ -98,7 +125,7 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
       getTimelineDetail(
         entry({ action_type: "attendee_edited", metadata: { fields: ["shirt_size"] } }),
       ),
-    ).toBe("Shirt size · operator 1");
+    ).toBe("Shirt size");
   });
 
   it("uses the registry's real label for a configured custom field, not a humanized guess at its slugified key (PO review)", () => {
@@ -109,13 +136,11 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
         entry({ action_type: "attendee_edited", metadata: { fields: ["niepe_nosprawnosc"] } }),
         [{ label: "Niepełnosprawność", source_field: "niepe_nosprawnosc", type: "boolean", required: false }],
       ),
-    ).toBe("Niepełnosprawność · operator 1");
+    ).toBe("Niepełnosprawność");
   });
 
-  it("falls back to the actor alone when attendee_edited has no fields metadata", () => {
-    expect(getTimelineDetail(entry({ action_type: "attendee_edited", metadata: null }))).toBe(
-      "operator 1",
-    );
+  it("returns an empty string when attendee_edited has no fields metadata (actor is shown separately, via getTimelineActor)", () => {
+    expect(getTimelineDetail(entry({ action_type: "attendee_edited", metadata: null }))).toBe("");
   });
 
   it("shows the pass status transition for pass_revoked", () => {
@@ -126,7 +151,7 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
           metadata: { previous_status: "registered" },
         }),
       ),
-    ).toBe("Active → Revoked · operator 1");
+    ).toBe("Active → Revoked");
   });
 
   it("falls back to the raw status string for an unrecognized previous_status value", () => {
@@ -137,7 +162,7 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
           metadata: { previous_status: "some_future_status" },
         }),
       ),
-    ).toBe("some_future_status → Revoked · operator 1");
+    ).toBe("some_future_status → Revoked");
   });
 
   it("shows the pass status transition for pass_restored", () => {
@@ -148,7 +173,7 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
           metadata: { previous_status: "revoked" },
         }),
       ),
-    ).toBe("Revoked → Active · operator 1");
+    ).toBe("Revoked → Active");
   });
 
   it("shows the humanized event item key for item_issued/item_returned/item_revoked", () => {
@@ -156,7 +181,7 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
       getTimelineDetail(
         entry({ action_type: "item_issued", metadata: { event_item_key: "badge" } }),
       ),
-    ).toBe("Badge · operator 1");
+    ).toBe("Badge");
     expect(
       getTimelineDetail(
         entry({
@@ -164,7 +189,7 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
           metadata: { event_item_key: "gift_bag", from_state: "issued", to_state: "returned" },
         }),
       ),
-    ).toBe("Gift bag · operator 1");
+    ).toBe("Gift bag");
     expect(
       getTimelineDetail(
         entry({
@@ -172,7 +197,7 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
           metadata: { event_item_key: "badge", from_state: "issued", to_state: "pending" },
         }),
       ),
-    ).toBe("Badge · operator 1");
+    ).toBe("Badge");
   });
 
   it("uses the item's real registry label over a humanized guess at its key (PO review)", () => {
@@ -186,7 +211,7 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
         [],
         [{ key: "gratis", label: "Free gift", icon: null, state: "issued" }],
       ),
-    ).toBe("Free gift · operator 1");
+    ).toBe("Free gift");
   });
 
   it("falls back to humanizing the key when the item isn't in the registry (e.g. removed after this log entry was written)", () => {
@@ -196,7 +221,7 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
         [],
         [],
       ),
-    ).toBe("Gratis · operator 1");
+    ).toBe("Gratis");
   });
 });
 

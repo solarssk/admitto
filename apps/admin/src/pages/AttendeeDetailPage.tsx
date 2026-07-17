@@ -33,6 +33,7 @@ import {
 import { formatAdmissionDisplay, formatEventDateTime } from "../utils/event-dates.js";
 import {
   deriveAttendeeSource,
+  getTimelineActor,
   getTimelineDetail,
   getTimelineIcon,
   getTimelineLabel,
@@ -981,20 +982,29 @@ export function AttendeeDetailPage() {
             />
           ) : (
             <ul className="at-timeline">
-              {detail.action_log.map((entry) => (
-                <li key={entry.id} className="at-tl-item">
-                  <div className={`at-tl-dot at-tl-dot--${getTimelineTone(entry)}`}>
-                    <i className={`ti ti-${getTimelineIcon(entry.action_type)}`} aria-hidden="true" />
-                  </div>
-                  <div className="at-tl-body">
-                    <b>{getTimelineLabel(entry)}</b>
-                    <span>{getTimelineDetail(entry, attributeFields, eventItems)}</span>
-                  </div>
-                  <time className="at-tl-time" dateTime={entry.created_at}>
-                    {formatActivityTimestamp(entry.created_at, entry.client_timezone, event.timezone)}
-                  </time>
-                </li>
-              ))}
+              {detail.action_log.map((entry) => {
+                const detailText = getTimelineDetail(entry, attributeFields, eventItems);
+                return (
+                  <li key={entry.id} className="at-tl-item">
+                    <div className={`at-tl-dot at-tl-dot--${getTimelineTone(entry)}`}>
+                      <i className={`ti ti-${getTimelineIcon(entry.action_type)}`} aria-hidden="true" />
+                    </div>
+                    <div className="at-tl-body">
+                      <b>{getTimelineLabel(entry)}</b>
+                      {detailText && <span>{detailText}</span>}
+                    </div>
+                    <div className="at-tl-meta">
+                      <time className="at-tl-time" dateTime={entry.created_at}>
+                        {formatActivityTimestamp(entry.created_at, entry.client_timezone, event.timezone)}
+                      </time>
+                      <span className="at-tl-actor">
+                        <i className="ti ti-user" aria-hidden="true" />
+                        {getTimelineActor(entry)}
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </Card>
