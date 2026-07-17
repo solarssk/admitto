@@ -581,6 +581,15 @@
   background: var(--surface-hover);
 }
 
+.more-actions-menu__item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.more-actions-menu__item:disabled:hover {
+  background: none;
+}
+
 .attendees-export-menu {
   position: relative;
   display: inline-flex;

@@ -15,6 +15,7 @@ import {
 import {
   ApiError,
   fetchAttendeeDetail,
+  fetchEventMailSettings,
   fetchTicketTypes,
   resendTicket,
   revokeAttendeeCheckIn,
@@ -51,7 +52,12 @@ import {
 } from "../attendees/customData.js";
 import type { CustomDataFieldDef } from "../attendees/customData.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
-import { ArchivedGuard, ARCHIVED_ACTION_TOOLTIP, isEventArchived } from "../components/ArchivedGuard.js";
+import {
+  ArchivedGuard,
+  ARCHIVED_ACTION_TOOLTIP,
+  isEventArchived,
+  type ArchivedGuardEvent,
+} from "../components/ArchivedGuard.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { canRevokeCheckIn } from "../checkin/revokeEligibility.js";
@@ -128,14 +134,22 @@ function RevokeActionMenu({
 
 /** Secondary actions that don't need their own header button - today just Resend ticket, matching
  * the design mockup's "More actions" menu (which also groups actions this page doesn't have yet,
- * e.g. attendee removal, tracked separately by #356). */
+ * e.g. attendee removal, tracked separately by #356). The trigger's own `disabled` is the archived
+ * lock (blocks the whole menu); "Resend ticket" additionally gets its own disabled+tooltip when
+ * the event has no working mail transport - same check and copy as the Attendees list's "Send
+ * tickets" button, but scoped to just this one item since future menu entries (e.g. #356) may
+ * have nothing to do with mail. */
 function MoreActionsMenu({
+  event,
   onResend,
   disabled = false,
+  mailConfigured,
   "aria-describedby": ariaDescribedBy,
 }: {
+  event: ArchivedGuardEvent;
   onResend: () => void;
   disabled?: boolean;
+  mailConfigured: boolean | undefined;
   "aria-describedby"?: string;
 }) {
   const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
@@ -158,17 +172,32 @@ function MoreActionsMenu({
       </Button>
       {open && (
         <div className="more-actions-menu__panel" role="menu" ref={panelRef}>
-          <button
-            type="button"
-            role="menuitem"
-            className="more-actions-menu__item"
-            onClick={() => {
-              setOpen(false);
-              onResend();
-            }}
+          <ArchivedGuard
+            event={event}
+            reasonId="resend-ticket-mail-reason"
+            disabled={mailConfigured === false}
+            tooltip={
+              mailConfigured === false
+                ? "No mail transport configured for this event. Set one up in Event Settings → Mailing."
+                : undefined
+            }
+            placement="below"
           >
-            <i className="ti ti-send" aria-hidden="true" /> Resend ticket
-          </button>
+            {(guard) => (
+              <button
+                type="button"
+                role="menuitem"
+                className="more-actions-menu__item"
+                {...guard}
+                onClick={() => {
+                  setOpen(false);
+                  onResend();
+                }}
+              >
+                <i className="ti ti-send" aria-hidden="true" /> Resend ticket
+              </button>
+            )}
+          </ArchivedGuard>
         </div>
       )}
     </div>
@@ -328,6 +357,27 @@ export function AttendeeDetailPage() {
   useEffect(() => {
     loadTicketTypes();
   }, [loadTicketTypes]);
+
+  // Whether "Resend ticket" should work at all — same effective-transport resolution as the
+  // Attendees list's "Send tickets" button (fetchEventMailSettings, provider smtp/graph/
+  // powerautomate only - "export_only" is a real saved value but never actually delivers mail).
+  const [mailConfigured, setMailConfigured] = useState<boolean | undefined>(undefined);
+  useEffect(() => {
+    if (!eventId) return;
+    setMailConfigured(undefined);
+    const ac = new AbortController();
+    fetchEventMailSettings(eventId, ac.signal)
+      .then((data) => {
+        if (ac.signal.aborted) return;
+        const provider = data.fields.provider.value;
+        setMailConfigured(provider === "smtp" || provider === "graph" || provider === "powerautomate");
+      })
+      .catch(() => {
+        if (ac.signal.aborted) return;
+        setMailConfigured(undefined);
+      });
+    return () => ac.abort();
+  }, [eventId]);
 
   const baseline = detail != null ? toAttendeeForm(detail, attributeFields) : null;
   const isDirty =
@@ -685,7 +735,14 @@ export function AttendeeDetailPage() {
               </ArchivedGuard>
             )}
             <ArchivedGuard event={event} reasonId="more-actions-reason" placement="below">
-              {(guard) => <MoreActionsMenu onResend={() => setResendOpen(true)} {...guard} />}
+              {(guard) => (
+                <MoreActionsMenu
+                  event={event}
+                  mailConfigured={mailConfigured}
+                  onResend={() => setResendOpen(true)}
+                  {...guard}
+                />
+              )}
             </ArchivedGuard>
             <Button variant="secondary" onClick={handleBack}>
               Back
