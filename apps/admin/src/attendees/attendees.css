@@ -936,8 +936,9 @@
   white-space: nowrap;
 }
 
-/* Event-day items list (#365 follow-up) - reuses the status strip's icon tint tokens
-   for visual consistency, but as a vertical row list rather than a chip grid. */
+/* Event-day items list — matches the design mockup's .att-item-row exactly (values pulled
+   from ui_kits/admin/index.html, not eyeballed: 8px icon radius not a circle, 500-weight
+   body-sized label, 600-weight xs-sized state, muted/disabled text tokens for "not yet"). */
 .attendee-items-list {
   display: flex;
   flex-direction: column;
@@ -946,9 +947,9 @@
 .attendee-items-row {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--border);
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--at-gray-100);
 }
 
 .attendee-items-row:last-child {
@@ -958,35 +959,43 @@
 .attendee-items-row__icon {
   width: 28px;
   height: 28px;
-  border-radius: 50%;
+  border-radius: 8px;
   flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 14px;
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
 }
 
-.attendee-items-row__icon--ok { background: var(--status-ok-tint); color: var(--status-ok-fg); }
-.attendee-items-row__icon--neutral { background: var(--at-gray-100); color: var(--text-muted); }
+.attendee-items-row__icon--issued { background: var(--status-ok-tint); color: var(--status-ok); }
+.attendee-items-row__icon--returned { background: var(--at-gray-100); color: var(--text-muted); }
 
 .attendee-items-row__label {
   flex: 1;
   min-width: 0;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-body);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .attendee-items-row__detail {
   color: var(--text-muted);
+  font-weight: 400;
 }
 
 .attendee-items-row__state {
-  font-size: var(--fs-sm);
-  font-weight: 500;
+  font-size: var(--fs-xs);
+  font-weight: 600;
   white-space: nowrap;
+  flex: none;
 }
 
-.attendee-items-row__state--ok { color: var(--status-ok-fg); }
-.attendee-items-row__state--neutral { color: var(--text-muted); }
+.attendee-items-row__state--ok { color: var(--status-ok); }
+.attendee-items-row__state--muted { color: var(--text-disabled); }
 
 /* Attendee detail status strip - 5 chips (Registration/Attendance/Ticket delivery/Check-in/
    Wallet), matching the design mockup's .att-status-strip. */

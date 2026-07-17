@@ -203,8 +203,17 @@ function itemStateLabel(state: string): string {
   return "Not yet";
 }
 
-function itemStateTone(state: string): ChipTone {
-  return state === "issued" || state === "returned" ? "ok" : "neutral";
+/** Icon background/color has three looks (pending/issued/returned); the status text
+ * only distinguishes "done" (issued) from everything else - matches the design mockup's
+ * .att-item-row__icon vs .att-item-row__status rules exactly, not a simplification. */
+function itemIconModifier(state: string): "issued" | "returned" | "" {
+  if (state === "issued") return "issued";
+  if (state === "returned") return "returned";
+  return "";
+}
+
+function itemStateTone(state: string): "ok" | "muted" {
+  return state === "issued" ? "ok" : "muted";
 }
 
 /** Event attendee detail: profile edit, pass revoke/restore, resend, and activity log. */
@@ -828,7 +837,13 @@ export function AttendeeDetailPage() {
                     {eventItems.map((item) => (
                       <li className="attendee-items-row" key={item.key}>
                         <span
-                          className={`attendee-items-row__icon attendee-items-row__icon--${itemStateTone(item.state)}`}
+                          className={[
+                            "attendee-items-row__icon",
+                            itemIconModifier(item.state) &&
+                              `attendee-items-row__icon--${itemIconModifier(item.state)}`,
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
                         >
                           <i
                             className={`ti ti-${item.state === "issued" || item.state === "returned" ? "circle-check" : (item.icon ?? "package")}`}
