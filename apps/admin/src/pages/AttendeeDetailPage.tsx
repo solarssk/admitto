@@ -628,7 +628,7 @@ export function AttendeeDetailPage() {
         subtitle="Manage this attendee's profile, ticket, and check-in status."
         actions={
           <>
-            <ArchivedGuard event={event} reasonId="edit-profile-reason">
+            <ArchivedGuard event={event} reasonId="edit-profile-reason" placement="below">
               {(guard) => (
                 <Button
                   type="button"
@@ -642,7 +642,12 @@ export function AttendeeDetailPage() {
               )}
             </ArchivedGuard>
             {isRevoked ? (
-              <ArchivedGuard event={event} reasonId="restore-pass-reason" disabled={revokeBusy}>
+              <ArchivedGuard
+                event={event}
+                reasonId="restore-pass-reason"
+                disabled={revokeBusy}
+                placement="below"
+              >
                 {(guard) => (
                   <Button
                     variant="primary"
@@ -658,7 +663,7 @@ export function AttendeeDetailPage() {
                 )}
               </ArchivedGuard>
             ) : (
-              <ArchivedGuard event={event} reasonId="revoke-menu-reason">
+              <ArchivedGuard event={event} reasonId="revoke-menu-reason" placement="below">
                 {(guard) => (
                   <RevokeActionMenu
                     canRevokeCheckIn={canRevokeCheckIn({
@@ -678,7 +683,7 @@ export function AttendeeDetailPage() {
                 )}
               </ArchivedGuard>
             )}
-            <ArchivedGuard event={event} reasonId="more-actions-reason">
+            <ArchivedGuard event={event} reasonId="more-actions-reason" placement="below">
               {(guard) => <MoreActionsMenu onResend={() => setResendOpen(true)} {...guard} />}
             </ArchivedGuard>
             <Button variant="secondary" onClick={handleBack}>
