@@ -1,7 +1,20 @@
 import nodemailer from "nodemailer";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { lookup } from "node:dns/promises";
 import { SmtpAdapter } from "../src/adapters/smtp.js";
 import type { SmtpConfig } from "../src/config.js";
+
+vi.mock("node:dns/promises", () => ({
+  lookup: vi.fn(),
+}));
+
+const mockedLookup = vi.mocked(lookup);
+
+beforeEach(() => {
+  mockedLookup.mockResolvedValue([{ address: "93.184.216.34", family: 4 }] as Awaited<
+    ReturnType<typeof lookup>
+  >);
+});
 
 const config: SmtpConfig = {
   provider: "smtp",
@@ -132,5 +145,29 @@ describe("SmtpAdapter", () => {
     expect(res.status).toBe("rejected");
     expect(res.retryable).toBe(false);
     expect(res.error).toContain("535");
+  });
+
+  it("rejects a private/loopback host without ever calling sendMail (SSRF guard)", async () => {
+    const sendMail = vi.fn(async () => ({ messageId: "<id@test>" }));
+    const adapter = new SmtpAdapter(
+      { ...config, host: "127.0.0.1" },
+      { sendMail } as unknown as nodemailer.Transporter,
+    );
+    const res = await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
+    expect(res.status).toBe("rejected");
+    expect(res.retryable).toBe(false);
+    expect(res.error).toMatch(/private, loopback, or link-local/);
+    expect(sendMail).not.toHaveBeenCalled();
+  });
+
+  it("rejects a host that resolves to a private address at send-time (DNS rebinding)", async () => {
+    mockedLookup.mockResolvedValue([{ address: "10.0.0.5", family: 4 }] as Awaited<
+      ReturnType<typeof lookup>
+    >);
+    const sendMail = vi.fn(async () => ({ messageId: "<id@test>" }));
+    const adapter = new SmtpAdapter(config, { sendMail } as unknown as nodemailer.Transporter);
+    const res = await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
+    expect(res.status).toBe("rejected");
+    expect(sendMail).not.toHaveBeenCalled();
   });
 });

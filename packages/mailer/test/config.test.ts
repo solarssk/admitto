@@ -89,4 +89,48 @@ describe("config", () => {
     const bad = safeParseMailerConfig({ provider: "carrier-pigeon" });
     expect(bad.success).toBe(false);
   });
+
+  it.each(["127.0.0.1", "localhost", "10.0.0.1", "169.254.169.254", "192.168.1.1"])(
+    "rejects powerautomate URL targeting private/loopback/metadata host %s (SSRF)",
+    (host) => {
+      const bad = safeParseMailerConfig({
+        provider: "powerautomate",
+        url: `https://${host}/flow`,
+        fromAddress: "a@example.com",
+      });
+      expect(bad.success).toBe(false);
+    },
+  );
+
+  it.each(["127.0.0.1", "localhost", "10.0.0.1", "169.254.169.254", "192.168.1.1"])(
+    "rejects smtp host targeting private/loopback/metadata address %s (SSRF)",
+    (host) => {
+      const bad = safeParseMailerConfig({
+        provider: "smtp",
+        host,
+        user: "u",
+        password: "p",
+        fromAddress: "a@example.com",
+      });
+      expect(bad.success).toBe(false);
+    },
+  );
+
+  it("still accepts a public powerautomate URL and smtp host", () => {
+    const okUrl = safeParseMailerConfig({
+      provider: "powerautomate",
+      url: "https://prod-1.westeurope.logic.azure.com/workflows/x",
+      fromAddress: "a@example.com",
+    });
+    expect(okUrl.success).toBe(true);
+
+    const okHost = safeParseMailerConfig({
+      provider: "smtp",
+      host: "smtp.example.com",
+      user: "u",
+      password: "p",
+      fromAddress: "a@example.com",
+    });
+    expect(okHost.success).toBe(true);
+  });
 });

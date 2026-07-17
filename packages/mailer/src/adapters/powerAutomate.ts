@@ -4,6 +4,7 @@ import { mapHttpStatus, mapNetworkError } from "../errorMapping.js";
 import { rejectedSendResult } from "../adapterUtils.js";
 import { resolveReplyTo } from "../senderUtils.js";
 import { validateMailMessage } from "../validation.js";
+import { assertSafeMailDestination } from "../ssrfGuard.js";
 import type { FetchFn, MailMessage, MailerAdapter, SendResult } from "../types.js";
 
 /**
@@ -29,6 +30,16 @@ export class PowerAutomateAdapter implements MailerAdapter {
       return rejectedSendResult(this.provider, validationError, message.idempotencyKey);
     }
 
+    try {
+      await assertSafeMailDestination(new URL(this.config.url).hostname);
+    } catch (e) {
+      return rejectedSendResult(
+        this.provider,
+        e instanceof Error ? e.message : "mail transport destination is not permitted",
+        message.idempotencyKey,
+      );
+    }
+
     const base: SendResult = {
       status: "failed",
       provider: this.provider,
@@ -44,6 +55,9 @@ export class PowerAutomateAdapter implements MailerAdapter {
       const res = await this.fetchFn(this.config.url, {
         method: "POST",
         headers,
+        // Reject outright rather than follow a redirect — a same-host-looking URL that
+        // 302s to an internal target would otherwise bypass the destination check above.
+        redirect: "error",
         body: JSON.stringify({
           to: message.to,
           subject: message.subject,

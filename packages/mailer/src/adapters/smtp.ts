@@ -5,6 +5,7 @@ import { mapSmtpError } from "../errorMapping.js";
 import { rejectedSendResult } from "../adapterUtils.js";
 import { formatFromHeader, parseAddressList, resolveReplyTo } from "../senderUtils.js";
 import { validateMailMessage } from "../validation.js";
+import { assertSafeMailDestination } from "../ssrfGuard.js";
 import type { MailMessage, MailerAdapter, SendResult } from "../types.js";
 
 /**
@@ -65,6 +66,16 @@ export class SmtpAdapter implements MailerAdapter {
     const validationError = validateMailMessage(message);
     if (validationError) {
       return rejectedSendResult(this.provider, validationError, message.idempotencyKey);
+    }
+
+    try {
+      await assertSafeMailDestination(this.config.host);
+    } catch (e) {
+      return rejectedSendResult(
+        this.provider,
+        e instanceof Error ? e.message : "mail transport destination is not permitted",
+        message.idempotencyKey,
+      );
     }
 
     const from = formatFromHeader(this.config);

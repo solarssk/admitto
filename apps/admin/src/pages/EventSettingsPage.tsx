@@ -665,14 +665,16 @@ export function EventSettingsPage() {
         )}
       </EventSettingsTabPanel>
 
-      <EventSettingsTabPanel tab="mail" activeTab={tab} visited={visitedTabs} label="Mail">
-        <EventMailSettingsCard
-          key={mailCardResetKey}
-          eventId={eventId}
-          isArchived={isArchived}
-          onDirtyChange={setMailDirty}
-        />
-      </EventSettingsTabPanel>
+      {isSa && (
+        <EventSettingsTabPanel tab="mail" activeTab={tab} visited={visitedTabs} label="Mail">
+          <EventMailSettingsCard
+            key={mailCardResetKey}
+            eventId={eventId}
+            isArchived={isArchived}
+            onDirtyChange={setMailDirty}
+          />
+        </EventSettingsTabPanel>
+      )}
 
       <EventSettingsTabPanel tab="wallet" activeTab={tab} visited={visitedTabs} label="Wallet">
         <EmptyState
