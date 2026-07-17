@@ -62,6 +62,20 @@ describe("item_revoked timeline mapping (bot review, #457)", () => {
   });
 });
 
+describe("getTimelineDetail — pre-existing rsvp_status_changed rendering", () => {
+  it("still shows the RSVP transition after the #364 refactor", () => {
+    expect(
+      getTimelineDetail({
+        id: "log-1",
+        action_type: "rsvp_status_changed",
+        actor_display: "Admin",
+        metadata: { from: "none", to: "confirmed" },
+        created_at: "2026-06-28T13:00:00.000Z",
+      }),
+    ).toBe("Registered → Confirmed · Admin");
+  });
+});
+
 describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
   function entry(overrides: Partial<Parameters<typeof getTimelineDetail>[0]>) {
     return {
@@ -105,6 +119,17 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
         }),
       ),
     ).toBe("Active → Revoked · operator 1");
+  });
+
+  it("falls back to the raw status string for an unrecognized previous_status value", () => {
+    expect(
+      getTimelineDetail(
+        entry({
+          action_type: "pass_revoked",
+          metadata: { previous_status: "some_future_status" },
+        }),
+      ),
+    ).toBe("some_future_status → Revoked · operator 1");
   });
 
   it("shows the pass status transition for pass_restored", () => {

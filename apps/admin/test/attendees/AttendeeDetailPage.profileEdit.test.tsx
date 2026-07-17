@@ -278,6 +278,63 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     expect(screen.getByRole("button", { name: "Edit" })).toBeTruthy();
   });
 
+  it("shows the stale-write warning and Reload control when a save hits a 409 stale_write", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockLoad(baseDetail());
+    updateAttendee.mockRejectedValueOnce(new ApiError(409, "stale", "stale_write"));
+    // Auto-triggered reload (fired from inside the stale-write catch handler) - left pending so
+    // we can observe the intermediate staleWrite=true render before it resolves.
+    let resolveReload!: () => void;
+    loadAttendeeDetailData.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveReload = () => resolve({ detail: baseDetail(), attributeFields, itemsWarning: null });
+      }),
+    );
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna B." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(
+      await screen.findByText("Someone else updated this attendee — reload and reapply your edits."),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Reload/ })).toBeTruthy();
+    resolveReload();
+  });
+
+  it("clicking Save with no actual changes exits edit mode without calling the API", async () => {
+    mockLoad(baseDetail());
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(screen.queryByLabelText("Email")).toBeNull());
+    expect(screen.getByRole("button", { name: "Edit" })).toBeTruthy();
+    expect(updateAttendee).not.toHaveBeenCalled();
+  });
+
+  it("the header Back button warns before leaving with unsaved edits, distinct from in-form Cancel", async () => {
+    mockLoad(baseDetail());
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Someone Else" } });
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toMatch(/Leave without saving\?/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Leave" }));
+
+    // Navigated away to the attendees list — no route in this test matches it, so the
+    // attendee heading and page content are gone.
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Anna" })).toBeNull());
+  });
+
   it("Cancel with unsaved changes confirms before discarding, and reverts the field on confirm", async () => {
     mockLoad(baseDetail());
     renderPage();
