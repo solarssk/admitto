@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { createMemoryRouter, MemoryRouter, RouterProvider, Route, Routes } from "react-router-dom";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { renderWithToast } from "../test-utils.js";
 
@@ -158,5 +158,95 @@ describe("AttendeeDetailPage — Delete attendee (GDPR erasure, #356)", () => {
 
     await screen.findByText("You do not have access.");
     expect(screen.getByText("Permanently delete this attendee?")).toBeTruthy();
+  });
+
+  it("Cancel closes the dialog without calling deleteAttendee", async () => {
+    mockLoad(baseDetail());
+    renderPage();
+    await openDeleteDialog();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByText("Permanently delete this attendee?")).toBeNull();
+    expect(deleteAttendee).not.toHaveBeenCalled();
+  });
+
+  it("ignores a stale delete completion after navigating to a different attendee mid-request (CodeRabbit review)", async () => {
+    let resolveDelete!: () => void;
+    deleteAttendee.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveDelete = resolve;
+      }),
+    );
+    mockLoad(baseDetail());
+    mockLoad(baseDetail({ id: "att-2", name: "Bob Beta" }));
+
+    const router = createMemoryRouter(
+      [
+        { path: "/admin/events/:eventId/attendees/:attendeeId", element: <AttendeeDetailPage /> },
+        { path: "/admin/events/:eventId/attendees", element: <div>Attendees list marker</div> },
+      ],
+      { initialEntries: ["/admin/events/evt-1/attendees/att-1"] },
+    );
+    renderWithToast(<RouterProvider router={router} />);
+    await openDeleteDialog();
+
+    fireEvent.change(screen.getByLabelText('Type the attendee\'s name to confirm: "Anna Alpha"'), {
+      target: { value: "Anna Alpha" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Delete attendee" }));
+
+    // Navigate to a different attendee while the delete request is still in flight — the
+    // completion below must not toast or navigate on behalf of a selection that's gone stale.
+    await act(async () => router.navigate("/admin/events/evt-1/attendees/att-2"));
+    await screen.findByRole("heading", { name: "Bob Beta" });
+
+    await act(async () => {
+      resolveDelete();
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText("Attendee permanently deleted")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Bob Beta" })).toBeTruthy();
+  });
+
+  it("ignores a stale delete failure after navigating to a different attendee mid-request (CodeRabbit review)", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    let rejectDelete!: (err: unknown) => void;
+    deleteAttendee.mockReturnValueOnce(
+      new Promise<void>((_resolve, reject) => {
+        rejectDelete = reject;
+      }),
+    );
+    mockLoad(baseDetail());
+    mockLoad(baseDetail({ id: "att-2", name: "Bob Beta" }));
+
+    const router = createMemoryRouter(
+      [
+        { path: "/admin/events/:eventId/attendees/:attendeeId", element: <AttendeeDetailPage /> },
+        { path: "/admin/events/:eventId/attendees", element: <div>Attendees list marker</div> },
+      ],
+      { initialEntries: ["/admin/events/evt-1/attendees/att-1"] },
+    );
+    renderWithToast(<RouterProvider router={router} />);
+    await openDeleteDialog();
+
+    fireEvent.change(screen.getByLabelText('Type the attendee\'s name to confirm: "Anna Alpha"'), {
+      target: { value: "Anna Alpha" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Delete attendee" }));
+
+    // Navigate away before the delete request rejects — the failure below must not set the
+    // (now unmounted-for-this-attendee) delete dialog's inline error on behalf of Anna Alpha.
+    await act(async () => router.navigate("/admin/events/evt-1/attendees/att-2"));
+    await screen.findByRole("heading", { name: "Bob Beta" });
+
+    await act(async () => {
+      rejectDelete(new ApiError(403, "forbidden", "forbidden"));
+      await Promise.resolve().catch(() => {});
+    });
+
+    expect(screen.queryByText("You do not have access.")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Bob Beta" })).toBeTruthy();
   });
 });
