@@ -2,28 +2,8 @@ import { execFile } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 import { WEB_TEST_DATABASE_URL } from "./testEnv.js";
-
-/** Refuse Prisma setup unless DATABASE_URL targets a local or `*_test` database. */
-function assertTestDatabaseUrl(databaseUrl: string): void {
-  let parsed: URL;
-  try {
-    parsed = new URL(databaseUrl);
-  } catch {
-    throw new Error("Refusing Prisma setup: DATABASE_URL is not a valid URL");
-  }
-
-  const host = parsed.hostname.toLowerCase();
-  const dbName = parsed.pathname.replace(/^\//, "").toLowerCase();
-  const isTestHost = host === "localhost" || host === "127.0.0.1" || host === "::1";
-  const isTestDb = dbName.includes("_test") || dbName.endsWith("_test");
-
-  if (isTestHost || isTestDb) return;
-
-  throw new Error(
-    `Refusing Prisma setup: DATABASE_URL host "${host}" database "${dbName || "(default)"}" does not look like a test target`,
-  );
-}
 
 const execFileAsync = promisify(execFile);
 const DB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "packages", "db");
