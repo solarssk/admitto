@@ -32,6 +32,7 @@ const tableProps = {
   page: 1,
   pageSize: 25,
   loading: false,
+  hasLoadedOnce: true,
   isUnfilteredEmpty: false,
   searchInput: "",
   statusFilter: "all" as const,

@@ -239,6 +239,7 @@ export interface AttendeesTableProps {
   page: number;
   pageSize: number;
   loading: boolean;
+  hasLoadedOnce: boolean;
   isUnfilteredEmpty: boolean;
   searchInput: string;
   statusFilter: "all" | "admitted" | "not_admitted";
@@ -537,6 +538,7 @@ function FilterToolbar({
  * checkbox to reuse), the empty state, or the loading skeleton — whichever applies. */
 function AttendeesListContent({
   loading,
+  hasLoadedOnce,
   items,
   isDesktop,
   isUnfilteredEmpty,
@@ -555,6 +557,7 @@ function AttendeesListContent({
   onRestorePass,
 }: Readonly<{
   loading: boolean;
+  hasLoadedOnce: boolean;
   items: AttendeeRowDto[];
   isDesktop: boolean;
   isUnfilteredEmpty: boolean;
@@ -572,23 +575,30 @@ function AttendeesListContent({
   onRevokePass?: (row: AttendeeRowDto) => void;
   onRestorePass?: (row: AttendeeRowDto) => void;
 }>): ReactNode {
-  if (loading && items.length === 0) {
+  // Only the very first load ever (never-loaded, items always [] at that point) gets the
+  // shimmer skeleton. A later filter/search that also lands on zero matches reuses the same
+  // dim-in-place treatment as a non-empty refetch instead of flashing the skeleton again.
+  if (loading && !hasLoadedOnce) {
     return isDesktop ? <AttendeesTableSkeleton /> : <AttendeesCardsSkeleton />;
   }
 
   if (items.length === 0) {
-    return isUnfilteredEmpty ? (
-      <EmptyState
-        icon={<i className="ti ti-users" aria-hidden="true" />}
-        title="No attendees yet"
-        description="Import a CSV or XLSX file, or add attendees one at a time."
-      />
-    ) : (
-      <EmptyState
-        icon={<i className="ti ti-search-off" aria-hidden="true" />}
-        title="No matches"
-        description="Try a different search, or clear your filters."
-      />
+    return (
+      <div className={`attendees-table-wrap${loading ? " attendees-table-wrap--loading" : ""}`}>
+        {isUnfilteredEmpty ? (
+          <EmptyState
+            icon={<i className="ti ti-users" aria-hidden="true" />}
+            title="No attendees yet"
+            description="Import a CSV or XLSX file, or add attendees one at a time."
+          />
+        ) : (
+          <EmptyState
+            icon={<i className="ti ti-search-off" aria-hidden="true" />}
+            title="No matches"
+            description="Try a different search, or clear your filters."
+          />
+        )}
+      </div>
     );
   }
 
@@ -739,6 +749,7 @@ export function AttendeesTable({
   page,
   pageSize,
   loading,
+  hasLoadedOnce,
   isUnfilteredEmpty,
   searchInput,
   statusFilter,
@@ -807,6 +818,7 @@ export function AttendeesTable({
       )}
       <AttendeesListContent
         loading={loading}
+        hasLoadedOnce={hasLoadedOnce}
         items={items}
         isDesktop={isDesktop}
         isUnfilteredEmpty={isUnfilteredEmpty}

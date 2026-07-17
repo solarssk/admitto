@@ -252,6 +252,10 @@ export function AttendeesPage() {
   const [ticketTypesRetryToken, setTicketTypesRetryToken] = useState(0);
   const [exportingFormat, setExportingFormat] = useState<ExportFormat | null>(null);
   const [loading, setLoading] = useState(true);
+  // True once the very first fetch (success or failure) has settled - distinguishes the
+  // real first-load skeleton from a later filter/search landing on zero matches, which
+  // should dim in place like any other refetch instead of flashing the skeleton again.
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [sendTicketsOpen, setSendTicketsOpen] = useState(false);
@@ -368,7 +372,10 @@ export function AttendeesPage() {
         setLoadError("Failed to load attendees.");
       }
     } finally {
-      if (!ac.signal.aborted) setLoading(false);
+      if (!ac.signal.aborted) {
+        setLoading(false);
+        setHasLoadedOnce(true);
+      }
     }
   }, [
     eventId,
@@ -650,6 +657,7 @@ export function AttendeesPage() {
         page={page}
         pageSize={pageSize}
         loading={loading}
+        hasLoadedOnce={hasLoadedOnce}
         isUnfilteredEmpty={isUnfilteredEmpty}
         searchInput={searchInput}
         statusFilter={statusFilter}

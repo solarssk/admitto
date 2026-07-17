@@ -25,6 +25,7 @@ const tableProps = {
   page: 1,
   pageSize: 25,
   loading: false,
+  hasLoadedOnce: true,
   isUnfilteredEmpty: false,
   searchInput: "",
   statusFilter: "all" as const,
@@ -211,11 +212,25 @@ describe("AttendeesTable loading states (#271)", () => {
     expect(wrap?.getAttribute("aria-busy")).toBe("false");
   });
 
-  it("shows a neutral Loading… footer instead of falsely claiming 0 attendees on first load", () => {
+  it("shows a neutral Loading… footer instead of falsely claiming 0 attendees while re-fetching", () => {
     render(<AttendeesTable {...tableProps} loading items={[]} total={0} />);
 
     expect(screen.getByText("Loading…")).toBeTruthy();
     expect(screen.queryByText("0 attendees")).toBeNull();
+  });
+
+  it("shows the shimmer skeleton only on the very first load, not a later filter landing on zero matches", () => {
+    const { rerender } = render(
+      <AttendeesTable {...tableProps} hasLoadedOnce={false} loading items={[]} total={0} />,
+    );
+    expect(document.querySelector("table[aria-hidden='true']")).toBeTruthy();
+    expect(screen.queryByText("No matches")).toBeNull();
+
+    // Once the first load has settled, a later filter/search landing on zero matches dims
+    // the empty state in place instead of flashing the skeleton again.
+    rerender(<AttendeesTable {...tableProps} hasLoadedOnce loading items={[]} total={0} />);
+    expect(document.querySelector("table[aria-hidden='true']")).toBeNull();
+    expect(screen.getByText("No matches")).toBeTruthy();
   });
 });
 

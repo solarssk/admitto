@@ -607,6 +607,10 @@ export function AttendeeDetailPage() {
       : null;
   const attendeeSource = deriveAttendeeSource(detail.action_log);
   const customDataEntries = allCustomDataEntries(detail.custom_data, attributeFields, humanizeFieldKey);
+  // Falls back to [] against a stale API response missing this field (e.g. an apps/web dev
+  // server running from before event_items was added - it doesn't hot-reload) instead of
+  // crashing the whole page on detail.event_items.length.
+  const eventItems = detail.event_items ?? [];
 
   return (
     <div className="attendee-detail-page">
@@ -790,7 +794,7 @@ export function AttendeeDetailPage() {
             </Card>
 
             <Card title="Event-day items">
-              {detail.event_items.length === 0 ? (
+              {eventItems.length === 0 ? (
                 <EmptyState
                   icon={<i className="ti ti-package" aria-hidden="true" />}
                   title="No event-day items"
@@ -800,7 +804,7 @@ export function AttendeeDetailPage() {
                 <>
                   <p className="attendee-readonly">Issued at check-in</p>
                   <ul className="attendee-items-list">
-                    {detail.event_items.map((item) => (
+                    {eventItems.map((item) => (
                       <li className="attendee-items-row" key={item.key}>
                         <span
                           className={`attendee-items-row__icon attendee-items-row__icon--${itemStateTone(item.state)}`}
