@@ -4,7 +4,7 @@ import {
   isLoopbackHost,
   resolveSafeHostname,
   unbracketHostname,
-} from "@admitto/shared";
+} from "@admitto/shared/ssrf-guard";
 
 /** Block server-side OIDC/Cloudflare Access fetches to private/link-local targets (SSRF mitigation). */
 

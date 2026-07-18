@@ -3,7 +3,7 @@ import {
   isLoopbackHost,
   resolveSafeHostname,
   unbracketHostname,
-} from "@admitto/shared";
+} from "@admitto/shared/ssrf-guard";
 
 /**
  * SSRF guard for mail transport destinations (Power Automate webhook URL, SMTP host).

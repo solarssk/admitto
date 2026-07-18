@@ -10,6 +10,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./ssrf-guard": {
+      "types": "./dist/ssrfGuard.d.ts",
+      "default": "./dist/ssrfGuard.js"
     }
   },
   "scripts": {
