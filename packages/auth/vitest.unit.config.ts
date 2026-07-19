@@ -4,7 +4,11 @@ import { vitestCoverage } from "../../vitest.coverage.ts";
 export default defineConfig({
   test: {
     coverage: vitestCoverage,
-    name: "unit",
+    // "auth-unit", not "unit" - the repo-root vitest.config.ts aggregator lists this file
+    // alongside apps/web/vitest.unit.config.ts (also named "unit" standalone), and Vitest
+    // requires every aggregated project name to be unique. Harmless for this package's own
+    // standalone `npm run test -w @admitto/auth` - nothing depends on the literal name "unit".
+    name: "auth-unit",
     include: ["test/**/*.test.ts"],
     exclude: ["test/integration/**"],
     environment: "node",

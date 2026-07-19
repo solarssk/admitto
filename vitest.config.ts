@@ -1,12 +1,18 @@
 import { defineConfig } from "vitest/config";
 
 /**
- * Root-level aggregator so `npx vitest run` from the repo root (or any directory, via an IDE or
- * a stray command) resolves into every package's own vitest config — including its own
- * DATABASE_URL override to the package's `*_test` database — instead of falling through to
- * whatever DATABASE_URL happens to be ambient (a real dev database via Prisma's own dotenv
- * auto-load). `npm test` (`--workspaces`) was never affected by this — each workspace's own
- * `npm run test` already `cd`s into that package first.
+ * Root-level aggregator so `npx vitest run` from the repo root resolves into every package's own
+ * vitest config — including its own DATABASE_URL override to the package's `*_test` database —
+ * instead of falling through to whatever DATABASE_URL happens to be ambient (a real dev database
+ * via Prisma's own dotenv auto-load). `npm test` (`--workspaces`) was never affected by this —
+ * each workspace's own `npm run test` already `cd`s into that package first.
+ *
+ * Only works from the repo root. `test.projects` entries below are resolved relative to CWD, not
+ * to this file's own directory — running `npx vitest run` from any OTHER directory fails at
+ * startup ("references a non-existing file") rather than silently using the wrong config. That's
+ * an acceptable failure mode (loud crash, not a silent DB leak), just not "works from anywhere" -
+ * don't claim that in future edits without re-verifying it (independently checked 2026-07-19: it
+ * does not).
  *
  * Every entry below is a LEAF config (one that sets `test.env`/`test.setupFiles` directly), not
  * a delegating one. `apps/web/vitest.config.ts` and `packages/auth/vitest.config.ts` themselves
@@ -16,24 +22,35 @@ import { defineConfig } from "vitest/config";
  * an ambient DATABASE_URL (2026-07-18 incident - do not reintroduce this by "simplifying" back to
  * a glob or to the two packages' own top-level vitest.config.ts).
  *
- * KNOWN ISSUE (2026-07-18, not yet root-caused): Vitest 4.1.9 appears to spawn extra, unnamed
- * "ghost" projects for a listed project's own workspace *dependencies* (e.g. listing
- * packages/auth - which depends on @admitto/crypto - also runs packages/crypto's tests a second
- * time, unnamed, without packages/crypto's own env overrides). Not documented in Vitest's guide
- * (checked https://vitest.dev/guide/projects); may be an undocumented Vite workspace-resolution
- * behavior or a genuine Vitest bug. Root-caused far enough to confirm it does NOT depend on this
- * file's own `projects` entries (it still happens with an empty-ish list) - not far enough to
- * eliminate outright tonight. Mitigated below instead of solved: `env.DATABASE_URL` at THIS root
- * level is deliberately an invalid host, so any ghost project that doesn't correctly inherit its
- * real leaf's env override gets a hard connection-refused failure instead of a silently-ambient
- * DATABASE_URL. Each leaf's own `env.DATABASE_URL` still overrides this for its OWN, correctly-run
- * copy - this is the actual safety property this file exists for, and it holds regardless of the
- * ghost-project noise. The ghost-run test-count/failure noise itself is a follow-up to fix or
- * upgrade Vitest to resolve, not a safety issue - do not treat "some project count looks
- * inflated" as a regression in this file without first checking whether the *real* leaf project
- * for that package still resolves the correct database (it does, as of this commit - verified via
- * temporarily renaming the real dev database out of the way and confirming a full root-level run
- * never references it).
+ * Every entry is a plain string path - NOT the `[path, { test: {...} }]` tuple form. That form
+ * looked like "load this file, then override its name" and was used in an earlier version of this
+ * file to rename the two colliding "unit" projects (packages/auth and apps/web both name their
+ * own unit project "unit" standalone). It does not do that: per Vitest's own resolveTestProjectConfigs
+ * (node_modules/vitest/dist/chunks/cli-api.*.js), only `typeof definition === "string"` gets
+ * treated as "resolve this config file" - anything else (including a 2-element array) falls into
+ * the final `else` branch and is pushed as an INLINE project config object as-is. An array has no
+ * `.test`/`.root`/`.configFile` properties, so Vitest silently created an unconfigured project
+ * rooted at the repo root with its own default `include` glob - which matches every test file in
+ * the entire monorepo, including a stale prior build's compiled `dist/test/*.test.js` (this root
+ * config's own `exclude` does not apply to it either, since it's a separate inline project, not a
+ * child of this one). Confirmed via an independent review 2026-07-19 and by reading the Vitest
+ * source directly - this was NOT "Vitest auto-discovers workspace dependencies as ghost projects"
+ * as an earlier version of this comment claimed; it was this file's own invalid tuple syntax.
+ * Fixed by renaming the two projects' `test.name` directly in their own leaf config files instead
+ * (`apps/web/vitest.unit.config.ts` → "web-unit", `packages/auth/vitest.unit.config.ts` →
+ * "auth-unit") and listing every entry here as a plain string.
+ *
+ * `env.DATABASE_URL` below is deliberately an invalid host, kept as a defense-in-depth backstop
+ * even after the tuple bug fix above: if any project - through this bug, a future Vitest version
+ * change, or something not yet discovered - ends up not correctly inheriting its own leaf's
+ * DATABASE_URL override, it inherits this poisoned one instead of the real ambient database. A
+ * connection to it fails immediately (ECONNREFUSED), and separately, because the poisoned database
+ * name doesn't end in `_test`, packages/db/src/testDbGuard.ts's assertTestDatabaseUrl (PR #518)
+ * rejects it too for any code path that calls that guard. This does NOT poison other ambient
+ * secrets a ghost/misconfigured project might still read (SMTP settings, encryption keys, etc.) -
+ * only DATABASE_URL is covered. Verified empirically, not by inspection: renamed the real dev
+ * database out of the way (ALTER DATABASE ... RENAME) before full root-level runs, confirmed zero
+ * references to it in the output across multiple runs, then renamed it back.
  */
 export default defineConfig({
   test: {
@@ -51,9 +68,9 @@ export default defineConfig({
       "packages/crypto/vitest.config.ts",
       "packages/mailer/vitest.config.ts",
       "packages/ui/vitest.config.ts",
-      ["packages/auth/vitest.unit.config.ts", { test: { name: "auth-unit" } }],
+      "packages/auth/vitest.unit.config.ts",
       "packages/auth/vitest.integration.config.ts",
-      ["apps/web/vitest.unit.config.ts", { test: { name: "web-unit" } }],
+      "apps/web/vitest.unit.config.ts",
       "apps/web/vitest.integration.config.ts",
       "apps/admin/vitest.config.ts",
       "apps/cli/vitest.config.ts",
