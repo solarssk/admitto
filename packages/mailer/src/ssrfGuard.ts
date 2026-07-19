@@ -1,3 +1,4 @@
+import type { LookupAddress } from "node:dns";
 import {
   isBlockedPrivateOrMetadataHost,
   isLoopbackHost,
@@ -23,12 +24,19 @@ export function isBlockedMailHost(hostname: string): boolean {
  * (Power Automate fetch / SMTP connect). Throws if the hostname is, or resolves to, a
  * private/loopback/link-local/metadata address. Written config can pass isBlockedMailHost
  * at save-time and still resolve to a blocked address later (DNS rebinding); this is the
- * layer that closes that gap.
+ * layer that closes that gap. Returns the resolved records so the caller can pin the real
+ * connection to them — resolving here and then letting fetch/nodemailer do their own,
+ * separate DNS lookup for the actual connect would reopen the same DNS-rebinding gap.
  */
-export async function assertSafeMailDestination(hostname: string): Promise<void> {
+export async function resolveSafeMailDestination(hostname: string): Promise<LookupAddress[]> {
   const host = unbracketHostname(hostname);
   if (isLoopbackHost(host) || isBlockedPrivateOrMetadataHost(host)) {
     throw new Error("destination is a private, loopback, or link-local address");
   }
-  await resolveSafeHostname(host);
+  return resolveSafeHostname(host);
+}
+
+/** Same check as {@link resolveSafeMailDestination}, for callers that don't need the records. */
+export async function assertSafeMailDestination(hostname: string): Promise<void> {
+  await resolveSafeMailDestination(hostname);
 }

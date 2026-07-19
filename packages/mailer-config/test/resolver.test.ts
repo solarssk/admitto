@@ -1,9 +1,22 @@
 import { PrismaClient } from "@prisma/client";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { lookup } from "node:dns/promises";
 import { createMailer, parseMailerConfig } from "@admitto/mailer";
 import { setMailSettings } from "../src/mailSettings.js";
 import { resolveMailConfig, resolveMailConfigForOrg } from "../src/resolver.js";
 import { resetDb } from "./resetDb.js";
+
+vi.mock("node:dns/promises", () => ({
+  lookup: vi.fn(),
+}));
+
+const mockedLookup = vi.mocked(lookup);
+
+beforeEach(() => {
+  mockedLookup.mockResolvedValue([{ address: "93.184.216.34", family: 4 }] as Awaited<
+    ReturnType<typeof lookup>
+  >);
+});
 
 const prisma = new PrismaClient();
 
@@ -50,7 +63,7 @@ describe("resolveMailConfig — env only", () => {
   it("output passes parseMailerConfig and creates an adapter", async () => {
     const config = await resolveMailConfig("evt-r", prisma, BASE_SMTP_ENV);
     expect(() => parseMailerConfig(config)).not.toThrow();
-    const adapter = createMailer(config);
+    const adapter = await createMailer(config);
     expect(adapter.provider).toBe("smtp");
     await adapter.close();
   });

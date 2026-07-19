@@ -1,11 +1,51 @@
+import type { LookupAddress } from "node:dns";
+import { Agent, fetch as undiciFetch } from "undici";
 import type { PowerAutomateConfig } from "../config.js";
 import { POWER_AUTOMATE_CAPABILITIES } from "../capabilities.js";
 import { mapHttpStatus, mapNetworkError } from "../errorMapping.js";
 import { rejectedSendResult } from "../adapterUtils.js";
 import { resolveReplyTo } from "../senderUtils.js";
 import { validateMailMessage } from "../validation.js";
-import { assertSafeMailDestination } from "../ssrfGuard.js";
+import { resolveSafeMailDestination } from "../ssrfGuard.js";
 import type { FetchFn, MailMessage, MailerAdapter, SendResult } from "../types.js";
+
+/**
+ * Pin the outbound connection to an already-validated address (see ssrfGuard.ts) while
+ * keeping the original hostname for the Host header / TLS SNI. Without this, `fetch`
+ * would re-resolve the hostname itself at connect time — a second, separate DNS lookup
+ * that a rebinding attacker can answer differently from the validation lookup above.
+ */
+async function pinnedFetch(
+  url: string,
+  hostname: string,
+  record: LookupAddress,
+  init: { method: string; headers: Record<string, string>; body: string },
+): Promise<Response> {
+  const dispatcher = new Agent({
+    connect: {
+      servername: hostname,
+      lookup: (_host, options, callback) => {
+        if (options.all) {
+          (callback as (err: null, addresses: { address: string; family: number }[]) => void)(
+            null,
+            [{ address: record.address, family: record.family }],
+          );
+        } else {
+          callback(null, record.address, record.family);
+        }
+      },
+    },
+  });
+  try {
+    return (await undiciFetch(url, {
+      ...init,
+      redirect: "error",
+      dispatcher,
+    } as Parameters<typeof undiciFetch>[1])) as unknown as Response;
+  } finally {
+    await dispatcher.close();
+  }
+}
 
 /**
  * Power Automate — sends via an HTTP-triggered flow (Admitto POSTs a ready-to-send
@@ -15,9 +55,10 @@ export class PowerAutomateAdapter implements MailerAdapter {
   readonly provider = "powerautomate" as const;
   readonly capabilities = POWER_AUTOMATE_CAPABILITIES;
 
+  /** `fetchFn` DI (tests only) bypasses DNS pinning; production leaves it unset. */
   constructor(
     private readonly config: PowerAutomateConfig,
-    private readonly fetchFn: FetchFn = fetch,
+    private readonly fetchFn?: FetchFn,
   ) {}
 
   async close(): Promise<void> {
@@ -30,8 +71,10 @@ export class PowerAutomateAdapter implements MailerAdapter {
       return rejectedSendResult(this.provider, validationError, message.idempotencyKey);
     }
 
+    const hostname = new URL(this.config.url).hostname;
+    let records: LookupAddress[];
     try {
-      await assertSafeMailDestination(new URL(this.config.url).hostname);
+      records = await resolveSafeMailDestination(hostname);
     } catch (e) {
       return rejectedSendResult(
         this.provider,
@@ -51,24 +94,23 @@ export class PowerAutomateAdapter implements MailerAdapter {
 
     const replyTo = resolveReplyTo(this.config.replyTo, message);
 
+    const body = JSON.stringify({
+      to: message.to,
+      subject: message.subject,
+      html: message.html,
+      cc: message.cc,
+      replyTo,
+      fromAddress: this.config.fromAddress,
+      fromName: this.config.fromName,
+      envelopeFrom: this.config.envelopeFrom,
+    });
+
     try {
-      const res = await this.fetchFn(this.config.url, {
-        method: "POST",
-        headers,
-        // Reject outright rather than follow a redirect — a same-host-looking URL that
-        // 302s to an internal target would otherwise bypass the destination check above.
-        redirect: "error",
-        body: JSON.stringify({
-          to: message.to,
-          subject: message.subject,
-          html: message.html,
-          cc: message.cc,
-          replyTo,
-          fromAddress: this.config.fromAddress,
-          fromName: this.config.fromName,
-          envelopeFrom: this.config.envelopeFrom,
-        }),
-      });
+      // Reject outright rather than follow a redirect — a same-host-looking URL that
+      // 302s to an internal target would otherwise bypass the destination check above.
+      const res = this.fetchFn
+        ? await this.fetchFn(this.config.url, { method: "POST", headers, redirect: "error", body })
+        : await pinnedFetch(this.config.url, hostname, records[0]!, { method: "POST", headers, body });
 
       if (res.ok) {
         return {

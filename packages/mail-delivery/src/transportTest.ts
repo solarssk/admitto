@@ -23,7 +23,7 @@ async function sendTransportTestEmailWithConfig(
   toAddress: string,
   deps: MailDeliveryDeps,
 ): Promise<SendResult> {
-  const mailer = createMailer(mailConfig, { exportSink: deps.exportSink });
+  const mailer = await createMailer(mailConfig, { exportSink: deps.exportSink });
 
   try {
     const result = await mailer.send({

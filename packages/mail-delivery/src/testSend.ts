@@ -39,7 +39,7 @@ export async function sendTestEmail(
   options: SendTestEmailOptions = {},
 ): Promise<SendResult> {
   const mailConfig = await resolveMailConfig(params.eventId, prisma, env);
-  const mailer = createMailer(mailConfig, { exportSink: deps.exportSink });
+  const mailer = await createMailer(mailConfig, { exportSink: deps.exportSink });
   const baseUrl = options.baseUrl ?? resolveBaseUrl(env);
 
   try {

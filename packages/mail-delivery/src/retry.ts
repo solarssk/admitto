@@ -48,7 +48,7 @@ export async function retryDelivery(
   );
 
   const mailConfig = await resolveMailConfig(delivery.event_id, prisma, env);
-  const mailer = createMailer(mailConfig, { exportSink: deps.exportSink });
+  const mailer = await createMailer(mailConfig, { exportSink: deps.exportSink });
 
   const message = {
     to: delivery.recipient_email,

@@ -5,36 +5,48 @@ import { mapSmtpError } from "../errorMapping.js";
 import { rejectedSendResult } from "../adapterUtils.js";
 import { formatFromHeader, parseAddressList, resolveReplyTo } from "../senderUtils.js";
 import { validateMailMessage } from "../validation.js";
-import { assertSafeMailDestination } from "../ssrfGuard.js";
+import { assertSafeMailDestination, resolveSafeMailDestination } from "../ssrfGuard.js";
 import type { MailMessage, MailerAdapter, SendResult } from "../types.js";
 
 /**
  * SMTP via nodemailer. Works with any standards-compliant mail server.
  *
- * An optional transporter (or transport options like `{ jsonTransport: true }`)
- * can be injected for testing without sending real email.
+ * A transporter (or transport options like `{ jsonTransport: true }`) must be supplied —
+ * tests inject one directly; production goes through `SmtpAdapter.create()`, which resolves
+ * DNS and pins the transporter's connect target to the validated address (see `create()`).
  */
 export class SmtpAdapter implements MailerAdapter {
   readonly provider = "smtp" as const;
   readonly capabilities = SMTP_CAPABILITIES;
-  private readonly transporter: Transporter;
 
-  /** Create adapter; uses `createTransporter` unless a transporter is injected for tests. */
   constructor(
     private readonly config: SmtpConfig,
-    /** Optional transporter (DI for tests). If omitted, created from config. */
-    transporter?: Transporter,
-  ) {
-    this.transporter = transporter ?? SmtpAdapter.createTransporter(config);
+    private readonly transporter: Transporter,
+  ) {}
+
+  /**
+   * Resolve + validate `config.host`'s DNS before building the transporter, then pin the
+   * transporter's connect target to that validated address (nodemailer skips its own DNS
+   * lookup when `host` is already a literal IP — see `smtp-connection`'s `resolveHostname`).
+   * Without this, nodemailer would re-resolve the hostname itself at connect time — a
+   * second, separate DNS lookup that a rebinding attacker can answer differently from the
+   * validation lookup here.
+   */
+  static async create(config: SmtpConfig): Promise<SmtpAdapter> {
+    const records = await resolveSafeMailDestination(config.host);
+    const transporter = SmtpAdapter.createTransporter(config, records[0]!.address);
+    return new SmtpAdapter(config, transporter);
   }
 
   /**
    * Build a nodemailer transporter from SMTP config.
-   * Enforces TLS 1.2 minimum via `tls.minVersion`.
+   * Enforces TLS 1.2 minimum via `tls.minVersion`. `connectHost` (defaults to `config.host`)
+   * is what nodemailer actually connects to; `tls.servername` stays the real hostname
+   * regardless, so SNI/cert validation is unaffected by connecting to a pinned IP.
    */
-  static createTransporter(config: SmtpConfig): Transporter {
+  static createTransporter(config: SmtpConfig, connectHost: string = config.host): Transporter {
     return nodemailer.createTransport({
-      host: config.host,
+      host: connectHost,
       port: config.port,
       secure: config.secure,
       requireTLS: config.requireTLS,
