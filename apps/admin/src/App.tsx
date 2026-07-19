@@ -152,9 +152,9 @@ export function EventLayout() {
   if (error) return <Navigate to="/admin" replace />;
   if (!event) {
     return (
-      <div className="shell-loading" role="status">
+      <output className="shell-loading">
         <Spinner label="Loading event" />
-      </div>
+      </output>
     );
   }
 
@@ -249,9 +249,9 @@ export default function App() {
           <ConnectionStateProvider>
             <Suspense
               fallback={
-                <div className="shell-loading" role="status">
+                <output className="shell-loading">
                   <Spinner label="Loading" />
-                </div>
+                </output>
               }
             >
               <StaffRoutes />
