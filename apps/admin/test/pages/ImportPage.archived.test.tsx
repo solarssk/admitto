@@ -28,6 +28,7 @@ vi.mock("../../src/api/client.js", () => ({
   },
   fetchEventCustomFields: (...args: unknown[]) => fetchEventCustomFields(...args),
   previewImport: vi.fn(),
+  fetchImportHistory: vi.fn().mockResolvedValue([]),
   commitImport: vi.fn(),
 }));
 

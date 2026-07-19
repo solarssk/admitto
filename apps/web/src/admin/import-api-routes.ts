@@ -639,6 +639,59 @@ async function loadImportAttributeFields(
   return filterCustomDataAttributeFields(fields);
 }
 
+/** Newest-first page size for the import history card — one screen's worth, not an archive. */
+const IMPORT_HISTORY_LIMIT = 20;
+
+export type ImportHistoryEntryDto = {
+  id: string;
+  created_at: string;
+  filename: string | null;
+  created: number;
+  updated: number;
+  skipped: number;
+};
+
+function importHistoryNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+/** GET /api/admin/events/:eventId/import/history — recent commits from the audit log. The
+ * `attendees_imported` bulk action rows written at commit time already carry everything the
+ * history card shows (filename + created/updated/skipped counts), so this is a read of the
+ * existing log, not a new table. */
+export async function handleGetImportHistory(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const rows = await db.attendeeActionLog.findMany({
+    where: { event_id: eventId, action_type: "attendees_imported" },
+    orderBy: { created_at: "desc" },
+    take: IMPORT_HISTORY_LIMIT,
+    select: { id: true, created_at: true, metadata: true },
+  });
+
+  const items: ImportHistoryEntryDto[] = rows.map((row) => {
+    const meta =
+      row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+        ? (row.metadata as Record<string, unknown>)
+        : {};
+    return {
+      id: row.id,
+      created_at: row.created_at.toISOString(),
+      filename: typeof meta.filename === "string" ? meta.filename : null,
+      created: importHistoryNumber(meta.created),
+      updated: importHistoryNumber(meta.updated),
+      skipped: importHistoryNumber(meta.skipped),
+    };
+  });
+
+  c.header("Cache-Control", "no-store");
+  return c.json({ items });
+}
+
 function buildImportTemplateCsv(attributeFields: ImportAttributeField[]): string {
   const columns = [
     ...IMPORT_TEMPLATE_BASE_COLUMNS,

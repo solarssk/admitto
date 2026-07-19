@@ -1062,3 +1062,97 @@ describe("GET /api/admin/events/:eventId/import/template", () => {
     });
   });
 });
+
+describe("GET /api/admin/events/:eventId/import/history", () => {
+  afterAll(async () => {
+    await prisma.attendeeActionLog.deleteMany({
+      where: { event_id: { in: [EVENT_A, EVENT_B] }, action_type: "attendees_imported" },
+    });
+  });
+
+  it("returns committed imports newest-first with counts and filename from the audit log", async () => {
+    await prisma.attendeeActionLog.deleteMany({
+      where: { event_id: EVENT_A, action_type: "attendees_imported" },
+    });
+    await prisma.attendeeActionLog.createMany({
+      data: [
+        {
+          event_id: EVENT_A,
+          attendee_id: null,
+          action_type: "attendees_imported",
+          created_at: new Date("2026-06-01T10:00:00Z"),
+          metadata: { created: 10, updated: 2, skipped: 1, filename: "first.csv" },
+        },
+        {
+          event_id: EVENT_A,
+          attendee_id: null,
+          action_type: "attendees_imported",
+          created_at: new Date("2026-06-02T10:00:00Z"),
+          metadata: { created: 5, updated: 0, skipped: 0, filename: "second.xlsx" },
+        },
+        // Different action types and other events never leak into the history.
+        {
+          event_id: EVENT_A,
+          attendee_id: null,
+          action_type: "attendees_exported",
+          metadata: { format: "csv", count: 3 },
+        },
+        {
+          event_id: EVENT_B,
+          attendee_id: null,
+          action_type: "attendees_imported",
+          metadata: { created: 99, updated: 0, skipped: 0, filename: "other-event.csv" },
+        },
+      ],
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/import/history`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    const body = (await res.json()) as { items: Array<Record<string, unknown>> };
+    expect(body.items).toHaveLength(2);
+    expect(body.items[0]).toMatchObject({
+      filename: "second.xlsx",
+      created: 5,
+      updated: 0,
+      skipped: 0,
+    });
+    expect(body.items[1]).toMatchObject({ filename: "first.csv", created: 10, updated: 2, skipped: 1 });
+    expect(typeof body.items[0]!.created_at).toBe("string");
+  });
+
+  it("tolerates legacy rows with missing metadata fields", async () => {
+    await prisma.attendeeActionLog.deleteMany({
+      where: { event_id: EVENT_A, action_type: "attendees_imported" },
+    });
+    await prisma.attendeeActionLog.create({
+      data: {
+        event_id: EVENT_A,
+        attendee_id: null,
+        action_type: "attendees_imported",
+        metadata: { created: 3 },
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/import/history`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: Array<Record<string, unknown>> };
+    expect(body.items[0]).toMatchObject({ filename: null, created: 3, updated: 0, skipped: 0 });
+  });
+
+  it("returns 403 for an operator and for an admin outside the event's organization", async () => {
+    const opRes = await app.request(`/api/admin/events/${EVENT_A}/import/history`, {
+      headers: { Cookie: opCookie },
+    });
+    expect(opRes.status).toBe(403);
+
+    const crossRes = await app.request(`/api/admin/events/${EVENT_B}/import/history`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(crossRes.status).toBe(403);
+  });
+});

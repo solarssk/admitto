@@ -263,6 +263,28 @@ export async function previewImport(
   return parseJson<ImportPreviewResponse>(res);
 }
 
+export interface ImportHistoryEntry {
+  id: string;
+  created_at: string;
+  filename: string | null;
+  created: number;
+  updated: number;
+  skipped: number;
+}
+
+/** Recent committed imports for the event (newest first), read from the audit log. */
+export async function fetchImportHistory(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<ImportHistoryEntry[]> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/import/history`,
+    { credentials: "same-origin", signal },
+  );
+  const body = await parseJson<{ items: ImportHistoryEntry[] }>(res);
+  return body.items;
+}
+
 /** Commit an attendee file import after preview (creates/updates rows in the event). */
 export async function commitImport(
   eventId: string,

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ImportPage } from "../../src/pages/ImportPage.js";
 import { renderWithToast } from "../test-utils.js";
@@ -8,6 +8,7 @@ import { renderWithToast } from "../test-utils.js";
 const fetchEventCustomFields = vi.fn();
 const previewImport = vi.fn();
 const commitImport = vi.fn();
+const fetchImportHistory = vi.fn();
 
 let mockAssignments: Array<{ role: string; scope_type: string; scope_id: string | null }> = [
   { role: "admin", scope_type: "organization", scope_id: "org-1" },
@@ -35,6 +36,7 @@ vi.mock("../../src/api/client.js", () => ({
   },
   fetchEventCustomFields: (...args: unknown[]) => fetchEventCustomFields(...args),
   previewImport: (...args: unknown[]) => previewImport(...args),
+  fetchImportHistory: (...args: unknown[]) => fetchImportHistory(...args),
   commitImport: (...args: unknown[]) => commitImport(...args),
 }));
 
@@ -85,6 +87,10 @@ function selectFile() {
   const file = new File(["a,b\n1,2"], "attendees.csv", { type: "text/csv" });
   fireEvent.change(fileInput, { target: { files: [file] } });
 }
+
+beforeEach(() => {
+  fetchImportHistory.mockResolvedValue([]);
+});
 
 afterEach(() => {
   cleanup();
@@ -267,5 +273,79 @@ describe("ImportPage dropzone (#358 Phase A)", () => {
     expect(screen.getByRole("button", { name: "Upload a CSV or XLSX file" })).toBeTruthy();
     expect(screen.queryByText("To create")).toBeNull();
     expect((screen.getByRole("button", { name: "Validate file" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe("ImportPage history + done screen (#358 Phase C)", () => {
+  it("renders the import history card with recent commits", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    fetchImportHistory.mockResolvedValue([
+      {
+        id: "log-1",
+        created_at: "2026-06-07T10:00:00.000Z",
+        filename: "attendees_final.csv",
+        created: 312,
+        updated: 171,
+        skipped: 4,
+      },
+    ]);
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText("Import history")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("attendees_final.csv")).toBeTruthy());
+    expect(screen.getByText("312")).toBeTruthy();
+    expect(screen.getByText("171")).toBeTruthy();
+  });
+
+  it("shows an empty state when there are no imports yet", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    renderPage();
+    await waitFor(() => expect(screen.getByText("No imports yet for this event.")).toBeTruthy());
+  });
+
+  it("shows an inline error with Retry when history fails to load, and retries", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    fetchImportHistory.mockRejectedValueOnce(new Error("boom")).mockResolvedValueOnce([]);
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText("Couldn't load import history.")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(screen.getByText("No imports yet for this event.")).toBeTruthy());
+  });
+
+  it("shows the mockup done screen after commit and 'Import another file' resets the flow", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(samplePreview());
+    commitImport.mockResolvedValueOnce({
+      importId: "imp-1",
+      toCreate: 1,
+      toUpdate: 0,
+      toSkip: 0,
+      created: 1,
+      updated: 0,
+      skipped: [],
+      invalidRows: [],
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Validate file" })).toBeTruthy());
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    await waitFor(() => expect(screen.getByText("To create")).toBeTruthy());
+    fireEvent.click(screen.getByLabelText(/Dry run/));
+    fireEvent.click(screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }));
+
+    await waitFor(() => expect(screen.getByText("Import complete")).toBeTruthy());
+    expect(screen.getByText(/1 attendee created · 0 updated · 0 skipped/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "View attendees" })).toBeTruthy();
+    // History refreshes after a successful commit (initial load + post-commit).
+    expect(fetchImportHistory).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Import another file" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Upload a CSV or XLSX file" })).toBeTruthy(),
+    );
+    expect((screen.getByLabelText(/Dry run/) as HTMLInputElement).checked).toBe(true);
+    expect(screen.queryByText("Import complete")).toBeNull();
   });
 });

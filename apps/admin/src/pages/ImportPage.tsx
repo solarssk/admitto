@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import { Link, useOutletContext, useParams } from "react-router-dom";
 import { Button, Card, PageHeader, Switch, useToast } from "@admitto/ui";
-import { ApiError, commitImport, previewImport, type EventFullMeta } from "../api/client.js";
+import {
+  ApiError,
+  commitImport,
+  fetchImportHistory,
+  previewImport,
+  type EventFullMeta,
+  type ImportHistoryEntry,
+} from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto, ImportCommitResponse, ImportPreviewResponse, ImportSampleRow } from "../api/types.js";
 import { fetchAttendeeCustomFields, type CustomDataFieldDef } from "../attendees/customData.js";
@@ -9,6 +16,7 @@ import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
+import { formatEventDateTime } from "../utils/event-dates.js";
 import "../attendees/attendees.css";
 import "./import.css";
 
@@ -98,6 +106,74 @@ function ImportSampleTable({ rows, totalValid, attributeFieldLabels }: ImportSam
   );
 }
 
+/** "Import history" card from the design mockup — recent commits with their outcome counts,
+ * read from the audit log (no dedicated table). Timestamps render in the event's timezone via
+ * the central formatter, like other event-scoped tables. Errors render inline with a Retry,
+ * per the toast-vs-inline convention (a load failure of a passive card shouldn't toast). */
+function ImportHistoryCard({
+  history,
+  error,
+  eventTimezone,
+  onRetry,
+}: {
+  history: ImportHistoryEntry[] | null;
+  error: string | null;
+  eventTimezone: string | undefined;
+  onRetry: () => void;
+}) {
+  return (
+    <Card
+      title="Import history"
+      className="import-card"
+      /* Unpadded only when the table renders — it brings its own scroll wrapper (mockup's
+       * padded={false} table card); every text state keeps the normal card padding. */
+      padded={error !== null || history === null || history.length === 0}
+    >
+      {error ? (
+        <div className="import-history__error">
+          <p className="import-hint">{error}</p>
+          <Button variant="secondary" onClick={onRetry}>
+            Retry
+          </Button>
+        </div>
+      ) : history === null ? (
+        <p className="import-hint import-history__loading">Loading…</p>
+      ) : history.length === 0 ? (
+        <p className="import-hint">No imports yet for this event.</p>
+      ) : (
+        <div className="attendees-table-wrap">
+          <table className="table import-history-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>File</th>
+                <th>Created</th>
+                <th>Updated</th>
+                <th>Skipped</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.map((entry) => (
+                <tr key={entry.id}>
+                  <td className="import-history__date">
+                    {formatEventDateTime(entry.created_at, eventTimezone)}
+                  </td>
+                  <td className="import-history__file">
+                    {entry.filename ?? <span className="import-sample__empty">—</span>}
+                  </td>
+                  <td className="import-history__num import-history__num--ok">{entry.created}</td>
+                  <td className="import-history__num import-history__num--warn">{entry.updated}</td>
+                  <td className="import-history__num">{entry.skipped}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 /** Row/Reason table shared by the preview step's parse.invalidRows and the done step's
  * commit-time invalidRows - same shape, same rendering, different source. */
 function InvalidRowsTable({ rows }: { rows: readonly { rowIndex: number; reason: string }[] }) {
@@ -147,6 +223,9 @@ export function ImportPage() {
   const [capacityBlocked, setCapacityBlocked] = useState<EventFullMeta | null>(null);
   const [forceCapacity, setForceCapacity] = useState(false);
   const [attributeFields, setAttributeFields] = useState<CustomDataFieldDef[]>([]);
+  const [history, setHistory] = useState<ImportHistoryEntry[] | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyToken, setHistoryToken] = useState(0);
 
   useEffect(() => {
     if (!eventId) return;
@@ -183,6 +262,19 @@ export function ImportPage() {
       addToast("Request failed.", "error");
     }
   };
+
+  useEffect(() => {
+    if (!eventId) return;
+    const ac = new AbortController();
+    setHistoryError(null);
+    fetchImportHistory(eventId, ac.signal)
+      .then((items) => setHistory(items))
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setHistoryError("Couldn't load import history.");
+      });
+    return () => ac.abort();
+  }, [eventId, historyToken]);
 
   /** Shared by the file picker's onChange and the dropzone's drop handler — same reset. */
   const selectFile = (picked: File | null) => {
@@ -241,6 +333,7 @@ export function ImportPage() {
       setResult(data);
       setStep("done");
       setForceCapacity(false);
+      setHistoryToken((n) => n + 1);
       addToast(
         `Attendees imported: ${data.created} created, ${data.updated} updated, ${data.skipped.length} skipped`,
         "success",
@@ -586,30 +679,53 @@ export function ImportPage() {
                 )}
               </Card>
             )}
+
+            <ImportHistoryCard
+              history={history}
+              error={historyError}
+              eventTimezone={event.timezone}
+              onRetry={() => setHistoryToken((n) => n + 1)}
+            />
           </div>
         </div>
       )}
 
       {step === "done" && result && (
         <Card className="import-card">
-          <h2 className="import-section-title">Import complete</h2>
-          <p className="import-hint">
-            Reference ID: <code className="import-ref">{result.importId}</code>
-            {" "}(include when contacting support)
-          </p>
-          <div className="import-stats">
-            <div className="import-stat">
-              <span className="import-stat__value">{result.created}</span>
-              <span className="import-stat__label">Created</span>
+          <div className="import-done">
+            <div className="import-done__icon" aria-hidden="true">
+              <i className="ti ti-circle-check" />
             </div>
-            <div className="import-stat">
-              <span className="import-stat__value">{result.updated}</span>
-              <span className="import-stat__label">Updated</span>
+            <h2 className="import-done__title">Import complete</h2>
+            <p className="import-done__summary">
+              {result.created} attendee{result.created === 1 ? "" : "s"} created · {result.updated}{" "}
+              updated · {result.skipped.length} skipped
+            </p>
+            <div className="import-done__actions">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setFile(null);
+                  setPreview(null);
+                  setResult(null);
+                  setCapacityBlocked(null);
+                  setForceCapacity(false);
+                  setDryRun(true);
+                  setStep("upload");
+                }}
+              >
+                Import another file
+              </Button>
+              <Link to={`/admin/events/${eventId}/attendees`}>
+                <Button variant="primary" icon={<i className="ti ti-users" aria-hidden="true" />}>
+                  View attendees
+                </Button>
+              </Link>
             </div>
-            <div className="import-stat">
-              <span className="import-stat__value">{result.skipped.length}</span>
-              <span className="import-stat__label">Skipped</span>
-            </div>
+            <p className="import-hint">
+              Reference ID: <code className="import-ref">{result.importId}</code>
+              {" "}(include when contacting support)
+            </p>
           </div>
 
           {result.skipped.length > 0 && (
@@ -646,12 +762,6 @@ export function ImportPage() {
               <InvalidRowsTable rows={result.invalidRows} />
             </div>
           )}
-
-          <div className="import-actions">
-            <Link to={`/admin/events/${eventId}/attendees`}>
-              <Button variant="primary">Back to attendees</Button>
-            </Link>
-          </div>
         </Card>
       )}
     </>
