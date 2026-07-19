@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { Spinner } from "@admitto/ui";
 import { ToastProvider } from "@admitto/ui";
@@ -13,29 +13,36 @@ import { AdminShell } from "./layouts/AdminShell.js";
 import { EventsListShell } from "./layouts/EventsListShell.js";
 import { InstanceSettingsShell } from "./layouts/InstanceSettingsShell.js";
 import { SettingsLayout } from "./layouts/SettingsLayout.js";
-import { SettingsTabContent } from "./pages/SettingsPage.js";
-import { IdentityProvidersPanel } from "./identity/IdentityProvidersPanel.js";
-import { IdentityProviderEditor } from "./identity/IdentityProviderEditor.js";
-import { CfAccessEditor } from "./identity/CfAccessEditor.js";
-import { UsersPage } from "./pages/UsersPage.js";
 import { OperatorShell } from "./layouts/OperatorShell.js";
-import { AccountLayout } from "./account/AccountLayout.js";
 import { EventsPickerPage } from "./pages/EventsPickerPage.js";
-import { CheckInEntryPage } from "./pages/CheckInEntryPage.js";
-import { CheckInPage } from "./pages/CheckInPage.js";
-import { AdminCheckInRoute } from "./pages/AdminCheckInRoute.js";
-import { AttendeesPage } from "./pages/AttendeesPage.js";
-import { AttendeeDetailPage } from "./pages/AttendeeDetailPage.js";
-import { EventSettingsPage } from "./pages/EventSettingsPage.js";
-import { ImportPage } from "./pages/ImportPage.js";
-import { RequirementsPage } from "./pages/RequirementsPage.js";
-import { CommunicationPage } from "./pages/CommunicationPage.js";
-import { EventOverviewPage } from "./pages/EventOverviewPage.js";
-import { ReportsPage } from "./pages/ReportsPage.js";
 import { PlaceholderPage } from "./pages/PlaceholderPage.js";
-import { SetupWizardPage } from "./pages/SetupWizardPage.js";
 import { ApiError, fetchAdminEvents } from "./api/client.js";
 import type { EventDto } from "./api/types.js";
+
+// Route-level code-splitting: each page below loads on demand so the initial
+// bundle stays under Vite's 500 kB chunk warning. Guards, providers, and
+// shells stay static — they render on every path. React Router wraps
+// navigations in startTransition, so an in-app navigation keeps the current
+// view while the chunk loads; only a cold load of a lazy route shows the
+// Suspense fallback.
+const SettingsTabContent = lazy(() => import("./pages/SettingsPage.js").then((m) => ({ default: m.SettingsTabContent })));
+const IdentityProvidersPanel = lazy(() => import("./identity/IdentityProvidersPanel.js").then((m) => ({ default: m.IdentityProvidersPanel })));
+const IdentityProviderEditor = lazy(() => import("./identity/IdentityProviderEditor.js").then((m) => ({ default: m.IdentityProviderEditor })));
+const CfAccessEditor = lazy(() => import("./identity/CfAccessEditor.js").then((m) => ({ default: m.CfAccessEditor })));
+const UsersPage = lazy(() => import("./pages/UsersPage.js").then((m) => ({ default: m.UsersPage })));
+const AccountLayout = lazy(() => import("./account/AccountLayout.js").then((m) => ({ default: m.AccountLayout })));
+const CheckInEntryPage = lazy(() => import("./pages/CheckInEntryPage.js").then((m) => ({ default: m.CheckInEntryPage })));
+const CheckInPage = lazy(() => import("./pages/CheckInPage.js").then((m) => ({ default: m.CheckInPage })));
+const AdminCheckInRoute = lazy(() => import("./pages/AdminCheckInRoute.js").then((m) => ({ default: m.AdminCheckInRoute })));
+const AttendeesPage = lazy(() => import("./pages/AttendeesPage.js").then((m) => ({ default: m.AttendeesPage })));
+const AttendeeDetailPage = lazy(() => import("./pages/AttendeeDetailPage.js").then((m) => ({ default: m.AttendeeDetailPage })));
+const EventSettingsPage = lazy(() => import("./pages/EventSettingsPage.js").then((m) => ({ default: m.EventSettingsPage })));
+const ImportPage = lazy(() => import("./pages/ImportPage.js").then((m) => ({ default: m.ImportPage })));
+const RequirementsPage = lazy(() => import("./pages/RequirementsPage.js").then((m) => ({ default: m.RequirementsPage })));
+const CommunicationPage = lazy(() => import("./pages/CommunicationPage.js").then((m) => ({ default: m.CommunicationPage })));
+const EventOverviewPage = lazy(() => import("./pages/EventOverviewPage.js").then((m) => ({ default: m.EventOverviewPage })));
+const ReportsPage = lazy(() => import("./pages/ReportsPage.js").then((m) => ({ default: m.ReportsPage })));
+const SetupWizardPage = lazy(() => import("./pages/SetupWizardPage.js").then((m) => ({ default: m.SetupWizardPage })));
 
 const PLACEHOLDER_ROUTES = [
   { path: "overview", title: "Overview" },
@@ -240,7 +247,15 @@ export default function App() {
       <ToastProvider>
         <AuthProvider>
           <ConnectionStateProvider>
-            <StaffRoutes />
+            <Suspense
+              fallback={
+                <div className="shell-loading" role="status">
+                  <Spinner label="Loading" />
+                </div>
+              }
+            >
+              <StaffRoutes />
+            </Suspense>
           </ConnectionStateProvider>
         </AuthProvider>
         <DemoBar />
