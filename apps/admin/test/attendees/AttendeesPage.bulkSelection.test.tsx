@@ -555,6 +555,23 @@ describe("AttendeesPage bulk check-in", () => {
     });
   });
 
+  it("toasts a warning with the failure count when some check-ins errored unexpectedly", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkCheckInAttendees.mockResolvedValue({ checkedIn: 1, alreadyCheckedIn: 0, revoked: 0, invalid: 0, errored: 2 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("1 attendee checked in (2 failed unexpectedly).", "warning");
+    });
+  });
+
   it("redirects to /login on a 401", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     const assignSpy = vi.fn();
