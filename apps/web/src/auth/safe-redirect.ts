@@ -43,7 +43,7 @@ export function resolveOptionalSafeRedirectPath(next: string | undefined): strin
     trimmed.startsWith("//") ||
     trimmed.startsWith("/\\") ||
     trimmed.includes("\\") ||
-    /[\r\n]/.test(trimmed)
+    /[\t\r\n]/.test(trimmed)
   ) {
     return undefined;
   }

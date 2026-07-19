@@ -432,6 +432,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     );
     expect(res.headers.get("Content-Disposition")).toMatch(/attachment/);
     expect(res.headers.get("Content-Disposition")).toMatch(/filename="attendees-/);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
   });
 
   it("format=csv → 200, Content-Type text/csv", async () => {
@@ -441,6 +442,12 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     );
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain("text/csv");
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    // Baseline security headers are applied by app-level middleware AFTER the handler
+    // returns, specifically so they also land on a bare `new Response(...)` like this CSV
+    // export (not just handlers that go through c.json()) — see apps/web/src/app.ts.
+    expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(res.headers.get("X-Frame-Options")).toBe("DENY");
   });
 
   it("missing format → 400", async () => {
@@ -466,6 +473,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain("application/pdf");
     expect(res.headers.get("Content-Disposition")).toMatch(/attachment/);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
     const buf = new Uint8Array(await res.arrayBuffer());
     expect(buf[0]).toBe(0x25);
     expect(buf[1]).toBe(0x50);

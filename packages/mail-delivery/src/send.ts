@@ -136,7 +136,7 @@ export async function sendTicketEmails(
     },
   });
 
-  const mailer = createMailer(mailConfig, { exportSink: deps.exportSink });
+  const mailer = await createMailer(mailConfig, { exportSink: deps.exportSink });
   const pending: PendingSend[] = [];
   const skipped: SendTicketEmailsResult["skipped"] = [];
   let sentCount = 0;

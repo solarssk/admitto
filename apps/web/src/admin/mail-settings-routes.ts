@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import type { z } from "zod";
-import { canManageInstance, resolveSetupComplete } from "@admitto/auth";
+import { resolveSetupComplete } from "@admitto/auth";
 import {
   describeMailConfigForOrg,
   describeMailConfigForOrgWizard,
@@ -12,7 +12,7 @@ import {
 } from "@admitto/mailer-config";
 import { sendTransportTestEmail, type MailDeliveryDeps } from "@admitto/mail-delivery";
 import { writeAdminAuditLog } from "@admitto/tickets";
-import { adminAuditFromContext } from "./admin-helpers.js";
+import { adminAuditFromContext, requireSuperadmin } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import {
   putMailSettingsBodySchema,
@@ -26,14 +26,6 @@ import {
 } from "./mail-settings-shared.js";
 
 export { MAX_MAIL_SETTINGS_BODY_BYTES } from "./mail-settings-shared.js";
-
-async function requireSuperadmin(c: Context, db: PrismaClient): Promise<Response | null> {
-  const auth = c.get("auth");
-  if (!(await canManageInstance(db, auth.userId))) {
-    return c.json({ error: "forbidden" }, 403);
-  }
-  return null;
-}
 
 async function isFirstRunWizard(db: PrismaClient): Promise<boolean> {
   return !(await resolveSetupComplete(db));

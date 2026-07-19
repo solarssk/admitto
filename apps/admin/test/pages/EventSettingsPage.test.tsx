@@ -531,6 +531,34 @@ describe("EventSettingsPage Integrations tab (superadmin-only)", () => {
   });
 });
 
+describe("EventSettingsPage Mailing tab (superadmin-only)", () => {
+  it("shows the Mailing tab for superadmin", async () => {
+    mockAssignments = superadminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings();
+    await screen.findByRole("tab", { name: "Mailing" });
+    fireEvent.click(screen.getByRole("tab", { name: "Mailing" }));
+    expect(await screen.findByRole("radio", { name: "Organization mail" })).toBeTruthy();
+  });
+
+  it("hides the Mailing tab entirely for a non-superadmin org admin", async () => {
+    mockAssignments = orgAdminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings();
+    await screen.findByRole("tab", { name: "General" });
+    expect(screen.queryByRole("tab", { name: "Mailing" })).toBeNull();
+  });
+
+  it("falls back to General when a non-superadmin deep-links ?tab=mail directly", async () => {
+    mockAssignments = orgAdminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings("/admin/events/evt-1/settings?tab=mail");
+    await screen.findByLabelText("Event title");
+    expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.queryByRole("radio", { name: "Organization mail" })).toBeNull();
+  });
+});
+
 describe("EventSettingsPage — delete event (#395)", () => {
   async function openDangerZone() {
     await waitFor(() => screen.getByRole("tab", { name: "Danger zone" }));
