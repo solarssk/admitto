@@ -31,6 +31,7 @@ import {
   countFilteredAttendees,
   findFilteredAttendeesForExport,
   findFilteredAttendeesForList,
+  findSelectedAttendeesForExport,
   isAdmittable,
   admitAttendee,
   revokeCheckIn,
@@ -364,14 +365,18 @@ async function buildExportPdfBuffer(
   return new Uint8Array(Buffer.concat(chunks));
 }
 
-/** Append bulk audit row after a successful filtered export (no raw search term). */
+/** Append bulk audit row after a successful filtered or explicit-selection export (no raw
+ * search term, no attendee ids — `selected_count` is how many ids the operator requested,
+ * while `count` above it is how many rows actually exported). */
 async function auditAttendeesExported(
   db: PrismaClient,
   c: Context,
   eventId: string,
   format: "xlsx" | "csv" | "pdf",
   count: number,
-  filters: { status: string; ticket_type?: string; has_query: boolean },
+  filters:
+    | { status: string; ticket_type?: string; has_query: boolean }
+    | { selected_count: number },
 ): Promise<void> {
   await db.$transaction(async (tx) => {
     await writeBulkActionLog(tx, {
@@ -381,11 +386,14 @@ async function auditAttendeesExported(
       metadata: {
         format,
         count,
-        filters: {
-          status: filters.status,
-          ticket_type: filters.ticket_type ?? null,
-          has_query: filters.has_query,
-        },
+        filters:
+          "selected_count" in filters
+            ? { selected_count: filters.selected_count }
+            : {
+                status: filters.status,
+                ticket_type: filters.ticket_type ?? null,
+                has_query: filters.has_query,
+              },
       },
     });
   });
@@ -772,7 +780,21 @@ export async function handleListEventAttendees(c: Context, db: PrismaClient): Pr
   });
 }
 
-/** GET /api/admin/events/:eventId/attendees/export — filtered subset as XLSX, CSV, or PDF (no tokens). */
+/** Parse `attendee_ids` (comma-separated) for an explicit-selection export. Returns undefined
+ * when the param is absent (regular filtered export), a 400 Response when present but empty
+ * or over the bulk cap — the UI's page-scoped selection can never legitimately exceed it. */
+function parseExportSelectionQuery(c: Context): string[] | undefined | Response {
+  const raw = c.req.query("attendee_ids");
+  if (raw === undefined) return undefined;
+  const ids = [...new Set(raw.split(",").map((id) => id.trim()).filter(Boolean))];
+  if (ids.length === 0 || ids.length > BULK_SEND_LIMIT) {
+    return c.json({ error: "validation_failed" }, 400);
+  }
+  return ids;
+}
+
+/** GET /api/admin/events/:eventId/attendees/export — filtered subset (or an explicit
+ * `attendee_ids` selection, which bypasses filters) as XLSX, CSV, or PDF (no tokens). */
 export async function handleExportAttendees(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
@@ -785,6 +807,10 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
     return c.json({ error: "format must be xlsx, csv, or pdf" }, 400);
   }
   const format = formatRaw;
+
+  const selectedIdsOrRes = parseExportSelectionQuery(c);
+  if (selectedIdsOrRes instanceof Response) return selectedIdsOrRes;
+  const selectedIds = selectedIdsOrRes;
 
   const { q, status, ticket_type, rsvp_status } = parseListQuery(c);
 
@@ -801,13 +827,19 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
 
   const timeZone = resolvePreviewEventTimeZone(event.timezone);
 
-  const total = await countFilteredAttendees(db, eventId, filterParams);
-  if (total > EXPORT_ROW_CAP) {
-    return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
+  // An explicit selection is capped at BULK_SEND_LIMIT ids (far below EXPORT_ROW_CAP), so the
+  // too-large guard only applies to the filtered path.
+  if (!selectedIds) {
+    const total = await countFilteredAttendees(db, eventId, filterParams);
+    if (total > EXPORT_ROW_CAP) {
+      return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
+    }
   }
 
   const [rows, attributeFieldsResult, ticketTypes] = await Promise.all([
-    findFilteredAttendeesForExport(db, eventId, filterParams),
+    selectedIds
+      ? findSelectedAttendeesForExport(db, eventId, selectedIds)
+      : findFilteredAttendeesForExport(db, eventId, filterParams),
     loadEventCustomDataFields(db, eventId).catch((err) => err),
     loadEventTicketTypes(db, eventId),
   ]);
@@ -821,7 +853,9 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
 
   const timestamp = new Date().toISOString().slice(0, 10);
   const filename = `attendees-${eventId}-${timestamp}.${format}`;
-  const auditFilters = { status, ticket_type, has_query: Boolean(q) };
+  const auditFilters = selectedIds
+    ? { selected_count: selectedIds.length }
+    : { status, ticket_type, has_query: Boolean(q) };
 
   if (format === "csv") {
     const csv = buildExportCsv(exportRows, exportColumns);

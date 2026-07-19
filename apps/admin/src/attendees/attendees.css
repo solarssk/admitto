@@ -617,6 +617,19 @@
   background: none;
 }
 
+.more-actions-menu__item-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.more-actions-menu__item-hint {
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
 .more-actions-menu__divider {
   height: 1px;
   margin: var(--space-1) 0;

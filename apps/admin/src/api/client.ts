@@ -1136,10 +1136,17 @@ export async function deleteTicketType(eventId: string, typeId: string): Promise
   await parseJson<{ ok: boolean }>(res);
 }
 
-/** Download a filtered attendee export and trigger browser save. */
+/** Download a filtered attendee export and trigger browser save. Passing `attendee_ids`
+ * exports exactly that selection instead — the server ignores the list filters then. */
 export async function exportAttendees(
   eventId: string,
-  params: { q?: string; status?: string; ticket_type?: string; rsvp_status?: RsvpStatus },
+  params: {
+    q?: string;
+    status?: string;
+    ticket_type?: string;
+    rsvp_status?: RsvpStatus;
+    attendee_ids?: string[];
+  },
   format: "xlsx" | "csv" | "pdf",
   signal?: AbortSignal,
 ): Promise<void> {
@@ -1148,6 +1155,7 @@ export async function exportAttendees(
   if (params.status && params.status !== "all") urlParams.set("status", params.status);
   if (params.ticket_type) urlParams.set("ticket_type", params.ticket_type);
   if (params.rsvp_status) urlParams.set("rsvp_status", params.rsvp_status);
+  if (params.attendee_ids?.length) urlParams.set("attendee_ids", params.attendee_ids.join(","));
 
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/attendees/export?${urlParams.toString()}`,

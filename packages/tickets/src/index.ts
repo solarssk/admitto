@@ -66,6 +66,7 @@ export {
   countFilteredAttendees,
   findFilteredAttendeesForExport,
   findFilteredAttendeesForList,
+  findSelectedAttendeesForExport,
 } from "./attendees-list-filters.js";
 export type {
   AttendeeExportRsvpStatus,

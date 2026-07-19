@@ -301,6 +301,7 @@ export function AttendeesPage() {
   const [bulkSendBusy, setBulkSendBusy] = useState(false);
   const [bulkSendConfirmOpen, setBulkSendConfirmOpen] = useState(false);
   const [bulkCheckInBusy, setBulkCheckInBusy] = useState(false);
+  const [bulkExportBusy, setBulkExportBusy] = useState(false);
   const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
   const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null);
@@ -633,6 +634,36 @@ export function AttendeesPage() {
     }
   };
 
+  /** CSV export of an explicit subset of selected attendees — separate from the header
+   * "Export" dropdown (which exports the whole filtered view): the server bypasses list
+   * filters when attendee_ids is present. CSV only, per the design mockup. No success toast
+   * and selection stays put, matching the header export's behavior (the download starting is
+   * the feedback). */
+  const handleBulkExportSelected = async () => {
+    if (!eventId || selectedIds.size === 0) return;
+    const initiatingEventId = eventId;
+    const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
+    setBulkExportBusy(true);
+    try {
+      await exportAttendees(initiatingEventId, { attendee_ids: [...selectedIds] }, "csv");
+    } catch (err) {
+      if (!isStillOnEvent()) return;
+      if (err instanceof ApiError) {
+        reportApiError(err.status);
+        if (err.status === 401) {
+          const next = encodeURIComponent(window.location.pathname);
+          window.location.assign(`/login?next=${next}`);
+          return;
+        }
+        addToast(operatorApiErrorMessage(err, "Export failed."), "error");
+      } else {
+        addToast("Export failed.", "error");
+      }
+    } finally {
+      if (isStillOnEvent()) setBulkExportBusy(false);
+    }
+  };
+
   /** Bulk GDPR erasure for an explicit subset of selected attendees — same effect as running
    * the attendee detail page's "Delete attendee" once per selected row. Guards every
    * completion effect against the operator navigating to a different event's Attendees list
@@ -804,6 +835,8 @@ export function AttendeesPage() {
         canBulkSend={mailConfigured !== false}
         onBulkCheckIn={() => void handleBulkCheckInSelected()}
         bulkCheckInBusy={bulkCheckInBusy}
+        onBulkExportSelected={() => void handleBulkExportSelected()}
+        bulkExportBusy={bulkExportBusy}
         onBulkDelete={() => {
           setBulkDeleteError(null);
           setBulkDeleteConfirmOpen(true);

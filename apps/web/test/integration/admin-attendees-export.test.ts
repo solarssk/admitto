@@ -803,3 +803,111 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe("GET /api/admin/events/:eventId/attendees/export — attendee_ids selection (#520)", () => {
+  beforeEach(() => {
+    rateLimitStore.reset();
+  });
+
+  it("exports exactly the selected rows, ignoring list filters", async () => {
+    // ticket_type=vip would exclude ATT_STD — the explicit selection must win.
+    const res = await app.request(
+      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&ticket_type=vip&attendee_ids=${ATT_STD},${ATT_VIP1}`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/csv");
+    const lines = (await res.text()).split("\r\n").filter(Boolean);
+    expect(lines.length).toBe(3); // header + 2 selected rows
+    const body = lines.slice(1).join("\n");
+    expect(body).toContain("Standard Guest");
+    expect(body).toContain("Vip One");
+    expect(body).not.toContain("Vip Two");
+  });
+
+  it("silently ignores ids that belong to another event", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&attendee_ids=${ATT_VIP1},${ATT_CROSS}`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    const lines = text.split("\r\n").filter(Boolean);
+    expect(lines.length).toBe(2); // header + ATT_VIP1 only
+    expect(lines[1]).toContain("Vip One");
+    expect(text).not.toContain("Cross Event");
+  });
+
+  it("unknown ids only → file with headers only", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&attendee_ids=att-does-not-exist`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const lines = (await res.text()).split("\r\n").filter(Boolean);
+    expect(lines.length).toBe(1);
+  });
+
+  it("empty attendee_ids → 400", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&attendee_ids=`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "validation_failed" });
+  });
+
+  it("more ids than the bulk cap → 400", async () => {
+    const ids = Array.from({ length: 501 }, (_, i) => `att-cap-${i}`).join(",");
+    const res = await app.request(
+      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&attendee_ids=${ids}`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "validation_failed" });
+  });
+
+  it("audit metadata records selected_count instead of list filters", async () => {
+    await prisma.attendeeActionLog.deleteMany({
+      where: { event_id: EVENT_EX, action_type: "attendees_exported" },
+    });
+    const res = await app.request(
+      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&attendee_ids=${ATT_VIP1},${ATT_VIP2},att-does-not-exist`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { event_id: EVENT_EX, action_type: "attendees_exported" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log).not.toBeNull();
+    const meta = log!.metadata as Record<string, unknown>;
+    expect(meta.format).toBe("csv");
+    // count = rows actually exported; selected_count = ids the operator requested.
+    expect(meta.count).toBe(2);
+    expect(meta.filters).toEqual({ selected_count: 3 });
+    // No attendee ids and no list-filter fields in the selection audit entry.
+    expect(JSON.stringify(meta)).not.toContain(ATT_VIP1);
+    expect(meta.filters).not.toHaveProperty("status");
+  });
+
+  it("selection works for xlsx too (format stays generic server-side)", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_EX}/attendees/export?format=xlsx&attendee_ids=${ATT_VIP1}`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain(
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+  });
+
+  it("operator → 403", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&attendee_ids=${ATT_VIP1}`,
+      { headers: { Cookie: opCookie } },
+    );
+    expect(res.status).toBe(403);
+  });
+});
