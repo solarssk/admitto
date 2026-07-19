@@ -837,7 +837,7 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     const dialog = screen.getByRole("dialog", { name: "Change ticket type" });
     expect(within(dialog).getByRole("radio", { name: "VIP" })).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("radio", { name: "Standard" }));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Apply to selected" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
 
     await waitFor(() => {
       expect(bulkChangeTicketType).toHaveBeenCalledWith("evt-1", ["att-1", "att-2"], "standard");
@@ -856,7 +856,7 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     await selectTwoRowsAndOpenMenu();
     fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change ticket type/ }));
     const dialog = screen.getByRole("dialog", { name: "Change ticket type" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Apply to selected" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
 
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith("1 attendee set to VIP (1 already had it)", "success");
@@ -871,7 +871,7 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     await selectTwoRowsAndOpenMenu();
     fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change ticket type/ }));
     const dialog = screen.getByRole("dialog", { name: "Change ticket type" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Apply to selected" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
 
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith("All selected attendees already have VIP.", "info");
@@ -887,7 +887,7 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     await selectTwoRowsAndOpenMenu();
     fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change ticket type/ }));
     const dialog = screen.getByRole("dialog", { name: "Change ticket type" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Apply to selected" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
 
     await waitFor(() => {
       expect(within(dialog).getByRole("alert").textContent).toContain("no longer exists");

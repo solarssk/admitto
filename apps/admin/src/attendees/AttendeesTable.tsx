@@ -435,7 +435,7 @@ function BulkMoreActionsMenu({
           >
             <i className="ti ti-ticket" aria-hidden="true" />
             <span className="more-actions-menu__item-text">
-              Change ticket type…
+              Change ticket type
               <span className="more-actions-menu__item-hint">
                 Choose from {ticketTypeCount} configured type{ticketTypeCount === 1 ? "" : "s"}
               </span>

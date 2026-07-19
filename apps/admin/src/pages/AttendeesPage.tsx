@@ -25,6 +25,7 @@ import type {
 } from "../api/types.js";
 import { AddAttendeeModal } from "../attendees/AddAttendeeModal.js";
 import { AttendeesTable } from "../attendees/AttendeesTable.js";
+import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { useMailConfigured } from "../attendees/useMailConfigured.js";
 import { ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
@@ -212,9 +213,11 @@ interface ChangeTicketTypeDialogProps {
 }
 
 /** Pick one of the event's configured ticket types for every selected attendee (#521). The
- * catalog is per-event (batch 04), so this is a dynamic radio list rather than the mockup's
- * hardcoded VIP/Standard buttons. Errors render inline — the dialog has focus, so a toast
- * behind it would go unseen (AGENTS.md toast-vs-inline table). */
+ * catalog is per-event (batch 04), so this is a dynamic list rather than the mockup's
+ * hardcoded VIP/Standard buttons — each option is a card carrying the type's colored badge
+ * (the operator picks by the same chip the table shows) with a check on the selected one
+ * (PO review). Errors render inline — the dialog has focus, so a toast behind it would go
+ * unseen (AGENTS.md toast-vs-inline table). */
 function ChangeTicketTypeDialog({
   open,
   busy,
@@ -245,31 +248,38 @@ function ChangeTicketTypeDialog({
           </p>
         )}
         <p className="mail-field-hint">
-          Assign one ticket type to {selectedCount} selected attendee{selectedCount === 1 ? "" : "s"}.
+          Set the ticket type for {selectedCount} selected attendee{selectedCount === 1 ? "" : "s"}.
         </p>
-        <div className="mail-field-row">
+        <div className="change-type-options">
           {ticketTypes.map((type) => (
-            <label key={type.id} className="send-tickets-radio">
+            <label
+              key={type.id}
+              className={`change-type-option${value === type.key ? " change-type-option--selected" : ""}`}
+            >
+              {/* Real radio for keyboard/AT semantics — visually the card is the control. */}
               <input
                 type="radio"
                 name="bulk-ticket-type"
+                className="change-type-option__input"
                 value={type.key}
                 checked={value === type.key}
                 disabled={busy}
                 onChange={() => onValueChange(type.key)}
+                aria-label={type.label}
               />
-              <span>
-                <strong>{type.label}</strong>
-              </span>
+              <TicketTypeBadge ticketType={type.key} catalog={ticketTypes} />
+              {value === type.key && (
+                <i className="ti ti-check change-type-option__check" aria-hidden="true" />
+              )}
             </label>
           ))}
         </div>
-        <div className="add-attendee-modal__actions">
-          <Button type="button" variant="primary" disabled={busy || !value} onClick={onConfirm}>
-            {busy ? "Applying…" : "Apply to selected"}
-          </Button>
+        <div className="change-type-actions">
           <Button type="button" variant="secondary" disabled={busy} onClick={onClose}>
             Cancel
+          </Button>
+          <Button type="button" variant="primary" disabled={busy || !value} onClick={onConfirm}>
+            {busy ? "Applying…" : "Apply"}
           </Button>
         </div>
       </div>
