@@ -52,20 +52,22 @@ import { defineConfig } from "vitest/config";
  * database out of the way (ALTER DATABASE ... RENAME) before full root-level runs, confirmed zero
  * references to it in the output across multiple runs, then renamed it back.
  *
- * `sequence.concurrent: false` below: `apps/web/vitest.config.ts` (the delegating file this
- * aggregator bypasses - see above) sets this same option specifically because its own unit and
- * integration projects share one database (`admitto_web_test`) and must not run at the same time
- * ("Avoid Prisma client/package.json races when unit imports @admitto/auth while integration
- * globalSetup runs migrate deploy" - its own comment). Listing `apps/web`'s two leaf configs here
- * as independent top-level projects drops that guarantee unless restated here too - Vitest runs
- * sibling projects concurrently by default. Applied globally (not scoped to just apps/web's pair -
- * Vitest's `projects` array has no per-pair concurrency control) at the cost of a slower run; this
- * aggregator is a rarely-invoked safety fallback, not the everyday `npm test` path, so trading
- * speed for one less race-condition class here is the right tradeoff.
+ * No `sequence.concurrent` here. An earlier commit on this branch set `sequence: { concurrent:
+ * false }` at this level believing it serializes sibling projects - it does not. That option only
+ * controls whether tests WITHIN one file run concurrently, `false` is already Vitest's default,
+ * and workers read the root-level value anyway (per-project `sequence.concurrent` is ignored -
+ * see serializeConfig in node_modules/vitest/dist/chunks/cli-api.*.js). What actually keeps the
+ * DB-touching projects from overlapping: each of them sets `fileParallelism: false` (which
+ * resolveConfig normalizes to `maxWorkers: 1`), and the scheduler (groupSpecs, same chunk) puts
+ * every file of a `maxWorkers: 1` + `isolate: true` project into one shared sequential group that
+ * runs one file at a time, after all other projects have finished behind a barrier. Their
+ * globalSetups likewise all run sequentially before any test file starts. The intermittent
+ * identity-api-routes failure that commit tried to fix was therefore never a concurrency race -
+ * it was cf-access-routes.test.ts leaving CF Access rows behind in the shared SystemSettings
+ * table, fixed where it belongs (that file's afterAll + a defensive clear in the affected test).
  */
 export default defineConfig({
   test: {
-    sequence: { concurrent: false },
     env: {
       DATABASE_URL: "postgresql://intentionally-invalid-root-fallback@127.0.0.1:1/refuse-to-run",
     },

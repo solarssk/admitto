@@ -5,8 +5,9 @@ export default defineConfig({
   test: {
     // "web-unit", not "unit" - the repo-root vitest.config.ts aggregator lists this file
     // alongside packages/auth/vitest.unit.config.ts (also named "unit" standalone), and Vitest
-    // requires every aggregated project name to be unique. Harmless for this package's own
-    // standalone `npm run test -w @admitto/web` - nothing depends on the literal name "unit".
+    // requires every aggregated project name to be unique. This package's `test:unit` script
+    // selects this project by name (`vitest run --project web-unit`; the filter is an anchored
+    // exact match) - keep package.json in sync when renaming.
     name: "web-unit",
     include: ["test/**/*.test.ts"],
     // Also excludes dist/ - see the matching comment in vitest.integration.config.ts.
