@@ -1442,12 +1442,44 @@ const bulkCheckInAttendeesBodySchema = z
   })
   .strict();
 
+/**
+ * How many attendees' own per-attendee transactions run concurrently within one chunk of a bulk
+ * check-in. Each attendee still gets its own `admitAttendee` transaction (unchanged); this only
+ * bounds how many of those transactions are in flight at once, matching
+ * `packages/tickets/src/bulk-revoke.ts`'s BULK_REVOKE_CONCURRENCY for the same shape of
+ * per-attendee transaction fan-out.
+ */
+const BULK_CHECKIN_CONCURRENCY = 10;
+
+/** Split an array into fixed-size chunks (last chunk may be smaller) — same helper as
+ * `packages/tickets/src/bulk-revoke.ts`'s local `chunk`, duplicated here rather than shared
+ * since it's a trivial, dependency-free six-liner and this file is in a different package. */
+function chunk<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
+
 /** POST /api/admin/events/:eventId/attendees/bulk-checkin — manual check-in for a selection of
  * attendees at once, from the Attendees list's row-selection bulk bar. Reuses `admitAttendee`
  * (the same single-use CAS path scan check-in already goes through, ADR 0010 §4) once per
  * selected id rather than a bespoke bulk update, so every existing guarantee — CAS, per-attendee
  * AttendeeActionLog write, badge issuance — applies unchanged; ids that don't belong to this
- * event are silently ignored, same convention as bulk-delete. */
+ * event are silently ignored, same convention as bulk-delete. Attendees are processed in
+ * bounded-concurrency chunks (BULK_CHECKIN_CONCURRENCY) rather than fully serially, for
+ * throughput on large selections, while each attendee keeps its own independent CAS transaction —
+ * same shape as `revokeAllCheckInsForEvent`. Unlike that path, a per-attendee failure here isn't
+ * caught and skipped: admitAttendee has no analogous "expected race" exception (it already
+ * reports a losing race as ALREADY_CHECKED_IN/REVOKED via its return value, not a throw), so an
+ * unexpected throw still aborts the request — but because Promise.all doesn't wait for a failing
+ * chunk's still-settling siblings, up to BULK_CHECKIN_CONCURRENCY-1 concurrent admissions in that
+ * chunk can already be committed without being counted in the (never-returned) response. This
+ * widens the old serial loop's "everything before the throw is committed but unreported" blast
+ * radius from a strict one-attendee-at-a-time prefix to one chunk's worth; it's accepted because
+ * admitAttendee is itself idempotent, so a retry after any such failure just reports
+ * ALREADY_CHECKED_IN for whoever already quietly succeeded, not corruption or double effects. */
 export async function handleBulkCheckInEventAttendees(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
@@ -1472,12 +1504,16 @@ export async function handleBulkCheckInEventAttendees(c: Context, db: PrismaClie
 
   const audit = adminAuditFromContext(c);
   const counts = { checkedIn: 0, alreadyCheckedIn: 0, revoked: 0, invalid: 0 };
-  for (const { id } of owned) {
-    const result = await admitAttendee({ attendeeId: id, eventId, method: "manual", audit }, db);
-    if (result.status === "VALID") counts.checkedIn += 1;
-    else if (result.status === "ALREADY_CHECKED_IN") counts.alreadyCheckedIn += 1;
-    else if (result.status === "REVOKED") counts.revoked += 1;
-    else counts.invalid += 1;
+  for (const batch of chunk(owned, BULK_CHECKIN_CONCURRENCY)) {
+    const results = await Promise.all(
+      batch.map(({ id }) => admitAttendee({ attendeeId: id, eventId, method: "manual", audit }, db)),
+    );
+    for (const result of results) {
+      if (result.status === "VALID") counts.checkedIn += 1;
+      else if (result.status === "ALREADY_CHECKED_IN") counts.alreadyCheckedIn += 1;
+      else if (result.status === "REVOKED") counts.revoked += 1;
+      else counts.invalid += 1;
+    }
   }
 
   return c.json(counts);

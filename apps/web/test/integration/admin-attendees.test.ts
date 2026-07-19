@@ -906,6 +906,27 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-checkin", () => {
     expect(checkIns).toHaveLength(2);
   });
 
+  it("spans more than one bounded-concurrency chunk and sums counts correctly across chunks", async () => {
+    // BULK_CHECKIN_CONCURRENCY is 10 - 12 ids force exactly two chunks (10 + 2), exercising the
+    // outer `for (const batch of chunk(...))` accumulation that every other test in this block
+    // (2 ids or fewer) never reaches.
+    const ids = Array.from({ length: 12 }, (_, i) => `att-bulk-checkin-chunk-${i}`);
+    await seedCheckable(ids);
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-checkin`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: ids }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ checkedIn: 12, alreadyCheckedIn: 0, revoked: 0, invalid: 0 });
+
+    const after = await prisma.attendee.findMany({ where: { id: { in: ids } }, select: { admitted_at: true } });
+    expect(after).toHaveLength(12);
+    expect(after.every((a) => a.admitted_at !== null)).toBe(true);
+  });
+
   it("counts a cancelled attendee's ticket as revoked instead of admitting them", async () => {
     const id = "att-bulk-checkin-revoked";
     await prisma.attendee.create({
