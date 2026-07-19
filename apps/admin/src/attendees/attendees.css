@@ -26,19 +26,34 @@
   min-width: 720px;
 }
 
+/* Search + filters always render as ONE row of fixed height, at every viewport — desktop,
+   tablet, or phone (PO review: wrapping to 2-3 lines, even evenly, still grew the toolbar's
+   height and looked broken). Rather than collapsing filters behind a toggle below some
+   breakpoint, the row is a ScrollFadeRow (see ScrollFadeRow.tsx / scroll-fade-tabs.css): it
+   never wraps, and scrolls horizontally with soft edge fades once content doesn't fit,
+   exactly like the existing settings-page tab strips already do for the same reason. */
 .attendees-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  align-items: center;
-  padding: var(--space-4);
+  --scroll-fade-bg: var(--surface-card);
+  margin-bottom: 0;
   border-bottom: 1px solid var(--border);
+}
+
+.attendees-toolbar .scroll-fade-tabs__scroll {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
 }
 
 .attendees-toolbar__search {
   position: relative;
-  flex: 1 1 200px;
-  min-width: 180px;
+  /* The one item that actually flexes: grows into any leftover width on a wide desktop,
+     shrinks down to this floor as the viewport narrows — only once it's AT that floor does
+     the row start needing to scroll (see .attendees-toolbar__filter below, which never
+     shrinks at all, so search absorbs the squeeze first). */
+  flex: 1 1 220px;
+  min-width: 220px;
 }
 
 .attendees-toolbar__search .at-input {
@@ -67,15 +82,11 @@
   color: var(--text);
 }
 
-/* flex (not grid) so each wrapped line distributes its OWN leftover space — a grid's column
-   tracks span every row, so a lone trailing item only got one narrow track's width with a
-   dead gap beside it (PO review). max-width keeps a lone trailing item from stretching to the
-   full row; any space past that is just empty margin, which reads as normal end-of-row
-   whitespace instead of a stray narrow control. */
+/* Fixed width, never shrinks or grows — a comfortable, always-legible size. Once these four
+   plus the search box's floor no longer fit the viewport, the row scrolls rather than
+   squeezing any of them narrower than usable. */
 .attendees-toolbar__filter {
-  flex: 1 1 160px;
-  max-width: 260px;
-  min-width: 0;
+  flex: 0 0 180px;
 }
 
 .attendees-toolbar__filter .at-select {
@@ -83,92 +94,22 @@
 }
 
 /* Mobile-only "Sort by" select + direction toggle (AttendeesTable has no column headers to
-   click below 768px) — sits alongside the filter selects in the same collapsible panel. */
+   click below 768px) — just one more fixed-width item in the same never-wrapping row. */
 .attendees-toolbar__sort {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: var(--space-2);
 }
 
-/* Inside the sort control the select shares its grid cell with the direction toggle —
-   let it shrink instead of overflowing the cell at narrow widths. */
 .attendees-toolbar__sort .at-select {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-/* Filters toggle — hidden on desktop (filters always shown inline); becomes the
-   only way to reveal the filter selects below 768px, so the toolbar's first row
-   (search + toggle) never has to fight three selects for width on a phone. */
-.attendees-filters-toggle {
-  display: none;
-  align-items: center;
-  gap: var(--space-2);
-  height: var(--control-h-sm);
-  padding: 0 var(--space-3);
-  border: var(--border-width) solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--surface-card);
-  font-family: var(--font-sans);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  color: var(--text-secondary);
-  cursor: pointer;
-  flex: none;
-}
-
-.attendees-filters-toggle:hover {
-  background: var(--surface-hover);
-}
-
-.attendees-filters-toggle__count {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: var(--radius-pill);
-  background: var(--primary);
-  color: var(--text-on-primary);
-  font-size: 10px;
-  font-weight: 700;
-}
-
-/* The four filter selects live on their own row below the search box, wrapping as a normal
-   flex line — however many fit at the current width, evenly sized (see
-   .attendees-toolbar__filter above), no partial-row gaps. */
-.attendees-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  flex-basis: 100%;
-  min-width: 0;
+  width: 150px;
 }
 
 /* 767, not 768 — useIsDesktop() (apps/admin/src/hooks/useIsDesktop.ts) switches
    the table/cards split at min-width:768px; this must be the exact complement
    or the two breakpoints overlap by one pixel and disagree at exactly 768px. */
 @media (max-width: 767px) {
-  .attendees-filters-toggle {
-    display: flex;
-  }
-
-  .attendees-filters {
-    display: none;
-  }
-
-  .attendees-filters--open {
-    display: flex;
-  }
-
-  /* One filter per line on a phone — four items each capped at 260px would otherwise still
-     try to sit two-to-a-line at ~350-500px widths, each looking oddly narrow. */
-  .attendees-toolbar__filter {
-    flex-basis: 100%;
-    max-width: none;
-  }
-
   /* Full-width, not flush-right — margin-left:auto on its own line would sit the whole
      actions group flush against the right edge with a dead gap to its left, the same
      leftover-space bug the filter row had. */

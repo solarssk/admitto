@@ -132,49 +132,54 @@ describe("AttendeesTable toolbar vs bulk bar", () => {
   });
 });
 
-describe("AttendeesTable collapsible filters toggle", () => {
+describe("AttendeesTable search+filter row never wraps (PO review)", () => {
   beforeEach(() => {
     mockMatchMedia(true);
   });
 
-  it("toggles aria-expanded and the filters wrapper's open class when clicked", () => {
+  it("has no collapsible toggle — search and every filter select are always visible together", () => {
     render(
       <AttendeesTable {...tableProps} items={[baseRow]} selectedIds={new Set()} onToggleRow={vi.fn()} />,
     );
 
-    const toggle = screen.getByRole("button", { name: /Filters/ });
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(document.querySelector(".attendees-filters")?.classList.contains("attendees-filters--open")).toBe(
-      false,
-    );
-
-    fireEvent.click(toggle);
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    expect(document.querySelector(".attendees-filters")?.classList.contains("attendees-filters--open")).toBe(
-      true,
-    );
-
-    fireEvent.click(toggle);
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(document.querySelector(".attendees-filters")?.classList.contains("attendees-filters--open")).toBe(
-      false,
-    );
+    expect(screen.queryByRole("button", { name: /Filters/ })).toBeNull();
+    expect(screen.getByLabelText("Search attendees by name, email, or company")).toBeTruthy();
+    expect(screen.getByLabelText("Filter by ticket type")).toBeTruthy();
+    expect(screen.getByLabelText("Filter by attendance")).toBeTruthy();
+    expect(screen.getByLabelText("Filter by check-in status")).toBeTruthy();
+    expect(screen.getByLabelText("Filter by mail delivery status")).toBeTruthy();
   });
 
-  it("shows the active-filter-count badge on the toggle when filters are applied", () => {
+  it("renders search and every filter select as direct children of one non-wrapping scroll strip", () => {
+    render(
+      <AttendeesTable {...tableProps} items={[baseRow]} selectedIds={new Set()} onToggleRow={vi.fn()} />,
+    );
+
+    const row = document.querySelector(".attendees-toolbar .scroll-fade-tabs__scroll");
+    expect(row).toBeTruthy();
+    // Every control's own wrapper is a direct child of the same scroll strip — none of them
+    // sit inside a nested wrapper that could independently wrap onto its own line.
+    const search = screen.getByLabelText("Search attendees by name, email, or company").closest(".attendees-toolbar__search");
+    const mailFilter = screen.getByLabelText("Filter by mail delivery status").closest(".attendees-toolbar__filter");
+    expect(search?.parentElement).toBe(row);
+    expect(mailFilter?.parentElement).toBe(row);
+  });
+
+  it("stays visible and functional on a phone too — same row, no separate mobile panel", () => {
+    mockMatchMedia(false);
+    const onMailStatusFilterChange = vi.fn();
     render(
       <AttendeesTable
         {...tableProps}
         items={[baseRow]}
         selectedIds={new Set()}
-        onToggleRow={vi.fn()}
-        statusFilter="admitted"
-        rsvpStatusFilter="confirmed"
+        onMailStatusFilterChange={onMailStatusFilterChange}
       />,
     );
 
-    const toggle = screen.getByRole("button", { name: /Filters/ });
-    expect(within(toggle).getByText("2")).toBeTruthy();
+    const select = screen.getByLabelText("Filter by mail delivery status") as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "failed" } });
+    expect(onMailStatusFilterChange).toHaveBeenCalledWith("failed");
   });
 });
 
@@ -248,9 +253,8 @@ describe("AttendeesTable mobile card view (<768px)", () => {
       />,
     );
 
-    // Behind the same "Filters" toggle as the three filter selects.
-    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
-
+    // No toggle to open anymore — the sort control sits directly in the same
+    // never-wrapping row as the filter selects.
     const sortSelect = screen.getByLabelText("Sort by") as HTMLSelectElement;
     expect(sortSelect.value).toBe("name");
 
@@ -313,8 +317,14 @@ describe("AttendeesTable mail delivery status filter (#522)", () => {
     expect(onMailStatusFilterChange).toHaveBeenCalledWith("failed");
   });
 
-  it("counts an active mail filter in the Filters toggle badge", () => {
-    render(
+  it("keeps the selected mail status reflected in the select's value (no separate active-filter indicator to keep in sync)", () => {
+    const { rerender } = render(
+      <AttendeesTable {...tableProps} items={[baseRow]} selectedIds={new Set()} mailStatusFilter="" />,
+    );
+    let select = screen.getByLabelText("Filter by mail delivery status") as HTMLSelectElement;
+    expect(select.value).toBe("");
+
+    rerender(
       <AttendeesTable
         {...tableProps}
         items={[baseRow]}
@@ -322,7 +332,7 @@ describe("AttendeesTable mail delivery status filter (#522)", () => {
         mailStatusFilter="not_sent"
       />,
     );
-    const toggle = screen.getByRole("button", { name: /Filters/ });
-    expect(within(toggle).getByText("1")).toBeTruthy();
+    select = screen.getByLabelText("Filter by mail delivery status") as HTMLSelectElement;
+    expect(select.value).toBe("not_sent");
   });
 });
