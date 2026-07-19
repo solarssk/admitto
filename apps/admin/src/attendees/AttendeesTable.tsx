@@ -505,66 +505,73 @@ function BulkBar({
   const archived = event.archived_at != null;
   return (
     <div className="attendees-bulkbar">
-      <span className="attendees-bulkbar__count">
-        <strong>{selectedIds.size}</strong> selected
-      </span>
-      <button
-        type="button"
-        className="attendees-bulkbar__clear"
-        onClick={onClearSelection}
-        aria-label="Clear selection"
-      >
-        <i className="ti ti-x" aria-hidden="true" />
-      </button>
-      <div className="attendees-bulkbar__spacer" />
-      <span className="attendees-bulkbar__sep" aria-hidden="true" />
-      <ArchivedGuard
-        event={event}
-        reasonId="bulk-send-tickets-reason"
-        disabled={bulkSendBusy || !canBulkSend}
-        tooltip={
-          !canBulkSend
-            ? "No mail transport configured for this event. Set one up in Event Settings → Mailing."
-            : undefined
-        }
-      >
-        {(guard) => (
-          <Button
-            variant="ghost"
-            icon={<i className="ti ti-send" aria-hidden="true" />}
-            {...guard}
-            onClick={onBulkSendTickets}
-          >
-            {bulkSendBusy ? "Sending…" : "Send tickets"}
-          </Button>
-        )}
-      </ArchivedGuard>
-      <ArchivedGuard event={event} reasonId="bulk-checkin-reason" disabled={bulkCheckInBusy}>
-        {(guard) => (
-          <Button
-            variant="ghost"
-            icon={<i className="ti ti-qrcode" aria-hidden="true" />}
-            {...guard}
-            onClick={onBulkCheckIn}
-          >
-            {bulkCheckInBusy ? "Checking in…" : "Check in"}
-          </Button>
-        )}
-      </ArchivedGuard>
-      <BulkMoreActionsMenu
-        selectedCount={selectedIds.size}
-        exportBusy={bulkExportBusy}
-        onExportSelected={onBulkExportSelected}
-        ticketTypeCount={ticketTypes.length}
-        changeTicketTypeDisabled={archived || ticketTypes.length === 0}
-        changeTicketTypeDisabledReason={
-          archived
-            ? "This event is archived."
-            : "No ticket types configured for this event. Add some in Event Settings → Ticket types."
-        }
-        onChangeTicketType={onBulkChangeTicketType}
-        onDelete={onBulkDelete}
-      />
+      <div className="attendees-bulkbar__info">
+        <span className="attendees-bulkbar__count">
+          <strong>{selectedIds.size}</strong> selected
+        </span>
+        <button
+          type="button"
+          className="attendees-bulkbar__clear"
+          onClick={onClearSelection}
+          aria-label="Clear selection"
+        >
+          <i className="ti ti-x" aria-hidden="true" />
+        </button>
+      </div>
+      {/* Own wrapping group (not just spacer + buttons loose in the row) so on a phone,
+       * where three action buttons don't fit alongside the count, this whole group drops to
+       * its own full-width line instead of the buttons individually overflowing past the
+       * card edge (PO review — "Check in" was spilling outside the table on mobile). */}
+      <div className="attendees-bulkbar__actions">
+        <span className="attendees-bulkbar__sep" aria-hidden="true" />
+        <ArchivedGuard
+          event={event}
+          reasonId="bulk-send-tickets-reason"
+          disabled={bulkSendBusy || !canBulkSend}
+          tooltip={
+            !canBulkSend
+              ? "No mail transport configured for this event. Set one up in Event Settings → Mailing."
+              : undefined
+          }
+        >
+          {(guard) => (
+            <Button
+              variant="ghost"
+              icon={<i className="ti ti-send" aria-hidden="true" />}
+              {...guard}
+              onClick={onBulkSendTickets}
+            >
+              {bulkSendBusy ? "Sending…" : "Send tickets"}
+            </Button>
+          )}
+        </ArchivedGuard>
+        <ArchivedGuard event={event} reasonId="bulk-checkin-reason" disabled={bulkCheckInBusy}>
+          {(guard) => (
+            <Button
+              variant="ghost"
+              icon={<i className="ti ti-qrcode" aria-hidden="true" />}
+              {...guard}
+              onClick={onBulkCheckIn}
+            >
+              {bulkCheckInBusy ? "Checking in…" : "Check in"}
+            </Button>
+          )}
+        </ArchivedGuard>
+        <BulkMoreActionsMenu
+          selectedCount={selectedIds.size}
+          exportBusy={bulkExportBusy}
+          onExportSelected={onBulkExportSelected}
+          ticketTypeCount={ticketTypes.length}
+          changeTicketTypeDisabled={archived || ticketTypes.length === 0}
+          changeTicketTypeDisabledReason={
+            archived
+              ? "This event is archived."
+              : "No ticket types configured for this event. Add some in Event Settings → Ticket types."
+          }
+          onChangeTicketType={onBulkChangeTicketType}
+          onDelete={onBulkDelete}
+        />
+      </div>
     </div>
   );
 }

@@ -67,12 +67,17 @@
   color: var(--text);
 }
 
+/* flex (not grid) so each wrapped line distributes its OWN leftover space — a grid's column
+   tracks span every row, so a lone trailing item only got one narrow track's width with a
+   dead gap beside it (PO review). max-width keeps a lone trailing item from stretching to the
+   full row; any space past that is just empty margin, which reads as normal end-of-row
+   whitespace instead of a stray narrow control. */
 .attendees-toolbar__filter {
+  flex: 1 1 160px;
+  max-width: 260px;
   min-width: 0;
 }
 
-/* Every filter select stretches to its grid track — four content-sized selects wrapped
-   unevenly at tablet widths (three on one line, the fourth alone and narrower). */
 .attendees-toolbar__filter .at-select {
   width: 100%;
 }
@@ -130,12 +135,12 @@
   font-weight: 700;
 }
 
-/* The four filter selects live on their own full-width row as an even grid — auto-fit
-   collapses 4 → 2×2 → 1 column as the viewport narrows, every select the same width
-   (PO review: content-sized flex items wrapped raggedly once the 4th filter landed). */
+/* The four filter selects live on their own row below the search box, wrapping as a normal
+   flex line — however many fit at the current width, evenly sized (see
+   .attendees-toolbar__filter above), no partial-row gaps. */
 .attendees-filters {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-3);
   flex-basis: 100%;
   min-width: 0;
@@ -154,7 +159,22 @@
   }
 
   .attendees-filters--open {
-    display: grid;
+    display: flex;
+  }
+
+  /* One filter per line on a phone — four items each capped at 260px would otherwise still
+     try to sit two-to-a-line at ~350-500px widths, each looking oddly narrow. */
+  .attendees-toolbar__filter {
+    flex-basis: 100%;
+    max-width: none;
+  }
+
+  /* Full-width, not flush-right — margin-left:auto on its own line would sit the whole
+     actions group flush against the right edge with a dead gap to its left, the same
+     leftover-space bug the filter row had. */
+  .attendees-bulkbar__actions {
+    flex-basis: 100%;
+    margin-left: 0;
   }
 
   /* The summary text + rows-per-page + Previous/Page X of Y/Next pager don't fit on one
@@ -215,6 +235,7 @@
    toolbar it replaces, for a seamless swap. */
 .attendees-bulkbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-4);
@@ -226,6 +247,24 @@
   background: var(--at-gray-100);
 }
 
+.attendees-bulkbar__info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* margin-left: auto pushes this group to the row's right edge on desktop (replacing a
+   dedicated spacer element) while staying a normal flex item that's free to wrap onto its
+   own line — three action buttons plus the count text don't fit one row on a phone, and
+   without this wrapping group they overflowed past the card edge (PO review). */
+.attendees-bulkbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+}
+
 .attendees-bulkbar__count {
   font-size: var(--fs-sm);
   font-weight: 600;
@@ -235,12 +274,6 @@
 
 .attendees-bulkbar__count strong {
   font-weight: 700;
-}
-
-/* Pushes the separator + action button to the right edge, keeping
-   count/clear on the left — matches the previous, preferred layout. */
-.attendees-bulkbar__spacer {
-  flex: 1;
 }
 
 .attendees-bulkbar__sep {
@@ -953,24 +986,36 @@
 
 
 /* Attendees v2 table */
+/* Capped, not just nowrap: an unbounded nowrap email let the column (and the whole table)
+   grow wide enough to force horizontal scrolling on the page (PO review — the table isn't
+   meant to be draggable/scrollable). Truncating with ellipsis at a fixed max-width keeps the
+   column — and the table — at a predictable size regardless of how long a generated address
+   is, same treatment the mobile card's email already uses. */
 .attendees-table-v2__attendee {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   text-align: left;
   gap: 2px;
+  max-width: 240px;
+  min-width: 0;
 }
 
 .attendees-table-v2__name {
   font-weight: 600;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .attendees-table-v2__email {
   font-size: 0.8125rem;
   color: var(--text-muted);
   font-family: var(--font-mono, ui-monospace, monospace);
-  /* Never break an address mid-token ("qa-b07-\n031@…") — the table wrap scrolls
-     horizontally instead when the column runs out of room (PO review). */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
