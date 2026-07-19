@@ -10,7 +10,7 @@ const MUTE_KEY = "admitto_checkin_sound_muted";
 // disabled by policy) — never let a mute-preference read/write break the
 // scan flow. Defaults to "not muted" on failure: the feature's whole point
 // is audible feedback, so failing toward silence would be the worse default.
-// The `typeof window` check must come first: Node 24+ ships a global
+// The `typeof window` check must come first: Node 25+ ships a global
 // localStorage whose mere access emits an ExperimentalWarning (once per test
 // worker process), so probing localStorage itself is not a safe guard.
 function readMutedFromStorage(): boolean {
