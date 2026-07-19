@@ -112,7 +112,10 @@ export async function handleListEventCustomFields(c: Context, db: PrismaClient):
 
   const rows = await db.eventCustomField.findMany({
     where: { event_id: eventId },
-    orderBy: { created_at: "asc" },
+    // Same tiebreaker as loadEventCustomDataFields (packages/tickets) — rows from the same
+    // createMany share an identical created_at, so id (a per-process monotonic cuid) resolves
+    // ties back to insertion order deterministically.
+    orderBy: [{ created_at: "asc" }, { id: "asc" }],
   });
 
   return c.json({ items: rows.map(serializeCustomField) });
