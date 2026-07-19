@@ -335,6 +335,18 @@ export interface BulkResendResponse {
   failed: number;
 }
 
+/** Bulk manual check-in summary from POST .../attendees/bulk-checkin. */
+export interface BulkCheckInResponse {
+  checkedIn: number;
+  alreadyCheckedIn: number;
+  /** Pass revoked / cancelled attendee - not admittable. */
+  revoked: number;
+  /** Id no longer valid for this event by the time the check-in ran. */
+  invalid: number;
+  /** admitAttendee threw for this id (unexpected, e.g. a data-consistency guard) - safe to retry. */
+  errored: number;
+}
+
 /** Admin SPA DTOs for event item configuration (mirror of web API).
  * `content_fields` references EventCustomField rows by source_field (see below) - it does not
  * embed field definitions. */

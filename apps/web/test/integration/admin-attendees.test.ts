@@ -852,6 +852,205 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-delete", () => {
   });
 });
 
+describe("POST /api/admin/events/:eventId/attendees/bulk-checkin", () => {
+  // The suite-level seed() doesn't clean up after this block, and later describes in this same
+  // file (e.g. bulk-resend) count *every* attendee in EVENT_A - leaving our seeded rows behind
+  // would skew those counts. Delete CheckIn rows before Attendee rows (FK constraint), matching
+  // revoke-checkin's own fixture below.
+  afterAll(async () => {
+    await prisma.checkIn.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-checkin-" } } });
+    await prisma.attendee.deleteMany({ where: { id: { startsWith: "att-bulk-checkin-" } } });
+  });
+
+  async function seedCheckable(ids: string[], overrides: Partial<{ admitted_at: Date }> = {}) {
+    await prisma.attendee.createMany({
+      data: ids.map((id) => ({
+        id,
+        event_id: EVENT_A,
+        email: `${id}@example.com`,
+        name: `Bulk Checkin ${id}`,
+        token_hash: hashToken(generateToken()),
+        token_enc: encryptToString(generateToken()),
+        ...overrides,
+      })),
+    });
+  }
+
+  it("checks in every requested attendee, updates admitted_at, and writes per-attendee check_in logs", async () => {
+    const ids = ["att-bulk-checkin-1", "att-bulk-checkin-2"];
+    await seedCheckable(ids);
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-checkin`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: ids }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ checkedIn: 2, alreadyCheckedIn: 0, revoked: 0, invalid: 0, errored: 0 });
+
+    const after = await prisma.attendee.findMany({
+      where: { id: { in: ids } },
+      select: { admitted_at: true },
+    });
+    expect(after.every((a) => a.admitted_at !== null)).toBe(true);
+
+    const logs = await prisma.attendeeActionLog.findMany({
+      where: { attendee_id: { in: ids }, action_type: "check_in" },
+    });
+    expect(logs).toHaveLength(2);
+
+    const checkIns = await prisma.checkIn.findMany({
+      where: { attendee_id: { in: ids }, status: "VALID", source: "manual" },
+    });
+    expect(checkIns).toHaveLength(2);
+  });
+
+  it("spans more than one bounded-concurrency chunk and sums counts correctly across chunks", async () => {
+    // BULK_CHECKIN_CONCURRENCY is 10 - 12 ids force exactly two chunks (10 + 2), exercising the
+    // outer `for (const batch of chunk(...))` accumulation that every other test in this block
+    // (2 ids or fewer) never reaches.
+    const ids = Array.from({ length: 12 }, (_, i) => `att-bulk-checkin-chunk-${i}`);
+    await seedCheckable(ids);
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-checkin`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: ids }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ checkedIn: 12, alreadyCheckedIn: 0, revoked: 0, invalid: 0, errored: 0 });
+
+    const after = await prisma.attendee.findMany({ where: { id: { in: ids } }, select: { admitted_at: true } });
+    expect(after).toHaveLength(12);
+    expect(after.every((a) => a.admitted_at !== null)).toBe(true);
+  });
+
+  it("counts a cancelled attendee's ticket as revoked instead of admitting them", async () => {
+    const id = "att-bulk-checkin-revoked";
+    await prisma.attendee.create({
+      data: {
+        id,
+        event_id: EVENT_A,
+        email: `${id}@example.com`,
+        name: `Bulk Checkin ${id}`,
+        token_hash: hashToken(generateToken()),
+        token_enc: encryptToString(generateToken()),
+        status: "cancelled",
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-checkin`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: [id] }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ checkedIn: 0, alreadyCheckedIn: 0, revoked: 1, invalid: 0, errored: 0 });
+    const after = await prisma.attendee.findUnique({ where: { id } });
+    expect(after?.admitted_at).toBeNull();
+  });
+
+  it("rejects a malformed JSON body", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-checkin`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{not json",
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 403 for an admin outside the event's organization", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_B}/attendees/bulk-checkin`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: ["att-does-not-matter"] }),
+    });
+
+    expect(res.status).toBe(403);
+  });
+
+  it("counts an already-admitted attendee separately without failing the request", async () => {
+    const freshId = "att-bulk-checkin-mixed-fresh";
+    const admittedId = "att-bulk-checkin-mixed-admitted";
+    await seedCheckable([freshId]);
+    await seedCheckable([admittedId], { admitted_at: new Date("2026-10-01T10:00:00Z") });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-checkin`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: [freshId, admittedId] }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ checkedIn: 1, alreadyCheckedIn: 1, revoked: 0, invalid: 0, errored: 0 });
+  });
+
+  it("silently ignores an id from a different event instead of failing the whole request", async () => {
+    const ownId = "att-bulk-checkin-own";
+    await seedCheckable([ownId]);
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-checkin`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: [ownId, ATT_B1] }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ checkedIn: 1, alreadyCheckedIn: 0, revoked: 0, invalid: 0, errored: 0 });
+    const other = await prisma.attendee.findUnique({ where: { id: ATT_B1 } });
+    expect(other?.admitted_at).toBeNull();
+  });
+
+  it("rejects an empty selection", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-checkin`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: [] }),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects operator", async () => {
+    const ids = ["att-bulk-checkin-op"];
+    await seedCheckable(ids);
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-checkin`, {
+      method: "POST",
+      headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: ids }),
+    });
+
+    expect(res.status).toBe(403);
+    const after = await prisma.attendee.findUnique({ where: { id: ids[0] } });
+    expect(after?.admitted_at).toBeNull();
+  });
+
+  it("returns 403 when the event is archived", async () => {
+    const ids = ["att-bulk-checkin-archived"];
+    await seedCheckable(ids);
+    await prisma.event.update({ where: { id: EVENT_A }, data: { archived_at: new Date() } });
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-checkin`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ attendeeIds: ids }),
+      });
+      expect(res.status).toBe(403);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe("event_archived");
+      const after = await prisma.attendee.findUnique({ where: { id: ids[0] } });
+      expect(after?.admitted_at).toBeNull();
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_A }, data: { archived_at: null } });
+    }
+  });
+});
+
 describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
   async function currentUpdatedAt(attendeeId: string): Promise<string> {
     const row = await prisma.attendee.findUniqueOrThrow({

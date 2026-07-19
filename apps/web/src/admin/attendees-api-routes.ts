@@ -32,6 +32,7 @@ import {
   findFilteredAttendeesForExport,
   findFilteredAttendeesForList,
   isAdmittable,
+  admitAttendee,
   revokeCheckIn,
   revokeCheckInMutation,
   revokeItemState,
@@ -41,6 +42,7 @@ import {
   assertTicketTypeInCatalog,
   UnknownTicketTypeError,
   acquireEventTicketTypesLock,
+  type AdmitResult,
   type AttendeeSortBy,
   type AttendeeSortDir,
 } from "@admitto/tickets";
@@ -1435,6 +1437,101 @@ export async function handleBulkDeleteEventAttendees(c: Context, db: PrismaClien
   return c.json({ deletedCount });
 }
 
+const bulkCheckInAttendeesBodySchema = z
+  .object({
+    attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+  })
+  .strict();
+
+/**
+ * How many attendees' own per-attendee transactions run concurrently within one chunk of a bulk
+ * check-in. Each attendee still gets its own `admitAttendee` transaction (unchanged); this only
+ * bounds how many of those transactions are in flight at once, matching
+ * `packages/tickets/src/bulk-revoke.ts`'s BULK_REVOKE_CONCURRENCY for the same shape of
+ * per-attendee transaction fan-out.
+ */
+const BULK_CHECKIN_CONCURRENCY = 10;
+
+/** Split an array into fixed-size chunks (last chunk may be smaller) — same helper as
+ * `packages/tickets/src/bulk-revoke.ts`'s local `chunk`, duplicated here rather than shared
+ * since it's a trivial, dependency-free six-liner and this file is in a different package. */
+function chunk<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
+
+/** Maps each admitAttendee outcome to its bulk check-in response counter. `satisfies` keeps the
+ * map exhaustive: adding a new AdmitResult status fails the build here instead of silently
+ * falling through. */
+const BULK_CHECKIN_STATUS_COUNTER = {
+  VALID: "checkedIn",
+  ALREADY_CHECKED_IN: "alreadyCheckedIn",
+  REVOKED: "revoked",
+  INVALID: "invalid",
+} as const satisfies Record<
+  AdmitResult["status"],
+  "checkedIn" | "alreadyCheckedIn" | "revoked" | "invalid"
+>;
+
+/** POST /api/admin/events/:eventId/attendees/bulk-checkin — manual check-in for a selection of
+ * attendees at once, from the Attendees list's row-selection bulk bar. Reuses `admitAttendee`
+ * (the same single-use CAS path scan check-in already goes through, ADR 0010 §4) once per
+ * selected id rather than a bespoke bulk update, so every existing guarantee — CAS, per-attendee
+ * AttendeeActionLog write, badge issuance — applies unchanged; ids that don't belong to this
+ * event are silently ignored, same convention as bulk-delete. Attendees are processed in
+ * bounded-concurrency chunks (BULK_CHECKIN_CONCURRENCY) rather than fully serially, for
+ * throughput on large selections, while each attendee keeps its own independent CAS transaction —
+ * same shape as `revokeAllCheckInsForEvent`. Uses Promise.allSettled (not Promise.all) per chunk:
+ * admitAttendee has no analogous "expected race" exception to catch-and-skip like bulk-revoke's
+ * UndoNotAllowedError (it already reports a losing race as ALREADY_CHECKED_IN/REVOKED via its
+ * return value, not a throw), so any throw here represents a genuine, unexpected per-attendee
+ * failure rather than a routine race — but discarding an entire chunk's already-committed
+ * siblings over one such failure (Promise.all's behavior) would silently under-report a mostly-
+ * successful bulk operation. Settling lets every attendee's own transaction outcome be counted
+ * regardless of its neighbors. */
+export async function handleBulkCheckInEventAttendees(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid json" }, 400);
+  }
+  const parsed = bulkCheckInAttendeesBodySchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "validation_failed" }, 400);
+
+  const owned = await db.attendee.findMany({
+    where: { id: { in: parsed.data.attendeeIds }, event_id: eventId },
+    select: { id: true },
+  });
+
+  const audit = adminAuditFromContext(c);
+  const counts = { checkedIn: 0, alreadyCheckedIn: 0, revoked: 0, invalid: 0, errored: 0 };
+  for (const batch of chunk(owned, BULK_CHECKIN_CONCURRENCY)) {
+    const settled = await Promise.allSettled(
+      batch.map(({ id }) => admitAttendee({ attendeeId: id, eventId, method: "manual", audit }, db)),
+    );
+    for (const outcome of settled) {
+      if (outcome.status === "rejected") {
+        console.error("bulk check-in: admitAttendee failed:", outcome.reason);
+        counts.errored += 1;
+        continue;
+      }
+      counts[BULK_CHECKIN_STATUS_COUNTER[outcome.value.status]] += 1;
+    }
+  }
+
+  return c.json(counts);
+}
 
 /** POST /api/admin/events/:eventId/attendees — manual attendee create (admin/superadmin). */
 export async function handleCreateEventAttendee(c: Context, db: PrismaClient): Promise<Response> {

@@ -70,6 +70,7 @@ vi.mock("../../src/api/client.js", () => ({
   bulkResendTickets: vi.fn(),
   sendEventBulk: vi.fn(),
   bulkDeleteAttendees: vi.fn(),
+  bulkCheckInAttendees: vi.fn(),
   updateAttendee: vi.fn(),
 }));
 
@@ -181,6 +182,10 @@ describe("AttendeesPage archived lockdown", () => {
 
     const bulkSendButton = within(bar).getByRole("button", { name: "Send tickets" });
     expect((bulkSendButton as HTMLButtonElement).disabled).toBe(true);
+    // Manual check-in for an event that's already over doesn't make sense (matches
+    // revoke-checkin/bulk-resend, unlike bulk-delete below).
+    const bulkCheckInButton = within(bar).getByRole("button", { name: "Check in" });
+    expect((bulkCheckInButton as HTMLButtonElement).disabled).toBe(true);
     // GDPR erasure requests can legally arrive after an event ends; the bulk-delete endpoint
     // doesn't block on archived_at either (matches the single-attendee Delete attendee action).
     const moreActionsButton = within(bar).getByRole("button", { name: "More actions" });
