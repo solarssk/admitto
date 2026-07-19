@@ -65,6 +65,40 @@ describe("loadEventCustomDataFields", () => {
     ]);
   });
 
+  it("resolves same-created_at ties by ascending id, not query-plan-dependent scan order", async () => {
+    const tieEventId = "test-event-load-custom-fields-tie";
+    await prisma.event.upsert({
+      where: { id: tieEventId },
+      create: {
+        id: tieEventId,
+        title: "Tie Event",
+        slug: "load-custom-fields-tie-event",
+        date: new Date("2026-09-01T09:00:00Z"),
+        organization_id: "org_load_custom_fields",
+      },
+      update: {},
+    });
+    // A single createMany statement evaluates now() once, so every row below shares the same
+    // created_at - the scenario the (created_at, id) tiebreaker exists for.
+    const created = await prisma.eventCustomField.createManyAndReturn({
+      data: [
+        { event_id: tieEventId, source_field: "field_c", label: "Field C" },
+        { event_id: tieEventId, source_field: "field_a", label: "Field A" },
+        { event_id: tieEventId, source_field: "field_b", label: "Field B" },
+      ],
+    });
+    const timestamps = new Set(created.map((row) => row.created_at.getTime()));
+    expect(timestamps.size).toBe(1); // sanity check: the tie scenario is actually exercised
+
+    const expectedOrder = [...created].sort((a, b) => (a.id < b.id ? -1 : 1)).map((row) => row.source_field);
+
+    const fields = await loadEventCustomDataFields(prisma, tieEventId);
+    expect(fields.map((f) => f.source_field)).toEqual(expectedOrder);
+
+    await prisma.eventCustomField.deleteMany({ where: { event_id: tieEventId } });
+    await prisma.event.delete({ where: { id: tieEventId } });
+  });
+
   it("returns an empty array for an event with no custom fields", async () => {
     const otherEventId = "test-event-load-custom-fields-empty";
     await prisma.event.upsert({
