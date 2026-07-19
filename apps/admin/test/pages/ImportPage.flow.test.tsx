@@ -107,19 +107,23 @@ describe("ImportPage upload → preview → commit flow", () => {
       invalidRows: [],
     });
     renderPage();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Preview" })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Validate file" })).toBeTruthy());
 
     selectFile();
     fireEvent.click(screen.getByLabelText(/Overwrite existing attendees/));
 
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
     await waitFor(() => {
       expect(previewImport).toHaveBeenCalledWith("evt-1", expect.any(File), true);
     });
 
     await waitFor(() => expect(screen.getByText("To create")).toBeTruthy());
 
-    fireEvent.click(screen.getByRole("button", { name: /^Import 1 attendee$/ }));
+    // Commit stays disabled while Dry run is on - turn it off first (mockup Options card).
+    const commitBtn = screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }) as HTMLButtonElement;
+    expect(commitBtn.disabled).toBe(true);
+    fireEvent.click(screen.getByLabelText(/Dry run/));
+    fireEvent.click(screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }));
     await waitFor(() => {
       expect(commitImport).toHaveBeenCalledWith("evt-1", expect.any(File), true, { force: false });
     });
@@ -142,13 +146,14 @@ describe("ImportPage upload → preview → commit flow", () => {
       invalidRows: [{ rowIndex: 1, reason: 'Unknown ticket type: "vip"' }],
     });
     renderPage();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Preview" })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Validate file" })).toBeTruthy());
 
     selectFile();
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
     await waitFor(() => expect(screen.getByText("To create")).toBeTruthy());
 
-    fireEvent.click(screen.getByRole("button", { name: /^Import 1 attendee$/ }));
+    fireEvent.click(screen.getByLabelText(/Dry run/));
+    fireEvent.click(screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }));
     await waitFor(() => expect(commitImport).toHaveBeenCalled());
 
     expect(await screen.findByText("Invalid rows")).toBeTruthy();
@@ -175,19 +180,20 @@ describe("ImportPage upload → preview → commit flow", () => {
         invalidRows: [],
       });
     renderPage();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Preview" })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Validate file" })).toBeTruthy());
 
     selectFile();
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
     await waitFor(() => expect(screen.getByText("To create")).toBeTruthy());
 
-    fireEvent.click(screen.getByRole("button", { name: /^Import 2 attendees$/ }));
+    fireEvent.click(screen.getByLabelText(/Dry run/));
+    fireEvent.click(screen.getByRole("button", { name: /^Commit import \(2 attendees\)$/ }));
     await waitFor(() => {
       expect(screen.getByText(/Event is at capacity/)).toBeTruthy();
     });
 
     fireEvent.click(screen.getByLabelText(/Override capacity limit/));
-    fireEvent.click(screen.getByRole("button", { name: /^Import 2 attendees$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Commit import \(2 attendees\)$/ }));
 
     await waitFor(() => {
       expect(commitImport).toHaveBeenLastCalledWith("evt-1", expect.any(File), false, { force: true });
@@ -198,21 +204,68 @@ describe("ImportPage upload → preview → commit flow", () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());
     renderPage();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Preview" })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Validate file" })).toBeTruthy());
 
     // Cancelling the native file picker fires a change event with an empty FileList.
     fireEvent.change(screen.getByLabelText("File (.csv or .xlsx)"), { target: { files: [] } });
-    expect((screen.getByRole("button", { name: "Preview" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Validate file" }) as HTMLButtonElement).disabled).toBe(true);
 
     selectFile();
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
     await waitFor(() => expect(screen.getByText("To create")).toBeTruthy());
 
     // Choosing a different file after previewing sends the flow back to "upload".
     selectFile();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Preview" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Validate file" })).toBeTruthy();
       expect(screen.queryByText("To create")).toBeNull();
     });
+  });
+});
+
+describe("ImportPage dropzone (#358 Phase A)", () => {
+  it("accepts a dropped .csv exactly like the file picker and shows the file chip", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Validate file" })).toBeTruthy());
+
+    const dropzone = screen.getByRole("button", { name: "Upload a CSV or XLSX file" });
+    const file = new File(["a,b\n1,2"], "dropped.csv", { type: "text/csv" });
+    fireEvent.drop(dropzone, { dataTransfer: { files: [file] } });
+
+    expect(screen.getByText("dropped.csv")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Remove file" })).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Validate file" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("rejects a dropped file with an unsupported extension via a toast", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Validate file" })).toBeTruthy());
+
+    const dropzone = screen.getByRole("button", { name: "Upload a CSV or XLSX file" });
+    const file = new File(["%PDF"], "attendees.pdf", { type: "application/pdf" });
+    fireEvent.drop(dropzone, { dataTransfer: { files: [file] } });
+
+    expect(screen.getByTestId("at-toast").textContent).toContain("Only .csv or .xlsx files");
+    expect(screen.queryByRole("button", { name: "Remove file" })).toBeNull();
+    expect((screen.getByRole("button", { name: "Validate file" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("removing the picked file via the chip brings the dropzone back and clears any preview", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(samplePreview());
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Validate file" })).toBeTruthy());
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    await waitFor(() => expect(screen.getByText("To create")).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove file" }));
+
+    expect(screen.getByRole("button", { name: "Upload a CSV or XLSX file" })).toBeTruthy();
+    expect(screen.queryByText("To create")).toBeNull();
+    expect((screen.getByRole("button", { name: "Validate file" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
