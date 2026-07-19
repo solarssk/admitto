@@ -276,6 +276,7 @@ export interface AttendeesTableProps {
   bulkCheckInBusy: boolean;
   onBulkExportSelected: () => void;
   bulkExportBusy: boolean;
+  onBulkChangeTicketType: () => void;
   onBulkDelete: () => void;
   eventTimezone: string;
   event: ArchivedGuardEvent;
@@ -357,20 +358,28 @@ function AttendeeCard({
   );
 }
 
-/** Bulk "More actions" — Export selected plus Delete, styled as a menu (not bare buttons) so
- * the destructive bulk action takes an extra click to even reach, matching the design mockup's
- * More actions panel and the same danger-item treatment already used on the attendee detail
- * page's own More actions menu. Room to grow: the mockup also shows ticket-type changes,
- * reminders, and wallet-pass actions in this same menu — not built yet, out of scope here. */
+/** Bulk "More actions" — Export selected, Change ticket type, and Delete, styled as a menu
+ * (not bare buttons) so the destructive bulk action takes an extra click to even reach,
+ * matching the design mockup's More actions panel and the same danger-item treatment already
+ * used on the attendee detail page's own More actions menu. Room to grow: the mockup also
+ * shows reminders and wallet-pass actions in this same menu — not built yet, out of scope. */
 function BulkMoreActionsMenu({
   selectedCount,
   exportBusy,
   onExportSelected,
+  ticketTypeCount,
+  changeTicketTypeDisabled,
+  changeTicketTypeDisabledReason,
+  onChangeTicketType,
   onDelete,
 }: Readonly<{
   selectedCount: number;
   exportBusy: boolean;
   onExportSelected: () => void;
+  ticketTypeCount: number;
+  changeTicketTypeDisabled: boolean;
+  changeTicketTypeDisabledReason?: string;
+  onChangeTicketType: () => void;
   onDelete: () => void;
 }>) {
   const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
@@ -410,6 +419,28 @@ function BulkMoreActionsMenu({
               </span>
             </span>
           </button>
+          {/* Disabled (not hidden) on archived events and when the catalog is empty — the
+           * endpoint is guardArchivedEvent'd, and with no configured types there's nothing
+           * to pick; the title explains why instead of the item silently vanishing. */}
+          <button
+            type="button"
+            role="menuitem"
+            className="more-actions-menu__item"
+            disabled={changeTicketTypeDisabled}
+            title={changeTicketTypeDisabled ? changeTicketTypeDisabledReason : undefined}
+            onClick={() => {
+              setOpen(false);
+              onChangeTicketType();
+            }}
+          >
+            <i className="ti ti-ticket" aria-hidden="true" />
+            <span className="more-actions-menu__item-text">
+              Change ticket type…
+              <span className="more-actions-menu__item-hint">
+                Choose from {ticketTypeCount} configured type{ticketTypeCount === 1 ? "" : "s"}
+              </span>
+            </span>
+          </button>
           <hr className="more-actions-menu__divider" />
           {/* Not ArchivedGuard'd — GDPR erasure requests can legally arrive after an event
            * ends; the DELETE endpoint doesn't block on archived_at either. */}
@@ -444,6 +475,8 @@ function BulkBar({
   onBulkCheckIn,
   bulkExportBusy,
   onBulkExportSelected,
+  ticketTypes,
+  onBulkChangeTicketType,
   onBulkDelete,
 }: Readonly<{
   selectedIds: ReadonlySet<string>;
@@ -456,8 +489,11 @@ function BulkBar({
   onBulkCheckIn: () => void;
   bulkExportBusy: boolean;
   onBulkExportSelected: () => void;
+  ticketTypes: TicketTypeDto[];
+  onBulkChangeTicketType: () => void;
   onBulkDelete: () => void;
 }>) {
+  const archived = event.archived_at != null;
   return (
     <div className="attendees-bulkbar">
       <span className="attendees-bulkbar__count">
@@ -510,6 +546,14 @@ function BulkBar({
         selectedCount={selectedIds.size}
         exportBusy={bulkExportBusy}
         onExportSelected={onBulkExportSelected}
+        ticketTypeCount={ticketTypes.length}
+        changeTicketTypeDisabled={archived || ticketTypes.length === 0}
+        changeTicketTypeDisabledReason={
+          archived
+            ? "This event is archived."
+            : "No ticket types configured for this event. Add some in Event Settings → Ticket types."
+        }
+        onChangeTicketType={onBulkChangeTicketType}
         onDelete={onBulkDelete}
       />
     </div>
@@ -907,6 +951,7 @@ export function AttendeesTable({
   bulkCheckInBusy,
   onBulkExportSelected,
   bulkExportBusy,
+  onBulkChangeTicketType,
   onBulkDelete,
   eventTimezone,
   event,
@@ -930,6 +975,8 @@ export function AttendeesTable({
           onBulkCheckIn={onBulkCheckIn}
           bulkExportBusy={bulkExportBusy}
           onBulkExportSelected={onBulkExportSelected}
+          ticketTypes={ticketTypes}
+          onBulkChangeTicketType={onBulkChangeTicketType}
           onBulkDelete={onBulkDelete}
         />
       ) : (

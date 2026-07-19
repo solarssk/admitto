@@ -758,6 +758,25 @@ export async function bulkDeleteAttendees(
 
 /** Manually check in a selection of attendees at once (no QR scan), from the Attendees list's
  * row-selection bulk bar. Same single-use CAS admission path as scan check-in. */
+export interface BulkTicketTypeResponse {
+  updatedCount: number;
+  alreadySetCount: number;
+}
+
+/** Assign one catalog ticket type to every selected attendee. Ids outside the event are
+ * silently ignored server-side; rows already carrying the type are counted separately. */
+export async function bulkChangeTicketType(
+  eventId: string,
+  attendeeIds: string[],
+  ticketType: string,
+): Promise<BulkTicketTypeResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-ticket-type`,
+    jsonPostInit({ attendeeIds, ticket_type: ticketType }),
+  );
+  return parseJson<BulkTicketTypeResponse>(res);
+}
+
 export async function bulkCheckInAttendees(
   eventId: string,
   attendeeIds: string[],

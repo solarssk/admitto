@@ -2911,3 +2911,147 @@ describe("Attendees v2 — RSVP and manual create", () => {
     }
   });
 });
+
+describe("POST /api/admin/events/:eventId/attendees/bulk-ticket-type", () => {
+  afterAll(async () => {
+    await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-tt-" } } });
+    await prisma.attendee.deleteMany({ where: { id: { startsWith: "att-bulk-tt-" } } });
+  });
+
+  async function seedTyped(ids: string[], ticket_type: string | null = null) {
+    await prisma.attendee.createMany({
+      data: ids.map((id) => ({
+        id,
+        event_id: EVENT_A,
+        email: `${id}@example.com`,
+        name: `Bulk Type ${id}`,
+        ticket_type,
+        token_hash: hashToken(generateToken()),
+        token_enc: encryptToString(generateToken()),
+      })),
+    });
+  }
+
+  function postBulkType(eventId: string, body: unknown) {
+    return app.request(`/api/admin/events/${eventId}/attendees/bulk-ticket-type`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("assigns the type to every selected attendee and writes per-attendee attendee_edited logs with from→to", async () => {
+    const ids = ["att-bulk-tt-1", "att-bulk-tt-2"];
+    await seedTyped([ids[0]!], "standard");
+    await seedTyped([ids[1]!], null);
+
+    const res = await postBulkType(EVENT_A, { attendeeIds: ids, ticket_type: "vip" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updatedCount: 2, alreadySetCount: 0 });
+
+    const after = await prisma.attendee.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, ticket_type: true },
+    });
+    expect(after.every((a) => a.ticket_type === "vip")).toBe(true);
+
+    const logs = await prisma.attendeeActionLog.findMany({
+      where: { attendee_id: { in: ids }, action_type: "attendee_edited" },
+    });
+    expect(logs).toHaveLength(2);
+    const byId = new Map(logs.map((l) => [l.attendee_id, l.metadata as Record<string, unknown>]));
+    expect(byId.get(ids[0]!)).toEqual({
+      fields: ["ticket_type"],
+      field_changes: { ticket_type: { from: "standard", to: "vip" } },
+    });
+    expect(byId.get(ids[1]!)).toEqual({
+      fields: ["ticket_type"],
+      field_changes: { ticket_type: { from: null, to: "vip" } },
+    });
+  });
+
+  it("leaves rows that already have the type untouched — no update, no log, no updated_at bump", async () => {
+    const already = "att-bulk-tt-already";
+    const fresh = "att-bulk-tt-fresh";
+    await seedTyped([already], "vip");
+    await seedTyped([fresh], "standard");
+    const before = await prisma.attendee.findUniqueOrThrow({
+      where: { id: already },
+      select: { updated_at: true },
+    });
+
+    const res = await postBulkType(EVENT_A, { attendeeIds: [already, fresh], ticket_type: "vip" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 1 });
+
+    const after = await prisma.attendee.findUniqueOrThrow({
+      where: { id: already },
+      select: { updated_at: true },
+    });
+    expect(after.updated_at.toISOString()).toBe(before.updated_at.toISOString());
+    const logs = await prisma.attendeeActionLog.findMany({
+      where: { attendee_id: already, action_type: "attendee_edited" },
+    });
+    expect(logs).toHaveLength(0);
+  });
+
+  it("rejects a type that is not in the event's catalog", async () => {
+    const id = "att-bulk-tt-unknown-type";
+    await seedTyped([id], "standard");
+
+    const res = await postBulkType(EVENT_A, { attendeeIds: [id], ticket_type: "platinum" });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "unknown_ticket_type" });
+    const after = await prisma.attendee.findUniqueOrThrow({ where: { id } });
+    expect(after.ticket_type).toBe("standard");
+  });
+
+  it("silently ignores an id from a different event instead of failing the whole request", async () => {
+    const ownId = "att-bulk-tt-own";
+    await seedTyped([ownId]);
+
+    const res = await postBulkType(EVENT_A, { attendeeIds: [ownId, ATT_B1], ticket_type: "vip" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 0 });
+    const other = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_B1 } });
+    expect(other.ticket_type).not.toBe("vip");
+  });
+
+  it("returns 403 when the event is archived", async () => {
+    const id = "att-bulk-tt-archived";
+    await seedTyped([id], "standard");
+    await prisma.event.update({ where: { id: EVENT_A }, data: { archived_at: new Date() } });
+    try {
+      const res = await postBulkType(EVENT_A, { attendeeIds: [id], ticket_type: "vip" });
+      expect(res.status).toBe(403);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe("event_archived");
+      const after = await prisma.attendee.findUniqueOrThrow({ where: { id } });
+      expect(after.ticket_type).toBe("standard");
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_A }, data: { archived_at: null } });
+    }
+  });
+
+  it("returns 403 for an admin outside the event's organization", async () => {
+    const res = await postBulkType(EVENT_B, { attendeeIds: ["att-does-not-matter"], ticket_type: "vip" });
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects an empty selection, a missing type, and a malformed body", async () => {
+    expect((await postBulkType(EVENT_A, { attendeeIds: [], ticket_type: "vip" })).status).toBe(400);
+    expect((await postBulkType(EVENT_A, { attendeeIds: ["x"] })).status).toBe(400);
+    expect((await postBulkType(EVENT_A, { attendeeIds: ["x"], ticket_type: "" })).status).toBe(400);
+
+    const malformed = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-ticket-type`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{not json",
+    });
+    expect(malformed.status).toBe(400);
+  });
+});

@@ -3,6 +3,7 @@ import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom
 import { Button, EmptyState, PageHeader, useToast, type ToastVariant } from "@admitto/ui";
 import {
   ApiError,
+  bulkChangeTicketType,
   bulkCheckInAttendees,
   bulkDeleteAttendees,
   bulkResendTickets,
@@ -12,7 +13,7 @@ import {
   sendEventBulk,
   updateAttendee,
 } from "../api/client.js";
-import { operatorApiErrorMessage } from "../api/operator-api-error.js";
+import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type {
   AttendeeDetailDto,
   AttendeeRowDto,
@@ -198,6 +199,84 @@ function SendTicketsDialog({
   );
 }
 
+interface ChangeTicketTypeDialogProps {
+  open: boolean;
+  busy: boolean;
+  selectedCount: number;
+  ticketTypes: TicketTypeDto[];
+  value: string;
+  error: string | null;
+  onValueChange: (key: string) => void;
+  onConfirm: () => void;
+  onClose: () => void;
+}
+
+/** Pick one of the event's configured ticket types for every selected attendee (#521). The
+ * catalog is per-event (batch 04), so this is a dynamic radio list rather than the mockup's
+ * hardcoded VIP/Standard buttons. Errors render inline — the dialog has focus, so a toast
+ * behind it would go unseen (AGENTS.md toast-vs-inline table). */
+function ChangeTicketTypeDialog({
+  open,
+  busy,
+  selectedCount,
+  ticketTypes,
+  value,
+  error,
+  onValueChange,
+  onConfirm,
+  onClose,
+}: ChangeTicketTypeDialogProps) {
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  useModalFocusTrap(panelRef, open, onClose);
+
+  if (!open) return null;
+
+  return (
+    <div className="add-attendee-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div className="add-attendee-modal__backdrop" role="presentation" onClick={onClose} />
+      <div className="add-attendee-modal__panel" ref={panelRef}>
+        <h2 className="add-attendee-modal__title" id={titleId}>
+          Change ticket type
+        </h2>
+        {error && (
+          <p className="add-attendee-modal__error" role="alert">
+            {error}
+          </p>
+        )}
+        <p className="mail-field-hint">
+          Assign one ticket type to {selectedCount} selected attendee{selectedCount === 1 ? "" : "s"}.
+        </p>
+        <div className="mail-field-row">
+          {ticketTypes.map((type) => (
+            <label key={type.id} className="send-tickets-radio">
+              <input
+                type="radio"
+                name="bulk-ticket-type"
+                value={type.key}
+                checked={value === type.key}
+                disabled={busy}
+                onChange={() => onValueChange(type.key)}
+              />
+              <span>
+                <strong>{type.label}</strong>
+              </span>
+            </label>
+          ))}
+        </div>
+        <div className="add-attendee-modal__actions">
+          <Button type="button" variant="primary" disabled={busy || !value} onClick={onConfirm}>
+            {busy ? "Applying…" : "Apply to selected"}
+          </Button>
+          <Button type="button" variant="secondary" disabled={busy} onClick={onClose}>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type ExportFormat = "xlsx" | "csv" | "pdf";
 
 interface ExportMenuProps {
@@ -302,6 +381,10 @@ export function AttendeesPage() {
   const [bulkSendConfirmOpen, setBulkSendConfirmOpen] = useState(false);
   const [bulkCheckInBusy, setBulkCheckInBusy] = useState(false);
   const [bulkExportBusy, setBulkExportBusy] = useState(false);
+  const [changeTypeOpen, setChangeTypeOpen] = useState(false);
+  const [changeTypeBusy, setChangeTypeBusy] = useState(false);
+  const [changeTypeError, setChangeTypeError] = useState<string | null>(null);
+  const [changeTypeValue, setChangeTypeValue] = useState("");
   const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
   const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null);
@@ -664,6 +747,60 @@ export function AttendeesPage() {
     }
   };
 
+  /** Bulk ticket-type assignment for an explicit subset of selected attendees (#521). Success
+   * toasts with an updated/already-had-it breakdown, clears the selection, and reloads the
+   * list; failure renders inline in the dialog (which stays open), matching the project's
+   * dialog convention. The unknown_ticket_type branch covers the type being deleted between
+   * the picker opening and submit — the server re-validates under the catalog lock. */
+  const handleBulkChangeTicketTypeConfirm = async () => {
+    if (!eventId || selectedIds.size === 0 || !changeTypeValue) return;
+    const initiatingEventId = eventId;
+    const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
+    const typeLabel =
+      ticketTypes.find((t) => t.key === changeTypeValue)?.label ?? changeTypeValue;
+    setChangeTypeBusy(true);
+    setChangeTypeError(null);
+    try {
+      const { updatedCount, alreadySetCount } = await bulkChangeTicketType(
+        initiatingEventId,
+        [...selectedIds],
+        changeTypeValue,
+      );
+      if (!isStillOnEvent()) return;
+      if (updatedCount === 0) {
+        addToast(`All selected attendees already have ${typeLabel}.`, "info");
+      } else {
+        const alreadyNote = alreadySetCount > 0 ? ` (${alreadySetCount} already had it)` : "";
+        addToast(
+          `${updatedCount} attendee${updatedCount === 1 ? "" : "s"} set to ${typeLabel}${alreadyNote}`,
+          "success",
+        );
+      }
+      setChangeTypeOpen(false);
+      clearSelection();
+      setReloadToken((n) => n + 1);
+    } catch (err) {
+      if (!isStillOnEvent()) return;
+      if (err instanceof ApiError) {
+        reportApiError(err.status);
+        if (err.status === 401) {
+          const next = encodeURIComponent(window.location.pathname);
+          window.location.assign(`/login?next=${next}`);
+          return;
+        }
+        setChangeTypeError(
+          hasApiErrorCode(err, "unknown_ticket_type")
+            ? "That ticket type no longer exists — it may have just been deleted. Close and try again."
+            : operatorApiErrorMessage(err, "Change failed."),
+        );
+      } else {
+        setChangeTypeError("Failed to change ticket type.");
+      }
+    } finally {
+      if (isStillOnEvent()) setChangeTypeBusy(false);
+    }
+  };
+
   /** Bulk GDPR erasure for an explicit subset of selected attendees — same effect as running
    * the attendee detail page's "Delete attendee" once per selected row. Guards every
    * completion effect against the operator navigating to a different event's Attendees list
@@ -837,6 +974,11 @@ export function AttendeesPage() {
         bulkCheckInBusy={bulkCheckInBusy}
         onBulkExportSelected={() => void handleBulkExportSelected()}
         bulkExportBusy={bulkExportBusy}
+        onBulkChangeTicketType={() => {
+          setChangeTypeError(null);
+          setChangeTypeValue(ticketTypes[0]?.key ?? "");
+          setChangeTypeOpen(true);
+        }}
         onBulkDelete={() => {
           setBulkDeleteError(null);
           setBulkDeleteConfirmOpen(true);
@@ -851,6 +993,20 @@ export function AttendeesPage() {
         open={addOpen}
         onClose={() => setAddOpen(false)}
         onCreated={handleCreated}
+      />
+
+      <ChangeTicketTypeDialog
+        open={changeTypeOpen}
+        busy={changeTypeBusy}
+        selectedCount={selectedIds.size}
+        ticketTypes={ticketTypes}
+        value={changeTypeValue}
+        error={changeTypeError}
+        onValueChange={setChangeTypeValue}
+        onConfirm={() => void handleBulkChangeTicketTypeConfirm()}
+        onClose={() => {
+          if (!changeTypeBusy) setChangeTypeOpen(false);
+        }}
       />
 
       <SendTicketsDialog
