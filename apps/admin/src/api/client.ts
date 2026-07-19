@@ -18,6 +18,7 @@ import type {
   ImportPreviewResponse,
   ImportCommitResponse,
   BulkResendResponse,
+  BulkCheckInResponse,
   EventItemDto,
   EventItemsListResponse,
   CreateEventItemBody,
@@ -753,6 +754,19 @@ export async function bulkDeleteAttendees(
     jsonPostInit({ attendeeIds }),
   );
   return parseJson<{ deletedCount: number }>(res);
+}
+
+/** Manually check in a selection of attendees at once (no QR scan), from the Attendees list's
+ * row-selection bulk bar. Same single-use CAS admission path as scan check-in. */
+export async function bulkCheckInAttendees(
+  eventId: string,
+  attendeeIds: string[],
+): Promise<BulkCheckInResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-checkin`,
+    jsonPostInit({ attendeeIds }),
+  );
+  return parseJson<BulkCheckInResponse>(res);
 }
 
 export async function resendTicket(

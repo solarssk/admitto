@@ -36,8 +36,35 @@
 }
 
 .attendees-toolbar__search {
+  position: relative;
   flex: 1 1 200px;
   min-width: 180px;
+}
+
+.attendees-toolbar__search .at-input {
+  padding-right: var(--space-6);
+}
+
+.attendees-toolbar__search-clear {
+  position: absolute;
+  top: 50%;
+  right: var(--space-2);
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.attendees-toolbar__search-clear:hover {
+  background: var(--surface-hover);
+  color: var(--text);
 }
 
 .attendees-toolbar__filter {
