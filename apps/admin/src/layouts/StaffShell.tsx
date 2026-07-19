@@ -13,8 +13,12 @@ export interface StaffShellProps {
 
 const SIDEBAR_PIN_KEY = "admitto_sidebar_pinned";
 
-/** Read sidebar pin preference from localStorage (defaults to pinned). */
+/** Read sidebar pin preference from localStorage (defaults to pinned).
+ * The `typeof window` check must come first: Node 24+ ships a global
+ * localStorage whose mere access emits an ExperimentalWarning in test worker
+ * processes, so probing localStorage itself is not a safe guard. */
 function readPinned(): boolean {
+  if (typeof window === "undefined") return true;
   try {
     return localStorage.getItem(SIDEBAR_PIN_KEY) !== "false";
   } catch {

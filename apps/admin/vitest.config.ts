@@ -17,5 +17,12 @@ export default defineConfig({
     coverage: vitestCoverage,
     environment: "node",
     include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
+    // Node 24+ ships an experimental global localStorage that (a) emits an
+    // ExperimentalWarning on any access and (b) shadows jsdom's working
+    // localStorage, because vitest skips window keys that already exist on
+    // globalThis (vitest-dev/vitest#8757). Disabling webstorage in test
+    // workers restores the intended semantics: jsdom files get jsdom's real
+    // localStorage, node files get none.
+    execArgv: ["--no-webstorage"],
   },
 });
