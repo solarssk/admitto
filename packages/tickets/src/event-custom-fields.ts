@@ -20,7 +20,10 @@ export async function loadEventCustomDataFields(
 ): Promise<EventItemContent[]> {
   const rows = await db.eventCustomField.findMany({
     where: { event_id: eventId },
-    orderBy: { created_at: "asc" },
+    // Rows from the same createMany share an identical created_at (single-statement `now()`),
+    // so created_at alone leaves ties to whatever scan order Postgres picks - id (a per-process
+    // monotonic cuid) makes ties resolve to insertion order deterministically.
+    orderBy: [{ created_at: "asc" }, { id: "asc" }],
   });
   return rows.map((row): EventItemContent => {
     const field: EventItemContent = {

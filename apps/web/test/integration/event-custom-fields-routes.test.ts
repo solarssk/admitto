@@ -126,6 +126,33 @@ describe("GET /api/admin/events/:eventId/custom-fields", () => {
     const body = (await res.json()) as { items: unknown[] };
     expect(body.items).toEqual([]);
   });
+
+  it("resolves same-created_at ties by ascending id, not query-plan-dependent scan order", async () => {
+    // A single createMany statement evaluates now() once, so every row below shares the same
+    // created_at - the scenario the (created_at, id) tiebreaker in handleListEventCustomFields
+    // exists for.
+    await prisma.eventCustomField.createMany({
+      data: [
+        { event_id: EVENT_CF_OTHER, source_field: "field_c", label: "Field C" },
+        { event_id: EVENT_CF_OTHER, source_field: "field_a", label: "Field A" },
+        { event_id: EVENT_CF_OTHER, source_field: "field_b", label: "Field B" },
+      ],
+    });
+    const created = await prisma.eventCustomField.findMany({ where: { event_id: EVENT_CF_OTHER } });
+    const timestamps = new Set(created.map((row) => row.created_at.getTime()));
+    expect(timestamps.size).toBe(1); // sanity check: the tie scenario is actually exercised
+
+    const expectedOrder = [...created].sort((a, b) => (a.id < b.id ? -1 : 1)).map((row) => row.source_field);
+
+    const res = await app.request(`/api/admin/events/${EVENT_CF_OTHER}/custom-fields`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: { source_field: string }[] };
+    expect(body.items.map((item) => item.source_field)).toEqual(expectedOrder);
+
+    await prisma.eventCustomField.deleteMany({ where: { event_id: EVENT_CF_OTHER } });
+  });
 });
 
 describe("POST /api/admin/events/:eventId/custom-fields", () => {
