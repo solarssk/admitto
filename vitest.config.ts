@@ -81,6 +81,7 @@ export default defineConfig({
       "packages/mail-templates/vitest.config.ts",
       "packages/crypto/vitest.config.ts",
       "packages/mailer/vitest.config.ts",
+      "packages/shared/vitest.config.ts",
       "packages/ui/vitest.config.ts",
       "packages/auth/vitest.unit.config.ts",
       "packages/auth/vitest.integration.config.ts",
