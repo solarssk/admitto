@@ -1,4 +1,4 @@
-import { type MailerConfig, parseMailerConfig } from "./config.js";
+import { parseMailerConfig } from "./config.js";
 import { GraphAdapter } from "./adapters/graph.js";
 import { SmtpAdapter } from "./adapters/smtp.js";
 import { PowerAutomateAdapter } from "./adapters/powerAutomate.js";
@@ -30,7 +30,7 @@ export interface CreateMailerDeps {
  * uses the returned MailerAdapter without caring what's underneath.
  */
 export async function createMailer(
-  config: MailerConfig | unknown,
+  config: unknown,
   deps: CreateMailerDeps = {},
 ): Promise<MailerAdapter> {
   const cfg = parseMailerConfig(config);

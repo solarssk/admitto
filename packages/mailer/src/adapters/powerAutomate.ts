@@ -14,13 +14,19 @@ import type { FetchFn, MailMessage, MailerAdapter, SendResult } from "../types.j
  * keeping the original hostname for the Host header / TLS SNI. Without this, `fetch`
  * would re-resolve the hostname itself at connect time — a second, separate DNS lookup
  * that a rebinding attacker can answer differently from the validation lookup above.
+ *
+ * Takes a `handler` rather than returning the raw Response: `dispatcher.close()` in the
+ * `finally` block waits for the request to fully complete, which for a response whose
+ * body is never read means it waits forever — the caller must consume the body inside
+ * `handler`, before this function (and its `finally`) returns.
  */
-async function pinnedFetch(
+export async function withPinnedFetch<T>(
   url: string,
   hostname: string,
   record: LookupAddress,
   init: { method: string; headers: Record<string, string>; body: string },
-): Promise<Response> {
+  handler: (res: Response) => Promise<T>,
+): Promise<T> {
   const dispatcher = new Agent({
     connect: {
       servername: hostname,
@@ -37,11 +43,12 @@ async function pinnedFetch(
     },
   });
   try {
-    return (await undiciFetch(url, {
+    const res = (await undiciFetch(url, {
       ...init,
       redirect: "error",
       dispatcher,
     } as Parameters<typeof undiciFetch>[1])) as unknown as Response;
+    return await handler(res);
   } finally {
     await dispatcher.close();
   }
@@ -105,12 +112,10 @@ export class PowerAutomateAdapter implements MailerAdapter {
       envelopeFrom: this.config.envelopeFrom,
     });
 
-    try {
-      // Reject outright rather than follow a redirect — a same-host-looking URL that
-      // 302s to an internal target would otherwise bypass the destination check above.
-      const res = this.fetchFn
-        ? await this.fetchFn(this.config.url, { method: "POST", headers, redirect: "error", body })
-        : await pinnedFetch(this.config.url, hostname, records[0]!, { method: "POST", headers, body });
+    const processResponse = async (res: Response): Promise<SendResult> => {
+      // Always consume the body — an unread response body keeps the underlying
+      // socket/dispatcher from closing (see withPinnedFetch).
+      const text = (await res.text().catch(() => "")).slice(0, 200);
 
       if (res.ok) {
         return {
@@ -120,7 +125,6 @@ export class PowerAutomateAdapter implements MailerAdapter {
           idempotencyKey: message.idempotencyKey,
         };
       }
-      const text = (await res.text().catch(() => "")).slice(0, 200);
       const mapped = mapHttpStatus(res.status);
       return {
         ...base,
@@ -128,6 +132,23 @@ export class PowerAutomateAdapter implements MailerAdapter {
         retryable: mapped.retryable,
         error: `Power Automate: HTTP ${res.status}${text ? " — " + text : ""}`,
       };
+    };
+
+    try {
+      // Reject outright rather than follow a redirect — a same-host-looking URL that
+      // 302s to an internal target would otherwise bypass the destination check above.
+      const result = this.fetchFn
+        ? await this.fetchFn(this.config.url, { method: "POST", headers, redirect: "error", body }).then(
+            processResponse,
+          )
+        : await withPinnedFetch(
+            this.config.url,
+            hostname,
+            records[0]!,
+            { method: "POST", headers, body },
+            processResponse,
+          );
+      return result;
     } catch (e) {
       const mapped = mapNetworkError();
       return {
