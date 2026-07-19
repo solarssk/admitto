@@ -521,6 +521,40 @@ describe("AttendeesPage bulk check-in", () => {
     });
   });
 
+  it("toasts that everyone was already checked in when nobody new was admitted", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkCheckInAttendees.mockResolvedValue({ checkedIn: 0, alreadyCheckedIn: 3, revoked: 0, invalid: 0 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("All selected attendees were already checked in.", "info");
+    });
+  });
+
+  it("toasts a revoked/invalid breakdown when nobody could be checked in", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkCheckInAttendees.mockResolvedValue({ checkedIn: 0, alreadyCheckedIn: 0, revoked: 1, invalid: 1 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("No attendees checked in (1 pass revoked, 1 not found).", "error");
+    });
+  });
+
   it("redirects to /login on a 401", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     const assignSpy = vi.fn();
@@ -567,6 +601,58 @@ describe("AttendeesPage bulk check-in", () => {
       expect(addToast).toHaveBeenCalledWith("Check-in failed.", "error");
     });
     expect(document.querySelector(".attendees-bulkbar")).toBeTruthy();
+  });
+
+  it("shows a generic error toast when the request throws a non-API error", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkCheckInAttendees.mockRejectedValueOnce(new Error("network down"));
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("Failed to check in attendees.", "error");
+    });
+  });
+
+  it("ignores a stale bulk-checkin error after navigating to a different event mid-request", async () => {
+    let rejectCheckIn!: (err: unknown) => void;
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkCheckInAttendees.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectCheckIn = reject;
+      }),
+    );
+
+    const router = createMemoryRouter(
+      [{ path: "/admin/events/:eventId/attendees", element: <AttendeesPage /> }],
+      { initialEntries: ["/admin/events/evt-1/attendees"] },
+    );
+    render(<RouterProvider router={router} />);
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+
+    await act(async () => router.navigate("/admin/events/evt-2/attendees"));
+    await waitFor(() => {
+      expect(fetchEventAttendees).toHaveBeenCalledWith("evt-2", expect.anything(), expect.anything());
+    });
+
+    await act(async () => {
+      rejectCheckIn(new Error("network down"));
+      await Promise.resolve();
+    });
+
+    expect(addToast).not.toHaveBeenCalledWith(expect.stringContaining("Check-in"), "error");
+    expect(addToast).not.toHaveBeenCalledWith("Failed to check in attendees.", "error");
   });
 
   it("ignores a stale bulk-checkin completion after navigating to a different event mid-request (CodeRabbit-style race guard)", async () => {

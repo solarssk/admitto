@@ -853,11 +853,13 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-delete", () => {
 });
 
 describe("POST /api/admin/events/:eventId/attendees/bulk-checkin", () => {
-  // The suite-level seed() doesn't clean CheckIn rows (same reason revoke-checkin's own
-  // fixture below has its own manual cleanup) - admitAttendee creates them here, so clear them
-  // ourselves or the next run's attendee.deleteMany hits a dangling FK constraint.
+  // The suite-level seed() doesn't clean up after this block, and later describes in this same
+  // file (e.g. bulk-resend) count *every* attendee in EVENT_A - leaving our seeded rows behind
+  // would skew those counts. Delete CheckIn rows before Attendee rows (FK constraint), matching
+  // revoke-checkin's own fixture below.
   afterAll(async () => {
     await prisma.checkIn.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-checkin-" } } });
+    await prisma.attendee.deleteMany({ where: { id: { startsWith: "att-bulk-checkin-" } } });
   });
 
   async function seedCheckable(ids: string[], overrides: Partial<{ admitted_at: Date }> = {}) {
@@ -902,6 +904,52 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-checkin", () => {
       where: { attendee_id: { in: ids }, status: "VALID", source: "manual" },
     });
     expect(checkIns).toHaveLength(2);
+  });
+
+  it("counts a cancelled attendee's ticket as revoked instead of admitting them", async () => {
+    const id = "att-bulk-checkin-revoked";
+    await prisma.attendee.create({
+      data: {
+        id,
+        event_id: EVENT_A,
+        email: `${id}@example.com`,
+        name: `Bulk Checkin ${id}`,
+        token_hash: hashToken(generateToken()),
+        token_enc: encryptToString(generateToken()),
+        status: "cancelled",
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-checkin`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: [id] }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ checkedIn: 0, alreadyCheckedIn: 0, revoked: 1, invalid: 0 });
+    const after = await prisma.attendee.findUnique({ where: { id } });
+    expect(after?.admitted_at).toBeNull();
+  });
+
+  it("rejects a malformed JSON body", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-checkin`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{not json",
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 403 for an admin outside the event's organization", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_B}/attendees/bulk-checkin`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: ["att-does-not-matter"] }),
+    });
+
+    expect(res.status).toBe(403);
   });
 
   it("counts an already-admitted attendee separately without failing the request", async () => {

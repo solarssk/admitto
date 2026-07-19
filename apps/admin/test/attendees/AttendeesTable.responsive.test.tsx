@@ -257,4 +257,26 @@ describe("AttendeesTable mobile card view (<768px)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sort ascending" }));
     expect(onSortChange).toHaveBeenLastCalledWith("name");
   });
+
+  it("shows a clear button only once the search box has text, and clearing it calls onSearchChange", () => {
+    const onSearchChange = vi.fn();
+    const { rerender } = render(
+      <AttendeesTable {...tableProps} items={[baseRow]} selectedIds={new Set()} onSearchChange={onSearchChange} />,
+    );
+
+    expect(screen.queryByLabelText("Clear search")).toBeNull();
+
+    rerender(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow]}
+        selectedIds={new Set()}
+        searchInput="jane"
+        onSearchChange={onSearchChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Clear search"));
+    expect(onSearchChange).toHaveBeenCalledWith("");
+  });
 });
