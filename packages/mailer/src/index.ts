@@ -1,4 +1,4 @@
-import { type MailerConfig, parseMailerConfig } from "./config.js";
+import { parseMailerConfig } from "./config.js";
 import { GraphAdapter } from "./adapters/graph.js";
 import { SmtpAdapter } from "./adapters/smtp.js";
 import { PowerAutomateAdapter } from "./adapters/powerAutomate.js";
@@ -29,13 +29,16 @@ export interface CreateMailerDeps {
  * The only place that knows about all transports. The rest of Admitto
  * uses the returned MailerAdapter without caring what's underneath.
  */
-export function createMailer(config: MailerConfig | unknown, deps: CreateMailerDeps = {}): MailerAdapter {
+export async function createMailer(
+  config: unknown,
+  deps: CreateMailerDeps = {},
+): Promise<MailerAdapter> {
   const cfg = parseMailerConfig(config);
   switch (cfg.provider) {
     case "graph":
       return new GraphAdapter(cfg, deps.fetchFn);
     case "smtp":
-      return new SmtpAdapter(cfg);
+      return SmtpAdapter.create(cfg);
     case "powerautomate":
       return new PowerAutomateAdapter(cfg, deps.fetchFn);
     case "export_only":

@@ -1,6 +1,19 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { lookup } from "node:dns/promises";
 import { createMailer, sendBatch, MockAdapter, configFromEnv } from "../src/index.js";
 import type { EmailProviderCapabilities, MailMessage } from "../src/types.js";
+
+vi.mock("node:dns/promises", () => ({
+  lookup: vi.fn(),
+}));
+
+const mockedLookup = vi.mocked(lookup);
+
+beforeEach(() => {
+  mockedLookup.mockResolvedValue([{ address: "93.184.216.34", family: 4 }] as Awaited<
+    ReturnType<typeof lookup>
+  >);
+});
 
 const TEST_CAPABILITIES: EmailProviderCapabilities = {
   supportsAttachments: false,
@@ -14,8 +27,8 @@ const TEST_CAPABILITIES: EmailProviderCapabilities = {
 };
 
 describe("createMailer", () => {
-  it("creates the correct adapter for each provider", () => {
-    const pa = createMailer(
+  it("creates the correct adapter for each provider", async () => {
+    const pa = await createMailer(
       {
         provider: "powerautomate",
         url: "https://example.com/flow",
@@ -25,7 +38,7 @@ describe("createMailer", () => {
     );
     expect(pa.provider).toBe("powerautomate");
 
-    const smtp = createMailer({
+    const smtp = await createMailer({
       provider: "smtp",
       host: "smtp.example.com",
       user: "u",
@@ -34,24 +47,24 @@ describe("createMailer", () => {
     });
     expect(smtp.provider).toBe("smtp");
 
-    const exp = createMailer(
+    const exp = await createMailer(
       { provider: "export_only", fromAddress: "a@example.com" },
       { exportSink: vi.fn() },
     );
     expect(exp.provider).toBe("export_only");
   });
 
-  it("throws when export_only is created without exportSink", () => {
-    expect(() => createMailer({ provider: "export_only", fromAddress: "a@example.com" })).toThrow(
-      /exportSink/,
-    );
+  it("throws when export_only is created without exportSink", async () => {
+    await expect(
+      createMailer({ provider: "export_only", fromAddress: "a@example.com" }),
+    ).rejects.toThrow(/exportSink/);
   });
 
-  it("throws on invalid config", () => {
-    expect(() =>
+  it("throws on invalid config", async () => {
+    await expect(
       createMailer({ provider: "powerautomate", url: "not-a-url", fromAddress: "a@example.com" }),
-    ).toThrow();
-    expect(() => createMailer({ provider: "unknown-provider" })).toThrow();
+    ).rejects.toThrow();
+    await expect(createMailer({ provider: "unknown-provider" })).rejects.toThrow();
   });
 });
 
