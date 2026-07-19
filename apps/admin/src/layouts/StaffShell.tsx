@@ -39,10 +39,12 @@ export function StaffShell({ sidebar, subnav, children }: StaffShellProps) {
   const togglePin = () => {
     const next = !pinned;
     setPinned(next);
-    try {
-      localStorage.setItem(SIDEBAR_PIN_KEY, String(next));
-    } catch {
-      /* ignore storage errors */
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem(SIDEBAR_PIN_KEY, String(next));
+      } catch {
+        /* ignore storage errors */
+      }
     }
   };
 
