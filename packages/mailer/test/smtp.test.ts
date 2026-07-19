@@ -1,7 +1,22 @@
 import nodemailer from "nodemailer";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { lookup } from "node:dns/promises";
 import { SmtpAdapter } from "../src/adapters/smtp.js";
 import type { SmtpConfig } from "../src/config.js";
+import * as ssrfGuard from "../src/ssrfGuard.js";
+
+vi.mock("node:dns/promises", () => ({
+  lookup: vi.fn(),
+}));
+
+const mockedLookup = vi.mocked(lookup);
+
+beforeEach(() => {
+  mockedLookup.mockClear();
+  mockedLookup.mockResolvedValue([{ address: "93.184.216.34", family: 4 }] as Awaited<
+    ReturnType<typeof lookup>
+  >);
+});
 
 const config: SmtpConfig = {
   provider: "smtp",
@@ -132,5 +147,84 @@ describe("SmtpAdapter", () => {
     expect(res.status).toBe("rejected");
     expect(res.retryable).toBe(false);
     expect(res.error).toContain("535");
+  });
+
+  it("rejects a private/loopback host without ever calling sendMail (SSRF guard)", async () => {
+    const sendMail = vi.fn(async () => ({ messageId: "<id@test>" }));
+    const adapter = new SmtpAdapter(
+      { ...config, host: "127.0.0.1" },
+      { sendMail } as unknown as nodemailer.Transporter,
+    );
+    const res = await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
+    expect(res.status).toBe("rejected");
+    expect(res.retryable).toBe(false);
+    expect(res.error).toMatch(/private, loopback, or link-local/);
+    expect(sendMail).not.toHaveBeenCalled();
+  });
+
+  it("falls back to a generic message when the destination guard throws a non-Error", async () => {
+    const spy = vi
+      .spyOn(ssrfGuard, "assertSafeMailDestination")
+      .mockRejectedValueOnce("not-an-error");
+    const sendMail = vi.fn(async () => ({ messageId: "<id@test>" }));
+    const adapter = new SmtpAdapter(config, { sendMail } as unknown as nodemailer.Transporter);
+    const res = await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
+    expect(res.status).toBe("rejected");
+    expect(res.error).toBe("mail transport destination is not permitted");
+    expect(sendMail).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("rejects a host that resolves to a private address at send-time (DNS rebinding)", async () => {
+    mockedLookup.mockResolvedValue([{ address: "10.0.0.5", family: 4 }] as Awaited<
+      ReturnType<typeof lookup>
+    >);
+    const sendMail = vi.fn(async () => ({ messageId: "<id@test>" }));
+    const adapter = new SmtpAdapter(config, { sendMail } as unknown as nodemailer.Transporter);
+    const res = await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
+    expect(res.status).toBe("rejected");
+    expect(sendMail).not.toHaveBeenCalled();
+  });
+
+  describe("SmtpAdapter.create() — DNS pinning (production path)", () => {
+    it("pins the transporter's connect target to the resolved address, keeping the real hostname for SNI", async () => {
+      const createSpy = vi.spyOn(nodemailer, "createTransport");
+      const adapter = await SmtpAdapter.create(config);
+
+      expect(mockedLookup).toHaveBeenCalledTimes(1);
+      expect(mockedLookup).toHaveBeenCalledWith("smtp.example.com", expect.anything());
+      expect(createSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          host: "93.184.216.34",
+          tls: expect.objectContaining({ servername: "smtp.example.com" }),
+        }),
+      );
+      expect(adapter.provider).toBe("smtp");
+      createSpy.mockRestore();
+    });
+
+    it("rejects when the host resolves to a private address, without building a transporter (DNS rebinding closed)", async () => {
+      mockedLookup.mockResolvedValue([{ address: "10.0.0.5", family: 4 }] as Awaited<
+        ReturnType<typeof lookup>
+      >);
+      const createSpy = vi.spyOn(nodemailer, "createTransport");
+
+      await expect(SmtpAdapter.create(config)).rejects.toThrow(/private or link-local/);
+      expect(createSpy).not.toHaveBeenCalled();
+      createSpy.mockRestore();
+    });
+
+    it("pins to the first resolved record when DNS returns multiple addresses", async () => {
+      mockedLookup.mockResolvedValue([
+        { address: "93.184.216.34", family: 4 },
+        { address: "203.0.113.9", family: 4 },
+      ] as Awaited<ReturnType<typeof lookup>>);
+      const createSpy = vi.spyOn(nodemailer, "createTransport");
+
+      await SmtpAdapter.create(config);
+
+      expect(createSpy).toHaveBeenCalledWith(expect.objectContaining({ host: "93.184.216.34" }));
+      createSpy.mockRestore();
+    });
   });
 });

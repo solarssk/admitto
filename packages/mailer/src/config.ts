@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { NO_CONTROL_CHARS_RE } from "./validation.js";
+import { isBlockedMailHost } from "./ssrfGuard.js";
 
 /**
  * Mailer configuration schemas. Discriminated union on `provider` —
@@ -44,7 +45,9 @@ export const graphConfigSchema = z
 export const smtpConfigSchema = z
   .object({
     provider: z.literal("smtp"),
-    host: z.string().min(1),
+    host: z.string().min(1).refine((h) => !isBlockedMailHost(h), {
+      error: "host must not be a private, loopback, or link-local address",
+    }),
     port: z.number().int().positive().default(587),
     /** false => STARTTLS (port 587), true => TLS (port 465). */
     secure: z.boolean().default(false),
@@ -73,7 +76,17 @@ export const powerAutomateConfigSchema = z
       .url("url must be a valid flow URL")
       .refine((u) => u.toLowerCase().startsWith("https://"), {
         message: "url must use HTTPS",
-      }),
+      })
+      .refine(
+        (u) => {
+          try {
+            return !isBlockedMailHost(new URL(u).hostname);
+          } catch {
+            return false;
+          }
+        },
+        { error: "url must not target a private, loopback, or link-local address" },
+      ),
     /** Optional key sent in x-admitto-key header (endpoint protection). */
     key: z.string().optional(),
   })

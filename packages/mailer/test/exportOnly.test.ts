@@ -48,9 +48,9 @@ describe("ExportOnlyAdapter", () => {
     expect(res.error).toContain("write timeout");
   });
 
-  it("is created by createMailer factory", () => {
+  it("is created by createMailer factory", async () => {
     const sink = vi.fn();
-    const mailer = createMailer(
+    const mailer = await createMailer(
       { provider: "export_only", fromAddress: "a@example.com" },
       { exportSink: sink },
     );

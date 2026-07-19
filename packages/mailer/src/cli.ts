@@ -61,7 +61,7 @@ function readCsv(file: string): { email: string; firstName?: string }[] {
 async function main() {
   loadDotEnv();
   const config = configFromEnv();
-  const mailer = createMailer(config);
+  const mailer = await createMailer(config);
   console.log(`provider = ${config.provider}`);
 
   let exitCode = 0;

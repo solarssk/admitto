@@ -17,4 +17,9 @@ describe("resolveSafeRedirectPath", () => {
     expect(resolveSafeRedirectPath("/foo\\bar")).toBe("/operator");
     expect(resolveSafeRedirectPath("/ok\r\nLocation: https://evil.com")).toBe("/operator");
   });
+
+  it("rejects a raw tab character (known blocklist-bypass technique)", () => {
+    expect(resolveSafeRedirectPath("/\t/evil.com")).toBe("/operator");
+    expect(resolveSafeRedirectPath("/ok\tpath")).toBe("/operator");
+  });
 });

@@ -4,6 +4,11 @@
  * lets a specific event send through its own dedicated transport instead
  * (co-branded event, separate mailbox/domain). See issue #511.
  *
+ * Superadmin-only, same as the organization level: this configures live outbound
+ * mail transport credentials (SMTP host/port, Power Automate webhook URL, Graph
+ * tenant/client), not day-to-day event content — org-scoped admins manage the
+ * event itself but do not touch transport config.
+ *
  * "Dedicated" vs "inherits from org" is not a stored flag — it's simply whether
  * an event-scoped MailSettings row exists. GET always returns the *effective*
  * (resolved) values via describeMailConfig, plus hasEventOverride so the admin
@@ -24,9 +29,9 @@ import { sendEventTransportTestEmail, type MailDeliveryDeps } from "@admitto/mai
 import { writeAdminAuditLog } from "@admitto/tickets";
 import {
   adminAuditFromContext,
-  assertEventManageAccess,
   lockEventForMailSettingsWrite,
   requireEventId,
+  requireSuperadmin,
 } from "./admin-helpers.js";
 import {
   putMailSettingsBodySchema,
@@ -79,7 +84,7 @@ export async function handleGetEventMailSettings(c: Context, db: PrismaClient): 
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
   const eventId = eventIdOrRes;
 
-  const forbidden = await assertEventManageAccess(c, db, eventId);
+  const forbidden = await requireSuperadmin(c, db);
   if (forbidden) return forbidden;
 
   const org = await loadEventOrg(db, eventId);
@@ -105,7 +110,7 @@ export async function handlePutEventMailSettings(c: Context, db: PrismaClient): 
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
   const eventId = eventIdOrRes;
 
-  const forbidden = await assertEventManageAccess(c, db, eventId);
+  const forbidden = await requireSuperadmin(c, db);
   if (forbidden) return forbidden;
 
   let body: z.infer<typeof putMailSettingsBodySchema>;
@@ -201,7 +206,7 @@ export async function handleDeleteEventMailSettings(c: Context, db: PrismaClient
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
   const eventId = eventIdOrRes;
 
-  const forbidden = await assertEventManageAccess(c, db, eventId);
+  const forbidden = await requireSuperadmin(c, db);
   if (forbidden) return forbidden;
 
   const org = await loadEventOrg(db, eventId);
@@ -241,7 +246,7 @@ export async function handlePostEventMailSettingsTest(
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
   const eventId = eventIdOrRes;
 
-  const forbidden = await assertEventManageAccess(c, db, eventId);
+  const forbidden = await requireSuperadmin(c, db);
   if (forbidden) return forbidden;
 
   const org = await loadEventOrg(db, eventId);
