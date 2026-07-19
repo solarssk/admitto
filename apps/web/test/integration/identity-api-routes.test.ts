@@ -44,6 +44,10 @@ let adminCookie: string;
 
 beforeAll(async () => {
   prisma = new PrismaClient();
+  // CF Access settings are instance-wide (SystemSettings) in the shared admitto_web_test
+  // database. The team_domain_required test below requires them absent - clear any leftovers
+  // defensively instead of depending on other test files' cleanup.
+  await prisma.systemSettings.deleteMany({ where: { key: { startsWith: "cf_access_" } } });
   await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: PROVIDER_ID } });
   await prisma.identityProvider.deleteMany({ where: { id: PROVIDER_ID } });
   await prisma.userMfaMethod.deleteMany({ where: { user_id: { in: [SUPER_ID, OPERATOR_ID, ADMIN_ID] } } });

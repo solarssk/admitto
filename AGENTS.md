@@ -109,6 +109,15 @@ Do **not** pass `ApiError.message` straight into toasts or inline error strings.
 
 When an agent repeats a mistake, add a precise rule here (or in a scoped `.cursor/rules/*.mdc` file). One line per gotcha; cut rules that no longer prevent real errors.
 
+**Renaming a Vitest project (`test.name`):** grep `package.json` scripts and CI workflows for
+`--project <old-name>` first — the filter is an anchored exact match, so a stale reference fails
+at startup ("No projects matched the filter").
+
+**Integration tests sharing a package's `*_test` database run one file at a time** (their configs
+set `fileParallelism: false`), so cross-file failures there are leftover-state pollution, not
+concurrency races — fix them with cleanup in the polluting file, not with `sequence.concurrent`
+(that option only affects tests within one file).
+
 **Do not create new top-level `.md` documentation files in this repo.** This repo's doc set is
 fixed: `README.md`, `CHANGELOG.md`, `SECURITY.md`, `VERSIONING.md`, `DATA-PROTECTION.md`,
 `AGENTS.md`, `CLAUDE.md`, plus package-level `README.md` files and `docs/*` referenced from them.

@@ -236,11 +236,11 @@ describe("GET /api/admin/events/:eventId/mail-settings", () => {
     expect(body.fields.host?.value).toBe("smtp.dedicated.example.com");
   });
 
-  it("allows org admin (not just superadmin) to view", async () => {
+  it("rejects org admin (not superadmin) — transport config is superadmin-only", async () => {
     const res = await app.request(`/api/admin/events/${EVENT}/mail-settings`, {
       headers: { Cookie: adminCookie },
     });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(403);
   });
 
   it("rejects operator", async () => {
@@ -309,7 +309,7 @@ describe("PUT /api/admin/events/:eventId/mail-settings", () => {
     expect(row?.from_address).toBe("put@example.com");
   });
 
-  it("allows org admin to save", async () => {
+  it("rejects org admin (not superadmin) — transport config is superadmin-only", async () => {
     const res = await app.request(`/api/admin/events/${EVENT}/mail-settings`, {
       method: "PUT",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
@@ -322,7 +322,7 @@ describe("PUT /api/admin/events/:eventId/mail-settings", () => {
         smtpPassword: "admin-secret",
       }),
     });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(403);
   });
 
   it("rejects operator", async () => {
@@ -495,14 +495,15 @@ describe("PUT /api/admin/events/:eventId/mail-settings", () => {
   });
 
   it("rejects an event override that redirects the SMTP host while inheriting the org's password", async () => {
-    // Security: an org admin (this event's manager) must not be able to point the
-    // connection at a host they control while the resolved config authenticates with
-    // the organization's real SMTP password.
+    // Security: even a superadmin's partial PUT must not be able to silently point the
+    // connection at a different host while the resolved config still authenticates with
+    // the organization's real SMTP password (a plain data-integrity/incomplete-transport
+    // guard — write access itself is already superadmin-only, see the 403 tests above).
     await createOrgSmtp();
 
     const res = await app.request(`/api/admin/events/${EVENT}/mail-settings`, {
       method: "PUT",
-      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({ host: "smtp.attacker.example.com" }),
     });
     expect(res.status).toBe(400);
@@ -675,13 +676,13 @@ describe("DELETE /api/admin/events/:eventId/mail-settings", () => {
     expect(body.hasEventOverride).toBe(false);
   });
 
-  it("allows org admin", async () => {
+  it("rejects org admin (not superadmin) — transport config is superadmin-only", async () => {
     await createEventOverride();
     const res = await app.request(`/api/admin/events/${EVENT}/mail-settings`, {
       method: "DELETE",
       headers: { Cookie: adminCookie, ...sameOrigin },
     });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(403);
   });
 
   it("rejects operator", async () => {

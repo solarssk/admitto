@@ -11,7 +11,7 @@
     "precoverage": "npm run pretest",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
-    "test:unit": "vitest run --project unit",
+    "test:unit": "vitest run --project web-unit",
     "test:integration": "vitest run --project integration",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "dev": "NODE_ENV=development tsx src/index.ts",
