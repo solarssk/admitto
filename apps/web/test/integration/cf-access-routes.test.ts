@@ -131,6 +131,11 @@ beforeAll(async () => {
 afterAll(async () => {
   clearCfAccessJwksCacheForTests();
   await stopMockCfAccess(mock);
+  // Remove the CF Access settings seeded above. SystemSettings is instance-wide state in the
+  // shared admitto_web_test database - identity-api-routes.test.ts's team_domain_required test
+  // requires these keys to be absent, and file order is not guaranteed (the sequencer sorts by
+  // cached timings), so leaving them behind made that test fail intermittently.
+  await prisma.systemSettings.deleteMany({ where: { key: { startsWith: "cf_access_" } } });
   await prisma.$disconnect();
 });
 
