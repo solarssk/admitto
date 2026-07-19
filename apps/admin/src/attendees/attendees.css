@@ -576,7 +576,8 @@
   top: calc(100% + 4px);
   right: 0;
   z-index: var(--z-dropdown);
-  min-width: 180px;
+  /* Wide enough that item hints ("CSV of 25 attendees") stay on one line (PO review). */
+  min-width: 260px;
   background: var(--surface-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);

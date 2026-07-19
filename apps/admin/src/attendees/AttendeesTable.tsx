@@ -381,7 +381,6 @@ function BulkMoreActionsMenu({
         ref={triggerRef}
         type="button"
         variant="ghost"
-        icon={<i className="ti ti-dots-vertical" aria-hidden="true" />}
         hasMenu
         aria-haspopup="menu"
         aria-expanded={open}
