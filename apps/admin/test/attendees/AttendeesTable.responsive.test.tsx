@@ -278,5 +278,8 @@ describe("AttendeesTable mobile card view (<768px)", () => {
 
     fireEvent.click(screen.getByLabelText("Clear search"));
     expect(onSearchChange).toHaveBeenCalledWith("");
+    // Clearing unmounts the button itself - focus should land back on the search input rather
+    // than being lost, so keyboard/screen-reader users stay in context (CodeRabbit review).
+    expect(document.activeElement).toBe(screen.getByLabelText("Search attendees by name, email, or company"));
   });
 });

@@ -10,7 +10,7 @@ describe("bulkCheckInAttendees (client) — thin wrapper coverage", () => {
   it("POSTs the encoded bulk-checkin endpoint with the selected ids", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ checkedIn: 2, alreadyCheckedIn: 1, revoked: 0, invalid: 0 }),
+      json: async () => ({ checkedIn: 2, alreadyCheckedIn: 1, revoked: 0, invalid: 0, errored: 0 }),
     });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -24,7 +24,7 @@ describe("bulkCheckInAttendees (client) — thin wrapper coverage", () => {
         body: JSON.stringify({ attendeeIds: ["att-1", "att-2", "att-3"] }),
       }),
     );
-    expect(result).toEqual({ checkedIn: 2, alreadyCheckedIn: 1, revoked: 0, invalid: 0 });
+    expect(result).toEqual({ checkedIn: 2, alreadyCheckedIn: 1, revoked: 0, invalid: 0, errored: 0 });
   });
 
   it("propagates API errors", async () => {

@@ -88,18 +88,19 @@ function notifyBulkSendResult(
 /** Standard "N checked in (M already admitted)" toast for a bulk manual check-in result —
  * shared shape with notifyBulkSendResult above. */
 function notifyBulkCheckInResult(
-  result: { checkedIn: number; alreadyCheckedIn: number; revoked: number; invalid: number },
+  result: { checkedIn: number; alreadyCheckedIn: number; revoked: number; invalid: number; errored: number },
   addToast: (message: string, variant?: ToastVariant) => void,
 ) {
-  const { checkedIn, alreadyCheckedIn, revoked, invalid } = result;
+  const { checkedIn, alreadyCheckedIn, revoked, invalid, errored } = result;
   const notes: string[] = [];
   if (alreadyCheckedIn > 0) notes.push(`${alreadyCheckedIn} already admitted`);
   if (revoked > 0) notes.push(`${revoked} pass revoked`);
   if (invalid > 0) notes.push(`${invalid} not found`);
+  if (errored > 0) notes.push(`${errored} failed unexpectedly`);
   const noteSuffix = notes.length > 0 ? ` (${notes.join(", ")})` : "";
 
   if (checkedIn > 0) {
-    addToast(`${checkedIn} ${pluralize(checkedIn, "attendee")} checked in${noteSuffix}.`, "success");
+    addToast(`${checkedIn} ${pluralize(checkedIn, "attendee")} checked in${noteSuffix}.`, errored > 0 ? "warning" : "success");
     return;
   }
 

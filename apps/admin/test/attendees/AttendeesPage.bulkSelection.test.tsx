@@ -484,7 +484,7 @@ describe("AttendeesPage bulk delete (#356 follow-up)", () => {
 describe("AttendeesPage bulk check-in", () => {
   it("checks in the selected attendees via bulkCheckInAttendees, toasts, and clears the selection", async () => {
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
-    bulkCheckInAttendees.mockResolvedValue({ checkedIn: 2, alreadyCheckedIn: 0, revoked: 0, invalid: 0 });
+    bulkCheckInAttendees.mockResolvedValue({ checkedIn: 2, alreadyCheckedIn: 0, revoked: 0, invalid: 0, errored: 0 });
 
     renderPage();
 
@@ -506,7 +506,7 @@ describe("AttendeesPage bulk check-in", () => {
 
   it("notes already-admitted attendees in the toast instead of erroring", async () => {
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
-    bulkCheckInAttendees.mockResolvedValue({ checkedIn: 1, alreadyCheckedIn: 1, revoked: 0, invalid: 0 });
+    bulkCheckInAttendees.mockResolvedValue({ checkedIn: 1, alreadyCheckedIn: 1, revoked: 0, invalid: 0, errored: 0 });
 
     renderPage();
 
@@ -523,7 +523,7 @@ describe("AttendeesPage bulk check-in", () => {
 
   it("toasts that everyone was already checked in when nobody new was admitted", async () => {
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
-    bulkCheckInAttendees.mockResolvedValue({ checkedIn: 0, alreadyCheckedIn: 3, revoked: 0, invalid: 0 });
+    bulkCheckInAttendees.mockResolvedValue({ checkedIn: 0, alreadyCheckedIn: 3, revoked: 0, invalid: 0, errored: 0 });
 
     renderPage();
 
@@ -540,7 +540,7 @@ describe("AttendeesPage bulk check-in", () => {
 
   it("toasts a revoked/invalid breakdown when nobody could be checked in", async () => {
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
-    bulkCheckInAttendees.mockResolvedValue({ checkedIn: 0, alreadyCheckedIn: 0, revoked: 1, invalid: 1 });
+    bulkCheckInAttendees.mockResolvedValue({ checkedIn: 0, alreadyCheckedIn: 0, revoked: 1, invalid: 1, errored: 0 });
 
     renderPage();
 
@@ -656,7 +656,13 @@ describe("AttendeesPage bulk check-in", () => {
   });
 
   it("ignores a stale bulk-checkin completion after navigating to a different event mid-request (CodeRabbit-style race guard)", async () => {
-    let resolveCheckIn!: (value: { checkedIn: number; alreadyCheckedIn: number; revoked: number; invalid: number }) => void;
+    let resolveCheckIn!: (value: {
+      checkedIn: number;
+      alreadyCheckedIn: number;
+      revoked: number;
+      invalid: number;
+      errored: number;
+    }) => void;
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
     bulkCheckInAttendees.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -682,7 +688,7 @@ describe("AttendeesPage bulk check-in", () => {
     });
 
     await act(async () => {
-      resolveCheckIn({ checkedIn: 1, alreadyCheckedIn: 0, revoked: 0, invalid: 0 });
+      resolveCheckIn({ checkedIn: 1, alreadyCheckedIn: 0, revoked: 0, invalid: 0, errored: 0 });
       await Promise.resolve();
     });
 

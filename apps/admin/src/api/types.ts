@@ -343,6 +343,8 @@ export interface BulkCheckInResponse {
   revoked: number;
   /** Id no longer valid for this event by the time the check-in ran. */
   invalid: number;
+  /** admitAttendee threw for this id (unexpected, e.g. a data-consistency guard) - safe to retry. */
+  errored: number;
 }
 
 /** Admin SPA DTOs for event item configuration (mirror of web API).

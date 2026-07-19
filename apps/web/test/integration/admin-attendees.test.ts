@@ -887,7 +887,7 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-checkin", () => {
     });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ checkedIn: 2, alreadyCheckedIn: 0, revoked: 0, invalid: 0 });
+    expect(await res.json()).toEqual({ checkedIn: 2, alreadyCheckedIn: 0, revoked: 0, invalid: 0, errored: 0 });
 
     const after = await prisma.attendee.findMany({
       where: { id: { in: ids } },
@@ -920,7 +920,7 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-checkin", () => {
     });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ checkedIn: 12, alreadyCheckedIn: 0, revoked: 0, invalid: 0 });
+    expect(await res.json()).toEqual({ checkedIn: 12, alreadyCheckedIn: 0, revoked: 0, invalid: 0, errored: 0 });
 
     const after = await prisma.attendee.findMany({ where: { id: { in: ids } }, select: { admitted_at: true } });
     expect(after).toHaveLength(12);
@@ -948,7 +948,7 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-checkin", () => {
     });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ checkedIn: 0, alreadyCheckedIn: 0, revoked: 1, invalid: 0 });
+    expect(await res.json()).toEqual({ checkedIn: 0, alreadyCheckedIn: 0, revoked: 1, invalid: 0, errored: 0 });
     const after = await prisma.attendee.findUnique({ where: { id } });
     expect(after?.admitted_at).toBeNull();
   });
@@ -986,7 +986,7 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-checkin", () => {
     });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ checkedIn: 1, alreadyCheckedIn: 1, revoked: 0, invalid: 0 });
+    expect(await res.json()).toEqual({ checkedIn: 1, alreadyCheckedIn: 1, revoked: 0, invalid: 0, errored: 0 });
   });
 
   it("silently ignores an id from a different event instead of failing the whole request", async () => {
@@ -1000,7 +1000,7 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-checkin", () => {
     });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ checkedIn: 1, alreadyCheckedIn: 0, revoked: 0, invalid: 0 });
+    expect(await res.json()).toEqual({ checkedIn: 1, alreadyCheckedIn: 0, revoked: 0, invalid: 0, errored: 0 });
     const other = await prisma.attendee.findUnique({ where: { id: ATT_B1 } });
     expect(other?.admitted_at).toBeNull();
   });

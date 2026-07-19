@@ -1470,16 +1470,14 @@ function chunk<T>(items: T[], size: number): T[][] {
  * event are silently ignored, same convention as bulk-delete. Attendees are processed in
  * bounded-concurrency chunks (BULK_CHECKIN_CONCURRENCY) rather than fully serially, for
  * throughput on large selections, while each attendee keeps its own independent CAS transaction —
- * same shape as `revokeAllCheckInsForEvent`. Unlike that path, a per-attendee failure here isn't
- * caught and skipped: admitAttendee has no analogous "expected race" exception (it already
- * reports a losing race as ALREADY_CHECKED_IN/REVOKED via its return value, not a throw), so an
- * unexpected throw still aborts the request — but because Promise.all doesn't wait for a failing
- * chunk's still-settling siblings, up to BULK_CHECKIN_CONCURRENCY-1 concurrent admissions in that
- * chunk can already be committed without being counted in the (never-returned) response. This
- * widens the old serial loop's "everything before the throw is committed but unreported" blast
- * radius from a strict one-attendee-at-a-time prefix to one chunk's worth; it's accepted because
- * admitAttendee is itself idempotent, so a retry after any such failure just reports
- * ALREADY_CHECKED_IN for whoever already quietly succeeded, not corruption or double effects. */
+ * same shape as `revokeAllCheckInsForEvent`. Uses Promise.allSettled (not Promise.all) per chunk:
+ * admitAttendee has no analogous "expected race" exception to catch-and-skip like bulk-revoke's
+ * UndoNotAllowedError (it already reports a losing race as ALREADY_CHECKED_IN/REVOKED via its
+ * return value, not a throw), so any throw here represents a genuine, unexpected per-attendee
+ * failure rather than a routine race — but discarding an entire chunk's already-committed
+ * siblings over one such failure (Promise.all's behavior) would silently under-report a mostly-
+ * successful bulk operation. Settling lets every attendee's own transaction outcome be counted
+ * regardless of its neighbors. */
 export async function handleBulkCheckInEventAttendees(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
@@ -1503,12 +1501,18 @@ export async function handleBulkCheckInEventAttendees(c: Context, db: PrismaClie
   });
 
   const audit = adminAuditFromContext(c);
-  const counts = { checkedIn: 0, alreadyCheckedIn: 0, revoked: 0, invalid: 0 };
+  const counts = { checkedIn: 0, alreadyCheckedIn: 0, revoked: 0, invalid: 0, errored: 0 };
   for (const batch of chunk(owned, BULK_CHECKIN_CONCURRENCY)) {
-    const results = await Promise.all(
+    const settled = await Promise.allSettled(
       batch.map(({ id }) => admitAttendee({ attendeeId: id, eventId, method: "manual", audit }, db)),
     );
-    for (const result of results) {
+    for (const outcome of settled) {
+      if (outcome.status === "rejected") {
+        console.error("bulk check-in: admitAttendee failed:", outcome.reason);
+        counts.errored += 1;
+        continue;
+      }
+      const result = outcome.value;
       if (result.status === "VALID") counts.checkedIn += 1;
       else if (result.status === "ALREADY_CHECKED_IN") counts.alreadyCheckedIn += 1;
       else if (result.status === "REVOKED") counts.revoked += 1;
