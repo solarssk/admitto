@@ -51,9 +51,21 @@ import { defineConfig } from "vitest/config";
  * only DATABASE_URL is covered. Verified empirically, not by inspection: renamed the real dev
  * database out of the way (ALTER DATABASE ... RENAME) before full root-level runs, confirmed zero
  * references to it in the output across multiple runs, then renamed it back.
+ *
+ * `sequence.concurrent: false` below: `apps/web/vitest.config.ts` (the delegating file this
+ * aggregator bypasses - see above) sets this same option specifically because its own unit and
+ * integration projects share one database (`admitto_web_test`) and must not run at the same time
+ * ("Avoid Prisma client/package.json races when unit imports @admitto/auth while integration
+ * globalSetup runs migrate deploy" - its own comment). Listing `apps/web`'s two leaf configs here
+ * as independent top-level projects drops that guarantee unless restated here too - Vitest runs
+ * sibling projects concurrently by default. Applied globally (not scoped to just apps/web's pair -
+ * Vitest's `projects` array has no per-pair concurrency control) at the cost of a slower run; this
+ * aggregator is a rarely-invoked safety fallback, not the everyday `npm test` path, so trading
+ * speed for one less race-condition class here is the right tradeoff.
  */
 export default defineConfig({
   test: {
+    sequence: { concurrent: false },
     env: {
       DATABASE_URL: "postgresql://intentionally-invalid-root-fallback@127.0.0.1:1/refuse-to-run",
     },
