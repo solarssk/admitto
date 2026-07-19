@@ -42,6 +42,7 @@ import {
   assertTicketTypeInCatalog,
   UnknownTicketTypeError,
   acquireEventTicketTypesLock,
+  type AdmitResult,
   type AttendeeSortBy,
   type AttendeeSortDir,
 } from "@admitto/tickets";
@@ -1462,6 +1463,19 @@ function chunk<T>(items: T[], size: number): T[][] {
   return chunks;
 }
 
+/** Maps each admitAttendee outcome to its bulk check-in response counter. `satisfies` keeps the
+ * map exhaustive: adding a new AdmitResult status fails the build here instead of silently
+ * falling through. */
+const BULK_CHECKIN_STATUS_COUNTER = {
+  VALID: "checkedIn",
+  ALREADY_CHECKED_IN: "alreadyCheckedIn",
+  REVOKED: "revoked",
+  INVALID: "invalid",
+} as const satisfies Record<
+  AdmitResult["status"],
+  "checkedIn" | "alreadyCheckedIn" | "revoked" | "invalid"
+>;
+
 /** POST /api/admin/events/:eventId/attendees/bulk-checkin — manual check-in for a selection of
  * attendees at once, from the Attendees list's row-selection bulk bar. Reuses `admitAttendee`
  * (the same single-use CAS path scan check-in already goes through, ADR 0010 §4) once per
@@ -1512,11 +1526,7 @@ export async function handleBulkCheckInEventAttendees(c: Context, db: PrismaClie
         counts.errored += 1;
         continue;
       }
-      const result = outcome.value;
-      if (result.status === "VALID") counts.checkedIn += 1;
-      else if (result.status === "ALREADY_CHECKED_IN") counts.alreadyCheckedIn += 1;
-      else if (result.status === "REVOKED") counts.revoked += 1;
-      else counts.invalid += 1;
+      counts[BULK_CHECKIN_STATUS_COUNTER[outcome.value.status]] += 1;
     }
   }
 
