@@ -1,6 +1,13 @@
 import { useRef, useState, type ReactNode } from "react";
 import { Button, Card, Checkbox, EmptyState, IconButton, Input, Select, Skeleton } from "@admitto/ui";
-import type { AttendeeRowDto, AttendeeSortBy, AttendeeSortDir, RsvpStatus, TicketTypeDto } from "../api/types.js";
+import type {
+  AttendeeMailStatusFilter,
+  AttendeeRowDto,
+  AttendeeSortBy,
+  AttendeeSortDir,
+  RsvpStatus,
+  TicketTypeDto,
+} from "../api/types.js";
 import { ArchivedGuard, type ArchivedGuardEvent } from "../components/ArchivedGuard.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
@@ -246,6 +253,7 @@ export interface AttendeesTableProps {
   statusFilter: "all" | "admitted" | "not_admitted";
   ticketTypeFilter: string;
   rsvpStatusFilter: "" | RsvpStatus;
+  mailStatusFilter: "" | AttendeeMailStatusFilter;
   ticketTypes?: TicketTypeDto[];
   /** Set when the ticket-type filter's own catalog failed to load - the rest of the table (and
    * the other filters) still work, so this renders as a small inline notice next to the Type
@@ -256,6 +264,7 @@ export interface AttendeesTableProps {
   onStatusFilterChange: (value: "all" | "admitted" | "not_admitted") => void;
   onTicketTypeFilterChange: (value: string) => void;
   onRsvpStatusFilterChange: (value: "" | RsvpStatus) => void;
+  onMailStatusFilterChange: (value: "" | AttendeeMailStatusFilter) => void;
   sortBy: AttendeeSortBy;
   sortDir: AttendeeSortDir;
   onSortChange: (column: AttendeeSortBy) => void;
@@ -575,6 +584,8 @@ function FilterToolbar({
   onRetryTicketTypes,
   rsvpStatusFilter,
   onRsvpStatusFilterChange,
+  mailStatusFilter,
+  onMailStatusFilterChange,
   isDesktop,
   sortBy,
   sortDir,
@@ -591,6 +602,8 @@ function FilterToolbar({
   onRetryTicketTypes?: () => void;
   rsvpStatusFilter: "" | RsvpStatus;
   onRsvpStatusFilterChange: (value: "" | RsvpStatus) => void;
+  mailStatusFilter: "" | AttendeeMailStatusFilter;
+  onMailStatusFilterChange: (value: "" | AttendeeMailStatusFilter) => void;
   isDesktop: boolean;
   sortBy: AttendeeSortBy;
   sortDir: AttendeeSortDir;
@@ -599,7 +612,10 @@ function FilterToolbar({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const activeFilterCount =
-    (statusFilter !== "all" ? 1 : 0) + (rsvpStatusFilter !== "" ? 1 : 0) + (ticketTypeFilter !== "" ? 1 : 0);
+    (statusFilter !== "all" ? 1 : 0) +
+    (rsvpStatusFilter !== "" ? 1 : 0) +
+    (ticketTypeFilter !== "" ? 1 : 0) +
+    (mailStatusFilter !== "" ? 1 : 0);
 
   return (
     <div className="attendees-toolbar">
@@ -694,6 +710,23 @@ function FilterToolbar({
             <option value="all">All check-ins</option>
             <option value="admitted">Checked in</option>
             <option value="not_admitted">Not checked in</option>
+          </Select>
+        </div>
+        <div className="attendees-toolbar__filter">
+          {/* Buckets over raw delivery statuses — filters the same latest-delivery status the
+            * Mail column badge shows (#522). */}
+          <Select
+            id="attendees-filter-mail"
+            name="attendees-filter-mail"
+            aria-label="Filter by mail delivery status"
+            value={mailStatusFilter}
+            onChange={(e) => onMailStatusFilterChange(e.target.value as "" | AttendeeMailStatusFilter)}
+          >
+            <option value="">All mail statuses</option>
+            <option value="not_sent">Not sent</option>
+            <option value="sent">Sent</option>
+            <option value="pending">Pending</option>
+            <option value="failed">Failed</option>
           </Select>
         </div>
       </div>
@@ -924,6 +957,7 @@ export function AttendeesTable({
   statusFilter,
   ticketTypeFilter,
   rsvpStatusFilter,
+  mailStatusFilter,
   ticketTypes = [],
   ticketTypesError,
   onRetryTicketTypes,
@@ -931,6 +965,7 @@ export function AttendeesTable({
   onStatusFilterChange,
   onTicketTypeFilterChange,
   onRsvpStatusFilterChange,
+  onMailStatusFilterChange,
   sortBy,
   sortDir,
   onSortChange,
@@ -992,6 +1027,8 @@ export function AttendeesTable({
           onRetryTicketTypes={onRetryTicketTypes}
           rsvpStatusFilter={rsvpStatusFilter}
           onRsvpStatusFilterChange={onRsvpStatusFilterChange}
+          mailStatusFilter={mailStatusFilter}
+          onMailStatusFilterChange={onMailStatusFilterChange}
           isDesktop={isDesktop}
           sortBy={sortBy}
           sortDir={sortDir}

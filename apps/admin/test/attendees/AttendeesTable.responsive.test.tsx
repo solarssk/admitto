@@ -38,6 +38,8 @@ const tableProps = {
   statusFilter: "all" as const,
   ticketTypeFilter: "",
   rsvpStatusFilter: "" as const,
+  mailStatusFilter: "" as const,
+  onMailStatusFilterChange: vi.fn(),
   onSearchChange: vi.fn(),
   onStatusFilterChange: vi.fn(),
   onTicketTypeFilterChange: vi.fn(),
@@ -284,5 +286,43 @@ describe("AttendeesTable mobile card view (<768px)", () => {
     // Clearing unmounts the button itself - focus should land back on the search input rather
     // than being lost, so keyboard/screen-reader users stay in context (CodeRabbit review).
     expect(document.activeElement).toBe(screen.getByLabelText("Search attendees by name, email, or company"));
+  });
+});
+
+describe("AttendeesTable mail delivery status filter (#522)", () => {
+  beforeEach(() => {
+    mockMatchMedia(true);
+  });
+
+  it("renders the fourth select with the four buckets and reports changes", () => {
+    const onMailStatusFilterChange = vi.fn();
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow]}
+        selectedIds={new Set()}
+        onMailStatusFilterChange={onMailStatusFilterChange}
+      />,
+    );
+
+    const select = screen.getByLabelText("Filter by mail delivery status") as HTMLSelectElement;
+    const values = Array.from(select.options).map((o) => o.value);
+    expect(values).toEqual(["", "not_sent", "sent", "pending", "failed"]);
+
+    fireEvent.change(select, { target: { value: "failed" } });
+    expect(onMailStatusFilterChange).toHaveBeenCalledWith("failed");
+  });
+
+  it("counts an active mail filter in the Filters toggle badge", () => {
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow]}
+        selectedIds={new Set()}
+        mailStatusFilter="not_sent"
+      />,
+    );
+    const toggle = screen.getByRole("button", { name: /Filters/ });
+    expect(within(toggle).getByText("1")).toBeTruthy();
   });
 });

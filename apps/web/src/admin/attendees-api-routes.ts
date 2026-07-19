@@ -27,6 +27,7 @@ import {
   writeBulkActionLog,
   type EventItemContent,
   ATTENDEE_EXPORT_RSVP_STATUSES,
+  ATTENDEE_MAIL_STATUS_FILTERS,
   ATTENDEE_SORT_COLUMNS,
   EXPORT_ROW_CAP,
   countFilteredAttendees,
@@ -45,6 +46,7 @@ import {
   UnknownTicketTypeError,
   acquireEventTicketTypesLock,
   type AdmitResult,
+  type AttendeeMailStatusFilter,
   type AttendeeSortBy,
   type AttendeeSortDir,
 } from "@admitto/tickets";
@@ -376,7 +378,7 @@ async function auditAttendeesExported(
   format: "xlsx" | "csv" | "pdf",
   count: number,
   filters:
-    | { status: string; ticket_type?: string; has_query: boolean }
+    | { status: string; ticket_type?: string; mail_status?: string; has_query: boolean }
     | { selected_count: number },
 ): Promise<void> {
   await db.$transaction(async (tx) => {
@@ -393,6 +395,7 @@ async function auditAttendeesExported(
             : {
                 status: filters.status,
                 ticket_type: filters.ticket_type ?? null,
+                mail_status: filters.mail_status ?? null,
                 has_query: filters.has_query,
               },
       },
@@ -534,7 +537,7 @@ async function loadAttendeeInEvent(
   return row;
 }
 
-/** Parse and clamp list query params (`page`, `pageSize`, `q`, `status`, `ticket_type`, `sortBy`, `sortDir`). */
+/** Parse and clamp list query params (`page`, `pageSize`, `q`, `status`, `ticket_type`, `mail_status`, `sortBy`, `sortDir`). */
 function parseListQuery(c: Context): {
   page: number;
   pageSize: number;
@@ -542,6 +545,7 @@ function parseListQuery(c: Context): {
   status: "all" | "admitted" | "not_admitted";
   ticket_type?: string;
   rsvp_status?: RsvpStatus;
+  mail_status?: AttendeeMailStatusFilter;
   sortBy: AttendeeSortBy;
   sortDir: AttendeeSortDir;
 } {
@@ -558,13 +562,17 @@ function parseListQuery(c: Context): {
   const rsvp_status = RSVP_STATUSES.includes(rsvpRaw as RsvpStatus)
     ? (rsvpRaw as RsvpStatus)
     : undefined;
+  const mailStatusRaw = c.req.query("mail_status")?.trim();
+  const mail_status = ATTENDEE_MAIL_STATUS_FILTERS.includes(mailStatusRaw as AttendeeMailStatusFilter)
+    ? (mailStatusRaw as AttendeeMailStatusFilter)
+    : undefined;
   const sortByRaw = c.req.query("sortBy");
   const sortBy = ATTENDEE_SORT_COLUMNS.includes(sortByRaw as AttendeeSortBy)
     ? (sortByRaw as AttendeeSortBy)
     : "name";
   const sortDirRaw = c.req.query("sortDir");
   const sortDir: AttendeeSortDir = sortDirRaw === "desc" ? "desc" : "asc";
-  return { page, pageSize, q, status, ticket_type, rsvp_status, sortBy, sortDir };
+  return { page, pageSize, q, status, ticket_type, rsvp_status, mail_status, sortBy, sortDir };
 }
 
 /** Latest email delivery status per attendee id (one entry per id). */
@@ -758,9 +766,9 @@ export async function handleListEventAttendees(c: Context, db: PrismaClient): Pr
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
-  const { page, pageSize, q, status, ticket_type, rsvp_status, sortBy, sortDir } = parseListQuery(c);
+  const { page, pageSize, q, status, ticket_type, rsvp_status, mail_status, sortBy, sortDir } = parseListQuery(c);
 
-  const filterParams = { q, status, ticket_type, rsvp_status };
+  const filterParams = { q, status, ticket_type, rsvp_status, mail_status };
 
   const [total, rows] = await Promise.all([
     countFilteredAttendees(db, eventId, filterParams),
@@ -813,9 +821,9 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
   if (selectedIdsOrRes instanceof Response) return selectedIdsOrRes;
   const selectedIds = selectedIdsOrRes;
 
-  const { q, status, ticket_type, rsvp_status } = parseListQuery(c);
+  const { q, status, ticket_type, rsvp_status, mail_status } = parseListQuery(c);
 
-  const filterParams = { q, status, ticket_type, rsvp_status };
+  const filterParams = { q, status, ticket_type, rsvp_status, mail_status };
 
   const event = await db.event.findUnique({
     where: { id: eventId },
@@ -856,7 +864,7 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
   const filename = `attendees-${eventId}-${timestamp}.${format}`;
   const auditFilters = selectedIds
     ? { selected_count: selectedIds.length }
-    : { status, ticket_type, has_query: Boolean(q) };
+    : { status, ticket_type, mail_status, has_query: Boolean(q) };
 
   if (format === "csv") {
     const csv = buildExportCsv(exportRows, exportColumns);

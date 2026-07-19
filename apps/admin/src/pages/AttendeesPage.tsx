@@ -19,6 +19,7 @@ import type {
   AttendeeRowDto,
   AttendeeSortBy,
   AttendeeSortDir,
+  AttendeeMailStatusFilter,
   EventDto,
   RsvpStatus,
   TicketTypeDto,
@@ -369,6 +370,7 @@ export function AttendeesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "admitted" | "not_admitted">("all");
   const [rsvpStatusFilter, setRsvpStatusFilter] = useState<"" | RsvpStatus>("");
+  const [mailStatusFilter, setMailStatusFilter] = useState<"" | AttendeeMailStatusFilter>("");
   const [ticketTypeFilter, setTicketTypeFilter] = useState("");
   const [sortBy, setSortBy] = useState<AttendeeSortBy>("name");
   const [sortDir, setSortDir] = useState<AttendeeSortDir>("asc");
@@ -460,6 +462,7 @@ export function AttendeesPage() {
           status: statusFilter,
           ticket_type: ticketTypeFilter || undefined,
           rsvp_status: rsvpStatusFilter || undefined,
+          mail_status: mailStatusFilter || undefined,
           sortBy,
           sortDir,
         },
@@ -500,6 +503,7 @@ export function AttendeesPage() {
     statusFilter,
     ticketTypeFilter,
     rsvpStatusFilter,
+    mailStatusFilter,
     sortBy,
     sortDir,
     reportApiError,
@@ -529,6 +533,7 @@ export function AttendeesPage() {
             status: statusFilter,
             ticket_type: ticketTypeFilter || undefined,
             rsvp_status: rsvpStatusFilter || undefined,
+            mail_status: mailStatusFilter || undefined,
           },
           format,
           ac.signal,
@@ -550,7 +555,7 @@ export function AttendeesPage() {
         if (!ac.signal.aborted) setExportingFormat(null);
       }
     },
-    [eventId, searchQuery, statusFilter, ticketTypeFilter, rsvpStatusFilter, reportApiError, addToast],
+    [eventId, searchQuery, statusFilter, ticketTypeFilter, rsvpStatusFilter, mailStatusFilter, reportApiError, addToast],
   );
 
   const handleCreated = (attendee: AttendeeDetailDto) => {
@@ -849,7 +854,12 @@ export function AttendeesPage() {
   };
 
   const isUnfilteredEmpty =
-    total === 0 && !searchQuery && statusFilter === "all" && !ticketTypeFilter && !rsvpStatusFilter;
+    total === 0 &&
+    !searchQuery &&
+    statusFilter === "all" &&
+    !ticketTypeFilter &&
+    !rsvpStatusFilter &&
+    !mailStatusFilter;
 
   if (!eventId) return <p>Missing event.</p>;
 
@@ -933,6 +943,7 @@ export function AttendeesPage() {
         statusFilter={statusFilter}
         ticketTypeFilter={ticketTypeFilter}
         rsvpStatusFilter={rsvpStatusFilter}
+        mailStatusFilter={mailStatusFilter}
         ticketTypes={ticketTypes}
         ticketTypesError={ticketTypesError}
         onRetryTicketTypes={() => setTicketTypesRetryToken((n) => n + 1)}
@@ -947,6 +958,10 @@ export function AttendeesPage() {
         }}
         onRsvpStatusFilterChange={(v) => {
           setRsvpStatusFilter(v);
+          setPage(1);
+        }}
+        onMailStatusFilterChange={(v) => {
+          setMailStatusFilter(v);
           setPage(1);
         }}
         sortBy={sortBy}

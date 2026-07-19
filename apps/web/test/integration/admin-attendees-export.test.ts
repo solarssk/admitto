@@ -49,6 +49,7 @@ let opCookie = "";
 async function seed(client: PrismaClient) {
   const eventIds = [EVENT_EX, EVENT_EX_B, EVENT_EMPTY, EVENT_EX_JACKET, EVENT_EX_SHIRT, EVENT_EX_INJ_HEADER];
   await client.attendeeActionLog.deleteMany({ where: { event_id: { in: eventIds } } });
+  await client.emailDelivery.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.attendee.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.eventItem.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.roleAssignment.deleteMany({
@@ -909,5 +910,94 @@ describe("GET /api/admin/events/:eventId/attendees/export — attendee_ids selec
       { headers: { Cookie: opCookie } },
     );
     expect(res.status).toBe(403);
+  });
+});
+
+describe("mail_status filter — list + export (#522)", () => {
+  // Latest-delivery buckets: VIP1 sent (newer sent beats older failed), VIP2 pending (queued),
+  // STD failed (newer bounced beats older sent), INJ sent (delivered); everyone else not_sent.
+  beforeAll(async () => {
+    const org = { organization_id: ORG_EX, event_id: EVENT_EX, provider: "smtp" };
+    await prisma.emailDelivery.createMany({
+      data: [
+        { ...org, attendee_id: ATT_VIP1, status: "failed", created_at: new Date("2026-06-01T10:00:00Z") },
+        { ...org, purpose: "resend", attendee_id: ATT_VIP1, status: "sent", created_at: new Date("2026-06-02T10:00:00Z") },
+        { ...org, attendee_id: ATT_VIP2, status: "queued", created_at: new Date("2026-06-01T10:00:00Z") },
+        { ...org, attendee_id: ATT_STD, status: "sent", created_at: new Date("2026-06-01T10:00:00Z") },
+        { ...org, purpose: "resend", attendee_id: ATT_STD, status: "bounced", created_at: new Date("2026-06-03T10:00:00Z") },
+        { ...org, attendee_id: ATT_INJ, status: "delivered", created_at: new Date("2026-06-01T10:00:00Z") },
+      ],
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.emailDelivery.deleteMany({ where: { event_id: EVENT_EX } });
+  });
+
+  beforeEach(() => {
+    rateLimitStore.reset();
+  });
+
+  async function listIds(query: string): Promise<string[]> {
+    // pageSize=100: EVENT_EX carries ~60 fixture attendees from earlier blocks — one page.
+    const res = await app.request(
+      `/api/admin/events/${EVENT_EX}/attendees?pageSize=100&${query}`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: { id: string }[]; total: number };
+    expect(body.total).toBe(body.items.length);
+    return body.items.map((i) => i.id).sort();
+  }
+
+  it("sent bucket matches the LATEST delivery (a newer sent beats an older failed)", async () => {
+    expect(await listIds("mail_status=sent")).toEqual([ATT_INJ, ATT_VIP1].sort());
+  });
+
+  it("failed bucket matches the LATEST delivery (a newer bounce beats an older sent)", async () => {
+    expect(await listIds("mail_status=failed")).toEqual([ATT_STD]);
+  });
+
+  it("pending bucket returns attendees whose latest delivery is queued", async () => {
+    expect(await listIds("mail_status=pending")).toEqual([ATT_VIP2]);
+  });
+
+  it("not_sent returns exactly the attendees with no deliveries at all", async () => {
+    const all = await listIds("");
+    const withDeliveries = [ATT_VIP1, ATT_VIP2, ATT_STD, ATT_INJ];
+    const expected = all.filter((id) => !withDeliveries.includes(id));
+    expect(await listIds("mail_status=not_sent")).toEqual(expected);
+    expect(expected).toEqual(expect.arrayContaining([ATT_MEGA_STD, ATT_MEGA_VIP, "att-export-notype"]));
+  });
+
+  it("composes with ticket_type and with q (both raw-SQL paths)", async () => {
+    expect(await listIds("mail_status=failed&ticket_type=standard")).toEqual([ATT_STD]);
+    expect(await listIds("mail_status=sent&q=Vip")).toEqual([ATT_VIP1]);
+  });
+
+  it("an unknown mail_status value is ignored (no filter applied)", async () => {
+    const all = await listIds("");
+    expect(await listIds("mail_status=carrier-pigeon")).toEqual(all);
+  });
+
+  it("export respects mail_status and audit metadata records it", async () => {
+    await prisma.attendeeActionLog.deleteMany({
+      where: { event_id: EVENT_EX, action_type: "attendees_exported" },
+    });
+    const res = await app.request(
+      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&mail_status=failed`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const lines = (await res.text()).split("\r\n").filter(Boolean);
+    expect(lines.length).toBe(2); // header + ATT_STD
+    expect(lines[1]).toContain("Standard Guest");
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { event_id: EVENT_EX, action_type: "attendees_exported" },
+      orderBy: { created_at: "desc" },
+    });
+    const meta = log!.metadata as Record<string, unknown>;
+    expect(meta.filters).toMatchObject({ mail_status: "failed" });
   });
 });

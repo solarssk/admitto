@@ -1,6 +1,7 @@
 import type {
   AttendeeCardDto,
   AttendeeDetailDto,
+  AttendeeMailStatusFilter,
   AttendeesListParams,
   AttendeesListResponse,
   BrandingThemeDto,
@@ -682,6 +683,7 @@ function attendeesListQuery(eventId: string, params: AttendeesListParams = {}): 
   if (params.status && params.status !== "all") q.set("status", params.status);
   if (params.ticket_type) q.set("ticket_type", params.ticket_type);
   if (params.rsvp_status) q.set("rsvp_status", params.rsvp_status);
+  if (params.mail_status) q.set("mail_status", params.mail_status);
   if (params.sortBy && params.sortBy !== "name") q.set("sortBy", params.sortBy);
   if (params.sortDir && params.sortDir !== "asc") q.set("sortDir", params.sortDir);
   const qs = q.toString();
@@ -1186,6 +1188,7 @@ export async function exportAttendees(
     status?: string;
     ticket_type?: string;
     rsvp_status?: RsvpStatus;
+    mail_status?: AttendeeMailStatusFilter;
     attendee_ids?: string[];
   },
   format: "xlsx" | "csv" | "pdf",
@@ -1196,6 +1199,7 @@ export async function exportAttendees(
   if (params.status && params.status !== "all") urlParams.set("status", params.status);
   if (params.ticket_type) urlParams.set("ticket_type", params.ticket_type);
   if (params.rsvp_status) urlParams.set("rsvp_status", params.rsvp_status);
+  if (params.mail_status) urlParams.set("mail_status", params.mail_status);
   if (params.attendee_ids?.length) urlParams.set("attendee_ids", params.attendee_ids.join(","));
 
   const res = await fetch(
