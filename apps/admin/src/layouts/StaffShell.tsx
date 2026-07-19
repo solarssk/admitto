@@ -3,6 +3,7 @@ import { useAuth } from "../auth/AuthProvider.js";
 import { MailerStatusBadge } from "../components/MailerStatusBadge.js";
 import { RoleBadge } from "../components/RoleBadge.js";
 import { ServerConnectionBadge } from "../checkin/ConnectionBanner.js";
+import { readSidebarPinned, writeSidebarPinned } from "./sidebarPinPref.js";
 
 export interface StaffShellProps {
   sidebar: ReactNode;
@@ -11,27 +12,12 @@ export interface StaffShellProps {
   children: ReactNode;
 }
 
-const SIDEBAR_PIN_KEY = "admitto_sidebar_pinned";
-
-/** Read sidebar pin preference from localStorage (defaults to pinned).
- * The `typeof window` check must come first: Node 25+ ships a global
- * localStorage whose mere access emits an ExperimentalWarning in test worker
- * processes, so probing localStorage itself is not a safe guard. */
-function readPinned(): boolean {
-  if (typeof window === "undefined") return true;
-  try {
-    return localStorage.getItem(SIDEBAR_PIN_KEY) !== "false";
-  } catch {
-    return true;
-  }
-}
-
 /** App shell: fixed sidebar + topbar chrome, scrollable main content area. */
 export function StaffShell({ sidebar, subnav, children }: StaffShellProps) {
   const { user, assignments } = useAuth();
   const displayName = user.display_name || user.email.split("@")[0] || "Staff";
   const [navOpen, setNavOpen] = useState(false);
-  const [pinned, setPinned] = useState(readPinned);
+  const [pinned, setPinned] = useState(readSidebarPinned);
   const [hovered, setHovered] = useState(false);
 
   const closeNav = useCallback(() => setNavOpen(false), []);
@@ -39,13 +25,7 @@ export function StaffShell({ sidebar, subnav, children }: StaffShellProps) {
   const togglePin = () => {
     const next = !pinned;
     setPinned(next);
-    if (typeof window !== "undefined") {
-      try {
-        localStorage.setItem(SIDEBAR_PIN_KEY, String(next));
-      } catch {
-        /* ignore storage errors */
-      }
-    }
+    writeSidebarPinned(next);
   };
 
   const sidebarExpanded = pinned || hovered;
