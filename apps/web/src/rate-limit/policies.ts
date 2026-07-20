@@ -224,6 +224,16 @@ export const RATE_POLICIES = {
       },
     ],
   },
+  "admin:attendees-search": {
+    checks: [
+      {
+        keyOf: (c) => adminUserEventKey(c, "attendees-search"),
+        windowMs: 60_000,
+        max: 120,
+        logOnExceeded: { scope: "admin_attendees_search", keyHint: "user_event" },
+      },
+    ],
+  },
   "admin:import-commit": {
     checks: [
       {
