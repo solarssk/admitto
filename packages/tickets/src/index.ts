@@ -56,7 +56,7 @@ export {
 } from "./ticket-types.js";
 export type { TicketTypeInfo, TicketTypeColor } from "./ticket-types.js";
 export { parseEventOpsConfig, loadEventOpsConfig } from "./ops-config.js";
-export { writeActionLog, writeBulkActionLog } from "./ops-audit.js";
+export { writeActionLog, writeActionLogMany, writeBulkActionLog } from "./ops-audit.js";
 export { writeAdminAuditLog } from "./admin-audit.js";
 export {
   ATTENDEE_EXPORT_RSVP_STATUSES,
@@ -66,6 +66,7 @@ export {
   countFilteredAttendees,
   findFilteredAttendeesForExport,
   findFilteredAttendeesForList,
+  findSelectedAttendeesForExport,
 } from "./attendees-list-filters.js";
 export type {
   AttendeeExportRsvpStatus,

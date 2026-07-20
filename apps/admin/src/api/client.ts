@@ -758,6 +758,25 @@ export async function bulkDeleteAttendees(
 
 /** Manually check in a selection of attendees at once (no QR scan), from the Attendees list's
  * row-selection bulk bar. Same single-use CAS admission path as scan check-in. */
+export interface BulkTicketTypeResponse {
+  updatedCount: number;
+  alreadySetCount: number;
+}
+
+/** Assign one catalog ticket type to every selected attendee. Ids outside the event are
+ * silently ignored server-side; rows already carrying the type are counted separately. */
+export async function bulkChangeTicketType(
+  eventId: string,
+  attendeeIds: string[],
+  ticketType: string,
+): Promise<BulkTicketTypeResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-ticket-type`,
+    jsonPostInit({ attendeeIds, ticket_type: ticketType }),
+  );
+  return parseJson<BulkTicketTypeResponse>(res);
+}
+
 export async function bulkCheckInAttendees(
   eventId: string,
   attendeeIds: string[],
@@ -1136,23 +1155,11 @@ export async function deleteTicketType(eventId: string, typeId: string): Promise
   await parseJson<{ ok: boolean }>(res);
 }
 
-/** Download a filtered attendee export and trigger browser save. */
-export async function exportAttendees(
-  eventId: string,
-  params: { q?: string; status?: string; ticket_type?: string; rsvp_status?: RsvpStatus },
-  format: "xlsx" | "csv" | "pdf",
-  signal?: AbortSignal,
-): Promise<void> {
-  const urlParams = new URLSearchParams({ format });
-  if (params.q) urlParams.set("q", params.q);
-  if (params.status && params.status !== "all") urlParams.set("status", params.status);
-  if (params.ticket_type) urlParams.set("ticket_type", params.ticket_type);
-  if (params.rsvp_status) urlParams.set("rsvp_status", params.rsvp_status);
+type AttendeeExportFormat = "xlsx" | "csv" | "pdf";
 
-  const res = await fetch(
-    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/export?${urlParams.toString()}`,
-    { credentials: "same-origin", signal },
-  );
+/** Shared by both export entry points: validates the response, then triggers the browser
+ * download from the returned blob. */
+async function downloadExportResponse(res: Response, format: AttendeeExportFormat): Promise<void> {
   if (!res.ok) {
     let message = `HTTP ${res.status}`;
     try {
@@ -1177,6 +1184,48 @@ export async function exportAttendees(
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+/** Filtered export (header "Export" menu) — the current list filters as XLSX/CSV/PDF. */
+export async function exportAttendees(
+  eventId: string,
+  params: {
+    q?: string;
+    status?: string;
+    ticket_type?: string;
+    rsvp_status?: RsvpStatus;
+  },
+  format: AttendeeExportFormat,
+  signal?: AbortSignal,
+): Promise<void> {
+  const urlParams = new URLSearchParams({ format });
+  if (params.q) urlParams.set("q", params.q);
+  if (params.status && params.status !== "all") urlParams.set("status", params.status);
+  if (params.ticket_type) urlParams.set("ticket_type", params.ticket_type);
+  if (params.rsvp_status) urlParams.set("rsvp_status", params.rsvp_status);
+
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/export?${urlParams.toString()}`,
+    { credentials: "same-origin", signal },
+  );
+  await downloadExportResponse(res, format);
+}
+
+/** Explicit-selection export (bulk bar's "Export selected") — a POST with the ids in the JSON
+ * body, not a GET with them in the query string: the default reverse-proxy access log records
+ * the full request URI, and this app's own access log deliberately excludes query strings for
+ * exactly this reason (Codex review, #520). */
+export async function exportSelectedAttendees(
+  eventId: string,
+  attendeeIds: string[],
+  format: AttendeeExportFormat,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/attendees/export-selected`, {
+    ...jsonPostInit({ attendee_ids: attendeeIds, format }),
+    signal,
+  });
+  await downloadExportResponse(res, format);
 }
 
 /** Load instance mail transport settings (superadmin). */

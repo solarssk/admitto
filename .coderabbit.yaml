@@ -1,0 +1,8 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+reviews:
+  auto_review:
+    # Automatic reviews were failing the (non-required) CodeRabbit status check with
+    # "Review rate limited" on every PR, regardless of the PR's actual content — a
+    # false-positive red X in CI history. Manual review is still available via the
+    # @coderabbitai review command on a PR.
+    enabled: false

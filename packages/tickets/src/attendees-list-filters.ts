@@ -195,6 +195,23 @@ export async function findFilteredAttendeesForList(
   `;
 }
 
+/** Explicit-selection export — rows for the given ids only, scoped to the event. Ids that
+ * don't belong to this event are silently ignored, same convention as bulk delete/check-in
+ * (the UI can only select rows already on the current event's current page). */
+export async function findSelectedAttendeesForExport(
+  db: PrismaClient,
+  eventId: string,
+  attendeeIds: string[],
+): Promise<ExportAttendeeSqlRow[]> {
+  if (attendeeIds.length === 0) return [];
+  return db.attendee.findMany({
+    where: { event_id: eventId, id: { in: attendeeIds } },
+    select: EXPORT_ATTENDEE_SELECT,
+    orderBy: { name: "asc" },
+    take: EXPORT_ROW_CAP,
+  });
+}
+
 export async function findFilteredAttendeesForExport(
   db: PrismaClient,
   eventId: string,

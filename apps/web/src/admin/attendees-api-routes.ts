@@ -22,6 +22,7 @@ import {
   customDataValue,
   parseCustomData,
   writeActionLog,
+  writeActionLogMany,
   writeAdminAuditLog,
   writeBulkActionLog,
   type EventItemContent,
@@ -31,6 +32,7 @@ import {
   countFilteredAttendees,
   findFilteredAttendeesForExport,
   findFilteredAttendeesForList,
+  findSelectedAttendeesForExport,
   isAdmittable,
   admitAttendee,
   revokeCheckIn,
@@ -45,6 +47,7 @@ import {
   type AdmitResult,
   type AttendeeSortBy,
   type AttendeeSortDir,
+  type ExportAttendeeSqlRow,
 } from "@admitto/tickets";
 import {
   EXPORT_BASE_COLUMNS,
@@ -364,14 +367,18 @@ async function buildExportPdfBuffer(
   return new Uint8Array(Buffer.concat(chunks));
 }
 
-/** Append bulk audit row after a successful filtered export (no raw search term). */
+/** Append bulk audit row after a successful filtered or explicit-selection export (no raw
+ * search term, no attendee ids — `selected_count` is how many ids the operator requested,
+ * while `count` above it is how many rows actually exported). */
 async function auditAttendeesExported(
   db: PrismaClient,
   c: Context,
   eventId: string,
   format: "xlsx" | "csv" | "pdf",
   count: number,
-  filters: { status: string; ticket_type?: string; has_query: boolean },
+  filters:
+    | { status: string; ticket_type?: string; has_query: boolean }
+    | { selected_count: number },
 ): Promise<void> {
   await db.$transaction(async (tx) => {
     await writeBulkActionLog(tx, {
@@ -381,11 +388,14 @@ async function auditAttendeesExported(
       metadata: {
         format,
         count,
-        filters: {
-          status: filters.status,
-          ticket_type: filters.ticket_type ?? null,
-          has_query: filters.has_query,
-        },
+        filters:
+          "selected_count" in filters
+            ? { selected_count: filters.selected_count }
+            : {
+                status: filters.status,
+                ticket_type: filters.ticket_type ?? null,
+                has_query: filters.has_query,
+              },
       },
     });
   });
@@ -772,42 +782,22 @@ export async function handleListEventAttendees(c: Context, db: PrismaClient): Pr
   });
 }
 
-/** GET /api/admin/events/:eventId/attendees/export — filtered subset as XLSX, CSV, or PDF (no tokens). */
-export async function handleExportAttendees(c: Context, db: PrismaClient): Promise<Response> {
-  const eventIdOrRes = requireEventId(c);
-  if (eventIdOrRes instanceof Response) return eventIdOrRes;
-  const eventId = eventIdOrRes;
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
+type ExportFormat = "xlsx" | "csv" | "pdf";
 
-  const formatRaw = c.req.query("format");
-  if (formatRaw !== "xlsx" && formatRaw !== "csv" && formatRaw !== "pdf") {
-    return c.json({ error: "format must be xlsx, csv, or pdf" }, 400);
-  }
-  const format = formatRaw;
-
-  const { q, status, ticket_type, rsvp_status } = parseListQuery(c);
-
-  const filterParams = { q, status, ticket_type, rsvp_status };
-
-  const event = await db.event.findUnique({
-    where: { id: eventId },
-    select: { title: true, date: true, timezone: true },
-  });
-
-  if (!event) {
-    return c.json({ error: "not_found" }, 404);
-  }
-
+/** Shared by the filtered (GET) and explicit-selection (POST) export handlers: builds the
+ * sanitized export rows, writes the bulk-action audit entry, and returns the file response for
+ * whichever format was requested. */
+async function buildExportFileResponse(
+  db: PrismaClient,
+  c: Context,
+  eventId: string,
+  rows: ExportAttendeeSqlRow[],
+  format: ExportFormat,
+  event: { title: string; date: Date; timezone: string },
+  auditFilters: { status: string; ticket_type?: string; has_query: boolean } | { selected_count: number },
+): Promise<Response> {
   const timeZone = resolvePreviewEventTimeZone(event.timezone);
-
-  const total = await countFilteredAttendees(db, eventId, filterParams);
-  if (total > EXPORT_ROW_CAP) {
-    return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
-  }
-
-  const [rows, attributeFieldsResult, ticketTypes] = await Promise.all([
-    findFilteredAttendeesForExport(db, eventId, filterParams),
+  const [attributeFieldsResult, ticketTypes] = await Promise.all([
     loadEventCustomDataFields(db, eventId).catch((err) => err),
     loadEventTicketTypes(db, eventId),
   ]);
@@ -821,7 +811,6 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
 
   const timestamp = new Date().toISOString().slice(0, 10);
   const filename = `attendees-${eventId}-${timestamp}.${format}`;
-  const auditFilters = { status, ticket_type, has_query: Boolean(q) };
 
   if (format === "csv") {
     const csv = buildExportCsv(exportRows, exportColumns);
@@ -864,6 +853,96 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
       "Cache-Control": "no-store",
       "Pragma": "no-cache",
     },
+  });
+}
+
+/** GET /api/admin/events/:eventId/attendees/export — filtered subset as XLSX, CSV, or PDF (no
+ * tokens). An explicit-selection export (checked rows in the bulk bar) is a separate POST
+ * endpoint (`handleExportSelectedAttendees`, below) — its ids never travel in a query string,
+ * since the default reverse-proxy access log records the full request URI (unlike this app's
+ * own PII-free access log), and a selection of attendee ids is exactly the kind of detail that
+ * log shouldn't retain. */
+export async function handleExportAttendees(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const formatRaw = c.req.query("format");
+  if (formatRaw !== "xlsx" && formatRaw !== "csv" && formatRaw !== "pdf") {
+    return c.json({ error: "format must be xlsx, csv, or pdf" }, 400);
+  }
+  const format = formatRaw;
+
+  const { q, status, ticket_type, rsvp_status } = parseListQuery(c);
+  const filterParams = { q, status, ticket_type, rsvp_status };
+
+  const event = await db.event.findUnique({
+    where: { id: eventId },
+    select: { title: true, date: true, timezone: true },
+  });
+  if (!event) {
+    return c.json({ error: "not_found" }, 404);
+  }
+
+  const total = await countFilteredAttendees(db, eventId, filterParams);
+  if (total > EXPORT_ROW_CAP) {
+    return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
+  }
+
+  const rows = await findFilteredAttendeesForExport(db, eventId, filterParams);
+  return buildExportFileResponse(db, c, eventId, rows, format, event, {
+    status,
+    ticket_type,
+    has_query: Boolean(q),
+  });
+}
+
+const exportSelectedBodySchema = z
+  .object({
+    attendee_ids: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+    format: z.enum(["xlsx", "csv", "pdf"]),
+  })
+  .strict();
+
+/** POST /api/admin/events/:eventId/attendees/export-selected — CSV/XLSX/PDF of an explicit
+ * subset of attendees (the bulk bar's "Export selected"), bypassing list filters entirely. A
+ * POST with the ids in the JSON body, not a GET with them in the query string (Codex review,
+ * #520): the default reverse-proxy access log records the full request URI, and this app's own
+ * access log deliberately excludes query strings for exactly this reason (deploy/README.md) —
+ * a GET here would have quietly reopened that same PII-adjacent leak one layer down. Capped at
+ * the same BULK_SEND_LIMIT as every other bulk action now that the ids aren't URL-length
+ * constrained. Ids that don't belong to this event are silently ignored (findSelectedAttendeesForExport),
+ * same convention as bulk delete/check-in. */
+export async function handleExportSelectedAttendees(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid json" }, 400);
+  }
+  const parsed = exportSelectedBodySchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "validation_failed" }, 400);
+  const { attendee_ids: attendeeIds, format } = parsed.data;
+
+  const event = await db.event.findUnique({
+    where: { id: eventId },
+    select: { title: true, date: true, timezone: true },
+  });
+  if (!event) {
+    return c.json({ error: "not_found" }, 404);
+  }
+
+  const rows = await findSelectedAttendeesForExport(db, eventId, attendeeIds);
+  return buildExportFileResponse(db, c, eventId, rows, format, event, {
+    selected_count: attendeeIds.length,
   });
 }
 
@@ -1435,6 +1514,90 @@ export async function handleBulkDeleteEventAttendees(c: Context, db: PrismaClien
   });
 
   return c.json({ deletedCount });
+}
+
+const bulkTicketTypeBodySchema = z
+  .object({
+    attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+    ticket_type: z.string().trim().min(1).max(100),
+  })
+  .strict();
+
+/** POST /api/admin/events/:eventId/attendees/bulk-ticket-type — assign one catalog ticket type
+ * to every selected attendee at once, from the Attendees list's row-selection bulk bar. A plain
+ * field write — no per-attendee CAS and no expected_updated_at (unlike bulk check-in): the list
+ * reloads after the action and re-applying the same type is harmless. Ids that don't belong to
+ * this event are silently ignored, matching bulk delete/check-in. Catalog membership is
+ * validated once inside the transaction, under the same advisory lock ticket-type DELETE takes
+ * (TOCTOU — same rationale as the single-attendee PATCH), so the picked type can't be deleted
+ * out from under the write between the picker opening and submit. Rows that already have the
+ * target type are left untouched (no updated_at bump, no log entry) and reported back as
+ * alreadySetCount for the toast breakdown. */
+export async function handleBulkTicketTypeEventAttendees(
+  c: Context,
+  db: PrismaClient,
+): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid json" }, 400);
+  }
+  const parsed = bulkTicketTypeBodySchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "validation_failed" }, 400);
+  const { attendeeIds, ticket_type } = parsed.data;
+
+  try {
+    const counts = await db.$transaction(async (tx) => {
+      await acquireEventTicketTypesLock(tx, eventId);
+      const ticketTypeError = await validateTicketTypeCatalog(tx, eventId, ticket_type);
+      if (ticketTypeError) throw c.json(ticketTypeError, 400);
+
+      const owned = await tx.attendee.findMany({
+        where: { id: { in: attendeeIds }, event_id: eventId },
+        select: { id: true, ticket_type: true },
+      });
+      const changed = owned.filter((a) => a.ticket_type !== ticket_type);
+      if (changed.length === 0) {
+        return { updatedCount: 0, alreadySetCount: owned.length };
+      }
+
+      await tx.attendee.updateMany({
+        where: { id: { in: changed.map((a) => a.id) } },
+        data: { ticket_type },
+      });
+
+      // Same action_type + metadata shape as the single-attendee PATCH's profile-edit log, so
+      // the attendee detail timeline renders a bulk change identically to a manual one.
+      await writeActionLogMany(tx, {
+        event_id: eventId,
+        action_type: "attendee_edited",
+        audit: adminAuditFromContext(c),
+        entries: changed.map((a) => ({
+          attendee_id: a.id,
+          metadata: {
+            fields: ["ticket_type"],
+            field_changes: { ticket_type: { from: a.ticket_type, to: ticket_type } },
+          },
+        })),
+      });
+
+      return { updatedCount: changed.length, alreadySetCount: owned.length - changed.length };
+    });
+
+    return c.json(counts);
+  } catch (err) {
+    if (err instanceof Response) return err;
+    console.error("handleBulkTicketTypeEventAttendees failed:", err);
+    return c.json({ error: "server error" }, 500);
+  }
 }
 
 const bulkCheckInAttendeesBodySchema = z
