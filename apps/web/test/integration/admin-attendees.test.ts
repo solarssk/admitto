@@ -2997,6 +2997,34 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-ticket-type", () => {
     expect(logs).toHaveLength(0);
   });
 
+  it("updates nothing and writes no logs when every selected attendee already has the type", async () => {
+    const ids = ["att-bulk-tt-all-already-1", "att-bulk-tt-all-already-2"];
+    await seedTyped(ids, "vip");
+
+    const res = await postBulkType(EVENT_A, { attendeeIds: ids, ticket_type: "vip" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updatedCount: 0, alreadySetCount: 2 });
+    const logs = await prisma.attendeeActionLog.findMany({
+      where: { attendee_id: { in: ids }, action_type: "attendee_edited" },
+    });
+    expect(logs).toHaveLength(0);
+  });
+
+  it("returns a generic 500 without leaking the underlying error for an unexpected failure", async () => {
+    const id = "att-bulk-tt-transaction-fails";
+    await seedTyped([id], "standard");
+    const spy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("db exploded"));
+    try {
+      const res = await postBulkType(EVENT_A, { attendeeIds: [id], ticket_type: "vip" });
+      expect(res.status).toBe(500);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("server error");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("rejects a type that is not in the event's catalog", async () => {
     const id = "att-bulk-tt-unknown-type";
     await seedTyped([id], "standard");
