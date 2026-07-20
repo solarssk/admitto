@@ -22,6 +22,7 @@ import {
   customDataValue,
   parseCustomData,
   writeActionLog,
+  writeActionLogMany,
   writeAdminAuditLog,
   writeBulkActionLog,
   type EventItemContent,
@@ -1513,6 +1514,90 @@ export async function handleBulkDeleteEventAttendees(c: Context, db: PrismaClien
   });
 
   return c.json({ deletedCount });
+}
+
+const bulkTicketTypeBodySchema = z
+  .object({
+    attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+    ticket_type: z.string().trim().min(1).max(100),
+  })
+  .strict();
+
+/** POST /api/admin/events/:eventId/attendees/bulk-ticket-type — assign one catalog ticket type
+ * to every selected attendee at once, from the Attendees list's row-selection bulk bar. A plain
+ * field write — no per-attendee CAS and no expected_updated_at (unlike bulk check-in): the list
+ * reloads after the action and re-applying the same type is harmless. Ids that don't belong to
+ * this event are silently ignored, matching bulk delete/check-in. Catalog membership is
+ * validated once inside the transaction, under the same advisory lock ticket-type DELETE takes
+ * (TOCTOU — same rationale as the single-attendee PATCH), so the picked type can't be deleted
+ * out from under the write between the picker opening and submit. Rows that already have the
+ * target type are left untouched (no updated_at bump, no log entry) and reported back as
+ * alreadySetCount for the toast breakdown. */
+export async function handleBulkTicketTypeEventAttendees(
+  c: Context,
+  db: PrismaClient,
+): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid json" }, 400);
+  }
+  const parsed = bulkTicketTypeBodySchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "validation_failed" }, 400);
+  const { attendeeIds, ticket_type } = parsed.data;
+
+  try {
+    const counts = await db.$transaction(async (tx) => {
+      await acquireEventTicketTypesLock(tx, eventId);
+      const ticketTypeError = await validateTicketTypeCatalog(tx, eventId, ticket_type);
+      if (ticketTypeError) throw c.json(ticketTypeError, 400);
+
+      const owned = await tx.attendee.findMany({
+        where: { id: { in: attendeeIds }, event_id: eventId },
+        select: { id: true, ticket_type: true },
+      });
+      const changed = owned.filter((a) => a.ticket_type !== ticket_type);
+      if (changed.length === 0) {
+        return { updatedCount: 0, alreadySetCount: owned.length };
+      }
+
+      await tx.attendee.updateMany({
+        where: { id: { in: changed.map((a) => a.id) } },
+        data: { ticket_type },
+      });
+
+      // Same action_type + metadata shape as the single-attendee PATCH's profile-edit log, so
+      // the attendee detail timeline renders a bulk change identically to a manual one.
+      await writeActionLogMany(tx, {
+        event_id: eventId,
+        action_type: "attendee_edited",
+        audit: adminAuditFromContext(c),
+        entries: changed.map((a) => ({
+          attendee_id: a.id,
+          metadata: {
+            fields: ["ticket_type"],
+            field_changes: { ticket_type: { from: a.ticket_type, to: ticket_type } },
+          },
+        })),
+      });
+
+      return { updatedCount: changed.length, alreadySetCount: owned.length - changed.length };
+    });
+
+    return c.json(counts);
+  } catch (err) {
+    if (err instanceof Response) return err;
+    console.error("handleBulkTicketTypeEventAttendees failed:", err);
+    return c.json({ error: "server error" }, 500);
+  }
 }
 
 const bulkCheckInAttendeesBodySchema = z
