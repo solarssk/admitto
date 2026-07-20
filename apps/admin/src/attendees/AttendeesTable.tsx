@@ -394,6 +394,8 @@ function BulkMoreActionsMenu({
   ticketTypeCount,
   changeTicketTypeDisabled,
   changeTicketTypeDisabledReason,
+  ticketTypesError,
+  onRetryTicketTypes,
   onChangeTicketType,
   onDelete,
 }: Readonly<{
@@ -407,6 +409,8 @@ function BulkMoreActionsMenu({
   ticketTypeCount: number;
   changeTicketTypeDisabled: boolean;
   changeTicketTypeDisabledReason?: string;
+  ticketTypesError?: string | null;
+  onRetryTicketTypes?: () => void;
   onChangeTicketType: () => void;
   onDelete: () => void;
 }>) {
@@ -497,6 +501,19 @@ function BulkMoreActionsMenu({
               </span>
             </span>
           </button>
+          {/* The catalog fetch's own retry lives behind the Type filter, which this bulk bar
+           * replaces while rows are selected — without this, the only way to retry was to
+           * clear the selection first, losing the batch the operator was about to act on
+           * (Codex review). */}
+          {!archived && changeTicketTypeDisabled && ticketTypesError && onRetryTicketTypes && (
+            <button
+              type="button"
+              className="more-actions-menu__retry link-btn"
+              onClick={onRetryTicketTypes}
+            >
+              Retry loading ticket types
+            </button>
+          )}
           <hr className="more-actions-menu__divider" />
           {/* Not ArchivedGuard'd — GDPR erasure requests can legally arrive after an event
            * ends; the DELETE endpoint doesn't block on archived_at either. */}
@@ -546,6 +563,7 @@ function BulkBar({
   onBulkExportSelected,
   ticketTypes,
   ticketTypesError,
+  onRetryTicketTypes,
   onBulkChangeTicketType,
   onBulkDelete,
 }: Readonly<{
@@ -561,6 +579,7 @@ function BulkBar({
   onBulkExportSelected: () => void;
   ticketTypes: TicketTypeDto[];
   ticketTypesError?: string | null;
+  onRetryTicketTypes?: () => void;
   onBulkChangeTicketType: () => void;
   onBulkDelete: () => void;
 }>) {
@@ -636,6 +655,8 @@ function BulkBar({
           ticketTypeCount={ticketTypes.length}
           changeTicketTypeDisabled={archived || ticketTypes.length === 0}
           changeTicketTypeDisabledReason={bulkChangeTicketTypeReason(archived, ticketTypesError)}
+          ticketTypesError={ticketTypesError}
+          onRetryTicketTypes={onRetryTicketTypes}
           onChangeTicketType={onBulkChangeTicketType}
           onDelete={onBulkDelete}
         />
@@ -1102,6 +1123,7 @@ export function AttendeesTable({
           onBulkExportSelected={onBulkExportSelected}
           ticketTypes={ticketTypes}
           ticketTypesError={ticketTypesError}
+          onRetryTicketTypes={onRetryTicketTypes}
           onBulkChangeTicketType={onBulkChangeTicketType}
           onBulkDelete={onBulkDelete}
         />
