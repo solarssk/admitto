@@ -413,7 +413,7 @@ function BulkMoreActionsMenu({
           >
             <i className="ti ti-download" aria-hidden="true" />
             <span className="more-actions-menu__item-text">
-              Export selected
+              <span>Export selected</span>
               <span className="more-actions-menu__item-hint">
                 CSV of {selectedCount} attendee{selectedCount === 1 ? "" : "s"}
               </span>
@@ -435,7 +435,7 @@ function BulkMoreActionsMenu({
           >
             <i className="ti ti-ticket" aria-hidden="true" />
             <span className="more-actions-menu__item-text">
-              Change ticket type
+              <span>Change ticket type</span>
               <span className="more-actions-menu__item-hint">
                 Choose from {ticketTypeCount} configured type{ticketTypeCount === 1 ? "" : "s"}
               </span>
@@ -476,6 +476,7 @@ function BulkBar({
   bulkExportBusy,
   onBulkExportSelected,
   ticketTypes,
+  ticketTypesError,
   onBulkChangeTicketType,
   onBulkDelete,
 }: Readonly<{
@@ -490,6 +491,7 @@ function BulkBar({
   bulkExportBusy: boolean;
   onBulkExportSelected: () => void;
   ticketTypes: TicketTypeDto[];
+  ticketTypesError?: string | null;
   onBulkChangeTicketType: () => void;
   onBulkDelete: () => void;
 }>) {
@@ -551,7 +553,9 @@ function BulkBar({
         changeTicketTypeDisabledReason={
           archived
             ? "This event is archived."
-            : "No ticket types configured for this event. Add some in Event Settings → Ticket types."
+            : ticketTypesError
+              ? "Couldn't load ticket types — try again from the Type filter above."
+              : "No ticket types configured for this event. Add some in Event Settings → Ticket types."
         }
         onChangeTicketType={onBulkChangeTicketType}
         onDelete={onBulkDelete}
@@ -976,6 +980,7 @@ export function AttendeesTable({
           bulkExportBusy={bulkExportBusy}
           onBulkExportSelected={onBulkExportSelected}
           ticketTypes={ticketTypes}
+          ticketTypesError={ticketTypesError}
           onBulkChangeTicketType={onBulkChangeTicketType}
           onBulkDelete={onBulkDelete}
         />

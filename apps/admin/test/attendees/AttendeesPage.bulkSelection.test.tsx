@@ -12,7 +12,7 @@ const sendEventBulk = vi.fn();
 const bulkDeleteAttendees = vi.fn();
 const bulkCheckInAttendees = vi.fn();
 const bulkChangeTicketType = vi.fn();
-const exportAttendees = vi.fn();
+const exportSelectedAttendees = vi.fn();
 const fetchTicketTypes = vi.fn();
 const addToast = vi.fn();
 const reportApiError = vi.fn();
@@ -74,7 +74,8 @@ vi.mock("../../src/api/client.js", () => ({
   fetchTicketTypes: (...args: unknown[]) => fetchTicketTypes(...args),
   bulkChangeTicketType: (...args: unknown[]) => bulkChangeTicketType(...args),
   fetchEventMailSettings: (...args: unknown[]) => fetchEventMailSettings(...args),
-  exportAttendees: (...args: unknown[]) => exportAttendees(...args),
+  exportAttendees: vi.fn(),
+  exportSelectedAttendees: (...args: unknown[]) => exportSelectedAttendees(...args),
   bulkResendTickets: vi.fn(),
   sendEventBulk: (...args: unknown[]) => sendEventBulk(...args),
   bulkDeleteAttendees: (...args: unknown[]) => bulkDeleteAttendees(...args),
@@ -721,7 +722,7 @@ describe("AttendeesPage bulk check-in", () => {
 describe("AttendeesPage bulk export selected (#520)", () => {
   it("exports exactly the selected attendees as CSV and keeps the selection", async () => {
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
-    exportAttendees.mockResolvedValue(undefined);
+    exportSelectedAttendees.mockResolvedValue(undefined);
 
     renderPage();
 
@@ -734,10 +735,11 @@ describe("AttendeesPage bulk export selected (#520)", () => {
     fireEvent.click(bulkBar().getByRole("menuitem", { name: /Export selected/ }));
 
     await waitFor(() => {
-      expect(exportAttendees).toHaveBeenCalledWith(
+      expect(exportSelectedAttendees).toHaveBeenCalledWith(
         "evt-1",
-        { attendee_ids: ["att-1", "att-2"] },
+        ["att-1", "att-2"],
         "csv",
+        expect.anything(),
       );
     });
     // No success toast and the selection stays — the download starting is the feedback,
@@ -768,7 +770,7 @@ describe("AttendeesPage bulk export selected (#520)", () => {
   it("toasts an operator-safe error and keeps the selection when the export fails", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
-    exportAttendees.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    exportSelectedAttendees.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
 
     renderPage();
 
@@ -788,7 +790,7 @@ describe("AttendeesPage bulk export selected (#520)", () => {
   it("redirects to /login on a 401", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
-    exportAttendees.mockRejectedValueOnce(new ApiError(401, "unauthorized"));
+    exportSelectedAttendees.mockRejectedValueOnce(new ApiError(401, "unauthorized"));
     const assign = vi.fn();
     vi.stubGlobal("location", { ...window.location, assign, pathname: "/admin/events/evt-1/attendees" });
 
@@ -911,5 +913,21 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     const item = bulkBar().getByRole("menuitem", { name: /Change ticket type/ }) as HTMLButtonElement;
     expect(item.disabled).toBe(true);
     expect(item.title).toContain("No ticket types configured");
+  });
+
+  it("blames a failed catalog load, not 'no types configured', when the fetch itself failed (Codex review)", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchTicketTypes.mockRejectedValue(new Error("network down"));
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+
+    const item = bulkBar().getByRole("menuitem", { name: /Change ticket type/ }) as HTMLButtonElement;
+    expect(item.disabled).toBe(true);
+    expect(item.title).not.toContain("No ticket types configured");
+    expect(item.title).toContain("Couldn't load ticket types");
   });
 });
