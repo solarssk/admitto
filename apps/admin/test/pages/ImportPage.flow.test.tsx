@@ -179,6 +179,48 @@ describe("ImportPage upload → preview → commit flow", () => {
     expect(dryRunSwitch.disabled).toBe(true);
   });
 
+  it("re-validates the same file on Re-validate, keeping the summary card open", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValue(samplePreview());
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    expect(await screen.findByText("To create")).toBeTruthy();
+    expect(previewImport).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Re-validate" }));
+    await waitFor(() => expect(previewImport).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("To create")).toBeTruthy();
+  });
+
+  it("lists configured custom attribute fields as extra rows in the Required CSV columns reference", async () => {
+    fetchEventCustomFields.mockResolvedValue([
+      { id: "1", source_field: "shirt_size", label: "Shirt size", type: "text", required: false, options: null, created_at: "2026-01-01T00:00:00.000Z" },
+    ]);
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    expect(await screen.findByText("shirt_size")).toBeTruthy();
+    expect(screen.getByText("Shirt size")).toBeTruthy();
+  });
+
+  it("lists parse warnings on the validation summary", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(
+      samplePreview({ parse: { validCount: 1, invalidRows: [], warnings: ['Row 3: "email" looks malformed'] } }),
+    );
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+
+    expect(await screen.findByText("Warnings")).toBeTruthy();
+    expect(screen.getByText('Row 3: "email" looks malformed')).toBeTruthy();
+  });
+
   it("shows rows the commit-time re-parse invalidated (e.g. a ticket type deleted between preview and commit)", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());
@@ -292,6 +334,43 @@ describe("ImportPage dropzone (#358 Phase A)", () => {
 
     const fileInput = screen.getByLabelText("File (.csv or .xlsx)") as HTMLInputElement;
     expect(fileInput.tabIndex).toBe(-1);
+  });
+
+  it("opens the file picker with Enter or Space on the focused dropzone, but not other keys", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    const clickSpy = vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(() => {});
+    try {
+      const dropzone = screen.getByRole("button", { name: "Upload a CSV or XLSX file" });
+
+      fireEvent.keyDown(dropzone, { key: "a" });
+      expect(clickSpy).not.toHaveBeenCalled();
+
+      fireEvent.keyDown(dropzone, { key: "Enter" });
+      expect(clickSpy).toHaveBeenCalledTimes(1);
+
+      fireEvent.keyDown(dropzone, { key: " " });
+      expect(clickSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      clickSpy.mockRestore();
+    }
+  });
+
+  it("highlights the dropzone while a file is dragged over it, and clears on drag leave", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    const dropzone = screen.getByRole("button", { name: "Upload a CSV or XLSX file" });
+    expect(dropzone.className).not.toContain("import-dropzone--over");
+
+    fireEvent.dragOver(dropzone);
+    expect(dropzone.className).toContain("import-dropzone--over");
+
+    fireEvent.dragLeave(dropzone);
+    expect(dropzone.className).not.toContain("import-dropzone--over");
   });
 
   it("rejects a dropped file with an unsupported extension via a toast", async () => {
