@@ -134,7 +134,7 @@ function SendTicketsDialog({
   onTargetChange,
   onConfirm,
   onClose,
-}: SendTicketsDialogProps) {
+}: Readonly<SendTicketsDialogProps>) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(panelRef, open, onClose);
@@ -229,7 +229,7 @@ function ChangeTicketTypeDialog({
   onValueChange,
   onConfirm,
   onClose,
-}: ChangeTicketTypeDialogProps) {
+}: Readonly<ChangeTicketTypeDialogProps>) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(panelRef, open, onClose);

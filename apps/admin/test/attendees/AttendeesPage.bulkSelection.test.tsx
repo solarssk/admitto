@@ -914,4 +914,20 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     expect(item.disabled).toBe(true);
     expect(item.title).toContain("No ticket types configured");
   });
+
+  it("blames a failed catalog load, not 'no types configured', when the fetch itself failed (Codex review)", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchTicketTypes.mockRejectedValue(new Error("network down"));
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+
+    const item = bulkBar().getByRole("menuitem", { name: /Change ticket type/ }) as HTMLButtonElement;
+    expect(item.disabled).toBe(true);
+    expect(item.title).not.toContain("No ticket types configured");
+    expect(item.title).toContain("Couldn't load ticket types");
+  });
 });
