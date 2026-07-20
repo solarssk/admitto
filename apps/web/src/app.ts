@@ -111,9 +111,11 @@ import {
   handleDeleteEventAttendee,
   handleBulkDeleteEventAttendees,
   handleBulkCheckInEventAttendees,
+  handleBulkTicketTypeEventAttendees,
   handleResendEventAttendeeTicket,
   handleBulkResendTickets,
   handleExportAttendees,
+  handleExportSelectedAttendees,
   handleRevokeAttendeeCheckIn,
   handleRevokeAttendeeItem,
 } from "./admin/attendees-api-routes.js";
@@ -385,6 +387,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminMailSettingsRateLimit = rateLimit(rateLimitStore, "admin:mail-transport-test");
   const adminEventMailSettingsRateLimit = rateLimit(rateLimitStore, "admin:event-mail-transport-test");
   const adminImportPreviewRateLimit = rateLimit(rateLimitStore, "admin:import-preview");
+  const adminAttendeesSearchRateLimit = rateLimit(rateLimitStore, "admin:attendees-search");
   const adminImportCommitRateLimit = rateLimit(rateLimitStore, "admin:import-commit");
   const adminTemplatePreviewRateLimit = rateLimit(rateLimitStore, "admin:template-preview");
   const adminAuthProviderOpsRateLimit = rateLimit(rateLimitStore, "admin:oidc-provider-ops");
@@ -657,8 +660,18 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/api/admin/events/:eventId/attendees/export", staffAdminGate, adminExportRateLimit, (c) =>
     handleExportAttendees(c, db),
   );
-  app.get("/api/admin/events/:eventId/attendees", staffAdminGate, (c) =>
-    handleListEventAttendees(c, db),
+  app.post(
+    "/api/admin/events/:eventId/attendees/export-selected",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminExportRateLimit,
+    (c) => handleExportSelectedAttendees(c, db),
+  );
+  app.get(
+    "/api/admin/events/:eventId/attendees",
+    staffAdminGate,
+    adminAttendeesSearchRateLimit,
+    (c) => handleListEventAttendees(c, db),
   );
   app.post(
     "/api/admin/events/:eventId/attendees",
@@ -693,6 +706,12 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     guardArchivedEvent((c) => handleBulkCheckInEventAttendees(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/bulk-ticket-type",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleBulkTicketTypeEventAttendees(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/:id/resend",

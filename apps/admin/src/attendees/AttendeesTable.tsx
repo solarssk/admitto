@@ -274,6 +274,9 @@ export interface AttendeesTableProps {
   canBulkSend: boolean;
   onBulkCheckIn: () => void;
   bulkCheckInBusy: boolean;
+  onBulkExportSelected: () => void;
+  bulkExportBusy: boolean;
+  onBulkChangeTicketType: () => void;
   onBulkDelete: () => void;
   eventTimezone: string;
   event: ArchivedGuardEvent;
@@ -355,12 +358,36 @@ function AttendeeCard({
   );
 }
 
-/** Bulk "More actions" — today just Delete, but styled as a menu (not a bare button) so a
- * destructive bulk action takes an extra click to even reach, matching the design mockup's
- * More actions panel and the same danger-item treatment already used on the attendee detail
- * page's own More actions menu. Room to grow: the mockup also shows ticket-type changes,
- * reminders, and wallet-pass actions in this same menu — not built yet, out of scope here. */
-function BulkMoreActionsMenu({ onDelete }: Readonly<{ onDelete: () => void }>) {
+/** Bulk "More actions" — Export selected, Change ticket type, and Delete, styled as a menu
+ * (not bare buttons) so the destructive bulk action takes an extra click to even reach,
+ * matching the design mockup's More actions panel and the same danger-item treatment already
+ * used on the attendee detail page's own More actions menu. Room to grow: the mockup also
+ * shows reminders and wallet-pass actions in this same menu — not built yet, out of scope. */
+function BulkMoreActionsMenu({
+  selectedCount,
+  archived,
+  exportBusy,
+  onExportSelected,
+  ticketTypeCount,
+  changeTicketTypeDisabled,
+  changeTicketTypeDisabledReason,
+  ticketTypesError,
+  onRetryTicketTypes,
+  onChangeTicketType,
+  onDelete,
+}: Readonly<{
+  selectedCount: number;
+  archived: boolean;
+  exportBusy: boolean;
+  onExportSelected: () => void;
+  ticketTypeCount: number;
+  changeTicketTypeDisabled: boolean;
+  changeTicketTypeDisabledReason?: string;
+  ticketTypesError?: string | null;
+  onRetryTicketTypes?: () => void;
+  onChangeTicketType: () => void;
+  onDelete: () => void;
+}>) {
   const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
 
   return (
@@ -369,7 +396,6 @@ function BulkMoreActionsMenu({ onDelete }: Readonly<{ onDelete: () => void }>) {
         ref={triggerRef}
         type="button"
         variant="ghost"
-        icon={<i className="ti ti-dots-vertical" aria-hidden="true" />}
         hasMenu
         aria-haspopup="menu"
         aria-expanded={open}
@@ -379,6 +405,63 @@ function BulkMoreActionsMenu({ onDelete }: Readonly<{ onDelete: () => void }>) {
       </Button>
       {open && (
         <div className="more-actions-menu__panel" role="menu" ref={panelRef}>
+          {/* Not ArchivedGuard'd — exporting a selection is read-only, so it stays legal
+           * after an event is archived. */}
+          <button
+            type="button"
+            role="menuitem"
+            className="more-actions-menu__item"
+            disabled={exportBusy}
+            onClick={() => {
+              setOpen(false);
+              onExportSelected();
+            }}
+          >
+            <i className="ti ti-download" aria-hidden="true" />
+            <span className="more-actions-menu__item-text">
+              <span>Export selected</span>
+              <span className="more-actions-menu__item-hint">
+                CSV of {selectedCount} attendee{selectedCount === 1 ? "" : "s"}
+              </span>
+            </span>
+          </button>
+          {/* Disabled (not hidden) on archived events and when the catalog is empty — the
+           * endpoint is guardArchivedEvent'd, and with no configured types there's nothing
+           * to pick; the title explains why instead of the item silently vanishing. */}
+          <button
+            type="button"
+            role="menuitem"
+            className="more-actions-menu__item"
+            disabled={changeTicketTypeDisabled}
+            title={changeTicketTypeDisabled ? changeTicketTypeDisabledReason : undefined}
+            onClick={() => {
+              setOpen(false);
+              onChangeTicketType();
+            }}
+          >
+            <i className="ti ti-ticket" aria-hidden="true" />
+            <span className="more-actions-menu__item-text">
+              <span>Change ticket type</span>
+              <span className="more-actions-menu__item-hint">
+                Choose from {ticketTypeCount} configured type{ticketTypeCount === 1 ? "" : "s"}
+              </span>
+            </span>
+          </button>
+          {/* The catalog fetch's own retry lives behind the Type filter, which this bulk bar
+           * replaces while rows are selected — without this, the only way to retry was to
+           * clear the selection first, losing the batch the operator was about to act on
+           * (Codex review). */}
+          {!archived && changeTicketTypeDisabled && ticketTypesError && onRetryTicketTypes && (
+            <button
+              type="button"
+              role="menuitem"
+              className="more-actions-menu__retry link-btn"
+              onClick={onRetryTicketTypes}
+            >
+              Retry loading ticket types
+            </button>
+          )}
+          <hr className="more-actions-menu__divider" />
           {/* Not ArchivedGuard'd — GDPR erasure requests can legally arrive after an event
            * ends; the DELETE endpoint doesn't block on archived_at either. */}
           <button
@@ -398,6 +481,13 @@ function BulkMoreActionsMenu({ onDelete }: Readonly<{ onDelete: () => void }>) {
   );
 }
 
+/** "Change ticket type" menu item's disabled-title (Sonar S3358: was a nested ternary). */
+function bulkChangeTicketTypeReason(archived: boolean, ticketTypesError?: string | null): string {
+  if (archived) return "This event is archived.";
+  if (ticketTypesError) return "Couldn't load ticket types — try again from the Type filter above.";
+  return "No ticket types configured for this event. Add some in Event Settings → Ticket types.";
+}
+
 /** Selection count + "Send tickets" / "More actions" — replaces the search/filter toolbar in
  * place while rows are selected, so the card never grows taller just because something is
  * selected. */
@@ -410,6 +500,12 @@ function BulkBar({
   onBulkSendTickets,
   bulkCheckInBusy,
   onBulkCheckIn,
+  bulkExportBusy,
+  onBulkExportSelected,
+  ticketTypes,
+  ticketTypesError,
+  onRetryTicketTypes,
+  onBulkChangeTicketType,
   onBulkDelete,
 }: Readonly<{
   selectedIds: ReadonlySet<string>;
@@ -420,8 +516,15 @@ function BulkBar({
   onBulkSendTickets: () => void;
   bulkCheckInBusy: boolean;
   onBulkCheckIn: () => void;
+  bulkExportBusy: boolean;
+  onBulkExportSelected: () => void;
+  ticketTypes: TicketTypeDto[];
+  ticketTypesError?: string | null;
+  onRetryTicketTypes?: () => void;
+  onBulkChangeTicketType: () => void;
   onBulkDelete: () => void;
 }>) {
+  const archived = event.archived_at != null;
   return (
     <div className="attendees-bulkbar">
       <span className="attendees-bulkbar__count">
@@ -470,7 +573,19 @@ function BulkBar({
           </Button>
         )}
       </ArchivedGuard>
-      <BulkMoreActionsMenu onDelete={onBulkDelete} />
+      <BulkMoreActionsMenu
+        selectedCount={selectedIds.size}
+        archived={archived}
+        exportBusy={bulkExportBusy}
+        onExportSelected={onBulkExportSelected}
+        ticketTypeCount={ticketTypes.length}
+        changeTicketTypeDisabled={archived || ticketTypes.length === 0}
+        changeTicketTypeDisabledReason={bulkChangeTicketTypeReason(archived, ticketTypesError)}
+        ticketTypesError={ticketTypesError}
+        onRetryTicketTypes={onRetryTicketTypes}
+        onChangeTicketType={onBulkChangeTicketType}
+        onDelete={onBulkDelete}
+      />
     </div>
   );
 }
@@ -864,6 +979,9 @@ export function AttendeesTable({
   canBulkSend,
   onBulkCheckIn,
   bulkCheckInBusy,
+  onBulkExportSelected,
+  bulkExportBusy,
+  onBulkChangeTicketType,
   onBulkDelete,
   eventTimezone,
   event,
@@ -885,6 +1003,12 @@ export function AttendeesTable({
           onBulkSendTickets={onBulkSendTickets}
           bulkCheckInBusy={bulkCheckInBusy}
           onBulkCheckIn={onBulkCheckIn}
+          bulkExportBusy={bulkExportBusy}
+          onBulkExportSelected={onBulkExportSelected}
+          ticketTypes={ticketTypes}
+          ticketTypesError={ticketTypesError}
+          onRetryTicketTypes={onRetryTicketTypes}
+          onBulkChangeTicketType={onBulkChangeTicketType}
           onBulkDelete={onBulkDelete}
         />
       ) : (
