@@ -454,6 +454,7 @@ function BulkMoreActionsMenu({
           {!archived && changeTicketTypeDisabled && ticketTypesError && onRetryTicketTypes && (
             <button
               type="button"
+              role="menuitem"
               className="more-actions-menu__retry link-btn"
               onClick={onRetryTicketTypes}
             >
