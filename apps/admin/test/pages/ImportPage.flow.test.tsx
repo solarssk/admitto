@@ -107,25 +107,131 @@ describe("ImportPage upload → preview → commit flow", () => {
       invalidRows: [],
     });
     renderPage();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Preview" })).toBeTruthy());
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
 
     selectFile();
     fireEvent.click(screen.getByLabelText(/Overwrite existing attendees/));
 
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
     await waitFor(() => {
       expect(previewImport).toHaveBeenCalledWith("evt-1", expect.any(File), true);
     });
 
-    await waitFor(() => expect(screen.getByText("To create")).toBeTruthy());
+    expect(await screen.findByText("To create")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: /^Import 1 attendee$/ }));
+    // Commit stays disabled while Dry run is on - turn it off first (mockup Options card).
+    const commitBtn = screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }) as HTMLButtonElement;
+    expect(commitBtn.disabled).toBe(true);
+    fireEvent.click(screen.getByLabelText(/Dry run/));
+    fireEvent.click(screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }));
     await waitFor(() => {
       expect(commitImport).toHaveBeenCalledWith("evt-1", expect.any(File), true, { force: false });
     });
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Attendees imported: 1 created/);
     });
+  });
+
+  it("keeps Dry run locked on until a validation summary is showing, so it can't be turned off on reflex before ever validating (Codex review)", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(samplePreview());
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    const dryRunSwitch = screen.getByLabelText(/Dry run/) as HTMLInputElement;
+    expect(dryRunSwitch.disabled).toBe(true);
+    expect(dryRunSwitch.checked).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    expect(await screen.findByText("To create")).toBeTruthy();
+
+    // Only now, with the summary on screen, can it be toggled.
+    expect(dryRunSwitch.disabled).toBe(false);
+    const commitBtn = screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }) as HTMLButtonElement;
+    expect(commitBtn.disabled).toBe(true);
+    fireEvent.click(dryRunSwitch);
+    expect(commitBtn.disabled).toBe(false);
+  });
+
+  it("re-arms Dry run when a different file is picked, so a summary already unlocked for the first file can't unlock committing the new one on arrival", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(samplePreview());
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    expect(await screen.findByText("To create")).toBeTruthy();
+    const dryRunSwitch = screen.getByLabelText(/Dry run/) as HTMLInputElement;
+    fireEvent.click(dryRunSwitch);
+    expect(dryRunSwitch.checked).toBe(false);
+
+    // Picking a different file drops back to the upload step and back to Dry run.
+    selectFile();
+    expect(dryRunSwitch.checked).toBe(true);
+    expect(dryRunSwitch.disabled).toBe(true);
+  });
+
+  it("re-validates the same file on Re-validate, keeping the summary card open", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValue(samplePreview());
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    expect(await screen.findByText("To create")).toBeTruthy();
+    expect(previewImport).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Re-validate" }));
+    await waitFor(() => expect(previewImport).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("To create")).toBeTruthy();
+  });
+
+  it("re-arms Dry run on Re-validate, so turning it off before re-validating can't unlock committing the refreshed summary (CodeRabbit review)", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValue(samplePreview());
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    expect(await screen.findByText("To create")).toBeTruthy();
+
+    const dryRunSwitch = screen.getByLabelText(/Dry run/) as HTMLInputElement;
+    fireEvent.click(dryRunSwitch);
+    expect(dryRunSwitch.checked).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Re-validate" }));
+    await waitFor(() => expect(previewImport).toHaveBeenCalledTimes(2));
+    expect(dryRunSwitch.checked).toBe(true);
+  });
+
+  it("lists configured custom attribute fields as extra rows in the Required CSV columns reference", async () => {
+    fetchEventCustomFields.mockResolvedValue([
+      { id: "1", source_field: "shirt_size", label: "Shirt size", type: "text", required: false, options: null, created_at: "2026-01-01T00:00:00.000Z" },
+    ]);
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    expect(await screen.findByText("shirt_size")).toBeTruthy();
+    expect(screen.getByText("Shirt size")).toBeTruthy();
+  });
+
+  it("lists parse warnings on the validation summary", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(
+      samplePreview({ parse: { validCount: 1, invalidRows: [], warnings: ['Row 3: "email" looks malformed'] } }),
+    );
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+
+    expect(await screen.findByText("Warnings")).toBeTruthy();
+    expect(screen.getByText('Row 3: "email" looks malformed')).toBeTruthy();
   });
 
   it("shows rows the commit-time re-parse invalidated (e.g. a ticket type deleted between preview and commit)", async () => {
@@ -142,13 +248,14 @@ describe("ImportPage upload → preview → commit flow", () => {
       invalidRows: [{ rowIndex: 1, reason: 'Unknown ticket type: "vip"' }],
     });
     renderPage();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Preview" })).toBeTruthy());
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
 
     selectFile();
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
-    await waitFor(() => expect(screen.getByText("To create")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    expect(await screen.findByText("To create")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: /^Import 1 attendee$/ }));
+    fireEvent.click(screen.getByLabelText(/Dry run/));
+    fireEvent.click(screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }));
     await waitFor(() => expect(commitImport).toHaveBeenCalled());
 
     expect(await screen.findByText("Invalid rows")).toBeTruthy();
@@ -175,19 +282,20 @@ describe("ImportPage upload → preview → commit flow", () => {
         invalidRows: [],
       });
     renderPage();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Preview" })).toBeTruthy());
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
 
     selectFile();
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
-    await waitFor(() => expect(screen.getByText("To create")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    expect(await screen.findByText("To create")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: /^Import 2 attendees$/ }));
+    fireEvent.click(screen.getByLabelText(/Dry run/));
+    fireEvent.click(screen.getByRole("button", { name: /^Commit import \(2 attendees\)$/ }));
     await waitFor(() => {
       expect(screen.getByText(/Event is at capacity/)).toBeTruthy();
     });
 
     fireEvent.click(screen.getByLabelText(/Override capacity limit/));
-    fireEvent.click(screen.getByRole("button", { name: /^Import 2 attendees$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Commit import \(2 attendees\)$/ }));
 
     await waitFor(() => {
       expect(commitImport).toHaveBeenLastCalledWith("evt-1", expect.any(File), false, { force: true });
@@ -198,21 +306,132 @@ describe("ImportPage upload → preview → commit flow", () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());
     renderPage();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Preview" })).toBeTruthy());
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
 
     // Cancelling the native file picker fires a change event with an empty FileList.
     fireEvent.change(screen.getByLabelText("File (.csv or .xlsx)"), { target: { files: [] } });
-    expect((screen.getByRole("button", { name: "Preview" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Validate file" }) as HTMLButtonElement).disabled).toBe(true);
 
     selectFile();
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
-    await waitFor(() => expect(screen.getByText("To create")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    expect(await screen.findByText("To create")).toBeTruthy();
 
     // Choosing a different file after previewing sends the flow back to "upload".
     selectFile();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Preview" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Validate file" })).toBeTruthy();
       expect(screen.queryByText("To create")).toBeNull();
     });
+  });
+});
+
+describe("ImportPage dropzone (#358 Phase A)", () => {
+  it("accepts a dropped .csv exactly like the file picker and shows the file chip", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    const dropzone = screen.getByRole("button", { name: "Upload a CSV or XLSX file" });
+    const file = new File(["a,b\n1,2"], "dropped.csv", { type: "text/csv" });
+    fireEvent.drop(dropzone, { dataTransfer: { files: [file] } });
+
+    expect(screen.getByText("dropped.csv")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Remove file" })).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Validate file" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("keeps the proxied file input out of the tab order — the dropzone button is the keyboard path (Codex review)", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    const fileInput = screen.getByLabelText("File (.csv or .xlsx)") as HTMLInputElement;
+    expect(fileInput.tabIndex).toBe(-1);
+  });
+
+  it("opens the file picker with Enter or Space on the focused dropzone, but not other keys", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    const clickSpy = vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(() => {});
+    try {
+      const dropzone = screen.getByRole("button", { name: "Upload a CSV or XLSX file" });
+
+      fireEvent.keyDown(dropzone, { key: "a" });
+      expect(clickSpy).not.toHaveBeenCalled();
+
+      fireEvent.keyDown(dropzone, { key: "Enter" });
+      expect(clickSpy).toHaveBeenCalledTimes(1);
+
+      fireEvent.keyDown(dropzone, { key: " " });
+      expect(clickSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      clickSpy.mockRestore();
+    }
+  });
+
+  it("highlights the dropzone while a file is dragged over it, and clears on drag leave", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    const dropzone = screen.getByRole("button", { name: "Upload a CSV or XLSX file" });
+    expect(dropzone.className).not.toContain("import-dropzone--over");
+
+    fireEvent.dragOver(dropzone);
+    expect(dropzone.className).toContain("import-dropzone--over");
+
+    fireEvent.dragLeave(dropzone);
+    expect(dropzone.className).not.toContain("import-dropzone--over");
+  });
+
+  it("rejects a dropped file with an unsupported extension via a toast", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    const dropzone = screen.getByRole("button", { name: "Upload a CSV or XLSX file" });
+    const file = new File(["%PDF"], "attendees.pdf", { type: "application/pdf" });
+    fireEvent.drop(dropzone, { dataTransfer: { files: [file] } });
+
+    expect(screen.getByTestId("at-toast").textContent).toContain("Only .csv or .xlsx files");
+    expect(screen.queryByRole("button", { name: "Remove file" })).toBeNull();
+    expect((screen.getByRole("button", { name: "Validate file" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("removing the picked file via the chip brings the dropzone back and clears any preview", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(samplePreview());
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    expect(await screen.findByText("To create")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove file" }));
+
+    expect(screen.getByRole("button", { name: "Upload a CSV or XLSX file" })).toBeTruthy();
+    expect(screen.queryByText("To create")).toBeNull();
+    expect((screen.getByRole("button", { name: "Validate file" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("clears the native file input when the file is removed, so Browse-ing the same file again re-fires the picker (CodeRabbit review)", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    const fileInput = screen.getByLabelText("File (.csv or .xlsx)") as HTMLInputElement;
+    // jsdom doesn't emulate the browser's fake-path auto-value on a real file pick, so assert
+    // the underlying reset the fix relies on: the native input's value setter is invoked with
+    // "" when the file is removed (real browsers require this to re-fire onChange for the same
+    // file next time).
+    const valueSetter = vi.spyOn(fileInput, "value", "set");
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove file" }));
+
+    expect(valueSetter).toHaveBeenCalledWith("");
   });
 });

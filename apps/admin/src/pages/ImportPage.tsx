@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import { Link, useOutletContext, useParams } from "react-router-dom";
-import { Button, Card, PageHeader, useToast } from "@admitto/ui";
+import { Button, Card, PageHeader, Switch, useToast } from "@admitto/ui";
 import { ApiError, commitImport, previewImport, type EventFullMeta } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto, ImportCommitResponse, ImportPreviewResponse, ImportSampleRow } from "../api/types.js";
@@ -15,6 +15,10 @@ import "./import.css";
 type Step = "upload" | "preview" | "done";
 
 const SAMPLE_DISPLAY_LIMIT = 20;
+
+function pluralize(count: number, singular: string): string {
+  return count === 1 ? singular : `${singular}s`;
+}
 
 interface ImportSampleTableProps {
   rows: ImportSampleRow[];
@@ -136,6 +140,11 @@ export function ImportPage() {
   const [step, setStep] = useState<Step>("upload");
   const [file, setFile] = useState<File | null>(null);
   const [overwrite, setOverwrite] = useState(false);
+  // "Dry run" mirrors the existing two-phase flow (Validate = the dry run; committing is only
+  // possible once it's switched off), it does not add a new server mode — the preview endpoint
+  // has always been the no-writes pass.
+  const [dryRun, setDryRun] = useState(true);
+  const [dragOver, setDragOver] = useState(false);
   const [preview, setPreview] = useState<ImportPreviewResponse | null>(null);
   const [result, setResult] = useState<ImportCommitResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -179,6 +188,48 @@ export function ImportPage() {
     }
   };
 
+  /** Shared by the file picker's onChange and the dropzone's drop handler — same reset. */
+  const selectFile = (picked: File | null) => {
+    setFile(picked);
+    setPreview(null);
+    setCapacityBlocked(null);
+    setForceCapacity(false);
+    // A new file means a new, not-yet-reviewed validation summary — re-arm Dry run so a
+    // switch left off from a previous file's summary can't immediately unlock committing
+    // this one before its own summary has even been seen (Codex review).
+    setDryRun(true);
+    if (step === "preview") setStep("upload");
+    // Browsers don't fire onChange when the same file is re-selected through the native
+    // input unless its value is cleared first — otherwise Browse-ing the same file again
+    // right after removing it would silently do nothing (CodeRabbit review).
+    if (!picked && fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const onDrop = (e: DragEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    setDragOver(false);
+    if (loading || isEventArchived(event)) return;
+    const dropped = e.dataTransfer.files?.[0] ?? null;
+    if (!dropped) return;
+    if (!/\.(csv|xlsx)$/i.test(dropped.name)) {
+      addToast("Only .csv or .xlsx files can be imported.", "error");
+      return;
+    }
+    selectFile(dropped);
+  };
+
+  const openFilePicker = () => {
+    if (loading || isEventArchived(event)) return;
+    fileInputRef.current?.click();
+  };
+
+  const onDropzoneKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      openFilePicker();
+    }
+  };
+
   const onPreview = async () => {
     if (!eventId || !file) return;
     setLoading(true);
@@ -186,6 +237,12 @@ export function ImportPage() {
       const data = await previewImport(eventId, file, overwrite);
       setPreview(data);
       setStep("preview");
+      // Force back to the safe state on every fresh validate (including Re-validate, which
+      // also calls this) — toggling Dry run off *before* seeing this summary shouldn't count
+      // as reviewing it; the operator must turn it off again after seeing these actual
+      // results (code review: the switch had no step-aware guard, so pre-toggling it let the
+      // Commit button start already enabled on the summary's first render).
+      setDryRun(true);
     } catch (err) {
       handleApiError(err);
     } finally {
@@ -241,236 +298,323 @@ export function ImportPage() {
 
 
       {step !== "done" && (
-        <Card className="import-card">
-          <div className="import-form">
-            <details className="import-columns-info">
-              <summary>Required CSV columns</summary>
-              <table className="import-columns-table">
-                <thead>
-                  <tr>
-                    <th>Column</th>
-                    <th>Required</th>
-                    <th>Description</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr><td><code>first_name</code></td><td>Yes</td><td>Attendee&apos;s first name</td></tr>
-                  <tr><td><code>last_name</code></td><td>Yes</td><td>Attendee&apos;s last name</td></tr>
-                  <tr><td><code>email</code></td><td>Yes</td><td>Valid email address (used as unique key)</td></tr>
-                  <tr>
-                    <td><code>ticket_type</code></td>
-                    <td>No</td>
-                    <td>
-                      Must match a{" "}
-                      <Link to={`/admin/events/${eventId}/settings?tab=ticket-types`}>
-                        ticket type configured for this event
-                      </Link>
-                      ; the whole row is skipped if this doesn&apos;t match
-                    </td>
-                  </tr>
-                  <tr><td><code>company</code></td><td>No</td><td>Attendee&apos;s company</td></tr>
-                  <tr><td><code>department</code></td><td>No</td><td>Department or team</td></tr>
-                  <tr><td><code>external_uuid</code></td><td>No</td><td>External ID for deduplication</td></tr>
-                  <tr><td><code>qr_payload</code></td><td>No</td><td>Custom QR code payload (auto-generated if empty)</td></tr>
-                  {attributeFields.map((field) => (
-                    <tr key={field.source_field}>
-                      <td>
-                        <code>{field.source_field}</code>
-                      </td>
-                      <td>{field.required ? "Yes" : "No"}</td>
-                      <td>
-                        {field.label}
-                        {field.type === "select" && field.options?.length
-                          ? ` — select: ${field.options.join(", ")}`
-                          : field.type === "boolean"
-                            ? " — Yes/No or true/false"
-                            : ""}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </details>
-            <p className="import-hint import-hint--limits">
-              <strong>Limits:</strong> max 5 MB · max 50 000 data rows · .csv or .xlsx only.
-            </p>
-            {attributeFields.length > 0 ? (
-              <p className="import-hint">
-                Event attribute columns use the <code>source_field</code> slug (included in the
-                downloadable template). Export files may use human-readable labels — re-import accepts
-                those too.
-              </p>
-            ) : null}
-            <a
-              href={`/api/admin/events/${eventId}/import/template`}
-              download="admitto-import-template.csv"
-              className="at-btn at-btn--secondary import-template-btn"
-            >
-              Download CSV template
-            </a>
-
-            <fieldset
-              className={[
-                "import-upload-fieldset",
-                isEventArchived(event) && "at-tooltip at-tooltip--below",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              data-tooltip={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
-              disabled={isEventArchived(event)}
-            >
-              <div className="import-field">
-                <label className="import-label" htmlFor="import-file">
-                  File (.csv or .xlsx)
-                </label>
-                <input
-                  id="import-file"
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".csv,.xlsx"
-                  disabled={loading || step === "preview"}
-                  onChange={(e) => {
-                    const picked = e.target.files?.[0] ?? null;
-                    setFile(picked);
-                    setPreview(null);
-                    if (step === "preview") setStep("upload");
-                  }}
-                />
-              </div>
-
-              <label className="import-checkbox">
-                <input
-                  type="checkbox"
-                  checked={overwrite}
-                  disabled={loading || step === "preview"}
-                  onChange={(e) => setOverwrite(e.target.checked)}
-                />
-                <span>
-                  Overwrite existing attendees
-                  <span className="import-checkbox__hint">
-                    When off, existing attendees matched by email are skipped.
-                  </span>
-                </span>
-              </label>
-            </fieldset>
-
-            {step === "upload" && (
-              <div className="import-actions">
-                <ArchivedGuard event={event} reasonId="import-preview-reason" disabled={!file || loading}>
-                  {(guard) => (
-                    <Button variant="primary" onClick={() => void onPreview()} {...guard}>
-                      {loading ? "Previewing…" : "Preview"}
-                    </Button>
+        <div className="import-two-col">
+          <div className="import-stack">
+            <Card title="1 · Upload file" className="import-card">
+              <div className="import-form">
+                <fieldset
+                  className={[
+                    "import-upload-fieldset",
+                    isEventArchived(event) && "at-tooltip at-tooltip--below",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  data-tooltip={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
+                  disabled={isEventArchived(event)}
+                >
+                  {file ? (
+                    <div className="import-file-chip">
+                      <i className="ti ti-file-text" aria-hidden="true" />
+                      <div className="import-file-chip__info">
+                        <strong>{file.name}</strong>
+                        <span className="import-file-chip__meta">
+                          {preview
+                            ? `${preview.parse.validCount} valid ${pluralize(preview.parse.validCount, "row")}`
+                            : `${Math.max(1, Math.round(file.size / 1024))} KB`}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="import-file-chip__remove"
+                        aria-label="Remove file"
+                        disabled={loading}
+                        onClick={() => selectFile(null)}
+                      >
+                        <i className="ti ti-x" aria-hidden="true" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className={["import-dropzone", dragOver && "import-dropzone--over"]
+                        .filter(Boolean)
+                        .join(" ")}
+                      tabIndex={isEventArchived(event) ? -1 : 0}
+                      aria-label="Upload a CSV or XLSX file"
+                      onClick={openFilePicker}
+                      onKeyDown={onDropzoneKeyDown}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        if (!loading && !isEventArchived(event)) setDragOver(true);
+                      }}
+                      onDragLeave={() => setDragOver(false)}
+                      onDrop={onDrop}
+                    >
+                      <i className="ti ti-cloud-upload" aria-hidden="true" />
+                      <b>Drop CSV/XLSX here</b>
+                      <span>or click to browse · max 5 MB · max 50 000 rows</span>
+                    </button>
                   )}
-                </ArchivedGuard>
+                  {/* Visually hidden but still labelled — the dropzone proxies clicks to it, and
+                   * it stays the real form control (tests and assistive tech target it). */}
+                  <div className="import-field import-field--visually-hidden">
+                    <label className="import-label" htmlFor="import-file">
+                      File (.csv or .xlsx)
+                    </label>
+                    <input
+                      id="import-file"
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".csv,.xlsx"
+                      disabled={loading}
+                      // Out of the tab order — the visible dropzone button right before it is
+                      // the real keyboard activation path; without this, Tab from the dropzone
+                      // landed on this invisible native control next, with no visible focus
+                      // target (Codex review).
+                      tabIndex={-1}
+                      onChange={(e) => selectFile(e.target.files?.[0] ?? null)}
+                    />
+                  </div>
+                </fieldset>
+
+                <a
+                  href={`/api/admin/events/${eventId}/import/template`}
+                  download="admitto-import-template.csv"
+                  className="at-btn at-btn--secondary import-template-btn"
+                >
+                  Download CSV template
+                </a>
+
+                <details className="import-columns-info">
+                  <summary>Required CSV columns</summary>
+                  <table className="import-columns-table">
+                    <thead>
+                      <tr>
+                        <th>Column</th>
+                        <th>Required</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr><td><code>first_name</code></td><td>Yes</td><td>Attendee&apos;s first name</td></tr>
+                      <tr><td><code>last_name</code></td><td>Yes</td><td>Attendee&apos;s last name</td></tr>
+                      <tr><td><code>email</code></td><td>Yes</td><td>Valid email address (used as unique key)</td></tr>
+                      <tr>
+                        <td><code>ticket_type</code></td>
+                        <td>No</td>
+                        <td>
+                          Must match a{" "}
+                          <Link to={`/admin/events/${eventId}/settings?tab=ticket-types`}>
+                            ticket type configured for this event
+                          </Link>
+                          ; the whole row is skipped if this doesn&apos;t match
+                        </td>
+                      </tr>
+                      <tr><td><code>company</code></td><td>No</td><td>Attendee&apos;s company</td></tr>
+                      <tr><td><code>department</code></td><td>No</td><td>Department or team</td></tr>
+                      <tr><td><code>external_uuid</code></td><td>No</td><td>External ID for deduplication</td></tr>
+                      <tr><td><code>qr_payload</code></td><td>No</td><td>Custom QR code payload (auto-generated if empty)</td></tr>
+                      {attributeFields.map((field) => (
+                        <tr key={field.source_field}>
+                          <td>
+                            <code>{field.source_field}</code>
+                          </td>
+                          <td>{field.required ? "Yes" : "No"}</td>
+                          <td>
+                            {field.label}
+                            {field.type === "select" && field.options?.length
+                              ? ` — select: ${field.options.join(", ")}`
+                              : field.type === "boolean"
+                                ? " — Yes/No or true/false"
+                                : ""}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </details>
+                {attributeFields.length > 0 ? (
+                  <p className="import-hint">
+                    Event attribute columns use the <code>source_field</code> slug (included in the
+                    downloadable template). Export files may use human-readable labels — re-import accepts
+                    those too.
+                  </p>
+                ) : null}
               </div>
+            </Card>
+
+            {step === "preview" && preview && (
+              <Card title="Row preview" className="import-card">
+                <ImportSampleTable
+                  rows={preview.sampleRows}
+                  totalValid={preview.parse.validCount}
+                  attributeFieldLabels={preview.attributeFieldLabels}
+                />
+              </Card>
             )}
           </div>
-        </Card>
-      )}
 
-      {step === "preview" && preview && (
-        <Card className="import-card">
-          <h2 className="import-section-title">Preview</h2>
-          <div className="import-stats">
-            <div className="import-stat">
-              <span className="import-stat__value">{preview.summary.toCreate}</span>
-              <span className="import-stat__label">To create</span>
-            </div>
-            <div className="import-stat">
-              <span className="import-stat__value">{preview.summary.toUpdate}</span>
-              <span className="import-stat__label">To update</span>
-            </div>
-            <div className="import-stat">
-              <span className="import-stat__value">{preview.summary.toSkip}</span>
-              <span className="import-stat__label">To skip</span>
-            </div>
-          </div>
-
-          <ImportSampleTable
-            rows={preview.sampleRows}
-            totalValid={preview.parse.validCount}
-            attributeFieldLabels={preview.attributeFieldLabels}
-          />
-
-          {preview.parse.validCount === 0 && (
-            <p className="import-warn">
-              No valid rows to import. Fix the file or choose a different file before committing.
-            </p>
-          )}
-
-          {preview.parse.warnings.length > 0 && (
-            <div className="import-warnings">
-              <h3 className="import-subtitle">Warnings</h3>
-              <ul>
-                {preview.parse.warnings.map((w) => (
-                  <li key={w}>{w}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {preview.parse.invalidRows.length > 0 && (
-            <div className="import-invalid">
-              <h3 className="import-subtitle">Invalid rows</h3>
-              <InvalidRowsTable rows={preview.parse.invalidRows} />
-            </div>
-          )}
-
-          {capacityBlocked && (
-            <div className="import-warn import-capacity-banner" role="alert">
-              <p>
-                Event is at capacity ({capacityBlocked.current}/{capacityBlocked.capacity}).
-                {capacityBlocked.incoming != null && (
-                  <> Import would add {capacityBlocked.incoming} new attendee{capacityBlocked.incoming === 1 ? "" : "s"}.</>
-                )}
-              </p>
-              {superadmin && preview.summary.toCreate > 0 && (
-                <ArchivedGuard event={event} reasonId="force-capacity-reason" disabled={loading}>
-                  {(guard) => (
-                    <label className="import-checkbox">
-                      <input
-                        type="checkbox"
-                        checked={forceCapacity}
-                        onChange={(e) => setForceCapacity(e.target.checked)}
-                        {...guard}
-                      />
-                      <span>Override capacity limit (superadmin)</span>
-                    </label>
-                  )}
-                </ArchivedGuard>
-              )}
-            </div>
-          )}
-
-          <div className="import-actions">
-            <Button
-              variant="secondary"
-              disabled={loading}
-              onClick={() => {
-                setStep("upload");
-                setPreview(null);
-                setCapacityBlocked(null);
-                setForceCapacity(false);
-              }}
+          <div className="import-stack">
+            <Card
+              title="2 · Options"
+              className="import-card"
+              footer={
+                step === "upload" ? (
+                  <div className="import-actions">
+                    <ArchivedGuard event={event} reasonId="import-preview-reason" disabled={!file || loading}>
+                      {(guard) => (
+                        <Button variant="primary" onClick={() => void onPreview()} {...guard}>
+                          {loading ? "Validating…" : "Validate file"}
+                        </Button>
+                      )}
+                    </ArchivedGuard>
+                  </div>
+                ) : undefined
+              }
             >
-              Choose another file
-            </Button>
-            <ArchivedGuard event={event} reasonId="import-commit-reason" disabled={!canCommit}>
-              {(guard) => (
-                <Button
-                  variant="primary"
-                  onClick={() => void onCommit({ force: forceCapacity && superadmin })}
-                  {...guard}
-                >
-                  {loading
-                    ? "Importing…"
-                    : `Import ${importCount} attendee${importCount === 1 ? "" : "s"}`}
-                </Button>
-              )}
-            </ArchivedGuard>
+              <fieldset
+                className={[
+                  "import-upload-fieldset",
+                  isEventArchived(event) && "at-tooltip at-tooltip--below",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                data-tooltip={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
+                disabled={isEventArchived(event)}
+              >
+                <div className="import-option">
+                  <Switch
+                    label="Dry run (validate only, no writes)"
+                    checked={dryRun}
+                    // Only togglable once a validation summary is actually on screen — otherwise
+                    // an operator could turn it off during the upload step, before ever seeing
+                    // what a commit would do, and Commit import would arm the instant the
+                    // preview arrived (Codex review).
+                    disabled={loading || step !== "preview"}
+                    onChange={(e) => setDryRun(e.target.checked)}
+                  />
+                  <span className="import-checkbox__hint">
+                    Validation never writes anything. Turn this off after reviewing the summary to
+                    enable committing.
+                  </span>
+                </div>
+                <label className="import-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={overwrite}
+                    disabled={loading || step === "preview"}
+                    onChange={(e) => setOverwrite(e.target.checked)}
+                  />
+                  <span>
+                    Overwrite existing attendees
+                    <span className="import-checkbox__hint">
+                      When off, existing attendees matched by email are skipped.
+                    </span>
+                  </span>
+                </label>
+              </fieldset>
+            </Card>
+
+            {step === "preview" && preview && (
+              <Card
+                title="Validation summary"
+                className="import-card"
+                footer={
+                  <div className="import-actions">
+                    <Button variant="secondary" disabled={loading} onClick={() => void onPreview()}>
+                      {loading ? "Validating…" : "Re-validate"}
+                    </Button>
+                    <ArchivedGuard
+                      event={event}
+                      reasonId="import-commit-reason"
+                      disabled={!canCommit || dryRun}
+                      tooltip={
+                        dryRun ? "Turn off Dry run in Options to enable committing." : undefined
+                      }
+                    >
+                      {(guard) => (
+                        <Button
+                          variant="primary"
+                          onClick={() => void onCommit({ force: forceCapacity && superadmin })}
+                          {...guard}
+                        >
+                          {loading
+                            ? "Importing…"
+                            : `Commit import (${importCount} ${pluralize(importCount, "attendee")})`}
+                        </Button>
+                      )}
+                    </ArchivedGuard>
+                  </div>
+                }
+              >
+                <div className="import-stats">
+                  <div className="import-stat import-stat--ok">
+                    <span className="import-stat__value">{preview.summary.toCreate}</span>
+                    <span className="import-stat__label">To create</span>
+                  </div>
+                  <div className="import-stat import-stat--warn">
+                    <span className="import-stat__value">{preview.summary.toUpdate}</span>
+                    <span className="import-stat__label">To update</span>
+                  </div>
+                  <div className="import-stat import-stat--muted">
+                    <span className="import-stat__value">{preview.summary.toSkip}</span>
+                    <span className="import-stat__label">To skip</span>
+                  </div>
+                </div>
+
+                {preview.parse.validCount === 0 && (
+                  <p className="import-warn">
+                    No valid rows to import. Fix the file or choose a different file before committing.
+                  </p>
+                )}
+
+                {preview.parse.warnings.length > 0 && (
+                  <div className="import-warnings">
+                    <h3 className="import-subtitle">Warnings</h3>
+                    <ul>
+                      {preview.parse.warnings.map((w) => (
+                        <li key={w}>{w}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {preview.parse.invalidRows.length > 0 && (
+                  <div className="import-invalid">
+                    <h3 className="import-subtitle">Invalid rows</h3>
+                    <InvalidRowsTable rows={preview.parse.invalidRows} />
+                  </div>
+                )}
+
+                {capacityBlocked && (
+                  <div className="import-warn import-capacity-banner" role="alert">
+                    <p>
+                      Event is at capacity ({capacityBlocked.current}/{capacityBlocked.capacity}).
+                      {capacityBlocked.incoming != null && (
+                        <> Import would add {capacityBlocked.incoming} new attendee{capacityBlocked.incoming === 1 ? "" : "s"}.</>
+                      )}
+                    </p>
+                    {superadmin && preview.summary.toCreate > 0 && (
+                      <ArchivedGuard event={event} reasonId="force-capacity-reason" disabled={loading}>
+                        {(guard) => (
+                          <label className="import-checkbox">
+                            <input
+                              type="checkbox"
+                              checked={forceCapacity}
+                              onChange={(e) => setForceCapacity(e.target.checked)}
+                              {...guard}
+                            />
+                            <span>Override capacity limit (superadmin)</span>
+                          </label>
+                        )}
+                      </ArchivedGuard>
+                    )}
+                  </div>
+                )}
+              </Card>
+            )}
           </div>
-        </Card>
+        </div>
       )}
 
       {step === "done" && result && (
