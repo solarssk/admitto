@@ -387,6 +387,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminMailSettingsRateLimit = rateLimit(rateLimitStore, "admin:mail-transport-test");
   const adminEventMailSettingsRateLimit = rateLimit(rateLimitStore, "admin:event-mail-transport-test");
   const adminImportPreviewRateLimit = rateLimit(rateLimitStore, "admin:import-preview");
+  const adminAttendeesSearchRateLimit = rateLimit(rateLimitStore, "admin:attendees-search");
   const adminImportCommitRateLimit = rateLimit(rateLimitStore, "admin:import-commit");
   const adminTemplatePreviewRateLimit = rateLimit(rateLimitStore, "admin:template-preview");
   const adminAuthProviderOpsRateLimit = rateLimit(rateLimitStore, "admin:oidc-provider-ops");
@@ -666,8 +667,11 @@ export function createApp(options: CreateAppOptions = {}) {
     adminExportRateLimit,
     (c) => handleExportSelectedAttendees(c, db),
   );
-  app.get("/api/admin/events/:eventId/attendees", staffAdminGate, (c) =>
-    handleListEventAttendees(c, db),
+  app.get(
+    "/api/admin/events/:eventId/attendees",
+    staffAdminGate,
+    adminAttendeesSearchRateLimit,
+    (c) => handleListEventAttendees(c, db),
   );
   app.post(
     "/api/admin/events/:eventId/attendees",
