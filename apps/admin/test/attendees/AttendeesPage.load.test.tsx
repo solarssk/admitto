@@ -112,6 +112,8 @@ describe("AttendeesPage load errors", () => {
 
     renderPage();
 
+    // The error sits inside the Filters dropdown panel now (PO review) - open it to see it.
+    fireEvent.click(await screen.findByRole("button", { name: "Filters" }));
     await waitFor(() => expect(screen.getByText("Couldn't load types.")).toBeTruthy());
     // The list itself isn't replaced by an error - only the Type filter is affected.
     expect(screen.queryByText("Could not load attendees")).toBeNull();

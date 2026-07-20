@@ -940,7 +940,11 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
 
     renderPage();
     await screen.findByText("Jane Doe");
+    // The error sits inside the Filters dropdown panel now (PO review) — open it to confirm
+    // the ticketTypesError state has actually settled before proceeding.
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     await waitFor(() => expect(screen.getByText("Couldn't load types.")).toBeTruthy());
+
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
     fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));

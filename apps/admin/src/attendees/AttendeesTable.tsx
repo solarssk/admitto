@@ -9,7 +9,6 @@ import type {
   TicketTypeDto,
 } from "../api/types.js";
 import { ArchivedGuard, type ArchivedGuardEvent } from "../components/ArchivedGuard.js";
-import { ScrollFadeRow } from "../components/ScrollFadeRow.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { MailStatusBadge } from "./mailStatusBadge.js";
@@ -581,9 +580,14 @@ function BulkBar({
   );
 }
 
-/** Search box, the three filter selects (behind a "Filters" toggle below 768px), and — mobile
- * only, since there's no column header to click — a "Sort by" control. Owns its own open/close
- * state for the mobile filters panel; nothing outside this component needs it. */
+/** Search box + a single "Filters" trigger button. The four filter selects (and, on mobile,
+ * the "Sort by" control) live in a floating dropdown panel opened from that button — not
+ * inline in the row and not a horizontally-scrolling strip (both tried and rejected in PO
+ * review: inline wrapping changed the row's height, and a scrollable row still meant
+ * scrolling to reach a filter). A floating panel is `position: absolute`, so it overlays the
+ * table below instead of pushing it down — the row itself (search + one button) never
+ * changes size, at any viewport, whether the panel is open or closed. Same trigger+panel
+ * mechanism as the Export and More actions menus elsewhere on this page. */
 function FilterToolbar({
   searchInput,
   onSearchChange,
@@ -622,13 +626,15 @@ function FilterToolbar({
   onSortChange: (column: AttendeeSortBy) => void;
 }>) {
   const searchInputRef = useRef<HTMLInputElement>(null);
-  // Item count the row renders, so the scroll-fade hook re-measures when it changes (e.g. the
-  // mobile sort control appearing/disappearing across the isDesktop breakpoint) without
-  // waiting for a scroll event.
-  const itemCount = (isDesktop ? 4 : 5) + (ticketTypesError ? 1 : 0);
+  const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+  const activeFilterCount =
+    (statusFilter !== "all" ? 1 : 0) +
+    (rsvpStatusFilter !== "" ? 1 : 0) +
+    (ticketTypeFilter !== "" ? 1 : 0) +
+    (mailStatusFilter !== "" ? 1 : 0);
 
   return (
-    <ScrollFadeRow className="attendees-toolbar" watch={itemCount}>
+    <div className="attendees-toolbar">
       <div className="attendees-toolbar__search">
         <Input
           ref={searchInputRef}
@@ -654,80 +660,103 @@ function FilterToolbar({
           </button>
         )}
       </div>
-      {!isDesktop && <MobileSortControl sortBy={sortBy} sortDir={sortDir} onSortChange={onSortChange} />}
-      <div className="attendees-toolbar__filter">
-        <Select
-          id="attendees-filter-type"
-          name="attendees-filter-type"
-          aria-label="Filter by ticket type"
-          value={ticketTypeFilter}
-          onChange={(e) => onTicketTypeFilterChange(e.target.value)}
+      <div className="attendees-filters-menu" ref={rootRef}>
+        <Button
+          ref={triggerRef}
+          type="button"
+          variant="secondary"
+          icon={<i className="ti ti-filter" aria-hidden="true" />}
+          hasMenu
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
         >
-          <option value="">All ticket types</option>
-          {ticketTypes.map((t) => (
-            <option key={t.key} value={t.key}>
-              {t.label}
-            </option>
-          ))}
-        </Select>
-        {ticketTypesError && (
-          <p className="mail-field-hint" role="alert">
-            {ticketTypesError}{" "}
-            {onRetryTicketTypes && (
-              <button type="button" className="link-btn" onClick={onRetryTicketTypes}>
-                Retry
-              </button>
+          Filters
+          {activeFilterCount > 0 && (
+            <span className="attendees-filters-menu__count">{activeFilterCount}</span>
+          )}
+        </Button>
+        {open && (
+          <div className="attendees-filters-menu__panel" ref={panelRef}>
+            {!isDesktop && (
+              <MobileSortControl sortBy={sortBy} sortDir={sortDir} onSortChange={onSortChange} />
             )}
-          </p>
+            <div className="attendees-toolbar__filter">
+              <Select
+                id="attendees-filter-type"
+                name="attendees-filter-type"
+                aria-label="Filter by ticket type"
+                value={ticketTypeFilter}
+                onChange={(e) => onTicketTypeFilterChange(e.target.value)}
+              >
+                <option value="">All ticket types</option>
+                {ticketTypes.map((t) => (
+                  <option key={t.key} value={t.key}>
+                    {t.label}
+                  </option>
+                ))}
+              </Select>
+              {ticketTypesError && (
+                <p className="mail-field-hint" role="alert">
+                  {ticketTypesError}{" "}
+                  {onRetryTicketTypes && (
+                    <button type="button" className="link-btn" onClick={onRetryTicketTypes}>
+                      Retry
+                    </button>
+                  )}
+                </p>
+              )}
+            </div>
+            <div className="attendees-toolbar__filter">
+              <Select
+                id="attendees-filter-rsvp"
+                name="attendees-filter-rsvp"
+                aria-label="Filter by attendance"
+                value={rsvpStatusFilter}
+                onChange={(e) => onRsvpStatusFilterChange(e.target.value as "" | RsvpStatus)}
+              >
+                <option value="">All attendance statuses</option>
+                <option value="none">Registered</option>
+                <option value="confirmed">Confirmed</option>
+                <option value="declined">Declined</option>
+                <option value="tentative">Tentative</option>
+                <option value="cancelled">Cancelled</option>
+              </Select>
+            </div>
+            <div className="attendees-toolbar__filter">
+              <Select
+                id="attendees-filter-checkin"
+                name="attendees-filter-checkin"
+                aria-label="Filter by check-in status"
+                value={statusFilter}
+                onChange={(e) => onStatusFilterChange(e.target.value as "all" | "admitted" | "not_admitted")}
+              >
+                <option value="all">All check-ins</option>
+                <option value="admitted">Checked in</option>
+                <option value="not_admitted">Not checked in</option>
+              </Select>
+            </div>
+            <div className="attendees-toolbar__filter">
+              {/* Buckets over raw delivery statuses — filters the same latest-delivery status
+                * the Mail column badge shows (#522). */}
+              <Select
+                id="attendees-filter-mail"
+                name="attendees-filter-mail"
+                aria-label="Filter by mail delivery status"
+                value={mailStatusFilter}
+                onChange={(e) => onMailStatusFilterChange(e.target.value as "" | AttendeeMailStatusFilter)}
+              >
+                <option value="">All mail statuses</option>
+                <option value="not_sent">Not sent</option>
+                <option value="sent">Sent</option>
+                <option value="pending">Pending</option>
+                <option value="failed">Failed</option>
+              </Select>
+            </div>
+          </div>
         )}
       </div>
-      <div className="attendees-toolbar__filter">
-        <Select
-          id="attendees-filter-rsvp"
-          name="attendees-filter-rsvp"
-          aria-label="Filter by attendance"
-          value={rsvpStatusFilter}
-          onChange={(e) => onRsvpStatusFilterChange(e.target.value as "" | RsvpStatus)}
-        >
-          <option value="">All attendance statuses</option>
-          <option value="none">Registered</option>
-          <option value="confirmed">Confirmed</option>
-          <option value="declined">Declined</option>
-          <option value="tentative">Tentative</option>
-          <option value="cancelled">Cancelled</option>
-        </Select>
-      </div>
-      <div className="attendees-toolbar__filter">
-        <Select
-          id="attendees-filter-checkin"
-          name="attendees-filter-checkin"
-          aria-label="Filter by check-in status"
-          value={statusFilter}
-          onChange={(e) => onStatusFilterChange(e.target.value as "all" | "admitted" | "not_admitted")}
-        >
-          <option value="all">All check-ins</option>
-          <option value="admitted">Checked in</option>
-          <option value="not_admitted">Not checked in</option>
-        </Select>
-      </div>
-      <div className="attendees-toolbar__filter">
-        {/* Buckets over raw delivery statuses — filters the same latest-delivery status the
-          * Mail column badge shows (#522). */}
-        <Select
-          id="attendees-filter-mail"
-          name="attendees-filter-mail"
-          aria-label="Filter by mail delivery status"
-          value={mailStatusFilter}
-          onChange={(e) => onMailStatusFilterChange(e.target.value as "" | AttendeeMailStatusFilter)}
-        >
-          <option value="">All mail statuses</option>
-          <option value="not_sent">Not sent</option>
-          <option value="sent">Sent</option>
-          <option value="pending">Pending</option>
-          <option value="failed">Failed</option>
-        </Select>
-      </div>
-    </ScrollFadeRow>
+    </div>
   );
 }
 

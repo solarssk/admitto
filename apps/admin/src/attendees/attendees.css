@@ -26,37 +26,24 @@
   min-width: 720px;
 }
 
-/* Search + filters always render as ONE row of fixed height, at every viewport — desktop,
-   tablet, or phone (PO review: wrapping to 2-3 lines, even evenly, still grew the toolbar's
-   height and looked broken). Rather than collapsing filters behind a toggle below some
-   breakpoint, the row is a ScrollFadeRow (see ScrollFadeRow.tsx / scroll-fade-tabs.css): it
-   never wraps, and scrolls horizontally with soft edge fades once content doesn't fit,
-   exactly like the existing settings-page tab strips already do for the same reason. */
+/* Search box + a single "Filters" button — the row itself is just these two items, so it
+   never wraps and never changes height at any viewport (PO review, third attempt: wrapping
+   onto extra lines changed the height, and a horizontally-scrolling row still meant scrolling
+   to reach a filter). The four selects (+ the mobile sort control) live in a floating
+   `position: absolute` panel opened from the button instead — same mechanism as the Export
+   and More actions menus, so it overlays the table below rather than pushing it down. */
 .attendees-toolbar {
-  --scroll-fade-bg: var(--surface-card);
-  margin-bottom: 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.attendees-toolbar .scroll-fade-tabs__scroll {
   display: flex;
-  flex-wrap: nowrap;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-4);
+  border-bottom: 1px solid var(--border);
 }
 
 .attendees-toolbar__search {
   position: relative;
-  /* The one item that actually flexes: grows into any leftover width on a wide desktop,
-     shrinks down to this floor as the viewport narrows — only once it's AT that floor does
-     the row start needing to scroll (see .attendees-toolbar__filter below, which never
-     shrinks at all, so search absorbs the squeeze first). 180, not wider — a search box
-     doesn't need as much floor space as a select whose full option label has to stay
-     readable, and a lower floor is what keeps the row fitting without scrolling at a common
-     1440px desktop width (confirmed live). */
-  flex: 1 1 220px;
-  min-width: 180px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .attendees-toolbar__search .at-input {
@@ -85,13 +72,45 @@
   color: var(--text);
 }
 
-/* Fixed width, never shrinks or grows — a comfortable, always-legible size. 200px (not
-   narrower) so the longest option text ("All attendance statuses") doesn't get clipped by
-   the native <select> itself — confirmed live at 178px it was (PO QA pass). Once these four
-   plus the search box's floor no longer fit the viewport, the row scrolls rather than
-   squeezing any of them narrower than usable. */
-.attendees-toolbar__filter {
-  flex: 0 0 220px;
+.attendees-filters-menu {
+  position: relative;
+  flex: none;
+}
+
+.attendees-filters-menu__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  margin-left: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+  color: var(--text-on-primary);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* Anchored right, like the Export/More actions panels — the trigger sits at the row's right
+   edge (search fills all the leftover space via flex:1 1 auto above), so extending leftward
+   from there stays within the card, at any viewport. Unlike the bulk bar's actions group,
+   this row never wraps, so the trigger never relocates to the left edge the way "More
+   actions" could — no mobile-only override needed here. */
+.attendees-filters-menu__panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: var(--z-dropdown);
+  width: 260px;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
 .attendees-toolbar__filter .at-select {
@@ -99,16 +118,16 @@
 }
 
 /* Mobile-only "Sort by" select + direction toggle (AttendeesTable has no column headers to
-   click below 768px) — just one more fixed-width item in the same never-wrapping row. */
+   click below 768px) — sits at the top of the same filters panel. */
 .attendees-toolbar__sort {
   display: flex;
-  flex: 0 0 auto;
   align-items: center;
   gap: var(--space-2);
 }
 
 .attendees-toolbar__sort .at-select {
-  width: 150px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* 767, not 768 — useIsDesktop() (apps/admin/src/hooks/useIsDesktop.ts) switches
@@ -121,6 +140,16 @@
   .attendees-bulkbar__actions {
     flex-basis: 100%;
     margin-left: 0;
+  }
+
+  /* The actions group can wrap "More actions" onto its own line starting at the row's LEFT
+     edge (unlike desktop, where the group stays right-aligned) — its panel's usual right:0
+     anchor then extended leftward off-screen (PO review: menu text was clipped). Anchor from
+     the left instead so it extends rightward, staying on screen from wherever the trigger
+     lands. */
+  .more-actions-menu__panel {
+    right: auto;
+    left: 0;
   }
 
   /* The summary text + rows-per-page + Previous/Page X of Y/Next pager don't fit on one

@@ -4,9 +4,6 @@
 .scroll-fade-tabs {
   position: relative;
   margin-bottom: var(--space-4);
-  /* Overridable per instance — a strip sitting on a white card (not the page background)
-     needs its fade to blend into --surface-card instead (see ScrollFadeRow usages). */
-  --scroll-fade-bg: var(--surface-page);
 }
 
 .scroll-fade-tabs__scroll {
@@ -43,12 +40,12 @@
 
 .scroll-fade-tabs::before {
   left: 0;
-  background: linear-gradient(to left, transparent, var(--scroll-fade-bg));
+  background: linear-gradient(to left, transparent, var(--surface-page));
 }
 
 .scroll-fade-tabs::after {
   right: 0;
-  background: linear-gradient(to right, transparent, var(--scroll-fade-bg));
+  background: linear-gradient(to right, transparent, var(--surface-page));
 }
 
 .scroll-fade-tabs--at-start::before {

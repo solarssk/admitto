@@ -74,7 +74,7 @@ describe("AttendeesTable toolbar vs bulk bar", () => {
     mockMatchMedia(true);
   });
 
-  it("hides the search input and filter selects entirely once a row is selected, and shows the bulk bar instead", () => {
+  it("hides the search input and Filters button entirely once a row is selected, and shows the bulk bar instead", () => {
     const onClearSelection = vi.fn();
     const { rerender } = render(
       <AttendeesTable
@@ -87,9 +87,7 @@ describe("AttendeesTable toolbar vs bulk bar", () => {
     );
 
     expect(screen.getByLabelText("Search attendees by name, email, or company")).toBeTruthy();
-    expect(screen.getByLabelText("Filter by check-in status")).toBeTruthy();
-    expect(screen.getByLabelText("Filter by attendance")).toBeTruthy();
-    expect(screen.getByLabelText("Filter by ticket type")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Filters" })).toBeTruthy();
     expect(document.querySelector(".attendees-bulkbar")).toBeNull();
 
     rerender(
@@ -104,9 +102,7 @@ describe("AttendeesTable toolbar vs bulk bar", () => {
 
     // Not just visually hidden - not in the DOM at all.
     expect(screen.queryByLabelText("Search attendees by name, email, or company")).toBeNull();
-    expect(screen.queryByLabelText("Filter by check-in status")).toBeNull();
-    expect(screen.queryByLabelText("Filter by attendance")).toBeNull();
-    expect(screen.queryByLabelText("Filter by ticket type")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Filters" })).toBeNull();
     const bar = document.querySelector(".attendees-bulkbar");
     expect(bar).toBeTruthy();
     expect(within(bar as HTMLElement).getByText("1")).toBeTruthy();
@@ -127,45 +123,71 @@ describe("AttendeesTable toolbar vs bulk bar", () => {
     );
 
     expect(screen.getByLabelText("Search attendees by name, email, or company")).toBeTruthy();
-    expect(screen.getByLabelText("Filter by check-in status")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Filters" })).toBeTruthy();
     expect(document.querySelector(".attendees-bulkbar")).toBeNull();
   });
 });
 
-describe("AttendeesTable search+filter row never wraps (PO review)", () => {
+describe("AttendeesTable Filters dropdown (PO review, third pass)", () => {
   beforeEach(() => {
     mockMatchMedia(true);
   });
 
-  it("has no collapsible toggle — search and every filter select are always visible together", () => {
+  it("keeps the filter selects out of the DOM until the Filters button is clicked, then reveals all four", () => {
     render(
       <AttendeesTable {...tableProps} items={[baseRow]} selectedIds={new Set()} onToggleRow={vi.fn()} />,
     );
 
-    expect(screen.queryByRole("button", { name: /Filters/ })).toBeNull();
-    expect(screen.getByLabelText("Search attendees by name, email, or company")).toBeTruthy();
+    expect(screen.queryByLabelText("Filter by ticket type")).toBeNull();
+    expect(screen.queryByLabelText("Filter by attendance")).toBeNull();
+    expect(screen.queryByLabelText("Filter by check-in status")).toBeNull();
+    expect(screen.queryByLabelText("Filter by mail delivery status")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+
     expect(screen.getByLabelText("Filter by ticket type")).toBeTruthy();
     expect(screen.getByLabelText("Filter by attendance")).toBeTruthy();
     expect(screen.getByLabelText("Filter by check-in status")).toBeTruthy();
     expect(screen.getByLabelText("Filter by mail delivery status")).toBeTruthy();
   });
 
-  it("renders search and every filter select as direct children of one non-wrapping scroll strip", () => {
+  it("floats as an absolutely-positioned overlay, not inline content pushing the row's own height", () => {
     render(
       <AttendeesTable {...tableProps} items={[baseRow]} selectedIds={new Set()} onToggleRow={vi.fn()} />,
     );
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
 
-    const row = document.querySelector(".attendees-toolbar .scroll-fade-tabs__scroll");
-    expect(row).toBeTruthy();
-    // Every control's own wrapper is a direct child of the same scroll strip — none of them
-    // sit inside a nested wrapper that could independently wrap onto its own line.
-    const search = screen.getByLabelText("Search attendees by name, email, or company").closest(".attendees-toolbar__search");
-    const mailFilter = screen.getByLabelText("Filter by mail delivery status").closest(".attendees-toolbar__filter");
-    expect(search?.parentElement).toBe(row);
-    expect(mailFilter?.parentElement).toBe(row);
+    // The row (.attendees-toolbar) and the floating panel are structurally separate — the
+    // panel is a sibling of the trigger inside its own small wrapper, not a child that grows
+    // the toolbar row itself (see attendees.css: .attendees-filters-menu__panel is
+    // position:absolute).
+    const panel = document.querySelector(".attendees-filters-menu__panel");
+    expect(panel).toBeTruthy();
+    expect(panel?.closest(".attendees-toolbar")).toBeTruthy();
+    expect(panel?.parentElement?.className).toContain("attendees-filters-menu");
   });
 
-  it("stays visible and functional on a phone too — same row, no separate mobile panel", () => {
+  it("shows an active-filter count badge on the trigger and clears when filters reset", () => {
+    const { rerender } = render(
+      <AttendeesTable {...tableProps} items={[baseRow]} selectedIds={new Set()} onToggleRow={vi.fn()} />,
+    );
+    expect(screen.queryByText("2")).toBeNull();
+
+    rerender(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow]}
+        selectedIds={new Set()}
+        onToggleRow={vi.fn()}
+        statusFilter="admitted"
+        rsvpStatusFilter="confirmed"
+      />,
+    );
+    const toggle = screen.getByRole("button", { name: /Filters/ });
+    expect(within(toggle).getByText("2")).toBeTruthy();
+  });
+
+  it("stays reachable and functional on a phone too — same trigger button, same floating panel", () => {
     mockMatchMedia(false);
     const onMailStatusFilterChange = vi.fn();
     render(
@@ -177,6 +199,7 @@ describe("AttendeesTable search+filter row never wraps (PO review)", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
     const select = screen.getByLabelText("Filter by mail delivery status") as HTMLSelectElement;
     fireEvent.change(select, { target: { value: "failed" } });
     expect(onMailStatusFilterChange).toHaveBeenCalledWith("failed");
@@ -253,8 +276,8 @@ describe("AttendeesTable mobile card view (<768px)", () => {
       />,
     );
 
-    // No toggle to open anymore — the sort control sits directly in the same
-    // never-wrapping row as the filter selects.
+    // The sort control sits at the top of the same Filters dropdown panel.
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     const sortSelect = screen.getByLabelText("Sort by") as HTMLSelectElement;
     expect(sortSelect.value).toBe("name");
 
@@ -309,6 +332,7 @@ describe("AttendeesTable mail delivery status filter (#522)", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     const select = screen.getByLabelText("Filter by mail delivery status") as HTMLSelectElement;
     const values = Array.from(select.options).map((o) => o.value);
     expect(values).toEqual(["", "not_sent", "sent", "pending", "failed"]);
@@ -321,6 +345,7 @@ describe("AttendeesTable mail delivery status filter (#522)", () => {
     const { rerender } = render(
       <AttendeesTable {...tableProps} items={[baseRow]} selectedIds={new Set()} mailStatusFilter="" />,
     );
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     let select = screen.getByLabelText("Filter by mail delivery status") as HTMLSelectElement;
     expect(select.value).toBe("");
 
