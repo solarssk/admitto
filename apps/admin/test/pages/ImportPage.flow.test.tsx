@@ -291,8 +291,8 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
     ]);
     renderPage();
 
-    await waitFor(() => expect(screen.getByText("Import history")).toBeTruthy());
-    await waitFor(() => expect(screen.getByText("attendees_final.csv")).toBeTruthy());
+    expect(await screen.findByText("Import history")).toBeTruthy();
+    expect(await screen.findByText("attendees_final.csv")).toBeTruthy();
     expect(screen.getByText("312")).toBeTruthy();
     expect(screen.getByText("171")).toBeTruthy();
   });
@@ -300,7 +300,7 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
   it("shows an empty state when there are no imports yet", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     renderPage();
-    await waitFor(() => expect(screen.getByText("No imports yet for this event.")).toBeTruthy());
+    expect(await screen.findByText("No imports yet for this event.")).toBeTruthy();
   });
 
   it("shows an inline error with Retry when history fails to load, and retries", async () => {
@@ -308,9 +308,9 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
     fetchImportHistory.mockRejectedValueOnce(new Error("boom")).mockResolvedValueOnce([]);
     renderPage();
 
-    await waitFor(() => expect(screen.getByText("Couldn't load import history.")).toBeTruthy());
+    expect(await screen.findByText("Couldn't load import history.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    await waitFor(() => expect(screen.getByText("No imports yet for this event.")).toBeTruthy());
+    expect(await screen.findByText("No imports yet for this event.")).toBeTruthy();
   });
 
   it("shows the mockup done screen after commit and 'Import another file' resets the flow", async () => {
@@ -327,15 +327,15 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
       invalidRows: [],
     });
     renderPage();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Validate file" })).toBeTruthy());
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
 
     selectFile();
     fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
-    await waitFor(() => expect(screen.getByText("To create")).toBeTruthy());
+    expect(await screen.findByText("To create")).toBeTruthy();
     fireEvent.click(screen.getByLabelText(/Dry run/));
     fireEvent.click(screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }));
 
-    await waitFor(() => expect(screen.getByText("Import complete")).toBeTruthy());
+    expect(await screen.findByText("Import complete")).toBeTruthy();
     expect(screen.getByText(/1 attendee created · 0 updated · 0 skipped/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "View attendees" })).toBeTruthy();
     // History refreshes after a successful commit (initial load + post-commit).

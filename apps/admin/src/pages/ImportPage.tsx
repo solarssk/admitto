@@ -110,21 +110,71 @@ function ImportSampleTable({ rows, totalValid, attributeFieldLabels }: ImportSam
   );
 }
 
-/** "Import history" card from the design mockup — recent commits with their outcome counts,
- * read from the audit log (no dedicated table). Timestamps render in the event's timezone via
- * the central formatter, like other event-scoped tables. Errors render inline with a Retry,
- * per the toast-vs-inline convention (a load failure of a passive card shouldn't toast). */
-function ImportHistoryCard({
-  history,
-  error,
-  eventTimezone,
-  onRetry,
-}: {
+interface ImportHistoryCardProps {
   history: ImportHistoryEntry[] | null;
   error: string | null;
   eventTimezone: string | undefined;
   onRetry: () => void;
-}) {
+}
+
+/** One state at a time (error takes priority, then loading, then empty, then the table) — a
+ * plain if/return chain instead of nested ternaries (Sonar S3358), which also reads closer to
+ * how an operator actually encounters these: never more than one at once. */
+function renderImportHistoryBody({ history, error, eventTimezone, onRetry }: ImportHistoryCardProps) {
+  if (error) {
+    return (
+      <div className="import-history__error">
+        <p className="import-hint">{error}</p>
+        <Button variant="secondary" onClick={onRetry}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+  if (history === null) {
+    return <p className="import-hint import-history__loading">Loading…</p>;
+  }
+  if (history.length === 0) {
+    return <p className="import-hint">No imports yet for this event.</p>;
+  }
+  return (
+    <div className="attendees-table-wrap">
+      <table className="table import-history-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>File</th>
+            <th>Created</th>
+            <th>Updated</th>
+            <th>Skipped</th>
+          </tr>
+        </thead>
+        <tbody>
+          {history.map((entry) => (
+            <tr key={entry.id}>
+              <td className="import-history__date">
+                {formatEventDateTime(entry.created_at, eventTimezone)}
+              </td>
+              <td className="import-history__file">
+                {entry.filename ?? <span className="import-sample__empty">—</span>}
+              </td>
+              <td className="import-history__num import-history__num--ok">{entry.created}</td>
+              <td className="import-history__num import-history__num--warn">{entry.updated}</td>
+              <td className="import-history__num">{entry.skipped}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** "Import history" card from the design mockup — recent commits with their outcome counts,
+ * read from the audit log (no dedicated table). Timestamps render in the event's timezone via
+ * the central formatter, like other event-scoped tables. Errors render inline with a Retry,
+ * per the toast-vs-inline convention (a load failure of a passive card shouldn't toast). */
+function ImportHistoryCard(props: Readonly<ImportHistoryCardProps>) {
+  const { history, error } = props;
   return (
     <Card
       title="Import history"
@@ -133,47 +183,7 @@ function ImportHistoryCard({
        * padded={false} table card); every text state keeps the normal card padding. */
       padded={error !== null || history === null || history.length === 0}
     >
-      {error ? (
-        <div className="import-history__error">
-          <p className="import-hint">{error}</p>
-          <Button variant="secondary" onClick={onRetry}>
-            Retry
-          </Button>
-        </div>
-      ) : history === null ? (
-        <p className="import-hint import-history__loading">Loading…</p>
-      ) : history.length === 0 ? (
-        <p className="import-hint">No imports yet for this event.</p>
-      ) : (
-        <div className="attendees-table-wrap">
-          <table className="table import-history-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>File</th>
-                <th>Created</th>
-                <th>Updated</th>
-                <th>Skipped</th>
-              </tr>
-            </thead>
-            <tbody>
-              {history.map((entry) => (
-                <tr key={entry.id}>
-                  <td className="import-history__date">
-                    {formatEventDateTime(entry.created_at, eventTimezone)}
-                  </td>
-                  <td className="import-history__file">
-                    {entry.filename ?? <span className="import-sample__empty">—</span>}
-                  </td>
-                  <td className="import-history__num import-history__num--ok">{entry.created}</td>
-                  <td className="import-history__num import-history__num--warn">{entry.updated}</td>
-                  <td className="import-history__num">{entry.skipped}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {renderImportHistoryBody(props)}
     </Card>
   );
 }
