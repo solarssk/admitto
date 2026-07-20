@@ -296,6 +296,10 @@ export function ImportPage() {
     setPreview(null);
     setCapacityBlocked(null);
     setForceCapacity(false);
+    // A new file means a new, not-yet-reviewed validation summary — re-arm Dry run so a
+    // switch left off from a previous file's summary can't immediately unlock committing
+    // this one before its own summary has even been seen (Codex review).
+    setDryRun(true);
     if (step === "preview") setStep("upload");
   };
 
@@ -456,6 +460,11 @@ export function ImportPage() {
                       type="file"
                       accept=".csv,.xlsx"
                       disabled={loading}
+                      // Out of the tab order — the visible dropzone button right before it is
+                      // the real keyboard activation path; without this, Tab from the dropzone
+                      // landed on this invisible native control next, with no visible focus
+                      // target (Codex review).
+                      tabIndex={-1}
                       onChange={(e) => selectFile(e.target.files?.[0] ?? null)}
                     />
                   </div>
@@ -570,7 +579,11 @@ export function ImportPage() {
                   <Switch
                     label="Dry run (validate only, no writes)"
                     checked={dryRun}
-                    disabled={loading}
+                    // Only togglable once a validation summary is actually on screen — otherwise
+                    // an operator could turn it off during the upload step, before ever seeing
+                    // what a commit would do, and Commit import would arm the instant the
+                    // preview arrived (Codex review).
+                    disabled={loading || step !== "preview"}
                     onChange={(e) => setDryRun(e.target.checked)}
                   />
                   <span className="import-checkbox__hint">
