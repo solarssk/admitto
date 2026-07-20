@@ -302,6 +302,10 @@ export function ImportPage() {
     // this one before its own summary has even been seen (Codex review).
     setDryRun(true);
     if (step === "preview") setStep("upload");
+    // Browsers don't fire onChange when the same file is re-selected through the native
+    // input unless its value is cleared first — otherwise Browse-ing the same file again
+    // right after removing it would silently do nothing (CodeRabbit review).
+    if (!picked && fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const onDrop = (e: DragEvent<HTMLButtonElement>) => {

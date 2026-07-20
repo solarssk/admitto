@@ -195,6 +195,25 @@ describe("ImportPage upload → preview → commit flow", () => {
     expect(screen.getByText("To create")).toBeTruthy();
   });
 
+  it("re-arms Dry run on Re-validate, so turning it off before re-validating can't unlock committing the refreshed summary (CodeRabbit review)", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValue(samplePreview());
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    expect(await screen.findByText("To create")).toBeTruthy();
+
+    const dryRunSwitch = screen.getByLabelText(/Dry run/) as HTMLInputElement;
+    fireEvent.click(dryRunSwitch);
+    expect(dryRunSwitch.checked).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Re-validate" }));
+    await waitFor(() => expect(previewImport).toHaveBeenCalledTimes(2));
+    expect(dryRunSwitch.checked).toBe(true);
+  });
+
   it("lists configured custom attribute fields as extra rows in the Required CSV columns reference", async () => {
     fetchEventCustomFields.mockResolvedValue([
       { id: "1", source_field: "shirt_size", label: "Shirt size", type: "text", required: false, options: null, created_at: "2026-01-01T00:00:00.000Z" },
@@ -402,6 +421,24 @@ describe("ImportPage dropzone (#358 Phase A)", () => {
     expect(screen.getByRole("button", { name: "Upload a CSV or XLSX file" })).toBeTruthy();
     expect(screen.queryByText("To create")).toBeNull();
     expect((screen.getByRole("button", { name: "Validate file" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("clears the native file input when the file is removed, so Browse-ing the same file again re-fires the picker (CodeRabbit review)", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    const fileInput = screen.getByLabelText("File (.csv or .xlsx)") as HTMLInputElement;
+    // jsdom doesn't emulate the browser's fake-path auto-value on a real file pick, so assert
+    // the underlying reset the fix relies on: the native input's value setter is invoked with
+    // "" when the file is removed (real browsers require this to re-fire onChange for the same
+    // file next time).
+    const valueSetter = vi.spyOn(fileInput, "value", "set");
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove file" }));
+
+    expect(valueSetter).toHaveBeenCalledWith("");
   });
 });
 
