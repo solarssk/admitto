@@ -199,6 +199,10 @@ export function ImportPage() {
     // this one before its own summary has even been seen (Codex review).
     setDryRun(true);
     if (step === "preview") setStep("upload");
+    // Browsers don't fire onChange when the same file is re-selected through the native
+    // input unless its value is cleared first — otherwise Browse-ing the same file again
+    // right after removing it would silently do nothing (CodeRabbit review).
+    if (!picked && fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const onDrop = (e: DragEvent<HTMLButtonElement>) => {
@@ -233,6 +237,12 @@ export function ImportPage() {
       const data = await previewImport(eventId, file, overwrite);
       setPreview(data);
       setStep("preview");
+      // Force back to the safe state on every fresh validate (including Re-validate, which
+      // also calls this) — toggling Dry run off *before* seeing this summary shouldn't count
+      // as reviewing it; the operator must turn it off again after seeing these actual
+      // results (code review: the switch had no step-aware guard, so pre-toggling it let the
+      // Commit button start already enabled on the summary's first render).
+      setDryRun(true);
     } catch (err) {
       handleApiError(err);
     } finally {
