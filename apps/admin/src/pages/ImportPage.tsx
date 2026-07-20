@@ -17,6 +17,7 @@ import { isSuperadmin } from "../auth/capabilities.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { formatEventDateTime } from "../utils/event-dates.js";
+import { formatFileSize } from "../utils/formatFileSize.js";
 import "../attendees/attendees.css";
 import "./import.css";
 
@@ -137,12 +138,12 @@ function ImportHistoryCard({
           </Button>
         </div>
       ) : history === null ? (
-        <p className="import-hint import-history__loading">Loading…</p>
+        <p className="import-hint">Loading…</p>
       ) : history.length === 0 ? (
         <p className="import-hint">No imports yet for this event.</p>
       ) : (
         <div className="attendees-table-wrap">
-          <table className="table import-history-table">
+          <table className="table">
             <thead>
               <tr>
                 <th>Date</th>
@@ -317,6 +318,12 @@ export function ImportPage() {
       const data = await previewImport(eventId, file, overwrite);
       setPreview(data);
       setStep("preview");
+      // Force back to the safe state on every fresh validate (including Re-validate, which
+      // also calls this) — toggling Dry run off *before* seeing this summary shouldn't count
+      // as reviewing it; the operator must turn it off again after seeing these actual
+      // results (code review: the switch had no step-aware guard, so pre-toggling it let the
+      // Commit button start already enabled on the summary's first render).
+      setDryRun(true);
     } catch (err) {
       handleApiError(err);
     } finally {
@@ -395,7 +402,7 @@ export function ImportPage() {
                         <span className="import-file-chip__meta">
                           {preview
                             ? `${preview.parse.validCount} valid row${preview.parse.validCount === 1 ? "" : "s"}`
-                            : `${Math.max(1, Math.round(file.size / 1024))} KB`}
+                            : formatFileSize(file.size)}
                         </span>
                       </div>
                       <button
@@ -432,7 +439,7 @@ export function ImportPage() {
                   )}
                   {/* Visually hidden but still labelled — the dropzone proxies clicks to it, and
                    * it stays the real form control (tests and assistive tech target it). */}
-                  <div className="import-field import-field--visually-hidden">
+                  <div className="import-field sr-only">
                     <label className="import-label" htmlFor="import-file">
                       File (.csv or .xlsx)
                     </label>
@@ -441,7 +448,7 @@ export function ImportPage() {
                       ref={fileInputRef}
                       type="file"
                       accept=".csv,.xlsx"
-                      disabled={loading}
+                      disabled={loading || step === "preview"}
                       onChange={(e) => selectFile(e.target.files?.[0] ?? null)}
                     />
                   </div>

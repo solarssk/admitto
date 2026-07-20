@@ -261,7 +261,7 @@ function ChangeTicketTypeDialog({
               <input
                 type="radio"
                 name="bulk-ticket-type"
-                className="change-type-option__input"
+                className="sr-only"
                 value={type.key}
                 checked={value === type.key}
                 disabled={busy}
@@ -782,7 +782,13 @@ export function AttendeesPage() {
         changeTypeValue,
       );
       if (!isStillOnEvent()) return;
-      if (updatedCount === 0) {
+      if (updatedCount === 0 && alreadySetCount === 0) {
+        // None of the selected ids resolved to an attendee in this event — most likely they
+        // were deleted by someone else between opening the picker and clicking Apply (code
+        // review: this used to fall into the "already had it" branch below, which is wrong —
+        // nothing was found at all, let alone already set to the type).
+        addToast("None of the selected attendees could be found — they may have been removed.", "error");
+      } else if (updatedCount === 0) {
         addToast(`All selected attendees already have ${typeLabel}.`, "info");
       } else {
         const alreadyNote = alreadySetCount > 0 ? ` (${alreadySetCount} already had it)` : "";

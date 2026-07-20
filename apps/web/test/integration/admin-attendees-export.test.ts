@@ -858,8 +858,10 @@ describe("GET /api/admin/events/:eventId/attendees/export — attendee_ids selec
     expect(await res.json()).toEqual({ error: "validation_failed" });
   });
 
-  it("more ids than the bulk cap → 400", async () => {
-    const ids = Array.from({ length: 501 }, (_, i) => `att-cap-${i}`).join(",");
+  it("more ids than the export selection cap → 400", async () => {
+    // EXPORT_SELECTION_LIMIT (200) is deliberately lower than the other bulk endpoints'
+    // BULK_SEND_LIMIT (500) since this travels in a URL, not a POST body (code review).
+    const ids = Array.from({ length: 201 }, (_, i) => `att-cap-${i}`).join(",");
     const res = await app.request(
       `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&attendee_ids=${ids}`,
       { headers: { Cookie: adminCookie } },
@@ -999,5 +1001,49 @@ describe("mail_status filter — list + export (#522)", () => {
     });
     const meta = log!.metadata as Record<string, unknown>;
     expect(meta.filters).toMatchObject({ mail_status: "failed" });
+  });
+
+  it("the Mail column badge and the mail_status filter agree on 'latest' when two deliveries share a timestamp (#522 code review)", async () => {
+    // Same created_at on purpose - only the id tiebreak (DESC) distinguishes them. If the list
+    // endpoint's badge lookup and the filter's SQL ever pick different rows as "latest", this
+    // attendee would show one status in the Mail column while sitting in the wrong filter bucket.
+    const tiedAt = new Date("2026-06-05T12:00:00.000Z");
+    await prisma.emailDelivery.createMany({
+      data: [
+        {
+          id: "tie-a-older-id-wins-nothing",
+          organization_id: ORG_EX,
+          event_id: EVENT_EX,
+          attendee_id: ATT_MEGA_STD,
+          purpose: "initial",
+          provider: "smtp",
+          status: "sent",
+          created_at: tiedAt,
+        },
+        {
+          id: "tie-b-higher-id-is-latest",
+          organization_id: ORG_EX,
+          event_id: EVENT_EX,
+          attendee_id: ATT_MEGA_STD,
+          purpose: "resend",
+          provider: "smtp",
+          status: "failed",
+          created_at: tiedAt,
+        },
+      ],
+    });
+    try {
+      const listRes = await app.request(`/api/admin/events/${EVENT_EX}/attendees?q=Mega+Bulk`, {
+        headers: { Cookie: adminCookie },
+      });
+      const listBody = (await listRes.json()) as { items: { id: string; last_mail_status: string }[] };
+      const row = listBody.items.find((i) => i.id === ATT_MEGA_STD);
+      expect(row?.last_mail_status).toBe("failed");
+
+      expect(await listIds("mail_status=failed&q=Mega+Bulk")).toEqual([ATT_MEGA_STD]);
+      expect(await listIds("mail_status=sent&q=Mega+Bulk")).toEqual([]);
+    } finally {
+      await prisma.emailDelivery.deleteMany({ where: { id: { in: ["tie-a-older-id-wins-nothing", "tie-b-higher-id-is-latest"] } } });
+    }
   });
 });

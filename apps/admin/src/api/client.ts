@@ -780,8 +780,6 @@ export async function bulkDeleteAttendees(
   return parseJson<{ deletedCount: number }>(res);
 }
 
-/** Manually check in a selection of attendees at once (no QR scan), from the Attendees list's
- * row-selection bulk bar. Same single-use CAS admission path as scan check-in. */
 export interface BulkTicketTypeResponse {
   updatedCount: number;
   alreadySetCount: number;
@@ -801,6 +799,8 @@ export async function bulkChangeTicketType(
   return parseJson<BulkTicketTypeResponse>(res);
 }
 
+/** Manually check in a selection of attendees at once (no QR scan), from the Attendees list's
+ * row-selection bulk bar. Same single-use CAS admission path as scan check-in. */
 export async function bulkCheckInAttendees(
   eventId: string,
   attendeeIds: string[],

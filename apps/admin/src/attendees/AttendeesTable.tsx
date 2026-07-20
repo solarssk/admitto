@@ -486,6 +486,7 @@ function BulkBar({
   bulkExportBusy,
   onBulkExportSelected,
   ticketTypes,
+  ticketTypesError,
   onBulkChangeTicketType,
   onBulkDelete,
 }: Readonly<{
@@ -500,6 +501,7 @@ function BulkBar({
   bulkExportBusy: boolean;
   onBulkExportSelected: () => void;
   ticketTypes: TicketTypeDto[];
+  ticketTypesError?: string | null;
   onBulkChangeTicketType: () => void;
   onBulkDelete: () => void;
 }>) {
@@ -567,7 +569,9 @@ function BulkBar({
           changeTicketTypeDisabledReason={
             archived
               ? "This event is archived."
-              : "No ticket types configured for this event. Add some in Event Settings → Ticket types."
+              : ticketTypesError
+                ? "Couldn't load ticket types — try again from the Type filter above."
+                : "No ticket types configured for this event. Add some in Event Settings → Ticket types."
           }
           onChangeTicketType={onBulkChangeTicketType}
           onDelete={onBulkDelete}
@@ -879,8 +883,8 @@ function AttendeesListContent({
                   className="attendees-row-btn attendees-table-v2__attendee"
                   onClick={() => onViewAttendee(row.id)}
                 >
-                  <span className="attendees-table-v2__name">{row.name}</span>
-                  <span className="attendees-table-v2__email">{row.email}</span>
+                  <span className="attendees-table-v2__name" title={row.name}>{row.name}</span>
+                  <span className="attendees-table-v2__email" title={row.email}>{row.email}</span>
                 </button>
               </td>
               <td>
@@ -1004,6 +1008,7 @@ export function AttendeesTable({
           bulkExportBusy={bulkExportBusy}
           onBulkExportSelected={onBulkExportSelected}
           ticketTypes={ticketTypes}
+          ticketTypesError={ticketTypesError}
           onBulkChangeTicketType={onBulkChangeTicketType}
           onBulkDelete={onBulkDelete}
         />

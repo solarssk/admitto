@@ -575,7 +575,13 @@ function parseListQuery(c: Context): {
   return { page, pageSize, q, status, ticket_type, rsvp_status, mail_status, sortBy, sortDir };
 }
 
-/** Latest email delivery status per attendee id (one entry per id). */
+/** Latest email delivery status per attendee id (one entry per id). Tiebreak on `id` desc
+ * after `created_at` desc, not just created_at — two deliveries for the same attendee can
+ * share a millisecond timestamp (e.g. a resend queued in the same request), and without a
+ * deterministic tiebreak here this could disagree with attendeeMailStatusSql's `mail_status`
+ * filter (packages/tickets/attendees-list-filters.ts), which already tiebreaks the same way
+ * specifically so the Mail column badge and the filter always agree on "latest" (code
+ * review). */
 async function lastMailStatusByAttendee(
   db: PrismaClient,
   attendeeIds: string[],
@@ -585,7 +591,7 @@ async function lastMailStatusByAttendee(
   const deliveries = await db.emailDelivery.findMany({
     where: { attendee_id: { in: attendeeIds } },
     select: { attendee_id: true, status: true },
-    orderBy: { created_at: "desc" },
+    orderBy: [{ created_at: "desc" }, { id: "desc" }],
   });
 
   const map = new Map<string, string>();
@@ -789,14 +795,25 @@ export async function handleListEventAttendees(c: Context, db: PrismaClient): Pr
   });
 }
 
+/** Cap for the export-selection `attendee_ids` query param specifically — deliberately lower
+ * than BULK_SEND_LIMIT (used elsewhere for JSON POST-body bulk actions, which have no such
+ * constraint). This travels in a URL, not a body: cuid ids are ~25 chars and a literal comma
+ * becomes 3 bytes once percent-encoded, so BULK_SEND_LIMIT's 500 ids could build a query
+ * string past the ~8KB request-line limit common reverse-proxy defaults (e.g. Nginx) enforce
+ * — the operator would see a raw 414/431 from the proxy instead of this endpoint's clean
+ * validation_failed response. 200 ids keeps the URL safely under that regardless of proxy
+ * (code review).
+ */
+const EXPORT_SELECTION_LIMIT = 200;
+
 /** Parse `attendee_ids` (comma-separated) for an explicit-selection export. Returns undefined
  * when the param is absent (regular filtered export), a 400 Response when present but empty
- * or over the bulk cap — the UI's page-scoped selection can never legitimately exceed it. */
+ * or over the cap. */
 function parseExportSelectionQuery(c: Context): string[] | undefined | Response {
   const raw = c.req.query("attendee_ids");
   if (raw === undefined) return undefined;
   const ids = [...new Set(raw.split(",").map((id) => id.trim()).filter(Boolean))];
-  if (ids.length === 0 || ids.length > BULK_SEND_LIMIT) {
+  if (ids.length === 0 || ids.length > EXPORT_SELECTION_LIMIT) {
     return c.json({ error: "validation_failed" }, 400);
   }
   return ids;

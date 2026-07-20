@@ -349,3 +349,44 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
     expect(screen.queryByText("Import complete")).toBeNull();
   });
 });
+
+describe("ImportPage dry-run reflex guard (code review)", () => {
+  it("re-arms Dry run on every fresh validate, even if it was already switched off beforehand", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(samplePreview());
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Validate file" })).toBeTruthy());
+
+    selectFile();
+    // Flip Dry run off BEFORE validating — this must not count as "reviewed the summary".
+    fireEvent.click(screen.getByLabelText(/Dry run/));
+    expect((screen.getByLabelText(/Dry run/) as HTMLInputElement).checked).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    await waitFor(() => expect(screen.getByText("To create")).toBeTruthy());
+
+    // The switch is forced back to safe, and Commit stays disabled until it's turned off again.
+    expect((screen.getByLabelText(/Dry run/) as HTMLInputElement).checked).toBe(true);
+    const commitBtn = screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }) as HTMLButtonElement;
+    expect(commitBtn.disabled).toBe(true);
+  });
+
+  it("re-arms Dry run on Re-validate too, not just the first Validate file click", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValue(samplePreview());
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Validate file" })).toBeTruthy());
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    await waitFor(() => expect(screen.getByText("To create")).toBeTruthy());
+
+    fireEvent.click(screen.getByLabelText(/Dry run/));
+    expect((screen.getByLabelText(/Dry run/) as HTMLInputElement).checked).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Re-validate" }));
+    await waitFor(() => expect(previewImport).toHaveBeenCalledTimes(2));
+
+    expect((screen.getByLabelText(/Dry run/) as HTMLInputElement).checked).toBe(true);
+  });
+});

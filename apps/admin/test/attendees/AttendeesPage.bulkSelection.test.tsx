@@ -878,6 +878,27 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     });
   });
 
+  it("toasts an error (not the 'already had it' message) when none of the selected attendees could be found (#521 code review)", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchTicketTypes.mockResolvedValue(catalog);
+    // Both zero — nothing was found at all, distinct from "found but already had it"
+    // (updatedCount: 0, alreadySetCount > 0), which is a different, non-error toast below.
+    bulkChangeTicketType.mockResolvedValue({ updatedCount: 0, alreadySetCount: 0 });
+
+    await selectTwoRowsAndOpenMenu();
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change ticket type/ }));
+    const dialog = screen.getByRole("dialog", { name: "Change ticket type" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        "None of the selected attendees could be found — they may have been removed.",
+        "error",
+      );
+    });
+    expect(addToast).not.toHaveBeenCalledWith(expect.stringContaining("already have"), expect.anything());
+  });
+
   it("shows the deleted-type error inline in the dialog and keeps the selection", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
@@ -911,5 +932,22 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     const item = bulkBar().getByRole("menuitem", { name: /Change ticket type/ }) as HTMLButtonElement;
     expect(item.disabled).toBe(true);
     expect(item.title).toContain("No ticket types configured");
+  });
+
+  it("blames a failed catalog load, not 'no types configured', when the fetch itself failed (#521 code review)", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchTicketTypes.mockRejectedValue(new Error("network down"));
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    await waitFor(() => expect(screen.getByText("Couldn't load types.")).toBeTruthy());
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+
+    const item = bulkBar().getByRole("menuitem", { name: /Change ticket type/ }) as HTMLButtonElement;
+    expect(item.disabled).toBe(true);
+    expect(item.title).not.toContain("No ticket types configured");
+    expect(item.title).toContain("Couldn't load ticket types");
   });
 });

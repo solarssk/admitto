@@ -3,6 +3,7 @@ import { Button, Card, EmptyState, Input, useToast } from "@admitto/ui";
 import { createEventImageAsset, deleteEventImageAsset, fetchEventImageAssets } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventImageAssetDto } from "../api/types.js";
+import { formatFileSize } from "../utils/formatFileSize.js";
 import { brandingLogoImgSrc } from "../utils/safeBrandingLogoHref.js";
 import { ConfirmDialog } from "./ConfirmDialog.js";
 import "./event-image-asset-library.css";
@@ -15,12 +16,6 @@ export interface EventImageAssetLibraryProps {
   readonly eventId: string;
   /** Disables uploading and deleting assets (e.g. archived event). Viewing the list stays allowed. */
   readonly disabled?: boolean;
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function pluralSuffix(count: number): string {
