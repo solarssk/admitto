@@ -21,7 +21,13 @@
   min-width: 0;
 }
 
+/* A <button>, not a div with role="button" (Sonar S6819 — real keyboard/AT semantics for
+   free instead of hand-rolled ones) — the extra properties below undo the browser's default
+   button chrome (background, font, width) that a div never had to begin with. */
 .import-dropzone {
+  width: 100%;
+  background: none;
+  font: inherit;
   border: 1.5px dashed var(--border-strong, var(--border));
   border-radius: var(--radius-md);
   padding: var(--space-6) var(--space-4);
