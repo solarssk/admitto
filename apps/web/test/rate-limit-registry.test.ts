@@ -18,6 +18,7 @@ const EXPECTED_POLICIES: Record<
   "admin:export": { windowMs: [3_600_000], max: [10], checks: 1 },
   "admin:export-pii": { windowMs: [3_600_000], max: [5], checks: 1 },
   "admin:import-preview": { windowMs: [60_000], max: [10], checks: 1 },
+  "admin:attendees-search": { windowMs: [60_000], max: [120], checks: 1 },
   "admin:import-commit": { windowMs: [60_000], max: [5], checks: 1 },
   "admin:template-preview": { windowMs: [60_000], max: [20], checks: 1 },
   "admin:resend": { windowMs: [60_000, 3_600_000], max: [5, 30], checks: 2 },
