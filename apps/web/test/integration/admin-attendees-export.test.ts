@@ -855,6 +855,16 @@ describe("POST /api/admin/events/:eventId/attendees/export-selected (#520)", () 
     expect(await res.json()).toEqual({ error: "validation_failed" });
   });
 
+  it("malformed JSON body → 400 invalid json", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EX}/attendees/export-selected`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{not valid json",
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid json" });
+  });
+
   it("more ids than the bulk cap → 400", async () => {
     const ids = Array.from({ length: 501 }, (_, i) => `att-cap-${i}`);
     const res = await postSelection(EVENT_EX, { attendee_ids: ids, format: "csv" });
