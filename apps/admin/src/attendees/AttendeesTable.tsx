@@ -365,20 +365,26 @@ function AttendeeCard({
  * shows reminders and wallet-pass actions in this same menu — not built yet, out of scope. */
 function BulkMoreActionsMenu({
   selectedCount,
+  archived,
   exportBusy,
   onExportSelected,
   ticketTypeCount,
   changeTicketTypeDisabled,
   changeTicketTypeDisabledReason,
+  ticketTypesError,
+  onRetryTicketTypes,
   onChangeTicketType,
   onDelete,
 }: Readonly<{
   selectedCount: number;
+  archived: boolean;
   exportBusy: boolean;
   onExportSelected: () => void;
   ticketTypeCount: number;
   changeTicketTypeDisabled: boolean;
   changeTicketTypeDisabledReason?: string;
+  ticketTypesError?: string | null;
+  onRetryTicketTypes?: () => void;
   onChangeTicketType: () => void;
   onDelete: () => void;
 }>) {
@@ -441,6 +447,19 @@ function BulkMoreActionsMenu({
               </span>
             </span>
           </button>
+          {/* The catalog fetch's own retry lives behind the Type filter, which this bulk bar
+           * replaces while rows are selected — without this, the only way to retry was to
+           * clear the selection first, losing the batch the operator was about to act on
+           * (Codex review). */}
+          {!archived && changeTicketTypeDisabled && ticketTypesError && onRetryTicketTypes && (
+            <button
+              type="button"
+              className="more-actions-menu__retry link-btn"
+              onClick={onRetryTicketTypes}
+            >
+              Retry loading ticket types
+            </button>
+          )}
           <hr className="more-actions-menu__divider" />
           {/* Not ArchivedGuard'd — GDPR erasure requests can legally arrive after an event
            * ends; the DELETE endpoint doesn't block on archived_at either. */}
@@ -461,6 +480,13 @@ function BulkMoreActionsMenu({
   );
 }
 
+/** "Change ticket type" menu item's disabled-title (Sonar S3358: was a nested ternary). */
+function bulkChangeTicketTypeReason(archived: boolean, ticketTypesError?: string | null): string {
+  if (archived) return "This event is archived.";
+  if (ticketTypesError) return "Couldn't load ticket types — try again from the Type filter above.";
+  return "No ticket types configured for this event. Add some in Event Settings → Ticket types.";
+}
+
 /** Selection count + "Send tickets" / "More actions" — replaces the search/filter toolbar in
  * place while rows are selected, so the card never grows taller just because something is
  * selected. */
@@ -477,6 +503,7 @@ function BulkBar({
   onBulkExportSelected,
   ticketTypes,
   ticketTypesError,
+  onRetryTicketTypes,
   onBulkChangeTicketType,
   onBulkDelete,
 }: Readonly<{
@@ -492,6 +519,7 @@ function BulkBar({
   onBulkExportSelected: () => void;
   ticketTypes: TicketTypeDto[];
   ticketTypesError?: string | null;
+  onRetryTicketTypes?: () => void;
   onBulkChangeTicketType: () => void;
   onBulkDelete: () => void;
 }>) {
@@ -546,17 +574,14 @@ function BulkBar({
       </ArchivedGuard>
       <BulkMoreActionsMenu
         selectedCount={selectedIds.size}
+        archived={archived}
         exportBusy={bulkExportBusy}
         onExportSelected={onBulkExportSelected}
         ticketTypeCount={ticketTypes.length}
         changeTicketTypeDisabled={archived || ticketTypes.length === 0}
-        changeTicketTypeDisabledReason={
-          archived
-            ? "This event is archived."
-            : ticketTypesError
-              ? "Couldn't load ticket types — try again from the Type filter above."
-              : "No ticket types configured for this event. Add some in Event Settings → Ticket types."
-        }
+        changeTicketTypeDisabledReason={bulkChangeTicketTypeReason(archived, ticketTypesError)}
+        ticketTypesError={ticketTypesError}
+        onRetryTicketTypes={onRetryTicketTypes}
         onChangeTicketType={onBulkChangeTicketType}
         onDelete={onBulkDelete}
       />
@@ -981,6 +1006,7 @@ export function AttendeesTable({
           onBulkExportSelected={onBulkExportSelected}
           ticketTypes={ticketTypes}
           ticketTypesError={ticketTypesError}
+          onRetryTicketTypes={onRetryTicketTypes}
           onBulkChangeTicketType={onBulkChangeTicketType}
           onBulkDelete={onBulkDelete}
         />
