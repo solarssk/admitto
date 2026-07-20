@@ -7,6 +7,7 @@ import {
   bulkDeleteAttendees,
   bulkResendTickets,
   exportAttendees,
+  exportSelectedAttendees,
   fetchEventAttendees,
   fetchTicketTypes,
   sendEventBulk,
@@ -266,6 +267,7 @@ export function AttendeesPage() {
   const { reportApiError } = useConnectionState();
   const listAbortRef = useRef<AbortController | null>(null);
   const exportAbortRef = useRef<AbortController | null>(null);
+  const bulkExportAbortRef = useRef<AbortController | null>(null);
   /** Guards handleBulkDeleteSelected against completing after the operator has navigated to a
    * different event's Attendees list while the request was still in flight (CodeRabbit review). */
   const eventIdRef = useRef(eventId);
@@ -417,7 +419,12 @@ export function AttendeesPage() {
     return () => listAbortRef.current?.abort();
   }, [loadList, reloadToken]);
 
-  useEffect(() => () => exportAbortRef.current?.abort(), []);
+  useEffect(() => {
+    return () => {
+      exportAbortRef.current?.abort();
+      bulkExportAbortRef.current?.abort();
+    };
+  }, []);
 
   const handleExport = useCallback(
     async (format: ExportFormat) => {
@@ -643,10 +650,14 @@ export function AttendeesPage() {
     if (!eventId || selectedIds.size === 0) return;
     const initiatingEventId = eventId;
     const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
+    bulkExportAbortRef.current?.abort();
+    const ac = new AbortController();
+    bulkExportAbortRef.current = ac;
     setBulkExportBusy(true);
     try {
-      await exportAttendees(initiatingEventId, { attendee_ids: [...selectedIds] }, "csv");
+      await exportSelectedAttendees(initiatingEventId, [...selectedIds], "csv", ac.signal);
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       if (!isStillOnEvent()) return;
       if (err instanceof ApiError) {
         reportApiError(err.status);
@@ -660,7 +671,7 @@ export function AttendeesPage() {
         addToast("Export failed.", "error");
       }
     } finally {
-      if (isStillOnEvent()) setBulkExportBusy(false);
+      if (!ac.signal.aborted) setBulkExportBusy(false);
     }
   };
 

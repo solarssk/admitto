@@ -46,6 +46,7 @@ import {
   type AdmitResult,
   type AttendeeSortBy,
   type AttendeeSortDir,
+  type ExportAttendeeSqlRow,
 } from "@admitto/tickets";
 import {
   EXPORT_BASE_COLUMNS,
@@ -780,66 +781,22 @@ export async function handleListEventAttendees(c: Context, db: PrismaClient): Pr
   });
 }
 
-/** Parse `attendee_ids` (comma-separated) for an explicit-selection export. Returns undefined
- * when the param is absent (regular filtered export), a 400 Response when present but empty
- * or over the bulk cap — the UI's page-scoped selection can never legitimately exceed it. */
-function parseExportSelectionQuery(c: Context): string[] | undefined | Response {
-  const raw = c.req.query("attendee_ids");
-  if (raw === undefined) return undefined;
-  const ids = [...new Set(raw.split(",").map((id) => id.trim()).filter(Boolean))];
-  if (ids.length === 0 || ids.length > BULK_SEND_LIMIT) {
-    return c.json({ error: "validation_failed" }, 400);
-  }
-  return ids;
-}
+type ExportFormat = "xlsx" | "csv" | "pdf";
 
-/** GET /api/admin/events/:eventId/attendees/export — filtered subset (or an explicit
- * `attendee_ids` selection, which bypasses filters) as XLSX, CSV, or PDF (no tokens). */
-export async function handleExportAttendees(c: Context, db: PrismaClient): Promise<Response> {
-  const eventIdOrRes = requireEventId(c);
-  if (eventIdOrRes instanceof Response) return eventIdOrRes;
-  const eventId = eventIdOrRes;
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
-
-  const formatRaw = c.req.query("format");
-  if (formatRaw !== "xlsx" && formatRaw !== "csv" && formatRaw !== "pdf") {
-    return c.json({ error: "format must be xlsx, csv, or pdf" }, 400);
-  }
-  const format = formatRaw;
-
-  const selectedIdsOrRes = parseExportSelectionQuery(c);
-  if (selectedIdsOrRes instanceof Response) return selectedIdsOrRes;
-  const selectedIds = selectedIdsOrRes;
-
-  const { q, status, ticket_type, rsvp_status } = parseListQuery(c);
-
-  const filterParams = { q, status, ticket_type, rsvp_status };
-
-  const event = await db.event.findUnique({
-    where: { id: eventId },
-    select: { title: true, date: true, timezone: true },
-  });
-
-  if (!event) {
-    return c.json({ error: "not_found" }, 404);
-  }
-
+/** Shared by the filtered (GET) and explicit-selection (POST) export handlers: builds the
+ * sanitized export rows, writes the bulk-action audit entry, and returns the file response for
+ * whichever format was requested. */
+async function buildExportFileResponse(
+  db: PrismaClient,
+  c: Context,
+  eventId: string,
+  rows: ExportAttendeeSqlRow[],
+  format: ExportFormat,
+  event: { title: string; date: Date; timezone: string },
+  auditFilters: { status: string; ticket_type?: string; has_query: boolean } | { selected_count: number },
+): Promise<Response> {
   const timeZone = resolvePreviewEventTimeZone(event.timezone);
-
-  // An explicit selection is capped at BULK_SEND_LIMIT ids (far below EXPORT_ROW_CAP), so the
-  // too-large guard only applies to the filtered path.
-  if (!selectedIds) {
-    const total = await countFilteredAttendees(db, eventId, filterParams);
-    if (total > EXPORT_ROW_CAP) {
-      return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
-    }
-  }
-
-  const [rows, attributeFieldsResult, ticketTypes] = await Promise.all([
-    selectedIds
-      ? findSelectedAttendeesForExport(db, eventId, selectedIds)
-      : findFilteredAttendeesForExport(db, eventId, filterParams),
+  const [attributeFieldsResult, ticketTypes] = await Promise.all([
     loadEventCustomDataFields(db, eventId).catch((err) => err),
     loadEventTicketTypes(db, eventId),
   ]);
@@ -853,9 +810,6 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
 
   const timestamp = new Date().toISOString().slice(0, 10);
   const filename = `attendees-${eventId}-${timestamp}.${format}`;
-  const auditFilters = selectedIds
-    ? { selected_count: selectedIds.length }
-    : { status, ticket_type, has_query: Boolean(q) };
 
   if (format === "csv") {
     const csv = buildExportCsv(exportRows, exportColumns);
@@ -898,6 +852,96 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
       "Cache-Control": "no-store",
       "Pragma": "no-cache",
     },
+  });
+}
+
+/** GET /api/admin/events/:eventId/attendees/export — filtered subset as XLSX, CSV, or PDF (no
+ * tokens). An explicit-selection export (checked rows in the bulk bar) is a separate POST
+ * endpoint (`handleExportSelectedAttendees`, below) — its ids never travel in a query string,
+ * since the default reverse-proxy access log records the full request URI (unlike this app's
+ * own PII-free access log), and a selection of attendee ids is exactly the kind of detail that
+ * log shouldn't retain. */
+export async function handleExportAttendees(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const formatRaw = c.req.query("format");
+  if (formatRaw !== "xlsx" && formatRaw !== "csv" && formatRaw !== "pdf") {
+    return c.json({ error: "format must be xlsx, csv, or pdf" }, 400);
+  }
+  const format = formatRaw;
+
+  const { q, status, ticket_type, rsvp_status } = parseListQuery(c);
+  const filterParams = { q, status, ticket_type, rsvp_status };
+
+  const event = await db.event.findUnique({
+    where: { id: eventId },
+    select: { title: true, date: true, timezone: true },
+  });
+  if (!event) {
+    return c.json({ error: "not_found" }, 404);
+  }
+
+  const total = await countFilteredAttendees(db, eventId, filterParams);
+  if (total > EXPORT_ROW_CAP) {
+    return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
+  }
+
+  const rows = await findFilteredAttendeesForExport(db, eventId, filterParams);
+  return buildExportFileResponse(db, c, eventId, rows, format, event, {
+    status,
+    ticket_type,
+    has_query: Boolean(q),
+  });
+}
+
+const exportSelectedBodySchema = z
+  .object({
+    attendee_ids: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+    format: z.enum(["xlsx", "csv", "pdf"]),
+  })
+  .strict();
+
+/** POST /api/admin/events/:eventId/attendees/export-selected — CSV/XLSX/PDF of an explicit
+ * subset of attendees (the bulk bar's "Export selected"), bypassing list filters entirely. A
+ * POST with the ids in the JSON body, not a GET with them in the query string (Codex review,
+ * #520): the default reverse-proxy access log records the full request URI, and this app's own
+ * access log deliberately excludes query strings for exactly this reason (deploy/README.md) —
+ * a GET here would have quietly reopened that same PII-adjacent leak one layer down. Capped at
+ * the same BULK_SEND_LIMIT as every other bulk action now that the ids aren't URL-length
+ * constrained. Ids that don't belong to this event are silently ignored (findSelectedAttendeesForExport),
+ * same convention as bulk delete/check-in. */
+export async function handleExportSelectedAttendees(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid json" }, 400);
+  }
+  const parsed = exportSelectedBodySchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "validation_failed" }, 400);
+  const { attendee_ids: attendeeIds, format } = parsed.data;
+
+  const event = await db.event.findUnique({
+    where: { id: eventId },
+    select: { title: true, date: true, timezone: true },
+  });
+  if (!event) {
+    return c.json({ error: "not_found" }, 404);
+  }
+
+  const rows = await findSelectedAttendeesForExport(db, eventId, attendeeIds);
+  return buildExportFileResponse(db, c, eventId, rows, format, event, {
+    selected_count: attendeeIds.length,
   });
 }
 

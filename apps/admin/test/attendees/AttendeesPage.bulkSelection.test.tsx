@@ -11,7 +11,7 @@ const fetchEventMailSettings = vi.fn();
 const sendEventBulk = vi.fn();
 const bulkDeleteAttendees = vi.fn();
 const bulkCheckInAttendees = vi.fn();
-const exportAttendees = vi.fn();
+const exportSelectedAttendees = vi.fn();
 const addToast = vi.fn();
 const reportApiError = vi.fn();
 
@@ -71,7 +71,8 @@ vi.mock("../../src/api/client.js", () => ({
   fetchEventAttendees: (...args: unknown[]) => fetchEventAttendees(...args),
   fetchTicketTypes: vi.fn().mockResolvedValue([]),
   fetchEventMailSettings: (...args: unknown[]) => fetchEventMailSettings(...args),
-  exportAttendees: (...args: unknown[]) => exportAttendees(...args),
+  exportAttendees: vi.fn(),
+  exportSelectedAttendees: (...args: unknown[]) => exportSelectedAttendees(...args),
   bulkResendTickets: vi.fn(),
   sendEventBulk: (...args: unknown[]) => sendEventBulk(...args),
   bulkDeleteAttendees: (...args: unknown[]) => bulkDeleteAttendees(...args),
@@ -717,7 +718,7 @@ describe("AttendeesPage bulk check-in", () => {
 describe("AttendeesPage bulk export selected (#520)", () => {
   it("exports exactly the selected attendees as CSV and keeps the selection", async () => {
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
-    exportAttendees.mockResolvedValue(undefined);
+    exportSelectedAttendees.mockResolvedValue(undefined);
 
     renderPage();
 
@@ -730,10 +731,11 @@ describe("AttendeesPage bulk export selected (#520)", () => {
     fireEvent.click(bulkBar().getByRole("menuitem", { name: /Export selected/ }));
 
     await waitFor(() => {
-      expect(exportAttendees).toHaveBeenCalledWith(
+      expect(exportSelectedAttendees).toHaveBeenCalledWith(
         "evt-1",
-        { attendee_ids: ["att-1", "att-2"] },
+        ["att-1", "att-2"],
         "csv",
+        expect.anything(),
       );
     });
     // No success toast and the selection stays — the download starting is the feedback,
@@ -764,7 +766,7 @@ describe("AttendeesPage bulk export selected (#520)", () => {
   it("toasts an operator-safe error and keeps the selection when the export fails", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
-    exportAttendees.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    exportSelectedAttendees.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
 
     renderPage();
 
@@ -784,7 +786,7 @@ describe("AttendeesPage bulk export selected (#520)", () => {
   it("redirects to /login on a 401", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
-    exportAttendees.mockRejectedValueOnce(new ApiError(401, "unauthorized"));
+    exportSelectedAttendees.mockRejectedValueOnce(new ApiError(401, "unauthorized"));
     const assign = vi.fn();
     vi.stubGlobal("location", { ...window.location, assign, pathname: "/admin/events/evt-1/attendees" });
 

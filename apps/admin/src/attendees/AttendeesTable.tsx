@@ -404,7 +404,7 @@ function BulkMoreActionsMenu({
           >
             <i className="ti ti-download" aria-hidden="true" />
             <span className="more-actions-menu__item-text">
-              Export selected
+              <span>Export selected</span>
               <span className="more-actions-menu__item-hint">
                 CSV of {selectedCount} attendee{selectedCount === 1 ? "" : "s"}
               </span>
