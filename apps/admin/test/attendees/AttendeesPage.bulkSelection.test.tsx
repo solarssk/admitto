@@ -809,6 +809,59 @@ describe("AttendeesPage bulk export selected (#520)", () => {
       );
     });
   });
+
+  it("toasts a generic 'Export failed.' message when the failure isn't an ApiError", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    exportSelectedAttendees.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Export selected/ }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("Export failed.", "error");
+    });
+  });
+
+  it("ignores a stale bulk-export error after navigating to a different event mid-request", async () => {
+    let rejectExport!: (err: unknown) => void;
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    exportSelectedAttendees.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectExport = reject;
+      }),
+    );
+
+    const router = createMemoryRouter(
+      [{ path: "/admin/events/:eventId/attendees", element: <AttendeesPage /> }],
+      { initialEntries: ["/admin/events/evt-1/attendees"] },
+    );
+    render(<RouterProvider router={router} />);
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Export selected/ }));
+
+    await act(async () => router.navigate("/admin/events/evt-2/attendees"));
+    await waitFor(() => {
+      expect(fetchEventAttendees).toHaveBeenCalledWith("evt-2", expect.anything(), expect.anything());
+    });
+
+    await act(async () => {
+      rejectExport(new Error("network down"));
+      await Promise.resolve();
+    });
+
+    expect(addToast).not.toHaveBeenCalledWith("Export failed.", "error");
+  });
 });
 
 describe("AttendeesPage bulk change ticket type (#521)", () => {
