@@ -274,6 +274,8 @@ export interface AttendeesTableProps {
   canBulkSend: boolean;
   onBulkCheckIn: () => void;
   bulkCheckInBusy: boolean;
+  onBulkExportSelected: () => void;
+  bulkExportBusy: boolean;
   onBulkDelete: () => void;
   eventTimezone: string;
   event: ArchivedGuardEvent;
@@ -355,12 +357,22 @@ function AttendeeCard({
   );
 }
 
-/** Bulk "More actions" — today just Delete, but styled as a menu (not a bare button) so a
- * destructive bulk action takes an extra click to even reach, matching the design mockup's
+/** Bulk "More actions" — Export selected plus Delete, styled as a menu (not bare buttons) so
+ * the destructive bulk action takes an extra click to even reach, matching the design mockup's
  * More actions panel and the same danger-item treatment already used on the attendee detail
  * page's own More actions menu. Room to grow: the mockup also shows ticket-type changes,
  * reminders, and wallet-pass actions in this same menu — not built yet, out of scope here. */
-function BulkMoreActionsMenu({ onDelete }: Readonly<{ onDelete: () => void }>) {
+function BulkMoreActionsMenu({
+  selectedCount,
+  exportBusy,
+  onExportSelected,
+  onDelete,
+}: Readonly<{
+  selectedCount: number;
+  exportBusy: boolean;
+  onExportSelected: () => void;
+  onDelete: () => void;
+}>) {
   const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
 
   return (
@@ -369,7 +381,6 @@ function BulkMoreActionsMenu({ onDelete }: Readonly<{ onDelete: () => void }>) {
         ref={triggerRef}
         type="button"
         variant="ghost"
-        icon={<i className="ti ti-dots-vertical" aria-hidden="true" />}
         hasMenu
         aria-haspopup="menu"
         aria-expanded={open}
@@ -379,6 +390,27 @@ function BulkMoreActionsMenu({ onDelete }: Readonly<{ onDelete: () => void }>) {
       </Button>
       {open && (
         <div className="more-actions-menu__panel" role="menu" ref={panelRef}>
+          {/* Not ArchivedGuard'd — exporting a selection is read-only, so it stays legal
+           * after an event is archived. */}
+          <button
+            type="button"
+            role="menuitem"
+            className="more-actions-menu__item"
+            disabled={exportBusy}
+            onClick={() => {
+              setOpen(false);
+              onExportSelected();
+            }}
+          >
+            <i className="ti ti-download" aria-hidden="true" />
+            <span className="more-actions-menu__item-text">
+              <span>Export selected</span>
+              <span className="more-actions-menu__item-hint">
+                CSV of {selectedCount} attendee{selectedCount === 1 ? "" : "s"}
+              </span>
+            </span>
+          </button>
+          <hr className="more-actions-menu__divider" />
           {/* Not ArchivedGuard'd — GDPR erasure requests can legally arrive after an event
            * ends; the DELETE endpoint doesn't block on archived_at either. */}
           <button
@@ -410,6 +442,8 @@ function BulkBar({
   onBulkSendTickets,
   bulkCheckInBusy,
   onBulkCheckIn,
+  bulkExportBusy,
+  onBulkExportSelected,
   onBulkDelete,
 }: Readonly<{
   selectedIds: ReadonlySet<string>;
@@ -420,6 +454,8 @@ function BulkBar({
   onBulkSendTickets: () => void;
   bulkCheckInBusy: boolean;
   onBulkCheckIn: () => void;
+  bulkExportBusy: boolean;
+  onBulkExportSelected: () => void;
   onBulkDelete: () => void;
 }>) {
   return (
@@ -470,7 +506,12 @@ function BulkBar({
           </Button>
         )}
       </ArchivedGuard>
-      <BulkMoreActionsMenu onDelete={onBulkDelete} />
+      <BulkMoreActionsMenu
+        selectedCount={selectedIds.size}
+        exportBusy={bulkExportBusy}
+        onExportSelected={onBulkExportSelected}
+        onDelete={onBulkDelete}
+      />
     </div>
   );
 }
@@ -864,6 +905,8 @@ export function AttendeesTable({
   canBulkSend,
   onBulkCheckIn,
   bulkCheckInBusy,
+  onBulkExportSelected,
+  bulkExportBusy,
   onBulkDelete,
   eventTimezone,
   event,
@@ -885,6 +928,8 @@ export function AttendeesTable({
           onBulkSendTickets={onBulkSendTickets}
           bulkCheckInBusy={bulkCheckInBusy}
           onBulkCheckIn={onBulkCheckIn}
+          bulkExportBusy={bulkExportBusy}
+          onBulkExportSelected={onBulkExportSelected}
           onBulkDelete={onBulkDelete}
         />
       ) : (

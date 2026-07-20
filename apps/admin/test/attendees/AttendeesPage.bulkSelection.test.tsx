@@ -11,6 +11,7 @@ const fetchEventMailSettings = vi.fn();
 const sendEventBulk = vi.fn();
 const bulkDeleteAttendees = vi.fn();
 const bulkCheckInAttendees = vi.fn();
+const exportSelectedAttendees = vi.fn();
 const addToast = vi.fn();
 const reportApiError = vi.fn();
 
@@ -71,6 +72,7 @@ vi.mock("../../src/api/client.js", () => ({
   fetchTicketTypes: vi.fn().mockResolvedValue([]),
   fetchEventMailSettings: (...args: unknown[]) => fetchEventMailSettings(...args),
   exportAttendees: vi.fn(),
+  exportSelectedAttendees: (...args: unknown[]) => exportSelectedAttendees(...args),
   bulkResendTickets: vi.fn(),
   sendEventBulk: (...args: unknown[]) => sendEventBulk(...args),
   bulkDeleteAttendees: (...args: unknown[]) => bulkDeleteAttendees(...args),
@@ -710,5 +712,150 @@ describe("AttendeesPage bulk check-in", () => {
     });
 
     expect(addToast).not.toHaveBeenCalledWith(expect.stringContaining("checked in"), "success");
+  });
+});
+
+describe("AttendeesPage bulk export selected (#520)", () => {
+  it("exports exactly the selected attendees as CSV and keeps the selection", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    exportSelectedAttendees.mockResolvedValue(undefined);
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select John Smith" }));
+    await waitFor(() => expect(bulkBar().getByText("2")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Export selected/ }));
+
+    await waitFor(() => {
+      expect(exportSelectedAttendees).toHaveBeenCalledWith(
+        "evt-1",
+        ["att-1", "att-2"],
+        "csv",
+        expect.anything(),
+      );
+    });
+    // No success toast and the selection stays — the download starting is the feedback,
+    // matching the header Export dropdown's behavior.
+    expect(addToast).not.toHaveBeenCalled();
+    expect(document.querySelector(".attendees-bulkbar")).toBeTruthy();
+  });
+
+  it("shows a dynamic 'CSV of N attendees' hint on the menu item", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    expect(bulkBar().getByText("CSV of 1 attendee")).toBeTruthy();
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select John Smith" }));
+    await waitFor(() => expect(bulkBar().getByText("2")).toBeTruthy());
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    expect(bulkBar().getByText("CSV of 2 attendees")).toBeTruthy();
+  });
+
+  it("toasts an operator-safe error and keeps the selection when the export fails", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    exportSelectedAttendees.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Export selected/ }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("Export failed.", "error");
+    });
+    expect(document.querySelector(".attendees-bulkbar")).toBeTruthy();
+  });
+
+  it("redirects to /login on a 401", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    exportSelectedAttendees.mockRejectedValueOnce(new ApiError(401, "unauthorized"));
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign, pathname: "/admin/events/evt-1/attendees" });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Export selected/ }));
+
+    await waitFor(() => {
+      expect(assign).toHaveBeenCalledWith(
+        `/login?next=${encodeURIComponent("/admin/events/evt-1/attendees")}`,
+      );
+    });
+  });
+
+  it("toasts a generic 'Export failed.' message when the failure isn't an ApiError", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    exportSelectedAttendees.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Export selected/ }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("Export failed.", "error");
+    });
+  });
+
+  it("ignores a stale bulk-export error after navigating to a different event mid-request", async () => {
+    let rejectExport!: (err: unknown) => void;
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    exportSelectedAttendees.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectExport = reject;
+      }),
+    );
+
+    const router = createMemoryRouter(
+      [{ path: "/admin/events/:eventId/attendees", element: <AttendeesPage /> }],
+      { initialEntries: ["/admin/events/evt-1/attendees"] },
+    );
+    render(<RouterProvider router={router} />);
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Export selected/ }));
+
+    await act(async () => router.navigate("/admin/events/evt-2/attendees"));
+    await waitFor(() => {
+      expect(fetchEventAttendees).toHaveBeenCalledWith("evt-2", expect.anything(), expect.anything());
+    });
+
+    await act(async () => {
+      rejectExport(new Error("network down"));
+      await Promise.resolve();
+    });
+
+    expect(addToast).not.toHaveBeenCalledWith("Export failed.", "error");
   });
 });
