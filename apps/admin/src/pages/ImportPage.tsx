@@ -16,6 +16,10 @@ type Step = "upload" | "preview" | "done";
 
 const SAMPLE_DISPLAY_LIMIT = 20;
 
+function pluralize(count: number, singular: string): string {
+  return count === 1 ? singular : `${singular}s`;
+}
+
 interface ImportSampleTableProps {
   rows: ImportSampleRow[];
   totalValid: number;
@@ -193,7 +197,7 @@ export function ImportPage() {
     if (step === "preview") setStep("upload");
   };
 
-  const onDrop = (e: DragEvent<HTMLDivElement>) => {
+  const onDrop = (e: DragEvent<HTMLButtonElement>) => {
     e.preventDefault();
     setDragOver(false);
     if (loading || isEventArchived(event)) return;
@@ -211,7 +215,7 @@ export function ImportPage() {
     fileInputRef.current?.click();
   };
 
-  const onDropzoneKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+  const onDropzoneKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       openFilePicker();
@@ -301,7 +305,7 @@ export function ImportPage() {
                         <strong>{file.name}</strong>
                         <span className="import-file-chip__meta">
                           {preview
-                            ? `${preview.parse.validCount} valid row${preview.parse.validCount === 1 ? "" : "s"}`
+                            ? `${preview.parse.validCount} valid ${pluralize(preview.parse.validCount, "row")}`
                             : `${Math.max(1, Math.round(file.size / 1024))} KB`}
                         </span>
                       </div>
@@ -316,11 +320,11 @@ export function ImportPage() {
                       </button>
                     </div>
                   ) : (
-                    <div
+                    <button
+                      type="button"
                       className={["import-dropzone", dragOver && "import-dropzone--over"]
                         .filter(Boolean)
                         .join(" ")}
-                      role="button"
                       tabIndex={isEventArchived(event) ? -1 : 0}
                       aria-label="Upload a CSV or XLSX file"
                       onClick={openFilePicker}
@@ -335,7 +339,7 @@ export function ImportPage() {
                       <i className="ti ti-cloud-upload" aria-hidden="true" />
                       <b>Drop CSV/XLSX here</b>
                       <span>or click to browse · max 5 MB · max 50 000 rows</span>
-                    </div>
+                    </button>
                   )}
                   {/* Visually hidden but still labelled — the dropzone proxies clicks to it, and
                    * it stays the real form control (tests and assistive tech target it). */}
@@ -513,7 +517,7 @@ export function ImportPage() {
                         >
                           {loading
                             ? "Importing…"
-                            : `Commit import (${importCount} attendee${importCount === 1 ? "" : "s"})`}
+                            : `Commit import (${importCount} ${pluralize(importCount, "attendee")})`}
                         </Button>
                       )}
                     </ArchivedGuard>
