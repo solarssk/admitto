@@ -115,6 +115,7 @@ import {
   handleResendEventAttendeeTicket,
   handleBulkResendTickets,
   handleExportAttendees,
+  handleExportSelectedAttendees,
   handleRevokeAttendeeCheckIn,
   handleRevokeAttendeeItem,
 } from "./admin/attendees-api-routes.js";
@@ -657,6 +658,13 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.get("/api/admin/events/:eventId/attendees/export", staffAdminGate, adminExportRateLimit, (c) =>
     handleExportAttendees(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/export-selected",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminExportRateLimit,
+    (c) => handleExportSelectedAttendees(c, db),
   );
   app.get("/api/admin/events/:eventId/attendees", staffAdminGate, (c) =>
     handleListEventAttendees(c, db),

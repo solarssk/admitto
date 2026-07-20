@@ -13,6 +13,7 @@ import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const CHECKIN_TOKEN = "admin-export-checkin-token-32chars!!";
+const sameOrigin = { Origin: "http://localhost" };
 
 const ORG_EX = "org-export-test";
 const ORG_EX_B = "org-export-test-b";
@@ -805,21 +806,27 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
   });
 });
 
-describe("GET /api/admin/events/:eventId/attendees/export — attendee_ids selection (#520)", () => {
+describe("POST /api/admin/events/:eventId/attendees/export-selected (#520)", () => {
   beforeEach(() => {
     rateLimitStore.reset();
   });
 
-  it("exports exactly the selected rows, ignoring list filters", async () => {
-    // ticket_type=vip would exclude ATT_STD — the explicit selection must win.
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&ticket_type=vip&attendee_ids=${ATT_STD},${ATT_VIP1}`,
-      { headers: { Cookie: adminCookie } },
-    );
+  function postSelection(eventId: string, body: unknown, cookie: string = adminCookie) {
+    return app.request(`/api/admin/events/${eventId}/attendees/export-selected`, {
+      method: "POST",
+      headers: { Cookie: cookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("exports exactly the selected rows, ignoring list filters — and never puts ids in the URL", async () => {
+    // No filter params on this request at all — an explicit selection bypasses filters
+    // entirely, and (Codex review, #520) the ids travel in the JSON body, not the query string.
+    const res = await postSelection(EVENT_EX, { attendee_ids: [ATT_STD, ATT_VIP1], format: "csv" });
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain("text/csv");
     const lines = (await res.text()).split("\r\n").filter(Boolean);
-    expect(lines.length).toBe(3); // header + 2 selected rows
+    expect(lines).toHaveLength(3); // header + 2 selected rows
     const body = lines.slice(1).join("\n");
     expect(body).toContain("Standard Guest");
     expect(body).toContain("Vip One");
@@ -827,45 +834,31 @@ describe("GET /api/admin/events/:eventId/attendees/export — attendee_ids selec
   });
 
   it("silently ignores ids that belong to another event", async () => {
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&attendee_ids=${ATT_VIP1},${ATT_CROSS}`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await postSelection(EVENT_EX, { attendee_ids: [ATT_VIP1, ATT_CROSS], format: "csv" });
     expect(res.status).toBe(200);
     const text = await res.text();
     const lines = text.split("\r\n").filter(Boolean);
-    expect(lines.length).toBe(2); // header + ATT_VIP1 only
+    expect(lines).toHaveLength(2); // header + ATT_VIP1 only
     expect(lines[1]).toContain("Vip One");
     expect(text).not.toContain("Cross Event");
   });
 
   it("unknown ids only → file with headers only", async () => {
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&attendee_ids=att-does-not-exist`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await postSelection(EVENT_EX, { attendee_ids: ["att-does-not-exist"], format: "csv" });
     expect(res.status).toBe(200);
     const lines = (await res.text()).split("\r\n").filter(Boolean);
-    expect(lines.length).toBe(1);
+    expect(lines).toHaveLength(1);
   });
 
   it("empty attendee_ids → 400", async () => {
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&attendee_ids=`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await postSelection(EVENT_EX, { attendee_ids: [], format: "csv" });
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "validation_failed" });
   });
 
-  it("more ids than the export selection cap → 400", async () => {
-    // EXPORT_SELECTION_LIMIT (200) is deliberately lower than the other bulk endpoints'
-    // BULK_SEND_LIMIT (500) since this travels in a URL, not a POST body (code review).
-    const ids = Array.from({ length: 201 }, (_, i) => `att-cap-${i}`).join(",");
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&attendee_ids=${ids}`,
-      { headers: { Cookie: adminCookie } },
-    );
+  it("more ids than the bulk cap → 400", async () => {
+    const ids = Array.from({ length: 501 }, (_, i) => `att-cap-${i}`);
+    const res = await postSelection(EVENT_EX, { attendee_ids: ids, format: "csv" });
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "validation_failed" });
   });
@@ -874,10 +867,10 @@ describe("GET /api/admin/events/:eventId/attendees/export — attendee_ids selec
     await prisma.attendeeActionLog.deleteMany({
       where: { event_id: EVENT_EX, action_type: "attendees_exported" },
     });
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&attendee_ids=${ATT_VIP1},${ATT_VIP2},att-does-not-exist`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await postSelection(EVENT_EX, {
+      attendee_ids: [ATT_VIP1, ATT_VIP2, "att-does-not-exist"],
+      format: "csv",
+    });
     expect(res.status).toBe(200);
 
     const log = await prisma.attendeeActionLog.findFirst({
@@ -896,21 +889,24 @@ describe("GET /api/admin/events/:eventId/attendees/export — attendee_ids selec
   });
 
   it("selection works for xlsx too (format stays generic server-side)", async () => {
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=xlsx&attendee_ids=${ATT_VIP1}`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await postSelection(EVENT_EX, { attendee_ids: [ATT_VIP1], format: "xlsx" });
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain(
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     );
   });
 
+  it("rejects a cross-origin POST (CSRF guard)", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EX}/attendees/export-selected`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", Origin: "https://evil.example" },
+      body: JSON.stringify({ attendee_ids: [ATT_VIP1], format: "csv" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
   it("operator → 403", async () => {
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&attendee_ids=${ATT_VIP1}`,
-      { headers: { Cookie: opCookie } },
-    );
+    const res = await postSelection(EVENT_EX, { attendee_ids: [ATT_VIP1], format: "csv" }, opCookie);
     expect(res.status).toBe(403);
   });
 });

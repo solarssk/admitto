@@ -57,9 +57,12 @@ const tableProps = {
   onBulkSendTickets: vi.fn(),
   bulkSendBusy: false,
   canBulkSend: true,
+  onBulkCheckIn: vi.fn(),
+  bulkCheckInBusy: false,
   onBulkExportSelected: vi.fn(),
   bulkExportBusy: false,
   onBulkChangeTicketType: vi.fn(),
+  onBulkDelete: vi.fn(),
   eventTimezone: "UTC",
   event: { archived_at: null as string | null },
 };

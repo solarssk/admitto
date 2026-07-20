@@ -25,6 +25,10 @@ type Step = "upload" | "preview" | "done";
 
 const SAMPLE_DISPLAY_LIMIT = 20;
 
+function pluralize(count: number, singular: string): string {
+  return count === 1 ? singular : `${singular}s`;
+}
+
 interface ImportSampleTableProps {
   rows: ImportSampleRow[];
   totalValid: number;
@@ -107,21 +111,71 @@ function ImportSampleTable({ rows, totalValid, attributeFieldLabels }: ImportSam
   );
 }
 
-/** "Import history" card from the design mockup — recent commits with their outcome counts,
- * read from the audit log (no dedicated table). Timestamps render in the event's timezone via
- * the central formatter, like other event-scoped tables. Errors render inline with a Retry,
- * per the toast-vs-inline convention (a load failure of a passive card shouldn't toast). */
-function ImportHistoryCard({
-  history,
-  error,
-  eventTimezone,
-  onRetry,
-}: {
+interface ImportHistoryCardProps {
   history: ImportHistoryEntry[] | null;
   error: string | null;
   eventTimezone: string | undefined;
   onRetry: () => void;
-}) {
+}
+
+/** One state at a time (error takes priority, then loading, then empty, then the table) — a
+ * plain if/return chain instead of nested ternaries (Sonar S3358), which also reads closer to
+ * how an operator actually encounters these: never more than one at once. */
+function renderImportHistoryBody({ history, error, eventTimezone, onRetry }: ImportHistoryCardProps) {
+  if (error) {
+    return (
+      <div className="import-history__error">
+        <p className="import-hint">{error}</p>
+        <Button variant="secondary" onClick={onRetry}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+  if (history === null) {
+    return <p className="import-hint">Loading…</p>;
+  }
+  if (history.length === 0) {
+    return <p className="import-hint">No imports yet for this event.</p>;
+  }
+  return (
+    <div className="attendees-table-wrap">
+      <table className="table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>File</th>
+            <th>Created</th>
+            <th>Updated</th>
+            <th>Skipped</th>
+          </tr>
+        </thead>
+        <tbody>
+          {history.map((entry) => (
+            <tr key={entry.id}>
+              <td className="import-history__date">
+                {formatEventDateTime(entry.created_at, eventTimezone)}
+              </td>
+              <td className="import-history__file">
+                {entry.filename ?? <span className="import-sample__empty">—</span>}
+              </td>
+              <td className="import-history__num import-history__num--ok">{entry.created}</td>
+              <td className="import-history__num import-history__num--warn">{entry.updated}</td>
+              <td className="import-history__num">{entry.skipped}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** "Import history" card from the design mockup — recent commits with their outcome counts,
+ * read from the audit log (no dedicated table). Timestamps render in the event's timezone via
+ * the central formatter, like other event-scoped tables. Errors render inline with a Retry,
+ * per the toast-vs-inline convention (a load failure of a passive card shouldn't toast). */
+function ImportHistoryCard(props: Readonly<ImportHistoryCardProps>) {
+  const { history, error } = props;
   return (
     <Card
       title="Import history"
@@ -130,47 +184,7 @@ function ImportHistoryCard({
        * padded={false} table card); every text state keeps the normal card padding. */
       padded={error !== null || history === null || history.length === 0}
     >
-      {error ? (
-        <div className="import-history__error">
-          <p className="import-hint">{error}</p>
-          <Button variant="secondary" onClick={onRetry}>
-            Retry
-          </Button>
-        </div>
-      ) : history === null ? (
-        <p className="import-hint">Loading…</p>
-      ) : history.length === 0 ? (
-        <p className="import-hint">No imports yet for this event.</p>
-      ) : (
-        <div className="attendees-table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>File</th>
-                <th>Created</th>
-                <th>Updated</th>
-                <th>Skipped</th>
-              </tr>
-            </thead>
-            <tbody>
-              {history.map((entry) => (
-                <tr key={entry.id}>
-                  <td className="import-history__date">
-                    {formatEventDateTime(entry.created_at, eventTimezone)}
-                  </td>
-                  <td className="import-history__file">
-                    {entry.filename ?? <span className="import-sample__empty">—</span>}
-                  </td>
-                  <td className="import-history__num import-history__num--ok">{entry.created}</td>
-                  <td className="import-history__num import-history__num--warn">{entry.updated}</td>
-                  <td className="import-history__num">{entry.skipped}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {renderImportHistoryBody(props)}
     </Card>
   );
 }
@@ -286,7 +300,7 @@ export function ImportPage() {
     if (step === "preview") setStep("upload");
   };
 
-  const onDrop = (e: DragEvent<HTMLDivElement>) => {
+  const onDrop = (e: DragEvent<HTMLButtonElement>) => {
     e.preventDefault();
     setDragOver(false);
     if (loading || isEventArchived(event)) return;
@@ -304,7 +318,7 @@ export function ImportPage() {
     fileInputRef.current?.click();
   };
 
-  const onDropzoneKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+  const onDropzoneKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       openFilePicker();
@@ -401,7 +415,7 @@ export function ImportPage() {
                         <strong>{file.name}</strong>
                         <span className="import-file-chip__meta">
                           {preview
-                            ? `${preview.parse.validCount} valid row${preview.parse.validCount === 1 ? "" : "s"}`
+                            ? `${preview.parse.validCount} valid ${pluralize(preview.parse.validCount, "row")}`
                             : formatFileSize(file.size)}
                         </span>
                       </div>
@@ -416,11 +430,11 @@ export function ImportPage() {
                       </button>
                     </div>
                   ) : (
-                    <div
+                    <button
+                      type="button"
                       className={["import-dropzone", dragOver && "import-dropzone--over"]
                         .filter(Boolean)
                         .join(" ")}
-                      role="button"
                       tabIndex={isEventArchived(event) ? -1 : 0}
                       aria-label="Upload a CSV or XLSX file"
                       onClick={openFilePicker}
@@ -435,7 +449,7 @@ export function ImportPage() {
                       <i className="ti ti-cloud-upload" aria-hidden="true" />
                       <b>Drop CSV/XLSX here</b>
                       <span>or click to browse · max 5 MB · max 50 000 rows</span>
-                    </div>
+                    </button>
                   )}
                   {/* Visually hidden but still labelled — the dropzone proxies clicks to it, and
                    * it stays the real form control (tests and assistive tech target it). */}
@@ -613,7 +627,7 @@ export function ImportPage() {
                         >
                           {loading
                             ? "Importing…"
-                            : `Commit import (${importCount} attendee${importCount === 1 ? "" : "s"})`}
+                            : `Commit import (${importCount} ${pluralize(importCount, "attendee")})`}
                         </Button>
                       )}
                     </ArchivedGuard>
