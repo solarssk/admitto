@@ -919,6 +919,20 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
   });
 
+  it("closes the picker on Cancel without applying anything, and keeps the selection", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchTicketTypes.mockResolvedValue(catalog);
+
+    await selectTwoRowsAndOpenMenu();
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change ticket type/ }));
+    const dialog = screen.getByRole("dialog", { name: "Change ticket type" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog", { name: "Change ticket type" })).toBeNull();
+    expect(bulkChangeTicketType).not.toHaveBeenCalled();
+    expect(document.querySelector(".attendees-bulkbar")).toBeTruthy();
+  });
+
   it("notes attendees that already had the type in the success toast", async () => {
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
     fetchTicketTypes.mockResolvedValue(catalog);
@@ -988,6 +1002,39 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     expect(screen.getByRole("dialog", { name: "Change ticket type" })).toBeTruthy();
     expect(document.querySelector(".attendees-bulkbar")).toBeTruthy();
     expect(addToast).not.toHaveBeenCalled();
+  });
+
+  it("redirects to /login on a 401", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchTicketTypes.mockResolvedValue(catalog);
+    bulkChangeTicketType.mockRejectedValueOnce(new ApiError(401, "unauthorized"));
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign, pathname: "/admin/events/evt-1/attendees" });
+
+    await selectTwoRowsAndOpenMenu();
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change ticket type/ }));
+    const dialog = screen.getByRole("dialog", { name: "Change ticket type" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(assign).toHaveBeenCalledWith(
+        `/login?next=${encodeURIComponent("/admin/events/evt-1/attendees")}`,
+      );
+    });
+  });
+
+  it("shows a generic inline error in the dialog when the failure isn't an ApiError", async () => {
+    fetchTicketTypes.mockResolvedValue(catalog);
+    bulkChangeTicketType.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    await selectTwoRowsAndOpenMenu();
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change ticket type/ }));
+    const dialog = screen.getByRole("dialog", { name: "Change ticket type" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(within(dialog).getByRole("alert").textContent).toBe("Failed to change ticket type.");
+    });
   });
 
   it("disables the menu item when the event has no configured ticket types", async () => {
