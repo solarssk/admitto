@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { createMemoryRouter, MemoryRouter, RouterProvider, Route, Routes } from "react-router-dom";
 import { ImportPage } from "../../src/pages/ImportPage.js";
 import { renderWithToast } from "../test-utils.js";
 
@@ -513,5 +513,54 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
     );
     expect((screen.getByLabelText(/Dry run/) as HTMLInputElement).checked).toBe(true);
     expect(screen.queryByText("Import complete")).toBeNull();
+  });
+
+  it("resets to the loading state when navigating directly from one event's import page to another, so the previous event's history can't flash under the new event's timezone (CodeRabbit review)", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    fetchImportHistory.mockResolvedValueOnce([
+      {
+        id: "log-evt1",
+        created_at: "2026-06-01T10:00:00.000Z",
+        filename: "evt1.csv",
+        created: 5,
+        updated: 1,
+        skipped: 0,
+      },
+    ]);
+    let resolveSecond!: (items: unknown) => void;
+    const secondFetch = new Promise((resolve) => {
+      resolveSecond = resolve;
+    });
+    fetchImportHistory.mockImplementationOnce(() => secondFetch);
+
+    const router = createMemoryRouter(
+      [{ path: "/admin/events/:eventId/attendees/import", element: <ImportPage /> }],
+      { initialEntries: ["/admin/events/evt-1/attendees/import"], initialIndex: 0 },
+    );
+    renderWithToast(<RouterProvider router={router} />);
+
+    expect(await screen.findByText("evt1.csv")).toBeTruthy();
+
+    await act(async () => {
+      await router.navigate("/admin/events/evt-2/attendees/import");
+    });
+
+    expect(screen.queryByText("evt1.csv")).toBeNull();
+    expect(screen.getByText("Loading…")).toBeTruthy();
+
+    await act(async () => {
+      resolveSecond([
+        {
+          id: "log-evt2",
+          created_at: "2026-06-02T10:00:00.000Z",
+          filename: "evt2.csv",
+          created: 2,
+          updated: 0,
+          skipped: 0,
+        },
+      ]);
+    });
+
+    expect(await screen.findByText("evt2.csv")).toBeTruthy();
   });
 });

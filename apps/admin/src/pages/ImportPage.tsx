@@ -281,6 +281,10 @@ export function ImportPage() {
     if (!eventId) return;
     const ac = new AbortController();
     setHistoryError(null);
+    // Router reuses this component across a direct navigation from one event's import URL to
+    // another's — reset to the loading state so the previous event's history can't flash under
+    // the new event's timezone while this fetch is in flight (CodeRabbit review).
+    setHistory(null);
     fetchImportHistory(eventId, ac.signal)
       .then((items) => setHistory(items))
       .catch((err) => {
