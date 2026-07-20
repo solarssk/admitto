@@ -46,7 +46,8 @@ export type RateLimitScope =
   | "admin_import_preview"
   | "admin_import_commit"
   | "admin_template_preview"
-  | "admin_oidc_provider_ops";
+  | "admin_oidc_provider_ops"
+  | "admin_attendees_search";
 
 /** Emit `auth.login.success` as JSON to stdout (no password/token fields). */
 export function logLoginSuccess(ctx: LoginAuditContext): void {
