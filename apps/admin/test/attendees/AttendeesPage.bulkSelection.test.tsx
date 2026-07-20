@@ -151,7 +151,7 @@ describe("AttendeesPage row selection + bulk bar (#355)", () => {
 
     renderPage();
 
-    await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
+    await screen.findByText("Jane Doe");
     expect(document.querySelector(".attendees-bulkbar")).toBeNull();
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
@@ -167,7 +167,7 @@ describe("AttendeesPage row selection + bulk bar (#355)", () => {
 
     renderPage();
 
-    await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
+    await screen.findByText("Jane Doe");
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Select all" }));
     await waitFor(() => expect(bulkBar().getByText("3")).toBeTruthy());
@@ -184,7 +184,7 @@ describe("AttendeesPage row selection + bulk bar (#355)", () => {
 
     renderPage();
 
-    await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
+    await screen.findByText("Jane Doe");
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
@@ -200,7 +200,7 @@ describe("AttendeesPage row selection + bulk bar (#355)", () => {
 
     renderPage();
 
-    await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
+    await screen.findByText("Jane Doe");
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Select John Smith" }));
     await waitFor(() => expect(bulkBar().getByText("2")).toBeTruthy());
@@ -229,7 +229,7 @@ describe("AttendeesPage row selection + bulk bar (#355)", () => {
 
     renderPage();
 
-    await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
+    await screen.findByText("Jane Doe");
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
@@ -250,7 +250,7 @@ describe("AttendeesPage row selection + bulk bar (#355)", () => {
 
     renderPage();
 
-    await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
+    await screen.findByText("Jane Doe");
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
 
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
@@ -266,7 +266,7 @@ describe("AttendeesPage row selection + bulk bar (#355)", () => {
 
     renderPage();
 
-    await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
+    await screen.findByText("Jane Doe");
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
@@ -961,7 +961,7 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     // The error sits inside the Filters dropdown panel now (PO review) — open it to confirm
     // the ticketTypesError state has actually settled before proceeding.
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
-    await waitFor(() => expect(screen.getByText("Couldn't load types.")).toBeTruthy());
+    await screen.findByText("Couldn't load types.");
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());

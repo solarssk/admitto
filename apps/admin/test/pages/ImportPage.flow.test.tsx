@@ -355,7 +355,7 @@ describe("ImportPage dry-run reflex guard (code review)", () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());
     renderPage();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Validate file" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Validate file" });
 
     selectFile();
     // Flip Dry run off BEFORE validating — this must not count as "reviewed the summary".
@@ -363,7 +363,7 @@ describe("ImportPage dry-run reflex guard (code review)", () => {
     expect((screen.getByLabelText(/Dry run/) as HTMLInputElement).checked).toBe(false);
 
     fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
-    await waitFor(() => expect(screen.getByText("To create")).toBeTruthy());
+    await screen.findByText("To create");
 
     // The switch is forced back to safe, and Commit stays disabled until it's turned off again.
     expect((screen.getByLabelText(/Dry run/) as HTMLInputElement).checked).toBe(true);
@@ -375,11 +375,11 @@ describe("ImportPage dry-run reflex guard (code review)", () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValue(samplePreview());
     renderPage();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Validate file" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Validate file" });
 
     selectFile();
     fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
-    await waitFor(() => expect(screen.getByText("To create")).toBeTruthy());
+    await screen.findByText("To create");
 
     fireEvent.click(screen.getByLabelText(/Dry run/));
     expect((screen.getByLabelText(/Dry run/) as HTMLInputElement).checked).toBe(false);

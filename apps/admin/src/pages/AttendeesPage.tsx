@@ -57,6 +57,13 @@ function pluralize(count: number, singular: string): string {
   return count === 1 ? singular : `${singular}s`;
 }
 
+/** Header "Send tickets" button label — busy state wins, then the responsive short label
+ * (Sonar S3358: was a nested ternary). */
+function sendTicketsButtonLabel(sendBusy: boolean, isDesktop: boolean): string {
+  if (sendBusy) return "Sending…";
+  return isDesktop ? "Send tickets" : "Send";
+}
+
 /** Standard "N queued / M failed / K skipped" toast for a bulk-send queue result — shared by
  * the header "Send tickets" dialog and the bulk-bar's send-to-selection action. */
 function notifyBulkSendResult(
@@ -934,7 +941,7 @@ export function AttendeesPage() {
                     setSendTicketsOpen(true);
                   }}
                 >
-                  {sendBusy ? "Sending…" : isDesktop ? "Send tickets" : "Send"}
+                  {sendTicketsButtonLabel(sendBusy, isDesktop)}
                 </Button>
               )}
             </ArchivedGuard>

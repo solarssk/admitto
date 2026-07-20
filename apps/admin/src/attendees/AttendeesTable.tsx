@@ -371,6 +371,13 @@ function AttendeeCard({
   );
 }
 
+/** Mobile "Send tickets" menu item's disabled-title (Sonar S3358: was a nested ternary). */
+function bulkSendTicketsTooltip(archived: boolean, canBulkSend: boolean): string | undefined {
+  if (archived) return ARCHIVED_ACTION_TOOLTIP;
+  if (!canBulkSend) return "No mail transport configured for this event. Set one up in Event Settings → Mailing.";
+  return undefined;
+}
+
 /** Bulk "More actions" — Export selected, Change ticket type, and Delete, styled as a menu
  * (not bare buttons) so the destructive bulk action takes an extra click to even reach,
  * matching the design mockup's More actions panel and the same danger-item treatment already
@@ -433,13 +440,7 @@ function BulkMoreActionsMenu({
               role="menuitem"
               className="more-actions-menu__item"
               disabled={archived || bulkSendBusy || !canBulkSend}
-              title={
-                archived
-                  ? ARCHIVED_ACTION_TOOLTIP
-                  : !canBulkSend
-                    ? "No mail transport configured for this event. Set one up in Event Settings → Mailing."
-                    : undefined
-              }
+              title={bulkSendTicketsTooltip(archived, canBulkSend)}
               onClick={() => {
                 setOpen(false);
                 onBulkSendTickets();
@@ -447,7 +448,7 @@ function BulkMoreActionsMenu({
             >
               <i className="ti ti-send" aria-hidden="true" />
               <span className="more-actions-menu__item-text">
-                {bulkSendBusy ? "Sending…" : "Send tickets"}
+                <span>{bulkSendBusy ? "Sending…" : "Send tickets"}</span>
                 <span className="more-actions-menu__item-hint">
                   Email tickets to {selectedCount} attendee{selectedCount === 1 ? "" : "s"}
                 </span>
@@ -510,7 +511,7 @@ function BulkMoreActionsMenu({
           >
             <i className="ti ti-trash" aria-hidden="true" />
             <span className="more-actions-menu__item-text">
-              Delete
+              <span>Delete</span>
               <span className="more-actions-menu__item-hint">
                 Permanently remove {selectedCount} attendee{selectedCount === 1 ? "" : "s"}
               </span>
@@ -520,6 +521,13 @@ function BulkMoreActionsMenu({
       )}
     </div>
   );
+}
+
+/** "Change ticket type" menu item's disabled-title (Sonar S3358: was a nested ternary). */
+function bulkChangeTicketTypeReason(archived: boolean, ticketTypesError?: string | null): string {
+  if (archived) return "This event is archived.";
+  if (ticketTypesError) return "Couldn't load ticket types — try again from the Type filter above.";
+  return "No ticket types configured for this event. Add some in Event Settings → Ticket types.";
 }
 
 /** Selection count + "Send tickets" / "More actions" — replaces the search/filter toolbar in
@@ -627,13 +635,7 @@ function BulkBar({
           onExportSelected={onBulkExportSelected}
           ticketTypeCount={ticketTypes.length}
           changeTicketTypeDisabled={archived || ticketTypes.length === 0}
-          changeTicketTypeDisabledReason={
-            archived
-              ? "This event is archived."
-              : ticketTypesError
-                ? "Couldn't load ticket types — try again from the Type filter above."
-                : "No ticket types configured for this event. Add some in Event Settings → Ticket types."
-          }
+          changeTicketTypeDisabledReason={bulkChangeTicketTypeReason(archived, ticketTypesError)}
           onChangeTicketType={onBulkChangeTicketType}
           onDelete={onBulkDelete}
         />

@@ -114,7 +114,7 @@ describe("AttendeesPage load errors", () => {
 
     // The error sits inside the Filters dropdown panel now (PO review) - open it to see it.
     fireEvent.click(await screen.findByRole("button", { name: "Filters" }));
-    await waitFor(() => expect(screen.getByText("Couldn't load types.")).toBeTruthy());
+    await screen.findByText("Couldn't load types.");
     // The list itself isn't replaced by an error - only the Type filter is affected.
     expect(screen.queryByText("Could not load attendees")).toBeNull();
 
@@ -133,7 +133,7 @@ describe("AttendeesPage header actions on mobile (PO review — header must neve
     fetchEventAttendees.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
 
     renderPage();
-    await waitFor(() => expect(screen.queryByText(/No attendees yet/i)).toBeTruthy());
+    await screen.findByText(/No attendees yet/i);
 
     expect(screen.queryByRole("button", { name: "+ Add attendee" })).toBeNull();
     expect(screen.getByRole("button", { name: "+ Add" })).toBeTruthy();
@@ -148,7 +148,7 @@ describe("AttendeesPage header actions on mobile (PO review — header must neve
     fetchEventAttendees.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
 
     renderPage();
-    await waitFor(() => expect(screen.queryByText(/No attendees yet/i)).toBeTruthy());
+    await screen.findByText(/No attendees yet/i);
 
     expect(screen.getByRole("button", { name: "+ Add attendee" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Send tickets" })).toBeTruthy();

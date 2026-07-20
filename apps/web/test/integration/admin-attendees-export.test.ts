@@ -616,7 +616,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     );
     expect(res.status).toBe(200);
     const rows = await parseXlsxRows(await res.arrayBuffer());
-    expect(rows.length).toBe(5);
+    expect(rows).toHaveLength(5);
     const dataRows = rows.slice(1);
     // The export resolves a row's raw ticket_type key through the catalog to its display label
     // (packages/tickets/src/attendees-export.ts's resolveTicketTypeLabel) - "vip" is stored, but
@@ -633,7 +633,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     expect(res.status).toBe(200);
     const text = await res.text();
     const lines = text.split("\r\n").filter(Boolean);
-    expect(lines.length).toBe(2);
+    expect(lines).toHaveLength(2);
     expect(lines[1]).toContain("Vip One");
     expect(lines[1]).not.toContain("Standard Guest");
   });
@@ -656,7 +656,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     );
     expect(res.status).toBe(200);
     const lines = (await res.text()).split("\r\n").filter(Boolean);
-    expect(lines.length).toBe(2);
+    expect(lines).toHaveLength(2);
     expect(lines[1]).toContain("Vip One");
     expect(lines[1]).not.toContain("Vip Two");
     expect(lines[1]).not.toContain("Standard Guest");
@@ -669,7 +669,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     );
     expect(res.status).toBe(200);
     const lines = (await res.text()).split("\r\n").filter(Boolean);
-    expect(lines.length).toBe(2);
+    expect(lines).toHaveLength(2);
     expect(lines[1]).toContain("Mega Vip");
     expect(lines[1]).not.toContain("Mega Standard");
   });
@@ -697,7 +697,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     );
     expect(res.status).toBe(200);
     const lines = (await res.text()).split("\r\n").filter(Boolean);
-    expect(lines.length).toBe(1);
+    expect(lines).toHaveLength(1);
   });
 
   it("no matches → file with headers only", async () => {
@@ -708,7 +708,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     expect(res.status).toBe(200);
     const text = await res.text();
     const lines = text.split("\r\n").filter(Boolean);
-    expect(lines.length).toBe(1);
+    expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("Name");
     expect(lines[0]).toContain("Email");
   });
@@ -988,7 +988,7 @@ describe("mail_status filter — list + export (#522)", () => {
     );
     expect(res.status).toBe(200);
     const lines = (await res.text()).split("\r\n").filter(Boolean);
-    expect(lines.length).toBe(2); // header + ATT_STD
+    expect(lines).toHaveLength(2); // header + ATT_STD
     expect(lines[1]).toContain("Standard Guest");
 
     const log = await prisma.attendeeActionLog.findFirst({
