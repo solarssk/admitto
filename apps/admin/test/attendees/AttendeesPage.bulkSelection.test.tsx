@@ -983,4 +983,29 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     expect(item.title).not.toContain("No ticket types configured");
     expect(item.title).toContain("Couldn't load ticket types");
   });
+
+  it("lets the operator retry the catalog load from the bulk bar's More actions menu, without losing the selection (Codex review)", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchTicketTypes.mockRejectedValueOnce(new Error("network down"));
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+
+    await waitFor(() => expect(bulkBar().getByText("Retry loading ticket types")).toBeTruthy());
+
+    fetchTicketTypes.mockResolvedValueOnce([
+      { id: "tt-1", key: "vip", label: "VIP", color: "purple", sort_order: 0, attendee_count: 1, created_at: "2026-06-01T00:00:00.000Z" },
+    ]);
+    fireEvent.click(bulkBar().getByText("Retry loading ticket types"));
+
+    await waitFor(() => {
+      const item = bulkBar().getByRole("menuitem", { name: /Change ticket type/ }) as HTMLButtonElement;
+      expect(item.disabled).toBe(false);
+    });
+    // The selection survives the retry — the whole point was not losing it.
+    expect(bulkBar().getByText("1")).toBeTruthy();
+  });
 });
