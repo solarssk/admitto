@@ -126,3 +126,31 @@ describe("AttendeesPage load errors", () => {
     await waitFor(() => expect(screen.queryByText("Couldn't load types.")).toBeNull());
   });
 });
+
+describe("AttendeesPage header actions on mobile (PO review — header must never change height)", () => {
+  it("shortens '+ Add attendee' to '+ Add' and 'Send tickets' to 'Send' below 768px, so all four header buttons fit one line", async () => {
+    mockMatchMedia(false);
+    fetchEventAttendees.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
+
+    renderPage();
+    await waitFor(() => expect(screen.queryByText(/No attendees yet/i)).toBeTruthy());
+
+    expect(screen.queryByRole("button", { name: "+ Add attendee" })).toBeNull();
+    expect(screen.getByRole("button", { name: "+ Add" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Send tickets" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
+    // Already short enough as-is — unchanged at any width.
+    expect(screen.getByRole("link", { name: "Import" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Export" })).toBeTruthy();
+  });
+
+  it("keeps the full header button labels at desktop widths", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
+
+    renderPage();
+    await waitFor(() => expect(screen.queryByText(/No attendees yet/i)).toBeTruthy());
+
+    expect(screen.getByRole("button", { name: "+ Add attendee" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Send tickets" })).toBeTruthy();
+  });
+});

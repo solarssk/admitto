@@ -32,11 +32,18 @@
    to reach a filter). The four selects (+ the mobile sort control) live in a floating
    `position: absolute` panel opened from the button instead — same mechanism as the Export
    and More actions menus, so it overlays the table below rather than pushing it down. */
+/* min-height (not just letting content decide) matches this exact formula on .attendees-bulkbar
+   too, below — selecting rows swaps this row for that one in the same slot, and the bulk bar's
+   buttons are deliberately smaller (attendees.css, mobile section) to fit next to the count on
+   phone widths, so without an explicit shared height the two would render at different heights
+   and the card would visibly grow/shrink the instant you check a row (PO review, with devtools
+   measurements: 69px vs 97px, then 69px vs 61px once the bulk bar was narrowed down to fit). */
 .attendees-toolbar {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-4);
+  min-height: calc(var(--control-h) + 2 * var(--space-4) + 1px);
   border-bottom: 1px solid var(--border);
 }
 
@@ -125,31 +132,106 @@
   gap: var(--space-2);
 }
 
-.attendees-toolbar__sort .at-select {
+.attendees-toolbar__sort .at-field {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.attendees-toolbar__sort .at-select {
+  width: 100%;
 }
 
 /* 767, not 768 — useIsDesktop() (apps/admin/src/hooks/useIsDesktop.ts) switches
    the table/cards split at min-width:768px; this must be the exact complement
    or the two breakpoints overlap by one pixel and disagree at exactly 768px. */
 @media (max-width: 767px) {
-  /* Full-width, not flush-right — margin-left:auto on its own line would sit the whole
-     actions group flush against the right edge with a dead gap to its left, the same
-     leftover-space bug the filter row had. */
-  .attendees-bulkbar__actions {
-    flex-basis: 100%;
-    margin-left: 0;
+  /* Import / + Add attendee / Send tickets / Export wrap onto a 2nd line below ~640px,
+     changing the header's height as the viewport narrows (PO review, with devtools
+     measurements: 36px vs 80px) — scoped to just this page (.attendees-pageheader, set via
+     PageHeader's className prop) rather than the shared PageHeader component every admin page
+     uses, since other pages' action sets haven't been reviewed for this yet. Compacted the
+     same way as the bulk bar: smaller buttons, decorative icons dropped (Export's own trailing
+     chevron survives — same reasoning as "More"), tighter gap. That alone isn't quite enough
+     here — four buttons' worth of full labels don't fit even fully compacted — so "+ Add
+     attendee" and "Send tickets" also shorten in AttendeesPage.tsx (via useIsDesktop()), the
+     one part CSS can't do; "Import" and "Export" were already short enough as-is. */
+  /* Centered (PO review) — the shared PageHeader stacks title above actions and
+     left-aligns them below 768px (packages/ui components.css); once the row itself
+     stretches full width, left-flush buttons with a gap of empty space to their right
+     read as unbalanced, especially now that they're the compact/shorter mobile set. */
+  .attendees-pageheader .at-pageheader__actions {
+    gap: var(--space-2);
+    justify-content: center;
   }
 
-  /* The actions group can wrap "More actions" onto its own line starting at the row's LEFT
-     edge (unlike desktop, where the group stays right-aligned) — its panel's usual right:0
-     anchor then extended leftward off-screen (PO review: menu text was clipped). Anchor from
-     the left instead so it extends rightward, staying on screen from wherever the trigger
-     lands. */
-  .more-actions-menu__panel {
-    right: auto;
-    left: 0;
+  .attendees-pageheader .at-pageheader__actions .at-btn {
+    height: var(--control-h-sm);
+    font-size: var(--fs-sm);
+    padding: 0 var(--space-2);
+  }
+
+  .attendees-pageheader .at-pageheader__actions .at-btn .at-btn__icon {
+    display: none;
+  }
+
+  .attendees-pageheader .attendees-export-menu .at-btn .at-btn__icon {
+    display: inline-flex;
+  }
+
+  /* Selecting attendees swaps the toolbar (search + Filters, one line) for this bar in the
+     exact same slot — it must end up the same height, or the whole card visibly grows the
+     instant you check a row (PO review, with devtools measurements: 69px vs 97px). Count +
+     clear + all three actions don't fit one line here even fully compacted, so "Send tickets"
+     moves into the "More" menu below 768px (AttendeesTable.tsx) — it's still one tap away,
+     just not its own button — leaving "Check in" + "More" to share this line with the count.
+     The separator is dropped too: what's left barely clears the available width as-is, and a
+     gray background already groups count-then-actions without needing a literal divider.
+     flex-wrap: nowrap on the bar itself (below) is load-bearing, not decorative — without it,
+     info and actions each individually fit one line but the *pair* of them can still together
+     exceed the row's width and wrap onto two lines of their own (PO review round 2: restoring
+     "Check in"'s icon, below, grew it just enough to trigger exactly that). */
+  .attendees-bulkbar {
+    gap: var(--space-2);
+    flex-wrap: nowrap;
+  }
+
+  .attendees-bulkbar__info {
+    gap: var(--space-2);
+  }
+
+  .attendees-bulkbar__actions {
+    gap: var(--space-1);
+    position: relative;
+  }
+
+  .attendees-bulkbar__sep {
+    display: none;
+  }
+
+  /* Just smaller (matching the pager's page-size control) — with "Send tickets" moved out
+     (above), "Check in" keeps its own leading icon and "More" its trailing chevron; both
+     still fit alongside the count on one line (PO review). Tightened again in round 2 (icon
+     restored, tighter gap/padding here and on .attendees-bulkbar/__info below) after restoring
+     that icon reopened the same "don't fit one line" problem — verified with ~19px of real
+     margin left over at 360px this time, not the razor-thin fit that broke last round. */
+  .attendees-bulkbar__actions .at-btn {
+    height: var(--control-h-sm);
+    font-size: var(--fs-sm);
+    padding: 0 var(--space-1);
+    gap: var(--space-1);
+  }
+
+  /* The panel positions itself relative to .more-actions-menu by default (a bare inline-flex
+     wrapper around the trigger button, sized to the button's own narrow width) — fine on
+     desktop, where that wrapper sits flush against the row's right edge anyway. On mobile the
+     trigger can land anywhere along the row depending on how much space the other two buttons
+     took, so anchoring to the trigger's own box put the panel off-screen either direction
+     (PO review, twice: first past the left edge when the trigger used to wrap alone onto its
+     own line, then past the right edge once the row above was widened to fit all three buttons
+     on one line). Anchoring to the whole row instead (its own position: relative, above) — a
+     stable, always-on-screen edge — fixes both: the trigger's own position becomes irrelevant. */
+  .more-actions-menu {
+    position: static;
   }
 
   /* The summary text + rows-per-page + Previous/Page X of Y/Next pager don't fit on one
@@ -214,6 +296,7 @@
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-4);
+  min-height: calc(var(--control-h) + 2 * var(--space-4) + 1px);
   border-bottom: 1px solid var(--border);
   /* A neutral gray, not --primary-tint — that's also the selected-row color,
      and sitting right above a block of tinted rows made the bar read as
@@ -228,10 +311,11 @@
   gap: var(--space-3);
 }
 
-/* margin-left: auto pushes this group to the row's right edge on desktop (replacing a
-   dedicated spacer element) while staying a normal flex item that's free to wrap onto its
-   own line — three action buttons plus the count text don't fit one row on a phone, and
-   without this wrapping group they overflowed past the card edge (PO review). */
+/* margin-left: auto pushes this group to the row's right edge (replacing a dedicated
+   spacer element) while staying a normal flex item, on both desktop and mobile — mobile
+   shows fewer/smaller buttons (below), but shares this same right-aligned layout rather
+   than a separate full-width line. flex-wrap stays as a defensive fallback; in practice the
+   mobile button set is sized (below) to always fit alongside the count on one line. */
 .attendees-bulkbar__actions {
   display: flex;
   flex-wrap: wrap;

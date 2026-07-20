@@ -123,7 +123,7 @@ function bulkBar() {
 function openAndArmDeleteDialog() {
   fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
   vi.useFakeTimers();
-  fireEvent.click(bulkBar().getByRole("menuitem", { name: "Delete" }));
+  fireEvent.click(bulkBar().getByRole("menuitem", { name: /^Delete/ }));
   const dialog = screen.getByRole("dialog");
   act(() => {
     vi.advanceTimersByTime(10_000);
@@ -765,6 +765,22 @@ describe("AttendeesPage bulk export selected (#520)", () => {
     expect(bulkBar().getByText("CSV of 2 attendees")).toBeTruthy();
   });
 
+  it("shows dynamic hints on 'Send tickets' and 'Delete' too, matching 'Export selected' (PO review — consistency)", async () => {
+    // "Send tickets" only lives in this menu below 768px (its own button on desktop).
+    mockMatchMedia(false);
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More" }));
+    expect(bulkBar().getByText("Email tickets to 1 attendee")).toBeTruthy();
+    expect(bulkBar().getByText("Permanently remove 1 attendee")).toBeTruthy();
+  });
+
   it("toasts an operator-safe error and keeps the selection when the export fails", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
@@ -953,5 +969,68 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     expect(item.disabled).toBe(true);
     expect(item.title).not.toContain("No ticket types configured");
     expect(item.title).toContain("Couldn't load ticket types");
+  });
+});
+
+describe("AttendeesPage bulk bar on mobile (PO review — bar must never change height)", () => {
+  it("shortens 'More actions' to 'More' below 768px so it fits alongside the count, and the menu still works", async () => {
+    mockMatchMedia(false);
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    expect(bulkBar().queryByRole("button", { name: "More actions" })).toBeNull();
+    fireEvent.click(bulkBar().getByRole("button", { name: "More" }));
+    expect(bulkBar().getByRole("menuitem", { name: /Export selected/ })).toBeTruthy();
+  });
+
+  it("keeps the full 'More actions' label at desktop widths", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    expect(bulkBar().getByRole("button", { name: "More actions" })).toBeTruthy();
+  });
+
+  it("moves 'Send tickets' into the 'More' menu below 768px instead of its own button, so count + Check in + More fit one line", async () => {
+    mockMatchMedia(false);
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 1, skipped: 0, failed: 0 });
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    expect(bulkBar().queryByRole("button", { name: "Send tickets" })).toBeNull();
+    expect(bulkBar().getByRole("button", { name: "Check in" })).toBeTruthy();
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /^Send tickets/ }));
+    const confirmDialog = screen.getByRole("dialog", { name: "Send tickets?" });
+    fireEvent.click(within(confirmDialog).getByRole("button", { name: "Send tickets" }));
+
+    await waitFor(() => {
+      expect(sendEventBulk).toHaveBeenCalledWith("evt-1", {
+        filter: { type: "attendee_ids", ids: ["att-1"] },
+      });
+    });
+  });
+
+  it("keeps 'Send tickets' as its own button at desktop widths", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    expect(bulkBar().getByRole("button", { name: "Send tickets" })).toBeTruthy();
   });
 });

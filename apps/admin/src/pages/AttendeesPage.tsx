@@ -33,6 +33,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
+import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import "../attendees/add-attendee-modal.css";
 import "../attendees/attendees.css";
 
@@ -354,6 +355,7 @@ export function AttendeesPage() {
   const navigate = useNavigate();
   const { addToast } = useToast();
   const { reportApiError } = useConnectionState();
+  const isDesktop = useIsDesktop();
   const listAbortRef = useRef<AbortController | null>(null);
   const exportAbortRef = useRef<AbortController | null>(null);
   /** Guards handleBulkDeleteSelected against completing after the operator has navigated to a
@@ -874,6 +876,7 @@ export function AttendeesPage() {
       <PageHeader
         title="Attendees"
         subtitle="Manage attendee records and resend tickets."
+        className="attendees-pageheader"
         actions={
           <>
             {isEventArchived(event) ? (
@@ -892,7 +895,10 @@ export function AttendeesPage() {
             <ArchivedGuard event={event} reasonId="add-attendee-reason" placement="below">
               {(guard) => (
                 <Button variant="primary" {...guard} onClick={() => setAddOpen(true)}>
-                  + Add attendee
+                  {/* Shortened below 768px (attendees.css compacts these 4 buttons to fit one
+                   * line, matching the bulk bar's own "never changes height" fix) — "+ Add
+                   * attendee" is the one label still too long to fit even fully compacted. */}
+                  {isDesktop ? "+ Add attendee" : "+ Add"}
                 </Button>
               )}
             </ArchivedGuard>
@@ -917,7 +923,7 @@ export function AttendeesPage() {
                     setSendTicketsOpen(true);
                   }}
                 >
-                  {sendBusy ? "Sending…" : "Send tickets"}
+                  {sendBusy ? "Sending…" : isDesktop ? "Send tickets" : "Send"}
                 </Button>
               )}
             </ArchivedGuard>

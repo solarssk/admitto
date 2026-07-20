@@ -8,7 +8,11 @@ import type {
   RsvpStatus,
   TicketTypeDto,
 } from "../api/types.js";
-import { ArchivedGuard, type ArchivedGuardEvent } from "../components/ArchivedGuard.js";
+import {
+  ARCHIVED_ACTION_TOOLTIP,
+  ArchivedGuard,
+  type ArchivedGuardEvent,
+} from "../components/ArchivedGuard.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { MailStatusBadge } from "./mailStatusBadge.js";
@@ -374,6 +378,10 @@ function AttendeeCard({
  * shows reminders and wallet-pass actions in this same menu — not built yet, out of scope. */
 function BulkMoreActionsMenu({
   selectedCount,
+  archived,
+  bulkSendBusy,
+  canBulkSend,
+  onBulkSendTickets,
   exportBusy,
   onExportSelected,
   ticketTypeCount,
@@ -383,6 +391,10 @@ function BulkMoreActionsMenu({
   onDelete,
 }: Readonly<{
   selectedCount: number;
+  archived: boolean;
+  bulkSendBusy: boolean;
+  canBulkSend: boolean;
+  onBulkSendTickets: () => void;
   exportBusy: boolean;
   onExportSelected: () => void;
   ticketTypeCount: number;
@@ -392,6 +404,7 @@ function BulkMoreActionsMenu({
   onDelete: () => void;
 }>) {
   const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+  const isDesktop = useIsDesktop();
 
   return (
     <div className="more-actions-menu" ref={rootRef}>
@@ -404,10 +417,43 @@ function BulkMoreActionsMenu({
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >
-        More actions
+        {/* Shortened below 768px — with its leading icon dropped too (attendees.css), "More
+         * actions" is the one label of the three bulk-bar buttons long enough to still not
+         * fit on one line otherwise (PO review: was wrapping onto a 3rd line). */}
+        {isDesktop ? "More actions" : "More"}
       </Button>
       {open && (
         <div className="more-actions-menu__panel" role="menu" ref={panelRef}>
+          {/* Below 768px only — "Send tickets" doesn't fit as its own button next to the
+           * count and "Check in" (attendees.css), so it lives here instead on mobile, first
+           * in the list since it's still one of the two most common bulk actions. */}
+          {!isDesktop && (
+            <button
+              type="button"
+              role="menuitem"
+              className="more-actions-menu__item"
+              disabled={archived || bulkSendBusy || !canBulkSend}
+              title={
+                archived
+                  ? ARCHIVED_ACTION_TOOLTIP
+                  : !canBulkSend
+                    ? "No mail transport configured for this event. Set one up in Event Settings → Mailing."
+                    : undefined
+              }
+              onClick={() => {
+                setOpen(false);
+                onBulkSendTickets();
+              }}
+            >
+              <i className="ti ti-send" aria-hidden="true" />
+              <span className="more-actions-menu__item-text">
+                {bulkSendBusy ? "Sending…" : "Send tickets"}
+                <span className="more-actions-menu__item-hint">
+                  Email tickets to {selectedCount} attendee{selectedCount === 1 ? "" : "s"}
+                </span>
+              </span>
+            </button>
+          )}
           {/* Not ArchivedGuard'd — exporting a selection is read-only, so it stays legal
            * after an event is archived. */}
           <button
@@ -462,7 +508,13 @@ function BulkMoreActionsMenu({
               onDelete();
             }}
           >
-            <i className="ti ti-trash" aria-hidden="true" /> Delete
+            <i className="ti ti-trash" aria-hidden="true" />
+            <span className="more-actions-menu__item-text">
+              Delete
+              <span className="more-actions-menu__item-hint">
+                Permanently remove {selectedCount} attendee{selectedCount === 1 ? "" : "s"}
+              </span>
+            </span>
           </button>
         </div>
       )}
@@ -505,6 +557,7 @@ function BulkBar({
   onBulkDelete: () => void;
 }>) {
   const archived = event.archived_at != null;
+  const isDesktop = useIsDesktop();
   return (
     <div className="attendees-bulkbar">
       <div className="attendees-bulkbar__info">
@@ -520,33 +573,38 @@ function BulkBar({
           <i className="ti ti-x" aria-hidden="true" />
         </button>
       </div>
-      {/* Own wrapping group (not just spacer + buttons loose in the row) so on a phone,
-       * where three action buttons don't fit alongside the count, this whole group drops to
-       * its own full-width line instead of the buttons individually overflowing past the
-       * card edge (PO review — "Check in" was spilling outside the table on mobile). */}
+      {/* Own wrapping group (not just spacer + buttons loose in the row) so it can sit
+       * flush against the row's right edge (margin-left: auto) without a dedicated spacer
+       * element. */}
       <div className="attendees-bulkbar__actions">
         <span className="attendees-bulkbar__sep" aria-hidden="true" />
-        <ArchivedGuard
-          event={event}
-          reasonId="bulk-send-tickets-reason"
-          disabled={bulkSendBusy || !canBulkSend}
-          tooltip={
-            !canBulkSend
-              ? "No mail transport configured for this event. Set one up in Event Settings → Mailing."
-              : undefined
-          }
-        >
-          {(guard) => (
-            <Button
-              variant="ghost"
-              icon={<i className="ti ti-send" aria-hidden="true" />}
-              {...guard}
-              onClick={onBulkSendTickets}
-            >
-              {bulkSendBusy ? "Sending…" : "Send tickets"}
-            </Button>
-          )}
-        </ArchivedGuard>
+        {/* Desktop only below 768px, "Send tickets" moves into the "More" menu instead
+         * (attendees.css) — with the count and "Check in" it doesn't fit as its own button
+         * without the row growing taller than the toolbar it replaces (PO review: selecting
+         * attendees was visibly expanding the bar). */}
+        {isDesktop && (
+          <ArchivedGuard
+            event={event}
+            reasonId="bulk-send-tickets-reason"
+            disabled={bulkSendBusy || !canBulkSend}
+            tooltip={
+              !canBulkSend
+                ? "No mail transport configured for this event. Set one up in Event Settings → Mailing."
+                : undefined
+            }
+          >
+            {(guard) => (
+              <Button
+                variant="ghost"
+                icon={<i className="ti ti-send" aria-hidden="true" />}
+                {...guard}
+                onClick={onBulkSendTickets}
+              >
+                {bulkSendBusy ? "Sending…" : "Send tickets"}
+              </Button>
+            )}
+          </ArchivedGuard>
+        )}
         <ArchivedGuard event={event} reasonId="bulk-checkin-reason" disabled={bulkCheckInBusy}>
           {(guard) => (
             <Button
@@ -561,6 +619,10 @@ function BulkBar({
         </ArchivedGuard>
         <BulkMoreActionsMenu
           selectedCount={selectedIds.size}
+          archived={archived}
+          bulkSendBusy={bulkSendBusy}
+          canBulkSend={canBulkSend}
+          onBulkSendTickets={onBulkSendTickets}
           exportBusy={bulkExportBusy}
           onExportSelected={onBulkExportSelected}
           ticketTypeCount={ticketTypes.length}
