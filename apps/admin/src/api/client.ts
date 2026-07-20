@@ -1179,9 +1179,11 @@ export async function deleteTicketType(eventId: string, typeId: string): Promise
   await parseJson<{ ok: boolean }>(res);
 }
 
+type AttendeeExportFormat = "xlsx" | "csv" | "pdf";
+
 /** Shared by both export entry points: validates the response, then triggers the browser
  * download from the returned blob. */
-async function downloadExportResponse(res: Response, format: "xlsx" | "csv" | "pdf"): Promise<void> {
+async function downloadExportResponse(res: Response, format: AttendeeExportFormat): Promise<void> {
   if (!res.ok) {
     let message = `HTTP ${res.status}`;
     try {
@@ -1218,7 +1220,7 @@ export async function exportAttendees(
     rsvp_status?: RsvpStatus;
     mail_status?: AttendeeMailStatusFilter;
   },
-  format: "xlsx" | "csv" | "pdf",
+  format: AttendeeExportFormat,
   signal?: AbortSignal,
 ): Promise<void> {
   const urlParams = new URLSearchParams({ format });
@@ -1242,7 +1244,7 @@ export async function exportAttendees(
 export async function exportSelectedAttendees(
   eventId: string,
   attendeeIds: string[],
-  format: "xlsx" | "csv" | "pdf",
+  format: AttendeeExportFormat,
   signal?: AbortSignal,
 ): Promise<void> {
   const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/attendees/export-selected`, {
