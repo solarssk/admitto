@@ -132,6 +132,47 @@ describe("ImportPage upload → preview → commit flow", () => {
     });
   });
 
+  it("keeps Dry run locked on until a validation summary is showing, so it can't be turned off on reflex before ever validating (Codex review)", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(samplePreview());
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    const dryRunSwitch = screen.getByLabelText(/Dry run/) as HTMLInputElement;
+    expect(dryRunSwitch.disabled).toBe(true);
+    expect(dryRunSwitch.checked).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    expect(await screen.findByText("To create")).toBeTruthy();
+
+    // Only now, with the summary on screen, can it be toggled.
+    expect(dryRunSwitch.disabled).toBe(false);
+    const commitBtn = screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }) as HTMLButtonElement;
+    expect(commitBtn.disabled).toBe(true);
+    fireEvent.click(dryRunSwitch);
+    expect(commitBtn.disabled).toBe(false);
+  });
+
+  it("re-arms Dry run when a different file is picked, so a summary already unlocked for the first file can't unlock committing the new one on arrival", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(samplePreview());
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    expect(await screen.findByText("To create")).toBeTruthy();
+    const dryRunSwitch = screen.getByLabelText(/Dry run/) as HTMLInputElement;
+    fireEvent.click(dryRunSwitch);
+    expect(dryRunSwitch.checked).toBe(false);
+
+    // Picking a different file drops back to the upload step and back to Dry run.
+    selectFile();
+    expect(dryRunSwitch.checked).toBe(true);
+    expect(dryRunSwitch.disabled).toBe(true);
+  });
+
   it("shows rows the commit-time re-parse invalidated (e.g. a ticket type deleted between preview and commit)", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());
@@ -236,6 +277,15 @@ describe("ImportPage dropzone (#358 Phase A)", () => {
     expect(screen.getByText("dropped.csv")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Remove file" })).toBeTruthy();
     expect((screen.getByRole("button", { name: "Validate file" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("keeps the proxied file input out of the tab order — the dropzone button is the keyboard path (Codex review)", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    const fileInput = screen.getByLabelText("File (.csv or .xlsx)") as HTMLInputElement;
+    expect(fileInput.tabIndex).toBe(-1);
   });
 
   it("rejects a dropped file with an unsupported extension via a toast", async () => {
