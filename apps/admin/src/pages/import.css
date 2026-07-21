@@ -1,3 +1,147 @@
+/* Two-column layout from the design mockup's Import screen (`two-col import`): upload +
+ * row preview on the left, options + validation summary on the right; stacks below 768px
+ * (same breakpoint the account page's 2-col grid uses). */
+.import-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+@media (max-width: 768px) {
+  .import-two-col {
+    grid-template-columns: 1fr;
+  }
+}
+
+.import-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* A <button>, not a div with role="button" (Sonar S6819 — real keyboard/AT semantics for
+   free instead of hand-rolled ones) — the extra properties below undo the browser's default
+   button chrome (background, font, width) that a div never had to begin with. */
+.import-dropzone {
+  width: 100%;
+  background: none;
+  font: inherit;
+  border: 1.5px dashed var(--border-strong, var(--border));
+  border-radius: var(--radius-md);
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.import-dropzone:hover,
+.import-dropzone--over {
+  border-color: var(--primary);
+  background: var(--primary-tint, var(--surface-hover));
+}
+
+.import-dropzone i {
+  font-size: 32px;
+}
+
+.import-dropzone b {
+  color: var(--text-primary);
+  font-size: var(--fs-body, var(--fs-sm));
+}
+
+.import-dropzone span {
+  font-size: var(--fs-sm);
+}
+
+fieldset:disabled .import-dropzone {
+  cursor: not-allowed;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.import-file-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  border: 1px solid var(--status-ok, #16a34a);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  background: var(--status-ok-tint, var(--surface-hover));
+}
+
+.import-file-chip > i {
+  font-size: 24px;
+  color: var(--status-ok, #16a34a);
+}
+
+.import-file-chip__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.import-file-chip__info strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-file-chip__meta {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.import-file-chip__remove {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 16px;
+  padding: var(--space-1);
+}
+
+.import-file-chip__remove:hover {
+  color: var(--text-primary);
+}
+
+.import-field--visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.import-option {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--fs-sm);
+}
+
+.import-stat--ok .import-stat__value {
+  color: var(--status-ok, #16a34a);
+}
+
+.import-stat--warn .import-stat__value {
+  color: var(--status-warn, #f59e0b);
+}
+
+.import-stat--muted .import-stat__value {
+  color: var(--text-muted);
+}
+
 .import-back {
   margin: 0 0 var(--space-4);
   font-size: var(--fs-sm);
