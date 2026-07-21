@@ -43,7 +43,7 @@ interface ImportSampleTableProps {
  * The enclosing Card carries its own "Row preview" title (with the showing-first-N-of-M count
  * folded in when relevant) — this used to repeat both in a second "Data preview" heading here,
  * reading as two headings for one table (PO feedback). */
-function ImportSampleTable({ rows, attributeFieldLabels }: ImportSampleTableProps) {
+function ImportSampleTable({ rows, attributeFieldLabels }: Readonly<ImportSampleTableProps>) {
   const displayRows = rows.slice(0, SAMPLE_DISPLAY_LIMIT);
   if (displayRows.length === 0) return null;
 
