@@ -112,7 +112,9 @@ describe("AttendeesPage load errors", () => {
 
     renderPage();
 
-    await waitFor(() => expect(screen.getByText("Couldn't load types.")).toBeTruthy());
+    // The error sits inside the Filters dropdown panel now (PO review) - open it to see it.
+    fireEvent.click(await screen.findByRole("button", { name: "Filters" }));
+    await screen.findByText("Couldn't load types.");
     // The list itself isn't replaced by an error - only the Type filter is affected.
     expect(screen.queryByText("Could not load attendees")).toBeNull();
 
@@ -122,5 +124,33 @@ describe("AttendeesPage load errors", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     await waitFor(() => expect(screen.queryByText("Couldn't load types.")).toBeNull());
+  });
+});
+
+describe("AttendeesPage header actions on mobile (PO review — header must never change height)", () => {
+  it("shortens '+ Add attendee' to '+ Add' and 'Send tickets' to 'Send' below 768px, so all four header buttons fit one line", async () => {
+    mockMatchMedia(false);
+    fetchEventAttendees.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
+
+    renderPage();
+    await screen.findByText(/No attendees yet/i);
+
+    expect(screen.queryByRole("button", { name: "+ Add attendee" })).toBeNull();
+    expect(screen.getByRole("button", { name: "+ Add" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Send tickets" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
+    // Already short enough as-is — unchanged at any width.
+    expect(screen.getByRole("link", { name: "Import" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Export" })).toBeTruthy();
+  });
+
+  it("keeps the full header button labels at desktop widths", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
+
+    renderPage();
+    await screen.findByText(/No attendees yet/i);
+
+    expect(screen.getByRole("button", { name: "+ Add attendee" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Send tickets" })).toBeTruthy();
   });
 });

@@ -49,13 +49,13 @@ describe("exportAttendees (client) — thin wrapper coverage", () => {
     try {
       await exportAttendees(
         "evt-1",
-        { q: "vip", status: "admitted", ticket_type: "vip", rsvp_status: "confirmed" },
+        { q: "vip", status: "admitted", ticket_type: "vip", rsvp_status: "confirmed", mail_status: "sent" },
         "csv",
       );
 
       const [url, init] = fetchMock.mock.calls[0]!;
       expect(url).toBe(
-        "/api/admin/events/evt-1/attendees/export?format=csv&q=vip&status=admitted&ticket_type=vip&rsvp_status=confirmed",
+        "/api/admin/events/evt-1/attendees/export?format=csv&q=vip&status=admitted&ticket_type=vip&rsvp_status=confirmed&mail_status=sent",
       );
       expect(init).toMatchObject({ credentials: "same-origin" });
       expect(stub.createObjectURL).toHaveBeenCalledOnce();

@@ -38,6 +38,8 @@ const tableProps = {
   statusFilter: "all" as const,
   ticketTypeFilter: "",
   rsvpStatusFilter: "" as const,
+  mailStatusFilter: "" as const,
+  onMailStatusFilterChange: vi.fn(),
   onSearchChange: vi.fn(),
   onStatusFilterChange: vi.fn(),
   onTicketTypeFilterChange: vi.fn(),
@@ -75,7 +77,7 @@ describe("AttendeesTable toolbar vs bulk bar", () => {
     mockMatchMedia(true);
   });
 
-  it("hides the search input and filter selects entirely once a row is selected, and shows the bulk bar instead", () => {
+  it("hides the search input and Filters button entirely once a row is selected, and shows the bulk bar instead", () => {
     const onClearSelection = vi.fn();
     const { rerender } = render(
       <AttendeesTable
@@ -88,9 +90,7 @@ describe("AttendeesTable toolbar vs bulk bar", () => {
     );
 
     expect(screen.getByLabelText("Search attendees by name, email, or company")).toBeTruthy();
-    expect(screen.getByLabelText("Filter by check-in status")).toBeTruthy();
-    expect(screen.getByLabelText("Filter by attendance")).toBeTruthy();
-    expect(screen.getByLabelText("Filter by ticket type")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Filters" })).toBeTruthy();
     expect(document.querySelector(".attendees-bulkbar")).toBeNull();
 
     rerender(
@@ -105,9 +105,7 @@ describe("AttendeesTable toolbar vs bulk bar", () => {
 
     // Not just visually hidden - not in the DOM at all.
     expect(screen.queryByLabelText("Search attendees by name, email, or company")).toBeNull();
-    expect(screen.queryByLabelText("Filter by check-in status")).toBeNull();
-    expect(screen.queryByLabelText("Filter by attendance")).toBeNull();
-    expect(screen.queryByLabelText("Filter by ticket type")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Filters" })).toBeNull();
     const bar = document.querySelector(".attendees-bulkbar");
     expect(bar).toBeTruthy();
     expect(within(bar as HTMLElement).getByText("1")).toBeTruthy();
@@ -128,42 +126,110 @@ describe("AttendeesTable toolbar vs bulk bar", () => {
     );
 
     expect(screen.getByLabelText("Search attendees by name, email, or company")).toBeTruthy();
-    expect(screen.getByLabelText("Filter by check-in status")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Filters" })).toBeTruthy();
     expect(document.querySelector(".attendees-bulkbar")).toBeNull();
   });
 });
 
-describe("AttendeesTable collapsible filters toggle", () => {
+describe("AttendeesTable mobile bulk bar — 'More' menu's Send tickets item", () => {
+  beforeEach(() => {
+    mockMatchMedia(false);
+  });
+
+  it("carries the archived tooltip when the event is archived", () => {
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow]}
+        selectedIds={new Set(["att-1"])}
+        event={{ archived_at: "2026-01-01T00:00:00.000Z" }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.getByRole("menuitem", { name: /Send tickets/ }).getAttribute("title")).toBe(
+      "This event is archived — editing is disabled.",
+    );
+  });
+
+  it("carries the no-mail-transport tooltip when canBulkSend is false and the event isn't archived", () => {
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow]}
+        selectedIds={new Set(["att-1"])}
+        canBulkSend={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.getByRole("menuitem", { name: /Send tickets/ }).getAttribute("title")).toBe(
+      "No mail transport configured for this event. Set one up in Event Settings → Mailing.",
+    );
+  });
+
+  it("shows 'Sending…' while busy and pluralizes the hint for more than one selected attendee", () => {
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow, otherRow]}
+        selectedIds={new Set(["att-1", "att-2"])}
+        bulkSendBusy
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    const item = screen.getByRole("menuitem", { name: /Sending…/ });
+    expect(item.textContent).toContain("Email tickets to 2 attendees");
+  });
+});
+
+describe("AttendeesTable Filters dropdown (PO review, third pass)", () => {
   beforeEach(() => {
     mockMatchMedia(true);
   });
 
-  it("toggles aria-expanded and the filters wrapper's open class when clicked", () => {
+  it("keeps the filter selects out of the DOM until the Filters button is clicked, then reveals all four", () => {
     render(
       <AttendeesTable {...tableProps} items={[baseRow]} selectedIds={new Set()} onToggleRow={vi.fn()} />,
     );
 
-    const toggle = screen.getByRole("button", { name: /Filters/ });
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(document.querySelector(".attendees-filters")?.classList.contains("attendees-filters--open")).toBe(
-      false,
-    );
+    expect(screen.queryByLabelText("Filter by ticket type")).toBeNull();
+    expect(screen.queryByLabelText("Filter by attendance")).toBeNull();
+    expect(screen.queryByLabelText("Filter by check-in status")).toBeNull();
+    expect(screen.queryByLabelText("Filter by mail delivery status")).toBeNull();
 
-    fireEvent.click(toggle);
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    expect(document.querySelector(".attendees-filters")?.classList.contains("attendees-filters--open")).toBe(
-      true,
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
 
-    fireEvent.click(toggle);
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(document.querySelector(".attendees-filters")?.classList.contains("attendees-filters--open")).toBe(
-      false,
-    );
+    expect(screen.getByLabelText("Filter by ticket type")).toBeTruthy();
+    expect(screen.getByLabelText("Filter by attendance")).toBeTruthy();
+    expect(screen.getByLabelText("Filter by check-in status")).toBeTruthy();
+    expect(screen.getByLabelText("Filter by mail delivery status")).toBeTruthy();
   });
 
-  it("shows the active-filter-count badge on the toggle when filters are applied", () => {
+  it("floats as an absolutely-positioned overlay, not inline content pushing the row's own height", () => {
     render(
+      <AttendeesTable {...tableProps} items={[baseRow]} selectedIds={new Set()} onToggleRow={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+
+    // The row (.attendees-toolbar) and the floating panel are structurally separate — the
+    // panel is a sibling of the trigger inside its own small wrapper, not a child that grows
+    // the toolbar row itself (see attendees.css: .attendees-filters-menu__panel is
+    // position:absolute).
+    const panel = document.querySelector(".attendees-filters-menu__panel");
+    expect(panel).toBeTruthy();
+    expect(panel?.closest(".attendees-toolbar")).toBeTruthy();
+    expect(panel?.parentElement?.className).toContain("attendees-filters-menu");
+  });
+
+  it("shows an active-filter count badge on the trigger and clears when filters reset", () => {
+    const { rerender } = render(
+      <AttendeesTable {...tableProps} items={[baseRow]} selectedIds={new Set()} onToggleRow={vi.fn()} />,
+    );
+    expect(screen.queryByText("2")).toBeNull();
+
+    rerender(
       <AttendeesTable
         {...tableProps}
         items={[baseRow]}
@@ -171,11 +237,76 @@ describe("AttendeesTable collapsible filters toggle", () => {
         onToggleRow={vi.fn()}
         statusFilter="admitted"
         rsvpStatusFilter="confirmed"
+        ticketTypeFilter="vip"
+      />,
+    );
+    const toggle = screen.getByRole("button", { name: /Filters/ });
+    expect(within(toggle).getByText("3")).toBeTruthy();
+  });
+
+  it("exposes the panel as a native fieldset of controls, not a false menu, and moves focus into it on open (CodeRabbit + SonarCloud review)", () => {
+    render(
+      <AttendeesTable {...tableProps} items={[baseRow]} selectedIds={new Set()} onToggleRow={vi.fn()} />,
+    );
+
+    const trigger = screen.getByRole("button", { name: "Filters" });
+    // Not "menu" - the panel holds native <select>s, not menuitems, so useDropdownMenu's
+    // menuitem-focus/roving-arrow-key behavior doesn't apply here.
+    expect(trigger.getAttribute("aria-haspopup")).toBe("true");
+
+    fireEvent.click(trigger);
+
+    // A native <fieldset>/<legend>, not `role="group"` on a div (SonarCloud S6819).
+    const panel = document.querySelector(".attendees-filters-menu__panel");
+    expect(panel?.tagName).toBe("FIELDSET");
+    expect(screen.getByText("Filters", { selector: "legend" })).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByLabelText("Filter by ticket type"));
+  });
+
+  it("stays reachable and functional on a phone too — same trigger button, same floating panel", () => {
+    mockMatchMedia(false);
+    const onMailStatusFilterChange = vi.fn();
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow]}
+        selectedIds={new Set()}
+        onMailStatusFilterChange={onMailStatusFilterChange}
       />,
     );
 
-    const toggle = screen.getByRole("button", { name: /Filters/ });
-    expect(within(toggle).getByText("2")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    const select = screen.getByLabelText("Filter by mail delivery status") as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "failed" } });
+    expect(onMailStatusFilterChange).toHaveBeenCalledWith("failed");
+  });
+
+  it("reports ticket type, attendance, and check-in status filter changes", () => {
+    const onTicketTypeFilterChange = vi.fn();
+    const onRsvpStatusFilterChange = vi.fn();
+    const onStatusFilterChange = vi.fn();
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow]}
+        selectedIds={new Set()}
+        ticketTypes={[{ key: "vip", label: "VIP" }]}
+        onTicketTypeFilterChange={onTicketTypeFilterChange}
+        onRsvpStatusFilterChange={onRsvpStatusFilterChange}
+        onStatusFilterChange={onStatusFilterChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+
+    fireEvent.change(screen.getByLabelText("Filter by ticket type"), { target: { value: "vip" } });
+    expect(onTicketTypeFilterChange).toHaveBeenCalledWith("vip");
+
+    fireEvent.change(screen.getByLabelText("Filter by attendance"), { target: { value: "confirmed" } });
+    expect(onRsvpStatusFilterChange).toHaveBeenCalledWith("confirmed");
+
+    fireEvent.change(screen.getByLabelText("Filter by check-in status"), { target: { value: "admitted" } });
+    expect(onStatusFilterChange).toHaveBeenCalledWith("admitted");
   });
 });
 
@@ -249,9 +380,8 @@ describe("AttendeesTable mobile card view (<768px)", () => {
       />,
     );
 
-    // Behind the same "Filters" toggle as the three filter selects.
-    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
-
+    // The sort control sits at the top of the same Filters dropdown panel.
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     const sortSelect = screen.getByLabelText("Sort by") as HTMLSelectElement;
     expect(sortSelect.value).toBe("name");
 
@@ -287,5 +417,51 @@ describe("AttendeesTable mobile card view (<768px)", () => {
     // Clearing unmounts the button itself - focus should land back on the search input rather
     // than being lost, so keyboard/screen-reader users stay in context (CodeRabbit review).
     expect(document.activeElement).toBe(screen.getByLabelText("Search attendees by name, email, or company"));
+  });
+});
+
+describe("AttendeesTable mail delivery status filter (#522)", () => {
+  beforeEach(() => {
+    mockMatchMedia(true);
+  });
+
+  it("renders the fourth select with the four buckets and reports changes", () => {
+    const onMailStatusFilterChange = vi.fn();
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow]}
+        selectedIds={new Set()}
+        onMailStatusFilterChange={onMailStatusFilterChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    const select = screen.getByLabelText("Filter by mail delivery status") as HTMLSelectElement;
+    const values = Array.from(select.options).map((o) => o.value);
+    expect(values).toEqual(["", "not_sent", "sent", "pending", "failed"]);
+
+    fireEvent.change(select, { target: { value: "failed" } });
+    expect(onMailStatusFilterChange).toHaveBeenCalledWith("failed");
+  });
+
+  it("keeps the selected mail status reflected in the select's value (no separate active-filter indicator to keep in sync)", () => {
+    const { rerender } = render(
+      <AttendeesTable {...tableProps} items={[baseRow]} selectedIds={new Set()} mailStatusFilter="" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    let select = screen.getByLabelText("Filter by mail delivery status") as HTMLSelectElement;
+    expect(select.value).toBe("");
+
+    rerender(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow]}
+        selectedIds={new Set()}
+        mailStatusFilter="not_sent"
+      />,
+    );
+    select = screen.getByLabelText("Filter by mail delivery status") as HTMLSelectElement;
+    expect(select.value).toBe("not_sent");
   });
 });

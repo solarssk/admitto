@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
+import { EMAIL_DELIVERY_SUCCESS_STATUSES } from "@admitto/db";
 
 export const ATTENDEE_EXPORT_RSVP_STATUSES = [
   "none",
@@ -11,11 +12,28 @@ export const ATTENDEE_EXPORT_RSVP_STATUSES = [
 
 export type AttendeeExportRsvpStatus = (typeof ATTENDEE_EXPORT_RSVP_STATUSES)[number];
 
+/** Mail-delivery filter buckets — the list's Mail column shows the LATEST delivery's status
+ * per attendee, so these buckets classify that latest status (not "any delivery ever"):
+ * `not_sent` = no delivery rows at all, `sent` = accepted/sent/delivered, `pending` = queued,
+ * `failed` = failed/bounced/rejected. Buckets rather than the seven raw statuses because
+ * that's the operator question ("who never got a mail / whose mail failed"), matching the
+ * Overview page's Sent/Pending/Failed email-delivery card. */
+export const ATTENDEE_MAIL_STATUS_FILTERS = ["not_sent", "sent", "pending", "failed"] as const;
+
+export type AttendeeMailStatusFilter = (typeof ATTENDEE_MAIL_STATUS_FILTERS)[number];
+
+const MAIL_FILTER_STATUS_SETS: Record<Exclude<AttendeeMailStatusFilter, "not_sent">, readonly string[]> = {
+  sent: EMAIL_DELIVERY_SUCCESS_STATUSES,
+  pending: ["queued"],
+  failed: ["failed", "bounced", "rejected"],
+};
+
 export type AttendeeListFilterParams = {
   q?: string;
   status: "all" | "admitted" | "not_admitted";
   ticket_type?: string;
   rsvp_status?: AttendeeExportRsvpStatus;
+  mail_status?: AttendeeMailStatusFilter;
 };
 
 /** Whitelisted sortable columns for the attendee list — Ticket sorts by the catalog's curated
@@ -135,6 +153,26 @@ function attendeeRsvpStatusSql(rsvp_status?: AttendeeExportRsvpStatus) {
   return rsvp_status ? Prisma.sql`AND a.rsvp_status = ${rsvp_status}` : Prisma.empty;
 }
 
+/** Latest-delivery mail-status filter, as a correlated subquery against "EmailDelivery" —
+ * "latest" must match what serializeAttendeeRow displays (newest by created_at, id as a
+ * deterministic tiebreak), and a correlated LIMIT 1 expresses that directly where a plain
+ * JOIN + IN would match ANY historical delivery. Per-attendee delivery counts are tiny
+ * (initial send + a few resends), so the subquery walks a handful of rows per candidate via
+ * the (attendee_id, event_id, status) index's leading column. */
+function attendeeMailStatusSql(mail_status?: AttendeeMailStatusFilter) {
+  if (!mail_status) return Prisma.empty;
+  if (mail_status === "not_sent") {
+    return Prisma.sql`AND NOT EXISTS (SELECT 1 FROM "EmailDelivery" ed WHERE ed.attendee_id = a.id)`;
+  }
+  const statuses = MAIL_FILTER_STATUS_SETS[mail_status];
+  return Prisma.sql`AND (
+    SELECT ed.status FROM "EmailDelivery" ed
+    WHERE ed.attendee_id = a.id
+    ORDER BY ed.created_at DESC, ed.id DESC
+    LIMIT 1
+  ) IN (${Prisma.join([...statuses])})`;
+}
+
 /** Search OR (columns + custom_data json), inlined in SQL — no id materialization. Empty when
  * there's no search term (the raw-SQL branch also runs, unsearched, for ticket_type sorting). */
 function attendeeSearchOrSql(q?: string) {
@@ -155,8 +193,10 @@ export async function countFilteredAttendees(
   eventId: string,
   params: AttendeeListFilterParams,
 ): Promise<number> {
-  const { q, status, ticket_type, rsvp_status } = params;
-  if (!q) {
+  const { q, status, ticket_type, rsvp_status, mail_status } = params;
+  // The latest-delivery mail filter (like search) has no Prisma-where equivalent — either one
+  // routes the count through the raw-SQL branch so it stays in lockstep with the list query.
+  if (!q && !mail_status) {
     return db.attendee.count({ where: buildAttendeeListWhere(eventId, params) });
   }
   const [{ count }] = await db.$queryRaw<[{ count: bigint }]>`
@@ -165,6 +205,7 @@ export async function countFilteredAttendees(
       ${attendeeStatusSql(status)}
       ${attendeeTicketTypeSql(ticket_type)}
       ${attendeeRsvpStatusSql(rsvp_status)}
+      ${attendeeMailStatusSql(mail_status)}
       ${attendeeSearchOrSql(q)}
   `;
   return Number(count);
@@ -179,7 +220,7 @@ export async function findFilteredAttendeesForList(
   sortBy: AttendeeSortBy = "name",
   sortDir: AttendeeSortDir = "asc",
 ): Promise<AttendeeListSqlRow[]> {
-  const { q, status, ticket_type, rsvp_status } = params;
+  const { q, status, ticket_type, rsvp_status, mail_status } = params;
   const skip = (page - 1) * pageSize;
   return db.$queryRaw<AttendeeListSqlRow[]>`
     SELECT a.id, a.name, a.email, a.company, a.department, a.custom_data, a.ticket_type, a.status, a.admitted_at, a.updated_at, a.rsvp_status
@@ -189,6 +230,7 @@ export async function findFilteredAttendeesForList(
       ${attendeeStatusSql(status)}
       ${attendeeTicketTypeSql(ticket_type)}
       ${attendeeRsvpStatusSql(rsvp_status)}
+      ${attendeeMailStatusSql(mail_status)}
       ${attendeeSearchOrSql(q)}
     ${attendeeOrderBySql(sortBy, sortDir)}
     LIMIT ${pageSize} OFFSET ${skip}
@@ -217,8 +259,8 @@ export async function findFilteredAttendeesForExport(
   eventId: string,
   params: AttendeeListFilterParams,
 ): Promise<ExportAttendeeSqlRow[]> {
-  const { q, status, ticket_type, rsvp_status } = params;
-  if (!q) {
+  const { q, status, ticket_type, rsvp_status, mail_status } = params;
+  if (!q && !mail_status) {
     return db.attendee.findMany({
       where: buildAttendeeListWhere(eventId, params),
       select: EXPORT_ATTENDEE_SELECT,
@@ -233,6 +275,7 @@ export async function findFilteredAttendeesForExport(
       ${attendeeStatusSql(status)}
       ${attendeeTicketTypeSql(ticket_type)}
       ${attendeeRsvpStatusSql(rsvp_status)}
+      ${attendeeMailStatusSql(mail_status)}
       ${attendeeSearchOrSql(q)}
     ORDER BY a.name ASC
     LIMIT ${EXPORT_ROW_CAP}

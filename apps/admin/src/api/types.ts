@@ -239,6 +239,9 @@ export interface AttendeesListResponse {
 export type AttendeeSortBy = "name" | "ticket_type" | "company" | "rsvp_status" | "status" | "admitted_at";
 export type AttendeeSortDir = "asc" | "desc";
 
+/** Latest-delivery mail filter buckets — mirrors ATTENDEE_MAIL_STATUS_FILTERS server-side. */
+export type AttendeeMailStatusFilter = "not_sent" | "sent" | "pending" | "failed";
+
 export interface AttendeesListParams {
   page?: number;
   pageSize?: number;
@@ -246,6 +249,7 @@ export interface AttendeesListParams {
   status?: "all" | "admitted" | "not_admitted";
   ticket_type?: string;
   rsvp_status?: RsvpStatus;
+  mail_status?: AttendeeMailStatusFilter;
   sortBy?: AttendeeSortBy;
   sortDir?: AttendeeSortDir;
 }

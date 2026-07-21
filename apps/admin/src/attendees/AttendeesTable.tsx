@@ -1,7 +1,18 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { Button, Card, Checkbox, EmptyState, IconButton, Input, Select, Skeleton } from "@admitto/ui";
-import type { AttendeeRowDto, AttendeeSortBy, AttendeeSortDir, RsvpStatus, TicketTypeDto } from "../api/types.js";
-import { ArchivedGuard, type ArchivedGuardEvent } from "../components/ArchivedGuard.js";
+import type {
+  AttendeeMailStatusFilter,
+  AttendeeRowDto,
+  AttendeeSortBy,
+  AttendeeSortDir,
+  RsvpStatus,
+  TicketTypeDto,
+} from "../api/types.js";
+import {
+  ARCHIVED_ACTION_TOOLTIP,
+  ArchivedGuard,
+  type ArchivedGuardEvent,
+} from "../components/ArchivedGuard.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { MailStatusBadge } from "./mailStatusBadge.js";
@@ -246,6 +257,7 @@ export interface AttendeesTableProps {
   statusFilter: "all" | "admitted" | "not_admitted";
   ticketTypeFilter: string;
   rsvpStatusFilter: "" | RsvpStatus;
+  mailStatusFilter: "" | AttendeeMailStatusFilter;
   ticketTypes?: TicketTypeDto[];
   /** Set when the ticket-type filter's own catalog failed to load - the rest of the table (and
    * the other filters) still work, so this renders as a small inline notice next to the Type
@@ -256,6 +268,7 @@ export interface AttendeesTableProps {
   onStatusFilterChange: (value: "all" | "admitted" | "not_admitted") => void;
   onTicketTypeFilterChange: (value: string) => void;
   onRsvpStatusFilterChange: (value: "" | RsvpStatus) => void;
+  onMailStatusFilterChange: (value: "" | AttendeeMailStatusFilter) => void;
   sortBy: AttendeeSortBy;
   sortDir: AttendeeSortDir;
   onSortChange: (column: AttendeeSortBy) => void;
@@ -358,6 +371,13 @@ function AttendeeCard({
   );
 }
 
+/** Mobile "Send tickets" menu item's disabled-title (Sonar S3358: was a nested ternary). */
+function bulkSendTicketsTooltip(archived: boolean, canBulkSend: boolean): string | undefined {
+  if (archived) return ARCHIVED_ACTION_TOOLTIP;
+  if (!canBulkSend) return "No mail transport configured for this event. Set one up in Event Settings → Mailing.";
+  return undefined;
+}
+
 /** Bulk "More actions" — Export selected, Change ticket type, and Delete, styled as a menu
  * (not bare buttons) so the destructive bulk action takes an extra click to even reach,
  * matching the design mockup's More actions panel and the same danger-item treatment already
@@ -366,6 +386,9 @@ function AttendeeCard({
 function BulkMoreActionsMenu({
   selectedCount,
   archived,
+  bulkSendBusy,
+  canBulkSend,
+  onBulkSendTickets,
   exportBusy,
   onExportSelected,
   ticketTypeCount,
@@ -378,6 +401,9 @@ function BulkMoreActionsMenu({
 }: Readonly<{
   selectedCount: number;
   archived: boolean;
+  bulkSendBusy: boolean;
+  canBulkSend: boolean;
+  onBulkSendTickets: () => void;
   exportBusy: boolean;
   onExportSelected: () => void;
   ticketTypeCount: number;
@@ -389,6 +415,7 @@ function BulkMoreActionsMenu({
   onDelete: () => void;
 }>) {
   const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+  const isDesktop = useIsDesktop();
 
   return (
     <div className="more-actions-menu" ref={rootRef}>
@@ -401,10 +428,37 @@ function BulkMoreActionsMenu({
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >
-        More actions
+        {/* Shortened below 768px — with its leading icon dropped too (attendees.css), "More
+         * actions" is the one label of the three bulk-bar buttons long enough to still not
+         * fit on one line otherwise (PO review: was wrapping onto a 3rd line). */}
+        {isDesktop ? "More actions" : "More"}
       </Button>
       {open && (
         <div className="more-actions-menu__panel" role="menu" ref={panelRef}>
+          {/* Below 768px only — "Send tickets" doesn't fit as its own button next to the
+           * count and "Check in" (attendees.css), so it lives here instead on mobile, first
+           * in the list since it's still one of the two most common bulk actions. */}
+          {!isDesktop && (
+            <button
+              type="button"
+              role="menuitem"
+              className="more-actions-menu__item"
+              disabled={archived || bulkSendBusy || !canBulkSend}
+              title={bulkSendTicketsTooltip(archived, canBulkSend)}
+              onClick={() => {
+                setOpen(false);
+                onBulkSendTickets();
+              }}
+            >
+              <i className="ti ti-send" aria-hidden="true" />
+              <span className="more-actions-menu__item-text">
+                <span>{bulkSendBusy ? "Sending…" : "Send tickets"}</span>
+                <span className="more-actions-menu__item-hint">
+                  Email tickets to {selectedCount} attendee{selectedCount === 1 ? "" : "s"}
+                </span>
+              </span>
+            </button>
+          )}
           {/* Not ArchivedGuard'd — exporting a selection is read-only, so it stays legal
            * after an event is archived. */}
           <button
@@ -473,7 +527,13 @@ function BulkMoreActionsMenu({
               onDelete();
             }}
           >
-            <i className="ti ti-trash" aria-hidden="true" /> Delete
+            <i className="ti ti-trash" aria-hidden="true" />
+            <span className="more-actions-menu__item-text">
+              <span>Delete</span>
+              <span className="more-actions-menu__item-hint">
+                Permanently remove {selectedCount} attendee{selectedCount === 1 ? "" : "s"}
+              </span>
+            </span>
           </button>
         </div>
       )}
@@ -525,74 +585,95 @@ function BulkBar({
   onBulkDelete: () => void;
 }>) {
   const archived = event.archived_at != null;
+  const isDesktop = useIsDesktop();
   return (
     <div className="attendees-bulkbar">
-      <span className="attendees-bulkbar__count">
-        <strong>{selectedIds.size}</strong> selected
-      </span>
-      <button
-        type="button"
-        className="attendees-bulkbar__clear"
-        onClick={onClearSelection}
-        aria-label="Clear selection"
-      >
-        <i className="ti ti-x" aria-hidden="true" />
-      </button>
-      <div className="attendees-bulkbar__spacer" />
-      <span className="attendees-bulkbar__sep" aria-hidden="true" />
-      <ArchivedGuard
-        event={event}
-        reasonId="bulk-send-tickets-reason"
-        disabled={bulkSendBusy || !canBulkSend}
-        tooltip={
-          !canBulkSend
-            ? "No mail transport configured for this event. Set one up in Event Settings → Mailing."
-            : undefined
-        }
-      >
-        {(guard) => (
-          <Button
-            variant="ghost"
-            icon={<i className="ti ti-send" aria-hidden="true" />}
-            {...guard}
-            onClick={onBulkSendTickets}
+      <div className="attendees-bulkbar__info">
+        <span className="attendees-bulkbar__count">
+          <strong>{selectedIds.size}</strong> selected
+        </span>
+        <button
+          type="button"
+          className="attendees-bulkbar__clear"
+          onClick={onClearSelection}
+          aria-label="Clear selection"
+        >
+          <i className="ti ti-x" aria-hidden="true" />
+        </button>
+      </div>
+      {/* Own wrapping group (not just spacer + buttons loose in the row) so it can sit
+       * flush against the row's right edge (margin-left: auto) without a dedicated spacer
+       * element. */}
+      <div className="attendees-bulkbar__actions">
+        <span className="attendees-bulkbar__sep" aria-hidden="true" />
+        {/* Desktop only below 768px, "Send tickets" moves into the "More" menu instead
+         * (attendees.css) — with the count and "Check in" it doesn't fit as its own button
+         * without the row growing taller than the toolbar it replaces (PO review: selecting
+         * attendees was visibly expanding the bar). */}
+        {isDesktop && (
+          <ArchivedGuard
+            event={event}
+            reasonId="bulk-send-tickets-reason"
+            disabled={bulkSendBusy || !canBulkSend}
+            tooltip={
+              !canBulkSend
+                ? "No mail transport configured for this event. Set one up in Event Settings → Mailing."
+                : undefined
+            }
           >
-            {bulkSendBusy ? "Sending…" : "Send tickets"}
-          </Button>
+            {(guard) => (
+              <Button
+                variant="ghost"
+                icon={<i className="ti ti-send" aria-hidden="true" />}
+                {...guard}
+                onClick={onBulkSendTickets}
+              >
+                {bulkSendBusy ? "Sending…" : "Send tickets"}
+              </Button>
+            )}
+          </ArchivedGuard>
         )}
-      </ArchivedGuard>
-      <ArchivedGuard event={event} reasonId="bulk-checkin-reason" disabled={bulkCheckInBusy}>
-        {(guard) => (
-          <Button
-            variant="ghost"
-            icon={<i className="ti ti-qrcode" aria-hidden="true" />}
-            {...guard}
-            onClick={onBulkCheckIn}
-          >
-            {bulkCheckInBusy ? "Checking in…" : "Check in"}
-          </Button>
-        )}
-      </ArchivedGuard>
-      <BulkMoreActionsMenu
-        selectedCount={selectedIds.size}
-        archived={archived}
-        exportBusy={bulkExportBusy}
-        onExportSelected={onBulkExportSelected}
-        ticketTypeCount={ticketTypes.length}
-        changeTicketTypeDisabled={archived || ticketTypes.length === 0}
-        changeTicketTypeDisabledReason={bulkChangeTicketTypeReason(archived, ticketTypesError)}
-        ticketTypesError={ticketTypesError}
-        onRetryTicketTypes={onRetryTicketTypes}
-        onChangeTicketType={onBulkChangeTicketType}
-        onDelete={onBulkDelete}
-      />
+        <ArchivedGuard event={event} reasonId="bulk-checkin-reason" disabled={bulkCheckInBusy}>
+          {(guard) => (
+            <Button
+              variant="ghost"
+              icon={<i className="ti ti-qrcode" aria-hidden="true" />}
+              {...guard}
+              onClick={onBulkCheckIn}
+            >
+              {bulkCheckInBusy ? "Checking in…" : "Check in"}
+            </Button>
+          )}
+        </ArchivedGuard>
+        <BulkMoreActionsMenu
+          selectedCount={selectedIds.size}
+          archived={archived}
+          bulkSendBusy={bulkSendBusy}
+          canBulkSend={canBulkSend}
+          onBulkSendTickets={onBulkSendTickets}
+          exportBusy={bulkExportBusy}
+          onExportSelected={onBulkExportSelected}
+          ticketTypeCount={ticketTypes.length}
+          changeTicketTypeDisabled={archived || ticketTypes.length === 0}
+          changeTicketTypeDisabledReason={bulkChangeTicketTypeReason(archived, ticketTypesError)}
+          ticketTypesError={ticketTypesError}
+          onRetryTicketTypes={onRetryTicketTypes}
+          onChangeTicketType={onBulkChangeTicketType}
+          onDelete={onBulkDelete}
+        />
+      </div>
     </div>
   );
 }
 
-/** Search box, the three filter selects (behind a "Filters" toggle below 768px), and — mobile
- * only, since there's no column header to click — a "Sort by" control. Owns its own open/close
- * state for the mobile filters panel; nothing outside this component needs it. */
+/** Search box + a single "Filters" trigger button. The four filter selects (and, on mobile,
+ * the "Sort by" control) live in a floating dropdown panel opened from that button — not
+ * inline in the row and not a horizontally-scrolling strip (both tried and rejected in PO
+ * review: inline wrapping changed the row's height, and a scrollable row still meant
+ * scrolling to reach a filter). A floating panel is `position: absolute`, so it overlays the
+ * table below instead of pushing it down — the row itself (search + one button) never
+ * changes size, at any viewport, whether the panel is open or closed. Same trigger+panel
+ * mechanism as the Export and More actions menus elsewhere on this page. */
 function FilterToolbar({
   searchInput,
   onSearchChange,
@@ -605,6 +686,8 @@ function FilterToolbar({
   onRetryTicketTypes,
   rsvpStatusFilter,
   onRsvpStatusFilterChange,
+  mailStatusFilter,
+  onMailStatusFilterChange,
   isDesktop,
   sortBy,
   sortDir,
@@ -621,15 +704,23 @@ function FilterToolbar({
   onRetryTicketTypes?: () => void;
   rsvpStatusFilter: "" | RsvpStatus;
   onRsvpStatusFilterChange: (value: "" | RsvpStatus) => void;
+  mailStatusFilter: "" | AttendeeMailStatusFilter;
+  onMailStatusFilterChange: (value: "" | AttendeeMailStatusFilter) => void;
   isDesktop: boolean;
   sortBy: AttendeeSortBy;
   sortDir: AttendeeSortDir;
   onSortChange: (column: AttendeeSortBy) => void;
 }>) {
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<
+    HTMLButtonElement,
+    HTMLFieldSetElement
+  >();
   const activeFilterCount =
-    (statusFilter !== "all" ? 1 : 0) + (rsvpStatusFilter !== "" ? 1 : 0) + (ticketTypeFilter !== "" ? 1 : 0);
+    (statusFilter !== "all" ? 1 : 0) +
+    (rsvpStatusFilter !== "" ? 1 : 0) +
+    (ticketTypeFilter !== "" ? 1 : 0) +
+    (mailStatusFilter !== "" ? 1 : 0);
 
   return (
     <div className="attendees-toolbar">
@@ -658,74 +749,106 @@ function FilterToolbar({
           </button>
         )}
       </div>
-      <button
-        type="button"
-        className="attendees-filters-toggle"
-        onClick={() => setFiltersOpen((v) => !v)}
-        aria-expanded={filtersOpen}
-      >
-        <i className="ti ti-filter" aria-hidden="true" />
-        Filters
-        {activeFilterCount > 0 && <span className="attendees-filters-toggle__count">{activeFilterCount}</span>}
-        <i className={`ti ti-chevron-${filtersOpen ? "up" : "down"}`} aria-hidden="true" />
-      </button>
-      <div className={`attendees-filters${filtersOpen ? " attendees-filters--open" : ""}`}>
-        {!isDesktop && <MobileSortControl sortBy={sortBy} sortDir={sortDir} onSortChange={onSortChange} />}
-        <div className="attendees-toolbar__filter">
-          <Select
-            id="attendees-filter-type"
-            name="attendees-filter-type"
-            aria-label="Filter by ticket type"
-            value={ticketTypeFilter}
-            onChange={(e) => onTicketTypeFilterChange(e.target.value)}
-          >
-            <option value="">All ticket types</option>
-            {ticketTypes.map((t) => (
-              <option key={t.key} value={t.key}>
-                {t.label}
-              </option>
-            ))}
-          </Select>
-          {ticketTypesError && (
-            <p className="mail-field-hint" role="alert">
-              {ticketTypesError}{" "}
-              {onRetryTicketTypes && (
-                <button type="button" className="link-btn" onClick={onRetryTicketTypes}>
-                  Retry
-                </button>
-              )}
-            </p>
+      <div className="attendees-filters-menu" ref={rootRef}>
+        <Button
+          ref={triggerRef}
+          type="button"
+          variant="secondary"
+          icon={<i className="ti ti-filter" aria-hidden="true" />}
+          hasMenu
+          aria-haspopup="true"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+        >
+          Filters
+          {activeFilterCount > 0 && (
+            <span className="attendees-filters-menu__count">{activeFilterCount}</span>
           )}
-        </div>
-        <div className="attendees-toolbar__filter">
-          <Select
-            id="attendees-filter-rsvp"
-            name="attendees-filter-rsvp"
-            aria-label="Filter by attendance"
-            value={rsvpStatusFilter}
-            onChange={(e) => onRsvpStatusFilterChange(e.target.value as "" | RsvpStatus)}
-          >
-            <option value="">All attendance statuses</option>
-            <option value="none">Registered</option>
-            <option value="confirmed">Confirmed</option>
-            <option value="declined">Declined</option>
-            <option value="tentative">Tentative</option>
-            <option value="cancelled">Cancelled</option>
-          </Select>
-        </div>
-        <div className="attendees-toolbar__filter">
-          <Select
-            id="attendees-filter-checkin"
-            name="attendees-filter-checkin"
-            aria-label="Filter by check-in status"
-            value={statusFilter}
-            onChange={(e) => onStatusFilterChange(e.target.value as "all" | "admitted" | "not_admitted")}
-          >
-            <option value="all">All check-ins</option>
-            <option value="admitted">Checked in</option>
-            <option value="not_admitted">Not checked in</option>
-          </Select>
-        </div>
+        </Button>
+        {open && (
+          // A native <fieldset> groups the selects below, not `role="menu"` (CodeRabbit review:
+          // aria-haspopup="menu" previously advertised a menu useDropdownMenu couldn't find a
+          // menuitem in, so focus never moved into the panel on open) nor `role="group"` on a
+          // plain div (SonarCloud S6819: prefer the native grouping element over the ARIA role).
+          <fieldset className="attendees-filters-menu__panel" ref={panelRef}>
+            <legend className="sr-only">Filters</legend>
+            {!isDesktop && (
+              <MobileSortControl sortBy={sortBy} sortDir={sortDir} onSortChange={onSortChange} />
+            )}
+            <div className="attendees-toolbar__filter">
+              <Select
+                id="attendees-filter-type"
+                name="attendees-filter-type"
+                aria-label="Filter by ticket type"
+                value={ticketTypeFilter}
+                onChange={(e) => onTicketTypeFilterChange(e.target.value)}
+              >
+                <option value="">All ticket types</option>
+                {ticketTypes.map((t) => (
+                  <option key={t.key} value={t.key}>
+                    {t.label}
+                  </option>
+                ))}
+              </Select>
+              {ticketTypesError && (
+                <p className="mail-field-hint" role="alert">
+                  {ticketTypesError}{" "}
+                  {onRetryTicketTypes && (
+                    <button type="button" className="link-btn" onClick={onRetryTicketTypes}>
+                      Retry
+                    </button>
+                  )}
+                </p>
+              )}
+            </div>
+            <div className="attendees-toolbar__filter">
+              <Select
+                id="attendees-filter-rsvp"
+                name="attendees-filter-rsvp"
+                aria-label="Filter by attendance"
+                value={rsvpStatusFilter}
+                onChange={(e) => onRsvpStatusFilterChange(e.target.value as "" | RsvpStatus)}
+              >
+                <option value="">All attendance statuses</option>
+                <option value="none">Registered</option>
+                <option value="confirmed">Confirmed</option>
+                <option value="declined">Declined</option>
+                <option value="tentative">Tentative</option>
+                <option value="cancelled">Cancelled</option>
+              </Select>
+            </div>
+            <div className="attendees-toolbar__filter">
+              <Select
+                id="attendees-filter-checkin"
+                name="attendees-filter-checkin"
+                aria-label="Filter by check-in status"
+                value={statusFilter}
+                onChange={(e) => onStatusFilterChange(e.target.value as "all" | "admitted" | "not_admitted")}
+              >
+                <option value="all">All check-ins</option>
+                <option value="admitted">Checked in</option>
+                <option value="not_admitted">Not checked in</option>
+              </Select>
+            </div>
+            <div className="attendees-toolbar__filter">
+              {/* Buckets over raw delivery statuses — filters the same latest-delivery status
+                * the Mail column badge shows (#522). */}
+              <Select
+                id="attendees-filter-mail"
+                name="attendees-filter-mail"
+                aria-label="Filter by mail delivery status"
+                value={mailStatusFilter}
+                onChange={(e) => onMailStatusFilterChange(e.target.value as "" | AttendeeMailStatusFilter)}
+              >
+                <option value="">All mail statuses</option>
+                <option value="not_sent">Not sent</option>
+                <option value="sent">Sent</option>
+                <option value="pending">Pending</option>
+                <option value="failed">Failed</option>
+              </Select>
+            </div>
+          </fieldset>
+        )}
       </div>
     </div>
   );
@@ -883,8 +1006,8 @@ function AttendeesListContent({
                   className="attendees-row-btn attendees-table-v2__attendee"
                   onClick={() => onViewAttendee(row.id)}
                 >
-                  <span className="attendees-table-v2__name">{row.name}</span>
-                  <span className="attendees-table-v2__email">{row.email}</span>
+                  <span className="attendees-table-v2__name" title={row.name}>{row.name}</span>
+                  <span className="attendees-table-v2__email" title={row.email}>{row.email}</span>
                 </button>
               </td>
               <td>
@@ -954,6 +1077,7 @@ export function AttendeesTable({
   statusFilter,
   ticketTypeFilter,
   rsvpStatusFilter,
+  mailStatusFilter,
   ticketTypes = [],
   ticketTypesError,
   onRetryTicketTypes,
@@ -961,6 +1085,7 @@ export function AttendeesTable({
   onStatusFilterChange,
   onTicketTypeFilterChange,
   onRsvpStatusFilterChange,
+  onMailStatusFilterChange,
   sortBy,
   sortDir,
   onSortChange,
@@ -1024,6 +1149,8 @@ export function AttendeesTable({
           onRetryTicketTypes={onRetryTicketTypes}
           rsvpStatusFilter={rsvpStatusFilter}
           onRsvpStatusFilterChange={onRsvpStatusFilterChange}
+          mailStatusFilter={mailStatusFilter}
+          onMailStatusFilterChange={onMailStatusFilterChange}
           isDesktop={isDesktop}
           sortBy={sortBy}
           sortDir={sortDir}

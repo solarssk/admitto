@@ -124,7 +124,7 @@ function bulkBar() {
 function openAndArmDeleteDialog() {
   fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
   vi.useFakeTimers();
-  fireEvent.click(bulkBar().getByRole("menuitem", { name: "Delete" }));
+  fireEvent.click(bulkBar().getByRole("menuitem", { name: /^Delete/ }));
   const dialog = screen.getByRole("dialog");
   act(() => {
     vi.advanceTimersByTime(10_000);
@@ -151,7 +151,7 @@ describe("AttendeesPage row selection + bulk bar (#355)", () => {
 
     renderPage();
 
-    await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
+    await screen.findByText("Jane Doe");
     expect(document.querySelector(".attendees-bulkbar")).toBeNull();
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
@@ -167,7 +167,7 @@ describe("AttendeesPage row selection + bulk bar (#355)", () => {
 
     renderPage();
 
-    await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
+    await screen.findByText("Jane Doe");
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Select all" }));
     await waitFor(() => expect(bulkBar().getByText("3")).toBeTruthy());
@@ -184,7 +184,7 @@ describe("AttendeesPage row selection + bulk bar (#355)", () => {
 
     renderPage();
 
-    await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
+    await screen.findByText("Jane Doe");
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
@@ -200,7 +200,7 @@ describe("AttendeesPage row selection + bulk bar (#355)", () => {
 
     renderPage();
 
-    await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
+    await screen.findByText("Jane Doe");
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Select John Smith" }));
     await waitFor(() => expect(bulkBar().getByText("2")).toBeTruthy());
@@ -229,7 +229,7 @@ describe("AttendeesPage row selection + bulk bar (#355)", () => {
 
     renderPage();
 
-    await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
+    await screen.findByText("Jane Doe");
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
@@ -250,7 +250,7 @@ describe("AttendeesPage row selection + bulk bar (#355)", () => {
 
     renderPage();
 
-    await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
+    await screen.findByText("Jane Doe");
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
 
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
@@ -266,7 +266,7 @@ describe("AttendeesPage row selection + bulk bar (#355)", () => {
 
     renderPage();
 
-    await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
+    await screen.findByText("Jane Doe");
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
@@ -767,6 +767,22 @@ describe("AttendeesPage bulk export selected (#520)", () => {
     expect(bulkBar().getByText("CSV of 2 attendees")).toBeTruthy();
   });
 
+  it("shows dynamic hints on 'Send tickets' and 'Delete' too, matching 'Export selected' (PO review — consistency)", async () => {
+    // "Send tickets" only lives in this menu below 768px (its own button on desktop).
+    mockMatchMedia(false);
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More" }));
+    expect(bulkBar().getByText("Email tickets to 1 attendee")).toBeTruthy();
+    expect(bulkBar().getByText("Permanently remove 1 attendee")).toBeTruthy();
+  });
+
   it("toasts an operator-safe error and keeps the selection when the export fails", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
@@ -947,6 +963,27 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     });
   });
 
+  it("toasts an error (not the 'already had it' message) when none of the selected attendees could be found (#521 code review)", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchTicketTypes.mockResolvedValue(catalog);
+    // Both zero — nothing was found at all, distinct from "found but already had it"
+    // (updatedCount: 0, alreadySetCount > 0), which is a different, non-error toast below.
+    bulkChangeTicketType.mockResolvedValue({ updatedCount: 0, alreadySetCount: 0 });
+
+    await selectTwoRowsAndOpenMenu();
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change ticket type/ }));
+    const dialog = screen.getByRole("dialog", { name: "Change ticket type" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        "None of the selected attendees could be found — they may have been removed.",
+        "error",
+      );
+    });
+    expect(addToast).not.toHaveBeenCalledWith(expect.stringContaining("already have"), expect.anything());
+  });
+
   it("shows the deleted-type error inline in the dialog and keeps the selection", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
@@ -1015,12 +1052,17 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     expect(item.title).toContain("No ticket types configured");
   });
 
-  it("blames a failed catalog load, not 'no types configured', when the fetch itself failed (Codex review)", async () => {
+  it("blames a failed catalog load, not 'no types configured', when the fetch itself failed (#521 code review)", async () => {
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
     fetchTicketTypes.mockRejectedValue(new Error("network down"));
 
     renderPage();
     await screen.findByText("Jane Doe");
+    // The error sits inside the Filters dropdown panel now (PO review) — open it to confirm
+    // the ticketTypesError state has actually settled before proceeding.
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    await screen.findByText("Couldn't load types.");
+
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
     fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
@@ -1054,5 +1096,68 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     });
     // The selection survives the retry — the whole point was not losing it.
     expect(bulkBar().getByText("1")).toBeTruthy();
+  });
+});
+
+describe("AttendeesPage bulk bar on mobile (PO review — bar must never change height)", () => {
+  it("shortens 'More actions' to 'More' below 768px so it fits alongside the count, and the menu still works", async () => {
+    mockMatchMedia(false);
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    expect(bulkBar().queryByRole("button", { name: "More actions" })).toBeNull();
+    fireEvent.click(bulkBar().getByRole("button", { name: "More" }));
+    expect(bulkBar().getByRole("menuitem", { name: /Export selected/ })).toBeTruthy();
+  });
+
+  it("keeps the full 'More actions' label at desktop widths", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    expect(bulkBar().getByRole("button", { name: "More actions" })).toBeTruthy();
+  });
+
+  it("moves 'Send tickets' into the 'More' menu below 768px instead of its own button, so count + Check in + More fit one line", async () => {
+    mockMatchMedia(false);
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 1, skipped: 0, failed: 0 });
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    expect(bulkBar().queryByRole("button", { name: "Send tickets" })).toBeNull();
+    expect(bulkBar().getByRole("button", { name: "Check in" })).toBeTruthy();
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /^Send tickets/ }));
+    const confirmDialog = screen.getByRole("dialog", { name: "Send tickets?" });
+    fireEvent.click(within(confirmDialog).getByRole("button", { name: "Send tickets" }));
+
+    await waitFor(() => {
+      expect(sendEventBulk).toHaveBeenCalledWith("evt-1", {
+        filter: { type: "attendee_ids", ids: ["att-1"] },
+      });
+    });
+  });
+
+  it("keeps 'Send tickets' as its own button at desktop widths", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    expect(bulkBar().getByRole("button", { name: "Send tickets" })).toBeTruthy();
   });
 });

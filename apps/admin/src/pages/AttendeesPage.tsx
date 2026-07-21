@@ -20,6 +20,7 @@ import type {
   AttendeeRowDto,
   AttendeeSortBy,
   AttendeeSortDir,
+  AttendeeMailStatusFilter,
   EventDto,
   RsvpStatus,
   TicketTypeDto,
@@ -33,6 +34,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
+import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import "../attendees/add-attendee-modal.css";
 import "../attendees/attendees.css";
 
@@ -53,6 +55,13 @@ function mergeAttendeeRow(prev: AttendeeRowDto, updated: AttendeeDetailDto): Att
 
 function pluralize(count: number, singular: string): string {
   return count === 1 ? singular : `${singular}s`;
+}
+
+/** Header "Send tickets" button label — busy state wins, then the responsive short label
+ * (Sonar S3358: was a nested ternary). */
+function sendTicketsButtonLabel(sendBusy: boolean, isDesktop: boolean): string {
+  if (sendBusy) return "Sending…";
+  return isDesktop ? "Send tickets" : "Send";
 }
 
 /** Standard "N queued / M failed / K skipped" toast for a bulk-send queue result — shared by
@@ -261,7 +270,7 @@ function ChangeTicketTypeDialog({
               <input
                 type="radio"
                 name="bulk-ticket-type"
-                className="change-type-option__input"
+                className="sr-only"
                 value={type.key}
                 checked={value === type.key}
                 disabled={busy}
@@ -354,6 +363,7 @@ export function AttendeesPage() {
   const navigate = useNavigate();
   const { addToast } = useToast();
   const { reportApiError } = useConnectionState();
+  const isDesktop = useIsDesktop();
   const listAbortRef = useRef<AbortController | null>(null);
   const exportAbortRef = useRef<AbortController | null>(null);
   const bulkExportAbortRef = useRef<AbortController | null>(null);
@@ -371,6 +381,7 @@ export function AttendeesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "admitted" | "not_admitted">("all");
   const [rsvpStatusFilter, setRsvpStatusFilter] = useState<"" | RsvpStatus>("");
+  const [mailStatusFilter, setMailStatusFilter] = useState<"" | AttendeeMailStatusFilter>("");
   const [ticketTypeFilter, setTicketTypeFilter] = useState("");
   const [sortBy, setSortBy] = useState<AttendeeSortBy>("name");
   const [sortDir, setSortDir] = useState<AttendeeSortDir>("asc");
@@ -462,6 +473,7 @@ export function AttendeesPage() {
           status: statusFilter,
           ticket_type: ticketTypeFilter || undefined,
           rsvp_status: rsvpStatusFilter || undefined,
+          mail_status: mailStatusFilter || undefined,
           sortBy,
           sortDir,
         },
@@ -502,6 +514,7 @@ export function AttendeesPage() {
     statusFilter,
     ticketTypeFilter,
     rsvpStatusFilter,
+    mailStatusFilter,
     sortBy,
     sortDir,
     reportApiError,
@@ -536,6 +549,7 @@ export function AttendeesPage() {
             status: statusFilter,
             ticket_type: ticketTypeFilter || undefined,
             rsvp_status: rsvpStatusFilter || undefined,
+            mail_status: mailStatusFilter || undefined,
           },
           format,
           ac.signal,
@@ -557,7 +571,7 @@ export function AttendeesPage() {
         if (!ac.signal.aborted) setExportingFormat(null);
       }
     },
-    [eventId, searchQuery, statusFilter, ticketTypeFilter, rsvpStatusFilter, reportApiError, addToast],
+    [eventId, searchQuery, statusFilter, ticketTypeFilter, rsvpStatusFilter, mailStatusFilter, reportApiError, addToast],
   );
 
   const handleCreated = (attendee: AttendeeDetailDto) => {
@@ -788,7 +802,13 @@ export function AttendeesPage() {
         changeTypeValue,
       );
       if (!isStillOnEvent()) return;
-      if (updatedCount === 0) {
+      if (updatedCount === 0 && alreadySetCount === 0) {
+        // None of the selected ids resolved to an attendee in this event — most likely they
+        // were deleted by someone else between opening the picker and clicking Apply (code
+        // review: this used to fall into the "already had it" branch below, which is wrong —
+        // nothing was found at all, let alone already set to the type).
+        addToast("None of the selected attendees could be found — they may have been removed.", "error");
+      } else if (updatedCount === 0) {
         addToast(`All selected attendees already have ${typeLabel}.`, "info");
       } else {
         const alreadyNote = alreadySetCount > 0 ? ` (${alreadySetCount} already had it)` : "";
@@ -860,7 +880,12 @@ export function AttendeesPage() {
   };
 
   const isUnfilteredEmpty =
-    total === 0 && !searchQuery && statusFilter === "all" && !ticketTypeFilter && !rsvpStatusFilter;
+    total === 0 &&
+    !searchQuery &&
+    statusFilter === "all" &&
+    !ticketTypeFilter &&
+    !rsvpStatusFilter &&
+    !mailStatusFilter;
 
   if (!eventId) return <p>Missing event.</p>;
 
@@ -869,6 +894,7 @@ export function AttendeesPage() {
       <PageHeader
         title="Attendees"
         subtitle="Manage attendee records and resend tickets."
+        className="attendees-pageheader"
         actions={
           <>
             {isEventArchived(event) ? (
@@ -887,7 +913,10 @@ export function AttendeesPage() {
             <ArchivedGuard event={event} reasonId="add-attendee-reason" placement="below">
               {(guard) => (
                 <Button variant="primary" {...guard} onClick={() => setAddOpen(true)}>
-                  + Add attendee
+                  {/* Shortened below 768px (attendees.css compacts these 4 buttons to fit one
+                   * line, matching the bulk bar's own "never changes height" fix) — "+ Add
+                   * attendee" is the one label still too long to fit even fully compacted. */}
+                  {isDesktop ? "+ Add attendee" : "+ Add"}
                 </Button>
               )}
             </ArchivedGuard>
@@ -912,7 +941,7 @@ export function AttendeesPage() {
                     setSendTicketsOpen(true);
                   }}
                 >
-                  {sendBusy ? "Sending…" : "Send tickets"}
+                  {sendTicketsButtonLabel(sendBusy, isDesktop)}
                 </Button>
               )}
             </ArchivedGuard>
@@ -944,6 +973,7 @@ export function AttendeesPage() {
         statusFilter={statusFilter}
         ticketTypeFilter={ticketTypeFilter}
         rsvpStatusFilter={rsvpStatusFilter}
+        mailStatusFilter={mailStatusFilter}
         ticketTypes={ticketTypes}
         ticketTypesError={ticketTypesError}
         onRetryTicketTypes={() => setTicketTypesRetryToken((n) => n + 1)}
@@ -958,6 +988,10 @@ export function AttendeesPage() {
         }}
         onRsvpStatusFilterChange={(v) => {
           setRsvpStatusFilter(v);
+          setPage(1);
+        }}
+        onMailStatusFilterChange={(v) => {
+          setMailStatusFilter(v);
           setPage(1);
         }}
         sortBy={sortBy}

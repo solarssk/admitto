@@ -191,7 +191,7 @@ describe("AttendeesPage archived lockdown", () => {
     const moreActionsButton = within(bar).getByRole("button", { name: "More actions" });
     expect((moreActionsButton as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(moreActionsButton);
-    const deleteItem = within(bar).getByRole("menuitem", { name: "Delete" });
+    const deleteItem = within(bar).getByRole("menuitem", { name: /^Delete/ });
     expect((deleteItem as HTMLButtonElement).disabled).toBe(false);
   });
 });

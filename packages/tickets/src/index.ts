@@ -60,6 +60,7 @@ export { writeActionLog, writeActionLogMany, writeBulkActionLog } from "./ops-au
 export { writeAdminAuditLog } from "./admin-audit.js";
 export {
   ATTENDEE_EXPORT_RSVP_STATUSES,
+  ATTENDEE_MAIL_STATUS_FILTERS,
   ATTENDEE_SORT_COLUMNS,
   EXPORT_ROW_CAP,
   buildAttendeeListWhere,
@@ -71,6 +72,7 @@ export {
 export type {
   AttendeeExportRsvpStatus,
   AttendeeListFilterParams,
+  AttendeeMailStatusFilter,
   AttendeeListSqlRow,
   AttendeeSortBy,
   AttendeeSortDir,

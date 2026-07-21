@@ -27,6 +27,7 @@ import {
   writeBulkActionLog,
   type EventItemContent,
   ATTENDEE_EXPORT_RSVP_STATUSES,
+  ATTENDEE_MAIL_STATUS_FILTERS,
   ATTENDEE_SORT_COLUMNS,
   EXPORT_ROW_CAP,
   countFilteredAttendees,
@@ -45,6 +46,7 @@ import {
   UnknownTicketTypeError,
   acquireEventTicketTypesLock,
   type AdmitResult,
+  type AttendeeMailStatusFilter,
   type AttendeeSortBy,
   type AttendeeSortDir,
   type ExportAttendeeSqlRow,
@@ -377,7 +379,7 @@ async function auditAttendeesExported(
   format: "xlsx" | "csv" | "pdf",
   count: number,
   filters:
-    | { status: string; ticket_type?: string; has_query: boolean }
+    | { status: string; ticket_type?: string; mail_status?: string; has_query: boolean }
     | { selected_count: number },
 ): Promise<void> {
   await db.$transaction(async (tx) => {
@@ -394,6 +396,7 @@ async function auditAttendeesExported(
             : {
                 status: filters.status,
                 ticket_type: filters.ticket_type ?? null,
+                mail_status: filters.mail_status ?? null,
                 has_query: filters.has_query,
               },
       },
@@ -535,7 +538,7 @@ async function loadAttendeeInEvent(
   return row;
 }
 
-/** Parse and clamp list query params (`page`, `pageSize`, `q`, `status`, `ticket_type`, `sortBy`, `sortDir`). */
+/** Parse and clamp list query params (`page`, `pageSize`, `q`, `status`, `ticket_type`, `mail_status`, `sortBy`, `sortDir`). */
 function parseListQuery(c: Context): {
   page: number;
   pageSize: number;
@@ -543,6 +546,7 @@ function parseListQuery(c: Context): {
   status: "all" | "admitted" | "not_admitted";
   ticket_type?: string;
   rsvp_status?: RsvpStatus;
+  mail_status?: AttendeeMailStatusFilter;
   sortBy: AttendeeSortBy;
   sortDir: AttendeeSortDir;
 } {
@@ -559,16 +563,26 @@ function parseListQuery(c: Context): {
   const rsvp_status = RSVP_STATUSES.includes(rsvpRaw as RsvpStatus)
     ? (rsvpRaw as RsvpStatus)
     : undefined;
+  const mailStatusRaw = c.req.query("mail_status")?.trim();
+  const mail_status = ATTENDEE_MAIL_STATUS_FILTERS.includes(mailStatusRaw as AttendeeMailStatusFilter)
+    ? (mailStatusRaw as AttendeeMailStatusFilter)
+    : undefined;
   const sortByRaw = c.req.query("sortBy");
   const sortBy = ATTENDEE_SORT_COLUMNS.includes(sortByRaw as AttendeeSortBy)
     ? (sortByRaw as AttendeeSortBy)
     : "name";
   const sortDirRaw = c.req.query("sortDir");
   const sortDir: AttendeeSortDir = sortDirRaw === "desc" ? "desc" : "asc";
-  return { page, pageSize, q, status, ticket_type, rsvp_status, sortBy, sortDir };
+  return { page, pageSize, q, status, ticket_type, rsvp_status, mail_status, sortBy, sortDir };
 }
 
-/** Latest email delivery status per attendee id (one entry per id). */
+/** Latest email delivery status per attendee id (one entry per id). Tiebreak on `id` desc
+ * after `created_at` desc, not just created_at — two deliveries for the same attendee can
+ * share a millisecond timestamp (e.g. a resend queued in the same request), and without a
+ * deterministic tiebreak here this could disagree with attendeeMailStatusSql's `mail_status`
+ * filter (packages/tickets/attendees-list-filters.ts), which already tiebreaks the same way
+ * specifically so the Mail column badge and the filter always agree on "latest" (code
+ * review). */
 async function lastMailStatusByAttendee(
   db: PrismaClient,
   attendeeIds: string[],
@@ -578,7 +592,7 @@ async function lastMailStatusByAttendee(
   const deliveries = await db.emailDelivery.findMany({
     where: { attendee_id: { in: attendeeIds } },
     select: { attendee_id: true, status: true },
-    orderBy: { created_at: "desc" },
+    orderBy: [{ created_at: "desc" }, { id: "desc" }],
   });
 
   const map = new Map<string, string>();
@@ -759,9 +773,9 @@ export async function handleListEventAttendees(c: Context, db: PrismaClient): Pr
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
-  const { page, pageSize, q, status, ticket_type, rsvp_status, sortBy, sortDir } = parseListQuery(c);
+  const { page, pageSize, q, status, ticket_type, rsvp_status, mail_status, sortBy, sortDir } = parseListQuery(c);
 
-  const filterParams = { q, status, ticket_type, rsvp_status };
+  const filterParams = { q, status, ticket_type, rsvp_status, mail_status };
 
   const [total, rows] = await Promise.all([
     countFilteredAttendees(db, eventId, filterParams),
@@ -794,7 +808,9 @@ async function buildExportFileResponse(
   rows: ExportAttendeeSqlRow[],
   format: ExportFormat,
   event: { title: string; date: Date; timezone: string },
-  auditFilters: { status: string; ticket_type?: string; has_query: boolean } | { selected_count: number },
+  auditFilters:
+    | { status: string; ticket_type?: string; mail_status?: string; has_query: boolean }
+    | { selected_count: number },
 ): Promise<Response> {
   const timeZone = resolvePreviewEventTimeZone(event.timezone);
   const [attributeFieldsResult, ticketTypes] = await Promise.all([
@@ -875,8 +891,8 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
   }
   const format = formatRaw;
 
-  const { q, status, ticket_type, rsvp_status } = parseListQuery(c);
-  const filterParams = { q, status, ticket_type, rsvp_status };
+  const { q, status, ticket_type, rsvp_status, mail_status } = parseListQuery(c);
+  const filterParams = { q, status, ticket_type, rsvp_status, mail_status };
 
   const event = await db.event.findUnique({
     where: { id: eventId },
@@ -895,6 +911,7 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
   return buildExportFileResponse(db, c, eventId, rows, format, event, {
     status,
     ticket_type,
+    mail_status,
     has_query: Boolean(q),
   });
 }

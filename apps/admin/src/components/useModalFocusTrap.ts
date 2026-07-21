@@ -1,7 +1,5 @@
 import { useEffect, useRef, type RefObject } from "react";
-
-const FOCUSABLE =
-  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+import { FOCUSABLE_SELECTOR } from "./focusable.js";
 
 /** Trap focus inside a modal panel, close on Escape, lock body scroll while open. */
 export function useModalFocusTrap(
@@ -22,7 +20,7 @@ export function useModalFocusTrap(
 
     const panel = panelRef.current;
     const queryFocusables = (): HTMLElement[] =>
-      panel ? Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)) : [];
+      panel ? Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)) : [];
     queryFocusables()[0]?.focus();
 
     const onKeyDown = (event: KeyboardEvent) => {

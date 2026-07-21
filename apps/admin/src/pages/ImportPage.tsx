@@ -23,6 +23,7 @@ import { isSuperadmin } from "../auth/capabilities.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { formatEventDateTime } from "../utils/event-dates.js";
+import { formatFileSize } from "../utils/formatFileSize.js";
 import "../attendees/attendees.css";
 import "./import.css";
 
@@ -478,7 +479,7 @@ export function ImportPage() {
                         <span className="import-file-chip__meta">
                           {preview
                             ? `${preview.parse.validCount} valid ${pluralize(preview.parse.validCount, "row")}`
-                            : `${Math.max(1, Math.round(file.size / 1024))} KB`}
+                            : formatFileSize(file.size)}
                         </span>
                       </div>
                       <button
@@ -515,7 +516,7 @@ export function ImportPage() {
                   )}
                   {/* Visually hidden but still labelled — the dropzone proxies clicks to it, and
                    * it stays the real form control (tests and assistive tech target it). */}
-                  <div className="import-field import-field--visually-hidden">
+                  <div className="import-field sr-only">
                     <label className="import-label" htmlFor="import-file">
                       File (.csv or .xlsx)
                     </label>
@@ -524,7 +525,7 @@ export function ImportPage() {
                       ref={fileInputRef}
                       type="file"
                       accept=".csv,.xlsx"
-                      disabled={loading}
+                      disabled={loading || step === "preview"}
                       // Out of the tab order — the visible dropzone button right before it is
                       // the real keyboard activation path; without this, Tab from the dropzone
                       // landed on this invisible native control next, with no visible focus

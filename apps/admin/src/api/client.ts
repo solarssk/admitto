@@ -1,6 +1,7 @@
 import type {
   AttendeeCardDto,
   AttendeeDetailDto,
+  AttendeeMailStatusFilter,
   AttendeesListParams,
   AttendeesListResponse,
   BrandingThemeDto,
@@ -682,6 +683,7 @@ function attendeesListQuery(eventId: string, params: AttendeesListParams = {}): 
   if (params.status && params.status !== "all") q.set("status", params.status);
   if (params.ticket_type) q.set("ticket_type", params.ticket_type);
   if (params.rsvp_status) q.set("rsvp_status", params.rsvp_status);
+  if (params.mail_status) q.set("mail_status", params.mail_status);
   if (params.sortBy && params.sortBy !== "name") q.set("sortBy", params.sortBy);
   if (params.sortDir && params.sortDir !== "asc") q.set("sortDir", params.sortDir);
   const qs = q.toString();
@@ -778,8 +780,6 @@ export async function bulkDeleteAttendees(
   return parseJson<{ deletedCount: number }>(res);
 }
 
-/** Manually check in a selection of attendees at once (no QR scan), from the Attendees list's
- * row-selection bulk bar. Same single-use CAS admission path as scan check-in. */
 export interface BulkTicketTypeResponse {
   updatedCount: number;
   alreadySetCount: number;
@@ -799,6 +799,8 @@ export async function bulkChangeTicketType(
   return parseJson<BulkTicketTypeResponse>(res);
 }
 
+/** Manually check in a selection of attendees at once (no QR scan), from the Attendees list's
+ * row-selection bulk bar. Same single-use CAS admission path as scan check-in. */
 export async function bulkCheckInAttendees(
   eventId: string,
   attendeeIds: string[],
@@ -1216,6 +1218,7 @@ export async function exportAttendees(
     status?: string;
     ticket_type?: string;
     rsvp_status?: RsvpStatus;
+    mail_status?: AttendeeMailStatusFilter;
   },
   format: AttendeeExportFormat,
   signal?: AbortSignal,
@@ -1225,6 +1228,7 @@ export async function exportAttendees(
   if (params.status && params.status !== "all") urlParams.set("status", params.status);
   if (params.ticket_type) urlParams.set("ticket_type", params.ticket_type);
   if (params.rsvp_status) urlParams.set("rsvp_status", params.rsvp_status);
+  if (params.mail_status) urlParams.set("mail_status", params.mail_status);
 
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/attendees/export?${urlParams.toString()}`,
