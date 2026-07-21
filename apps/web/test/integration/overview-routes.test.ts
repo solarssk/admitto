@@ -19,6 +19,7 @@ const EVENT_ARCHIVED = "evt-overview-archived";
 const EVENT_OTHER = "evt-overview-other";
 const EVENT_CAP = "evt-overview-capacity";
 const EVENT_MISSING = "evt-overview-missing";
+const EVENT_ACTIVITY = "evt-overview-activity";
 
 const EMAIL_SUPER = "overview-super@example.com";
 const EMAIL_ADMIN = "overview-admin@example.com";
@@ -30,6 +31,12 @@ const ATT_MAIN = Array.from({ length: 10 }, (_, i) => `att-overview-main-${i + 1
 const ATT_CAP = Array.from({ length: 150 }, (_, i) => `att-overview-cap-${i + 1}`);
 const ATT_OTHER = "att-overview-other-1";
 const ATT_EMAIL = Array.from({ length: 13 }, (_, i) => `att-overview-email-${i + 1}`);
+
+const ATT_ACT_STD_1 = "att-overview-activity-std-1";
+const ATT_ACT_STD_2 = "att-overview-activity-std-2";
+const ATT_ACT_VIP_1 = "att-overview-activity-vip-1";
+const ATT_ACT_NONE = "att-overview-activity-none";
+const ATT_ACT_REVOKED = "att-overview-activity-revoked";
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
@@ -43,9 +50,12 @@ let adminBCookie = "";
 let opCookie = "";
 
 async function seed(client: PrismaClient) {
-  const eventIds = [EVENT_MAIN, EVENT_EMPTY, EVENT_ARCHIVED, EVENT_OTHER, EVENT_CAP];
+  const eventIds = [EVENT_MAIN, EVENT_EMPTY, EVENT_ARCHIVED, EVENT_OTHER, EVENT_CAP, EVENT_ACTIVITY];
+  await client.checkIn.deleteMany({ where: { event_id: { in: eventIds } } });
+  await client.attendeeActionLog.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.emailDelivery.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.attendee.deleteMany({ where: { event_id: { in: eventIds } } });
+  await client.ticketType.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.roleAssignment.deleteMany({
     where: { OR: [{ scope_id: { in: [ORG_OV, ORG_OV_B, ...eventIds] } }] },
   });
@@ -113,6 +123,23 @@ async function seed(client: PrismaClient) {
         capacity: 200,
         organization_id: ORG_OV,
       },
+      {
+        id: EVENT_ACTIVITY,
+        title: "Overview Activity Event",
+        slug: "overview-activity",
+        date: new Date("2027-02-01T12:00:00.000Z"),
+        // UTC keeps hour-bucketing assertions below trivial to reason about.
+        timezone: "UTC",
+        organization_id: ORG_OV,
+      },
+    ],
+  });
+
+  await client.ticketType.createMany({
+    data: [
+      { event_id: EVENT_ACTIVITY, key: "standard", label: "Standard", color: "gray", sort_order: 0 },
+      { event_id: EVENT_ACTIVITY, key: "vip", label: "VIP", color: "purple", sort_order: 1 },
+      { event_id: EVENT_ACTIVITY, key: "press", label: "Press", color: "blue", sort_order: 2 },
     ],
   });
 
@@ -244,6 +271,122 @@ async function seed(client: PrismaClient) {
       recipient_email: "other-guest@example.com",
     },
   });
+
+  await client.attendee.createMany({
+    data: [
+      {
+        id: ATT_ACT_STD_1,
+        event_id: EVENT_ACTIVITY,
+        email: "activity-std-1@example.com",
+        name: "Activity Standard One",
+        ticket_type: "standard",
+      },
+      {
+        id: ATT_ACT_STD_2,
+        event_id: EVENT_ACTIVITY,
+        email: "activity-std-2@example.com",
+        name: "Activity Standard Two",
+        ticket_type: "standard",
+      },
+      {
+        id: ATT_ACT_VIP_1,
+        event_id: EVENT_ACTIVITY,
+        email: "activity-vip-1@example.com",
+        name: "Activity VIP One",
+        ticket_type: "vip",
+      },
+      {
+        id: ATT_ACT_NONE,
+        event_id: EVENT_ACTIVITY,
+        email: "activity-none@example.com",
+        name: "Activity No Type",
+      },
+      {
+        id: ATT_ACT_REVOKED,
+        event_id: EVENT_ACTIVITY,
+        email: "activity-revoked@example.com",
+        name: "Activity Revoked",
+        ticket_type: "standard",
+        status: "revoked",
+      },
+    ],
+  });
+
+  // Two VALID check-ins land in the 08:00 hour (busiest), one in 10:00 (most recent overall).
+  // The 23:00 ALREADY_CHECKED_IN row is later still but must not count for either stat.
+  await client.checkIn.createMany({
+    data: [
+      {
+        id: "checkin-overview-activity-1",
+        attendee_id: ATT_ACT_STD_1,
+        event_id: EVENT_ACTIVITY,
+        checked_in_at: new Date("2027-02-01T08:00:00.000Z"),
+        status: "VALID",
+        source: "scan",
+      },
+      {
+        id: "checkin-overview-activity-2",
+        attendee_id: ATT_ACT_STD_2,
+        event_id: EVENT_ACTIVITY,
+        checked_in_at: new Date("2027-02-01T08:30:00.000Z"),
+        status: "VALID",
+        source: "manual",
+      },
+      {
+        id: "checkin-overview-activity-3",
+        attendee_id: ATT_ACT_VIP_1,
+        event_id: EVENT_ACTIVITY,
+        checked_in_at: new Date("2027-02-01T10:00:00.000Z"),
+        status: "VALID",
+        source: "scan",
+      },
+      {
+        id: "checkin-overview-activity-noise",
+        attendee_id: ATT_ACT_NONE,
+        event_id: EVENT_ACTIVITY,
+        checked_in_at: new Date("2027-02-01T23:00:00.000Z"),
+        status: "ALREADY_CHECKED_IN",
+        source: "scan",
+      },
+    ],
+  });
+
+  await client.emailDelivery.createMany({
+    data: [
+      {
+        id: "del-overview-activity-bounced",
+        organization_id: ORG_OV,
+        event_id: EVENT_ACTIVITY,
+        attendee_id: ATT_ACT_STD_1,
+        purpose: "initial",
+        provider: "export_only",
+        status: "bounced",
+        recipient_email: "bounced-guest@example.com",
+        failed_at: new Date("2027-02-01T09:00:00.000Z"),
+      },
+      {
+        id: "del-overview-activity-failed",
+        organization_id: ORG_OV,
+        event_id: EVENT_ACTIVITY,
+        attendee_id: ATT_ACT_VIP_1,
+        purpose: "initial",
+        provider: "export_only",
+        status: "failed",
+        recipient_email: "failed-guest@example.com",
+        failed_at: new Date("2027-02-01T07:00:00.000Z"),
+      },
+    ],
+  });
+
+  await client.attendeeActionLog.create({
+    data: {
+      id: "log-overview-activity-import",
+      event_id: EVENT_ACTIVITY,
+      action_type: "attendees_imported",
+      created_at: new Date("2027-02-01T06:00:00.000Z"),
+      metadata: { filename: "activity-guests.csv", created: 3, updated: 1, skipped: 0 },
+    },
+  });
 }
 
 beforeAll(async () => {
@@ -339,6 +482,10 @@ describe("GET /api/admin/events/:eventId/overview", () => {
     // EVENT_EMPTY has no event-level operators, but ORG_OV admin can perform check-in
     expect(body.checkin_staff_count).toBe(1);
     expect(body.attendees_with_ticket).toBe(0);
+    expect(body.last_check_in_at).toBeNull();
+    expect(body.busiest_hour).toBeNull();
+    expect(body.ticket_type_breakdown).toEqual([]);
+    expect(body.recent_activity).toEqual([]);
   });
 
   it("returns admitted_count scoped to active attendees", async () => {
@@ -440,5 +587,74 @@ describe("GET /api/admin/events/:eventId/overview", () => {
     expect(body.email_failed).toBe(0);
     expect(body.email_bounced).toBe(0);
     expect(body.email_queued).toBe(0);
+  });
+
+  it("returns last_check_in_at and busiest_hour scoped to VALID check-ins", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_ACTIVITY}/overview`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as EventOverviewResponse;
+    // Most recent VALID check-in is 10:00; the later 23:00 row is ALREADY_CHECKED_IN and must
+    // not count.
+    expect(body.last_check_in_at).toBe("2027-02-01T10:00:00.000Z");
+    // Two VALID check-ins land in the 08:00 hour, one in 10:00 - 08:00 wins.
+    expect(body.busiest_hour).toEqual({ hour: "08:00", count: 2 });
+  });
+
+  it("returns ticket_type_breakdown for active attendees only, zero-count types omitted", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_ACTIVITY}/overview`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as EventOverviewResponse;
+    // "press" has 0 attendees (omitted); the revoked "standard" attendee doesn't count.
+    expect(body.ticket_type_breakdown).toEqual([
+      { key: "standard", label: "Standard", color: "gray", count: 2 },
+      { key: "vip", label: "VIP", color: "purple", count: 1 },
+    ]);
+  });
+
+  it("returns recent_activity merged newest-first across check-ins, mail failures, and imports", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_ACTIVITY}/overview`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as EventOverviewResponse;
+
+    expect(body.recent_activity.map((entry) => entry.occurred_at)).toEqual([
+      "2027-02-01T10:00:00.000Z",
+      "2027-02-01T09:00:00.000Z",
+      "2027-02-01T08:30:00.000Z",
+      "2027-02-01T08:00:00.000Z",
+      "2027-02-01T07:00:00.000Z",
+      "2027-02-01T06:00:00.000Z",
+    ]);
+
+    const [checkin, bounced, , , failed, imported] = body.recent_activity;
+    expect(checkin).toMatchObject({
+      type: "checkin",
+      tone: "ok",
+      attendee_name: "Activity VIP One",
+      message: "checked in",
+    });
+    expect(bounced).toMatchObject({
+      type: "mail_bounced",
+      tone: "error",
+      message: "Ticket email bounced for bounced-guest@example.com",
+    });
+    expect(failed).toMatchObject({
+      type: "mail_failed",
+      tone: "error",
+      message: "Ticket email failed for failed-guest@example.com",
+    });
+    expect(imported).toMatchObject({
+      type: "import",
+      tone: "muted",
+      message: "4 attendees imported",
+    });
+    // Length 6 (not 7) confirms the 23:00 ALREADY_CHECKED_IN noise row was excluded - a VALID-only
+    // check-in there would otherwise sort first, ahead of the 10:00 entry asserted above.
+    expect(body.recent_activity).toHaveLength(6);
   });
 });

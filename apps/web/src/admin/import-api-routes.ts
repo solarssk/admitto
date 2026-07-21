@@ -679,25 +679,21 @@ function importHistoryNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-/** GET /api/admin/events/:eventId/import/history — recent commits from the audit log. The
- * `attendees_imported` bulk action rows written at commit time already carry everything the
- * history card shows (filename + created/updated/skipped counts), so this is a read of the
- * existing log, not a new table. */
-export async function handleGetImportHistory(c: Context, db: PrismaClient): Promise<Response> {
-  const eventIdOrRes = requireEventId(c);
-  if (eventIdOrRes instanceof Response) return eventIdOrRes;
-  const eventId = eventIdOrRes;
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
-
+/** Reads recent `attendees_imported` bulk action rows from the audit log - shared by the
+ * import-history endpoint and the overview activity feed, which just need different limits. */
+export async function loadRecentImportBatches(
+  db: PrismaClient,
+  eventId: string,
+  limit: number,
+): Promise<ImportHistoryEntryDto[]> {
   const rows = await db.attendeeActionLog.findMany({
     where: { event_id: eventId, action_type: "attendees_imported" },
     orderBy: { created_at: "desc" },
-    take: IMPORT_HISTORY_LIMIT,
+    take: limit,
     select: { id: true, created_at: true, metadata: true },
   });
 
-  const items: ImportHistoryEntryDto[] = rows.map((row) => {
+  return rows.map((row) => {
     const meta =
       row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
         ? (row.metadata as Record<string, unknown>)
@@ -711,6 +707,20 @@ export async function handleGetImportHistory(c: Context, db: PrismaClient): Prom
       skipped: importHistoryNumber(meta.skipped),
     };
   });
+}
+
+/** GET /api/admin/events/:eventId/import/history — recent commits from the audit log. The
+ * `attendees_imported` bulk action rows written at commit time already carry everything the
+ * history card shows (filename + created/updated/skipped counts), so this is a read of the
+ * existing log, not a new table. */
+export async function handleGetImportHistory(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const items = await loadRecentImportBatches(db, eventId, IMPORT_HISTORY_LIMIT);
 
   c.header("Cache-Control", "no-store");
   return c.json({ items });
