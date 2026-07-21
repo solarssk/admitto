@@ -24,17 +24,21 @@
 /* A <button>, not a div with role="button" (Sonar S6819 — real keyboard/AT semantics for
    free instead of hand-rolled ones) — the extra properties below undo the browser's default
    button chrome (background, font, width) that a div never had to begin with. */
+/* Same min-height as .import-file-chip below — picking a file shouldn't shrink or grow the
+ * upload box (PO feedback: pick a standard size for this, not too big). */
 .import-dropzone {
   width: 100%;
+  min-height: 110px;
   background: none;
   font: inherit;
   border: 1.5px dashed var(--border-strong, var(--border));
   border-radius: var(--radius-md);
-  padding: var(--space-6) var(--space-4);
+  padding: var(--space-4);
   text-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: var(--space-1);
   color: var(--text-muted);
   cursor: pointer;
@@ -70,6 +74,7 @@ fieldset:disabled .import-dropzone {
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  min-height: 110px;
   border: 1px solid var(--status-ok, #16a34a);
   border-radius: var(--radius-md);
   padding: var(--space-3) var(--space-4);
@@ -332,6 +337,8 @@ fieldset:disabled .import-dropzone {
 .import-stat {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  text-align: center;
   min-width: 100px;
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border);
@@ -356,6 +363,21 @@ fieldset:disabled .import-dropzone {
   border: 1px solid var(--status-warn, #f59e0b);
   border-radius: var(--radius-md);
   font-size: var(--fs-sm);
+}
+
+/* Same amber callout as .import-warn (and the same margin every sibling section below it
+ * uses) — a bare bullet list with no box and no bottom margin read as a different, cramped
+ * pattern next to Invalid/Skipped rows' tables and the "no valid rows" banner (PO feedback). */
+.import-warnings {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3);
+  background: var(--status-warn-bg, #fff8e6);
+  border: 1px solid var(--status-warn, #f59e0b);
+  border-radius: var(--radius-md);
+}
+
+.import-warnings .import-subtitle {
+  margin-top: 0;
 }
 
 .import-warnings ul {

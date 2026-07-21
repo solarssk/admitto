@@ -554,8 +554,24 @@ export function ImportPage() {
                       </tr>
                       <tr><td><code>company</code></td><td>No</td><td>Attendee&apos;s company</td></tr>
                       <tr><td><code>department</code></td><td>No</td><td>Department or team</td></tr>
-                      <tr><td><code>external_uuid</code></td><td>No</td><td>External ID for deduplication</td></tr>
-                      <tr><td><code>qr_payload</code></td><td>No</td><td>Custom QR code payload (auto-generated if empty)</td></tr>
+                      <tr>
+                        <td><code>external_uuid</code></td>
+                        <td>No</td>
+                        <td>
+                          Only needed if your ticketing agency already assigns each attendee a
+                          unique ID — add it here so re-importing the same file updates that
+                          person instead of creating a duplicate
+                        </td>
+                      </tr>
+                      <tr>
+                        <td><code>qr_payload</code></td>
+                        <td>No</td>
+                        <td>
+                          Leave empty — Admitto generates a secure ticket code automatically. Only
+                          fill this in if attendees already have a ticket code from elsewhere that
+                          needs to match
+                        </td>
+                      </tr>
                       {attributeFields.map((field) => (
                         <tr key={field.source_field}>
                           <td>
