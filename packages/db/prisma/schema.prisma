@@ -121,6 +121,7 @@ model EventCustomField {
   event        Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
   source_field String
   label        String
+  description  String?
   type         String   @default("text")
   options      Json?
   required     Boolean  @default(false)

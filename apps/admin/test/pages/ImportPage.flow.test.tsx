@@ -214,15 +214,45 @@ describe("ImportPage upload → preview → commit flow", () => {
     expect(dryRunSwitch.checked).toBe(true);
   });
 
-  it("lists configured custom attribute fields as extra rows in the Required CSV columns reference", async () => {
+  it("lists configured custom attribute fields as extra rows in the Required CSV columns reference, showing the field's own description", async () => {
     fetchEventCustomFields.mockResolvedValue([
-      { id: "1", source_field: "shirt_size", label: "Shirt size", type: "text", required: false, options: null, created_at: "2026-01-01T00:00:00.000Z" },
+      {
+        id: "1",
+        source_field: "shirt_size",
+        label: "Shirt size",
+        description: "Attendee's t-shirt size for the swag bag",
+        type: "text",
+        required: false,
+        options: null,
+        created_at: "2026-01-01T00:00:00.000Z",
+      },
     ]);
     renderPage();
     expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
 
     expect(await screen.findByText("shirt_size")).toBeTruthy();
-    expect(screen.getByText("Shirt size")).toBeTruthy();
+    expect(screen.getByText("Attendee's t-shirt size for the swag bag")).toBeTruthy();
+    expect(screen.queryByText("Shirt size")).toBeNull();
+  });
+
+  it("falls back to a plain 'No description provided' note for a custom field with no description set", async () => {
+    fetchEventCustomFields.mockResolvedValue([
+      {
+        id: "1",
+        source_field: "shirt_size",
+        label: "Shirt size",
+        description: null,
+        type: "text",
+        required: false,
+        options: null,
+        created_at: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    expect(await screen.findByText("shirt_size")).toBeTruthy();
+    expect(screen.getByText("No description provided")).toBeTruthy();
   });
 
   it("lists parse warnings on the validation summary", async () => {

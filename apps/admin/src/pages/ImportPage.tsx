@@ -579,7 +579,7 @@ export function ImportPage() {
                           </td>
                           <td>{field.required ? "Yes" : "No"}</td>
                           <td>
-                            {field.label}
+                            {field.description || "No description provided"}
                             {field.type === "select" && field.options?.length
                               ? ` — select: ${field.options.join(", ")}`
                               : field.type === "boolean"

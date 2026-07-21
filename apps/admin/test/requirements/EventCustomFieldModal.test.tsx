@@ -27,6 +27,7 @@ const dietaryField: EventCustomFieldDto = {
   id: "field-dietary",
   source_field: "dietary",
   label: "Dietary requirements",
+  description: null,
   type: "text",
   required: false,
   options: null,
@@ -85,6 +86,7 @@ describe("EventCustomFieldModal — create", () => {
       expect(createEventCustomField).toHaveBeenCalledWith("evt-1", {
         source_field: "dietary_requirements",
         label: "Dietary requirements",
+        description: undefined,
         type: "text",
         required: false,
         options: undefined,
@@ -109,9 +111,35 @@ describe("EventCustomFieldModal — create", () => {
       expect(createEventCustomField).toHaveBeenCalledWith("evt-1", {
         source_field: "shirt_size",
         label: "Shirt size",
+        description: undefined,
         type: "select",
         required: true,
         options: ["S", "M", "L"],
+      });
+    });
+  });
+
+  it("sends the description an operator types, so the import reference table can show it instead of repeating the label", async () => {
+    vi.mocked(createEventCustomField).mockResolvedValueOnce({
+      ...dietaryField,
+      description: "Attendee's t-shirt size for the swag bag",
+    });
+    renderModal(null);
+    fireEvent.change(screen.getByLabelText("Display label"), {
+      target: { value: "Dietary requirements" },
+    });
+    fireEvent.change(screen.getByLabelText("Description"), {
+      target: { value: "Attendee's t-shirt size for the swag bag" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create field" }));
+    await waitFor(() => {
+      expect(createEventCustomField).toHaveBeenCalledWith("evt-1", {
+        source_field: "dietary_requirements",
+        label: "Dietary requirements",
+        description: "Attendee's t-shirt size for the swag bag",
+        type: "text",
+        required: false,
+        options: undefined,
       });
     });
   });
@@ -153,8 +181,34 @@ describe("EventCustomFieldModal — edit", () => {
     await waitFor(() => {
       expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-dietary", {
         label: "Dietary needs",
+        description: null,
         type: "text",
         required: true,
+        options: null,
+      });
+    });
+  });
+
+  it("pre-fills an existing description and sends the edited value", async () => {
+    const fieldWithDescription: EventCustomFieldDto = {
+      ...dietaryField,
+      description: "Old description",
+    };
+    vi.mocked(updateEventCustomField).mockResolvedValueOnce({
+      ...fieldWithDescription,
+      description: "New description",
+    });
+    renderModal(fieldWithDescription);
+    expect(screen.getByLabelText("Description")).toHaveProperty("value", "Old description");
+
+    fireEvent.change(screen.getByLabelText("Description"), { target: { value: "New description" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => {
+      expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-dietary", {
+        label: "Dietary requirements",
+        description: "New description",
+        type: "text",
+        required: false,
         options: null,
       });
     });
@@ -176,6 +230,7 @@ describe("EventCustomFieldModal — edit", () => {
     await waitFor(() => {
       expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-shirt", {
         label: "Shirt size",
+        description: null,
         type: "text",
         required: false,
         options: null,
