@@ -290,6 +290,8 @@ export interface AttendeesTableProps {
   onBulkExportSelected: () => void;
   bulkExportBusy: boolean;
   onBulkChangeTicketType: () => void;
+  onBulkRevokePass: () => void;
+  bulkRevokePassBusy: boolean;
   onBulkDelete: () => void;
   eventTimezone: string;
   event: ArchivedGuardEvent;
@@ -397,6 +399,8 @@ function BulkMoreActionsMenu({
   ticketTypesError,
   onRetryTicketTypes,
   onChangeTicketType,
+  onBulkRevokePass,
+  bulkRevokePassBusy,
   onDelete,
 }: Readonly<{
   selectedCount: number;
@@ -412,6 +416,8 @@ function BulkMoreActionsMenu({
   ticketTypesError?: string | null;
   onRetryTicketTypes?: () => void;
   onChangeTicketType: () => void;
+  onBulkRevokePass: () => void;
+  bulkRevokePassBusy: boolean;
   onDelete: () => void;
 }>) {
   const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
@@ -515,6 +521,29 @@ function BulkMoreActionsMenu({
               Retry loading ticket types
             </button>
           )}
+          {/* Always available for any non-empty selection (PO review, #549) — no "nothing to
+           * revoke" precondition to gate on; the server already leaves an already-revoked or
+           * cancelled attendee untouched and reports it separately in the result toast, same
+           * convention as the other bulk actions. */}
+          <button
+            type="button"
+            role="menuitem"
+            className="more-actions-menu__item more-actions-menu__item--danger"
+            disabled={archived || bulkRevokePassBusy}
+            title={archived ? ARCHIVED_ACTION_TOOLTIP : undefined}
+            onClick={() => {
+              setOpen(false);
+              onBulkRevokePass();
+            }}
+          >
+            <i className="ti ti-ban" aria-hidden="true" />
+            <span className="more-actions-menu__item-text">
+              <span>{bulkRevokePassBusy ? "Revoking pass…" : "Revoke pass"}</span>
+              <span className="more-actions-menu__item-hint">
+                Block check-in for {selectedCount} attendee{selectedCount === 1 ? "" : "s"}
+              </span>
+            </span>
+          </button>
           <hr className="more-actions-menu__divider" />
           {/* Not ArchivedGuard'd — GDPR erasure requests can legally arrive after an event
            * ends; the DELETE endpoint doesn't block on archived_at either. */}
@@ -566,6 +595,8 @@ function BulkBar({
   ticketTypesError,
   onRetryTicketTypes,
   onBulkChangeTicketType,
+  onBulkRevokePass,
+  bulkRevokePassBusy,
   onBulkDelete,
 }: Readonly<{
   selectedIds: ReadonlySet<string>;
@@ -582,6 +613,8 @@ function BulkBar({
   ticketTypesError?: string | null;
   onRetryTicketTypes?: () => void;
   onBulkChangeTicketType: () => void;
+  onBulkRevokePass: () => void;
+  bulkRevokePassBusy: boolean;
   onBulkDelete: () => void;
 }>) {
   const archived = event.archived_at != null;
@@ -659,6 +692,8 @@ function BulkBar({
           ticketTypesError={ticketTypesError}
           onRetryTicketTypes={onRetryTicketTypes}
           onChangeTicketType={onBulkChangeTicketType}
+          onBulkRevokePass={onBulkRevokePass}
+          bulkRevokePassBusy={bulkRevokePassBusy}
           onDelete={onBulkDelete}
         />
       </div>
@@ -1107,6 +1142,8 @@ export function AttendeesTable({
   onBulkExportSelected,
   bulkExportBusy,
   onBulkChangeTicketType,
+  onBulkRevokePass,
+  bulkRevokePassBusy,
   onBulkDelete,
   eventTimezone,
   event,
@@ -1134,6 +1171,8 @@ export function AttendeesTable({
           ticketTypesError={ticketTypesError}
           onRetryTicketTypes={onRetryTicketTypes}
           onBulkChangeTicketType={onBulkChangeTicketType}
+          onBulkRevokePass={onBulkRevokePass}
+          bulkRevokePassBusy={bulkRevokePassBusy}
           onBulkDelete={onBulkDelete}
         />
       ) : (

@@ -62,6 +62,8 @@ const tableProps = {
   onBulkExportSelected: vi.fn(),
   bulkExportBusy: false,
   onBulkChangeTicketType: vi.fn(),
+  onBulkRevokePass: vi.fn(),
+  bulkRevokePassBusy: false,
   onBulkDelete: vi.fn(),
   eventTimezone: "UTC",
   event: { archived_at: null as string | null },
@@ -128,6 +130,68 @@ describe("AttendeesTable toolbar vs bulk bar", () => {
     expect(screen.getByLabelText("Search attendees by name, email, or company")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Filters" })).toBeTruthy();
     expect(document.querySelector(".attendees-bulkbar")).toBeNull();
+  });
+});
+
+describe("AttendeesTable bulk revoke pass (PO review, #549)", () => {
+  beforeEach(() => {
+    mockMatchMedia(true);
+  });
+
+  it("is always enabled for a non-empty selection, regardless of check-in/pass state", () => {
+    render(
+      <AttendeesTable {...tableProps} items={[baseRow]} selectedIds={new Set(["att-1"])} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(
+      (screen.getByRole("menuitem", { name: /Revoke pass/ }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
+
+  it("disables with the archived tooltip when the event is archived", () => {
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow]}
+        selectedIds={new Set(["att-1"])}
+        event={{ archived_at: "2026-01-01T00:00:00.000Z" }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    const item = screen.getByRole("menuitem", { name: /Revoke pass/ }) as HTMLButtonElement;
+    expect(item.disabled).toBe(true);
+    expect(item.getAttribute("title")).toBe("This event is archived — editing is disabled.");
+  });
+
+  it("fires onBulkRevokePass and closes the menu when the item is clicked", () => {
+    const onBulkRevokePass = vi.fn();
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow]}
+        selectedIds={new Set(["att-1"])}
+        onBulkRevokePass={onBulkRevokePass}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Revoke pass/ }));
+
+    expect(onBulkRevokePass).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("menuitem", { name: /Revoke pass/ })).toBeNull();
+  });
+
+  it("shows 'Revoking pass…' and disables the item while busy", () => {
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow]}
+        selectedIds={new Set(["att-1"])}
+        bulkRevokePassBusy
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    const item = screen.getByRole("menuitem", { name: /Revoking pass…/ }) as HTMLButtonElement;
+    expect(item.disabled).toBe(true);
   });
 });
 

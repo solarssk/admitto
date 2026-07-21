@@ -71,6 +71,7 @@ vi.mock("../../src/api/client.js", () => ({
   sendEventBulk: vi.fn(),
   bulkDeleteAttendees: vi.fn(),
   bulkCheckInAttendees: vi.fn(),
+  bulkRevokePass: vi.fn(),
   updateAttendee: vi.fn(),
 }));
 
@@ -193,5 +194,9 @@ describe("AttendeesPage archived lockdown", () => {
     fireEvent.click(moreActionsButton);
     const deleteItem = within(bar).getByRole("menuitem", { name: /^Delete/ });
     expect((deleteItem as HTMLButtonElement).disabled).toBe(false);
+    // Revoking a pass for an event that's already over doesn't make sense (matches Check in
+    // above) - locked on archived events, unlike Delete/Export which stay reachable.
+    const revokePassItem = within(bar).getByRole("menuitem", { name: /Revoke pass/ });
+    expect((revokePassItem as HTMLButtonElement).disabled).toBe(true);
   });
 });

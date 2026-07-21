@@ -358,6 +358,15 @@ export interface BulkCheckInResponse {
   errored: number;
 }
 
+/** Bulk revoke-pass summary from POST .../attendees/bulk-revoke-pass. */
+export interface BulkRevokePassResponse {
+  revoked: number;
+  /** Already revoked or cancelled - nothing to revoke, left untouched. */
+  skipped: number;
+  /** revokeOneAttendeePass threw for this id (unexpected) - safe to retry. */
+  errored: number;
+}
+
 /** Admin SPA DTOs for event item configuration (mirror of web API).
  * `content_fields` references EventCustomField rows by source_field (see below) - it does not
  * embed field definitions. */

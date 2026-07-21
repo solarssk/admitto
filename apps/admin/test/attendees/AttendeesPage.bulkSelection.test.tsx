@@ -11,6 +11,7 @@ const fetchEventMailSettings = vi.fn();
 const sendEventBulk = vi.fn();
 const bulkDeleteAttendees = vi.fn();
 const bulkCheckInAttendees = vi.fn();
+const bulkRevokePass = vi.fn();
 const bulkChangeTicketType = vi.fn();
 const exportSelectedAttendees = vi.fn();
 const fetchTicketTypes = vi.fn();
@@ -80,6 +81,7 @@ vi.mock("../../src/api/client.js", () => ({
   sendEventBulk: (...args: unknown[]) => sendEventBulk(...args),
   bulkDeleteAttendees: (...args: unknown[]) => bulkDeleteAttendees(...args),
   bulkCheckInAttendees: (...args: unknown[]) => bulkCheckInAttendees(...args),
+  bulkRevokePass: (...args: unknown[]) => bulkRevokePass(...args),
   updateAttendee: vi.fn(),
 }));
 
@@ -484,6 +486,120 @@ describe("AttendeesPage bulk delete (#356 follow-up)", () => {
     });
 
     expect(screen.queryByText("Delete failed.")).toBeNull();
+  });
+});
+
+describe("AttendeesPage bulk revoke pass (#549)", () => {
+  it("revokes the pass for the selected attendees via the More actions menu, toasts, and clears the selection", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkRevokePass.mockResolvedValue({ revoked: 2, skipped: 0, errored: 0 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select John Smith" }));
+    await waitFor(() => expect(bulkBar().getByText("2")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke pass/ }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
+
+    await waitFor(() => {
+      expect(bulkRevokePass).toHaveBeenCalledWith("evt-1", ["att-1", "att-2"]);
+    });
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("2 passes revoked.", "success");
+    });
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
+  });
+
+  it("toasts that everyone was already revoked or cancelled when nobody new was revoked", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkRevokePass.mockResolvedValue({ revoked: 0, skipped: 1, errored: 0 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke pass/ }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("All selected attendees were already revoked or cancelled.", "info");
+    });
+  });
+
+  it("doesn't claim everyone was already revoked when a mixed batch also had unexpected failures (code review)", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkRevokePass.mockResolvedValue({ revoked: 0, skipped: 1, errored: 1 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke pass/ }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        "No passes revoked (1 already revoked or cancelled, 1 failed unexpectedly).",
+        "error",
+      );
+    });
+    expect(addToast).not.toHaveBeenCalledWith(
+      "All selected attendees were already revoked or cancelled.",
+      "info",
+    );
+  });
+
+  it("shows an operator-safe error inside the dialog and keeps the selection when bulkRevokePass fails", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkRevokePass.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke pass/ }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
+
+    // Inline in the dialog, not a toast - matches bulk delete's own convention.
+    await screen.findByText("Revoke pass failed.");
+    expect(addToast).not.toHaveBeenCalled();
+    expect(document.querySelector(".attendees-bulkbar")).toBeTruthy();
+  });
+
+  it("Cancel closes the bulk-revoke-pass dialog without calling bulkRevokePass", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke pass/ }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(bulkRevokePass).not.toHaveBeenCalled();
   });
 });
 
