@@ -413,7 +413,10 @@ describe("POST /api/admin/events/:eventId/import/preview", () => {
     // The preview and commit endpoints must agree on why a row was skipped — an operator
     // deciding whether to turn on Overwrite reads this before ever reaching commit.
     expect(body.summary.skipped).toEqual([
-      { email: "existing@example.com", reason: "Attendee already exists (overwrite=false)" },
+      {
+        email: "existing@example.com",
+        reason: 'Attendee already exists — turn on "Overwrite existing attendees" to update it instead of skipping',
+      },
     ]);
   });
 
@@ -742,7 +745,7 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
     expect(body.created).toBe(0);
     expect(body.updated).toBe(0);
     expect(body.skipped.length).toBe(2);
-    expect(body.skipped.every((s) => s.reason.includes("overwrite=false"))).toBe(true);
+    expect(body.skipped.every((s) => s.reason.includes("Overwrite existing attendees"))).toBe(true);
   });
 
   it("re-import overwrite=true updates profile fields", async () => {

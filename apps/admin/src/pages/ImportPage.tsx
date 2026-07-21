@@ -36,12 +36,14 @@ function pluralize(count: number, singular: string): string {
 
 interface ImportSampleTableProps {
   rows: ImportSampleRow[];
-  totalValid: number;
   attributeFieldLabels: Array<{ source_field: string; label: string }>;
 }
 
-/** Preview table for the first valid import rows (optional columns shown when any row has data). */
-function ImportSampleTable({ rows, totalValid, attributeFieldLabels }: ImportSampleTableProps) {
+/** Preview table for the first valid import rows (optional columns shown when any row has data).
+ * The enclosing Card carries its own "Row preview" title (with the showing-first-N-of-M count
+ * folded in when relevant) — this used to repeat both in a second "Data preview" heading here,
+ * reading as two headings for one table (PO feedback). */
+function ImportSampleTable({ rows, attributeFieldLabels }: ImportSampleTableProps) {
   const displayRows = rows.slice(0, SAMPLE_DISPLAY_LIMIT);
   if (displayRows.length === 0) return null;
 
@@ -53,15 +55,6 @@ function ImportSampleTable({ rows, totalValid, attributeFieldLabels }: ImportSam
 
   return (
     <div className="import-sample">
-      <h3 className="import-subtitle">
-        Data preview
-        {totalValid > displayRows.length && (
-          <span className="import-sample__note">
-            {" "}
-            — showing first {displayRows.length} of {totalValid} valid rows
-          </span>
-        )}
-      </h3>
       <div className="import-sample-wrap">
         <table className="table import-sample-table">
           <thead>
@@ -429,17 +422,35 @@ export function ImportPage() {
       <PageHeader
         title="Import attendees"
         subtitle="Upload a CSV or XLSX file to add or update attendee records."
+        actions={
+          <Link to={`/admin/events/${eventId}/attendees`}>
+            <Button variant="secondary" icon={<i className="ti ti-arrow-left" aria-hidden="true" />}>
+              Back to attendees
+            </Button>
+          </Link>
+        }
       />
-
-      <p className="import-back">
-        <Link to={`/admin/events/${eventId}/attendees`}>← Back to attendees</Link>
-      </p>
 
 
       {step !== "done" && (
         <div className="import-two-col">
           <div className="import-stack">
-            <Card title="1 · Upload file" className="import-card">
+            <Card
+              title="1 · Upload file"
+              className="import-card"
+              actions={
+                <a
+                  href={`/api/admin/events/${eventId}/import/template`}
+                  download="admitto-import-template.csv"
+                  className="at-btn at-btn--secondary at-btn--sm"
+                >
+                  <span className="at-btn__icon" aria-hidden="true">
+                    <i className="ti ti-download" />
+                  </span>
+                  <span>Download CSV template</span>
+                </a>
+              }
+            >
               <div className="import-form">
                 <fieldset
                   className={[
@@ -516,14 +527,6 @@ export function ImportPage() {
                   </div>
                 </fieldset>
 
-                <a
-                  href={`/api/admin/events/${eventId}/import/template`}
-                  download="admitto-import-template.csv"
-                  className="at-btn at-btn--secondary import-template-btn"
-                >
-                  Download CSV template
-                </a>
-
                 <details className="import-columns-info">
                   <summary>Required CSV columns</summary>
                   <table className="import-columns-table">
@@ -583,10 +586,16 @@ export function ImportPage() {
             </Card>
 
             {step === "preview" && preview && (
-              <Card title="Row preview" className="import-card">
+              <Card
+                title={
+                  preview.parse.validCount > preview.sampleRows.length
+                    ? `Row preview — showing first ${preview.sampleRows.length} of ${preview.parse.validCount} valid rows`
+                    : "Row preview"
+                }
+                className="import-card"
+              >
                 <ImportSampleTable
                   rows={preview.sampleRows}
-                  totalValid={preview.parse.validCount}
                   attributeFieldLabels={preview.attributeFieldLabels}
                 />
               </Card>
@@ -637,20 +646,21 @@ export function ImportPage() {
                     enable committing.
                   </span>
                 </div>
-                <label className="import-checkbox">
-                  <input
-                    type="checkbox"
+                <div className="import-option">
+                  <Switch
+                    label="Overwrite existing attendees"
                     checked={overwrite}
-                    disabled={loading || step === "preview"}
+                    // Togglable at any step, including preview — flip it after seeing an existing
+                    // attendee skipped in the Validation summary, then Re-validate (PO feedback:
+                    // this used to lock the instant a summary appeared, with no way back except
+                    // picking a new file).
+                    disabled={loading}
                     onChange={(e) => setOverwrite(e.target.checked)}
                   />
-                  <span>
-                    Overwrite existing attendees
-                    <span className="import-checkbox__hint">
-                      When off, existing attendees matched by email are skipped.
-                    </span>
+                  <span className="import-checkbox__hint">
+                    When off, existing attendees matched by email are skipped.
                   </span>
-                </label>
+                </div>
               </fieldset>
             </Card>
 

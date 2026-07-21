@@ -218,21 +218,6 @@ fieldset:disabled .import-dropzone {
   font-weight: 600;
 }
 
-.import-back {
-  margin: 0 0 var(--space-4);
-  font-size: var(--fs-sm);
-}
-
-.import-back a {
-  color: var(--text-muted);
-  text-decoration: none;
-}
-
-.import-back a:hover {
-  color: var(--text-primary);
-  text-decoration: underline;
-}
-
 .import-card {
   margin-bottom: var(--space-4);
 }
@@ -280,11 +265,6 @@ fieldset:disabled .import-dropzone {
   background: var(--surface-muted, var(--border));
   padding: 0.1rem 0.3rem;
   border-radius: var(--radius-sm, 3px);
-}
-
-.import-template-btn {
-  align-self: flex-start;
-  text-decoration: none;
 }
 
 .import-field {
@@ -387,6 +367,13 @@ fieldset:disabled .import-dropzone {
 
 .import-invalid {
   margin-bottom: var(--space-4);
+}
+
+/* Invalid/skipped rows can span the whole uploaded file (up to 50 000 rows) — cap the table's
+ * height and let it scroll instead of the page growing without bound (PO feedback). */
+.import-invalid .attendees-table-wrap {
+  max-height: 280px;
+  overflow-y: auto;
 }
 
 /* Import sample rows preview */
