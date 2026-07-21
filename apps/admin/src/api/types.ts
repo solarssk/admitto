@@ -358,6 +358,12 @@ export interface BulkCheckInResponse {
   errored: number;
 }
 
+/** Bulk revoke-items summary from POST .../attendees/bulk-revoke-items. */
+export interface BulkRevokeItemsResponse {
+  /** Individual item hand-outs reset back to pending, across the whole selection. */
+  revokedCount: number;
+}
+
 /** Admin SPA DTOs for event item configuration (mirror of web API).
  * `content_fields` references EventCustomField rows by source_field (see below) - it does not
  * embed field definitions. */

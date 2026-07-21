@@ -290,6 +290,11 @@ export interface AttendeesTableProps {
   onBulkExportSelected: () => void;
   bulkExportBusy: boolean;
   onBulkChangeTicketType: () => void;
+  itemCount: number;
+  itemsError?: string | null;
+  onRetryItems?: () => void;
+  onBulkRevokeItems: () => void;
+  bulkRevokeItemsBusy: boolean;
   onBulkDelete: () => void;
   eventTimezone: string;
   event: ArchivedGuardEvent;
@@ -397,6 +402,11 @@ function BulkMoreActionsMenu({
   ticketTypesError,
   onRetryTicketTypes,
   onChangeTicketType,
+  itemCount,
+  itemsError,
+  onRetryItems,
+  onBulkRevokeItems,
+  bulkRevokeItemsBusy,
   onDelete,
 }: Readonly<{
   selectedCount: number;
@@ -412,6 +422,11 @@ function BulkMoreActionsMenu({
   ticketTypesError?: string | null;
   onRetryTicketTypes?: () => void;
   onChangeTicketType: () => void;
+  itemCount: number;
+  itemsError?: string | null;
+  onRetryItems?: () => void;
+  onBulkRevokeItems: () => void;
+  bulkRevokeItemsBusy: boolean;
   onDelete: () => void;
 }>) {
   const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
@@ -515,6 +530,41 @@ function BulkMoreActionsMenu({
               Retry loading ticket types
             </button>
           )}
+          {/* Disabled (not hidden) on archived events and when the event has no configured
+           * items - same convention as Change ticket type above. Always resets every
+           * configured item for the selection at once (no per-item picker, PO review, #551:
+           * "od tego mamy check in widok" - for precise per-attendee/per-item
+           * control, that already exists on the check-in screen). Independent of check-in
+           * status, matching the Danger Zone's event-wide "Revoke all items issued". */}
+          <button
+            type="button"
+            role="menuitem"
+            className="more-actions-menu__item"
+            disabled={archived || bulkRevokeItemsBusy || itemCount === 0}
+            title={archived || itemCount === 0 ? bulkRevokeItemsReason(archived, itemsError) : undefined}
+            onClick={() => {
+              setOpen(false);
+              onBulkRevokeItems();
+            }}
+          >
+            <i className="ti ti-package" aria-hidden="true" />
+            <span className="more-actions-menu__item-text">
+              <span>{bulkRevokeItemsBusy ? "Revoking items…" : "Revoke items"}</span>
+              <span className="more-actions-menu__item-hint">
+                Reset all issued items for {selectedCount} attendee{selectedCount === 1 ? "" : "s"}
+              </span>
+            </span>
+          </button>
+          {!archived && itemCount === 0 && itemsError && onRetryItems && (
+            <button
+              type="button"
+              role="menuitem"
+              className="more-actions-menu__retry link-btn"
+              onClick={onRetryItems}
+            >
+              Retry loading items
+            </button>
+          )}
           <hr className="more-actions-menu__divider" />
           {/* Not ArchivedGuard'd — GDPR erasure requests can legally arrive after an event
            * ends; the DELETE endpoint doesn't block on archived_at either. */}
@@ -548,6 +598,12 @@ function bulkChangeTicketTypeReason(archived: boolean, ticketTypesError?: string
   return "No ticket types configured for this event. Add some in Event Settings → Ticket types.";
 }
 
+function bulkRevokeItemsReason(archived: boolean, itemsError?: string | null): string {
+  if (archived) return "This event is archived.";
+  if (itemsError) return "Couldn't load items — try again.";
+  return "No items configured for this event. Add some in Requirements.";
+}
+
 /** Selection count + "Send tickets" / "More actions" — replaces the search/filter toolbar in
  * place while rows are selected, so the card never grows taller just because something is
  * selected. */
@@ -566,6 +622,11 @@ function BulkBar({
   ticketTypesError,
   onRetryTicketTypes,
   onBulkChangeTicketType,
+  itemCount,
+  itemsError,
+  onRetryItems,
+  onBulkRevokeItems,
+  bulkRevokeItemsBusy,
   onBulkDelete,
 }: Readonly<{
   selectedIds: ReadonlySet<string>;
@@ -582,6 +643,11 @@ function BulkBar({
   ticketTypesError?: string | null;
   onRetryTicketTypes?: () => void;
   onBulkChangeTicketType: () => void;
+  itemCount: number;
+  itemsError?: string | null;
+  onRetryItems?: () => void;
+  onBulkRevokeItems: () => void;
+  bulkRevokeItemsBusy: boolean;
   onBulkDelete: () => void;
 }>) {
   const archived = event.archived_at != null;
@@ -659,6 +725,11 @@ function BulkBar({
           ticketTypesError={ticketTypesError}
           onRetryTicketTypes={onRetryTicketTypes}
           onChangeTicketType={onBulkChangeTicketType}
+          itemCount={itemCount}
+          itemsError={itemsError}
+          onRetryItems={onRetryItems}
+          onBulkRevokeItems={onBulkRevokeItems}
+          bulkRevokeItemsBusy={bulkRevokeItemsBusy}
           onDelete={onBulkDelete}
         />
       </div>
@@ -1107,6 +1178,11 @@ export function AttendeesTable({
   onBulkExportSelected,
   bulkExportBusy,
   onBulkChangeTicketType,
+  itemCount,
+  itemsError,
+  onRetryItems,
+  onBulkRevokeItems,
+  bulkRevokeItemsBusy,
   onBulkDelete,
   eventTimezone,
   event,
@@ -1134,6 +1210,11 @@ export function AttendeesTable({
           ticketTypesError={ticketTypesError}
           onRetryTicketTypes={onRetryTicketTypes}
           onBulkChangeTicketType={onBulkChangeTicketType}
+          itemCount={itemCount}
+          itemsError={itemsError}
+          onRetryItems={onRetryItems}
+          onBulkRevokeItems={onBulkRevokeItems}
+          bulkRevokeItemsBusy={bulkRevokeItemsBusy}
           onBulkDelete={onBulkDelete}
         />
       ) : (

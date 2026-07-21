@@ -39,6 +39,7 @@ import {
   revokeCheckIn,
   revokeCheckInMutation,
   revokeItemState,
+  revokeItemsForAttendees,
   getAttendeeCard,
   UndoNotAllowedError,
   loadEventTicketTypes,
@@ -1711,6 +1712,47 @@ export async function handleBulkCheckInEventAttendees(c: Context, db: PrismaClie
   }
 
   return c.json(counts);
+}
+
+const bulkRevokeItemsAttendeesBodySchema = z
+  .object({
+    attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+  })
+  .strict();
+
+/** POST /api/admin/events/:eventId/attendees/bulk-revoke-items — reset every issued/returned
+ * item hand-out back to "pending" for a selection of attendees at once, from the Attendees
+ * list's row-selection bulk bar. Independent of check-in status, like its Danger Zone sibling
+ * (event-wide "Revoke all items issued") — this is the same per-attendee reset scoped to an
+ * explicit selection instead of the whole event; `revokeItemsForAttendees` already owns the
+ * id-scoping, chunking, and per-attendee blocked-pass tolerance, so this handler is just
+ * validation + the call. Regular admin (not superadmin-only, unlike the Danger Zone version),
+ * matching the other bulk-selection actions in this file. */
+export async function handleBulkRevokeAttendeeItems(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid json" }, 400);
+  }
+  const parsed = bulkRevokeItemsAttendeesBodySchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "validation_failed" }, 400);
+
+  const audit = adminAuditFromContext(c);
+  const revokedCount = await revokeItemsForAttendees(db, {
+    eventId,
+    attendeeIds: parsed.data.attendeeIds,
+    audit,
+  });
+
+  return c.json({ revokedCount });
 }
 
 /** POST /api/admin/events/:eventId/attendees — manual attendee create (admin/superadmin). */

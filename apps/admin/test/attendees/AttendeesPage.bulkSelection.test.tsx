@@ -14,6 +14,8 @@ const bulkCheckInAttendees = vi.fn();
 const bulkChangeTicketType = vi.fn();
 const exportSelectedAttendees = vi.fn();
 const fetchTicketTypes = vi.fn();
+const fetchEventItems = vi.fn();
+const bulkRevokeItems = vi.fn();
 const addToast = vi.fn();
 const reportApiError = vi.fn();
 
@@ -74,6 +76,8 @@ vi.mock("../../src/api/client.js", () => ({
   fetchTicketTypes: (...args: unknown[]) => fetchTicketTypes(...args),
   bulkChangeTicketType: (...args: unknown[]) => bulkChangeTicketType(...args),
   fetchEventMailSettings: (...args: unknown[]) => fetchEventMailSettings(...args),
+  fetchEventItems: (...args: unknown[]) => fetchEventItems(...args),
+  bulkRevokeItems: (...args: unknown[]) => bulkRevokeItems(...args),
   exportAttendees: vi.fn(),
   exportSelectedAttendees: (...args: unknown[]) => exportSelectedAttendees(...args),
   bulkResendTickets: vi.fn(),
@@ -137,6 +141,7 @@ beforeEach(() => {
   mockMatchMedia(true);
   fetchEventMailSettings.mockResolvedValue(mailSettings("smtp"));
   fetchTicketTypes.mockResolvedValue([]);
+  fetchEventItems.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -1092,6 +1097,156 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
 
     await waitFor(() => {
       const item = bulkBar().getByRole("menuitem", { name: /Change ticket type/ }) as HTMLButtonElement;
+      expect(item.disabled).toBe(false);
+    });
+    // The selection survives the retry — the whole point was not losing it.
+    expect(bulkBar().getByText("1")).toBeTruthy();
+  });
+});
+
+describe("AttendeesPage bulk revoke items (#551)", () => {
+  const items = [
+    {
+      id: "item-1",
+      key: "badge",
+      label: "Badge",
+      description: null,
+      type: "custom",
+      enabled: true,
+      icon: null,
+      config: null,
+    },
+  ];
+
+  async function selectTwoRowsAndOpenMenu() {
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select John Smith" }));
+    await waitFor(() => expect(bulkBar().getByText("2")).toBeTruthy());
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+  }
+
+  it("revokes items for the selected attendees via the More actions menu, toasts, and clears the selection", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchEventItems.mockResolvedValue(items);
+    bulkRevokeItems.mockResolvedValue({ revokedCount: 3 });
+
+    await selectTwoRowsAndOpenMenu();
+    const item = bulkBar().getByRole("menuitem", { name: /Revoke items/ });
+    expect(item.textContent).toContain("Reset all issued items for 2 attendees");
+    fireEvent.click(item);
+
+    const dialog = screen.getByRole("dialog", { name: "Revoke items for 2 attendees?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke items" }));
+
+    await waitFor(() => {
+      expect(bulkRevokeItems).toHaveBeenCalledWith("evt-1", ["att-1", "att-2"]);
+    });
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("3 items revoked.", "success");
+    });
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
+  });
+
+  it("toasts an info message (not an error) when nothing was issued for the selection", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchEventItems.mockResolvedValue(items);
+    bulkRevokeItems.mockResolvedValue({ revokedCount: 0 });
+
+    await selectTwoRowsAndOpenMenu();
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke items/ }));
+    const dialog = screen.getByRole("dialog", { name: "Revoke items for 2 attendees?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke items" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("No issued items to revoke for the selected attendees.", "info");
+    });
+  });
+
+  it("Cancel closes the dialog without calling bulkRevokeItems, and keeps the selection", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchEventItems.mockResolvedValue(items);
+
+    await selectTwoRowsAndOpenMenu();
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke items/ }));
+    const dialog = screen.getByRole("dialog", { name: "Revoke items for 2 attendees?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog", { name: "Revoke items for 2 attendees?" })).toBeNull();
+    expect(bulkRevokeItems).not.toHaveBeenCalled();
+    expect(document.querySelector(".attendees-bulkbar")).toBeTruthy();
+  });
+
+  it("shows an operator-safe error inside the dialog and keeps the selection when bulkRevokeItems fails", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchEventItems.mockResolvedValue(items);
+    bulkRevokeItems.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+
+    await selectTwoRowsAndOpenMenu();
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke items/ }));
+    const dialog = screen.getByRole("dialog", { name: "Revoke items for 2 attendees?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke items" }));
+
+    await screen.findByText("Revoke items failed.");
+    expect(addToast).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Revoke items for 2 attendees?" })).toBeTruthy();
+    expect(document.querySelector(".attendees-bulkbar")).toBeTruthy();
+  });
+
+  it("redirects to /login on a 401 instead of showing an inline error", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchEventItems.mockResolvedValue(items);
+    bulkRevokeItems.mockRejectedValueOnce(new ApiError(401, "unauthorized"));
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign, pathname: "/admin/events/evt-1/attendees" });
+
+    await selectTwoRowsAndOpenMenu();
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke items/ }));
+    const dialog = screen.getByRole("dialog", { name: "Revoke items for 2 attendees?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke items" }));
+
+    await waitFor(() => {
+      expect(assign).toHaveBeenCalledWith(
+        `/login?next=${encodeURIComponent("/admin/events/evt-1/attendees")}`,
+      );
+    });
+  });
+
+  it("disables the menu item when the event has no configured items", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchEventItems.mockResolvedValue([]);
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+
+    const item = bulkBar().getByRole("menuitem", { name: /Revoke items/ }) as HTMLButtonElement;
+    expect(item.disabled).toBe(true);
+    expect(item.title).toContain("No items configured");
+  });
+
+  it("lets the operator retry the items load from the bulk bar's More actions menu, without losing the selection", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchEventItems.mockRejectedValueOnce(new Error("network down"));
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+
+    await waitFor(() => expect(bulkBar().getByText("Retry loading items")).toBeTruthy());
+
+    fetchEventItems.mockResolvedValueOnce(items);
+    fireEvent.click(bulkBar().getByText("Retry loading items"));
+
+    await waitFor(() => {
+      const item = bulkBar().getByRole("menuitem", { name: /Revoke items/ }) as HTMLButtonElement;
       expect(item.disabled).toBe(false);
     });
     // The selection survives the retry — the whole point was not losing it.

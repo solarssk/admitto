@@ -49,6 +49,9 @@ vi.mock("../../src/api/client.js", () => ({
   },
   fetchEventAttendees: (...args: unknown[]) => fetchEventAttendees(...args),
   fetchTicketTypes: vi.fn().mockResolvedValue([]),
+  fetchEventItems: vi.fn().mockResolvedValue([
+    { id: "item-1", key: "badge", label: "Badge", description: null, type: "custom", enabled: true, icon: null, config: null },
+  ]),
   fetchEventTemplates: vi.fn().mockResolvedValue([
     {
       id: "tpl-ticket",
@@ -193,5 +196,9 @@ describe("AttendeesPage archived lockdown", () => {
     fireEvent.click(moreActionsButton);
     const deleteItem = within(bar).getByRole("menuitem", { name: /^Delete/ });
     expect((deleteItem as HTMLButtonElement).disabled).toBe(false);
+    // Resetting issued items for an event that's already over doesn't make sense (matches
+    // Check in above) - locked on archived events, unlike Delete/Export which stay reachable.
+    const revokeItemsItem = within(bar).getByRole("menuitem", { name: /Revoke items/ });
+    expect((revokeItemsItem as HTMLButtonElement).disabled).toBe(true);
   });
 });

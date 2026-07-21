@@ -20,6 +20,7 @@ import type {
   ImportCommitResponse,
   BulkResendResponse,
   BulkCheckInResponse,
+  BulkRevokeItemsResponse,
   EventItemDto,
   EventItemsListResponse,
   CreateEventItemBody,
@@ -812,6 +813,17 @@ export async function bulkCheckInAttendees(
   return parseJson<BulkCheckInResponse>(res);
 }
 
+export async function bulkRevokeItems(
+  eventId: string,
+  attendeeIds: string[],
+): Promise<BulkRevokeItemsResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-revoke-items`,
+    jsonPostInit({ attendeeIds }),
+  );
+  return parseJson<BulkRevokeItemsResponse>(res);
+}
+
 export async function resendTicket(
   eventId: string,
   attendeeId: string,
@@ -836,7 +848,9 @@ export async function bulkResendTickets(
   return parseJson<BulkResendResponse>(res);
 }
 
-/** Fetch all event items for the Requirements admin screen. */
+/** Fetch all event items — the Requirements admin screen's catalog, and the Attendees list's
+ * bulk "Revoke items" gate (which item is configured doesn't matter there, only whether any
+ * are). */
 export async function fetchEventItems(
   eventId: string,
   signal?: AbortSignal,

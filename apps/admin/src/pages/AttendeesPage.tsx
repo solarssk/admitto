@@ -7,9 +7,11 @@ import {
   bulkCheckInAttendees,
   bulkDeleteAttendees,
   bulkResendTickets,
+  bulkRevokeItems,
   exportAttendees,
   exportSelectedAttendees,
   fetchEventAttendees,
+  fetchEventItems,
   fetchTicketTypes,
   sendEventBulk,
   updateAttendee,
@@ -388,6 +390,11 @@ export function AttendeesPage() {
   const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
   const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
   const [ticketTypesRetryToken, setTicketTypesRetryToken] = useState(0);
+  // Only the count is ever used (gates the bulk "Revoke items" action) — no need to hold onto
+  // the full item catalog here, unlike ticketTypes above (whose labels/colors ARE rendered).
+  const [eventItemCount, setEventItemCount] = useState(0);
+  const [eventItemsError, setEventItemsError] = useState<string | null>(null);
+  const [eventItemsRetryToken, setEventItemsRetryToken] = useState(0);
   const [exportingFormat, setExportingFormat] = useState<ExportFormat | null>(null);
   const [loading, setLoading] = useState(true);
   // True once the very first fetch (success or failure) has settled - distinguishes the
@@ -411,6 +418,9 @@ export function AttendeesPage() {
   const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
   const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null);
+  const [bulkRevokeItemsBusy, setBulkRevokeItemsBusy] = useState(false);
+  const [bulkRevokeItemsConfirmOpen, setBulkRevokeItemsConfirmOpen] = useState(false);
+  const [bulkRevokeItemsError, setBulkRevokeItemsError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [revokeOpen, setRevokeOpen] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<AttendeeRowDto | null>(null);
@@ -449,6 +459,24 @@ export function AttendeesPage() {
       });
     return () => ac.abort();
   }, [eventId, ticketTypesRetryToken]);
+
+  useEffect(() => {
+    if (!eventId) return;
+    setEventItemCount(0);
+    setEventItemsError(null);
+    const ac = new AbortController();
+    fetchEventItems(eventId, ac.signal)
+      .then((fetchedItems) => {
+        if (ac.signal.aborted) return;
+        setEventItemCount(fetchedItems.length);
+      })
+      .catch((err: unknown) => {
+        if (ac.signal.aborted) return;
+        setEventItemCount(0);
+        setEventItemsError(operatorApiErrorMessage(err, "Couldn't load items."));
+      });
+    return () => ac.abort();
+  }, [eventId, eventItemsRetryToken]);
 
   // Whether the header "Send tickets" button should work at all — shared with the Attendee
   // Detail page's "Resend ticket" gate via useMailConfigured.
@@ -879,6 +907,47 @@ export function AttendeesPage() {
     }
   };
 
+  /** Bulk "Revoke items" for an explicit subset of selected attendees — resets every issued
+   * item hand-out (badge, wristband, giftbag, …) back to pending for each selected attendee at
+   * once, independent of check-in status. Same dialog-stays-open-with-inline-error-on-failure
+   * convention as handleBulkDeleteSelected above; an attendee with a revoked/cancelled pass is
+   * skipped server-side rather than treated as a failure, so a partial revokedCount below the
+   * selection size is still a plain success toast, not an error. */
+  const handleBulkRevokeItemsSelected = async () => {
+    if (!eventId || selectedIds.size === 0) return;
+    const initiatingEventId = eventId;
+    const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
+    setBulkRevokeItemsBusy(true);
+    setBulkRevokeItemsError(null);
+    try {
+      const { revokedCount } = await bulkRevokeItems(initiatingEventId, [...selectedIds]);
+      if (!isStillOnEvent()) return;
+      if (revokedCount > 0) {
+        addToast(`${revokedCount} item${revokedCount === 1 ? "" : "s"} revoked.`, "success");
+      } else {
+        addToast("No issued items to revoke for the selected attendees.", "info");
+      }
+      setBulkRevokeItemsConfirmOpen(false);
+      clearSelection();
+      setReloadToken((n) => n + 1);
+    } catch (err) {
+      if (!isStillOnEvent()) return;
+      if (err instanceof ApiError) {
+        reportApiError(err.status);
+        if (err.status === 401) {
+          const next = encodeURIComponent(window.location.pathname);
+          window.location.assign(`/login?next=${next}`);
+          return;
+        }
+        setBulkRevokeItemsError(operatorApiErrorMessage(err, "Revoke items failed."));
+      } else {
+        setBulkRevokeItemsError("Failed to revoke items.");
+      }
+    } finally {
+      if (isStillOnEvent()) setBulkRevokeItemsBusy(false);
+    }
+  };
+
   const isUnfilteredEmpty =
     total === 0 &&
     !searchQuery &&
@@ -1034,6 +1103,14 @@ export function AttendeesPage() {
           setChangeTypeValue(ticketTypes[0]?.key ?? "");
           setChangeTypeOpen(true);
         }}
+        itemCount={eventItemCount}
+        itemsError={eventItemsError}
+        onRetryItems={() => setEventItemsRetryToken((n) => n + 1)}
+        onBulkRevokeItems={() => {
+          setBulkRevokeItemsError(null);
+          setBulkRevokeItemsConfirmOpen(true);
+        }}
+        bulkRevokeItemsBusy={bulkRevokeItemsBusy}
         onBulkDelete={() => {
           setBulkDeleteError(null);
           setBulkDeleteConfirmOpen(true);
@@ -1139,6 +1216,23 @@ export function AttendeesPage() {
           <li>Check-in history</li>
         </ul>
       </ConfirmDialog>
+
+      <ConfirmDialog
+        open={bulkRevokeItemsConfirmOpen}
+        title={`Revoke items for ${selectedIds.size} attendee${selectedIds.size === 1 ? "" : "s"}?`}
+        message="Every issued item (badge, wristband, giftbag, …) for the selected attendees is reset to pending. Items can be re-issued from the check-in screen at any time."
+        errorMessage={bulkRevokeItemsError}
+        confirmLabel="Revoke items"
+        confirmVariant="danger"
+        loading={bulkRevokeItemsBusy}
+        onConfirm={() => void handleBulkRevokeItemsSelected()}
+        onCancel={() => {
+          if (!bulkRevokeItemsBusy) {
+            setBulkRevokeItemsConfirmOpen(false);
+            setBulkRevokeItemsError(null);
+          }
+        }}
+      />
     </>
   );
 }

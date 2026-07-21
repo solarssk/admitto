@@ -41,6 +41,7 @@ vi.mock("../../src/api/client.js", () => ({
   },
   fetchEventAttendees: (...args: unknown[]) => fetchEventAttendees(...args),
   fetchTicketTypes: vi.fn().mockResolvedValue([]),
+  fetchEventItems: vi.fn().mockResolvedValue([]),
   fetchEventTemplates: vi.fn().mockResolvedValue([]),
   fetchEventMailSettings: vi.fn().mockResolvedValue({
     eventId: "evt-1",
