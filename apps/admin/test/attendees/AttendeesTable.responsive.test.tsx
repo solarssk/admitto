@@ -131,6 +131,59 @@ describe("AttendeesTable toolbar vs bulk bar", () => {
   });
 });
 
+describe("AttendeesTable mobile bulk bar — 'More' menu's Send tickets item", () => {
+  beforeEach(() => {
+    mockMatchMedia(false);
+  });
+
+  it("carries the archived tooltip when the event is archived", () => {
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow]}
+        selectedIds={new Set(["att-1"])}
+        event={{ archived_at: "2026-01-01T00:00:00.000Z" }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.getByRole("menuitem", { name: /Send tickets/ }).getAttribute("title")).toBe(
+      "This event is archived — editing is disabled.",
+    );
+  });
+
+  it("carries the no-mail-transport tooltip when canBulkSend is false and the event isn't archived", () => {
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow]}
+        selectedIds={new Set(["att-1"])}
+        canBulkSend={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.getByRole("menuitem", { name: /Send tickets/ }).getAttribute("title")).toBe(
+      "No mail transport configured for this event. Set one up in Event Settings → Mailing.",
+    );
+  });
+
+  it("shows 'Sending…' while busy and pluralizes the hint for more than one selected attendee", () => {
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow, otherRow]}
+        selectedIds={new Set(["att-1", "att-2"])}
+        bulkSendBusy
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    const item = screen.getByRole("menuitem", { name: /Sending…/ });
+    expect(item.textContent).toContain("Email tickets to 2 attendees");
+  });
+});
+
 describe("AttendeesTable Filters dropdown (PO review, third pass)", () => {
   beforeEach(() => {
     mockMatchMedia(true);
@@ -184,10 +237,11 @@ describe("AttendeesTable Filters dropdown (PO review, third pass)", () => {
         onToggleRow={vi.fn()}
         statusFilter="admitted"
         rsvpStatusFilter="confirmed"
+        ticketTypeFilter="vip"
       />,
     );
     const toggle = screen.getByRole("button", { name: /Filters/ });
-    expect(within(toggle).getByText("2")).toBeTruthy();
+    expect(within(toggle).getByText("3")).toBeTruthy();
   });
 
   it("exposes the panel as a native fieldset of controls, not a false menu, and moves focus into it on open (CodeRabbit + SonarCloud review)", () => {
@@ -225,6 +279,34 @@ describe("AttendeesTable Filters dropdown (PO review, third pass)", () => {
     const select = screen.getByLabelText("Filter by mail delivery status") as HTMLSelectElement;
     fireEvent.change(select, { target: { value: "failed" } });
     expect(onMailStatusFilterChange).toHaveBeenCalledWith("failed");
+  });
+
+  it("reports ticket type, attendance, and check-in status filter changes", () => {
+    const onTicketTypeFilterChange = vi.fn();
+    const onRsvpStatusFilterChange = vi.fn();
+    const onStatusFilterChange = vi.fn();
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow]}
+        selectedIds={new Set()}
+        ticketTypes={[{ key: "vip", label: "VIP" }]}
+        onTicketTypeFilterChange={onTicketTypeFilterChange}
+        onRsvpStatusFilterChange={onRsvpStatusFilterChange}
+        onStatusFilterChange={onStatusFilterChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+
+    fireEvent.change(screen.getByLabelText("Filter by ticket type"), { target: { value: "vip" } });
+    expect(onTicketTypeFilterChange).toHaveBeenCalledWith("vip");
+
+    fireEvent.change(screen.getByLabelText("Filter by attendance"), { target: { value: "confirmed" } });
+    expect(onRsvpStatusFilterChange).toHaveBeenCalledWith("confirmed");
+
+    fireEvent.change(screen.getByLabelText("Filter by check-in status"), { target: { value: "admitted" } });
+    expect(onStatusFilterChange).toHaveBeenCalledWith("admitted");
   });
 });
 
