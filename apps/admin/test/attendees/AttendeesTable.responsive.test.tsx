@@ -190,6 +190,24 @@ describe("AttendeesTable Filters dropdown (PO review, third pass)", () => {
     expect(within(toggle).getByText("2")).toBeTruthy();
   });
 
+  it("exposes the panel as a labeled group of native controls, not a false menu, and moves focus into it on open (CodeRabbit review)", () => {
+    render(
+      <AttendeesTable {...tableProps} items={[baseRow]} selectedIds={new Set()} onToggleRow={vi.fn()} />,
+    );
+
+    const trigger = screen.getByRole("button", { name: "Filters" });
+    // Not "menu" - the panel holds native <select>s, not menuitems, so useDropdownMenu's
+    // menuitem-focus/roving-arrow-key behavior doesn't apply here.
+    expect(trigger.getAttribute("aria-haspopup")).toBe("true");
+
+    fireEvent.click(trigger);
+
+    const panel = document.querySelector(".attendees-filters-menu__panel");
+    expect(panel?.getAttribute("role")).toBe("group");
+    expect(panel?.getAttribute("aria-label")).toBe("Filters");
+    expect(document.activeElement).toBe(screen.getByLabelText("Filter by ticket type"));
+  });
+
   it("stays reachable and functional on a phone too — same trigger button, same floating panel", () => {
     mockMatchMedia(false);
     const onMailStatusFilterChange = vi.fn();

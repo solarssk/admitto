@@ -753,7 +753,7 @@ function FilterToolbar({
           variant="secondary"
           icon={<i className="ti ti-filter" aria-hidden="true" />}
           hasMenu
-          aria-haspopup="menu"
+          aria-haspopup="true"
           aria-expanded={open}
           onClick={() => setOpen((o) => !o)}
         >
@@ -763,7 +763,10 @@ function FilterToolbar({
           )}
         </Button>
         {open && (
-          <div className="attendees-filters-menu__panel" ref={panelRef}>
+          // Native selects, not menuitems — a labeled group, not `role="menu"` (CodeRabbit review:
+          // aria-haspopup="menu" previously advertised a menu useDropdownMenu couldn't find a
+          // menuitem in, so focus never moved into the panel on open).
+          <div className="attendees-filters-menu__panel" role="group" aria-label="Filters" ref={panelRef}>
             {!isDesktop && (
               <MobileSortControl sortBy={sortBy} sortDir={sortDir} onSortChange={onSortChange} />
             )}
