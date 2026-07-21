@@ -868,7 +868,7 @@ describe("ImportPage operator errors", () => {
     fireEvent.change(screen.getByLabelText(/File \(\.csv or \.xlsx\)/), {
       target: { files: [file] },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed/);
     });
