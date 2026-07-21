@@ -34,6 +34,14 @@ function pluralize(count: number, singular: string): string {
   return count === 1 ? singular : `${singular}s`;
 }
 
+/** The server caps invalid/skipped row detail at a fixed count (CodeRabbit review: a file where
+ * every row is skipped/invalid would otherwise render tens of thousands of DOM rows) - this
+ * folds the "showing first N of M" note into the section heading when the response was capped,
+ * matching the Row preview card's own count note. */
+function rowDetailHeading(label: string, shown: number, total: number): string {
+  return total > shown ? `${label} — showing first ${shown} of ${total}` : label;
+}
+
 interface ImportSampleTableProps {
   rows: ImportSampleRow[];
   attributeFieldLabels: Array<{ source_field: string; label: string }>;
@@ -746,14 +754,18 @@ export function ImportPage() {
 
                 {preview.parse.invalidRows.length > 0 && (
                   <div className="import-invalid">
-                    <h3 className="import-subtitle">Invalid rows</h3>
+                    <h3 className="import-subtitle">
+                      {rowDetailHeading("Invalid rows", preview.parse.invalidRows.length, preview.parse.invalidCount)}
+                    </h3>
                     <InvalidRowsTable rows={preview.parse.invalidRows} />
                   </div>
                 )}
 
                 {preview.summary.skipped.length > 0 && (
                   <div className="import-invalid">
-                    <h3 className="import-subtitle">Skipped rows</h3>
+                    <h3 className="import-subtitle">
+                      {rowDetailHeading("Skipped rows", preview.summary.skipped.length, preview.summary.toSkip)}
+                    </h3>
                     <SkippedRowsTable rows={preview.summary.skipped} />
                   </div>
                 )}
@@ -836,31 +848,18 @@ export function ImportPage() {
 
           {result.skipped.length > 0 && (
             <div className="import-invalid">
-              <h3 className="import-subtitle">Skipped rows</h3>
-              <div className="attendees-table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Email</th>
-                      <th>Reason</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {result.skipped.map((row, idx) => (
-                      <tr key={`${row.email}-${idx}`}>
-                        <td>{row.email}</td>
-                        <td>{row.reason}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <h3 className="import-subtitle">
+                {rowDetailHeading("Skipped rows", result.skipped.length, result.toSkip)}
+              </h3>
+              <SkippedRowsTable rows={result.skipped} />
             </div>
           )}
 
           {result.invalidRows.length > 0 && (
             <div className="import-invalid">
-              <h3 className="import-subtitle">Invalid rows</h3>
+              <h3 className="import-subtitle">
+                {rowDetailHeading("Invalid rows", result.invalidRows.length, result.invalidCount)}
+              </h3>
               <p className="import-hint">
                 Something about the event changed between preview and commit (e.g. a ticket type
                 was removed) - these rows were not imported.

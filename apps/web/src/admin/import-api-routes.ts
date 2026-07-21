@@ -7,6 +7,7 @@ import {
   loadImportTicketTypes,
   type AttendeeRow,
   type ImportAttributeField,
+  type SkippedRow,
 } from "@admitto/import";
 import {
   loadEventCustomDataFields,
@@ -42,6 +43,13 @@ export type ImportInvalidRowDto = {
 /** Max valid rows returned in preview sample (data sanity check before commit). */
 const SAMPLE_LIMIT = 20;
 
+/** Max invalid/skipped rows returned per response (preview and commit alike). A file at
+ * MAX_IMPORT_ROWS where every row is skipped (e.g. re-importing the same file with overwrite
+ * off) would otherwise put 50 000 email/reason pairs in the payload and the admin SPA's table,
+ * making both the request and the page unresponsive (CodeRabbit review). The true counts are
+ * still returned in full via invalidCount/skippedCount. */
+const ROW_DETAIL_LIMIT = 20;
+
 /** One valid CSV row shaped for the import preview sample table (max SAMPLE_LIMIT per response). */
 export type ImportSampleRow = {
   rowIndex: number;
@@ -58,13 +66,16 @@ export type ImportPreviewDto = {
   importId: string;
   parse: {
     validCount: number;
+    /** Capped at ROW_DETAIL_LIMIT; invalidCount below is the true total. */
     invalidRows: ImportInvalidRowDto[];
+    invalidCount: number;
     warnings: string[];
   };
   summary: {
     toCreate: number;
     toUpdate: number;
     toSkip: number;
+    /** Capped at ROW_DETAIL_LIMIT; toSkip above is the true total. */
     skipped: Array<{ email: string; reason: string }>;
   };
   sampleRows: ImportSampleRow[];
@@ -78,14 +89,17 @@ export type ImportCommitDto = {
   toSkip: number;
   created: number;
   updated: number;
+  /** Capped at ROW_DETAIL_LIMIT; toSkip above is the true total. */
   skipped: Array<{ email: string; reason: string }>;
   /**
    * Rows that failed the commit-time re-parse (e.g. a ticket type deleted from the catalog
    * between preview and commit) and were therefore never passed into commitImport at all - they
    * are not reflected in toCreate/toUpdate/toSkip/created/updated/skipped above. Same shape as
-   * ImportPreviewDto's parse.invalidRows so the admin SPA can reuse its rendering.
+   * ImportPreviewDto's parse.invalidRows so the admin SPA can reuse its rendering. Capped at
+   * ROW_DETAIL_LIMIT; invalidCount below is the true total.
    */
   invalidRows: ImportInvalidRowDto[];
+  invalidCount: number;
 };
 
 type ImportFileType = "csv" | "xlsx";
@@ -206,10 +220,16 @@ function sanitizePreviewWarning(warning: string): string {
 function invalidRowsForResponse(
   invalidRows: { rowIndex: number; reason: string }[],
 ): ImportInvalidRowDto[] {
-  return invalidRows.map(({ rowIndex, reason }) => ({
+  return invalidRows.slice(0, ROW_DETAIL_LIMIT).map(({ rowIndex, reason }) => ({
     rowIndex,
     reason: reason.startsWith("Unknown ticket type:") ? reason : sanitizePreviewReason(reason),
   }));
+}
+
+/** Same cap as invalidRowsForResponse, for summary.skipped/body.skipped - both can span the
+ * whole file (e.g. re-importing with overwrite off skips every row). */
+function skippedRowsForResponse(skipped: SkippedRow[]): SkippedRow[] {
+  return skipped.slice(0, ROW_DETAIL_LIMIT);
 }
 
 /** Group invalid rows by sanitized reason type — counts only, no cell values. */
@@ -427,13 +447,14 @@ export async function handleImportPreview(c: Context, db: PrismaClient): Promise
       parse: {
         validCount: parsed.validRows.length,
         invalidRows: invalidRowsForResponse(parsed.invalidRows),
+        invalidCount: parsed.invalidRows.length,
         warnings: parsed.warnings.map(sanitizePreviewWarning),
       },
       summary: {
         toCreate: summary.toCreate,
         toUpdate: summary.toUpdate,
         toSkip: summary.toSkip,
-        skipped: summary.skipped,
+        skipped: skippedRowsForResponse(summary.skipped),
       },
       sampleRows,
       attributeFieldLabels,
@@ -610,8 +631,9 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
       toSkip: summary.toSkip,
       created: summary.created,
       updated: summary.updated,
-      skipped: summary.skipped,
+      skipped: skippedRowsForResponse(summary.skipped),
       invalidRows: invalidRowsForResponse(allInvalidRows),
+      invalidCount: allInvalidRows.length,
     };
 
     return c.json(body);

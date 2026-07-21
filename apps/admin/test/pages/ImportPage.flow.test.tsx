@@ -63,7 +63,7 @@ function renderPage() {
 function samplePreview(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     importId: "imp-1",
-    parse: { validCount: 1, invalidRows: [], warnings: [] },
+    parse: { validCount: 1, invalidRows: [], invalidCount: 0, warnings: [] },
     summary: { toCreate: 1, toUpdate: 0, toSkip: 0, skipped: [] },
     sampleRows: [
       {
@@ -111,6 +111,7 @@ describe("ImportPage upload → preview → commit flow", () => {
       updated: 0,
       skipped: [],
       invalidRows: [],
+      invalidCount: 0,
     });
     renderPage();
     expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
@@ -258,7 +259,9 @@ describe("ImportPage upload → preview → commit flow", () => {
   it("lists parse warnings on the validation summary", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(
-      samplePreview({ parse: { validCount: 1, invalidRows: [], warnings: ['Row 3: "email" looks malformed'] } }),
+      samplePreview({
+        parse: { validCount: 1, invalidRows: [], invalidCount: 0, warnings: ['Row 3: "email" looks malformed'] },
+      }),
     );
     renderPage();
     expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
@@ -302,6 +305,62 @@ describe("ImportPage upload → preview → commit flow", () => {
     ).toBeTruthy();
   });
 
+  it("notes the true total when the server capped the skipped/invalid row detail (CodeRabbit review)", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(
+      samplePreview({
+        parse: {
+          validCount: 1,
+          invalidRows: [{ rowIndex: 1, reason: "Missing email" }],
+          invalidCount: 5,
+          warnings: [],
+        },
+        summary: {
+          toCreate: 0,
+          toUpdate: 0,
+          toSkip: 5,
+          skipped: [{ email: "existing@example.com", reason: "Attendee already exists" }],
+        },
+      }),
+    );
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+
+    expect(await screen.findByText("Invalid rows — showing first 1 of 5")).toBeTruthy();
+    expect(screen.getByText("Skipped rows — showing first 1 of 5")).toBeTruthy();
+  });
+
+  it("shows a plain heading with no count note when every skipped/invalid row detail is returned", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(
+      samplePreview({
+        parse: {
+          validCount: 1,
+          invalidRows: [{ rowIndex: 1, reason: "Missing email" }],
+          invalidCount: 1,
+          warnings: [],
+        },
+        summary: {
+          toCreate: 0,
+          toUpdate: 0,
+          toSkip: 1,
+          skipped: [{ email: "existing@example.com", reason: "Attendee already exists" }],
+        },
+      }),
+    );
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+
+    expect(await screen.findByText("Invalid rows")).toBeTruthy();
+    expect(screen.queryByText(/showing first/)).toBeNull();
+  });
+
   it("shows rows the commit-time re-parse invalidated (e.g. a ticket type deleted between preview and commit)", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());
@@ -314,6 +373,7 @@ describe("ImportPage upload → preview → commit flow", () => {
       updated: 0,
       skipped: [],
       invalidRows: [{ rowIndex: 1, reason: 'Unknown ticket type: "vip"' }],
+      invalidCount: 1,
     });
     renderPage();
     expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
@@ -350,6 +410,7 @@ describe("ImportPage upload → preview → commit flow", () => {
         updated: 0,
         skipped: [],
         invalidRows: [],
+        invalidCount: 0,
       });
     renderPage();
     expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
@@ -555,6 +616,7 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
       updated: 0,
       skipped: [],
       invalidRows: [],
+      invalidCount: 0,
     });
     renderPage();
     expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
@@ -575,6 +637,34 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
     expect(await screen.findByRole("button", { name: "Upload a CSV or XLSX file" })).toBeTruthy();
     expect((screen.getByLabelText(/Dry run/) as HTMLInputElement).checked).toBe(true);
     expect(screen.queryByText("Import complete")).toBeNull();
+  });
+
+  it("notes the true total on the done screen when the server capped commit's skipped/invalid row detail (CodeRabbit review)", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(samplePreview());
+    commitImport.mockResolvedValueOnce({
+      importId: "imp-1",
+      toCreate: 0,
+      toUpdate: 0,
+      toSkip: 5,
+      created: 0,
+      updated: 0,
+      skipped: [{ email: "existing@example.com", reason: "Attendee already exists" }],
+      invalidRows: [{ rowIndex: 1, reason: "Missing email" }],
+      invalidCount: 5,
+    });
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    expect(await screen.findByText("To create")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(/Dry run/));
+    fireEvent.click(screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }));
+
+    expect(await screen.findByText("Import complete")).toBeTruthy();
+    expect(screen.getByText("Skipped rows — showing first 1 of 5")).toBeTruthy();
+    expect(screen.getByText("Invalid rows — showing first 1 of 5")).toBeTruthy();
   });
 
   it("resets to the loading state when navigating directly from one event's import page to another, so the previous event's history can't flash under the new event's timezone (CodeRabbit review)", async () => {

@@ -296,13 +296,16 @@ export interface ImportPreviewResponse {
   importId: string;
   parse: {
     validCount: number;
+    /** Capped server-side; invalidCount is the true total. */
     invalidRows: ImportInvalidRow[];
+    invalidCount: number;
     warnings: string[];
   };
   summary: {
     toCreate: number;
     toUpdate: number;
     toSkip: number;
+    /** Capped server-side; toSkip above is the true total. */
     skipped: ImportSkippedRow[];
   };
   sampleRows: ImportSampleRow[];
@@ -321,10 +324,13 @@ export interface ImportCommitResponse {
   toSkip: number;
   created: number;
   updated: number;
+  /** Capped server-side; toSkip above is the true total. */
   skipped: ImportSkippedRow[];
   /** Rows dropped by the commit-time re-parse before ever reaching the write step (e.g. a ticket
-   * type deleted from the catalog between preview and commit) - absent from created/updated/skipped. */
+   * type deleted from the catalog between preview and commit) - absent from created/updated/skipped.
+   * Capped server-side; invalidCount is the true total. */
   invalidRows: ImportInvalidRow[];
+  invalidCount: number;
 }
 
 /** Bulk ticket send queue summary from POST .../attendees/bulk-resend. */

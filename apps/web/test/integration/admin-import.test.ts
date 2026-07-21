@@ -420,6 +420,39 @@ describe("POST /api/admin/events/:eventId/import/preview", () => {
     ]);
   });
 
+  it("caps skipped-row detail in the response, reporting the true total separately (CodeRabbit review)", async () => {
+    // A re-import of a file where every row is already an existing attendee (overwrite off) - the
+    // scenario that could otherwise put thousands of email/reason pairs in one response.
+    const count = 25;
+    const emails = Array.from({ length: count }, (_, i) => `cap-skip-${i}@example.com`);
+    await prisma.attendee.createMany({
+      data: emails.map((email, i) => ({
+        event_id: EVENT_A,
+        email,
+        name: `Cap Skip ${i}`,
+      })),
+    });
+
+    const csv = [
+      "first_name,last_name,email",
+      ...emails.map((email, i) => `Cap,Skip ${i},${email}`),
+    ].join("\n");
+
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/preview`,
+      csvFormData(csv),
+      adminCookie,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      summary: { toSkip: number; skipped: { email: string; reason: string }[] };
+    };
+    expect(body.summary.toSkip).toBe(count);
+    expect(body.summary.skipped.length).toBe(20);
+
+    await prisma.attendee.deleteMany({ where: { email: { in: emails } } });
+  });
+
   it("rejects unsupported file type", async () => {
     const fd = new FormData();
     fd.append("file", new Blob(["hello"]), "notes.txt");
@@ -748,6 +781,35 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
     expect(body.skipped.every((s) => s.reason.includes("Overwrite existing attendees"))).toBe(true);
   });
 
+  it("caps skipped-row detail on commit too, reporting the true total separately (CodeRabbit review)", async () => {
+    const count = 25;
+    const emails = Array.from({ length: count }, (_, i) => `cap-commit-skip-${i}@example.com`);
+    await prisma.attendee.createMany({
+      data: emails.map((email, i) => ({
+        event_id: EVENT_A,
+        email,
+        name: `Cap Commit Skip ${i}`,
+      })),
+    });
+
+    const csv = [
+      "first_name,last_name,email",
+      ...emails.map((email, i) => `Cap,Commit ${i},${email}`),
+    ].join("\n");
+
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/commit`,
+      csvFormData(csv),
+      adminCookie,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { toSkip: number; skipped: unknown[] };
+    expect(body.toSkip).toBe(count);
+    expect(body.skipped.length).toBe(20);
+
+    await prisma.attendee.deleteMany({ where: { email: { in: emails } } });
+  });
+
   it("re-import overwrite=true updates profile fields", async () => {
     const updatedCsv = [
       "first_name,last_name,email,company",
@@ -835,6 +897,26 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
       expect(row).toHaveProperty("reason");
       expect(row.reason).not.toMatch(/@/);
     }
+  });
+
+  it("caps invalid-row detail in the response, reporting the true total separately (CodeRabbit review)", async () => {
+    const count = 25;
+    const csv = [
+      "first_name,last_name,email",
+      ...Array.from({ length: count }, (_, i) => `Missing,Email ${i},`),
+    ].join("\n");
+
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/preview`,
+      csvFormData(csv),
+      adminCookie,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      parse: { invalidCount: number; invalidRows: unknown[] };
+    };
+    expect(body.parse.invalidCount).toBe(count);
+    expect(body.parse.invalidRows.length).toBe(20);
   });
 
   // TOCTOU regression: a row valid at preview time can become invalid by commit time if the
