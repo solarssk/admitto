@@ -140,14 +140,14 @@ function renderImportHistoryBody({ history, error, eventTimezone, onRetry }: Imp
     );
   }
   if (history === null) {
-    return <p className="import-hint">Loading…</p>;
+    return <p className="import-hint import-history__loading">Loading…</p>;
   }
   if (history.length === 0) {
     return <p className="import-hint">No imports yet for this event.</p>;
   }
   return (
     <div className="attendees-table-wrap">
-      <table className="table">
+      <table className="table import-history-table">
         <thead>
           <tr>
             <th>Date</th>
