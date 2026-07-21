@@ -448,7 +448,7 @@ describe("POST /api/admin/events/:eventId/import/preview", () => {
       summary: { toSkip: number; skipped: { email: string; reason: string }[] };
     };
     expect(body.summary.toSkip).toBe(count);
-    expect(body.summary.skipped.length).toBe(20);
+    expect(body.summary.skipped).toHaveLength(20);
 
     await prisma.attendee.deleteMany({ where: { email: { in: emails } } });
   });
@@ -805,7 +805,7 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { toSkip: number; skipped: unknown[] };
     expect(body.toSkip).toBe(count);
-    expect(body.skipped.length).toBe(20);
+    expect(body.skipped).toHaveLength(20);
 
     await prisma.attendee.deleteMany({ where: { email: { in: emails } } });
   });
@@ -916,7 +916,7 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
       parse: { invalidCount: number; invalidRows: unknown[] };
     };
     expect(body.parse.invalidCount).toBe(count);
-    expect(body.parse.invalidRows.length).toBe(20);
+    expect(body.parse.invalidRows).toHaveLength(20);
   });
 
   // TOCTOU regression: a row valid at preview time can become invalid by commit time if the
