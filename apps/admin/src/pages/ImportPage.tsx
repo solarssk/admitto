@@ -191,8 +191,8 @@ function SkippedRowsTable({ rows }: Readonly<{ rows: readonly ImportSkippedRow[]
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={row.email}>
+          {rows.map((row, index) => (
+            <tr key={`${row.email}-${index}`}>
               <td>{row.email}</td>
               <td>{row.reason}</td>
             </tr>
