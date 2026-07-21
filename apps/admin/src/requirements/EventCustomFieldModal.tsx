@@ -19,19 +19,21 @@ export interface EventCustomFieldModalProps {
 type FormState = {
   label: string;
   source_field: string;
+  description: string;
   type: "text" | "select" | "boolean";
   required: boolean;
   options: string;
 };
 
 function emptyForm(): FormState {
-  return { label: "", source_field: "", type: "text", required: false, options: "" };
+  return { label: "", source_field: "", description: "", type: "text", required: false, options: "" };
 }
 
 function formFromField(field: EventCustomFieldDto): FormState {
   return {
     label: field.label,
     source_field: field.source_field,
+    description: field.description ?? "",
     type: field.type,
     required: field.required,
     options: field.options?.join("\n") ?? "",
@@ -69,6 +71,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
       setError("Enter a display label using letters or numbers.");
       return;
     }
+    const description = form.description.trim();
     const options = form.options
       .split(/[,\n]/)
       .map((s) => s.trim())
@@ -83,6 +86,9 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
       if (isEdit) {
         await updateEventCustomField(eventId, field.id, {
           label,
+          // null (not undefined) so the server can tell "clear the previous description" apart
+          // from "leave it untouched" - same convention as options below.
+          description: description || null,
           type: form.type,
           required: form.required,
           // null (not undefined) so the server can tell "clear the previous select's options"
@@ -93,6 +99,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
         await createEventCustomField(eventId, {
           source_field,
           label,
+          description: description || undefined,
           type: form.type,
           required: form.required,
           options: form.type === "select" ? options : undefined,
@@ -166,6 +173,19 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
               Used to reference this field from items and to match it elsewhere. Can't be
               changed after creation.
             </span>
+          </div>
+          <div className="at-field">
+            <label className="at-label" htmlFor="cf-description">
+              Description
+            </label>
+            <textarea
+              id="cf-description"
+              className="at-textarea"
+              rows={2}
+              value={form.description}
+              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              placeholder="Shown to operators on the import reference table"
+            />
           </div>
           <div className="at-field">
             <span className="at-label" id="cf-type-label">

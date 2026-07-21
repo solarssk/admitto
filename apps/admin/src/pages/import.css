@@ -309,7 +309,9 @@ fieldset:disabled .import-dropzone {
   font-weight: 600;
 }
 
+/* PO feedback: centered as a group, not left-stuck against the card's left edge. */
 .import-stats {
+  justify-content: center;
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-4);
@@ -347,14 +349,15 @@ fieldset:disabled .import-dropzone {
   font-size: var(--fs-sm);
 }
 
-/* Same amber callout as .import-warn (and the same margin every sibling section below it
- * uses) — a bare bullet list with no box and no bottom margin read as a different, cramped
- * pattern next to Invalid/Skipped rows' tables and the "no valid rows" banner (PO feedback). */
+/* Neutral framed box, same margin as Invalid/Skipped rows below it — stacking this right under
+ * the amber "no valid rows" banner in the same amber tone read as two copies of the same
+ * message instead of two distinct things (PO feedback: reusing .import-warn's color here was
+ * one callout too many). A bare bullet list with no box/margin at all read as a third, unrelated
+ * pattern, so it still gets a consistent frame - just not the same color as an actual blocker. */
 .import-warnings {
   margin: 0 0 var(--space-4);
-  padding: var(--space-3);
-  background: var(--status-warn-bg, #fff8e6);
-  border: 1px solid var(--status-warn, #f59e0b);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
 }
 

@@ -188,6 +188,46 @@ describe("POST /api/admin/events/:eventId/custom-fields", () => {
     expect(log?.metadata).toEqual({ source_field: "dietary" });
   });
 
+  it("creates a field with a description, distinct from its label", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_CF}/custom-fields`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        source_field: "shirt_size_desc",
+        label: "Shirt size",
+        description: "Attendee's t-shirt size for the swag bag",
+      }),
+    });
+    expect(res.status).toBe(201);
+    const row = (await res.json()) as { label: string; description: string | null };
+    expect(row.label).toBe("Shirt size");
+    expect(row.description).toBe("Attendee's t-shirt size for the swag bag");
+  });
+
+  it("defaults description to null when omitted", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_CF}/custom-fields`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ source_field: "no_description", label: "No description" }),
+    });
+    expect(res.status).toBe(201);
+    const row = (await res.json()) as { description: string | null };
+    expect(row.description).toBeNull();
+  });
+
+  it("rejects a description over 500 characters", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_CF}/custom-fields`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        source_field: "too_long_desc",
+        label: "Too long",
+        description: "x".repeat(501),
+      }),
+    });
+    expect(res.status).toBe(400);
+  });
+
   it("creates a select field with options and required", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_CF}/custom-fields`, {
       method: "POST",
@@ -378,6 +418,50 @@ describe("PATCH /api/admin/events/:eventId/custom-fields/:fieldId", () => {
       orderBy: { created_at: "desc" },
     });
     expect(log?.metadata).toEqual({ source_field: "parking" });
+  });
+
+  it("sets and then clears a field's description (explicit null)", async () => {
+    const created = await prisma.eventCustomField.create({
+      data: { event_id: EVENT_CF, source_field: "parking_desc", label: "Parking" },
+    });
+
+    const setRes = await app.request(`/api/admin/events/${EVENT_CF}/custom-fields/${created.id}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ description: "Does the attendee need a parking spot?" }),
+    });
+    expect(setRes.status).toBe(200);
+    const setBody = (await setRes.json()) as { description: string | null };
+    expect(setBody.description).toBe("Does the attendee need a parking spot?");
+
+    const clearRes = await app.request(`/api/admin/events/${EVENT_CF}/custom-fields/${created.id}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ description: null }),
+    });
+    expect(clearRes.status).toBe(200);
+    const clearBody = (await clearRes.json()) as { description: string | null };
+    expect(clearBody.description).toBeNull();
+  });
+
+  it("leaves description untouched when the PATCH omits the key", async () => {
+    const created = await prisma.eventCustomField.create({
+      data: {
+        event_id: EVENT_CF,
+        source_field: "untouched_desc",
+        label: "Untouched",
+        description: "Original description",
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_CF}/custom-fields/${created.id}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ label: "Renamed" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { description: string | null };
+    expect(body.description).toBe("Original description");
   });
 
   it("clears stored options when switching away from select (explicit null)", async () => {

@@ -400,6 +400,7 @@ export interface EventCustomFieldDto {
   id: string;
   source_field: string;
   label: string;
+  description: string | null;
   type: EventCustomFieldType;
   required: boolean;
   options: string[] | null;
@@ -413,6 +414,7 @@ export interface EventCustomFieldsListResponse {
 export interface CreateEventCustomFieldBody {
   source_field: string;
   label: string;
+  description?: string;
   type?: EventCustomFieldType;
   required?: boolean;
   options?: string[];
@@ -421,6 +423,8 @@ export interface CreateEventCustomFieldBody {
 /** `source_field` is immutable after create - see EventCustomFieldDto. */
 export interface UpdateEventCustomFieldPatch {
   label?: string;
+  /** null clears a previous description; omit to leave it untouched. */
+  description?: string | null;
   type?: EventCustomFieldType;
   required?: boolean;
   /** null clears a previous select's options; omit to leave options untouched. */
