@@ -303,6 +303,7 @@ export interface ImportPreviewResponse {
     toCreate: number;
     toUpdate: number;
     toSkip: number;
+    skipped: ImportSkippedRow[];
   };
   sampleRows: ImportSampleRow[];
   attributeFieldLabels: Array<{ source_field: string; label: string }>;

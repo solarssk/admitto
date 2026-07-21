@@ -65,6 +65,7 @@ export type ImportPreviewDto = {
     toCreate: number;
     toUpdate: number;
     toSkip: number;
+    skipped: Array<{ email: string; reason: string }>;
   };
   sampleRows: ImportSampleRow[];
   attributeFieldLabels: Array<{ source_field: string; label: string }>;
@@ -432,6 +433,7 @@ export async function handleImportPreview(c: Context, db: PrismaClient): Promise
         toCreate: summary.toCreate,
         toUpdate: summary.toUpdate,
         toSkip: summary.toSkip,
+        skipped: summary.skipped,
       },
       sampleRows,
       attributeFieldLabels,

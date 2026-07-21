@@ -10,7 +10,13 @@ import {
   type ImportHistoryEntry,
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { EventDto, ImportCommitResponse, ImportPreviewResponse, ImportSampleRow } from "../api/types.js";
+import type {
+  EventDto,
+  ImportCommitResponse,
+  ImportPreviewResponse,
+  ImportSampleRow,
+  ImportSkippedRow,
+} from "../api/types.js";
 import { fetchAttendeeCustomFields, type CustomDataFieldDef } from "../attendees/customData.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
@@ -161,6 +167,32 @@ function renderImportHistoryBody({ history, error, eventTimezone, onRetry }: Imp
               <td className="import-history__num import-history__num--ok">{entry.created}</td>
               <td className="import-history__num import-history__num--warn">{entry.updated}</td>
               <td className="import-history__num">{entry.skipped}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Email/Reason table explaining each skipped row — without it, "To skip: N" tells an operator
+ * nothing about why (usually an existing attendee with Overwrite off), which reads as the import
+ * silently doing nothing (PO feedback while testing #358 phase C). */
+function SkippedRowsTable({ rows }: { rows: readonly ImportSkippedRow[] }) {
+  return (
+    <div className="attendees-table-wrap">
+      <table className="table">
+        <thead>
+          <tr>
+            <th>Email</th>
+            <th>Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.email}>
+              <td>{row.email}</td>
+              <td>{row.reason}</td>
             </tr>
           ))}
         </tbody>
@@ -690,6 +722,13 @@ export function ImportPage() {
                   <div className="import-invalid">
                     <h3 className="import-subtitle">Invalid rows</h3>
                     <InvalidRowsTable rows={preview.parse.invalidRows} />
+                  </div>
+                )}
+
+                {preview.summary.skipped.length > 0 && (
+                  <div className="import-invalid">
+                    <h3 className="import-subtitle">Skipped rows</h3>
+                    <SkippedRowsTable rows={preview.summary.skipped} />
                   </div>
                 )}
 
