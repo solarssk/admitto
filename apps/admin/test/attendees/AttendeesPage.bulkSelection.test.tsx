@@ -11,6 +11,7 @@ const fetchEventMailSettings = vi.fn();
 const sendEventBulk = vi.fn();
 const bulkDeleteAttendees = vi.fn();
 const bulkCheckInAttendees = vi.fn();
+const bulkRevokeCheckIn = vi.fn();
 const bulkChangeTicketType = vi.fn();
 const exportSelectedAttendees = vi.fn();
 const fetchTicketTypes = vi.fn();
@@ -80,6 +81,7 @@ vi.mock("../../src/api/client.js", () => ({
   sendEventBulk: (...args: unknown[]) => sendEventBulk(...args),
   bulkDeleteAttendees: (...args: unknown[]) => bulkDeleteAttendees(...args),
   bulkCheckInAttendees: (...args: unknown[]) => bulkCheckInAttendees(...args),
+  bulkRevokeCheckIn: (...args: unknown[]) => bulkRevokeCheckIn(...args),
   updateAttendee: vi.fn(),
 }));
 
@@ -716,6 +718,92 @@ describe("AttendeesPage bulk check-in", () => {
     });
 
     expect(addToast).not.toHaveBeenCalledWith(expect.stringContaining("checked in"), "success");
+  });
+});
+
+describe("AttendeesPage bulk revoke check-in (#522 follow-up)", () => {
+  const rowAdmitted = { ...rowA, check_in_status: "admitted" as const };
+
+  it("revokes check-in for the selected attendees via the More actions menu, toasts, and clears the selection", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowAdmitted, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkRevokeCheckIn.mockResolvedValue({ revoked: 1, notAdmitted: 0, blocked: 0, errored: 0 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke check-in/ }));
+
+    await waitFor(() => {
+      expect(bulkRevokeCheckIn).toHaveBeenCalledWith("evt-1", ["att-1"]);
+    });
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("1 check-in revoked.", "success");
+    });
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
+  });
+
+  it("toasts that nobody was checked in when the whole selection had nothing to revoke", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowAdmitted, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkRevokeCheckIn.mockResolvedValue({ revoked: 0, notAdmitted: 1, blocked: 0, errored: 0 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke check-in/ }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("None of the selected attendees were checked in.", "info");
+    });
+  });
+
+  it("doesn't claim nobody was checked in when a blocked-pass attendee was actually checked in (code review)", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowAdmitted, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkRevokeCheckIn.mockResolvedValue({ revoked: 0, notAdmitted: 1, blocked: 1, errored: 0 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke check-in/ }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        "No check-ins revoked (1 weren't checked in, 1 pass no longer active).",
+        "error",
+      );
+    });
+    expect(addToast).not.toHaveBeenCalledWith("None of the selected attendees were checked in.", "info");
+  });
+
+  it("toasts an operator-safe error and keeps the selection when bulkRevokeCheckIn fails", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventAttendees.mockResolvedValue({ items: [rowAdmitted, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkRevokeCheckIn.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke check-in/ }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("Revoke check-in failed.", "error");
+    });
+    expect(document.querySelector(".attendees-bulkbar")).toBeTruthy();
   });
 });
 

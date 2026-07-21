@@ -5,6 +5,7 @@ import {
   ApiError,
   bulkChangeTicketType,
   bulkCheckInAttendees,
+  bulkRevokeCheckIn,
   bulkDeleteAttendees,
   bulkResendTickets,
   exportAttendees,
@@ -122,6 +123,39 @@ function notifyBulkCheckInResult(
   }
 
   addToast(`No attendees checked in${noteSuffix}.`, "error");
+}
+
+/** Standard "N check-ins revoked (M weren't checked in)" toast for a bulk revoke-check-in
+ * result — shared shape with notifyBulkCheckInResult above. */
+function notifyBulkRevokeCheckInResult(
+  result: { revoked: number; notAdmitted: number; blocked: number; errored: number },
+  addToast: (message: string, variant?: ToastVariant) => void,
+) {
+  const { revoked, notAdmitted, blocked, errored } = result;
+  const notes: string[] = [];
+  if (notAdmitted > 0) notes.push(`${notAdmitted} weren't checked in`);
+  if (blocked > 0) notes.push(`${blocked} pass no longer active`);
+  if (errored > 0) notes.push(`${errored} failed unexpectedly`);
+  const noteSuffix = notes.length > 0 ? ` (${notes.join(", ")})` : "";
+
+  if (revoked > 0) {
+    addToast(
+      `${revoked} ${pluralize(revoked, "check-in")} revoked${noteSuffix}.`,
+      errored > 0 ? "warning" : "success",
+    );
+    return;
+  }
+
+  // Only the clean "nobody had anything to revoke" case gets its own reassuring copy - a mix
+  // with blocked/errored falls through to the generic message below, whose noteSuffix already
+  // spells out every reason (code review: this branch used to fire on notAdmitted alone, so a
+  // blocked-pass attendee - who WAS checked in - got misreported as "nobody was checked in").
+  if (notAdmitted > 0 && blocked === 0 && errored === 0) {
+    addToast("None of the selected attendees were checked in.", "info");
+    return;
+  }
+
+  addToast(`No check-ins revoked${noteSuffix}.`, "error");
 }
 
 interface SendTicketsDialogProps {
@@ -403,6 +437,7 @@ export function AttendeesPage() {
   const [bulkSendBusy, setBulkSendBusy] = useState(false);
   const [bulkSendConfirmOpen, setBulkSendConfirmOpen] = useState(false);
   const [bulkCheckInBusy, setBulkCheckInBusy] = useState(false);
+  const [bulkRevokeCheckInBusy, setBulkRevokeCheckInBusy] = useState(false);
   const [bulkExportBusy, setBulkExportBusy] = useState(false);
   const [changeTypeOpen, setChangeTypeOpen] = useState(false);
   const [changeTypeBusy, setChangeTypeBusy] = useState(false);
@@ -748,6 +783,38 @@ export function AttendeesPage() {
     }
   };
 
+  /** Bulk "Revoke check-in" from the More actions menu — same no-confirmation-dialog reasoning
+   * as handleBulkCheckInSelected above (reversible internal state change), same
+   * still-on-this-event guard pattern. */
+  const handleBulkRevokeCheckInSelected = async () => {
+    if (!eventId || selectedIds.size === 0) return;
+    const initiatingEventId = eventId;
+    const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
+    setBulkRevokeCheckInBusy(true);
+    try {
+      const result = await bulkRevokeCheckIn(initiatingEventId, [...selectedIds]);
+      if (!isStillOnEvent()) return;
+      notifyBulkRevokeCheckInResult(result, addToast);
+      clearSelection();
+      setReloadToken((n) => n + 1);
+    } catch (err) {
+      if (!isStillOnEvent()) return;
+      if (err instanceof ApiError) {
+        reportApiError(err.status);
+        if (err.status === 401) {
+          const next = encodeURIComponent(window.location.pathname);
+          window.location.assign(`/login?next=${next}`);
+          return;
+        }
+        addToast(operatorApiErrorMessage(err, "Revoke check-in failed."), "error");
+      } else {
+        addToast("Failed to revoke check-in.", "error");
+      }
+    } finally {
+      if (isStillOnEvent()) setBulkRevokeCheckInBusy(false);
+    }
+  };
+
   /** CSV export of an explicit subset of selected attendees — separate from the header
    * "Export" dropdown (which exports the whole filtered view): the server bypasses list
    * filters when attendee_ids is present. CSV only, per the design mockup. No success toast
@@ -1027,6 +1094,8 @@ export function AttendeesPage() {
         canBulkSend={mailConfigured !== false}
         onBulkCheckIn={() => void handleBulkCheckInSelected()}
         bulkCheckInBusy={bulkCheckInBusy}
+        onBulkRevokeCheckIn={() => void handleBulkRevokeCheckInSelected()}
+        bulkRevokeCheckInBusy={bulkRevokeCheckInBusy}
         onBulkExportSelected={() => void handleBulkExportSelected()}
         bulkExportBusy={bulkExportBusy}
         onBulkChangeTicketType={() => {

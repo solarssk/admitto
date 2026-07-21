@@ -47,6 +47,7 @@ const ADMIN_TABLER_ICON_CLASSES = [
   "pencil",
   "plus",
   "qrcode",
+  "qrcode-off",
   "refresh",
   "scan",
   "search",
