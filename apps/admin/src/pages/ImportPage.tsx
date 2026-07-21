@@ -179,7 +179,7 @@ function renderImportHistoryBody({ history, error, eventTimezone, onRetry }: Imp
 /** Email/Reason table explaining each skipped row — without it, "To skip: N" tells an operator
  * nothing about why (usually an existing attendee with Overwrite off), which reads as the import
  * silently doing nothing (PO feedback while testing #358 phase C). */
-function SkippedRowsTable({ rows }: { rows: readonly ImportSkippedRow[] }) {
+function SkippedRowsTable({ rows }: Readonly<{ rows: readonly ImportSkippedRow[] }>) {
   return (
     <div className="attendees-table-wrap">
       <table className="table">
