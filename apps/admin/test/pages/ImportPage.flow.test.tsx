@@ -248,7 +248,12 @@ describe("ImportPage upload → preview → commit flow", () => {
           toCreate: 0,
           toUpdate: 0,
           toSkip: 1,
-          skipped: [{ email: "existing@example.com", reason: "Attendee already exists (overwrite=false)" }],
+          skipped: [
+            {
+              email: "existing@example.com",
+              reason: 'Attendee already exists — turn on "Overwrite existing attendees" to update it instead of skipping',
+            },
+          ],
         },
       }),
     );
@@ -260,7 +265,11 @@ describe("ImportPage upload → preview → commit flow", () => {
 
     expect(await screen.findByText("Skipped rows")).toBeTruthy();
     expect(screen.getByText("existing@example.com")).toBeTruthy();
-    expect(screen.getByText("Attendee already exists (overwrite=false)")).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Attendee already exists — turn on "Overwrite existing attendees" to update it instead of skipping',
+      ),
+    ).toBeTruthy();
   });
 
   it("shows rows the commit-time re-parse invalidated (e.g. a ticket type deleted between preview and commit)", async () => {

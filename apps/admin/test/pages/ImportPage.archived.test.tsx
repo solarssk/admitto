@@ -97,7 +97,7 @@ describe("ImportPage archived lockdown", () => {
     expect(screen.getByLabelText(/Dry run/).closest("fieldset")).toBe(optionsFieldset);
 
     // Read-only navigation stays usable.
-    expect(screen.getByRole("link", { name: "← Back to attendees" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Back to attendees" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Download CSV template" })).toBeTruthy();
   });
 });

@@ -235,7 +235,10 @@ export async function commitImport(
 
     if (found) {
       if (!overwrite) {
-        skipped.push({ email: row.email, reason: "Attendee already exists (overwrite=false)" });
+        skipped.push({
+          email: row.email,
+          reason: 'Attendee already exists — turn on "Overwrite existing attendees" to update it instead of skipping',
+        });
         continue;
       }
       const pendingUpdate = updatesById.get(found.id);
