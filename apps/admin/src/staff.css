@@ -3813,71 +3813,19 @@
   font-size: 1rem;
 }
 
-/* Needs attention */
-.overview-alerts {
-  display: flex;
-  flex-direction: column;
-}
-
-.overview-alert {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-  padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.overview-alert:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-
-.overview-alert:first-child {
-  padding-top: 0;
-}
-
-.overview-alert__icon {
-  font-size: 1rem;
-  flex-shrink: 0;
-  margin-top: 1px;
-}
-
-.overview-alert--error .overview-alert__icon { color: var(--status-error); }
-.overview-alert--warn  .overview-alert__icon { color: var(--status-warn); }
-
-.overview-alert__body {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.overview-alert__title {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  color: var(--text);
-}
-
-.overview-alert--error .overview-alert__title { color: var(--status-error-fg, var(--text)); }
-
-.overview-alert__desc {
-  font-size: var(--fs-xs);
-  color: var(--text-secondary);
-}
-
-/* Event readiness */
+/* Setup checklist (#348 — merged "Needs attention" + "Event readiness") */
 .overview-readiness-score {
   font-size: var(--fs-xs);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 
-.overview-readiness {
+.overview-checklist {
   display: flex;
   flex-direction: column;
 }
 
-.overview-readiness__row {
+.overview-checklist__row {
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -3885,16 +3833,16 @@
   border-bottom: 1px solid var(--border);
 }
 
-.overview-readiness__row:last-child {
+.overview-checklist__row:last-child {
   border-bottom: none;
   padding-bottom: 0;
 }
 
-.overview-readiness__row:first-child {
+.overview-checklist__row:first-child {
   padding-top: 0;
 }
 
-.overview-readiness__dot {
+.overview-checklist__dot {
   width: 18px;
   height: 18px;
   border-radius: 50%;
@@ -3905,26 +3853,166 @@
   font-size: 10px;
 }
 
-.overview-readiness__dot--ok      { background: var(--status-ok-tint);   color: var(--status-ok); }
-.overview-readiness__dot--warn    { background: var(--status-warn-tint); color: var(--status-warn-fg); }
-.overview-readiness__dot--error   { background: var(--status-error-tint); color: var(--status-error); }
-.overview-readiness__dot--neutral { background: var(--surface-sunken);   color: var(--text-muted); }
+.overview-checklist__dot--warn  { background: var(--status-warn-tint); color: var(--status-warn-fg); }
+.overview-checklist__dot--error { background: var(--status-error-tint); color: var(--status-error); }
 
-.overview-readiness__label {
+.overview-checklist__label {
   flex: 1;
   font-size: var(--fs-sm);
   color: var(--text);
 }
 
-.overview-readiness__value {
+.overview-checklist__value {
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
 }
 
-.overview-readiness__value--ok      { color: var(--status-ok); }
-.overview-readiness__value--warn    { color: var(--status-warn-fg); }
-.overview-readiness__value--error   { color: var(--status-error); }
-.overview-readiness__value--neutral { color: var(--text-muted); }
+.overview-checklist__value--warn  { color: var(--status-warn-fg); }
+.overview-checklist__value--error { color: var(--status-error); }
+
+.overview-checklist__link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-sm);
+  color: var(--primary);
+  text-decoration: none;
+}
+.overview-checklist__link:hover { text-decoration: underline; }
+
+/* Check-in progress (Part B) */
+.overview-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.overview-ring {
+  --ring-size: 108px;
+  width: var(--ring-size);
+  height: var(--ring-size);
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+}
+
+.overview-ring__hole {
+  width: calc(var(--ring-size) - 22px);
+  height: calc(var(--ring-size) - 22px);
+  border-radius: 50%;
+  background: var(--surface-card);
+  display: grid;
+  place-items: center;
+}
+
+.overview-ring__pct {
+  font-size: var(--fs-h2);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.overview-progress__legend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  min-width: 0;
+}
+
+.overview-progress__legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.overview-progress__legend-item strong {
+  margin-left: auto;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.overview-progress__legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.overview-tt-breakdown {
+  margin-top: var(--space-4);
+}
+
+.overview-tt-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--surface-sunken);
+}
+
+.overview-tt-bar__seg {
+  height: 100%;
+}
+
+.overview-tt-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.overview-tt-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+.overview-tt-legend__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.overview-tt-legend__count {
+  color: var(--text-muted);
+}
+
+.overview-glance {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.overview-glance__tile {
+  background: var(--surface-sunken);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+
+.overview-glance__label {
+  display: block;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.overview-glance__value {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+}
 
 /* Email delivery */
 .overview-delivery {
@@ -3972,7 +4060,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Recent check-ins */
+/* Recent activity */
 .overview-live-badge {
   display: flex;
   align-items: center;
@@ -3987,6 +4075,27 @@
   border-radius: 50%;
   background: var(--status-ok);
   flex-shrink: 0;
+}
+
+.overview-activity-filter {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.overview-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.overview-timeline__day {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-caps);
+  color: var(--text-muted);
+  margin-bottom: var(--space-1);
 }
 
 .overview-activity {
@@ -4075,34 +4184,13 @@
 }
 
 /* ── Pinned note ─────────────────────────────────────────────────── */
+/* Filled state renders on the standard Card/--surface-card background (#347) — no warn tint.
+ * The pin icon stays as a small accent inside the card title instead. */
 
-.overview-pinned-note {
-  background: color-mix(in srgb, var(--status-warn) 12%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--status-warn) 30%, transparent);
-  border-radius: var(--radius-md);
-  padding: var(--space-3) var(--space-4);
+.overview-pinned-note__pin {
+  color: var(--status-warn);
+  font-size: 0.9em;
 }
-
-.overview-pinned-note__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--space-2);
-}
-
-.overview-pinned-note__title {
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-
-.overview-pinned-note__edit {
-  opacity: 0.7;
-}
-.overview-pinned-note__edit:hover { opacity: 1; }
 
 .overview-pinned-note__body {
   margin: 0;
@@ -4154,7 +4242,7 @@
 
 .overview-contact {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-3);
   padding: var(--space-2) 0;
   border-bottom: 1px solid var(--border);
@@ -4171,14 +4259,19 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
+  /* Icons stay always-visible (not hover-reveal) so they're reachable on touch and discoverable
+   * without a pointer — the name wraps to two lines instead of truncating hard (#345). */
+  padding-top: 3px;
 }
 .overview-contact__info strong {
   font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text);
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: break-word;
 }
 .overview-contact__info span {
   font-size: var(--fs-xs);
@@ -4213,6 +4306,10 @@
 .overview-contact__action:hover {
   background: var(--surface-sunken);
   color: var(--text);
+  /* Without this, the global `a:hover { text-decoration: underline }` (base.css) wins the cascade
+   * on the tel:/mailto: anchors here — same specificity tier as this rule, higher type-selector
+   * count (#345). */
+  text-decoration: none;
 }
 .overview-contact__action--delete:hover {
   color: var(--status-error);

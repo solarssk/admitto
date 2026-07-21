@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useOutletContext } from "react-router-dom";
-import { Avatar, Badge, Card, PageHeader, Stat, useToast } from "@admitto/ui";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useOutletContext } from "react-router-dom";
+import { Avatar, Badge, Button, Card, Input, PageHeader, Select, Stat, TICKET_TYPE_COLORS, useToast } from "@admitto/ui";
 import {
   ApiError,
   fetchEventOverview,
@@ -17,13 +17,15 @@ import type {
   EventDto,
   EventOverviewDto,
   EventContactDto,
+  EventRecentActivityEntry,
   EventResourceDto,
   TicketTypeDto,
 } from "../api/types.js";
 import {
-  formatAdmissionDisplay,
+  calendarDateInZone,
   formatEventCalendarDate,
-  formatEventTime,
+  formatEventDate,
+  formatEventDateTime,
   formatUtcDateTime,
 } from "../utils/event-dates.js";
 import { useCountdown } from "../utils/event-countdown.js";
@@ -49,6 +51,31 @@ function safeHref(url: string): string {
   }
 }
 
+/** Compact "N min/hours/days ago" for glance stats and the activity timeline — not a shared
+ * export, mirrors the local helper StaffUserListItem.tsx already uses for the same purpose. */
+function formatRelativeTime(iso: string | null): string {
+  if (!iso) return "—";
+  const diffMs = Date.now() - new Date(iso).getTime();
+  if (diffMs < 60_000) return "Just now";
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days} day${days === 1 ? "" : "s"} ago`;
+  const months = Math.floor(days / 30);
+  return `${months} month${months === 1 ? "" : "s"} ago`;
+}
+
+/** "13:00" -> "13:00–14:00" for the check-in progress card's busiest-hour glance stat. */
+function formatBusiestHourRange(hour: string): string {
+  const [hh, mm = "00"] = hour.split(":");
+  const h = Number(hh);
+  if (!Number.isFinite(h)) return hour;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(h)}:${mm}–${pad((h + 1) % 24)}:${mm}`;
+}
+
 function AdmissionBar({ admitted, total }: { admitted: number; total: number }) {
   const pct = total > 0 ? Math.round((admitted / total) * 100) : 0;
   return (
@@ -65,93 +92,27 @@ function AdmissionBar({ admitted, total }: { admitted: number; total: number }) 
   );
 }
 
-
-interface NeedsAttentionProps {
-  overview: EventOverviewDto;
-}
-
-function NeedsAttentionCard({ overview }: NeedsAttentionProps) {
-  const failed = overview.email_failed + overview.email_bounced;
-  const alerts: Array<{ icon: string; level: "error" | "warn"; title: string; desc: string }> = [];
-
-  if (failed > 0) {
-    alerts.push({
-      icon: "ti-mail-x",
-      level: "error",
-      title: `${failed} email ${failed === 1 ? "delivery" : "deliveries"} failed`,
-      desc: `${overview.email_bounced > 0 ? `${overview.email_bounced} bounced` : ""}${overview.email_bounced > 0 && overview.email_failed > 0 ? " · " : ""}${overview.email_failed > 0 ? `${overview.email_failed} rejected` : ""}`.trim(),
-    });
-  }
-
-  if (overview.email_queued > 0) {
-    alerts.push({
-      icon: "ti-mail-forward",
-      level: "warn",
-      title: `${overview.email_queued} ${overview.email_queued === 1 ? "ticket" : "tickets"} still in send queue`,
-      desc: "Mailer queue processing — check mailer status if delayed",
-    });
-  }
-
-  if (overview.checkin_staff_count === 0 && !overview.event.archived_at) {
-    alerts.push({
-      icon: "ti-qrcode",
-      level: "warn",
-      title: "No operators assigned for check-in",
-      desc: "Assign at least one operator so staff can scan tickets",
-    });
-  }
-
-  if (alerts.length === 0) {
-    return (
-      <Card title="Needs attention">
-        <p className="overview-muted overview-all-clear">
-          <i className="ti ti-circle-check" aria-hidden="true" />
-          All good — no issues to action
-        </p>
-      </Card>
-    );
-  }
-
-  return (
-    <Card
-      title="Needs attention"
-      actions={
-        <Badge variant={alerts.some((a) => a.level === "error") ? "error" : "warn"}>
-          {alerts.length}
-        </Badge>
-      }
-    >
-      <div className="overview-alerts">
-        {alerts.map((alert) => (
-          <div key={alert.title} className={`overview-alert overview-alert--${alert.level}`}>
-            <i className={`ti ${alert.icon} overview-alert__icon`} aria-hidden="true" />
-            <div className="overview-alert__body">
-              <strong className="overview-alert__title">{alert.title}</strong>
-              {alert.desc && <span className="overview-alert__desc">{alert.desc}</span>}
-            </div>
-          </div>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
 interface ReadinessItem {
   label: string;
   status: "ok" | "warn" | "error" | "neutral";
   value: string;
 }
 
-function EventReadinessCard({
+/** Merges the former "Needs attention" + "Event readiness" cards into one compact checklist
+ * (#348) — same readiness computation the old EventReadinessCard used, just surfaced as a short
+ * "what still needs doing" list instead of two full-height cards. */
+function SetupChecklistCard({
   overview,
   loading,
+  eventId,
 }: {
   overview: EventOverviewDto | null;
   loading: boolean;
+  eventId: string;
 }) {
   if (!overview) {
     return (
-      <Card title="Event readiness">
+      <Card title="Setup checklist">
         <p className="overview-muted">{loading ? "Loading…" : "Unavailable"}</p>
       </Card>
     );
@@ -204,58 +165,263 @@ function EventReadinessCard({
   ];
 
   const okCount = items.filter((i) => i.status === "ok").length;
-  const actionableCount = items.filter((i) => i.status !== "neutral").length;
+  const total = items.filter((i) => i.status !== "neutral").length;
+  // Errors before warnings so the most urgent item is never bumped off the top-3 by an earlier,
+  // less pressing warning (mirrors the old Needs attention card's own priority order).
+  const notOk = items
+    .filter((i) => i.status === "warn" || i.status === "error")
+    .sort((a, b) => (a.status === b.status ? 0 : a.status === "error" ? -1 : 1))
+    .slice(0, 3);
 
   return (
     <Card
-      title="Event readiness"
+      title="Setup checklist"
       actions={
         <span className="overview-readiness-score">
-          {okCount}/{actionableCount}
+          {okCount}/{total}
         </span>
       }
     >
-      <div className="overview-readiness">
-        {items.map((item) => (
-          <div key={item.label} className="overview-readiness__row">
-            <span className={`overview-readiness__dot overview-readiness__dot--${item.status}`}>
-              {item.status === "ok" ? (
-                <i className="ti ti-check" aria-hidden="true" />
-              ) : item.status === "error" ? (
-                <i className="ti ti-x" aria-hidden="true" />
-              ) : item.status === "warn" ? (
-                <i className="ti ti-alert-triangle" aria-hidden="true" />
-              ) : (
-                <i className="ti ti-minus" aria-hidden="true" />
-              )}
-            </span>
-            <span className="overview-readiness__label">{item.label}</span>
-            <span className={`overview-readiness__value overview-readiness__value--${item.status}`}>
-              {item.value}
-            </span>
+      {notOk.length === 0 ? (
+        <p className="overview-muted overview-all-clear">
+          <i className="ti ti-circle-check" aria-hidden="true" />
+          All checks look good
+        </p>
+      ) : (
+        <div className="overview-checklist">
+          {notOk.map((item) => (
+            <div key={item.label} className="overview-checklist__row">
+              <span className={`overview-checklist__dot overview-checklist__dot--${item.status}`}>
+                {item.status === "error" ? (
+                  <i className="ti ti-x" aria-hidden="true" />
+                ) : (
+                  <i className="ti ti-alert-triangle" aria-hidden="true" />
+                )}
+              </span>
+              <span className="overview-checklist__label">{item.label}</span>
+              <span className={`overview-checklist__value overview-checklist__value--${item.status}`}>
+                {item.value}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      <Link to={`/admin/events/${eventId}/settings?tab=general`} className="overview-checklist__link">
+        View full checklist in Event settings <i className="ti ti-arrow-right" aria-hidden="true" />
+      </Link>
+    </Card>
+  );
+}
+
+/** Check-in progress card (new, Part B): admission ring, ticket-type breakdown, and two glance
+ * stats — the ring uses a real conic-gradient over --status-ok / --surface-sunken rather than an
+ * SVG/canvas dependency. */
+function CheckInProgressCard({
+  overview,
+  loading,
+}: {
+  overview: EventOverviewDto | null;
+  loading: boolean;
+}) {
+  if (!overview) {
+    return (
+      <Card title="Check-in progress">
+        <p className="overview-muted">{loading ? "Loading…" : "Unavailable"}</p>
+      </Card>
+    );
+  }
+
+  const total = overview.attendee_count;
+  const admitted = Math.min(overview.admitted_count, total);
+  const notYet = Math.max(total - admitted, 0);
+  const pct = total > 0 ? Math.round((admitted / total) * 100) : 0;
+  const breakdown = overview.ticket_type_breakdown.filter((t) => t.count > 0);
+  const breakdownTotal = breakdown.reduce((sum, t) => sum + t.count, 0);
+
+  return (
+    <Card title="Check-in progress">
+      <div className="overview-progress">
+        <div
+          className="overview-ring"
+          style={{
+            background: `conic-gradient(var(--status-ok) 0% ${pct}%, var(--surface-sunken) ${pct}% 100%)`,
+          }}
+          role="img"
+          aria-label={`${pct}% of attendees checked in`}
+        >
+          <div className="overview-ring__hole">
+            <span className="overview-ring__pct">{pct}%</span>
           </div>
-        ))}
+        </div>
+        <div className="overview-progress__legend">
+          <div className="overview-progress__legend-item">
+            <span className="overview-progress__legend-dot" style={{ background: "var(--status-ok)" }} />
+            Checked in <strong>{admitted}</strong>
+          </div>
+          <div className="overview-progress__legend-item">
+            <span className="overview-progress__legend-dot" style={{ background: "var(--surface-sunken)" }} />
+            Not yet <strong>{notYet}</strong>
+          </div>
+        </div>
+      </div>
+
+      {breakdown.length > 1 && (
+        <div className="overview-tt-breakdown">
+          <div className="overview-tt-bar">
+            {breakdown.map((t) => (
+              <span
+                key={t.key}
+                className="overview-tt-bar__seg"
+                style={{
+                  width: `${breakdownTotal > 0 ? (t.count / breakdownTotal) * 100 : 0}%`,
+                  background: (TICKET_TYPE_COLORS[t.color] ?? TICKET_TYPE_COLORS.gray).solid,
+                }}
+              />
+            ))}
+          </div>
+          <div className="overview-tt-legend">
+            {breakdown.map((t) => (
+              <span key={t.key} className="overview-tt-legend__item">
+                <span
+                  className="overview-tt-legend__dot"
+                  style={{ background: (TICKET_TYPE_COLORS[t.color] ?? TICKET_TYPE_COLORS.gray).solid }}
+                />
+                {t.label} <span className="overview-tt-legend__count">{t.count}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="overview-glance">
+        <div className="overview-glance__tile">
+          <span className="overview-glance__label">Last check-in</span>
+          <span className="overview-glance__value">{formatRelativeTime(overview.last_check_in_at)}</span>
+        </div>
+        <div className="overview-glance__tile">
+          <span className="overview-glance__label">Busiest hour</span>
+          <span className="overview-glance__value">
+            {overview.busiest_hour ? formatBusiestHourRange(overview.busiest_hour.hour) : "—"}
+          </span>
+        </div>
       </div>
     </Card>
   );
 }
 
-function RecentCheckinsCard({
-  checkins,
-  timezone,
-  eventDate,
-  connected,
+/** A `recent_activity` row, plus the optional client-only ticket type key SSE carries — present
+ * only on entries built locally from a live check-in (see mergeActivity) before the next overview
+ * poll/reconcile replaces it with the server's own (badge-less) copy of the same event. */
+interface DisplayActivityEntry extends EventRecentActivityEntry {
+  ticketType?: string | null;
+}
+
+const ACTIVITY_ICONS: Record<EventRecentActivityEntry["type"], string> = {
+  checkin: "ti-user-check",
+  mail_bounced: "ti-mail-x",
+  mail_failed: "ti-mail-x",
+  mail_resent: "ti-mail-forward",
+  import: "ti-upload",
+};
+
+function ActivityIcon({ entry }: { entry: DisplayActivityEntry }) {
+  if (entry.type === "checkin") {
+    return <Avatar name={entry.attendee_name ?? "?"} size="sm" />;
+  }
+  return (
+    <span className={`status-circle status-circle--sm status-circle--${entry.tone}`} aria-hidden="true">
+      <i className={`ti ${ACTIVITY_ICONS[entry.type]}`} />
+    </span>
+  );
+}
+
+/** Live SSE check-ins reshaped to look like a `recent_activity` row so they can render in the
+ * same timeline immediately, ahead of the next overview poll (#373). */
+function liveCheckinsAsActivity(checkins: StreamCheckinEvent[]): DisplayActivityEntry[] {
+  return checkins.map((c) => ({
+    id: `live-checkin:${c.attendeeId}-${c.admittedAt}`,
+    type: "checkin",
+    tone: "ok",
+    attendee_name: c.attendeeName,
+    message: "checked in",
+    occurred_at: c.admittedAt,
+    ticketType: c.ticketType,
+  }));
+}
+
+/** Prepends not-yet-reconciled live check-ins ahead of the server's own feed, without duplicating
+ * one once the next overview poll/reconcile brings the same check-in back as a server row —
+ * matched on attendee name + timestamp since `recent_activity` doesn't carry an attendee id. */
+function mergeActivity(
+  server: EventRecentActivityEntry[],
+  liveCheckins: StreamCheckinEvent[],
+): DisplayActivityEntry[] {
+  const seen = new Set(
+    server
+      .filter((e) => e.type === "checkin")
+      .map((e) => `${e.attendee_name ?? ""}|${e.occurred_at}`),
+  );
+  const live = liveCheckinsAsActivity(liveCheckins).filter(
+    (e) => !seen.has(`${e.attendee_name ?? ""}|${e.occurred_at}`),
+  );
+  return [...live, ...server];
+}
+
+function activityDayLabel(iso: string, timezone: string): string {
+  const day = calendarDateInZone(iso, timezone);
+  const today = calendarDateInZone(new Date().toISOString(), timezone);
+  if (day === today) return "Today";
+  const [y, m, d] = today.split("-").map(Number);
+  const yesterday = new Date(Date.UTC(y!, m! - 1, d! - 1)).toISOString().slice(0, 10);
+  if (day === yesterday) return "Yesterday";
+  return formatEventDate(iso, timezone);
+}
+
+/** Groups an already newest-first list into contiguous same-day runs (Today/Yesterday/date). */
+function groupActivityByDay(
+  entries: DisplayActivityEntry[],
+  timezone: string,
+): Array<{ key: string; label: string; items: DisplayActivityEntry[] }> {
+  const groups: Array<{ key: string; label: string; items: DisplayActivityEntry[] }> = [];
+  for (const entry of entries) {
+    const key = calendarDateInZone(entry.occurred_at, timezone);
+    const last = groups[groups.length - 1];
+    if (last && last.key === key) {
+      last.items.push(entry);
+    } else {
+      groups.push({ key, label: activityDayLabel(entry.occurred_at, timezone), items: [entry] });
+    }
+  }
+  return groups;
+}
+
+type ActivityFilter = "all" | "issues";
+
+/** Recent activity card (replaces "Recent check-ins", #373 + Part B): a day-grouped timeline of
+ * check-ins, mail failures/bounces, and imports, with an All/Issues filter. */
+function RecentActivityCard({
+  activity,
+  liveCheckins,
   ticketTypes,
+  timezone,
+  connected,
 }: {
-  checkins: StreamCheckinEvent[];
-  timezone: string;
-  eventDate: string | null;
-  connected: boolean;
+  activity: EventRecentActivityEntry[];
+  liveCheckins: StreamCheckinEvent[];
   ticketTypes: TicketTypeDto[];
+  timezone: string;
+  connected: boolean;
 }) {
+  const [filter, setFilter] = useState<ActivityFilter>("all");
+
+  const merged = useMemo(() => mergeActivity(activity, liveCheckins), [activity, liveCheckins]);
+  const filtered =
+    filter === "issues" ? merged.filter((e) => e.tone === "warn" || e.tone === "error") : merged;
+  const groups = useMemo(() => groupActivityByDay(filtered, timezone), [filtered, timezone]);
+
   return (
     <Card
-      title="Recent check-ins"
+      title="Recent activity"
       actions={
         connected ? (
           <span className="overview-live-badge">
@@ -265,28 +431,70 @@ function RecentCheckinsCard({
         ) : undefined
       }
     >
-      {checkins.length === 0 ? (
+      <div className="overview-activity-filter" role="group" aria-label="Filter activity">
+        <Button
+          type="button"
+          variant={filter === "all" ? "secondary" : "ghost"}
+          size="sm"
+          aria-pressed={filter === "all"}
+          onClick={() => setFilter("all")}
+        >
+          All
+        </Button>
+        <Button
+          type="button"
+          variant={filter === "issues" ? "secondary" : "ghost"}
+          size="sm"
+          aria-pressed={filter === "issues"}
+          onClick={() => setFilter("issues")}
+        >
+          Issues
+        </Button>
+      </div>
+
+      {filtered.length === 0 ? (
         <p className="overview-muted">
-          No check-ins yet — events will appear as attendees scan in.
+          {filter === "issues"
+            ? "No issues — everything's running smoothly."
+            : "No activity yet — check-ins, mail, and imports will appear here."}
         </p>
       ) : (
-        <ul className="overview-activity">
-          {checkins.map((c) => (
-            <li key={`${c.attendeeId}-${c.admittedAt}`} className="overview-activity__item">
-              <Avatar name={c.attendeeName} size="sm" />
-              <div className="overview-activity__info">
-                <strong>{c.attendeeName}</strong>
-                {/* ticketType off the SSE payload is the catalog `key` (batch 04 / #351), not the
-                    display label — same resolver AttendeeCard.tsx uses for the checkin card's
-                    identity block, so a renamed/recolored type shows correctly here too. */}
-                <TicketTypeBadge ticketType={c.ticketType} catalog={ticketTypes} />
-              </div>
-              <time className="overview-activity__time">
-                {formatAdmissionDisplay(c.admittedAt, eventDate, timezone)}
-              </time>
-            </li>
+        <div className="overview-timeline">
+          {groups.map((group) => (
+            <div key={group.key} className="overview-timeline__group">
+              <div className="overview-timeline__day">{group.label}</div>
+              <ul className="overview-activity">
+                {group.items.map((entry) => (
+                  <li key={entry.id} className="overview-activity__item">
+                    <ActivityIcon entry={entry} />
+                    <div className="overview-activity__info">
+                      {entry.attendee_name ? (
+                        <>
+                          <strong>{entry.attendee_name}</strong>
+                          <span>
+                            {entry.message}
+                            {entry.ticketType !== undefined && (
+                              <TicketTypeBadge ticketType={entry.ticketType} catalog={ticketTypes} />
+                            )}
+                          </span>
+                        </>
+                      ) : (
+                        <strong>{entry.message}</strong>
+                      )}
+                    </div>
+                    <time
+                      className="overview-activity__time"
+                      dateTime={entry.occurred_at}
+                      title={formatEventDateTime(entry.occurred_at, timezone)}
+                    >
+                      {formatRelativeTime(entry.occurred_at)}
+                    </time>
+                  </li>
+                ))}
+              </ul>
+            </div>
           ))}
-        </ul>
+        </div>
       )}
     </Card>
   );
@@ -390,12 +598,12 @@ function PinnedNoteCard({
             autoFocus
           />
           <div className="overview-note-actions">
-            <button className="btn btn-ghost btn-sm" onClick={handleCancel} disabled={saving}>
+            <Button type="button" variant="ghost" size="sm" onClick={handleCancel} disabled={saving}>
               Cancel
-            </button>
-            <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
+            </Button>
+            <Button type="button" variant="primary" size="sm" onClick={() => void handleSave()} disabled={saving}>
               {saving ? "Saving…" : "Save"}
-            </button>
+            </Button>
           </div>
         </div>
       </Card>
@@ -408,9 +616,15 @@ function PinnedNoteCard({
         title="Pinned note"
         actions={
           !loading && !archived ? (
-            <button className="btn btn-ghost btn-sm" onClick={handleEdit}>
-              + Add note
-            </button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              icon={<i className="ti ti-plus" aria-hidden="true" />}
+              onClick={handleEdit}
+            >
+              Add note
+            </Button>
           ) : undefined
         }
       >
@@ -422,19 +636,31 @@ function PinnedNoteCard({
   }
 
   return (
-    <div className="overview-pinned-note">
-      <div className="overview-pinned-note__header">
-        <span className="overview-pinned-note__title">
-          <i className="ti ti-pin" aria-hidden="true" /> Pinned note
-        </span>
-        {!archived && (
-          <button className="btn btn-ghost btn-sm overview-pinned-note__edit" onClick={handleEdit} aria-label="Edit pinned note">
-            <i className="ti ti-pencil" aria-hidden="true" /> Edit
-          </button>
-        )}
-      </div>
+    // Filled state renders on the standard Card surface, no warn tint (#347) — the pin stays as a
+    // small accent inside the title instead of a colored card background.
+    <Card
+      title={
+        <>
+          <i className="ti ti-pin overview-pinned-note__pin" aria-hidden="true" /> Pinned note
+        </>
+      }
+      actions={
+        !archived ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            icon={<i className="ti ti-pencil" aria-hidden="true" />}
+            onClick={handleEdit}
+            aria-label="Edit pinned note"
+          >
+            Edit
+          </Button>
+        ) : undefined
+      }
+    >
       <p className="overview-pinned-note__body">{note}</p>
-    </div>
+    </Card>
   );
 }
 
@@ -512,15 +738,15 @@ function KeyContactsCard({
 
   const inlineForm = (
     <div className="overview-contact-form">
-      <input className="input input-sm" placeholder="Name *" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-      <input className="input input-sm" placeholder="Role" value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))} />
-      <input className="input input-sm" placeholder="Phone" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
-      <input className="input input-sm" placeholder="Email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
+      <Input placeholder="Name *" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+      <Input placeholder="Role" value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))} />
+      <Input placeholder="Phone" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
+      <Input placeholder="Email" type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
       <div className="overview-contact-form__actions">
-        <button className="btn btn-ghost btn-sm" onClick={cancel} disabled={saving}>Cancel</button>
-        <button className="btn btn-primary btn-sm" onClick={handleSubmit} disabled={saving || !form.name.trim()}>
+        <Button type="button" variant="ghost" size="sm" onClick={cancel} disabled={saving}>Cancel</Button>
+        <Button type="button" variant="primary" size="sm" onClick={() => void handleSubmit()} disabled={saving || !form.name.trim()}>
           {saving ? "Saving…" : editingId ? "Save" : "Add"}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -530,9 +756,9 @@ function KeyContactsCard({
       title="Key contacts"
       actions={
         !archived ? (
-          <button className="btn btn-ghost btn-sm" onClick={openAdd} aria-label="Add contact">
-            + Add
-          </button>
+          <Button type="button" variant="ghost" size="sm" icon={<i className="ti ti-plus" aria-hidden="true" />} onClick={openAdd}>
+            Add
+          </Button>
         ) : undefined
       }
     >
@@ -670,20 +896,20 @@ function ImportantLinksCard({
 
   const inlineForm = (
     <div className="overview-resource-form">
-      <input className="input input-sm" placeholder="Title *" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
+      <Input placeholder="Title *" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
       <div className="overview-resource-form__row">
-        <select className="select select-sm" value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as "link" | "file" }))}>
+        <Select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as "link" | "file" }))}>
           <option value="link">Link</option>
           <option value="file">File</option>
-        </select>
-        <input className="input input-sm" placeholder="URL *" value={form.url} onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))} />
+        </Select>
+        <Input placeholder="URL *" value={form.url} onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))} />
       </div>
-      <input className="input input-sm" placeholder="Description (optional)" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
+      <Input placeholder="Description (optional)" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
       <div className="overview-resource-form__actions">
-        <button className="btn btn-ghost btn-sm" onClick={cancel} disabled={saving}>Cancel</button>
-        <button className="btn btn-primary btn-sm" onClick={handleSubmit} disabled={saving || !form.title.trim() || !form.url.trim()}>
+        <Button type="button" variant="ghost" size="sm" onClick={cancel} disabled={saving}>Cancel</Button>
+        <Button type="button" variant="primary" size="sm" onClick={() => void handleSubmit()} disabled={saving || !form.title.trim() || !form.url.trim()}>
           {saving ? "Saving…" : editingId ? "Save" : "Add"}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -693,9 +919,9 @@ function ImportantLinksCard({
       title="Important links & files"
       actions={
         !archived ? (
-          <button className="btn btn-ghost btn-sm" onClick={openAdd} aria-label="Add resource">
-            + Add
-          </button>
+          <Button type="button" variant="ghost" size="sm" icon={<i className="ti ti-plus" aria-hidden="true" />} onClick={openAdd}>
+            Add
+          </Button>
         ) : undefined
       }
     >
@@ -765,7 +991,8 @@ function ImportantLinksCard({
   );
 }
 
-/** Event-scoped dashboard — event command center with KPIs, alerts, readiness, and live check-in feed. */
+/** Event-scoped dashboard — event command center with KPIs, a setup checklist, check-in progress,
+ * and a live activity feed. */
 export function EventOverviewPage() {
   const { event } = useOutletContext<{ event: EventDto }>();
   const { reportApiError } = useConnectionState();
@@ -789,9 +1016,10 @@ export function EventOverviewPage() {
   const [pinnedNote, setPinnedNote] = useState<string | null>(null);
   const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
 
-  // Independent of the overview polling below — the "Recent check-ins" feed's live SSE payload
-  // only carries the ticket_type catalog key (see checkin-sse-publish.ts), so the page needs its
-  // own catalog fetch to resolve it to a label/color, same convention as CheckInPage/AttendeesPage.
+  // Independent of the overview polling below — the live SSE checkin payload only carries the
+  // ticket_type catalog key (see checkin-sse-publish.ts), so the page needs its own catalog fetch
+  // to resolve it to a label/color for the activity feed's not-yet-reconciled live rows, same
+  // convention as CheckInPage/AttendeesPage.
   useEffect(() => {
     const ac = new AbortController();
     fetchTicketTypes(event.id, ac.signal)
@@ -1016,18 +1244,39 @@ export function EventOverviewPage() {
       <div className="overview-stats">
         <Card>
           <Stat
+            icon={<i className="ti ti-users" aria-hidden="true" />}
             label="Attendees"
-            value={attendeeCount != null ? String(attendeeCount) : "—"}
+            // No raw event.attendee_count fallback here on purpose (#374) — that picker total
+            // includes revoked attendees, so falling back to it flashed a higher number (e.g.
+            // 5 -> 4) the instant the real active-only overview count arrived.
+            value={currentOverview != null ? String(currentOverview.attendee_count) : loading ? "…" : "—"}
             sub={
               currentOverview?.event.capacity != null
                 ? `of ${currentOverview.event.capacity} capacity`
-                : "Registered"
+                : "Active"
             }
           />
         </Card>
         <Card>
           <Stat
-            label="Admitted"
+            icon={<i className="ti ti-mail-check" aria-hidden="true" />}
+            label="Tickets sent"
+            value={currentOverview != null ? String(currentOverview.email_sent) : loading ? "…" : "—"}
+            sub={
+              currentOverview == null
+                ? loading
+                  ? "Loading…"
+                  : "Unavailable"
+                : currentOverview.email_queued > 0
+                  ? `${currentOverview.email_queued} queued`
+                  : "Delivered"
+            }
+          />
+        </Card>
+        <Card>
+          <Stat
+            icon={<i className="ti ti-user-check" aria-hidden="true" />}
+            label="Checked in"
             value={admittedCount != null ? String(admittedCount) : loading ? "…" : "—"}
             sub={admitPct != null ? `${admitPct}% admission rate` : "Check-in stats"}
           />
@@ -1037,36 +1286,26 @@ export function EventOverviewPage() {
         </Card>
         <Card>
           <Stat
-            label="Emails sent"
-            value={currentOverview != null ? String(currentOverview.email_sent) : loading ? "…" : "—"}
+            icon={<i className="ti ti-alert-triangle" aria-hidden="true" />}
+            label="Failed delivery"
+            value={currentOverview != null ? String(emailFailedTotal) : loading ? "…" : "—"}
             sub={
               currentOverview == null
                 ? loading
                   ? "Loading…"
                   : "Unavailable"
                 : emailFailedTotal > 0
-                  ? `${emailFailedTotal} failed`
-                  : currentOverview.email_queued > 0
-                    ? `${currentOverview.email_queued} queued`
-                    : "Delivered"
+                  ? "Needs attention"
+                  : "No failures"
             }
-          />
-        </Card>
-        <Card>
-          <Stat
-            label="Event date"
-            value={countdown}
-            sub={formatEventCalendarDate(eventDateIso)}
           />
         </Card>
       </div>
 
       <div className="overview-body">
         <div className="overview-body__left">
-          {currentOverview != null ? (
-            <NeedsAttentionCard overview={currentOverview} />
-          ) : null}
-          <EventReadinessCard overview={currentOverview} loading={loading} />
+          <SetupChecklistCard overview={currentOverview} loading={loading} eventId={event.id} />
+          <CheckInProgressCard overview={currentOverview} loading={loading} />
           <ImportantLinksCard
             resources={resources}
             loading={loading}
@@ -1083,12 +1322,12 @@ export function EventOverviewPage() {
             archived={!!event.archived_at}
             onSave={handleSaveNote}
           />
-          <RecentCheckinsCard
-            checkins={recentCheckins}
-            timezone={eventTimezone}
-            eventDate={eventDateIso}
-            connected={streamConnected}
+          <RecentActivityCard
+            activity={currentOverview?.recent_activity ?? []}
+            liveCheckins={recentCheckins}
             ticketTypes={ticketTypes}
+            timezone={eventTimezone}
+            connected={streamConnected}
           />
           <KeyContactsCard
             contacts={contacts}

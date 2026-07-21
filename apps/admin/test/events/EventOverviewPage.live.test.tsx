@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { act, cleanup, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { EventOverviewPage } from "../../src/pages/EventOverviewPage.js";
-import type { EventOverviewDto } from "../../src/api/types.js";
+import type { EventOverviewDto, EventRecentActivityEntry } from "../../src/api/types.js";
 import type { StreamCheckinEvent } from "../../src/hooks/useEventStream.js";
 import { makeTicketType, renderWithToast } from "../test-utils.js";
 
@@ -64,7 +64,10 @@ vi.mock("../../src/api/client.js", () => ({
   deleteEventResource: vi.fn(),
 }));
 
-const overviewFixture = (admitted = 5): EventOverviewDto => ({
+const overviewFixture = (
+  admitted = 5,
+  overrides: Partial<EventOverviewDto> = {},
+): EventOverviewDto => ({
   event: {
     id: "evt-1",
     title: "Demo Event",
@@ -86,8 +89,13 @@ const overviewFixture = (admitted = 5): EventOverviewDto => ({
   requirements_count: 0,
   checkin_staff_count: 1,
   attendees_with_ticket: 50,
+  last_check_in_at: null,
+  busiest_hour: null,
+  ticket_type_breakdown: [],
+  recent_activity: [],
   contacts: [],
   resources: [],
+  ...overrides,
 });
 
 const liveEvent: StreamCheckinEvent = {
@@ -108,6 +116,12 @@ function renderPage() {
       </Routes>
     </MemoryRouter>,
   );
+}
+
+/** The 4 KPI tiles - scope queries here since several plain numbers/labels (e.g. the admitted
+ * count, "Checked in") also appear in the Check-in progress card's ring legend. */
+function statsRow(): HTMLElement {
+  return document.querySelector(".overview-stats") as HTMLElement;
 }
 
 afterEach(() => {
@@ -131,7 +145,7 @@ describe("EventOverviewPage live stats", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("5")).toBeTruthy();
+      expect(within(statsRow()).getByText("5")).toBeTruthy();
     });
 
     act(() => {
@@ -139,13 +153,13 @@ describe("EventOverviewPage live stats", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("6")).toBeTruthy();
+      expect(within(statsRow()).getByText("6")).toBeTruthy();
     });
 
     await waitFor(
       () => {
         expect(fetchEventOverview).toHaveBeenCalledTimes(2);
-        expect(screen.getByText("6")).toBeTruthy();
+        expect(within(statsRow()).getByText("6")).toBeTruthy();
       },
       { timeout: 5000 },
     );
@@ -159,7 +173,7 @@ describe("EventOverviewPage live stats", () => {
       renderPage();
 
       await waitFor(() => {
-        expect(screen.getByText("5")).toBeTruthy();
+        expect(within(statsRow()).getByText("5")).toBeTruthy();
       });
 
       act(() => {
@@ -167,7 +181,7 @@ describe("EventOverviewPage live stats", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText("6")).toBeTruthy();
+        expect(within(statsRow()).getByText("6")).toBeTruthy();
       });
 
       fetchEventOverview.mockResolvedValue(overviewFixture(6));
@@ -177,7 +191,7 @@ describe("EventOverviewPage live stats", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText("6")).toBeTruthy();
+        expect(within(statsRow()).getByText("6")).toBeTruthy();
       });
     } finally {
       vi.useRealTimers();
@@ -192,7 +206,7 @@ describe("EventOverviewPage live stats", () => {
       renderPage();
 
       await waitFor(() => {
-        expect(screen.getByText("5")).toBeTruthy();
+        expect(within(statsRow()).getByText("5")).toBeTruthy();
       });
 
       act(() => {
@@ -200,7 +214,7 @@ describe("EventOverviewPage live stats", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText("6")).toBeTruthy();
+        expect(within(statsRow()).getByText("6")).toBeTruthy();
       });
 
       fetchEventOverview.mockResolvedValue(overviewFixture(6));
@@ -211,7 +225,7 @@ describe("EventOverviewPage live stats", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText("6")).toBeTruthy();
+        expect(within(statsRow()).getByText("6")).toBeTruthy();
         expect(fetchEventOverview).toHaveBeenCalledTimes(2);
       });
 
@@ -219,7 +233,7 @@ describe("EventOverviewPage live stats", () => {
         streamHandler?.(liveEvent);
       });
 
-      expect(screen.getByText("6")).toBeTruthy();
+      expect(within(statsRow()).getByText("6")).toBeTruthy();
     } finally {
       vi.useRealTimers();
     }
@@ -233,7 +247,7 @@ describe("EventOverviewPage live stats", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("5")).toBeTruthy();
+      expect(within(statsRow()).getByText("5")).toBeTruthy();
     });
 
     act(() => {
@@ -242,7 +256,7 @@ describe("EventOverviewPage live stats", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("6")).toBeTruthy();
+      expect(within(statsRow()).getByText("6")).toBeTruthy();
     });
 
     await waitFor(
@@ -259,7 +273,7 @@ describe("EventOverviewPage live stats", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("6")).toBeTruthy();
+      expect(within(statsRow()).getByText("6")).toBeTruthy();
     });
 
     const callsAfterLoad = fetchEventOverview.mock.calls.length;
@@ -275,17 +289,17 @@ describe("EventOverviewPage live stats", () => {
       },
       { timeout: 5000 },
     );
-    expect(screen.getByText("6")).toBeTruthy();
+    expect(within(statsRow()).getByText("6")).toBeTruthy();
   });
 
-  it("resolves a live check-in's ticket_type key to the catalog's current label instead of the key (batch 04 / #351)", async () => {
+  it("resolves a live check-in's ticket_type key to the catalog's current label instead of the key (batch 04 / #351), in the Recent activity feed", async () => {
     fetchEventOverview.mockResolvedValue(overviewFixture(5));
     fetchTicketTypes.mockResolvedValue([makeTicketType("vip", "VIP Guest")]);
 
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("5")).toBeTruthy();
+      expect(within(statsRow()).getByText("5")).toBeTruthy();
     });
 
     act(() => {
@@ -306,7 +320,7 @@ describe("EventOverviewPage live stats", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("5")).toBeTruthy();
+      expect(within(statsRow()).getByText("5")).toBeTruthy();
     });
 
     act(() => {
@@ -317,5 +331,230 @@ describe("EventOverviewPage live stats", () => {
       expect(screen.getByText("Orphan Guest")).toBeTruthy();
       expect(screen.getByText("staff_2")).toBeTruthy();
     });
+  });
+});
+
+describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
+  beforeEach(() => {
+    fetchEventOverview.mockReset();
+    fetchTicketTypes.mockReset();
+    fetchTicketTypes.mockResolvedValue([]);
+  });
+
+  it("shows a loading placeholder for the Attendees KPI instead of the raw (revoked-inclusive) events-picker count (#374)", async () => {
+    let resolveOverview!: (value: EventOverviewDto) => void;
+    fetchEventOverview.mockReturnValue(
+      new Promise<EventOverviewDto>((resolve) => {
+        resolveOverview = resolve;
+      }),
+    );
+
+    renderPage();
+
+    // event.attendee_count from useOutletContext is 50 (picker total); the real overview total
+    // below is different (48, active-only) - the tile must never show either raw number pre-load.
+    // Every KPI tile shows the same "…" placeholder pre-load, so assert at least one renders
+    // rather than a single exact match.
+    await waitFor(() => {
+      expect(screen.getAllByText("…").length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByText("50")).toBeNull();
+
+    await act(async () => {
+      resolveOverview(overviewFixture(5, { attendee_count: 48 }));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("48")).toBeTruthy();
+    });
+    // Fixture's event.capacity is 100, so the sub-label is the capacity phrasing, not "Active".
+    expect(screen.getByText("of 100 capacity")).toBeTruthy();
+  });
+
+  it("replaces the duplicate-date Event date tile with a Failed delivery tile and labels the KPI row per the mockup (#350)", async () => {
+    fetchEventOverview.mockResolvedValue(
+      overviewFixture(5, { email_failed: 2, email_bounced: 1 }),
+    );
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Attendees")).toBeTruthy();
+    });
+    // "Checked in" also appears in the Check-in progress card's ring legend - scope to the KPI row.
+    expect(within(statsRow()).getByText("Tickets sent")).toBeTruthy();
+    expect(within(statsRow()).getByText("Checked in")).toBeTruthy();
+    expect(within(statsRow()).getByText("Failed delivery")).toBeTruthy();
+    expect(within(statsRow()).getByText("3")).toBeTruthy();
+    expect(within(statsRow()).getByText("Needs attention")).toBeTruthy();
+    expect(screen.queryByText("Event date")).toBeNull();
+  });
+
+  it("merges Needs attention + Event readiness into a single Setup checklist card (#348)", async () => {
+    fetchEventOverview.mockResolvedValue(
+      overviewFixture(5, { checkin_staff_count: 0, attendee_count: 0, attendees_with_ticket: 0 }),
+    );
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Setup checklist")).toBeTruthy();
+    });
+    expect(screen.queryByText("Needs attention")).toBeNull();
+    expect(screen.queryByText("Event readiness")).toBeNull();
+    expect(screen.getByText("View full checklist in Event settings")).toBeTruthy();
+  });
+
+  it("shows an all-clear line in the checklist when nothing needs action", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(50));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Setup checklist")).toBeTruthy();
+    });
+    expect(screen.getByText("All checks look good")).toBeTruthy();
+  });
+
+  it("renders the Check-in progress card's ring percentage and glance stats", async () => {
+    fetchEventOverview.mockResolvedValue(
+      overviewFixture(25, {
+        attendee_count: 50,
+        last_check_in_at: "2026-07-01T10:00:00.000Z",
+        busiest_hour: { hour: "13:00", count: 4 },
+      }),
+    );
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Check-in progress")).toBeTruthy();
+    });
+    expect(screen.getByText("50%")).toBeTruthy();
+    expect(screen.getByText("Busiest hour")).toBeTruthy();
+    expect(screen.getByText("13:00–14:00")).toBeTruthy();
+  });
+
+  it("renders the ticket-type breakdown bar only when more than one type has attendees", async () => {
+    fetchEventOverview.mockResolvedValue(
+      overviewFixture(5, {
+        ticket_type_breakdown: [
+          { key: "standard", label: "Standard", color: "gray", count: 3 },
+          { key: "vip", label: "VIP", color: "purple", count: 2 },
+        ],
+      }),
+    );
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Check-in progress")).toBeTruthy();
+    });
+    expect(screen.getByText("Standard")).toBeTruthy();
+    expect(screen.getByText("VIP")).toBeTruthy();
+  });
+
+  it("hydrates Recent activity from the initial overview fetch, not only from a live SSE event (#373)", async () => {
+    const recentActivity: EventRecentActivityEntry[] = [
+      {
+        id: "checkin:hist-1",
+        type: "checkin",
+        tone: "ok",
+        attendee_name: "Historic Guest",
+        message: "checked in",
+        occurred_at: new Date().toISOString(),
+      },
+      {
+        id: "mail:hist-1",
+        type: "mail_failed",
+        tone: "error",
+        attendee_name: "Failed Guest",
+        message: "Ticket email failed for failed@example.com",
+        occurred_at: new Date().toISOString(),
+      },
+    ];
+    fetchEventOverview.mockResolvedValue(overviewFixture(5, { recent_activity: recentActivity }));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Historic Guest")).toBeTruthy();
+    });
+    expect(screen.getByText("Failed Guest")).toBeTruthy();
+    expect(screen.getByText(/Ticket email failed/)).toBeTruthy();
+    // No SSE event was ever fired above - this proves the feed hydrated purely from the initial fetch.
+    expect(streamHandler).not.toBeNull();
+  });
+
+  it("filters Recent activity to warn/error entries only via the Issues toggle", async () => {
+    const recentActivity: EventRecentActivityEntry[] = [
+      {
+        id: "checkin:ok-1",
+        type: "checkin",
+        tone: "ok",
+        attendee_name: "Fine Guest",
+        message: "checked in",
+        occurred_at: new Date().toISOString(),
+      },
+      {
+        id: "mail:err-1",
+        type: "mail_bounced",
+        tone: "error",
+        attendee_name: "Bounced Guest",
+        message: "Ticket email bounced for bounced@example.com",
+        occurred_at: new Date().toISOString(),
+      },
+    ];
+    fetchEventOverview.mockResolvedValue(overviewFixture(5, { recent_activity: recentActivity }));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Fine Guest")).toBeTruthy();
+    });
+    expect(screen.getByText("Bounced Guest")).toBeTruthy();
+
+    act(() => {
+      screen.getByRole("button", { name: "Issues" }).click();
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText("Fine Guest")).toBeNull();
+    });
+    expect(screen.getByText("Bounced Guest")).toBeTruthy();
+  });
+
+  it("uses real @admitto/ui form controls (no undefined btn/input/select classes) in the sidebar cards (#344, #345, #346)", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Key contacts")).toBeTruthy();
+    });
+
+    // Both Key contacts and Important links & files have an "Add" header button - scope to the
+    // Key contacts card specifically since the accessible name alone is ambiguous.
+    const keyContactsCard = screen.getByText("Key contacts").closest(".at-card") as HTMLElement;
+    act(() => {
+      within(keyContactsCard).getByRole("button", { name: "Add" }).click();
+    });
+
+    const nameInput = await screen.findByPlaceholderText("Name *");
+    expect(nameInput.className).toContain("at-input");
+    expect(document.querySelector(".btn")).toBeNull();
+  });
+
+  it("renders the Pinned note filled state on the standard card surface, not a custom warn-tinted wrapper (#347)", async () => {
+    fetchEventOverview.mockResolvedValue(
+      overviewFixture(5, { event: { ...overviewFixture(5).event, pinned_note: "Gate B is closed today" } }),
+    );
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Gate B is closed today")).toBeTruthy();
+    });
+    expect(document.querySelector(".overview-pinned-note")).toBeNull();
   });
 });

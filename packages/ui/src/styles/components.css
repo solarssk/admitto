@@ -130,6 +130,9 @@
 .status-circle--warn { background: var(--status-warn-tint); color: var(--status-warn-fg); }
 .status-circle--error { background: var(--status-error-tint); color: var(--status-error-fg); }
 .status-circle--neutral { background: var(--at-gray-100); color: var(--text-secondary); }
+.status-circle--info { background: var(--status-info-tint); color: var(--status-info-fg); }
+.status-circle--muted { background: var(--surface-sunken); color: var(--text-muted); }
+.status-circle--sm { width: 1.75rem; height: 1.75rem; font-size: 13px; }
 
 /* ---------------- Avatar ---------------- */
 .at-avatar {
@@ -152,9 +155,14 @@
 
 /* ---------------- Stat ---------------- */
 .at-stat { display: flex; flex-direction: column; gap: var(--space-1); }
+.at-stat__top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .at-stat__label { font-size: var(--fs-xs); font-weight: var(--fw-semibold); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--text-muted); }
+.at-stat__icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 2rem; height: 2rem; border-radius: var(--radius-pill); background: var(--primary-tint); color: var(--primary-active); font-size: 1rem; }
 .at-stat__value { font-size: var(--fs-display); font-weight: var(--fw-bold); color: var(--text-primary); line-height: 1; letter-spacing: var(--ls-tight); }
-.at-stat__sub { font-size: var(--fs-sm); color: var(--text-muted); }
+.at-stat__sub { font-size: var(--fs-sm); color: var(--text-muted); display: flex; align-items: center; gap: var(--space-2); }
+.at-stat__trend { font-size: var(--fs-xs); font-weight: var(--fw-semibold); }
+.at-stat__trend--up { color: var(--status-ok); }
+.at-stat__trend--down { color: var(--status-error); }
 
 /* ---------------- Tabs ---------------- */
 .at-tabs { display: flex; gap: var(--space-1); border-bottom: var(--border-width) solid var(--border); }
