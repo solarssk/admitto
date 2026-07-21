@@ -57,21 +57,21 @@ afterEach(() => {
 });
 
 describe("ImportPage archived lockdown", () => {
-  it("disables the upload fieldset and Preview, blocking the import flow at its entry point", async () => {
+  it("disables the upload and options fieldsets and Validate file, blocking the import flow at its entry point", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
 
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Preview" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Validate file" })).toBeTruthy();
     });
 
-    const previewButton = screen.getByRole("button", { name: "Preview" }) as HTMLButtonElement;
-    expect(previewButton.disabled).toBe(true);
-    const describedBy = previewButton.getAttribute("aria-describedby");
+    const validateButton = screen.getByRole("button", { name: "Validate file" }) as HTMLButtonElement;
+    expect(validateButton.disabled).toBe(true);
+    const describedBy = validateButton.getAttribute("aria-describedby");
     expect(describedBy).toBeTruthy();
     expect(document.getElementById(describedBy!)?.textContent).toBe(ARCHIVED_ACTION_TOOLTIP);
-    expect(previewButton.closest(".at-tooltip")).toBeTruthy();
+    expect(validateButton.closest(".at-tooltip")).toBeTruthy();
 
     const fileInput = screen.getByLabelText("File (.csv or .xlsx)");
     const uploadFieldset = fileInput.closest("fieldset");
@@ -82,9 +82,18 @@ describe("ImportPage archived lockdown", () => {
     // container's overflow boundary doesn't clip it (real bug found in testing).
     expect(uploadFieldset?.classList.contains("at-tooltip--below")).toBe(true);
 
-    // The overwrite checkbox lives in the same fieldset as the file input.
+    // The dropzone is keyboard-unfocusable and inert inside the disabled fieldset.
+    const dropzone = screen.getByRole("button", { name: "Upload a CSV or XLSX file" });
+    expect(dropzone.getAttribute("tabindex")).toBe("-1");
+
+    // The overwrite checkbox and dry-run switch live in the Options card's own disabled
+    // fieldset (two-column mockup layout splits them from the upload card).
     const overwriteCheckbox = screen.getByLabelText(/Overwrite existing attendees/);
-    expect(overwriteCheckbox.closest("fieldset")).toBe(uploadFieldset);
+    const optionsFieldset = overwriteCheckbox.closest("fieldset");
+    expect(optionsFieldset).not.toBe(uploadFieldset);
+    expect(optionsFieldset?.disabled).toBe(true);
+    expect(optionsFieldset?.getAttribute("data-tooltip")).toBe(ARCHIVED_ACTION_TOOLTIP);
+    expect(screen.getByLabelText(/Dry run/).closest("fieldset")).toBe(optionsFieldset);
 
     // Read-only navigation stays usable.
     expect(screen.getByRole("link", { name: "← Back to attendees" })).toBeTruthy();

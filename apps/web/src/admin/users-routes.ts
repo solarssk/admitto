@@ -3,6 +3,7 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import {
   canManageInstance,
   createUser,
+  findUserByEmail,
   hashPassword,
   normalizeEmail,
   PASSWORD_MIN_LENGTH,
@@ -275,6 +276,11 @@ export async function handlePostUser(c: Context, db: PrismaClient): Promise<Resp
   const email = normalizeEmail(emailRaw);
   if (!email || password.length < PASSWORD_MIN_LENGTH) {
     return c.json({ error: "invalid_request" }, 400);
+  }
+
+  const existing = await findUserByEmail(db, email);
+  if (existing) {
+    return c.json({ code: "email_conflict", error: "email_taken" }, 409);
   }
 
   const orgId = await resolveInstanceOrganizationId(db);
