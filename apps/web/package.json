@@ -29,7 +29,7 @@
     "@admitto/ui": "*",
     "@hono/node-server": "^2.0.8",
     "@prisma/client": "^5.17.0",
-    "@tabler/icons-webfont": "3.44.0",
+    "@tabler/icons-webfont": "3.45.0",
     "dejavu-fonts-ttf": "^2.37.3",
     "exceljs": "^4.4.0",
     "hono": "^4.12.30",
