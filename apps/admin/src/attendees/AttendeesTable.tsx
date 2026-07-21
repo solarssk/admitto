@@ -712,7 +712,10 @@ function FilterToolbar({
   onSortChange: (column: AttendeeSortBy) => void;
 }>) {
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+  const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<
+    HTMLButtonElement,
+    HTMLFieldSetElement
+  >();
   const activeFilterCount =
     (statusFilter !== "all" ? 1 : 0) +
     (rsvpStatusFilter !== "" ? 1 : 0) +
@@ -763,10 +766,12 @@ function FilterToolbar({
           )}
         </Button>
         {open && (
-          // Native selects, not menuitems — a labeled group, not `role="menu"` (CodeRabbit review:
+          // A native <fieldset> groups the selects below, not `role="menu"` (CodeRabbit review:
           // aria-haspopup="menu" previously advertised a menu useDropdownMenu couldn't find a
-          // menuitem in, so focus never moved into the panel on open).
-          <div className="attendees-filters-menu__panel" role="group" aria-label="Filters" ref={panelRef}>
+          // menuitem in, so focus never moved into the panel on open) nor `role="group"` on a
+          // plain div (SonarCloud S6819: prefer the native grouping element over the ARIA role).
+          <fieldset className="attendees-filters-menu__panel" ref={panelRef}>
+            <legend className="sr-only">Filters</legend>
             {!isDesktop && (
               <MobileSortControl sortBy={sortBy} sortDir={sortDir} onSortChange={onSortChange} />
             )}
@@ -842,7 +847,7 @@ function FilterToolbar({
                 <option value="failed">Failed</option>
               </Select>
             </div>
-          </div>
+          </fieldset>
         )}
       </div>
     </div>

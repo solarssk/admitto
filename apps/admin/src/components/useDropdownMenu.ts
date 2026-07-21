@@ -5,11 +5,14 @@ import { useClickOutside } from "./useClickOutside.js";
 /** Open/close state, click-outside, Escape-to-close, and first-`menuitem` focus for a small
  * trigger-button + `role="menu"` popover — was duplicated between the Attendee Detail page's
  * Revoke menu and the Attendees list's Export menu before being extracted here. */
-export function useDropdownMenu<TTrigger extends HTMLElement = HTMLButtonElement>() {
+export function useDropdownMenu<
+  TTrigger extends HTMLElement = HTMLButtonElement,
+  TPanel extends HTMLElement = HTMLDivElement,
+>() {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<TTrigger>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<TPanel>(null);
 
   const close = () => {
     setOpen(false);

@@ -190,7 +190,7 @@ describe("AttendeesTable Filters dropdown (PO review, third pass)", () => {
     expect(within(toggle).getByText("2")).toBeTruthy();
   });
 
-  it("exposes the panel as a labeled group of native controls, not a false menu, and moves focus into it on open (CodeRabbit review)", () => {
+  it("exposes the panel as a native fieldset of controls, not a false menu, and moves focus into it on open (CodeRabbit + SonarCloud review)", () => {
     render(
       <AttendeesTable {...tableProps} items={[baseRow]} selectedIds={new Set()} onToggleRow={vi.fn()} />,
     );
@@ -202,9 +202,10 @@ describe("AttendeesTable Filters dropdown (PO review, third pass)", () => {
 
     fireEvent.click(trigger);
 
+    // A native <fieldset>/<legend>, not `role="group"` on a div (SonarCloud S6819).
     const panel = document.querySelector(".attendees-filters-menu__panel");
-    expect(panel?.getAttribute("role")).toBe("group");
-    expect(panel?.getAttribute("aria-label")).toBe("Filters");
+    expect(panel?.tagName).toBe("FIELDSET");
+    expect(screen.getByText("Filters", { selector: "legend" })).toBeTruthy();
     expect(document.activeElement).toBe(screen.getByLabelText("Filter by ticket type"));
   });
 
