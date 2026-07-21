@@ -361,6 +361,20 @@ describe("ImportPage upload → preview → commit flow", () => {
     expect(screen.queryByText(/showing first/)).toBeNull();
   });
 
+  it("notes the true total on Row preview too when the sample is fewer than all valid rows", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(
+      samplePreview({ parse: { validCount: 5, invalidRows: [], invalidCount: 0, warnings: [] } }),
+    );
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+
+    expect(await screen.findByText("Row preview — showing first 1 of 5 valid rows")).toBeTruthy();
+  });
+
   it("shows rows the commit-time re-parse invalidated (e.g. a ticket type deleted between preview and commit)", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());

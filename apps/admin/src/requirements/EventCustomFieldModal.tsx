@@ -182,6 +182,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
               id="cf-description"
               className="at-textarea"
               rows={2}
+              maxLength={500}
               value={form.description}
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
               placeholder="Shown to operators on the import reference table"
