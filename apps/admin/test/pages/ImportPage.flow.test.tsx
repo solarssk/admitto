@@ -533,9 +533,7 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
     expect(fetchImportHistory).toHaveBeenCalledTimes(2);
 
     fireEvent.click(screen.getByRole("button", { name: "Import another file" }));
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Upload a CSV or XLSX file" })).toBeTruthy(),
-    );
+    expect(await screen.findByRole("button", { name: "Upload a CSV or XLSX file" })).toBeTruthy();
     expect((screen.getByLabelText(/Dry run/) as HTMLInputElement).checked).toBe(true);
     expect(screen.queryByText("Import complete")).toBeNull();
   });
