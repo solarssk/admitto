@@ -119,7 +119,7 @@ import {
   handleRevokeAttendeeCheckIn,
   handleRevokeAttendeeItem,
 } from "./admin/attendees-api-routes.js";
-import { handleImportPreview, handleImportCommit, handleGetImportTemplate, MAX_IMPORT_BODY_BYTES } from "./admin/import-api-routes.js";
+import { handleImportPreview, handleImportCommit, handleGetImportTemplate, handleGetImportHistory, MAX_IMPORT_BODY_BYTES } from "./admin/import-api-routes.js";
 import {
   handleListEventItems,
   handleCreateEventItem,
@@ -808,6 +808,9 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.get("/api/admin/events/:eventId/import/template", staffAdminGate, (c) =>
     handleGetImportTemplate(c, db),
+  );
+  app.get("/api/admin/events/:eventId/import/history", staffAdminGate, (c) =>
+    handleGetImportHistory(c, db),
   );
   app.post("/api/admin/events/:eventId/import/preview", jsonPostCsrf, staffAdminGate, adminImportPreviewRateLimit, importBodyLimit, guardArchivedEvent((c) =>
     handleImportPreview(c, db),

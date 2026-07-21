@@ -38,6 +38,7 @@ const createFieldSchema = z
   .object({
     source_field: slugField.min(1).max(60),
     label: z.string().trim().min(1).max(60),
+    description: z.string().trim().max(500).optional(),
     type: z.enum(["text", "select", "boolean"]).optional(),
     required: z.boolean().optional(),
     options: z.array(z.string().trim().min(1).max(60)).max(20).optional(),
@@ -56,6 +57,9 @@ const createFieldSchema = z
 const patchFieldSchema = z
   .object({
     label: z.string().trim().min(1).max(60).optional(),
+    // null clears a previously set description; omitting the key leaves it untouched (same
+    // omit-vs-null convention as options below).
+    description: z.union([z.string().trim().max(500), z.null()]).optional(),
     type: z.enum(["text", "select", "boolean"]).optional(),
     required: z.boolean().optional(),
     // null (not just omitted) is how the client asks to clear a previous select's options when
@@ -72,6 +76,7 @@ export type EventCustomFieldDto = {
   id: string;
   source_field: string;
   label: string;
+  description: string | null;
   type: "text" | "select" | "boolean";
   required: boolean;
   options: string[] | null;
@@ -82,6 +87,7 @@ function serializeCustomField(row: {
   id: string;
   source_field: string;
   label: string;
+  description: string | null;
   type: string;
   required: boolean;
   options: Prisma.JsonValue;
@@ -94,6 +100,7 @@ function serializeCustomField(row: {
     id: row.id,
     source_field: row.source_field,
     label: row.label,
+    description: row.description,
     type: row.type as EventCustomFieldDto["type"],
     required: row.required,
     options: options && options.length > 0 ? options : null,
@@ -167,6 +174,7 @@ export async function handleCreateEventCustomField(c: Context, db: PrismaClient)
           event_id: eventId,
           source_field: parsed.data.source_field,
           label: parsed.data.label,
+          description: parsed.data.description ?? null,
           type: parsed.data.type ?? "text",
           required: parsed.data.required ?? false,
           options: parsed.data.options ?? Prisma.JsonNull,
@@ -230,6 +238,7 @@ export async function handlePatchEventCustomField(c: Context, db: PrismaClient):
 
   const data: Prisma.EventCustomFieldUpdateInput = {};
   if (parsed.data.label !== undefined) data.label = parsed.data.label;
+  if (parsed.data.description !== undefined) data.description = parsed.data.description;
   if (parsed.data.type !== undefined) data.type = parsed.data.type;
   if (parsed.data.required !== undefined) data.required = parsed.data.required;
   if (parsed.data.options !== undefined) data.options = parsed.data.options ?? Prisma.JsonNull;

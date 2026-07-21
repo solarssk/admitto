@@ -296,13 +296,17 @@ export interface ImportPreviewResponse {
   importId: string;
   parse: {
     validCount: number;
+    /** Capped server-side; invalidCount is the true total. */
     invalidRows: ImportInvalidRow[];
+    invalidCount: number;
     warnings: string[];
   };
   summary: {
     toCreate: number;
     toUpdate: number;
     toSkip: number;
+    /** Capped server-side; toSkip above is the true total. */
+    skipped: ImportSkippedRow[];
   };
   sampleRows: ImportSampleRow[];
   attributeFieldLabels: Array<{ source_field: string; label: string }>;
@@ -320,10 +324,13 @@ export interface ImportCommitResponse {
   toSkip: number;
   created: number;
   updated: number;
+  /** Capped server-side; toSkip above is the true total. */
   skipped: ImportSkippedRow[];
   /** Rows dropped by the commit-time re-parse before ever reaching the write step (e.g. a ticket
-   * type deleted from the catalog between preview and commit) - absent from created/updated/skipped. */
+   * type deleted from the catalog between preview and commit) - absent from created/updated/skipped.
+   * Capped server-side; invalidCount is the true total. */
   invalidRows: ImportInvalidRow[];
+  invalidCount: number;
 }
 
 /** Bulk ticket send queue summary from POST .../attendees/bulk-resend. */
@@ -395,6 +402,7 @@ export interface EventCustomFieldDto {
   id: string;
   source_field: string;
   label: string;
+  description: string | null;
   type: EventCustomFieldType;
   required: boolean;
   options: string[] | null;
@@ -408,6 +416,7 @@ export interface EventCustomFieldsListResponse {
 export interface CreateEventCustomFieldBody {
   source_field: string;
   label: string;
+  description?: string;
   type?: EventCustomFieldType;
   required?: boolean;
   options?: string[];
@@ -416,6 +425,8 @@ export interface CreateEventCustomFieldBody {
 /** `source_field` is immutable after create - see EventCustomFieldDto. */
 export interface UpdateEventCustomFieldPatch {
   label?: string;
+  /** null clears a previous description; omit to leave it untouched. */
+  description?: string | null;
   type?: EventCustomFieldType;
   required?: boolean;
   /** null clears a previous select's options; omit to leave options untouched. */

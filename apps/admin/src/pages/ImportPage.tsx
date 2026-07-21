@@ -1,14 +1,28 @@
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import { Link, useOutletContext, useParams } from "react-router-dom";
 import { Button, Card, PageHeader, Switch, useToast } from "@admitto/ui";
-import { ApiError, commitImport, previewImport, type EventFullMeta } from "../api/client.js";
+import {
+  ApiError,
+  commitImport,
+  fetchImportHistory,
+  previewImport,
+  type EventFullMeta,
+  type ImportHistoryEntry,
+} from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { EventDto, ImportCommitResponse, ImportPreviewResponse, ImportSampleRow } from "../api/types.js";
+import type {
+  EventDto,
+  ImportCommitResponse,
+  ImportPreviewResponse,
+  ImportSampleRow,
+  ImportSkippedRow,
+} from "../api/types.js";
 import { fetchAttendeeCustomFields, type CustomDataFieldDef } from "../attendees/customData.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
+import { formatEventDateTime } from "../utils/event-dates.js";
 import "../attendees/attendees.css";
 import "./import.css";
 
@@ -20,14 +34,24 @@ function pluralize(count: number, singular: string): string {
   return count === 1 ? singular : `${singular}s`;
 }
 
+/** The server caps invalid/skipped row detail at a fixed count (CodeRabbit review: a file where
+ * every row is skipped/invalid would otherwise render tens of thousands of DOM rows) - this
+ * folds the "showing first N of M" note into the section heading when the response was capped,
+ * matching the Row preview card's own count note. */
+function rowDetailHeading(label: string, shown: number, total: number): string {
+  return total > shown ? `${label} — showing first ${shown} of ${total}` : label;
+}
+
 interface ImportSampleTableProps {
   rows: ImportSampleRow[];
-  totalValid: number;
   attributeFieldLabels: Array<{ source_field: string; label: string }>;
 }
 
-/** Preview table for the first valid import rows (optional columns shown when any row has data). */
-function ImportSampleTable({ rows, totalValid, attributeFieldLabels }: ImportSampleTableProps) {
+/** Preview table for the first valid import rows (optional columns shown when any row has data).
+ * The enclosing Card carries its own "Row preview" title (with the showing-first-N-of-M count
+ * folded in when relevant) — this used to repeat both in a second "Data preview" heading here,
+ * reading as two headings for one table (PO feedback). */
+function ImportSampleTable({ rows, attributeFieldLabels }: Readonly<ImportSampleTableProps>) {
   const displayRows = rows.slice(0, SAMPLE_DISPLAY_LIMIT);
   if (displayRows.length === 0) return null;
 
@@ -39,15 +63,6 @@ function ImportSampleTable({ rows, totalValid, attributeFieldLabels }: ImportSam
 
   return (
     <div className="import-sample">
-      <h3 className="import-subtitle">
-        Data preview
-        {totalValid > displayRows.length && (
-          <span className="import-sample__note">
-            {" "}
-            — showing first {displayRows.length} of {totalValid} valid rows
-          </span>
-        )}
-      </h3>
       <div className="import-sample-wrap">
         <table className="table import-sample-table">
           <thead>
@@ -102,6 +117,110 @@ function ImportSampleTable({ rows, totalValid, attributeFieldLabels }: ImportSam
   );
 }
 
+interface ImportHistoryCardProps {
+  history: ImportHistoryEntry[] | null;
+  error: string | null;
+  eventTimezone: string | undefined;
+  onRetry: () => void;
+}
+
+/** One state at a time (error takes priority, then loading, then empty, then the table) — a
+ * plain if/return chain instead of nested ternaries (Sonar S3358), which also reads closer to
+ * how an operator actually encounters these: never more than one at once. */
+function renderImportHistoryBody({ history, error, eventTimezone, onRetry }: ImportHistoryCardProps) {
+  if (error) {
+    return (
+      <div className="import-history__error">
+        <p className="import-hint">{error}</p>
+        <Button variant="secondary" onClick={onRetry}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+  if (history === null) {
+    return <p className="import-hint import-history__loading">Loading…</p>;
+  }
+  if (history.length === 0) {
+    return <p className="import-hint">No imports yet for this event.</p>;
+  }
+  return (
+    <div className="attendees-table-wrap">
+      <table className="table import-history-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>File</th>
+            <th>Created</th>
+            <th>Updated</th>
+            <th>Skipped</th>
+          </tr>
+        </thead>
+        <tbody>
+          {history.map((entry) => (
+            <tr key={entry.id}>
+              <td className="import-history__date">
+                {formatEventDateTime(entry.created_at, eventTimezone)}
+              </td>
+              <td className="import-history__file">
+                {entry.filename ?? <span className="import-sample__empty">—</span>}
+              </td>
+              <td className="import-history__num import-history__num--ok">{entry.created}</td>
+              <td className="import-history__num import-history__num--warn">{entry.updated}</td>
+              <td className="import-history__num">{entry.skipped}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Email/Reason table explaining each skipped row — without it, "To skip: N" tells an operator
+ * nothing about why (usually an existing attendee with Overwrite off), which reads as the import
+ * silently doing nothing (PO feedback while testing #358 phase C). */
+function SkippedRowsTable({ rows }: Readonly<{ rows: readonly ImportSkippedRow[] }>) {
+  return (
+    <div className="attendees-table-wrap">
+      <table className="table">
+        <thead>
+          <tr>
+            <th>Email</th>
+            <th>Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={`${row.email}-${index}`}>
+              <td>{row.email}</td>
+              <td>{row.reason}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** "Import history" card from the design mockup — recent commits with their outcome counts,
+ * read from the audit log (no dedicated table). Timestamps render in the event's timezone via
+ * the central formatter, like other event-scoped tables. Errors render inline with a Retry,
+ * per the toast-vs-inline convention (a load failure of a passive card shouldn't toast). */
+function ImportHistoryCard(props: Readonly<ImportHistoryCardProps>) {
+  const { history, error } = props;
+  return (
+    <Card
+      title="Import history"
+      className="import-card"
+      /* Unpadded only when the table renders — it brings its own scroll wrapper (mockup's
+       * padded={false} table card); every text state keeps the normal card padding. */
+      padded={error !== null || history === null || history.length === 0}
+    >
+      {renderImportHistoryBody(props)}
+    </Card>
+  );
+}
+
 /** Row/Reason table shared by the preview step's parse.invalidRows and the done step's
  * commit-time invalidRows - same shape, same rendering, different source. */
 function InvalidRowsTable({ rows }: { rows: readonly { rowIndex: number; reason: string }[] }) {
@@ -151,6 +270,9 @@ export function ImportPage() {
   const [capacityBlocked, setCapacityBlocked] = useState<EventFullMeta | null>(null);
   const [forceCapacity, setForceCapacity] = useState(false);
   const [attributeFields, setAttributeFields] = useState<CustomDataFieldDef[]>([]);
+  const [history, setHistory] = useState<ImportHistoryEntry[] | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyToken, setHistoryToken] = useState(0);
 
   useEffect(() => {
     if (!eventId) return;
@@ -187,6 +309,23 @@ export function ImportPage() {
       addToast("Request failed.", "error");
     }
   };
+
+  useEffect(() => {
+    if (!eventId) return;
+    const ac = new AbortController();
+    setHistoryError(null);
+    // Router reuses this component across a direct navigation from one event's import URL to
+    // another's — reset to the loading state so the previous event's history can't flash under
+    // the new event's timezone while this fetch is in flight (CodeRabbit review).
+    setHistory(null);
+    fetchImportHistory(eventId, ac.signal)
+      .then((items) => setHistory(items))
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setHistoryError("Couldn't load import history.");
+      });
+    return () => ac.abort();
+  }, [eventId, historyToken]);
 
   /** Shared by the file picker's onChange and the dropzone's drop handler — same reset. */
   const selectFile = (picked: File | null) => {
@@ -259,6 +398,7 @@ export function ImportPage() {
       setResult(data);
       setStep("done");
       setForceCapacity(false);
+      setHistoryToken((n) => n + 1);
       addToast(
         `Attendees imported: ${data.created} created, ${data.updated} updated, ${data.skipped.length} skipped`,
         "success",
@@ -290,17 +430,35 @@ export function ImportPage() {
       <PageHeader
         title="Import attendees"
         subtitle="Upload a CSV or XLSX file to add or update attendee records."
+        actions={
+          <Link to={`/admin/events/${eventId}/attendees`}>
+            <Button variant="secondary" icon={<i className="ti ti-arrow-left" aria-hidden="true" />}>
+              Back to attendees
+            </Button>
+          </Link>
+        }
       />
-
-      <p className="import-back">
-        <Link to={`/admin/events/${eventId}/attendees`}>← Back to attendees</Link>
-      </p>
 
 
       {step !== "done" && (
         <div className="import-two-col">
           <div className="import-stack">
-            <Card title="1 · Upload file" className="import-card">
+            <Card
+              title="1 · Upload file"
+              className="import-card"
+              actions={
+                <a
+                  href={`/api/admin/events/${eventId}/import/template`}
+                  download="admitto-import-template.csv"
+                  className="at-btn at-btn--secondary at-btn--sm"
+                >
+                  <span className="at-btn__icon" aria-hidden="true">
+                    <i className="ti ti-download" />
+                  </span>
+                  <span>Download CSV template</span>
+                </a>
+              }
+            >
               <div className="import-form">
                 <fieldset
                   className={[
@@ -377,14 +535,6 @@ export function ImportPage() {
                   </div>
                 </fieldset>
 
-                <a
-                  href={`/api/admin/events/${eventId}/import/template`}
-                  download="admitto-import-template.csv"
-                  className="at-btn at-btn--secondary import-template-btn"
-                >
-                  Download CSV template
-                </a>
-
                 <details className="import-columns-info">
                   <summary>Required CSV columns</summary>
                   <table className="import-columns-table">
@@ -412,8 +562,24 @@ export function ImportPage() {
                       </tr>
                       <tr><td><code>company</code></td><td>No</td><td>Attendee&apos;s company</td></tr>
                       <tr><td><code>department</code></td><td>No</td><td>Department or team</td></tr>
-                      <tr><td><code>external_uuid</code></td><td>No</td><td>External ID for deduplication</td></tr>
-                      <tr><td><code>qr_payload</code></td><td>No</td><td>Custom QR code payload (auto-generated if empty)</td></tr>
+                      <tr>
+                        <td><code>external_uuid</code></td>
+                        <td>No</td>
+                        <td>
+                          Only needed if your ticketing agency already assigns each attendee a
+                          unique ID — add it here so re-importing the same file updates that
+                          person instead of creating a duplicate
+                        </td>
+                      </tr>
+                      <tr>
+                        <td><code>qr_payload</code></td>
+                        <td>No</td>
+                        <td>
+                          Leave empty — Admitto generates a secure ticket code automatically. Only
+                          fill this in if attendees already have a ticket code from elsewhere that
+                          needs to match
+                        </td>
+                      </tr>
                       {attributeFields.map((field) => (
                         <tr key={field.source_field}>
                           <td>
@@ -421,7 +587,7 @@ export function ImportPage() {
                           </td>
                           <td>{field.required ? "Yes" : "No"}</td>
                           <td>
-                            {field.label}
+                            {field.description || "No description provided"}
                             {field.type === "select" && field.options?.length
                               ? ` — select: ${field.options.join(", ")}`
                               : field.type === "boolean"
@@ -444,10 +610,16 @@ export function ImportPage() {
             </Card>
 
             {step === "preview" && preview && (
-              <Card title="Row preview" className="import-card">
+              <Card
+                title={
+                  preview.parse.validCount > preview.sampleRows.length
+                    ? `Row preview — showing first ${preview.sampleRows.length} of ${preview.parse.validCount} valid rows`
+                    : "Row preview"
+                }
+                className="import-card"
+              >
                 <ImportSampleTable
                   rows={preview.sampleRows}
-                  totalValid={preview.parse.validCount}
                   attributeFieldLabels={preview.attributeFieldLabels}
                 />
               </Card>
@@ -498,20 +670,21 @@ export function ImportPage() {
                     enable committing.
                   </span>
                 </div>
-                <label className="import-checkbox">
-                  <input
-                    type="checkbox"
+                <div className="import-option">
+                  <Switch
+                    label="Overwrite existing attendees"
                     checked={overwrite}
-                    disabled={loading || step === "preview"}
+                    // Togglable at any step, including preview — flip it after seeing an existing
+                    // attendee skipped in the Validation summary, then Re-validate (PO feedback:
+                    // this used to lock the instant a summary appeared, with no way back except
+                    // picking a new file).
+                    disabled={loading}
                     onChange={(e) => setOverwrite(e.target.checked)}
                   />
-                  <span>
-                    Overwrite existing attendees
-                    <span className="import-checkbox__hint">
-                      When off, existing attendees matched by email are skipped.
-                    </span>
+                  <span className="import-checkbox__hint">
+                    When off, existing attendees matched by email are skipped.
                   </span>
-                </label>
+                </div>
               </fieldset>
             </Card>
 
@@ -581,8 +754,19 @@ export function ImportPage() {
 
                 {preview.parse.invalidRows.length > 0 && (
                   <div className="import-invalid">
-                    <h3 className="import-subtitle">Invalid rows</h3>
+                    <h3 className="import-subtitle">
+                      {rowDetailHeading("Invalid rows", preview.parse.invalidRows.length, preview.parse.invalidCount)}
+                    </h3>
                     <InvalidRowsTable rows={preview.parse.invalidRows} />
+                  </div>
+                )}
+
+                {preview.summary.skipped.length > 0 && (
+                  <div className="import-invalid">
+                    <h3 className="import-subtitle">
+                      {rowDetailHeading("Skipped rows", preview.summary.skipped.length, preview.summary.toSkip)}
+                    </h3>
+                    <SkippedRowsTable rows={preview.summary.skipped} />
                   </div>
                 )}
 
@@ -613,59 +797,69 @@ export function ImportPage() {
                 )}
               </Card>
             )}
+
+            <ImportHistoryCard
+              history={history}
+              error={historyError}
+              eventTimezone={event.timezone}
+              onRetry={() => setHistoryToken((n) => n + 1)}
+            />
           </div>
         </div>
       )}
 
       {step === "done" && result && (
         <Card className="import-card">
-          <h2 className="import-section-title">Import complete</h2>
-          <p className="import-hint">
-            Reference ID: <code className="import-ref">{result.importId}</code>
-            {" "}(include when contacting support)
-          </p>
-          <div className="import-stats">
-            <div className="import-stat">
-              <span className="import-stat__value">{result.created}</span>
-              <span className="import-stat__label">Created</span>
+          <div className="import-done">
+            <div className="import-done__icon" aria-hidden="true">
+              <i className="ti ti-circle-check" />
             </div>
-            <div className="import-stat">
-              <span className="import-stat__value">{result.updated}</span>
-              <span className="import-stat__label">Updated</span>
+            <h2 className="import-done__title">Import complete</h2>
+            <p className="import-done__summary">
+              {result.created} attendee{result.created === 1 ? "" : "s"} created · {result.updated}{" "}
+              updated · {result.skipped.length} skipped
+            </p>
+            <div className="import-done__actions">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setFile(null);
+                  setPreview(null);
+                  setResult(null);
+                  setCapacityBlocked(null);
+                  setForceCapacity(false);
+                  setDryRun(true);
+                  setStep("upload");
+                }}
+              >
+                Import another file
+              </Button>
+              <Link to={`/admin/events/${eventId}/attendees`}>
+                <Button variant="primary" icon={<i className="ti ti-users" aria-hidden="true" />}>
+                  View attendees
+                </Button>
+              </Link>
             </div>
-            <div className="import-stat">
-              <span className="import-stat__value">{result.skipped.length}</span>
-              <span className="import-stat__label">Skipped</span>
-            </div>
+            <p className="import-hint">
+              Reference ID: <code className="import-ref">{result.importId}</code>
+              {" "}(include when contacting support)
+            </p>
           </div>
 
           {result.skipped.length > 0 && (
             <div className="import-invalid">
-              <h3 className="import-subtitle">Skipped rows</h3>
-              <div className="attendees-table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Email</th>
-                      <th>Reason</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {result.skipped.map((row, idx) => (
-                      <tr key={`${row.email}-${idx}`}>
-                        <td>{row.email}</td>
-                        <td>{row.reason}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <h3 className="import-subtitle">
+                {rowDetailHeading("Skipped rows", result.skipped.length, result.toSkip)}
+              </h3>
+              <SkippedRowsTable rows={result.skipped} />
             </div>
           )}
 
           {result.invalidRows.length > 0 && (
             <div className="import-invalid">
-              <h3 className="import-subtitle">Invalid rows</h3>
+              <h3 className="import-subtitle">
+                {rowDetailHeading("Invalid rows", result.invalidRows.length, result.invalidCount)}
+              </h3>
               <p className="import-hint">
                 Something about the event changed between preview and commit (e.g. a ticket type
                 was removed) - these rows were not imported.
@@ -673,12 +867,6 @@ export function ImportPage() {
               <InvalidRowsTable rows={result.invalidRows} />
             </div>
           )}
-
-          <div className="import-actions">
-            <Link to={`/admin/events/${eventId}/attendees`}>
-              <Button variant="primary">Back to attendees</Button>
-            </Link>
-          </div>
         </Card>
       )}
     </>

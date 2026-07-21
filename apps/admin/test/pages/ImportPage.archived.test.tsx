@@ -28,6 +28,7 @@ vi.mock("../../src/api/client.js", () => ({
   },
   fetchEventCustomFields: (...args: unknown[]) => fetchEventCustomFields(...args),
   previewImport: vi.fn(),
+  fetchImportHistory: vi.fn().mockResolvedValue([]),
   commitImport: vi.fn(),
 }));
 
@@ -96,7 +97,7 @@ describe("ImportPage archived lockdown", () => {
     expect(screen.getByLabelText(/Dry run/).closest("fieldset")).toBe(optionsFieldset);
 
     // Read-only navigation stays usable.
-    expect(screen.getByRole("link", { name: "← Back to attendees" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Back to attendees" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Download CSV template" })).toBeTruthy();
   });
 });

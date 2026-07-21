@@ -406,10 +406,51 @@ describe("POST /api/admin/events/:eventId/import/preview", () => {
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      summary: { toCreate: number; toSkip: number };
+      summary: { toCreate: number; toSkip: number; skipped: { email: string; reason: string }[] };
     };
     expect(body.summary.toCreate).toBe(1);
     expect(body.summary.toSkip).toBe(1);
+    // The preview and commit endpoints must agree on why a row was skipped — an operator
+    // deciding whether to turn on Overwrite reads this before ever reaching commit.
+    expect(body.summary.skipped).toEqual([
+      {
+        email: "existing@example.com",
+        reason: 'Attendee already exists — turn on "Overwrite existing attendees" to update it instead of skipping',
+      },
+    ]);
+  });
+
+  it("caps skipped-row detail in the response, reporting the true total separately (CodeRabbit review)", async () => {
+    // A re-import of a file where every row is already an existing attendee (overwrite off) - the
+    // scenario that could otherwise put thousands of email/reason pairs in one response.
+    const count = 25;
+    const emails = Array.from({ length: count }, (_, i) => `cap-skip-${i}@example.com`);
+    await prisma.attendee.createMany({
+      data: emails.map((email, i) => ({
+        event_id: EVENT_A,
+        email,
+        name: `Cap Skip ${i}`,
+      })),
+    });
+
+    const csv = [
+      "first_name,last_name,email",
+      ...emails.map((email, i) => `Cap,Skip ${i},${email}`),
+    ].join("\n");
+
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/preview`,
+      csvFormData(csv),
+      adminCookie,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      summary: { toSkip: number; skipped: { email: string; reason: string }[] };
+    };
+    expect(body.summary.toSkip).toBe(count);
+    expect(body.summary.skipped).toHaveLength(20);
+
+    await prisma.attendee.deleteMany({ where: { email: { in: emails } } });
   });
 
   it("rejects unsupported file type", async () => {
@@ -737,7 +778,36 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
     expect(body.created).toBe(0);
     expect(body.updated).toBe(0);
     expect(body.skipped.length).toBe(2);
-    expect(body.skipped.every((s) => s.reason.includes("overwrite=false"))).toBe(true);
+    expect(body.skipped.every((s) => s.reason.includes("Overwrite existing attendees"))).toBe(true);
+  });
+
+  it("caps skipped-row detail on commit too, reporting the true total separately (CodeRabbit review)", async () => {
+    const count = 25;
+    const emails = Array.from({ length: count }, (_, i) => `cap-commit-skip-${i}@example.com`);
+    await prisma.attendee.createMany({
+      data: emails.map((email, i) => ({
+        event_id: EVENT_A,
+        email,
+        name: `Cap Commit Skip ${i}`,
+      })),
+    });
+
+    const csv = [
+      "first_name,last_name,email",
+      ...emails.map((email, i) => `Cap,Commit ${i},${email}`),
+    ].join("\n");
+
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/commit`,
+      csvFormData(csv),
+      adminCookie,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { toSkip: number; skipped: unknown[] };
+    expect(body.toSkip).toBe(count);
+    expect(body.skipped).toHaveLength(20);
+
+    await prisma.attendee.deleteMany({ where: { email: { in: emails } } });
   });
 
   it("re-import overwrite=true updates profile fields", async () => {
@@ -827,6 +897,26 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
       expect(row).toHaveProperty("reason");
       expect(row.reason).not.toMatch(/@/);
     }
+  });
+
+  it("caps invalid-row detail in the response, reporting the true total separately (CodeRabbit review)", async () => {
+    const count = 25;
+    const csv = [
+      "first_name,last_name,email",
+      ...Array.from({ length: count }, (_, i) => `Missing,Email ${i},`),
+    ].join("\n");
+
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/preview`,
+      csvFormData(csv),
+      adminCookie,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      parse: { invalidCount: number; invalidRows: unknown[] };
+    };
+    expect(body.parse.invalidCount).toBe(count);
+    expect(body.parse.invalidRows).toHaveLength(20);
   });
 
   // TOCTOU regression: a row valid at preview time can become invalid by commit time if the
@@ -1060,5 +1150,99 @@ describe("GET /api/admin/events/:eventId/import/template", () => {
     await prisma.eventCustomField.delete({
       where: { event_id_source_field: { event_id: EVENT_A, source_field: "email" } },
     });
+  });
+});
+
+describe("GET /api/admin/events/:eventId/import/history", () => {
+  afterAll(async () => {
+    await prisma.attendeeActionLog.deleteMany({
+      where: { event_id: { in: [EVENT_A, EVENT_B] }, action_type: "attendees_imported" },
+    });
+  });
+
+  it("returns committed imports newest-first with counts and filename from the audit log", async () => {
+    await prisma.attendeeActionLog.deleteMany({
+      where: { event_id: EVENT_A, action_type: "attendees_imported" },
+    });
+    await prisma.attendeeActionLog.createMany({
+      data: [
+        {
+          event_id: EVENT_A,
+          attendee_id: null,
+          action_type: "attendees_imported",
+          created_at: new Date("2026-06-01T10:00:00Z"),
+          metadata: { created: 10, updated: 2, skipped: 1, filename: "first.csv" },
+        },
+        {
+          event_id: EVENT_A,
+          attendee_id: null,
+          action_type: "attendees_imported",
+          created_at: new Date("2026-06-02T10:00:00Z"),
+          metadata: { created: 5, updated: 0, skipped: 0, filename: "second.xlsx" },
+        },
+        // Different action types and other events never leak into the history.
+        {
+          event_id: EVENT_A,
+          attendee_id: null,
+          action_type: "attendees_exported",
+          metadata: { format: "csv", count: 3 },
+        },
+        {
+          event_id: EVENT_B,
+          attendee_id: null,
+          action_type: "attendees_imported",
+          metadata: { created: 99, updated: 0, skipped: 0, filename: "other-event.csv" },
+        },
+      ],
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/import/history`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    const body = (await res.json()) as { items: Array<Record<string, unknown>> };
+    expect(body.items).toHaveLength(2);
+    expect(body.items[0]).toMatchObject({
+      filename: "second.xlsx",
+      created: 5,
+      updated: 0,
+      skipped: 0,
+    });
+    expect(body.items[1]).toMatchObject({ filename: "first.csv", created: 10, updated: 2, skipped: 1 });
+    expect(typeof body.items[0]!.created_at).toBe("string");
+  });
+
+  it("tolerates legacy rows with missing metadata fields", async () => {
+    await prisma.attendeeActionLog.deleteMany({
+      where: { event_id: EVENT_A, action_type: "attendees_imported" },
+    });
+    await prisma.attendeeActionLog.create({
+      data: {
+        event_id: EVENT_A,
+        attendee_id: null,
+        action_type: "attendees_imported",
+        metadata: { created: 3 },
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/import/history`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: Array<Record<string, unknown>> };
+    expect(body.items[0]).toMatchObject({ filename: null, created: 3, updated: 0, skipped: 0 });
+  });
+
+  it("returns 403 for an operator and for an admin outside the event's organization", async () => {
+    const opRes = await app.request(`/api/admin/events/${EVENT_A}/import/history`, {
+      headers: { Cookie: opCookie },
+    });
+    expect(opRes.status).toBe(403);
+
+    const crossRes = await app.request(`/api/admin/events/${EVENT_B}/import/history`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(crossRes.status).toBe(403);
   });
 });

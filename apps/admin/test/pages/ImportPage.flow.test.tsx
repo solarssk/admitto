@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createMemoryRouter, MemoryRouter, RouterProvider, Route, Routes } from "react-router-dom";
 import { ImportPage } from "../../src/pages/ImportPage.js";
 import { renderWithToast } from "../test-utils.js";
 
 const fetchEventCustomFields = vi.fn();
 const previewImport = vi.fn();
 const commitImport = vi.fn();
+const fetchImportHistory = vi.fn();
 
 let mockAssignments: Array<{ role: string; scope_type: string; scope_id: string | null }> = [
   { role: "admin", scope_type: "organization", scope_id: "org-1" },
@@ -35,6 +36,7 @@ vi.mock("../../src/api/client.js", () => ({
   },
   fetchEventCustomFields: (...args: unknown[]) => fetchEventCustomFields(...args),
   previewImport: (...args: unknown[]) => previewImport(...args),
+  fetchImportHistory: (...args: unknown[]) => fetchImportHistory(...args),
   commitImport: (...args: unknown[]) => commitImport(...args),
 }));
 
@@ -61,8 +63,8 @@ function renderPage() {
 function samplePreview(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     importId: "imp-1",
-    parse: { validCount: 1, invalidRows: [], warnings: [] },
-    summary: { toCreate: 1, toUpdate: 0, toSkip: 0 },
+    parse: { validCount: 1, invalidRows: [], invalidCount: 0, warnings: [] },
+    summary: { toCreate: 1, toUpdate: 0, toSkip: 0, skipped: [] },
     sampleRows: [
       {
         rowIndex: 1,
@@ -86,6 +88,10 @@ function selectFile() {
   fireEvent.change(fileInput, { target: { files: [file] } });
 }
 
+beforeEach(() => {
+  fetchImportHistory.mockResolvedValue([]);
+});
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -105,6 +111,7 @@ describe("ImportPage upload → preview → commit flow", () => {
       updated: 0,
       skipped: [],
       invalidRows: [],
+      invalidCount: 0,
     });
     renderPage();
     expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
@@ -208,21 +215,53 @@ describe("ImportPage upload → preview → commit flow", () => {
     expect(dryRunSwitch.checked).toBe(true);
   });
 
-  it("lists configured custom attribute fields as extra rows in the Required CSV columns reference", async () => {
+  it("lists configured custom attribute fields as extra rows in the Required CSV columns reference, showing the field's own description", async () => {
     fetchEventCustomFields.mockResolvedValue([
-      { id: "1", source_field: "shirt_size", label: "Shirt size", type: "text", required: false, options: null, created_at: "2026-01-01T00:00:00.000Z" },
+      {
+        id: "1",
+        source_field: "shirt_size",
+        label: "Shirt size",
+        description: "Attendee's t-shirt size for the swag bag",
+        type: "text",
+        required: false,
+        options: null,
+        created_at: "2026-01-01T00:00:00.000Z",
+      },
     ]);
     renderPage();
     expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
 
     expect(await screen.findByText("shirt_size")).toBeTruthy();
-    expect(screen.getByText("Shirt size")).toBeTruthy();
+    expect(screen.getByText("Attendee's t-shirt size for the swag bag")).toBeTruthy();
+    expect(screen.queryByText("Shirt size")).toBeNull();
+  });
+
+  it("falls back to a plain 'No description provided' note for a custom field with no description set", async () => {
+    fetchEventCustomFields.mockResolvedValue([
+      {
+        id: "1",
+        source_field: "shirt_size",
+        label: "Shirt size",
+        description: null,
+        type: "text",
+        required: false,
+        options: null,
+        created_at: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    expect(await screen.findByText("shirt_size")).toBeTruthy();
+    expect(screen.getByText("No description provided")).toBeTruthy();
   });
 
   it("lists parse warnings on the validation summary", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(
-      samplePreview({ parse: { validCount: 1, invalidRows: [], warnings: ['Row 3: "email" looks malformed'] } }),
+      samplePreview({
+        parse: { validCount: 1, invalidRows: [], invalidCount: 0, warnings: ['Row 3: "email" looks malformed'] },
+      }),
     );
     renderPage();
     expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
@@ -232,6 +271,108 @@ describe("ImportPage upload → preview → commit flow", () => {
 
     expect(await screen.findByText("Warnings")).toBeTruthy();
     expect(screen.getByText('Row 3: "email" looks malformed')).toBeTruthy();
+  });
+
+  it("explains why each row was skipped, so 'To skip' isn't a bare unexplained count (PO feedback)", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(
+      samplePreview({
+        summary: {
+          toCreate: 0,
+          toUpdate: 0,
+          toSkip: 1,
+          skipped: [
+            {
+              email: "existing@example.com",
+              reason: 'Attendee already exists — turn on "Overwrite existing attendees" to update it instead of skipping',
+            },
+          ],
+        },
+      }),
+    );
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+
+    expect(await screen.findByText("Skipped rows")).toBeTruthy();
+    expect(screen.getByText("existing@example.com")).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Attendee already exists — turn on "Overwrite existing attendees" to update it instead of skipping',
+      ),
+    ).toBeTruthy();
+  });
+
+  it("notes the true total when the server capped the skipped/invalid row detail (CodeRabbit review)", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(
+      samplePreview({
+        parse: {
+          validCount: 1,
+          invalidRows: [{ rowIndex: 1, reason: "Missing email" }],
+          invalidCount: 5,
+          warnings: [],
+        },
+        summary: {
+          toCreate: 0,
+          toUpdate: 0,
+          toSkip: 5,
+          skipped: [{ email: "existing@example.com", reason: "Attendee already exists" }],
+        },
+      }),
+    );
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+
+    expect(await screen.findByText("Invalid rows — showing first 1 of 5")).toBeTruthy();
+    expect(screen.getByText("Skipped rows — showing first 1 of 5")).toBeTruthy();
+  });
+
+  it("shows a plain heading with no count note when every skipped/invalid row detail is returned", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(
+      samplePreview({
+        parse: {
+          validCount: 1,
+          invalidRows: [{ rowIndex: 1, reason: "Missing email" }],
+          invalidCount: 1,
+          warnings: [],
+        },
+        summary: {
+          toCreate: 0,
+          toUpdate: 0,
+          toSkip: 1,
+          skipped: [{ email: "existing@example.com", reason: "Attendee already exists" }],
+        },
+      }),
+    );
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+
+    expect(await screen.findByText("Invalid rows")).toBeTruthy();
+    expect(screen.queryByText(/showing first/)).toBeNull();
+  });
+
+  it("notes the true total on Row preview too when the sample is fewer than all valid rows", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(
+      samplePreview({ parse: { validCount: 5, invalidRows: [], invalidCount: 0, warnings: [] } }),
+    );
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+
+    expect(await screen.findByText("Row preview — showing first 1 of 5 valid rows")).toBeTruthy();
   });
 
   it("shows rows the commit-time re-parse invalidated (e.g. a ticket type deleted between preview and commit)", async () => {
@@ -246,6 +387,7 @@ describe("ImportPage upload → preview → commit flow", () => {
       updated: 0,
       skipped: [],
       invalidRows: [{ rowIndex: 1, reason: 'Unknown ticket type: "vip"' }],
+      invalidCount: 1,
     });
     renderPage();
     expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
@@ -265,7 +407,9 @@ describe("ImportPage upload → preview → commit flow", () => {
   it("lets a superadmin override a capacity block and re-commit with force (plural count)", async () => {
     mockAssignments = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
     fetchEventCustomFields.mockResolvedValue([]);
-    previewImport.mockResolvedValueOnce(samplePreview({ summary: { toCreate: 2, toUpdate: 0, toSkip: 0 } }));
+    previewImport.mockResolvedValueOnce(
+      samplePreview({ summary: { toCreate: 2, toUpdate: 0, toSkip: 0, skipped: [] } }),
+    );
     const { ApiError } = await import("../../src/api/client.js");
     commitImport
       .mockRejectedValueOnce(
@@ -280,6 +424,7 @@ describe("ImportPage upload → preview → commit flow", () => {
         updated: 0,
         skipped: [],
         invalidRows: [],
+        invalidCount: 0,
       });
     renderPage();
     expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
@@ -433,5 +578,155 @@ describe("ImportPage dropzone (#358 Phase A)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove file" }));
 
     expect(valueSetter).toHaveBeenCalledWith("");
+  });
+});
+
+describe("ImportPage history + done screen (#358 Phase C)", () => {
+  it("renders the import history card with recent commits", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    fetchImportHistory.mockResolvedValue([
+      {
+        id: "log-1",
+        created_at: "2026-06-07T10:00:00.000Z",
+        filename: "attendees_final.csv",
+        created: 312,
+        updated: 171,
+        skipped: 4,
+      },
+    ]);
+    renderPage();
+
+    expect(await screen.findByText("Import history")).toBeTruthy();
+    expect(await screen.findByText("attendees_final.csv")).toBeTruthy();
+    expect(screen.getByText("312")).toBeTruthy();
+    expect(screen.getByText("171")).toBeTruthy();
+  });
+
+  it("shows an empty state when there are no imports yet", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    renderPage();
+    expect(await screen.findByText("No imports yet for this event.")).toBeTruthy();
+  });
+
+  it("shows an inline error with Retry when history fails to load, and retries", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    fetchImportHistory.mockRejectedValueOnce(new Error("boom")).mockResolvedValueOnce([]);
+    renderPage();
+
+    expect(await screen.findByText("Couldn't load import history.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("No imports yet for this event.")).toBeTruthy();
+  });
+
+  it("shows the mockup done screen after commit and 'Import another file' resets the flow", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(samplePreview());
+    commitImport.mockResolvedValueOnce({
+      importId: "imp-1",
+      toCreate: 1,
+      toUpdate: 0,
+      toSkip: 0,
+      created: 1,
+      updated: 0,
+      skipped: [],
+      invalidRows: [],
+      invalidCount: 0,
+    });
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    expect(await screen.findByText("To create")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(/Dry run/));
+    fireEvent.click(screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }));
+
+    expect(await screen.findByText("Import complete")).toBeTruthy();
+    expect(screen.getByText(/1 attendee created · 0 updated · 0 skipped/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "View attendees" })).toBeTruthy();
+    // History refreshes after a successful commit (initial load + post-commit).
+    expect(fetchImportHistory).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Import another file" }));
+    expect(await screen.findByRole("button", { name: "Upload a CSV or XLSX file" })).toBeTruthy();
+    expect((screen.getByLabelText(/Dry run/) as HTMLInputElement).checked).toBe(true);
+    expect(screen.queryByText("Import complete")).toBeNull();
+  });
+
+  it("notes the true total on the done screen when the server capped commit's skipped/invalid row detail (CodeRabbit review)", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(samplePreview());
+    commitImport.mockResolvedValueOnce({
+      importId: "imp-1",
+      toCreate: 0,
+      toUpdate: 0,
+      toSkip: 5,
+      created: 0,
+      updated: 0,
+      skipped: [{ email: "existing@example.com", reason: "Attendee already exists" }],
+      invalidRows: [{ rowIndex: 1, reason: "Missing email" }],
+      invalidCount: 5,
+    });
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    expect(await screen.findByText("To create")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(/Dry run/));
+    fireEvent.click(screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }));
+
+    expect(await screen.findByText("Import complete")).toBeTruthy();
+    expect(screen.getByText("Skipped rows — showing first 1 of 5")).toBeTruthy();
+    expect(screen.getByText("Invalid rows — showing first 1 of 5")).toBeTruthy();
+  });
+
+  it("resets to the loading state when navigating directly from one event's import page to another, so the previous event's history can't flash under the new event's timezone (CodeRabbit review)", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    fetchImportHistory.mockResolvedValueOnce([
+      {
+        id: "log-evt1",
+        created_at: "2026-06-01T10:00:00.000Z",
+        filename: "evt1.csv",
+        created: 5,
+        updated: 1,
+        skipped: 0,
+      },
+    ]);
+    let resolveSecond!: (items: unknown) => void;
+    const secondFetch = new Promise((resolve) => {
+      resolveSecond = resolve;
+    });
+    fetchImportHistory.mockImplementationOnce(() => secondFetch);
+
+    const router = createMemoryRouter(
+      [{ path: "/admin/events/:eventId/attendees/import", element: <ImportPage /> }],
+      { initialEntries: ["/admin/events/evt-1/attendees/import"], initialIndex: 0 },
+    );
+    renderWithToast(<RouterProvider router={router} />);
+
+    expect(await screen.findByText("evt1.csv")).toBeTruthy();
+
+    await act(async () => {
+      await router.navigate("/admin/events/evt-2/attendees/import");
+    });
+
+    expect(screen.queryByText("evt1.csv")).toBeNull();
+    expect(screen.getByText("Loading…")).toBeTruthy();
+
+    await act(async () => {
+      resolveSecond([
+        {
+          id: "log-evt2",
+          created_at: "2026-06-02T10:00:00.000Z",
+          filename: "evt2.csv",
+          created: 2,
+          updated: 0,
+          skipped: 0,
+        },
+      ]);
+    });
+
+    expect(await screen.findByText("evt2.csv")).toBeTruthy();
   });
 });
