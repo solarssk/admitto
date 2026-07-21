@@ -64,7 +64,7 @@ function samplePreview(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     importId: "imp-1",
     parse: { validCount: 1, invalidRows: [], warnings: [] },
-    summary: { toCreate: 1, toUpdate: 0, toSkip: 0 },
+    summary: { toCreate: 1, toUpdate: 0, toSkip: 0, skipped: [] },
     sampleRows: [
       {
         rowIndex: 1,
@@ -240,6 +240,29 @@ describe("ImportPage upload → preview → commit flow", () => {
     expect(screen.getByText('Row 3: "email" looks malformed')).toBeTruthy();
   });
 
+  it("explains why each row was skipped, so 'To skip' isn't a bare unexplained count (PO feedback)", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(
+      samplePreview({
+        summary: {
+          toCreate: 0,
+          toUpdate: 0,
+          toSkip: 1,
+          skipped: [{ email: "existing@example.com", reason: "Attendee already exists (overwrite=false)" }],
+        },
+      }),
+    );
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+
+    expect(await screen.findByText("Skipped rows")).toBeTruthy();
+    expect(screen.getByText("existing@example.com")).toBeTruthy();
+    expect(screen.getByText("Attendee already exists (overwrite=false)")).toBeTruthy();
+  });
+
   it("shows rows the commit-time re-parse invalidated (e.g. a ticket type deleted between preview and commit)", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());
@@ -271,7 +294,9 @@ describe("ImportPage upload → preview → commit flow", () => {
   it("lets a superadmin override a capacity block and re-commit with force (plural count)", async () => {
     mockAssignments = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
     fetchEventCustomFields.mockResolvedValue([]);
-    previewImport.mockResolvedValueOnce(samplePreview({ summary: { toCreate: 2, toUpdate: 0, toSkip: 0 } }));
+    previewImport.mockResolvedValueOnce(
+      samplePreview({ summary: { toCreate: 2, toUpdate: 0, toSkip: 0, skipped: [] } }),
+    );
     const { ApiError } = await import("../../src/api/client.js");
     commitImport
       .mockRejectedValueOnce(

@@ -406,10 +406,15 @@ describe("POST /api/admin/events/:eventId/import/preview", () => {
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      summary: { toCreate: number; toSkip: number };
+      summary: { toCreate: number; toSkip: number; skipped: { email: string; reason: string }[] };
     };
     expect(body.summary.toCreate).toBe(1);
     expect(body.summary.toSkip).toBe(1);
+    // The preview and commit endpoints must agree on why a row was skipped — an operator
+    // deciding whether to turn on Overwrite reads this before ever reaching commit.
+    expect(body.summary.skipped).toEqual([
+      { email: "existing@example.com", reason: "Attendee already exists (overwrite=false)" },
+    ]);
   });
 
   it("rejects unsupported file type", async () => {
