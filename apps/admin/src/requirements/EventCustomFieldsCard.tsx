@@ -9,11 +9,11 @@ import { customFieldTypeIcon } from "./customFieldType.js";
 import { EventCustomFieldModal } from "./EventCustomFieldModal.js";
 
 export interface EventCustomFieldsCardProps {
-  eventId: string;
-  event: EventDto;
-  fields: EventCustomFieldDto[];
-  loading: boolean;
-  onChanged: () => void;
+  readonly eventId: string;
+  readonly event: EventDto;
+  readonly fields: EventCustomFieldDto[];
+  readonly loading: boolean;
+  readonly onChanged: () => void;
 }
 
 function CustomFieldRow({
@@ -22,10 +22,10 @@ function CustomFieldRow({
   onEdit,
   onDelete,
 }: {
-  field: EventCustomFieldDto;
-  event: EventDto;
-  onEdit: () => void;
-  onDelete: () => void;
+  readonly field: EventCustomFieldDto;
+  readonly event: EventDto;
+  readonly onEdit: () => void;
+  readonly onDelete: () => void;
 }) {
   return (
     <tr>

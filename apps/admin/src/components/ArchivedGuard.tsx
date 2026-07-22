@@ -43,7 +43,7 @@ export function ArchivedGuard({
   disabled: fallbackDisabled = false,
   tooltip: fallbackTooltip,
   children,
-}: ArchivedGuardProps) {
+}: Readonly<ArchivedGuardProps>) {
   const archived = isEventArchived(event);
   const disabled = archived || fallbackDisabled;
   const tooltip = archived ? ARCHIVED_ACTION_TOOLTIP : fallbackTooltip;
