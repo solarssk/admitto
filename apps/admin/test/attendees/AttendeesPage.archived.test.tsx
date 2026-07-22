@@ -33,6 +33,14 @@ const revokedRow: AttendeeRowDto = {
   status: "revoked",
 };
 
+const admittedRow: AttendeeRowDto = {
+  ...registeredRow,
+  id: "att-3",
+  name: "Alex Kim",
+  email: "alex@example.com",
+  check_in_status: "admitted",
+};
+
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
   useConnectionState: () => ({ reportApiError }),
 }));
@@ -71,6 +79,7 @@ vi.mock("../../src/api/client.js", () => ({
   sendEventBulk: vi.fn(),
   bulkDeleteAttendees: vi.fn(),
   bulkCheckInAttendees: vi.fn(),
+  bulkRevokeCheckIn: vi.fn(),
   updateAttendee: vi.fn(),
 }));
 
@@ -167,8 +176,8 @@ describe("AttendeesPage archived lockdown", () => {
 
   it("locks the bulk bar's Send tickets but leaves Delete reachable (#356 follow-up)", async () => {
     fetchEventAttendees.mockResolvedValue({
-      items: [registeredRow, revokedRow],
-      total: 2,
+      items: [registeredRow, revokedRow, admittedRow],
+      total: 3,
       page: 1,
       pageSize: 25,
     });
@@ -177,6 +186,9 @@ describe("AttendeesPage archived lockdown", () => {
     await screen.findByText("Jane Doe");
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    // Also select an already-admitted attendee, so Revoke check-in's own "nothing to revoke"
+    // gate doesn't mask whether the archived gate disables it too.
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Alex Kim" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
     const bar = document.querySelector(".attendees-bulkbar") as HTMLElement;
 
@@ -193,5 +205,9 @@ describe("AttendeesPage archived lockdown", () => {
     fireEvent.click(moreActionsButton);
     const deleteItem = within(bar).getByRole("menuitem", { name: /^Delete/ });
     expect((deleteItem as HTMLButtonElement).disabled).toBe(false);
+    // Undoing a check-in on an event that's already over doesn't make sense either (matches
+    // bulk check-in above) - disabled even though the selection has someone to revoke.
+    const revokeCheckInItem = within(bar).getByRole("menuitem", { name: /Revoke check-in/ });
+    expect((revokeCheckInItem as HTMLButtonElement).disabled).toBe(true);
   });
 });
