@@ -35,7 +35,17 @@ jobs:
         with:
           node-version: "24.17.0"
           cache: "npm"
-      - run: npm ci
+      # Supply-chain hardening (SonarCloud githubactions:S6505): --ignore-scripts skips every
+      # dependency's install/postinstall script by default, instead of letting all ~900 of them
+      # run silently and automatically. Only the packages this workflow has confirmed it actually
+      # needs get their scripts run explicitly below — esbuild (its own binary, needed by every
+      # vite/vitest/tsx step) and argon2 (its native password-hashing binding, needed by
+      # packages/auth) via `npm rebuild`, and Prisma's query engine + generated client via its own
+      # `prisma generate`. Adding a new dependency that also needs its install script to run means
+      # adding it here explicitly, not silently inheriting it.
+      - run: npm ci --ignore-scripts
+      - run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
+      - run: npm run db:generate -w @admitto/db
       - run: npm audit --audit-level=high
       - run: npm run build
       - name: Release doc version markers match package.json
@@ -78,7 +88,10 @@ jobs:
         with:
           node-version: "24.17.0"
           cache: "npm"
-      - run: npm ci
+      # See lint-and-typecheck's own comment for why these two extra steps exist.
+      - run: npm ci --ignore-scripts
+      - run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
+      - run: npm run db:generate -w @admitto/db
       - run: npm run build
       - name: Create test databases
         run: bash infra/scripts/create-test-dbs.sh
@@ -86,7 +99,9 @@ jobs:
         env:
           DATABASE_URL: postgresql://admitto:admitto@localhost:5432/admitto_web_test
         working-directory: packages/db
-        run: npx prisma migrate deploy
+        # --no-install: use only the already-installed, lockfile-pinned prisma binary, never an
+        # on-demand npx download (SonarCloud githubactions:S6505 / S8543).
+        run: npx --no-install prisma migrate deploy
       - name: Run coverage (also emits JUnit XML for Test Analytics)
         run: npm run coverage -w @admitto/web --if-present -- --reporter=default --reporter=junit --outputFile.junit=./junit.xml
       - name: Upload coverage to Codecov
@@ -119,7 +134,10 @@ jobs:
         with:
           node-version: "24.17.0"
           cache: "npm"
-      - run: npm ci
+      # See lint-and-typecheck's own comment for why these two extra steps exist.
+      - run: npm ci --ignore-scripts
+      - run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
+      - run: npm run db:generate -w @admitto/db
       - run: npm run build
       - name: Run coverage (also emits JUnit XML for Test Analytics)
         run: npm run coverage -w @admitto/admin --if-present -- --reporter=default --reporter=junit --outputFile.junit=./junit.xml
@@ -183,7 +201,10 @@ jobs:
         with:
           node-version: "24.17.0"
           cache: "npm"
-      - run: npm ci
+      # See lint-and-typecheck's own comment for why these two extra steps exist.
+      - run: npm ci --ignore-scripts
+      - run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
+      - run: npm run db:generate -w @admitto/db
       - run: npm run build
       - name: Create test databases
         run: bash infra/scripts/create-test-dbs.sh
@@ -193,7 +214,9 @@ jobs:
         env:
           DATABASE_URL: postgresql://admitto:admitto@localhost:5432/admitto_auth_test
         working-directory: packages/db
-        run: npx prisma migrate deploy
+        # --no-install: use only the already-installed, lockfile-pinned prisma binary, never an
+        # on-demand npx download (SonarCloud githubactions:S6505 / S8543).
+        run: npx --no-install prisma migrate deploy
       - name: Run coverage (also emits JUnit XML per workspace for Test Analytics)
         run: >-
           npm run coverage --if-present
