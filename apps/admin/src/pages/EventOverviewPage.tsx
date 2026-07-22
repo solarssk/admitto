@@ -1478,13 +1478,17 @@ export function EventOverviewPage() {
   const countdownDate = formatEventCalendarDate(eventDateIso);
   // computeLabel() itself falls back to the plain calendar date for anything more than a week out
   // (fine for the header's prose chip, wrong for this numeric tile — it would just repeat the date
-  // already shown in the page header). Show the raw day count instead in that range; the short
-  // phrasings for everything within a week ("Today"/"Tomorrow"/"In N days"/"Ended …") already read
-  // fine as a tile value as-is.
-  const countdownValue = daysUntil != null && daysUntil > 7 ? String(daysUntil) : countdownLabel;
+  // already shown in the page header). Show the raw day count instead beyond that week window, on
+  // either side (future or already-past) — symmetric so a long-over event doesn't read as a full
+  // sentence next to a clean number for upcoming ones. The short phrasings for everything within a
+  // week ("Today"/"Tomorrow"/"Yesterday"/"In N days"/"Ended N days ago") already read fine as-is.
+  const countdownValue =
+    daysUntil != null && Math.abs(daysUntil) > 7 ? String(Math.abs(daysUntil)) : countdownLabel;
   const countdownSub =
-    daysUntil != null && daysUntil > 7
-      ? "days to go"
+    daysUntil != null && Math.abs(daysUntil) > 7
+      ? daysUntil > 0
+        ? "days to go"
+        : "days ago"
       : countdownLabel === countdownDate
         ? undefined
         : countdownDate;
@@ -1519,26 +1523,12 @@ export function EventOverviewPage() {
           // includes revoked attendees, so falling back to it flashed a higher number (e.g.
           // 5 -> 4) the instant the real active-only overview count arrived.
           value={currentOverview != null ? String(currentOverview.attendee_count) : loading ? "…" : "—"}
-          sub={
-            currentOverview?.event.capacity != null
-              ? `of ${currentOverview.event.capacity} capacity`
-              : "Active"
-          }
         />
         <OverviewKpiTile
           tone="info"
           icon={<i className="ti ti-mail-check" aria-hidden="true" />}
           label="Tickets sent"
           value={currentOverview != null ? String(currentOverview.email_sent) : loading ? "…" : "—"}
-          sub={
-            currentOverview == null
-              ? loading
-                ? "Loading…"
-                : "Unavailable"
-              : currentOverview.email_queued > 0
-                ? `${currentOverview.email_queued} queued`
-                : "Delivered"
-          }
         />
         {/* Replaces the former "Checked in" tile (#E1) — that duplicated the admission
          * count/percentage already shown prominently in the Check-in progress card directly
@@ -1557,15 +1547,6 @@ export function EventOverviewPage() {
           icon={<i className="ti ti-alert-triangle" aria-hidden="true" />}
           label="Failed delivery"
           value={currentOverview != null ? String(emailFailedTotal) : loading ? "…" : "—"}
-          sub={
-            currentOverview == null
-              ? loading
-                ? "Loading…"
-                : "Unavailable"
-              : emailFailedTotal > 0
-                ? "Needs attention"
-                : "No failures"
-          }
         />
       </div>
 

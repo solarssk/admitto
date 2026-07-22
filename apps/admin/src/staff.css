@@ -3757,13 +3757,12 @@
 
 /* KPI tiles (D, E2) — icon-square-left layout scoped to Overview's 4 top tiles only;
  * @admitto/ui's generic Stat (small icon circle, top-right) is unchanged for every other page
- * that uses it. The icon+text block is centered as a unit (not pinned to the left edge) and
- * sized up a second time in round 4 (E2) — a bigger icon square and bolder/larger value type so
- * the tile reads as deliberately composed instead of a small cluster adrift in an oversized box. */
+ * that uses it. Left-anchored (not centered as a unit) so all 4 tiles' icons line up in one
+ * column regardless of value/label length — centering each tile's content independently made
+ * icons drift sideways per tile, which read worse than the "empty" space it was meant to fix. */
 .overview-kpi {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: var(--space-4);
 }
 
@@ -3791,7 +3790,9 @@
 }
 
 .overview-kpi__value {
-  font-size: 2rem;
+  /* --fs-display is this codebase's own "hero number" token (also what the generic Stat
+   * component's .at-stat__value uses) — matching it instead of an off-scale custom size. */
+  font-size: var(--fs-display);
   font-weight: var(--fw-bold);
   color: var(--text-primary);
   line-height: 1.1;

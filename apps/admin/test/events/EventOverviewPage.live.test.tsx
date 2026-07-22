@@ -396,8 +396,6 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     await waitFor(() => {
       expect(screen.getByText("48")).toBeTruthy();
     });
-    // Fixture's event.capacity is 100, so the sub-label is the capacity phrasing, not "Active".
-    expect(screen.getByText("of 100 capacity")).toBeTruthy();
   });
 
   it("replaces the duplicate-date Event date tile with a Failed delivery tile and labels the KPI row per the mockup (#350)", async () => {
@@ -413,7 +411,6 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(within(statsRow()).getByText("Tickets sent")).toBeTruthy();
     expect(within(statsRow()).getByText("Failed delivery")).toBeTruthy();
     expect(within(statsRow()).getByText("3")).toBeTruthy();
-    expect(within(statsRow()).getByText("Needs attention")).toBeTruthy();
     expect(screen.queryByText("Event date")).toBeNull();
   });
 
