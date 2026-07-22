@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
 import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { Button, EmptyState, PageHeader, useToast, type ToastVariant } from "@admitto/ui";
 import {
@@ -204,6 +204,84 @@ function notifyBulkRevokePassResult(
   }
 
   addToast(`No passes revoked${noteSuffix}.`, "error");
+}
+
+interface RunBulkActionParams<T> {
+  eventId: string | undefined;
+  /** Detects the operator navigating to a different event's Attendees list before the request
+   * resolves — every bulk action below skips its success/error side effects once this fires,
+   * matching the guard handleBulkDeleteSelected established first (CodeRabbit review). */
+  eventIdRef: RefObject<string | undefined>;
+  selectedCount: number;
+  reportApiError: (status: number) => void;
+  setBusy: (busy: boolean) => void;
+  /** Inline dialog error setter. Omit for an action with no confirm dialog (Send tickets, Check
+   * in) — those toast the error instead, matching AGENTS.md's toast-vs-inline convention. */
+  setError?: (message: string | null) => void;
+  addToast: (message: string, variant?: ToastVariant) => void;
+  /** Passed to operatorApiErrorMessage() as the fallback for a recognized ApiError with no safe
+   * user-facing detail. Ignored when mapErrorMessage is provided. */
+  apiErrorFallback: string;
+  /** Message shown for a thrown non-ApiError value (network failure, unexpected exception) —
+   * deliberately a different string than apiErrorFallback in every caller below; that split
+   * already existed per-handler before this helper, not something introduced here. */
+  genericFallback: string;
+  /** Overrides the default operatorApiErrorMessage(err, apiErrorFallback) computation for a
+   * recognized ApiError — e.g. Change ticket type's unknown_ticket_type code needs its own copy. */
+  mapErrorMessage?: (err: ApiError) => string;
+  action: (eventId: string) => Promise<T>;
+  onSuccess: (result: T) => void;
+}
+
+/** Shared skeleton for the Attendees list's bulk actions (send tickets/check in/revoke check-in/
+ * change ticket type/delete/revoke items/revoke pass) — SonarCloud flagged the duplication
+ * between the first two of these when check-in bulk actions shipped; this extends the same
+ * dedup to the rest (PO request). Bulk export deliberately stays its own function — its
+ * AbortController-based cancel-in-flight lifecycle doesn't share this shape, and forcing it in
+ * would need its own special-cased branch rather than reusing this one cleanly. */
+async function runBulkAction<T>({
+  eventId,
+  eventIdRef,
+  selectedCount,
+  reportApiError,
+  setBusy,
+  setError,
+  addToast,
+  apiErrorFallback,
+  genericFallback,
+  mapErrorMessage,
+  action,
+  onSuccess,
+}: RunBulkActionParams<T>): Promise<void> {
+  if (!eventId || selectedCount === 0) return;
+  const initiatingEventId = eventId;
+  const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
+  setBusy(true);
+  setError?.(null);
+  try {
+    const result = await action(initiatingEventId);
+    if (!isStillOnEvent()) return;
+    onSuccess(result);
+  } catch (err) {
+    if (!isStillOnEvent()) return;
+    if (err instanceof ApiError) {
+      reportApiError(err.status);
+      if (err.status === 401) {
+        const next = encodeURIComponent(window.location.pathname);
+        window.location.assign(`/login?next=${next}`);
+        return;
+      }
+      const message = mapErrorMessage ? mapErrorMessage(err) : operatorApiErrorMessage(err, apiErrorFallback);
+      if (setError) setError(message);
+      else addToast(message, "error");
+    } else if (setError) {
+      setError(genericFallback);
+    } else {
+      addToast(genericFallback, "error");
+    }
+  } finally {
+    if (isStillOnEvent()) setBusy(false);
+  }
 }
 
 interface SendTicketsDialogProps {
@@ -802,100 +880,70 @@ export function AttendeesPage() {
    * templateId here on purpose: the server falls back to the built-in default ("ticket")
    * template when it's omitted, the same as the plain bulk-resend endpoint already does -
    * so this works even for an event with no persisted ticket template row. */
-  const handleBulkSendSelected = async () => {
-    if (!eventId || selectedIds.size === 0) return;
-    setBulkSendBusy(true);
-    try {
-      const result = await sendEventBulk(eventId, {
-        filter: { type: "attendee_ids", ids: [...selectedIds] },
-      });
-      notifyBulkSendResult(result, addToast);
-      setReloadToken((n) => n + 1);
-    } catch (err) {
-      if (err instanceof ApiError) {
-        reportApiError(err.status);
-        if (err.status === 401) {
-          const next = encodeURIComponent(window.location.pathname);
-          window.location.assign(`/login?next=${next}`);
-          return;
-        }
-        addToast(operatorApiErrorMessage(err, "Send failed."), "error");
-      } else {
-        addToast("Failed to queue tickets.", "error");
-      }
-    } finally {
-      setBulkSendBusy(false);
-    }
-  };
+  const handleBulkSendSelected = () =>
+    runBulkAction({
+      eventId,
+      eventIdRef,
+      selectedCount: selectedIds.size,
+      reportApiError,
+      setBusy: setBulkSendBusy,
+      addToast,
+      apiErrorFallback: "Send failed.",
+      genericFallback: "Failed to queue tickets.",
+      action: (id) =>
+        sendEventBulk(id, { filter: { type: "attendee_ids", ids: [...selectedIds] } }),
+      onSuccess: (result) => {
+        notifyBulkSendResult(result, addToast);
+        setReloadToken((n) => n + 1);
+      },
+    });
 
   /** Manual bulk check-in for an explicit subset of selected attendees — no confirmation dialog
    * (matches the design mockup and ADR-0010's "manual check-in is first-class, must be fast";
    * it's a reversible internal state change, not an email send). Guards the completion effect
    * against the operator navigating to a different event's Attendees list before the request
    * resolves, same pattern as handleBulkDeleteSelected below. */
-  const handleBulkCheckInSelected = async () => {
-    if (!eventId || selectedIds.size === 0) return;
-    const initiatingEventId = eventId;
-    const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
-    setBulkCheckInBusy(true);
-    try {
-      const result = await bulkCheckInAttendees(initiatingEventId, [...selectedIds]);
-      if (!isStillOnEvent()) return;
-      notifyBulkCheckInResult(result, addToast);
-      clearSelection();
-      setReloadToken((n) => n + 1);
-    } catch (err) {
-      if (!isStillOnEvent()) return;
-      if (err instanceof ApiError) {
-        reportApiError(err.status);
-        if (err.status === 401) {
-          const next = encodeURIComponent(window.location.pathname);
-          window.location.assign(`/login?next=${next}`);
-          return;
-        }
-        addToast(operatorApiErrorMessage(err, "Check-in failed."), "error");
-      } else {
-        addToast("Failed to check in attendees.", "error");
-      }
-    } finally {
-      if (isStillOnEvent()) setBulkCheckInBusy(false);
-    }
-  };
+  const handleBulkCheckInSelected = () =>
+    runBulkAction({
+      eventId,
+      eventIdRef,
+      selectedCount: selectedIds.size,
+      reportApiError,
+      setBusy: setBulkCheckInBusy,
+      addToast,
+      apiErrorFallback: "Check-in failed.",
+      genericFallback: "Failed to check in attendees.",
+      action: (id) => bulkCheckInAttendees(id, [...selectedIds]),
+      onSuccess: (result) => {
+        notifyBulkCheckInResult(result, addToast);
+        clearSelection();
+        setReloadToken((n) => n + 1);
+      },
+    });
 
   /** Bulk "Revoke check-in" for an explicit subset of selected attendees — behind a confirm
    * dialog with the same dialog-stays-open-with-inline-error convention and confirm-delay
    * cooldown as handleBulkRevokeItemsSelected/handleBulkRevokePassSelected below (PO review:
    * this used to fire immediately from the menu with no confirmation at all). */
-  const handleBulkRevokeCheckInSelected = async () => {
-    if (!eventId || selectedIds.size === 0) return;
-    const initiatingEventId = eventId;
-    const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
-    setBulkRevokeCheckInBusy(true);
-    setBulkRevokeCheckInError(null);
-    try {
-      const result = await bulkRevokeCheckIn(initiatingEventId, [...selectedIds]);
-      if (!isStillOnEvent()) return;
-      notifyBulkRevokeCheckInResult(result, addToast);
-      setBulkRevokeCheckInConfirmOpen(false);
-      clearSelection();
-      setReloadToken((n) => n + 1);
-    } catch (err) {
-      if (!isStillOnEvent()) return;
-      if (err instanceof ApiError) {
-        reportApiError(err.status);
-        if (err.status === 401) {
-          const next = encodeURIComponent(window.location.pathname);
-          window.location.assign(`/login?next=${next}`);
-          return;
-        }
-        setBulkRevokeCheckInError(operatorApiErrorMessage(err, "Revoke check-in failed."));
-      } else {
-        setBulkRevokeCheckInError("Failed to revoke check-in.");
-      }
-    } finally {
-      if (isStillOnEvent()) setBulkRevokeCheckInBusy(false);
-    }
-  };
+  const handleBulkRevokeCheckInSelected = () =>
+    runBulkAction({
+      eventId,
+      eventIdRef,
+      selectedCount: selectedIds.size,
+      reportApiError,
+      setBusy: setBulkRevokeCheckInBusy,
+      setError: setBulkRevokeCheckInError,
+      addToast,
+      apiErrorFallback: "Revoke check-in failed.",
+      genericFallback: "Failed to revoke check-in.",
+      action: (id) => bulkRevokeCheckIn(id, [...selectedIds]),
+      onSuccess: (result) => {
+        notifyBulkRevokeCheckInResult(result, addToast);
+        setBulkRevokeCheckInConfirmOpen(false);
+        clearSelection();
+        setReloadToken((n) => n + 1);
+      },
+    });
 
   /** CSV export of an explicit subset of selected attendees — separate from the header
    * "Export" dropdown (which exports the whole filtered view): the server bypasses list
@@ -936,59 +984,46 @@ export function AttendeesPage() {
    * list; failure renders inline in the dialog (which stays open), matching the project's
    * dialog convention. The unknown_ticket_type branch covers the type being deleted between
    * the picker opening and submit — the server re-validates under the catalog lock. */
-  const handleBulkChangeTicketTypeConfirm = async () => {
-    if (!eventId || selectedIds.size === 0 || !changeTypeValue) return;
-    const initiatingEventId = eventId;
-    const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
+  const handleBulkChangeTicketTypeConfirm = () => {
+    if (!changeTypeValue) return;
     const typeLabel =
       ticketTypes.find((t) => t.key === changeTypeValue)?.label ?? changeTypeValue;
-    setChangeTypeBusy(true);
-    setChangeTypeError(null);
-    try {
-      const { updatedCount, alreadySetCount } = await bulkChangeTicketType(
-        initiatingEventId,
-        [...selectedIds],
-        changeTypeValue,
-      );
-      if (!isStillOnEvent()) return;
-      if (updatedCount === 0 && alreadySetCount === 0) {
-        // None of the selected ids resolved to an attendee in this event — most likely they
-        // were deleted by someone else between opening the picker and clicking Apply (code
-        // review: this used to fall into the "already had it" branch below, which is wrong —
-        // nothing was found at all, let alone already set to the type).
-        addToast("None of the selected attendees could be found — they may have been removed.", "error");
-      } else if (updatedCount === 0) {
-        addToast(`All selected attendees already have ${typeLabel}.`, "info");
-      } else {
-        const alreadyNote = alreadySetCount > 0 ? ` (${alreadySetCount} already had it)` : "";
-        addToast(
-          `${updatedCount} attendee${updatedCount === 1 ? "" : "s"} set to ${typeLabel}${alreadyNote}`,
-          "success",
-        );
-      }
-      setChangeTypeOpen(false);
-      clearSelection();
-      setReloadToken((n) => n + 1);
-    } catch (err) {
-      if (!isStillOnEvent()) return;
-      if (err instanceof ApiError) {
-        reportApiError(err.status);
-        if (err.status === 401) {
-          const next = encodeURIComponent(window.location.pathname);
-          window.location.assign(`/login?next=${next}`);
-          return;
+    return runBulkAction({
+      eventId,
+      eventIdRef,
+      selectedCount: selectedIds.size,
+      reportApiError,
+      setBusy: setChangeTypeBusy,
+      setError: setChangeTypeError,
+      addToast,
+      apiErrorFallback: "Change failed.",
+      genericFallback: "Failed to change ticket type.",
+      mapErrorMessage: (err) =>
+        hasApiErrorCode(err, "unknown_ticket_type")
+          ? "That ticket type no longer exists — it may have just been deleted. Close and try again."
+          : operatorApiErrorMessage(err, "Change failed."),
+      action: (id) => bulkChangeTicketType(id, [...selectedIds], changeTypeValue),
+      onSuccess: ({ updatedCount, alreadySetCount }) => {
+        if (updatedCount === 0 && alreadySetCount === 0) {
+          // None of the selected ids resolved to an attendee in this event — most likely they
+          // were deleted by someone else between opening the picker and clicking Apply (code
+          // review: this used to fall into the "already had it" branch below, which is wrong —
+          // nothing was found at all, let alone already set to the type).
+          addToast("None of the selected attendees could be found — they may have been removed.", "error");
+        } else if (updatedCount === 0) {
+          addToast(`All selected attendees already have ${typeLabel}.`, "info");
+        } else {
+          const alreadyNote = alreadySetCount > 0 ? ` (${alreadySetCount} already had it)` : "";
+          addToast(
+            `${updatedCount} attendee${updatedCount === 1 ? "" : "s"} set to ${typeLabel}${alreadyNote}`,
+            "success",
+          );
         }
-        setChangeTypeError(
-          hasApiErrorCode(err, "unknown_ticket_type")
-            ? "That ticket type no longer exists — it may have just been deleted. Close and try again."
-            : operatorApiErrorMessage(err, "Change failed."),
-        );
-      } else {
-        setChangeTypeError("Failed to change ticket type.");
-      }
-    } finally {
-      if (isStillOnEvent()) setChangeTypeBusy(false);
-    }
+        setChangeTypeOpen(false);
+        clearSelection();
+        setReloadToken((n) => n + 1);
+      },
+    });
   };
 
   /** Bulk GDPR erasure for an explicit subset of selected attendees — same effect as running
@@ -997,36 +1032,25 @@ export function AttendeesPage() {
    * before the request resolves (CodeRabbit review); the dialog stays open on failure with an
    * inline error, matching the project's own ConfirmDialog convention (destructive actions
    * don't also toast the same message) and the attendee detail page's single-delete flow. */
-  const handleBulkDeleteSelected = async () => {
-    if (!eventId || selectedIds.size === 0) return;
-    const initiatingEventId = eventId;
-    const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
-    setBulkDeleteBusy(true);
-    setBulkDeleteError(null);
-    try {
-      const { deletedCount } = await bulkDeleteAttendees(initiatingEventId, [...selectedIds]);
-      if (!isStillOnEvent()) return;
-      addToast(`${deletedCount} attendee${deletedCount === 1 ? "" : "s"} permanently deleted`, "success");
-      setBulkDeleteConfirmOpen(false);
-      clearSelection();
-      setReloadToken((n) => n + 1);
-    } catch (err) {
-      if (!isStillOnEvent()) return;
-      if (err instanceof ApiError) {
-        reportApiError(err.status);
-        if (err.status === 401) {
-          const next = encodeURIComponent(window.location.pathname);
-          window.location.assign(`/login?next=${next}`);
-          return;
-        }
-        setBulkDeleteError(operatorApiErrorMessage(err, "Delete failed."));
-      } else {
-        setBulkDeleteError("Failed to delete attendees.");
-      }
-    } finally {
-      if (isStillOnEvent()) setBulkDeleteBusy(false);
-    }
-  };
+  const handleBulkDeleteSelected = () =>
+    runBulkAction({
+      eventId,
+      eventIdRef,
+      selectedCount: selectedIds.size,
+      reportApiError,
+      setBusy: setBulkDeleteBusy,
+      setError: setBulkDeleteError,
+      addToast,
+      apiErrorFallback: "Delete failed.",
+      genericFallback: "Failed to delete attendees.",
+      action: (id) => bulkDeleteAttendees(id, [...selectedIds]),
+      onSuccess: ({ deletedCount }) => {
+        addToast(`${deletedCount} attendee${deletedCount === 1 ? "" : "s"} permanently deleted`, "success");
+        setBulkDeleteConfirmOpen(false);
+        clearSelection();
+        setReloadToken((n) => n + 1);
+      },
+    });
 
   /** Bulk "Revoke items" for an explicit subset of selected attendees — resets every issued
    * item hand-out (badge, wristband, giftbag, …) back to pending for each selected attendee at
@@ -1034,36 +1058,25 @@ export function AttendeesPage() {
    * convention as handleBulkDeleteSelected above; an attendee with a revoked/cancelled pass is
    * skipped server-side rather than treated as a failure, so a partial revokedCount below the
    * selection size is still a plain success toast, not an error. */
-  const handleBulkRevokeItemsSelected = async () => {
-    if (!eventId || selectedIds.size === 0) return;
-    const initiatingEventId = eventId;
-    const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
-    setBulkRevokeItemsBusy(true);
-    setBulkRevokeItemsError(null);
-    try {
-      const { revokedCount } = await bulkRevokeItems(initiatingEventId, [...selectedIds]);
-      if (!isStillOnEvent()) return;
-      notifyBulkRevokeItemsResult(revokedCount, addToast);
-      setBulkRevokeItemsConfirmOpen(false);
-      clearSelection();
-      setReloadToken((n) => n + 1);
-    } catch (err) {
-      if (!isStillOnEvent()) return;
-      if (err instanceof ApiError) {
-        reportApiError(err.status);
-        if (err.status === 401) {
-          const next = encodeURIComponent(window.location.pathname);
-          window.location.assign(`/login?next=${next}`);
-          return;
-        }
-        setBulkRevokeItemsError(operatorApiErrorMessage(err, "Revoke items failed."));
-      } else {
-        setBulkRevokeItemsError("Failed to revoke items.");
-      }
-    } finally {
-      if (isStillOnEvent()) setBulkRevokeItemsBusy(false);
-    }
-  };
+  const handleBulkRevokeItemsSelected = () =>
+    runBulkAction({
+      eventId,
+      eventIdRef,
+      selectedCount: selectedIds.size,
+      reportApiError,
+      setBusy: setBulkRevokeItemsBusy,
+      setError: setBulkRevokeItemsError,
+      addToast,
+      apiErrorFallback: "Revoke items failed.",
+      genericFallback: "Failed to revoke items.",
+      action: (id) => bulkRevokeItems(id, [...selectedIds]),
+      onSuccess: ({ revokedCount }) => {
+        notifyBulkRevokeItemsResult(revokedCount, addToast);
+        setBulkRevokeItemsConfirmOpen(false);
+        clearSelection();
+        setReloadToken((n) => n + 1);
+      },
+    });
 
   /** Bulk "Revoke pass" for an explicit subset of selected attendees — same effect as the
    * attendee detail page's single "Revoke pass" action, run once per selected attendee. Same
@@ -1071,36 +1084,25 @@ export function AttendeesPage() {
    * (destructive-ish action, doesn't also toast the same message). An attendee already revoked
    * or cancelled is left untouched server-side and counted separately, not treated as a
    * failure - reported in the success toast rather than surfaced as an error. */
-  const handleBulkRevokePassSelected = async () => {
-    if (!eventId || selectedIds.size === 0) return;
-    const initiatingEventId = eventId;
-    const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
-    setBulkRevokePassBusy(true);
-    setBulkRevokePassError(null);
-    try {
-      const result = await bulkRevokePass(initiatingEventId, [...selectedIds]);
-      if (!isStillOnEvent()) return;
-      notifyBulkRevokePassResult(result, addToast);
-      setBulkRevokePassConfirmOpen(false);
-      clearSelection();
-      setReloadToken((n) => n + 1);
-    } catch (err) {
-      if (!isStillOnEvent()) return;
-      if (err instanceof ApiError) {
-        reportApiError(err.status);
-        if (err.status === 401) {
-          const next = encodeURIComponent(window.location.pathname);
-          window.location.assign(`/login?next=${next}`);
-          return;
-        }
-        setBulkRevokePassError(operatorApiErrorMessage(err, "Revoke pass failed."));
-      } else {
-        setBulkRevokePassError("Failed to revoke pass.");
-      }
-    } finally {
-      if (isStillOnEvent()) setBulkRevokePassBusy(false);
-    }
-  };
+  const handleBulkRevokePassSelected = () =>
+    runBulkAction({
+      eventId,
+      eventIdRef,
+      selectedCount: selectedIds.size,
+      reportApiError,
+      setBusy: setBulkRevokePassBusy,
+      setError: setBulkRevokePassError,
+      addToast,
+      apiErrorFallback: "Revoke pass failed.",
+      genericFallback: "Failed to revoke pass.",
+      action: (id) => bulkRevokePass(id, [...selectedIds]),
+      onSuccess: (result) => {
+        notifyBulkRevokePassResult(result, addToast);
+        setBulkRevokePassConfirmOpen(false);
+        clearSelection();
+        setReloadToken((n) => n + 1);
+      },
+    });
 
   const isUnfilteredEmpty =
     total === 0 &&
