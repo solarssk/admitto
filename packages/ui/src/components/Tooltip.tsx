@@ -33,7 +33,7 @@ const VIEWPORT_PADDING = 8;
  * it's never clipped by an ancestor's overflow and always paints above any dropdown/modal it's
  * triggered from (--z-tooltip).
  */
-export function Tooltip({ content, children, className, axis = "vertical" }: TooltipProps) {
+export function Tooltip({ content, children, className, axis = "vertical" }: Readonly<TooltipProps>) {
   const wrapperRef = useRef<HTMLSpanElement>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
