@@ -51,10 +51,30 @@ export function Tooltip({ content, children, className, axis = "vertical" }: Rea
     if (axis === "horizontal") {
       const spaceLeft = triggerRect.left;
       const spaceRight = window.innerWidth - triggerRect.right;
-      const placeLeft = spaceLeft >= bubbleRect.width + MARGIN || spaceLeft > spaceRight;
-      const left = placeLeft
-        ? triggerRect.left - bubbleRect.width - MARGIN
-        : triggerRect.right + MARGIN;
+      const fitsLeft = spaceLeft >= bubbleRect.width + MARGIN;
+      const fitsRight = spaceRight >= bubbleRect.width + MARGIN;
+      // Neither side actually fits (a narrow viewport where the trigger itself spans most of
+      // the width, e.g. the mobile "More" menu) - horizontal has nowhere to go without spilling
+      // off-screen, so fall back to vertical instead of clamping into an arbitrary position that
+      // may still overlap the trigger.
+      if (!fitsLeft && !fitsRight) {
+        const spaceAbove = triggerRect.top;
+        const spaceBelow = window.innerHeight - triggerRect.bottom;
+        const placeAbove = spaceAbove >= bubbleRect.height + MARGIN || spaceAbove > spaceBelow;
+        const top = placeAbove
+          ? triggerRect.top - bubbleRect.height - MARGIN
+          : triggerRect.bottom + MARGIN;
+        let left = triggerRect.right - bubbleRect.width;
+        left = Math.min(left, window.innerWidth - VIEWPORT_PADDING - bubbleRect.width);
+        left = Math.max(left, VIEWPORT_PADDING);
+        setStyle({ position: "fixed", top, left, visibility: "visible" });
+        return;
+      }
+
+      const placeLeft = fitsLeft && (!fitsRight || spaceLeft > spaceRight);
+      let left = placeLeft ? triggerRect.left - bubbleRect.width - MARGIN : triggerRect.right + MARGIN;
+      left = Math.min(left, window.innerWidth - VIEWPORT_PADDING - bubbleRect.width);
+      left = Math.max(left, VIEWPORT_PADDING);
 
       let top = triggerRect.top + triggerRect.height / 2 - bubbleRect.height / 2;
       top = Math.min(top, window.innerHeight - VIEWPORT_PADDING - bubbleRect.height);
