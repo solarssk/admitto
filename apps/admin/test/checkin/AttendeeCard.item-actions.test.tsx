@@ -43,8 +43,15 @@ describe("AttendeeCard — item action button (review finding)", () => {
     );
 
     const button = screen.getByRole("button", { name: "Mark badge issued" });
-    fireEvent.click(button);
-    fireEvent.click(button);
+    // Both clicks share one act() batch deliberately: fireEvent's own auto-wrapping would flush
+    // React's re-render (and the button's disabled state) between two separate act() calls, so
+    // the second click would just be silently ignored by a disabled <button> — that would test
+    // the DOM's own disabled-button behavior, not the useInFlightIds guard this test exists to
+    // cover (CodeRabbit review on PR #559 caught this act() removal breaking the race).
+    act(() => {
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
 
     expect(onItemAction).toHaveBeenCalledTimes(1);
   });
@@ -83,8 +90,13 @@ describe("AttendeeCard — item action button (review finding)", () => {
     );
 
     const button = screen.getByRole("button", { name: "Undo check-in" });
-    fireEvent.click(button);
-    fireEvent.click(button);
+    // Same-tick race, same reasoning as the "Mark badge issued" test above: both clicks must
+    // share one act() batch or the second click hits an already-disabled button instead of
+    // exercising the useInFlightIds guard.
+    act(() => {
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
 
     expect(onUndo).toHaveBeenCalledTimes(1);
   });

@@ -470,8 +470,12 @@ describe("CameraOverlay item issuing (#434)", () => {
     );
 
     const button = screen.getByRole("button", { name: "Mark badge issued" });
-    fireEvent.click(button);
-    fireEvent.click(button);
+    // Both clicks share one act() batch deliberately — see AttendeeCard.item-actions.test.tsx's
+    // same-tick tests for why (CodeRabbit review on PR #559).
+    act(() => {
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
 
     expect(onItemAction).toHaveBeenCalledTimes(1);
   });
@@ -491,8 +495,11 @@ describe("CameraOverlay item issuing (#434)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Mark badge issued" }));
     const undoButton = screen.getByRole("button", { name: "Undo last check-in" });
-    fireEvent.click(undoButton);
-    fireEvent.click(undoButton);
+    // Same-tick race, same reasoning as the "Mark badge issued" test above.
+    act(() => {
+      fireEvent.click(undoButton);
+      fireEvent.click(undoButton);
+    });
 
     expect(onUndo).toHaveBeenCalledTimes(1);
   });
