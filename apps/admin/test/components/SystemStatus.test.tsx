@@ -61,10 +61,7 @@ describe("SystemStatus", () => {
     fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
 
     renderStatus(SUPERADMIN);
-
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /All systems normal/ })).toBeTruthy();
-    });
+    await screen.findByRole("button", { name: /All systems normal/ });
 
     openMenu();
     expect(screen.getByText("Database")).toBeTruthy();
@@ -108,10 +105,8 @@ describe("SystemStatus", () => {
     });
 
     renderStatus(SUPERADMIN);
+    await screen.findByRole("button", { name: /Action needed/ });
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Action needed/ })).toBeTruthy();
-    });
     openMenu();
     // Plain language, not the raw API detail ("Cannot connect to PostgreSQL") — no
     // product names in the topbar.
@@ -125,10 +120,8 @@ describe("SystemStatus", () => {
     });
 
     renderStatus(SUPERADMIN);
+    await screen.findByRole("button", { name: /Degraded performance/ });
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Degraded performance/ })).toBeTruthy();
-    });
     openMenu();
     expect(screen.getByText("Responding slowly")).toBeTruthy();
   });
@@ -138,10 +131,8 @@ describe("SystemStatus", () => {
     fetchSetupChecks.mockRejectedValueOnce(new Error("network error"));
 
     renderStatus(SUPERADMIN);
+    await screen.findByRole("button", { name: /Action needed/ });
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Action needed/ })).toBeTruthy();
-    });
     openMenu();
     expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(0);
     expect(screen.queryByText("Checking…")).toBeNull();
@@ -152,7 +143,7 @@ describe("SystemStatus", () => {
     fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
 
     const { unmount } = renderStatus(SUPERADMIN);
-    await waitFor(() => expect(screen.getByRole("button", { name: /All systems normal/ })).toBeTruthy());
+    await screen.findByRole("button", { name: /All systems normal/ });
     unmount();
 
     renderStatus(SUPERADMIN);
@@ -166,8 +157,8 @@ describe("SystemStatus", () => {
     fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
 
     renderStatus(SUPERADMIN, null);
+    await screen.findByRole("button", { name: /All systems normal/ });
 
-    await waitFor(() => expect(screen.getByRole("button", { name: /All systems normal/ })).toBeTruthy());
     openMenu();
     expect(screen.queryByText("Email sending")).toBeNull();
   });
@@ -190,7 +181,7 @@ describe("SystemStatus", () => {
     fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
 
     renderStatus(SUPERADMIN);
-    await waitFor(() => expect(screen.getByRole("button", { name: /All systems normal/ })).toBeTruthy());
+    await screen.findByRole("button", { name: /All systems normal/ });
     openMenu();
 
     expect(screen.getByRole("menu")).toBeTruthy();
@@ -211,7 +202,7 @@ describe("SystemStatus", () => {
     fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
 
     renderStatus(SUPERADMIN);
-    await waitFor(() => expect(screen.getByRole("button", { name: /All systems normal/ })).toBeTruthy());
+    await screen.findByRole("button", { name: /All systems normal/ });
 
     openMenu();
     fireEvent.click(screen.getByRole("menuitem", { name: /View system logs/ }));

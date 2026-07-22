@@ -9,7 +9,9 @@ import type { ConnectionState } from "../connection/types.js";
 import { SETTINGS_INDEX_PATH } from "../settings/settingsTabs.js";
 import { useDropdownMenu } from "./useDropdownMenu.js";
 
-type RowState = "ok" | "degraded" | "down" | "pending";
+/** The 3 states a resolved (non-pending) row/trigger can be in. */
+type ResolvedRowState = "ok" | "degraded" | "down";
+type RowState = ResolvedRowState | "pending";
 
 interface StatusRow {
   key: string;
@@ -29,7 +31,7 @@ const ROW_CHECK_ICON: Record<RowState, string> = {
 /** Plain-language only — no product/vendor names (PostgreSQL, Redis, ENCRYPTION_KEY). An
  * event manager needs to know "is it working", not what runs it; the technical detail
  * still lives in System logs (Settings → Security) for whoever needs it. */
-const PLAIN_DETAIL: Record<"database" | "redis" | "encryption", Record<"ok" | "degraded" | "down", string>> = {
+const PLAIN_DETAIL: Record<"database" | "redis" | "encryption", Record<ResolvedRowState, string>> = {
   database: { ok: "Connected", degraded: "Responding slowly", down: "Not reachable" },
   redis: { ok: "Connected", degraded: "Responding slowly", down: "Not reachable" },
   encryption: { ok: "Active", degraded: "Needs attention", down: "Not configured" },
@@ -41,7 +43,7 @@ const SEVERITY_TO_ROW_STATE: Record<"ok" | "warn" | "error", RowState> = {
   error: "down",
 };
 
-const TRIGGER_META: Record<"ok" | "degraded" | "down", { dot: string; label: string; shortLabel: string }> = {
+const TRIGGER_META: Record<ResolvedRowState, { dot: string; label: string; shortLabel: string }> = {
   ok: { dot: "sys-status__dot--ok", label: "All systems normal", shortLabel: "OK" },
   degraded: { dot: "sys-status__dot--warn", label: "Degraded performance", shortLabel: "Degraded" },
   down: { dot: "sys-status__dot--err", label: "Action needed", shortLabel: "Alert" },
@@ -91,6 +93,12 @@ function mailerRow(mailerStatus: MailerStatus | null | undefined): StatusRow | n
   };
 }
 
+function resolveCheckState(result: SetupCheckResult | undefined): ResolvedRowState {
+  if (!result?.ok) return "down";
+  if (result.warn) return "degraded";
+  return "ok";
+}
+
 function setupCheckRow(
   key: "database" | "redis" | "encryption",
   icon: string,
@@ -101,8 +109,24 @@ function setupCheckRow(
 ): StatusRow {
   if (failed) return { key, icon, label, state: "down", detail: "Unavailable" };
   if (!loaded) return { key, icon, label, state: "pending", detail: "Checking…" };
-  const state: "ok" | "degraded" | "down" = !result || !result.ok ? "down" : result.warn ? "degraded" : "ok";
+  const state = resolveCheckState(result);
   return { key, icon, label, state, detail: PLAIN_DETAIL[key][state] };
+}
+
+function rowClassName(state: RowState): string {
+  if (state === "ok") return "sys-status__row";
+  return `sys-status__row sys-status__row--${state}`;
+}
+
+function checkIconClassName(state: RowState): string {
+  const base = `ti ti-${ROW_CHECK_ICON[state]} sys-status__check`;
+  return state === "ok" ? base : `${base} sys-status__check--${state}`;
+}
+
+function worstRowState(rows: StatusRow[]): ResolvedRowState {
+  if (rows.some((row) => row.state === "down")) return "down";
+  if (rows.some((row) => row.state === "degraded")) return "degraded";
+  return "ok";
 }
 
 /** Topbar system-health dropdown. Database/Session storage/Data encryption are
@@ -112,10 +136,10 @@ function setupCheckRow(
 export function SystemStatus({
   assignments,
   mailerStatus,
-}: {
+}: Readonly<{
   assignments: RoleAssignment[];
   mailerStatus: MailerStatus | null | undefined;
-}) {
+}>) {
   const navigate = useNavigate();
   const { state: connectionState } = useConnectionState();
   const { open, setOpen, close, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
@@ -155,11 +179,7 @@ export function SystemStatus({
       ]
     : [...(mailer ? [mailer] : []), connectionRow(connectionState)];
 
-  const worst: "ok" | "degraded" | "down" = rows.some((r) => r.state === "down")
-    ? "down"
-    : rows.some((r) => r.state === "degraded")
-      ? "degraded"
-      : "ok";
+  const worst = worstRowState(rows);
 
   // Only the superadmin's "View system logs" row is an actionable menuitem — for every
   // other role the panel is purely informational, so it shouldn't claim ARIA menu
@@ -190,10 +210,7 @@ export function SystemStatus({
           ref={panelRef}
         >
           {rows.map((row) => (
-            <div
-              key={row.key}
-              className={`sys-status__row${row.state !== "ok" ? ` sys-status__row--${row.state}` : ""}`}
-            >
+            <div key={row.key} className={rowClassName(row.state)}>
               <span className="user-menu__item-icon">
                 <i className={`ti ti-${row.icon}`} aria-hidden="true" />
               </span>
@@ -201,10 +218,7 @@ export function SystemStatus({
                 <strong>{row.label}</strong>
                 <span>{row.detail}</span>
               </span>
-              <i
-                className={`ti ti-${ROW_CHECK_ICON[row.state]} sys-status__check${row.state !== "ok" ? ` sys-status__check--${row.state}` : ""}`}
-                aria-hidden="true"
-              />
+              <i className={checkIconClassName(row.state)} aria-hidden="true" />
             </div>
           ))}
           {superadmin && (

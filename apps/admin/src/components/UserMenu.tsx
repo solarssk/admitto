@@ -18,12 +18,16 @@ function roleTier(assignments: RoleAssignment[]): RoleTier {
   return "operator";
 }
 
+function avatarClassName(size?: "md"): string {
+  return size ? `user-avatar user-avatar--${size}` : "user-avatar";
+}
+
 /** A generic person glyph + a role-tier icon badge, not initials — this is the one spot
  * naming the signed-in user, so the role (not just a name) needs to read at a glance. */
-function RoleAvatar({ tier, size }: { tier: RoleTier; size?: "md" }) {
+function RoleAvatar({ tier, size }: Readonly<{ tier: RoleTier; size?: "md" }>) {
   const meta = ROLE_TIER_META[tier];
   return (
-    <span className={`user-avatar${size ? ` user-avatar--${size}` : ""}`}>
+    <span className={avatarClassName(size)}>
       <i className="ti ti-user" aria-hidden="true" />
       <span className={`user-avatar__badge ${meta.badgeCls}`}>
         <i className={`ti ti-${meta.icon}`} aria-hidden="true" />
@@ -35,7 +39,7 @@ function RoleAvatar({ tier, size }: { tier: RoleTier; size?: "md" }) {
 /** Topbar user menu: avatar + role-tier badge trigger, "My account" and "Sign out" —
  * consolidates what used to be three separate topbar elements (RoleBadge, name, raw
  * sign-out button) into one dropdown. */
-export function UserMenu({ user, assignments }: { user: AuthUser; assignments: RoleAssignment[] }) {
+export function UserMenu({ user, assignments }: Readonly<{ user: AuthUser; assignments: RoleAssignment[] }>) {
   const navigate = useNavigate();
   const { open, setOpen, close, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
   const tier = roleTier(assignments);
