@@ -3948,7 +3948,12 @@
   text-decoration: none;
 }
 .overview-checklist__link i { transition: transform var(--dur-fast, 120ms); }
-.overview-checklist__link:hover { color: var(--primary-active); }
+/* text-decoration: none must be repeated here, not just on the base rule above — the global
+ * `a:hover { text-decoration: underline }` (packages/ui tokens/base.css) has higher specificity
+ * than a plain `.overview-checklist__link { text-decoration: none }` once :hover is in play (both
+ * are class-tier 0,1,x, but a:hover's extra type selector wins the tiebreak) — same gotcha
+ * .overview-contact__action's own comment already documents for the tel:/mailto: links (#345). */
+.overview-checklist__link:hover { color: var(--primary-active); text-decoration: none; }
 .overview-checklist__link:hover i { transform: translateX(2px); }
 
 /* Check-in progress (Part B) */
@@ -4302,9 +4307,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* text-decoration: none must be repeated here, not just on the base rule above — see
+ * .overview-checklist__link:hover's comment for why the global a:hover rule otherwise wins. */
 .overview-activity__attendee-link:hover,
 .overview-activity__attendee-link:focus-visible {
   color: var(--primary);
+  text-decoration: none;
 }
 
 .overview-activity__info span {
