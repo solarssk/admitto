@@ -3800,8 +3800,11 @@
 }
 
 .overview-kpi__label {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
+  /* Same size/weight as .at-card__title (the app's standard card-title tier) — the label is
+   * effectively this tile's title, and fs-sm/fw-medium (PO review: "too big a jump" from the
+   * fs-display value above it) was borrowed from generic secondary-text styling instead. */
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-semibold);
   color: var(--text-secondary);
 }
 
