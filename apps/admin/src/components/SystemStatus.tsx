@@ -31,10 +31,11 @@ const ROW_CHECK_ICON: Record<RowState, string> = {
 /** Plain-language only — no product/vendor names (PostgreSQL, Redis, ENCRYPTION_KEY). An
  * event manager needs to know "is it working", not what runs it; the technical detail
  * still lives in System logs (Settings → Security) for whoever needs it. */
-const PLAIN_DETAIL: Record<"database" | "redis" | "encryption", Record<ResolvedRowState, string>> = {
+const PLAIN_DETAIL: Record<"database" | "redis" | "encryption" | "instanceUrl", Record<ResolvedRowState, string>> = {
   database: { ok: "Connected", degraded: "Responding slowly", down: "Not reachable" },
   redis: { ok: "Connected", degraded: "Responding slowly", down: "Not reachable" },
   encryption: { ok: "Active", degraded: "Needs attention", down: "Not configured" },
+  instanceUrl: { ok: "Configured", degraded: "Optional — not set", down: "Not configured" },
 };
 
 const SEVERITY_TO_ROW_STATE: Record<"ok" | "warn" | "error", RowState> = {
@@ -100,7 +101,7 @@ function resolveCheckState(result: SetupCheckResult | undefined): ResolvedRowSta
 }
 
 function setupCheckRow(
-  key: "database" | "redis" | "encryption",
+  key: "database" | "redis" | "encryption" | "instanceUrl",
   icon: string,
   label: string,
   result: SetupCheckResult | undefined,
@@ -129,10 +130,12 @@ function worstRowState(rows: StatusRow[]): ResolvedRowState {
   return "ok";
 }
 
-/** Topbar system-health dropdown. Database/Session storage/Data encryption are
- * superadmin-only, matching `GET /api/admin/setup/checks`'s own server-side authorization
- * exactly; Email sending and Check-in connection aren't gated by anything and show for
- * every role, since operators and admins rely on them too. */
+/** Topbar system-health dropdown. Database/Session storage/Data encryption/Instance URL
+ * are superadmin-only, matching `GET /api/admin/setup/checks`'s own server-side
+ * authorization exactly (all 4 of its checks feed `worst`, not just 3 of them — a failed
+ * base_url check must be able to flip the trigger to "Action needed" too, the same as any
+ * other failed check). Email sending and Check-in connection aren't gated by anything and
+ * show for every role, since operators and admins rely on them too. */
 export function SystemStatus({
   assignments,
   mailerStatus,
@@ -173,8 +176,9 @@ export function SystemStatus({
     ? [
         setupCheckRow("database", "database", "Database", checks?.database, checks !== null, checksFailed),
         setupCheckRow("redis", "server-2", "Session storage", checks?.redis, checks !== null, checksFailed),
-        ...(mailer ? [mailer] : []),
         setupCheckRow("encryption", "lock", "Data encryption", checks?.encryption, checks !== null, checksFailed),
+        setupCheckRow("instanceUrl", "world", "Instance URL", checks?.base_url, checks !== null, checksFailed),
+        ...(mailer ? [mailer] : []),
         connectionRow(connectionState),
       ]
     : [...(mailer ? [mailer] : []), connectionRow(connectionState)];

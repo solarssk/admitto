@@ -171,6 +171,41 @@ describe("DatePicker", () => {
     });
   });
 
+  it("closes without stealing focus back when the user tabs to a control outside the panel", async () => {
+    vi.spyOn(eventDates, "todayIsoDate").mockReturnValue("2026-07-02");
+    vi.spyOn(eventDates, "formatCalendarMonth").mockReturnValue("July 2026");
+    vi.spyOn(eventDates, "getWeekdayLabelsShort").mockReturnValue([
+      "Mon",
+      "Tue",
+      "Wed",
+      "Thu",
+      "Fri",
+      "Sat",
+      "Sun",
+    ]);
+    vi.spyOn(eventDates, "formatIsoCalendarDate").mockImplementation((iso) => iso);
+    vi.spyOn(eventDates, "localeDateInputPattern").mockReturnValue("dd.mm.yyyy");
+
+    render(
+      <div>
+        <DatePicker value="" onChange={() => {}} label="Date" />
+        <button type="button">Next field</button>
+      </div>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
+    expect(screen.getByRole("dialog", { name: "Choose date" })).toBeTruthy();
+
+    const nextField = screen.getByRole("button", { name: "Next field" });
+    fireEvent.focusIn(nextField);
+
+    expect(screen.queryByRole("dialog", { name: "Choose date" })).toBeNull();
+    // Unlike Escape, a Tab-driven close must not pull focus back to the input — that would
+    // trap keyboard navigation instead of letting it continue to the next field.
+    await waitFor(() => {
+      expect(document.activeElement).not.toBe(screen.getByLabelText(/date/i));
+    });
+  });
+
   it("moves highlight with arrow keys and selects with Enter", () => {
     const onChange = vi.fn();
     vi.spyOn(eventDates, "todayIsoDate").mockReturnValue("2026-07-02");

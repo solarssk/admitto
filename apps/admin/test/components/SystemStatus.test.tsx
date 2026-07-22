@@ -3,7 +3,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { resetSystemStatusCache, SystemStatus } from "../../src/components/SystemStatus.js";
-import type { RoleAssignment } from "../../src/api/types.js";
+import { UserMenu } from "../../src/components/UserMenu.js";
+import type { AuthUser, RoleAssignment } from "../../src/api/types.js";
 import { connectionStateValue } from "../checkin/connectionStateMock.js";
 
 const fetchSetupChecks = vi.fn();
@@ -56,7 +57,7 @@ afterEach(() => {
 });
 
 describe("SystemStatus", () => {
-  it("shows all 5 rows and 'All systems normal' for a superadmin once checks pass", async () => {
+  it("shows all 6 rows and 'All systems normal' for a superadmin once checks pass", async () => {
     useConnectionState.mockReturnValue(connectionStateValue("connected"));
     fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
 
@@ -68,6 +69,7 @@ describe("SystemStatus", () => {
     expect(screen.getByText("Session storage")).toBeTruthy();
     expect(screen.getByText("Email sending")).toBeTruthy();
     expect(screen.getByText("Data encryption")).toBeTruthy();
+    expect(screen.getByText("Instance URL")).toBeTruthy();
     expect(screen.getByText("Check-in connection")).toBeTruthy();
     // Database, Session storage, Email sending, and Check-in connection all report the
     // same plain "Connected" — no PostgreSQL/Redis/vendor jargon in the topbar (that
@@ -75,6 +77,21 @@ describe("SystemStatus", () => {
     // rows' one-word status.
     expect(screen.getAllByText("Connected")).toHaveLength(4);
     expect(screen.getByText("Active")).toBeTruthy();
+    expect(screen.getByText("Configured")).toBeTruthy();
+  });
+
+  it("shows 'Action needed' when the instance-URL check fails, even though database/redis/encryption/mailer all pass", async () => {
+    useConnectionState.mockReturnValue(connectionStateValue("connected"));
+    fetchSetupChecks.mockResolvedValueOnce({
+      checks: { ...OK_CHECKS, base_url: { ok: false, detail: "BASE_URL env is required in production" } },
+    });
+
+    renderStatus(SUPERADMIN);
+    await screen.findByRole("button", { name: /Action needed/ });
+
+    openMenu();
+    expect(screen.getByText("Instance URL")).toBeTruthy();
+    expect(screen.getByText("Not configured")).toBeTruthy();
   });
 
   it("does not flash 'Action needed' while checks are still loading", async () => {
@@ -208,5 +225,33 @@ describe("SystemStatus", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /View system logs/ }));
 
     expect(screen.getByText("settings-page")).toBeTruthy();
+  });
+
+  it("closes when the user tabs to the adjacent UserMenu trigger, instead of leaving both dropdowns open", () => {
+    useConnectionState.mockReturnValue(connectionStateValue("connected"));
+    const user: AuthUser = {
+      id: "u1",
+      email: "superadmin@example.com",
+      display_name: "Ada Superadmin",
+      is_active: true,
+      created_at: "2026-01-01T00:00:00.000Z",
+    };
+
+    render(
+      <MemoryRouter>
+        <SystemStatus assignments={SUPERADMIN} mailerStatus={{ configured: true, provider: "smtp" }} />
+        <UserMenu user={user} assignments={SUPERADMIN} />
+      </MemoryRouter>,
+    );
+
+    openMenu();
+    expect(screen.getByRole("menu")).toBeTruthy();
+
+    // Tab from inside the open SystemStatus panel straight to UserMenu's trigger — no
+    // pointerdown in between, the exact keyboard-only path the two dropdowns used to both
+    // stay open for.
+    fireEvent.focusIn(screen.getByRole("button", { name: /Ada Superadmin/ }));
+
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 });
