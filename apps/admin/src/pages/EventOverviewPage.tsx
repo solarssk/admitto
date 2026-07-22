@@ -43,6 +43,9 @@ import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 
 const OVERVIEW_REFRESH_MS = 30_000;
 const RECENT_CHECKINS_MAX = 8;
+// Mirrors RECENT_ACTIVITY_LIMIT in apps/web/src/admin/overview-routes.ts — the merged feed must
+// honor the same 30-item contract as the server response it's reconciling against.
+const ACTIVITY_FEED_MAX = 30;
 
 function safeHref(url: string): string {
   try {
@@ -428,9 +431,12 @@ function liveCheckinsAsActivity(checkins: StreamCheckinEvent[]): DisplayActivity
   }));
 }
 
-/** Prepends not-yet-reconciled live check-ins ahead of the server's own feed, without duplicating
- * one once the next overview poll/reconcile brings the same check-in back as a server row —
- * matched on attendee name + timestamp since `recent_activity` doesn't carry an attendee id. */
+/** Merges not-yet-reconciled live check-ins into the server's own feed, without duplicating one
+ * once the next overview poll/reconcile brings the same check-in back as a server row — matched
+ * on attendee name + timestamp since `recent_activity` doesn't carry an attendee id. Re-sorted and
+ * re-capped rather than simply prepended: if the event stays open long enough that a live
+ * check-in ages out of the server's own capped window before it reconciles (30+ newer activities
+ * of any type in between), naive prepending would strand it above genuinely newer server rows. */
 function mergeActivity(
   server: EventRecentActivityEntry[],
   liveCheckins: StreamCheckinEvent[],
@@ -443,7 +449,9 @@ function mergeActivity(
   const live = liveCheckinsAsActivity(liveCheckins).filter(
     (e) => !seen.has(`${e.attendee_name ?? ""}|${e.occurred_at}`),
   );
-  return [...live, ...server];
+  return [...live, ...server]
+    .sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime())
+    .slice(0, ACTIVITY_FEED_MAX);
 }
 
 function activityDayLabel(iso: string, timezone: string): string {

@@ -3968,6 +3968,7 @@
 
 .overview-ring {
   --ring-size: 108px;
+
   width: var(--ring-size);
   height: var(--ring-size);
   border-radius: 50%;

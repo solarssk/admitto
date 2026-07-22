@@ -776,6 +776,61 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(screen.getByText("4 attendees imported").closest("a")).toBeNull();
   });
 
+  it("keeps the merged Recent activity feed sorted newest-first after reconcile, even when a live check-in ages out of the server's own capped window (CodeRabbit)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      fetchEventOverview.mockResolvedValueOnce(overviewFixture(5));
+
+      renderPage();
+
+      await waitFor(() => {
+        expect(admittedLegendValue()).toBe("5");
+      });
+
+      act(() => {
+        streamHandler?.({ ...liveEvent, attendeeName: "Stale Guest", admittedAt: "2020-01-01T00:00:00.000Z" });
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Stale Guest")).toBeTruthy();
+      });
+
+      // Reconcile poll returns a genuinely newer server activity that does NOT include the stale
+      // live check-in - simulating it having aged out of the server's own RECENT_ACTIVITY_LIMIT
+      // window before the 3s reconcile fired. A naive prepend would strand it above this newer row.
+      fetchEventOverview.mockResolvedValue(
+        overviewFixture(5, {
+          recent_activity: [
+            {
+              id: "import:fresh-1",
+              type: "import",
+              tone: "muted",
+              attendee_id: null,
+              message: "4 attendees imported",
+              occurred_at: new Date().toISOString(),
+            },
+          ],
+        }),
+      );
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("4 attendees imported")).toBeTruthy();
+      });
+
+      const items = Array.from(document.querySelectorAll(".overview-activity__item"));
+      const freshIndex = items.findIndex((el) => el.textContent?.includes("4 attendees imported"));
+      const staleIndex = items.findIndex((el) => el.textContent?.includes("Stale Guest"));
+      expect(freshIndex).toBeGreaterThanOrEqual(0);
+      expect(staleIndex).toBeGreaterThan(freshIndex);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("merges Pinned note, Key contacts, and Links & files into one Notes & contacts card, each with a leading header icon (#344, #345, #346)", async () => {
     fetchEventOverview.mockResolvedValue(overviewFixture(5));
 
