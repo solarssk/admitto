@@ -20,7 +20,12 @@ function slugifyTicketTypeKey(label: string): string {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
+    // The previous step already collapsed every non-alnum run (including runs of "_" itself)
+    // down to a single "_", so a leading/trailing underscore is always at most one character
+    // here — no quantifier needed, which also sidesteps SonarCloud's (over-cautious, but easy
+    // to just avoid) superlinear-backtracking flag on `_+` anchored at ^/$.
+    .replace(/^_/, "")
+    .replace(/_$/, "")
     .replace(/_+/g, "_")
     .slice(0, TICKET_TYPE_KEY_MAX_LENGTH);
 }

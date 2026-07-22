@@ -644,8 +644,14 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
     expect(await screen.findByText("Import complete")).toBeTruthy();
     expect(screen.getByText(/1 attendee created · 0 updated · 0 skipped/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "View attendees" })).toBeTruthy();
-    // History refreshes after a successful commit (initial load + post-commit).
-    expect(fetchImportHistory).toHaveBeenCalledTimes(2);
+    // History refreshes after a successful commit (initial load + post-commit) — the
+    // historyToken-keyed effect that triggers the second fetch runs in the same commit as the
+    // "Import complete" text, but isn't guaranteed to have flushed by the time findByText's own
+    // MutationObserver-driven resolution hands control back here, so this needs its own wait
+    // rather than asserting synchronously right after (flaky under CI's parallel test load).
+    await waitFor(() => {
+      expect(fetchImportHistory).toHaveBeenCalledTimes(2);
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "Import another file" }));
     expect(await screen.findByRole("button", { name: "Upload a CSV or XLSX file" })).toBeTruthy();

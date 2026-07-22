@@ -111,7 +111,7 @@ describe("AttendeesPage header Send tickets — mail-configured gate", () => {
     fetchEventMailSettings.mockResolvedValue(mailSettings(null));
     renderPage();
 
-    const sendTicketsButton = await waitFor(() => screen.getByRole("button", { name: "Send tickets" }));
+    const sendTicketsButton = await screen.findByRole("button", { name: "Send tickets" });
 
     await waitFor(() => expect(sendTicketsButton.disabled).toBe(true));
     const describedBy = sendTicketsButton.getAttribute("aria-describedby");
@@ -123,7 +123,7 @@ describe("AttendeesPage header Send tickets — mail-configured gate", () => {
     fetchEventMailSettings.mockResolvedValue(mailSettings("graph"));
     renderPage();
 
-    const sendTicketsButton = await waitFor(() => screen.getByRole("button", { name: "Send tickets" }));
+    const sendTicketsButton = await screen.findByRole("button", { name: "Send tickets" });
     await waitFor(() => expect(fetchEventMailSettings).toHaveBeenCalled());
     expect(sendTicketsButton.disabled).toBe(false);
   });
@@ -132,7 +132,7 @@ describe("AttendeesPage header Send tickets — mail-configured gate", () => {
     fetchEventMailSettings.mockResolvedValue(mailSettings("export_only"));
     renderPage();
 
-    const sendTicketsButton = await waitFor(() => screen.getByRole("button", { name: "Send tickets" }));
+    const sendTicketsButton = await screen.findByRole("button", { name: "Send tickets" });
     await waitFor(() => expect(sendTicketsButton.disabled).toBe(true));
   });
 
@@ -140,7 +140,7 @@ describe("AttendeesPage header Send tickets — mail-configured gate", () => {
     fetchEventMailSettings.mockRejectedValue(new Error("network down"));
     renderPage();
 
-    const sendTicketsButton = await waitFor(() => screen.getByRole("button", { name: "Send tickets" }));
+    const sendTicketsButton = await screen.findByRole("button", { name: "Send tickets" });
     await waitFor(() => expect(fetchEventMailSettings).toHaveBeenCalled());
     expect(sendTicketsButton.disabled).toBe(false);
   });

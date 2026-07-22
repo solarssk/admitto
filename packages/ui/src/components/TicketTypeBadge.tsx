@@ -26,7 +26,7 @@ export interface TicketTypeBadgeProps extends HTMLAttributes<HTMLSpanElement> {
 
 /** Badge for an admin-defined ticket type - unlike StatusBadge (fixed system enum), both label
  * and color are data here, sourced from the event's TicketType catalog. */
-export function TicketTypeBadge({ label, color = "gray", style, ...rest }: TicketTypeBadgeProps) {
+export function TicketTypeBadge({ label, color = "gray", style, ...rest }: Readonly<TicketTypeBadgeProps>) {
   const c = TICKET_TYPE_COLORS[color] ?? TICKET_TYPE_COLORS.gray;
   return (
     <Badge style={{ background: c.tint, color: c.solid, ...style }} {...rest}>

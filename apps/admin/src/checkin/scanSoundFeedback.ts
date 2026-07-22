@@ -114,9 +114,7 @@ let audioContext: AudioContext | null = null;
  * everywhere relevant (incl. iOS Safari) since 2021. */
 function unlockAudio(): AudioContext | null {
   try {
-    if (!audioContext) {
-      audioContext = new AudioContext();
-    }
+    audioContext ??= new AudioContext();
     if (audioContext.state === "suspended") {
       void audioContext.resume();
     }
@@ -145,7 +143,7 @@ function playTone(tone: FeedbackTone): void {
   // Still "suspended" mid-resume() (e.g. the very first scan of the
   // session) — skip rather than queue; every scan after this one will have
   // a running context.
-  if (!ctx || ctx.state !== "running") return;
+  if (ctx?.state !== "running") return;
   if (tone === "ok") beep(ctx, 880, 90);
   else if (tone === "warn") {
     beep(ctx, 520, 80);

@@ -36,9 +36,8 @@ export async function acquireEventImageAssetsLock(
   tx: Prisma.TransactionClient,
   eventId: string,
 ): Promise<void> {
-  await tx.$executeRaw(
-    Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`event-image-assets:${eventId}`}))`,
-  );
+  const lockKey = `event-image-assets:${eventId}`;
+  await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
 }
 
 /** Same {{snake_case}} shape as the mail-templates placeholder whitelist - an asset's token

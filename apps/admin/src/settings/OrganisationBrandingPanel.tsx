@@ -87,6 +87,15 @@ export function OrganisationBrandingPanel() {
 
   const formDisabled = saving;
 
+  let saveButtonLabel: string;
+  if (saving) {
+    saveButtonLabel = "Saving…";
+  } else if (uploading) {
+    saveButtonLabel = "Uploading…";
+  } else {
+    saveButtonLabel = "Save branding";
+  }
+
   return (
     <Card
       title="Organisation branding"
@@ -104,7 +113,7 @@ export function OrganisationBrandingPanel() {
             disabled={!loadedOk || formDisabled || uploading}
             onClick={() => void handleSave()}
           >
-            {saving ? "Saving…" : uploading ? "Uploading…" : "Save branding"}
+            {saveButtonLabel}
           </Button>
         </div>
       }

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { CameraOverlay } from "../../src/checkin/CameraOverlay.js";
 import type { AttendeeCardDto, AttendeeCardItemDto, CheckInScanResponse } from "../../src/api/types.js";
 
@@ -235,7 +235,7 @@ describe("CameraOverlay item issuing (#434)", () => {
     // `items` still shows the badge as pending (the update never landed) —
     // the optimistic mark must be dropped, or a false "issued" would
     // misrepresent the item as actually handed out and recorded.
-    await waitFor(() => expect(screen.getByText("1 item skipped")).toBeTruthy());
+    await screen.findByText("1 item skipped");
   });
 
   it("summary reads as a genuine success only when every item was actually issued, not just skipped through", () => {
@@ -470,7 +470,9 @@ describe("CameraOverlay item issuing (#434)", () => {
     );
 
     const button = screen.getByRole("button", { name: "Mark badge issued" });
-    act(() => {
+    // Both clicks share one act() batch deliberately — see AttendeeCard.item-actions.test.tsx's
+    // same-tick tests for why (CodeRabbit review on PR #559).
+    act(() => { // NOSONAR — deliberate shared batch, see comment above
       fireEvent.click(button);
       fireEvent.click(button);
     });
@@ -493,7 +495,8 @@ describe("CameraOverlay item issuing (#434)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Mark badge issued" }));
     const undoButton = screen.getByRole("button", { name: "Undo last check-in" });
-    act(() => {
+    // Same-tick race, same reasoning as the "Mark badge issued" test above.
+    act(() => { // NOSONAR — deliberate shared batch, see comment above
       fireEvent.click(undoButton);
       fireEvent.click(undoButton);
     });

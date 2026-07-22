@@ -23,7 +23,7 @@ import {
   requireEventId,
   resolveClientTimezone,
 } from "./admin-helpers.js";
-import { assertEventCapacityForIncoming, acquireEventCapacityLock } from "./event-capacity.js";
+import { assertEventCapacityForIncoming } from "./event-capacity.js";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 /** Multipart framing overhead allowed on top of the file cap (body-limit middleware). */

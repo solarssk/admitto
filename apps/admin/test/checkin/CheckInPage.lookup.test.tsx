@@ -609,7 +609,7 @@ describe("CheckInPage operator desktop camera toggle (#381)", () => {
       fireEvent.change(input, { target: { value: firstToken.slice(0, i) } });
     }
     fireEvent.keyDown(input, { key: "Enter" });
-    await waitFor(() => expect(screen.getByText("Anna Alpha")).toBeTruthy());
+    await screen.findByText("Anna Alpha");
 
     // showInlineCameraRef only reflects the camera toggle — the camera itself
     // is hidden behind this card, but the scan bar above it stays live, so a
@@ -662,9 +662,9 @@ describe("CheckInPage operator desktop camera toggle (#381)", () => {
 
     const input = await scanInput();
     fireEvent.change(input, { target: { value: "anna" } });
-    await waitFor(() => expect(screen.getByText("Anna Alpha")).toBeTruthy());
+    await screen.findByText("Anna Alpha");
     fireEvent.click(screen.getByText("Anna Alpha"));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Confirm check-in" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Confirm check-in" });
 
     fireEvent.click(screen.getByRole("button", { name: "Confirm check-in" }));
 
@@ -710,7 +710,7 @@ describe("CheckInPage operator desktop camera toggle (#381)", () => {
     }
     await new Promise((r) => setTimeout(r, 60)); // > WEDGE_DEBOUNCE_MS
 
-    await waitFor(() => expect(screen.getByText("Anna Alpha")).toBeTruthy());
+    await screen.findByText("Anna Alpha");
     expect(addToast).not.toHaveBeenCalledWith(
       "This code is not valid for this event. Check the QR or use manual lookup.",
       "warning",

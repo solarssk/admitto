@@ -80,7 +80,9 @@ describe("AttendeeCard — admin per-item Revoke (item revocation feature)", () 
       <AttendeeCard card={issuedItemCard} eventTimezone="UTC" canAct onRevokeItem={onRevokeItem} />,
     );
     const button = screen.getByRole("button", { name: "Revoke Gift bag" });
-    act(() => {
+    // Both clicks share one act() batch deliberately — see AttendeeCard.item-actions.test.tsx's
+    // same-tick tests for why (CodeRabbit review on PR #559).
+    act(() => { // NOSONAR — deliberate shared batch, see comment above
       fireEvent.click(button);
       fireEvent.click(button);
     });

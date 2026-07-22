@@ -510,6 +510,48 @@ describe("AttendeesPage bulk delete (#356 follow-up)", () => {
 
     expect(screen.queryByText("Delete failed.")).toBeNull();
   });
+
+  it("still clears the busy/spinner state after navigating away mid-request, even though the toast and dialog-close side effects are skipped (CodeRabbit review)", async () => {
+    let resolveDelete!: (value: { deletedCount: number }) => void;
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkDeleteAttendees.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveDelete = resolve;
+      }),
+    );
+
+    const router = createMemoryRouter(
+      [{ path: "/admin/events/:eventId/attendees", element: <AttendeesPage /> }],
+      { initialEntries: ["/admin/events/evt-1/attendees"] },
+    );
+    render(<RouterProvider router={router} />);
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openAndArmDeleteDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete attendees" }));
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Working…" })).toBeTruthy());
+
+    await act(async () => router.navigate("/admin/events/evt-2/attendees"));
+    await waitFor(() => {
+      expect(fetchEventAttendees).toHaveBeenCalledWith("evt-2", expect.anything(), expect.anything());
+    });
+
+    await act(async () => {
+      resolveDelete({ deletedCount: 1 });
+      await Promise.resolve();
+    });
+
+    // The dialog itself stays open (closing it is a skipped success side effect, same as the
+    // toast covered above) but its busy state is this component's own local state, not tied to
+    // which event initiated the request — it must still clear, or the confirm button is stuck
+    // reading "Working…" forever once the operator has navigated away.
+    await waitFor(() => {
+      expect(within(dialog).getByRole("button", { name: "Delete attendees" })).toBeTruthy();
+    });
+  });
 });
 
 describe("AttendeesPage bulk revoke pass (#549)", () => {

@@ -9,15 +9,15 @@ import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import "./ticket-types-card.css";
 
 export interface TicketTypesCardProps {
-  eventId: string;
-  event: EventSettingsDto;
-  types: TicketTypeDto[];
-  loading: boolean;
+  readonly eventId: string;
+  readonly event: EventSettingsDto;
+  readonly types: TicketTypeDto[];
+  readonly loading: boolean;
   /** Set when the catalog failed to load (initial load or a background refresh) - renders in
    * place of the list, with a Retry button (CodeRabbit review, batch 04 / #351). */
-  error?: string | null;
-  onRetry?: () => void;
-  onChanged: () => void;
+  readonly error?: string | null;
+  readonly onRetry?: () => void;
+  readonly onChanged: () => void;
 }
 
 const COLOR_ENTRIES = Object.entries(TICKET_TYPE_COLORS) as Array<
@@ -35,9 +35,9 @@ function ColorSwatchPicker({
   disabled,
   onChange,
 }: {
-  color: TicketTypeColor;
-  disabled: boolean;
-  onChange: (color: TicketTypeColor) => void;
+  readonly color: TicketTypeColor;
+  readonly disabled: boolean;
+  readonly onChange: (color: TicketTypeColor) => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -100,11 +100,11 @@ function TicketTypeRow({
   onUpdate,
   onRemove,
 }: {
-  type: TicketTypeDto;
-  disabled: boolean;
-  autoFocus: boolean;
-  onUpdate: (id: string, patch: { label?: string; color?: TicketTypeColor }) => Promise<boolean>;
-  onRemove: () => void;
+  readonly type: TicketTypeDto;
+  readonly disabled: boolean;
+  readonly autoFocus: boolean;
+  readonly onUpdate: (id: string, patch: { label?: string; color?: TicketTypeColor }) => Promise<boolean>;
+  readonly onRemove: () => void;
 }) {
   const [label, setLabel] = useState(type.label);
   const inputRef = useRef<HTMLInputElement>(null);
