@@ -64,6 +64,8 @@ const tableProps = {
   onBulkExportSelected: vi.fn(),
   bulkExportBusy: false,
   onBulkChangeTicketType: vi.fn(),
+  onBulkRevokePass: vi.fn(),
+  bulkRevokePassBusy: false,
   onBulkDelete: vi.fn(),
   eventTimezone: "UTC",
   event: { archived_at: null as string | null },
@@ -243,6 +245,114 @@ describe("AttendeesTable bulk revoke check-in (PO review, #522 follow-up)", () =
     // that, not the full selection size.
     expect(item.textContent).toContain("Undo check-in for 1 attendee");
     expect(item.textContent).not.toContain("2 attendee");
+  });
+});
+
+describe("AttendeesTable bulk revoke pass (PO review, #549)", () => {
+  beforeEach(() => {
+    mockMatchMedia(true);
+  });
+
+  const revokedRow = { ...baseRow, status: "revoked" as const };
+
+  it("disables Revoke pass only once every selected attendee's pass is already revoked/cancelled", () => {
+    const { rerender } = render(
+      <AttendeesTable
+        {...tableProps}
+        items={[revokedRow, otherRow]}
+        selectedIds={new Set(["att-1"])}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(
+      (screen.getByRole("menuitem", { name: /Revoke pass/ }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+
+    // Mixed selection (one revoked, one active) - still real work to do, stays enabled.
+    // Menu stays open across the rerender (same mounted component) - no need to reopen it.
+    rerender(
+      <AttendeesTable
+        {...tableProps}
+        items={[revokedRow, otherRow]}
+        selectedIds={new Set(["att-1", "att-2"])}
+      />,
+    );
+    expect(
+      (screen.getByRole("menuitem", { name: /Revoke pass/ }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
+
+  it("explains the no-op reason on the Revoke pass item's tooltip when disabled", () => {
+    render(
+      <AttendeesTable {...tableProps} items={[revokedRow]} selectedIds={new Set(["att-1"])} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(screen.getByRole("menuitem", { name: /Revoke pass/ }).getAttribute("title")).toBe(
+      "The selected attendees' passes are already revoked or cancelled.",
+    );
+  });
+
+  it("disables with the archived tooltip when the event is archived, even with an active pass", () => {
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow]}
+        selectedIds={new Set(["att-1"])}
+        event={{ archived_at: "2026-01-01T00:00:00.000Z" }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    const item = screen.getByRole("menuitem", { name: /Revoke pass/ }) as HTMLButtonElement;
+    expect(item.disabled).toBe(true);
+    expect(item.getAttribute("title")).toBe("This event is archived — editing is disabled.");
+  });
+
+  it("fires onBulkRevokePass and closes the menu when the item is clicked", () => {
+    const onBulkRevokePass = vi.fn();
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow]}
+        selectedIds={new Set(["att-1"])}
+        onBulkRevokePass={onBulkRevokePass}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Revoke pass/ }));
+
+    expect(onBulkRevokePass).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("menuitem", { name: /Revoke pass/ })).toBeNull();
+  });
+
+  it("shows 'Revoking pass…' and disables the item while busy", () => {
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow]}
+        selectedIds={new Set(["att-1"])}
+        bulkRevokePassBusy
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    const item = screen.getByRole("menuitem", { name: /Revoking pass…/ }) as HTMLButtonElement;
+    expect(item.disabled).toBe(true);
+  });
+
+  it("shows the accurate active-pass count in the hint, not the raw selection size, for a mixed selection", () => {
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[revokedRow, otherRow]}
+        selectedIds={new Set(["att-1", "att-2"])}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    // 2 selected, but only 1 (otherRow) still has an active pass - the hint must say "1
+    // attendee", not "2 attendees" (PO review follow-up, #549).
+    expect(
+      screen.getByText("Block check-in for 1 attendee", { exact: false }),
+    ).toBeTruthy();
+    expect(screen.queryByText("Block check-in for 2 attendees", { exact: false })).toBeNull();
   });
 });
 
