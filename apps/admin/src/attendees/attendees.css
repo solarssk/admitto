@@ -812,9 +812,10 @@
   background: var(--status-error-tint);
 }
 
-/* Lighter-weight than --danger — for reversible-but-impactful bulk actions (revoke check-in,
- * revoke items) that shouldn't read as alarming as truly destructive/irreversible ones (revoke
- * pass, delete). */
+/** Lighter-weight "caution" treatment for mutating-but-reversible actions (Revoke check-in,
+ * Revoke items) — red stays reserved for genuinely irreversible/high-stakes items like Revoke
+ * pass and Delete (PO review across the Revoke check-in / Revoke items / Revoke pass sibling
+ * PRs). */
 .more-actions-menu__item--warning {
   color: var(--status-warn);
 }

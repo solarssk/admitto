@@ -21,6 +21,7 @@ import type {
   BulkResendResponse,
   BulkCheckInResponse,
   BulkRevokeItemsResponse,
+  BulkRevokeCheckInResponse,
   EventItemDto,
   EventItemsListResponse,
   CreateEventItemBody,
@@ -822,6 +823,17 @@ export async function bulkRevokeItems(
     jsonPostInit({ attendeeIds }),
   );
   return parseJson<BulkRevokeItemsResponse>(res);
+}
+
+export async function bulkRevokeCheckIn(
+  eventId: string,
+  attendeeIds: string[],
+): Promise<BulkRevokeCheckInResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-revoke-checkin`,
+    jsonPostInit({ attendeeIds }),
+  );
+  return parseJson<BulkRevokeCheckInResponse>(res);
 }
 
 export async function resendTicket(
