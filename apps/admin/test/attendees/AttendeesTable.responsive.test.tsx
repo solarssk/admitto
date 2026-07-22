@@ -138,17 +138,46 @@ describe("AttendeesTable bulk revoke pass (PO review, #549)", () => {
     mockMatchMedia(true);
   });
 
-  it("is always enabled for a non-empty selection, regardless of check-in/pass state", () => {
-    render(
-      <AttendeesTable {...tableProps} items={[baseRow]} selectedIds={new Set(["att-1"])} />,
+  const revokedRow = { ...baseRow, status: "revoked" as const };
+
+  it("disables Revoke pass only once every selected attendee's pass is already revoked/cancelled", () => {
+    const { rerender } = render(
+      <AttendeesTable
+        {...tableProps}
+        items={[revokedRow, otherRow]}
+        selectedIds={new Set(["att-1"])}
+      />,
     );
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(
+      (screen.getByRole("menuitem", { name: /Revoke pass/ }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+
+    // Mixed selection (one revoked, one active) - still real work to do, stays enabled.
+    // Menu stays open across the rerender (same mounted component) - no need to reopen it.
+    rerender(
+      <AttendeesTable
+        {...tableProps}
+        items={[revokedRow, otherRow]}
+        selectedIds={new Set(["att-1", "att-2"])}
+      />,
+    );
     expect(
       (screen.getByRole("menuitem", { name: /Revoke pass/ }) as HTMLButtonElement).disabled,
     ).toBe(false);
   });
 
-  it("disables with the archived tooltip when the event is archived", () => {
+  it("explains the no-op reason on the Revoke pass item's tooltip when disabled", () => {
+    render(
+      <AttendeesTable {...tableProps} items={[revokedRow]} selectedIds={new Set(["att-1"])} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(screen.getByRole("menuitem", { name: /Revoke pass/ }).getAttribute("title")).toBe(
+      "The selected attendees' passes are already revoked or cancelled.",
+    );
+  });
+
+  it("disables with the archived tooltip when the event is archived, even with an active pass", () => {
     render(
       <AttendeesTable
         {...tableProps}

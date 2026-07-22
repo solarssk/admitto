@@ -380,6 +380,17 @@ function bulkSendTicketsTooltip(archived: boolean, canBulkSend: boolean): string
   return undefined;
 }
 
+/** "Revoke pass" menu item's disabled-title — same "nothing to do" gate as "Revoke check-in"
+ * (PO review follow-up): a selection where every attendee is already revoked/cancelled is a
+ * guaranteed no-op, so it's disabled rather than left clickable into a confirm dialog that just
+ * reports nothing changed. A mixed selection stays enabled — there's still real work for the
+ * still-active ones. */
+function bulkRevokePassTooltip(archived: boolean, canRevokePass: boolean): string | undefined {
+  if (archived) return ARCHIVED_ACTION_TOOLTIP;
+  if (!canRevokePass) return "The selected attendees' passes are already revoked or cancelled.";
+  return undefined;
+}
+
 /** Bulk "More actions" — Export selected, Change ticket type, and Delete, styled as a menu
  * (not bare buttons) so the destructive bulk action takes an extra click to even reach,
  * matching the design mockup's More actions panel and the same danger-item treatment already
@@ -401,6 +412,7 @@ function BulkMoreActionsMenu({
   onChangeTicketType,
   onBulkRevokePass,
   bulkRevokePassBusy,
+  canRevokePass,
   onDelete,
 }: Readonly<{
   selectedCount: number;
@@ -418,6 +430,7 @@ function BulkMoreActionsMenu({
   onChangeTicketType: () => void;
   onBulkRevokePass: () => void;
   bulkRevokePassBusy: boolean;
+  canRevokePass: boolean;
   onDelete: () => void;
 }>) {
   const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
@@ -521,16 +534,17 @@ function BulkMoreActionsMenu({
               Retry loading ticket types
             </button>
           )}
-          {/* Always available for any non-empty selection (PO review, #549) — no "nothing to
-           * revoke" precondition to gate on; the server already leaves an already-revoked or
-           * cancelled attendee untouched and reports it separately in the result toast, same
-           * convention as the other bulk actions. */}
+          {/* Disabled once every selected attendee is already revoked/cancelled — a guaranteed
+           * no-op otherwise, same "nothing to do" gate as "Revoke check-in" (PO review
+           * follow-up, #549). A mixed selection stays enabled: the server already leaves an
+           * already-revoked/cancelled attendee untouched and reports it separately in the
+           * result toast. */}
           <button
             type="button"
             role="menuitem"
             className="more-actions-menu__item more-actions-menu__item--danger"
-            disabled={archived || bulkRevokePassBusy}
-            title={archived ? ARCHIVED_ACTION_TOOLTIP : undefined}
+            disabled={archived || bulkRevokePassBusy || !canRevokePass}
+            title={bulkRevokePassTooltip(archived, canRevokePass)}
             onClick={() => {
               setOpen(false);
               onBulkRevokePass();
@@ -597,6 +611,7 @@ function BulkBar({
   onBulkChangeTicketType,
   onBulkRevokePass,
   bulkRevokePassBusy,
+  canRevokePass,
   onBulkDelete,
 }: Readonly<{
   selectedIds: ReadonlySet<string>;
@@ -615,6 +630,7 @@ function BulkBar({
   onBulkChangeTicketType: () => void;
   onBulkRevokePass: () => void;
   bulkRevokePassBusy: boolean;
+  canRevokePass: boolean;
   onBulkDelete: () => void;
 }>) {
   const archived = event.archived_at != null;
@@ -694,6 +710,7 @@ function BulkBar({
           onChangeTicketType={onBulkChangeTicketType}
           onBulkRevokePass={onBulkRevokePass}
           bulkRevokePassBusy={bulkRevokePassBusy}
+          canRevokePass={canRevokePass}
           onDelete={onBulkDelete}
         />
       </div>
@@ -1152,6 +1169,14 @@ export function AttendeesTable({
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(page * pageSize, total);
+  // "Revoke pass" is a no-op once every selected attendee is already revoked/cancelled -
+  // disabled rather than left clickable into a confirm dialog that just reports nothing
+  // changed, same "nothing to do" gate as "Revoke check-in" (PO review follow-up, #549). A
+  // mixed selection stays enabled: there's still real work for the still-active ones.
+  const selectedRows = items.filter((row) => selectedIds.has(row.id));
+  const anySelectedPassActive = selectedRows.some(
+    (row) => row.status !== "cancelled" && row.status !== "revoked",
+  );
 
   return (
     <Card padded={false}>
@@ -1173,6 +1198,7 @@ export function AttendeesTable({
           onBulkChangeTicketType={onBulkChangeTicketType}
           onBulkRevokePass={onBulkRevokePass}
           bulkRevokePassBusy={bulkRevokePassBusy}
+          canRevokePass={anySelectedPassActive}
           onBulkDelete={onBulkDelete}
         />
       ) : (
