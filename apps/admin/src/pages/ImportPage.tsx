@@ -289,6 +289,26 @@ function computeCanCommit(
   return superadmin && forceCapacity;
 }
 
+/** Routes a failed preview/commit call to the right feedback surface: a hard 401 redirect (session
+ * expired), or a toast otherwise. Extracted out of the component (Sonar S3776: this closure's own
+ * branching, nested inside ImportPage, was counting against the component's complexity). */
+function handleImportApiError(
+  err: unknown,
+  reportApiError: (status: number) => void,
+  addToast: (message: string, variant: "error", duration?: number) => void,
+): void {
+  if (err instanceof ApiError) {
+    reportApiError(err.status);
+    if (err.status === 401) {
+      const next = encodeURIComponent(window.location.pathname);
+      window.location.assign(`/login?next=${next}`);
+      return;
+    }
+  }
+  const { message, duration } = importApiErrorToast(err);
+  addToast(message, "error", duration);
+}
+
 /** Admin flow: upload CSV/XLSX → preview counts → commit import. */
 export function ImportPage() {
   const { eventId } = useParams();
@@ -332,18 +352,7 @@ export function ImportPage() {
     };
   }, [eventId]);
 
-  const handleApiError = (err: unknown) => {
-    if (err instanceof ApiError) {
-      reportApiError(err.status);
-      if (err.status === 401) {
-        const next = encodeURIComponent(window.location.pathname);
-        window.location.assign(`/login?next=${next}`);
-        return;
-      }
-    }
-    const { message, duration } = importApiErrorToast(err);
-    addToast(message, "error", duration);
-  };
+  const handleApiError = (err: unknown) => handleImportApiError(err, reportApiError, addToast);
 
   useEffect(() => {
     if (!eventId) return;

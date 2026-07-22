@@ -48,7 +48,7 @@ describe("AttendeeCard — item action button (review finding)", () => {
     // the second click would just be silently ignored by a disabled <button> — that would test
     // the DOM's own disabled-button behavior, not the useInFlightIds guard this test exists to
     // cover (CodeRabbit review on PR #559 caught this act() removal breaking the race).
-    act(() => {
+    act(() => { // NOSONAR — deliberate shared batch, see comment above
       fireEvent.click(button);
       fireEvent.click(button);
     });
@@ -93,7 +93,7 @@ describe("AttendeeCard — item action button (review finding)", () => {
     // Same-tick race, same reasoning as the "Mark badge issued" test above: both clicks must
     // share one act() batch or the second click hits an already-disabled button instead of
     // exercising the useInFlightIds guard.
-    act(() => {
+    act(() => { // NOSONAR — deliberate shared batch, see comment above
       fireEvent.click(button);
       fireEvent.click(button);
     });

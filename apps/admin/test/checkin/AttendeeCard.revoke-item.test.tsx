@@ -82,7 +82,7 @@ describe("AttendeeCard — admin per-item Revoke (item revocation feature)", () 
     const button = screen.getByRole("button", { name: "Revoke Gift bag" });
     // Both clicks share one act() batch deliberately — see AttendeeCard.item-actions.test.tsx's
     // same-tick tests for why (CodeRabbit review on PR #559).
-    act(() => {
+    act(() => { // NOSONAR — deliberate shared batch, see comment above
       fireEvent.click(button);
       fireEvent.click(button);
     });
