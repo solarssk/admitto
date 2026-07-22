@@ -9,9 +9,11 @@ import {
   bulkRevokePass,
   bulkDeleteAttendees,
   bulkResendTickets,
+  bulkRevokeItems,
   exportAttendees,
   exportSelectedAttendees,
   fetchEventAttendees,
+  fetchEventItems,
   fetchTicketTypes,
   sendEventBulk,
   updateAttendee,
@@ -44,6 +46,9 @@ const DEBOUNCE_MS = 300;
 /** Matches EventSettingsPage's Danger Zone bulk actions — a brief "don't act on reflex" pause
  * before a bulk, irreversible action's confirm button becomes clickable. */
 const BULK_DELETE_CONFIRM_DELAY_SECONDS = 10;
+/** Same "don't act on reflex" pause as BULK_DELETE_CONFIRM_DELAY_SECONDS above, for the bulk
+ * Revoke check-in/items/pass dialogs — was missing on all three (PO review). */
+const BULK_REVOKE_CONFIRM_DELAY_SECONDS = 10;
 
 function mergeAttendeeRow(prev: AttendeeRowDto, updated: AttendeeDetailDto): AttendeeRowDto {
   return {
@@ -157,6 +162,20 @@ function notifyBulkRevokeCheckInResult(
   }
 
   addToast(`No check-ins revoked${noteSuffix}.`, "error");
+}
+
+/** Standard "N items revoked" / "nothing to revoke" toast for a bulk revoke-items result —
+ * extracted (not inlined in the handler) to keep handleBulkRevokeItemsSelected's own cognitive
+ * complexity within Sonar's threshold, same reasoning as notifyBulkRevokePassResult above. */
+function notifyBulkRevokeItemsResult(
+  revokedCount: number,
+  addToast: (message: string, variant?: ToastVariant) => void,
+) {
+  if (revokedCount > 0) {
+    addToast(`${revokedCount} item${revokedCount === 1 ? "" : "s"} revoked.`, "success");
+  } else {
+    addToast("No issued items to revoke for the selected attendees.", "info");
+  }
 }
 
 /** Standard "N passes revoked (M already revoked or cancelled)" toast for a bulk revoke-pass
@@ -451,6 +470,11 @@ export function AttendeesPage() {
   const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
   const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
   const [ticketTypesRetryToken, setTicketTypesRetryToken] = useState(0);
+  // Only the count is ever used (gates the bulk "Revoke items" action) — no need to hold onto
+  // the full item catalog here, unlike ticketTypes above (whose labels/colors ARE rendered).
+  const [eventItemCount, setEventItemCount] = useState(0);
+  const [eventItemsError, setEventItemsError] = useState<string | null>(null);
+  const [eventItemsRetryToken, setEventItemsRetryToken] = useState(0);
   const [exportingFormat, setExportingFormat] = useState<ExportFormat | null>(null);
   const [loading, setLoading] = useState(true);
   // True once the very first fetch (success or failure) has settled - distinguishes the
@@ -467,6 +491,8 @@ export function AttendeesPage() {
   const [bulkSendConfirmOpen, setBulkSendConfirmOpen] = useState(false);
   const [bulkCheckInBusy, setBulkCheckInBusy] = useState(false);
   const [bulkRevokeCheckInBusy, setBulkRevokeCheckInBusy] = useState(false);
+  const [bulkRevokeCheckInConfirmOpen, setBulkRevokeCheckInConfirmOpen] = useState(false);
+  const [bulkRevokeCheckInError, setBulkRevokeCheckInError] = useState<string | null>(null);
   const [bulkExportBusy, setBulkExportBusy] = useState(false);
   const [changeTypeOpen, setChangeTypeOpen] = useState(false);
   const [changeTypeBusy, setChangeTypeBusy] = useState(false);
@@ -475,6 +501,9 @@ export function AttendeesPage() {
   const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
   const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null);
+  const [bulkRevokeItemsBusy, setBulkRevokeItemsBusy] = useState(false);
+  const [bulkRevokeItemsConfirmOpen, setBulkRevokeItemsConfirmOpen] = useState(false);
+  const [bulkRevokeItemsError, setBulkRevokeItemsError] = useState<string | null>(null);
   const [bulkRevokePassBusy, setBulkRevokePassBusy] = useState(false);
   const [bulkRevokePassConfirmOpen, setBulkRevokePassConfirmOpen] = useState(false);
   const [bulkRevokePassError, setBulkRevokePassError] = useState<string | null>(null);
@@ -516,6 +545,24 @@ export function AttendeesPage() {
       });
     return () => ac.abort();
   }, [eventId, ticketTypesRetryToken]);
+
+  useEffect(() => {
+    if (!eventId) return;
+    setEventItemCount(0);
+    setEventItemsError(null);
+    const ac = new AbortController();
+    fetchEventItems(eventId, ac.signal)
+      .then((fetchedItems) => {
+        if (ac.signal.aborted) return;
+        setEventItemCount(fetchedItems.length);
+      })
+      .catch((err: unknown) => {
+        if (ac.signal.aborted) return;
+        setEventItemCount(0);
+        setEventItemsError(operatorApiErrorMessage(err, "Couldn't load items."));
+      });
+    return () => ac.abort();
+  }, [eventId, eventItemsRetryToken]);
 
   // Whether the header "Send tickets" button should work at all — shared with the Attendee
   // Detail page's "Resend ticket" gate via useMailConfigured.
@@ -815,18 +862,21 @@ export function AttendeesPage() {
     }
   };
 
-  /** Bulk "Revoke check-in" from the More actions menu — same no-confirmation-dialog reasoning
-   * as handleBulkCheckInSelected above (reversible internal state change), same
-   * still-on-this-event guard pattern. */
+  /** Bulk "Revoke check-in" for an explicit subset of selected attendees — behind a confirm
+   * dialog with the same dialog-stays-open-with-inline-error convention and confirm-delay
+   * cooldown as handleBulkRevokeItemsSelected/handleBulkRevokePassSelected below (PO review:
+   * this used to fire immediately from the menu with no confirmation at all). */
   const handleBulkRevokeCheckInSelected = async () => {
     if (!eventId || selectedIds.size === 0) return;
     const initiatingEventId = eventId;
     const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
     setBulkRevokeCheckInBusy(true);
+    setBulkRevokeCheckInError(null);
     try {
       const result = await bulkRevokeCheckIn(initiatingEventId, [...selectedIds]);
       if (!isStillOnEvent()) return;
       notifyBulkRevokeCheckInResult(result, addToast);
+      setBulkRevokeCheckInConfirmOpen(false);
       clearSelection();
       setReloadToken((n) => n + 1);
     } catch (err) {
@@ -838,9 +888,9 @@ export function AttendeesPage() {
           window.location.assign(`/login?next=${next}`);
           return;
         }
-        addToast(operatorApiErrorMessage(err, "Revoke check-in failed."), "error");
+        setBulkRevokeCheckInError(operatorApiErrorMessage(err, "Revoke check-in failed."));
       } else {
-        addToast("Failed to revoke check-in.", "error");
+        setBulkRevokeCheckInError("Failed to revoke check-in.");
       }
     } finally {
       if (isStillOnEvent()) setBulkRevokeCheckInBusy(false);
@@ -978,6 +1028,43 @@ export function AttendeesPage() {
     }
   };
 
+  /** Bulk "Revoke items" for an explicit subset of selected attendees — resets every issued
+   * item hand-out (badge, wristband, giftbag, …) back to pending for each selected attendee at
+   * once, independent of check-in status. Same dialog-stays-open-with-inline-error-on-failure
+   * convention as handleBulkDeleteSelected above; an attendee with a revoked/cancelled pass is
+   * skipped server-side rather than treated as a failure, so a partial revokedCount below the
+   * selection size is still a plain success toast, not an error. */
+  const handleBulkRevokeItemsSelected = async () => {
+    if (!eventId || selectedIds.size === 0) return;
+    const initiatingEventId = eventId;
+    const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
+    setBulkRevokeItemsBusy(true);
+    setBulkRevokeItemsError(null);
+    try {
+      const { revokedCount } = await bulkRevokeItems(initiatingEventId, [...selectedIds]);
+      if (!isStillOnEvent()) return;
+      notifyBulkRevokeItemsResult(revokedCount, addToast);
+      setBulkRevokeItemsConfirmOpen(false);
+      clearSelection();
+      setReloadToken((n) => n + 1);
+    } catch (err) {
+      if (!isStillOnEvent()) return;
+      if (err instanceof ApiError) {
+        reportApiError(err.status);
+        if (err.status === 401) {
+          const next = encodeURIComponent(window.location.pathname);
+          window.location.assign(`/login?next=${next}`);
+          return;
+        }
+        setBulkRevokeItemsError(operatorApiErrorMessage(err, "Revoke items failed."));
+      } else {
+        setBulkRevokeItemsError("Failed to revoke items.");
+      }
+    } finally {
+      if (isStillOnEvent()) setBulkRevokeItemsBusy(false);
+    }
+  };
+
   /** Bulk "Revoke pass" for an explicit subset of selected attendees — same effect as the
    * attendee detail page's single "Revoke pass" action, run once per selected attendee. Same
    * dialog-stays-open-with-inline-error-on-failure convention as handleBulkDeleteSelected above
@@ -1022,6 +1109,25 @@ export function AttendeesPage() {
     !ticketTypeFilter &&
     !rsvpStatusFilter &&
     !mailStatusFilter;
+
+  // How many of the selection the bulk "Revoke check-in" confirm dialog would actually affect,
+  // not the raw selection size — matches the bulk bar's own menu-item hint (PO review).
+  const revokableCheckInCount = items.filter(
+    (row) => selectedIds.has(row.id) && row.check_in_status === "admitted",
+  ).length;
+
+  // How many of the selection the bulk "Revoke items" confirm dialog would actually affect, not
+  // the raw selection size (PO review) — matches the bulk bar's own menu-item hint. A
+  // blocked-pass attendee is excluded even if has_issued_items is true: the server's own
+  // isAdmittable guard refuses to reset their items, so counting them here would overstate the
+  // impact and could report a real revoke as "no issued items to revoke" (CodeRabbit review).
+  const revokableItemsCount = items.filter(
+    (row) =>
+      selectedIds.has(row.id) &&
+      row.has_issued_items &&
+      row.status !== "cancelled" &&
+      row.status !== "revoked",
+  ).length;
 
   // How many of the selection actually have an active pass to revoke - shown in the confirm
   // dialog's title instead of the raw selection size, so a mixed selection doesn't overstate
@@ -1170,7 +1276,10 @@ export function AttendeesPage() {
         canBulkSend={mailConfigured !== false}
         onBulkCheckIn={() => void handleBulkCheckInSelected()}
         bulkCheckInBusy={bulkCheckInBusy}
-        onBulkRevokeCheckIn={() => void handleBulkRevokeCheckInSelected()}
+        onBulkRevokeCheckIn={() => {
+          setBulkRevokeCheckInError(null);
+          setBulkRevokeCheckInConfirmOpen(true);
+        }}
         bulkRevokeCheckInBusy={bulkRevokeCheckInBusy}
         onBulkExportSelected={() => void handleBulkExportSelected()}
         bulkExportBusy={bulkExportBusy}
@@ -1179,6 +1288,14 @@ export function AttendeesPage() {
           setChangeTypeValue(ticketTypes[0]?.key ?? "");
           setChangeTypeOpen(true);
         }}
+        itemCount={eventItemCount}
+        itemsError={eventItemsError}
+        onRetryItems={() => setEventItemsRetryToken((n) => n + 1)}
+        onBulkRevokeItems={() => {
+          setBulkRevokeItemsError(null);
+          setBulkRevokeItemsConfirmOpen(true);
+        }}
+        bulkRevokeItemsBusy={bulkRevokeItemsBusy}
         onBulkRevokePass={() => {
           setBulkRevokePassError(null);
           setBulkRevokePassConfirmOpen(true);
@@ -1291,12 +1408,49 @@ export function AttendeesPage() {
       </ConfirmDialog>
 
       <ConfirmDialog
+        open={bulkRevokeCheckInConfirmOpen}
+        title={`Revoke check-in for ${revokableCheckInCount} attendee${revokableCheckInCount === 1 ? "" : "s"}?`}
+        message="They will be marked as not checked in. They can check in again at any time."
+        errorMessage={bulkRevokeCheckInError}
+        confirmLabel="Revoke check-in"
+        confirmVariant="warning"
+        confirmDelaySeconds={BULK_REVOKE_CONFIRM_DELAY_SECONDS}
+        loading={bulkRevokeCheckInBusy}
+        onConfirm={() => void handleBulkRevokeCheckInSelected()}
+        onCancel={() => {
+          if (!bulkRevokeCheckInBusy) {
+            setBulkRevokeCheckInConfirmOpen(false);
+            setBulkRevokeCheckInError(null);
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={bulkRevokeItemsConfirmOpen}
+        title={`Revoke items for ${revokableItemsCount} attendee${revokableItemsCount === 1 ? "" : "s"}?`}
+        message="Every issued item (badge, wristband, giftbag, …) for the selected attendees is reset to pending. Items can be re-issued from the check-in screen at any time."
+        errorMessage={bulkRevokeItemsError}
+        confirmLabel="Revoke items"
+        confirmVariant="warning"
+        confirmDelaySeconds={BULK_REVOKE_CONFIRM_DELAY_SECONDS}
+        loading={bulkRevokeItemsBusy}
+        onConfirm={() => void handleBulkRevokeItemsSelected()}
+        onCancel={() => {
+          if (!bulkRevokeItemsBusy) {
+            setBulkRevokeItemsConfirmOpen(false);
+            setBulkRevokeItemsError(null);
+          }
+        }}
+      />
+
+      <ConfirmDialog
         open={bulkRevokePassConfirmOpen}
         title={`Revoke the pass for ${revokablePassCount} attendee${revokablePassCount === 1 ? "" : "s"}?`}
         message="They will no longer be able to check in until the pass is restored. Already revoked or cancelled attendees are left untouched."
         errorMessage={bulkRevokePassError}
         confirmLabel="Revoke pass"
         confirmVariant="danger"
+        confirmDelaySeconds={BULK_REVOKE_CONFIRM_DELAY_SECONDS}
         loading={bulkRevokePassBusy}
         onConfirm={() => void handleBulkRevokePassSelected()}
         onCancel={() => {

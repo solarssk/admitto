@@ -696,6 +696,14 @@
   gap: 2px;
 }
 
+/* Tooltip's trigger wrapper defaults to inline-flex (shrink-to-fit) - override to block/full
+   width here so wrapping a menu item in <Tooltip> doesn't change its layout in this stacked,
+   full-width list. */
+.more-actions-menu__item-wrapper {
+  display: block;
+  width: 100%;
+}
+
 .more-actions-menu__item {
   display: flex;
   align-items: center;
@@ -812,11 +820,14 @@
   background: var(--status-error-tint);
 }
 
-/** Lighter-weight "caution" treatment for mutating-but-reversible actions (e.g. Revoke
- * check-in) — red stays reserved for genuinely irreversible/high-stakes items like Delete
- * (PO review across the Revoke check-in / Revoke items / Revoke pass sibling PRs). */
+/** Lighter-weight "caution" treatment for mutating-but-reversible actions (Revoke check-in,
+ * Revoke items) — red stays reserved for genuinely irreversible/high-stakes items like Revoke
+ * pass and Delete (PO review across the Revoke check-in / Revoke items / Revoke pass sibling
+ * PRs). --status-warn-fg (muted amber), not the raw --status-warn (bright yellow) — the raw tone
+ * is only ever paired with --status-warn-tint as a background elsewhere in this codebase, never
+ * used alone as plain text; used directly here it read as too vivid (PO review). */
 .more-actions-menu__item--warning {
-  color: var(--status-warn);
+  color: var(--status-warn-fg);
 }
 
 .more-actions-menu__item--warning:hover {

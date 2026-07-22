@@ -82,21 +82,52 @@ export async function revokeAllCheckInsForEvent(
 }
 
 /**
+ * Per-attendee reset+chunk+catch loop shared by revokeAllItemsForEvent (whole event) and
+ * revokeItemsForAttendees (an explicit selection) below — the two only differ in how they
+ * arrive at the attendeeIds list to process; the actual reset, concurrency bound, and
+ * race/error tolerance are identical, so it lives here once rather than twice.
+ */
+async function resetItemsForAttendeeIds(
+  prisma: PrismaClient,
+  attendeeIds: string[],
+  eventId: string,
+  audit: OpsAuditContext,
+): Promise<number> {
+  let revokedCount = 0;
+  for (const batch of chunk(attendeeIds, BULK_REVOKE_CONCURRENCY)) {
+    const counts = await Promise.all(
+      batch.map(async (attendeeId) => {
+        try {
+          // Sum the transaction's own re-scanned count, not the outer
+          // pre-scan itemCount — resetAllItemStatesForRevoke re-checks
+          // revocable states inside its own transaction and may find fewer
+          // than the pre-scan did (e.g. one was individually reset in the
+          // meantime), so the pre-scan count can overstate what actually
+          // changed.
+          return await prisma.$transaction((tx) =>
+            resetAllItemStatesForRevoke(tx, { attendeeId, eventId, audit }),
+          );
+        } catch (err) {
+          if (!(err instanceof IllegalItemTransitionError)) throw err;
+          // Blocked (revoked/cancelled) pass or a concurrent change raced
+          // this attendee's items — skip, keep the batch going.
+          return 0;
+        }
+      }),
+    );
+    revokedCount += counts.reduce((sum, n) => sum + n, 0);
+  }
+  return revokedCount;
+}
+
+/**
  * Admin/superadmin-only Danger Zone action: reset every currently
  * issued/returned item for the whole event back to "pending" in one go
  * ("Revoke all items issued"). Independent of check-in status — reuses the
  * same per-attendee bulk reset (resetAllItemStatesForRevoke) that the
  * check-in revoke path also cascades into, but here it's the sole action:
- * check-in state is left untouched. Each attendee is reset in its own
- * transaction, processed in bounded-concurrency chunks (BULK_REVOKE_CONCURRENCY)
- * rather than fully serially for throughput on large events. Tolerant of a
- * mid-batch race (IllegalItemTransitionError, e.g. the attendee's pass
- * stopped being active between the initial scan and this attendee's turn —
- * or was already blocked, per resetAllItemStatesForRevoke's own guard) by
- * skipping that attendee rather than aborting the rest of the batch.
- * Returns the number of individual item hand-outs actually reset (not the
- * outer pre-scan count, which can overstate it under the same kind of race)
- * so the caller can report an accurate count.
+ * check-in state is left untouched. Returns the number of individual item
+ * hand-outs actually reset.
  */
 export async function revokeAllItemsForEvent(
   prisma: PrismaClient,
@@ -111,31 +142,28 @@ export async function revokeAllItemsForEvent(
   });
   if (states.length === 0) return 0;
 
-  const attendeeIds = new Set(states.map((s) => s.attendee_id));
+  const attendeeIds = [...new Set(states.map((s) => s.attendee_id))];
+  return resetItemsForAttendeeIds(prisma, attendeeIds, params.eventId, params.audit);
+}
 
-  let revokedCount = 0;
-  for (const batch of chunk([...attendeeIds], BULK_REVOKE_CONCURRENCY)) {
-    const counts = await Promise.all(
-      batch.map(async (attendeeId) => {
-        try {
-          // Sum the transaction's own re-scanned count, not the outer
-          // pre-scan itemCount — resetAllItemStatesForRevoke re-checks
-          // revocable states inside its own transaction and may find fewer
-          // than the pre-scan did (e.g. one was individually reset in the
-          // meantime), so the pre-scan count can overstate what actually
-          // changed.
-          return await prisma.$transaction((tx) =>
-            resetAllItemStatesForRevoke(tx, { attendeeId, eventId: params.eventId, audit: params.audit }),
-          );
-        } catch (err) {
-          if (!(err instanceof IllegalItemTransitionError)) throw err;
-          // Blocked (revoked/cancelled) pass or a concurrent change raced
-          // this attendee's items — skip, keep the batch going.
-          return 0;
-        }
-      }),
-    );
-    revokedCount += counts.reduce((sum, n) => sum + n, 0);
-  }
-  return revokedCount;
+/**
+ * Same per-attendee item reset as revokeAllItemsForEvent above, scoped to an explicit selection
+ * of attendees instead of the whole event — backs the Attendees list's bulk-selection "Revoke
+ * items" action (regular admin, not superadmin-only, unlike the Danger Zone's event-wide
+ * version). No separate ownership pre-check here: resetItemsForAttendeeIds's own per-attendee
+ * transaction already scopes its lookup by both attendeeId and eventId (loadAttendeeForItemAction)
+ * and throws the same IllegalItemTransitionError the shared loop already tolerates, so an id from
+ * another event (or a stale/deleted one) is silently skipped there instead of being filtered out
+ * by a redundant extra query first. Returns the number of individual item hand-outs actually reset.
+ */
+export async function revokeItemsForAttendees(
+  prisma: PrismaClient,
+  params: { eventId: string; attendeeIds: string[]; audit: OpsAuditContext },
+): Promise<number> {
+  return resetItemsForAttendeeIds(
+    prisma,
+    [...new Set(params.attendeeIds)],
+    params.eventId,
+    params.audit,
+  );
 }
