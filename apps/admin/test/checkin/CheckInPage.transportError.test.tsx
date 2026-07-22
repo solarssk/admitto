@@ -150,9 +150,9 @@ describe("CheckInPage — transport error banner lifecycle", () => {
     const rendered = renderPage();
     const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
     fireEvent.change(input, { target: { value: "anna" } });
-    await waitFor(() => expect(screen.getByText("Anna Alpha")).toBeTruthy());
+    await screen.findByText("Anna Alpha");
     fireEvent.click(screen.getByText("Anna Alpha"));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Mark badge issued" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Mark badge issued" });
     return rendered;
   }
 
@@ -189,9 +189,7 @@ describe("CheckInPage — transport error banner lifecycle", () => {
     const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
     const token = "QRTOKEN-FAILINGSCAN01";
     typeWedge(input, token);
-    await act(async () => {
-      fireEvent.keyDown(input, { key: "Enter" });
-    });
+    fireEvent.keyDown(input, { key: "Enter" });
 
     await waitFor(() =>
       expect(document.querySelector(".ck-overlay__transport-error")?.textContent).toBe(
@@ -292,7 +290,7 @@ describe("CheckInPage — transport error banner lifecycle", () => {
     fetchAttendeeCard.mockRejectedValueOnce(new Error("boom"));
 
     const { rerender } = renderPage();
-    await waitFor(() => expect(screen.getByText("Anna Alpha")).toBeTruthy());
+    await screen.findByText("Anna Alpha");
     fireEvent.click(screen.getByText("Anna Alpha"));
 
     await waitFor(() =>
@@ -346,7 +344,7 @@ describe("CheckInPage — transport error banner lifecycle", () => {
     ]);
 
     renderPage();
-    await waitFor(() => expect(screen.getByText("Anna Alpha")).toBeTruthy());
+    await screen.findByText("Anna Alpha");
     fireEvent.click(screen.getByText("Anna Alpha"));
     await waitFor(() =>
       expect(screen.getByRole("alert").textContent).toBe("Request failed. Try again."),
@@ -356,7 +354,7 @@ describe("CheckInPage — transport error banner lifecycle", () => {
     // clear the stale banner — openLookupResultImpl didn't clear it at the
     // start of its own attempt, unlike every other mutation handler.
     fireEvent.click(screen.getByText("Anna Alpha"));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Mark badge issued" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Mark badge issued" });
     expect(screen.queryByRole("alert")).toBeNull();
   });
 });

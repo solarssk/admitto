@@ -206,6 +206,58 @@ function notifyBulkRevokePassResult(
   addToast(`No passes revoked${noteSuffix}.`, "error");
 }
 
+/** Standard "N attendees set to <type>" toast for a bulk change-ticket-type result — extracted
+ * (not inlined in the handler) to keep handleBulkChangeTicketTypeConfirm's own cognitive
+ * complexity within Sonar's threshold, same reasoning as notifyBulkRevokePassResult above. */
+function notifyBulkChangeTicketTypeResult(
+  result: { updatedCount: number; alreadySetCount: number },
+  typeLabel: string,
+  addToast: (message: string, variant?: ToastVariant) => void,
+) {
+  const { updatedCount, alreadySetCount } = result;
+
+  if (updatedCount === 0 && alreadySetCount === 0) {
+    // None of the selected ids resolved to an attendee in this event — most likely they were
+    // deleted by someone else between opening the picker and clicking Apply (code review: this
+    // used to fall into the "already had it" branch below, which is wrong — nothing was found
+    // at all, let alone already set to the type).
+    addToast("None of the selected attendees could be found — they may have been removed.", "error");
+    return;
+  }
+
+  if (updatedCount === 0) {
+    addToast(`All selected attendees already have ${typeLabel}.`, "info");
+    return;
+  }
+
+  const alreadyNote = alreadySetCount > 0 ? ` (${alreadySetCount} already had it)` : "";
+  addToast(
+    `${updatedCount} attendee${updatedCount === 1 ? "" : "s"} set to ${typeLabel}${alreadyNote}`,
+    "success",
+  );
+}
+
+/** Resolves the ChangeTicketTypeDialog's inline error copy for a bulk change-ticket-type
+ * failure. Returns null on 401 (redirect to login already handled — caller should leave
+ * changeTypeError untouched) — extracted, together with notifyBulkChangeTicketTypeResult above,
+ * to keep handleBulkChangeTicketTypeConfirm's own cognitive complexity within Sonar's
+ * threshold. */
+function bulkChangeTicketTypeErrorMessage(
+  err: unknown,
+  reportApiError: (status: number) => void,
+): string | null {
+  if (!(err instanceof ApiError)) return "Failed to change ticket type.";
+  reportApiError(err.status);
+  if (err.status === 401) {
+    const next = encodeURIComponent(window.location.pathname);
+    window.location.assign(`/login?next=${next}`);
+    return null;
+  }
+  return hasApiErrorCode(err, "unknown_ticket_type")
+    ? "That ticket type no longer exists — it may have just been deleted. Close and try again."
+    : operatorApiErrorMessage(err, "Change failed.");
+}
+
 interface SendTicketsDialogProps {
   open: boolean;
   busy: boolean;
@@ -945,47 +997,16 @@ export function AttendeesPage() {
     setChangeTypeBusy(true);
     setChangeTypeError(null);
     try {
-      const { updatedCount, alreadySetCount } = await bulkChangeTicketType(
-        initiatingEventId,
-        [...selectedIds],
-        changeTypeValue,
-      );
+      const result = await bulkChangeTicketType(initiatingEventId, [...selectedIds], changeTypeValue);
       if (!isStillOnEvent()) return;
-      if (updatedCount === 0 && alreadySetCount === 0) {
-        // None of the selected ids resolved to an attendee in this event — most likely they
-        // were deleted by someone else between opening the picker and clicking Apply (code
-        // review: this used to fall into the "already had it" branch below, which is wrong —
-        // nothing was found at all, let alone already set to the type).
-        addToast("None of the selected attendees could be found — they may have been removed.", "error");
-      } else if (updatedCount === 0) {
-        addToast(`All selected attendees already have ${typeLabel}.`, "info");
-      } else {
-        const alreadyNote = alreadySetCount > 0 ? ` (${alreadySetCount} already had it)` : "";
-        addToast(
-          `${updatedCount} attendee${updatedCount === 1 ? "" : "s"} set to ${typeLabel}${alreadyNote}`,
-          "success",
-        );
-      }
+      notifyBulkChangeTicketTypeResult(result, typeLabel, addToast);
       setChangeTypeOpen(false);
       clearSelection();
       setReloadToken((n) => n + 1);
     } catch (err) {
       if (!isStillOnEvent()) return;
-      if (err instanceof ApiError) {
-        reportApiError(err.status);
-        if (err.status === 401) {
-          const next = encodeURIComponent(window.location.pathname);
-          window.location.assign(`/login?next=${next}`);
-          return;
-        }
-        setChangeTypeError(
-          hasApiErrorCode(err, "unknown_ticket_type")
-            ? "That ticket type no longer exists — it may have just been deleted. Close and try again."
-            : operatorApiErrorMessage(err, "Change failed."),
-        );
-      } else {
-        setChangeTypeError("Failed to change ticket type.");
-      }
+      const message = bulkChangeTicketTypeErrorMessage(err, reportApiError);
+      if (message) setChangeTypeError(message);
     } finally {
       if (isStillOnEvent()) setChangeTypeBusy(false);
     }

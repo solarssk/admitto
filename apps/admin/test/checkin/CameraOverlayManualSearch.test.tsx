@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { CameraOverlayManualSearch } from "../../src/checkin/CameraOverlayManualSearch.js";
 import type { LookupAttendeeResult } from "../../src/api/types.js";
 import { makeTicketType } from "../test-utils.js";
@@ -54,7 +54,7 @@ describe("CameraOverlayManualSearch ticket type catalog resolution", () => {
 
     await search("Alice");
 
-    await waitFor(() => expect(screen.getByText("Alice Smith")).toBeTruthy());
+    expect(await screen.findByText("Alice Smith")).toBeTruthy();
     expect(screen.getByText("Acme · VIP Guest")).toBeTruthy();
     expect(screen.queryByText("Acme · vip")).toBeNull();
   });
@@ -71,7 +71,7 @@ describe("CameraOverlayManualSearch ticket type catalog resolution", () => {
 
     await search("Alice");
 
-    await waitFor(() => expect(screen.getByText("Alice Smith")).toBeTruthy());
+    expect(await screen.findByText("Alice Smith")).toBeTruthy();
     expect(screen.getByText("Acme · staff_2")).toBeTruthy();
   });
 
@@ -81,7 +81,7 @@ describe("CameraOverlayManualSearch ticket type catalog resolution", () => {
 
     await search("Alice");
 
-    await waitFor(() => expect(screen.getByText("Alice Smith")).toBeTruthy());
+    expect(await screen.findByText("Alice Smith")).toBeTruthy();
     expect(screen.getByText("Acme · vip")).toBeTruthy();
   });
 });
