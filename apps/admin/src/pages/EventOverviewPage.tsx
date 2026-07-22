@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useOutletContext } from "react-router-dom";
 import { Avatar, Badge, Button, Card, Input, PageHeader, Select, Stat, TICKET_TYPE_COLORS, useToast } from "@admitto/ui";
 import {
@@ -28,7 +28,6 @@ import {
   formatEventDateTime,
   formatUtcDateTime,
 } from "../utils/event-dates.js";
-import { useCountdown } from "../utils/event-countdown.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import {
   isAdmitDedupHit,
@@ -500,57 +499,29 @@ function RecentActivityCard({
   );
 }
 
-function EventInfoCard({
-  overview,
-  event,
-  countdown,
+/** One labeled sub-section inside `NotesAndContactsCard` — an `.overline` heading plus optional
+ * header action, replacing what used to be its own `<Card title=…>`. */
+function NotesSection({
+  label,
+  action,
+  children,
 }: {
-  overview: EventOverviewDto | null;
-  event: EventDto;
-  countdown: string;
+  label: ReactNode;
+  action?: ReactNode;
+  children: ReactNode;
 }) {
-  const location = overview?.event.location ?? event.location;
-  const timezone = overview?.event.timezone ?? event.timezone;
-  const dateIso = overview?.event.date ?? event.date;
-  const capacity = overview?.event.capacity ?? null;
-
-  const rows: Array<{ icon: string; label: string; value: string }> = [
-    {
-      icon: "ti-calendar",
-      label: "Date",
-      value: `${formatEventCalendarDate(dateIso)} · ${countdown}`,
-    },
-    ...(location ? [{ icon: "ti-map-pin", label: "Venue", value: location }] : []),
-    { icon: "ti-world", label: "Timezone", value: timezone },
-    ...(capacity != null
-      ? [
-          {
-            icon: "ti-users",
-            label: "Capacity",
-            value: `${overview?.attendee_count ?? "—"} of ${capacity}`,
-          },
-        ]
-      : []),
-  ];
-
   return (
-    <Card title="Event info">
-      <div className="overview-info">
-        {rows.map((row) => (
-          <div key={row.label} className="overview-info__row">
-            <i className={`ti ${row.icon} overview-info__icon`} aria-hidden="true" />
-            <div className="overview-info__content">
-              <span className="overview-info__label">{row.label}</span>
-              <span className="overview-info__value">{row.value}</span>
-            </div>
-          </div>
-        ))}
+    <div className="overview-notes-section">
+      <div className="overview-notes-section__header">
+        <span className="overline">{label}</span>
+        {action}
       </div>
-    </Card>
+      {children}
+    </div>
   );
 }
 
-function PinnedNoteCard({
+function PinnedNoteSection({
   note,
   loading,
   archived,
@@ -587,7 +558,7 @@ function PinnedNoteCard({
 
   if (editing) {
     return (
-      <Card title="Pinned note">
+      <NotesSection label="Pinned note">
         <div className="overview-note-edit">
           <textarea
             className="overview-note-textarea"
@@ -606,15 +577,15 @@ function PinnedNoteCard({
             </Button>
           </div>
         </div>
-      </Card>
+      </NotesSection>
     );
   }
 
   if (!note) {
     return (
-      <Card
-        title="Pinned note"
-        actions={
+      <NotesSection
+        label="Pinned note"
+        action={
           !loading && !archived ? (
             <Button
               type="button"
@@ -631,20 +602,20 @@ function PinnedNoteCard({
         <p className="overview-muted">
           {loading ? "Loading…" : "No operational note. Add one to share a quick reminder with all staff."}
         </p>
-      </Card>
+      </NotesSection>
     );
   }
 
   return (
-    // Filled state renders on the standard Card surface, no warn tint (#347) — the pin stays as a
-    // small accent inside the title instead of a colored card background.
-    <Card
-      title={
+    // Filled state renders on the standard section surface, no warn tint (#347) — the pin stays
+    // as a small accent inside the label instead of a colored background.
+    <NotesSection
+      label={
         <>
           <i className="ti ti-pin overview-pinned-note__pin" aria-hidden="true" /> Pinned note
         </>
       }
-      actions={
+      action={
         !archived ? (
           <Button
             type="button"
@@ -660,11 +631,11 @@ function PinnedNoteCard({
       }
     >
       <p className="overview-pinned-note__body">{note}</p>
-    </Card>
+    </NotesSection>
   );
 }
 
-function KeyContactsCard({
+function KeyContactsSection({
   contacts,
   loading,
   archived,
@@ -752,9 +723,9 @@ function KeyContactsCard({
   );
 
   return (
-    <Card
-      title="Key contacts"
-      actions={
+    <NotesSection
+      label="Key contacts"
+      action={
         !archived ? (
           <Button type="button" variant="ghost" size="sm" icon={<i className="ti ti-plus" aria-hidden="true" />} onClick={openAdd}>
             Add
@@ -818,11 +789,11 @@ function KeyContactsCard({
         onConfirm={() => { if (confirmDeleteId) void handleDelete(confirmDeleteId); }}
         onCancel={() => { setConfirmDeleteId(null); setDeleteError(null); }}
       />
-    </Card>
+    </NotesSection>
   );
 }
 
-function ImportantLinksCard({
+function LinksFilesSection({
   resources,
   loading,
   archived,
@@ -915,9 +886,9 @@ function ImportantLinksCard({
   );
 
   return (
-    <Card
-      title="Important links & files"
-      actions={
+    <NotesSection
+      label="Links & files"
+      action={
         !archived ? (
           <Button type="button" variant="ghost" size="sm" icon={<i className="ti ti-plus" aria-hidden="true" />} onClick={openAdd}>
             Add
@@ -987,6 +958,51 @@ function ImportantLinksCard({
         onConfirm={() => { if (confirmDeleteId) void handleDelete(confirmDeleteId); }}
         onCancel={() => { setConfirmDeleteId(null); setDeleteError(null); }}
       />
+    </NotesSection>
+  );
+}
+
+/** Merges the former Pinned note / Key contacts / Important links & files cards (#344, #345,
+ * #346) into one Card with three labeled sub-sections, matching the mockup's Overview layout —
+ * only the outer wrapping changed, each section keeps its own state/handlers/rows untouched. */
+function NotesAndContactsCard(props: {
+  pinnedNote: string | null;
+  loading: boolean;
+  archived: boolean;
+  onSaveNote: (note: string | null) => Promise<void>;
+  contacts: EventContactDto[];
+  onAddContact: (data: { name: string; role?: string | null; phone?: string | null; email?: string | null }) => Promise<void>;
+  onUpdateContact: (id: string, data: { name: string; role?: string | null; phone?: string | null; email?: string | null }) => Promise<void>;
+  onDeleteContact: (id: string) => Promise<void>;
+  resources: EventResourceDto[];
+  onAddResource: (data: { title: string; type: "link" | "file"; url: string; description?: string | null }) => Promise<void>;
+  onUpdateResource: (id: string, data: { title: string; type: "link" | "file"; url: string; description?: string | null }) => Promise<void>;
+  onDeleteResource: (id: string) => Promise<void>;
+}) {
+  return (
+    <Card title="Notes & contacts">
+      <PinnedNoteSection
+        note={props.pinnedNote}
+        loading={props.loading}
+        archived={props.archived}
+        onSave={props.onSaveNote}
+      />
+      <KeyContactsSection
+        contacts={props.contacts}
+        loading={props.loading}
+        archived={props.archived}
+        onAdd={props.onAddContact}
+        onUpdate={props.onUpdateContact}
+        onDelete={props.onDeleteContact}
+      />
+      <LinksFilesSection
+        resources={props.resources}
+        loading={props.loading}
+        archived={props.archived}
+        onAdd={props.onAddResource}
+        onUpdate={props.onUpdateResource}
+        onDelete={props.onDeleteResource}
+      />
     </Card>
   );
 }
@@ -1036,7 +1052,6 @@ export function EventOverviewPage() {
   const currentOverview = overview?.event.id === event.id ? overview : null;
   const eventTimezone = currentOverview?.event.timezone ?? event.timezone;
   const eventDateIso = currentOverview?.event.date ?? event.date;
-  const countdown = useCountdown(eventDateIso, eventTimezone);
 
   const absorbServerOverview = useCallback((data: EventOverviewDto) => {
     if (data.event.id !== currentEventIdRef.current) return;
@@ -1303,25 +1318,8 @@ export function EventOverviewPage() {
       </div>
 
       <div className="overview-body">
-        <div className="overview-body__left">
-          <SetupChecklistCard overview={currentOverview} loading={loading} eventId={event.id} />
+        <div className="overview-row">
           <CheckInProgressCard overview={currentOverview} loading={loading} />
-          <ImportantLinksCard
-            resources={resources}
-            loading={loading}
-            archived={!!event.archived_at}
-            onAdd={handleAddResource}
-            onUpdate={handleUpdateResource}
-            onDelete={handleDeleteResource}
-          />
-        </div>
-        <div className="overview-body__right">
-          <PinnedNoteCard
-            note={pinnedNote}
-            loading={loading}
-            archived={!!event.archived_at}
-            onSave={handleSaveNote}
-          />
           <RecentActivityCard
             activity={currentOverview?.recent_activity ?? []}
             liveCheckins={recentCheckins}
@@ -1329,15 +1327,23 @@ export function EventOverviewPage() {
             timezone={eventTimezone}
             connected={streamConnected}
           />
-          <KeyContactsCard
-            contacts={contacts}
+        </div>
+        <div className="overview-row">
+          <SetupChecklistCard overview={currentOverview} loading={loading} eventId={event.id} />
+          <NotesAndContactsCard
+            pinnedNote={pinnedNote}
             loading={loading}
             archived={!!event.archived_at}
-            onAdd={handleAddContact}
-            onUpdate={handleUpdateContact}
-            onDelete={handleDeleteContact}
+            onSaveNote={handleSaveNote}
+            contacts={contacts}
+            onAddContact={handleAddContact}
+            onUpdateContact={handleUpdateContact}
+            onDeleteContact={handleDeleteContact}
+            resources={resources}
+            onAddResource={handleAddResource}
+            onUpdateResource={handleUpdateResource}
+            onDeleteResource={handleDeleteResource}
           />
-          <EventInfoCard overview={currentOverview} event={event} countdown={countdown} />
         </div>
       </div>
     </div>

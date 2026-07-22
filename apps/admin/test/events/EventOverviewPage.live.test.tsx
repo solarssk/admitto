@@ -524,20 +524,28 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(screen.getByText("Bounced Guest")).toBeTruthy();
   });
 
-  it("uses real @admitto/ui form controls (no undefined btn/input/select classes) in the sidebar cards (#344, #345, #346)", async () => {
+  it("merges Pinned note, Key contacts, and Links & files into one Notes & contacts card (#344, #345, #346)", async () => {
     fetchEventOverview.mockResolvedValue(overviewFixture(5));
 
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Key contacts")).toBeTruthy();
+      expect(screen.getByText("Notes & contacts")).toBeTruthy();
     });
 
-    // Both Key contacts and Important links & files have an "Add" header button - scope to the
-    // Key contacts card specifically since the accessible name alone is ambiguous.
-    const keyContactsCard = screen.getByText("Key contacts").closest(".at-card") as HTMLElement;
+    // All three sub-sections now live inside the same outer card, not three separate cards.
+    const notesCard = screen.getByText("Notes & contacts").closest(".at-card") as HTMLElement;
+    expect(within(notesCard).getByText("Pinned note")).toBeTruthy();
+    expect(within(notesCard).getByText("Key contacts")).toBeTruthy();
+    expect(within(notesCard).getByText("Links & files")).toBeTruthy();
+    expect(screen.queryByText("Important links & files")).toBeNull();
+
+    // Both Key contacts and Links & files have an "Add" header button - scope to the Key
+    // contacts sub-section specifically since the accessible name alone is ambiguous now that
+    // both live under the same outer card.
+    const keyContactsSection = screen.getByText("Key contacts").closest(".overview-notes-section") as HTMLElement;
     act(() => {
-      within(keyContactsCard).getByRole("button", { name: "Add" }).click();
+      within(keyContactsSection).getByRole("button", { name: "Add" }).click();
     });
 
     const nameInput = await screen.findByPlaceholderText("Name *");
