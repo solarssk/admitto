@@ -11,17 +11,21 @@ import type {
 } from "../../src/api/types.js";
 import type { StreamCheckinEvent } from "../../src/hooks/useEventStream.js";
 import { makeTicketType, renderWithToast } from "../test-utils.js";
+import { formatEventCalendarDate } from "../../src/utils/event-dates.js";
 
 const fetchEventOverview = vi.fn();
 const fetchTicketTypes = vi.fn();
 const reportApiError = vi.fn();
 
 let streamHandler: ((event: StreamCheckinEvent) => void) | null = null;
+// Lets a test simulate the SSE handshake not having completed yet (#C) — defaults to true so
+// every other test keeps its original "always connected" behavior.
+let mockStreamConnected = true;
 
 vi.mock("../../src/hooks/useEventStream.js", () => ({
   useEventStream: (_eventId: string, onCheckin: (event: StreamCheckinEvent) => void) => {
     streamHandler = onCheckin;
-    return { connected: true, status: "connected" };
+    return { connected: mockStreamConnected, status: mockStreamConnected ? "connected" : "connecting" };
   },
 }));
 
@@ -135,16 +139,24 @@ function renderPage() {
   );
 }
 
-/** The 4 KPI tiles - scope queries here since several plain numbers/labels (e.g. the admitted
- * count, "Checked in") also appear in the Check-in progress card's ring legend. */
+/** The 4 KPI tiles - scope queries here since some plain numbers/labels also appear elsewhere on
+ * the page (e.g. the Failed delivery count vs. the Setup checklist). */
 function statsRow(): HTMLElement {
   return document.querySelector(".overview-stats") as HTMLElement;
+}
+
+/** The Check-in progress card's admission ring legend now owns the admitted count display (the
+ * top KPI row's old "Checked in" tile was removed in favor of a Days-to-event tile, #E1) — this
+ * still carries the optimistic SSE delta instantly, same as the removed tile used to. */
+function admittedLegendValue(): string {
+  return document.querySelector(".overview-progress__legend-item strong")?.textContent ?? "";
 }
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   streamHandler = null;
+  mockStreamConnected = true;
 });
 
 describe("EventOverviewPage live stats", () => {
@@ -162,7 +174,7 @@ describe("EventOverviewPage live stats", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(within(statsRow()).getByText("5")).toBeTruthy();
+      expect(admittedLegendValue()).toBe("5");
     });
 
     act(() => {
@@ -170,13 +182,13 @@ describe("EventOverviewPage live stats", () => {
     });
 
     await waitFor(() => {
-      expect(within(statsRow()).getByText("6")).toBeTruthy();
+      expect(admittedLegendValue()).toBe("6");
     });
 
     await waitFor(
       () => {
         expect(fetchEventOverview).toHaveBeenCalledTimes(2);
-        expect(within(statsRow()).getByText("6")).toBeTruthy();
+        expect(admittedLegendValue()).toBe("6");
       },
       { timeout: 5000 },
     );
@@ -190,7 +202,7 @@ describe("EventOverviewPage live stats", () => {
       renderPage();
 
       await waitFor(() => {
-        expect(within(statsRow()).getByText("5")).toBeTruthy();
+        expect(admittedLegendValue()).toBe("5");
       });
 
       act(() => {
@@ -198,7 +210,7 @@ describe("EventOverviewPage live stats", () => {
       });
 
       await waitFor(() => {
-        expect(within(statsRow()).getByText("6")).toBeTruthy();
+        expect(admittedLegendValue()).toBe("6");
       });
 
       fetchEventOverview.mockResolvedValue(overviewFixture(6));
@@ -208,7 +220,7 @@ describe("EventOverviewPage live stats", () => {
       });
 
       await waitFor(() => {
-        expect(within(statsRow()).getByText("6")).toBeTruthy();
+        expect(admittedLegendValue()).toBe("6");
       });
     } finally {
       vi.useRealTimers();
@@ -223,7 +235,7 @@ describe("EventOverviewPage live stats", () => {
       renderPage();
 
       await waitFor(() => {
-        expect(within(statsRow()).getByText("5")).toBeTruthy();
+        expect(admittedLegendValue()).toBe("5");
       });
 
       act(() => {
@@ -231,7 +243,7 @@ describe("EventOverviewPage live stats", () => {
       });
 
       await waitFor(() => {
-        expect(within(statsRow()).getByText("6")).toBeTruthy();
+        expect(admittedLegendValue()).toBe("6");
       });
 
       fetchEventOverview.mockResolvedValue(overviewFixture(6));
@@ -242,7 +254,7 @@ describe("EventOverviewPage live stats", () => {
       });
 
       await waitFor(() => {
-        expect(within(statsRow()).getByText("6")).toBeTruthy();
+        expect(admittedLegendValue()).toBe("6");
         expect(fetchEventOverview).toHaveBeenCalledTimes(2);
       });
 
@@ -250,7 +262,7 @@ describe("EventOverviewPage live stats", () => {
         streamHandler?.(liveEvent);
       });
 
-      expect(within(statsRow()).getByText("6")).toBeTruthy();
+      expect(admittedLegendValue()).toBe("6");
     } finally {
       vi.useRealTimers();
     }
@@ -264,7 +276,7 @@ describe("EventOverviewPage live stats", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(within(statsRow()).getByText("5")).toBeTruthy();
+      expect(admittedLegendValue()).toBe("5");
     });
 
     act(() => {
@@ -273,7 +285,7 @@ describe("EventOverviewPage live stats", () => {
     });
 
     await waitFor(() => {
-      expect(within(statsRow()).getByText("6")).toBeTruthy();
+      expect(admittedLegendValue()).toBe("6");
     });
 
     await waitFor(
@@ -290,7 +302,7 @@ describe("EventOverviewPage live stats", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(within(statsRow()).getByText("6")).toBeTruthy();
+      expect(admittedLegendValue()).toBe("6");
     });
 
     const callsAfterLoad = fetchEventOverview.mock.calls.length;
@@ -306,7 +318,7 @@ describe("EventOverviewPage live stats", () => {
       },
       { timeout: 5000 },
     );
-    expect(within(statsRow()).getByText("6")).toBeTruthy();
+    expect(admittedLegendValue()).toBe("6");
   });
 
   it("resolves a live check-in's ticket_type key to the catalog's current label instead of the key (batch 04 / #351), in the Recent activity feed", async () => {
@@ -316,7 +328,7 @@ describe("EventOverviewPage live stats", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(within(statsRow()).getByText("5")).toBeTruthy();
+      expect(admittedLegendValue()).toBe("5");
     });
 
     act(() => {
@@ -337,7 +349,7 @@ describe("EventOverviewPage live stats", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(within(statsRow()).getByText("5")).toBeTruthy();
+      expect(admittedLegendValue()).toBe("5");
     });
 
     act(() => {
@@ -398,9 +410,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     await waitFor(() => {
       expect(screen.getByText("Attendees")).toBeTruthy();
     });
-    // "Checked in" also appears in the Check-in progress card's ring legend - scope to the KPI row.
     expect(within(statsRow()).getByText("Tickets sent")).toBeTruthy();
-    expect(within(statsRow()).getByText("Checked in")).toBeTruthy();
     expect(within(statsRow()).getByText("Failed delivery")).toBeTruthy();
     expect(within(statsRow()).getByText("3")).toBeTruthy();
     expect(within(statsRow()).getByText("Needs attention")).toBeTruthy();
@@ -420,6 +430,34 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     // Scoped to Overview only - the shared Stat component (and its icon-circle-top-right layout)
     // must not render here anymore.
     expect(statsRow().querySelector(".at-stat")).toBeNull();
+  });
+
+  it("replaces the Checked in KPI tile with a Days to event countdown tile in the 3rd position, reusing the existing countdown util (#E1)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      // Fixture event date is 2026-07-01T18:00:00Z (UTC); 5 calendar days after this faked "now"
+      // (also UTC) - computeLabel() returns "In 5 days" for that gap.
+      vi.setSystemTime(new Date("2026-06-26T10:00:00.000Z"));
+      fetchEventOverview.mockResolvedValue(overviewFixture(5));
+
+      renderPage();
+
+      await waitFor(() => {
+        expect(within(statsRow()).getByText("Attendees")).toBeTruthy();
+      });
+
+      const labels = Array.from(statsRow().querySelectorAll(".overview-kpi__label")).map(
+        (el) => el.textContent,
+      );
+      expect(labels).toEqual(["Attendees", "Tickets sent", "Days to event", "Failed delivery"]);
+      expect(within(statsRow()).queryByText("Checked in")).toBeNull();
+      expect(within(statsRow()).getByText("In 5 days")).toBeTruthy();
+      expect(
+        within(statsRow()).getByText(formatEventCalendarDate("2026-07-01T18:00:00.000Z")),
+      ).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("merges Needs attention + Event readiness into a single Setup checklist card (#348)", async () => {
@@ -599,6 +637,24 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(issuesButton.getAttribute("aria-pressed")).toBe("true");
   });
 
+  it("still renders the live badge when the SSE handshake hasn't connected yet, instead of hiding it (#C)", async () => {
+    // Right after page load (or mid-reconnect) useEventStream's `connected` is false for a beat -
+    // the badge affirms "this feed receives live updates" as a static design element and must not
+    // flicker away for that window; the actual SSE connection health has its own surface elsewhere
+    // (e.g. CheckInPage's stream status banner).
+    mockStreamConnected = false;
+    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Recent activity")).toBeTruthy();
+    });
+    const activityCard = screen.getByText("Recent activity").closest(".at-card") as HTMLElement;
+    const header = activityCard.querySelector(".at-card__header") as HTMLElement;
+    expect(within(header).getByText("live")).toBeTruthy();
+  });
+
   it("keeps the Recent activity scroll container mounted (stable card height) even when the Issues filter matches nothing, instead of swapping in a bare paragraph", async () => {
     const recentActivity: EventRecentActivityEntry[] = [
       {
@@ -629,13 +685,16 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("No issues — everything's running smoothly.")).toBeTruthy();
+      expect(screen.getByText("No issues right now")).toBeTruthy();
     });
     // The empty state renders *inside* .overview-timeline, not as a sibling replacing it - so the
     // container (and the card's footprint) never disappears when a filter matches zero items.
+    // It's also centered in the fixed-height box (#A2), not pinned to the top over dead space.
     const timeline = document.querySelector(".overview-timeline");
     expect(timeline).toBeTruthy();
-    expect(within(timeline as HTMLElement).getByText("No issues — everything's running smoothly.")).toBeTruthy();
+    expect(timeline?.className).toContain("overview-timeline--empty");
+    expect(within(timeline as HTMLElement).getByText("No issues right now")).toBeTruthy();
+    expect(within(timeline as HTMLElement).getByText("Everything's running smoothly.")).toBeTruthy();
   });
 
   it("links a checkin/mail activity entry with an attendee_id to that attendee's detail page, and leaves attendee-less entries (imports) unlinked (#E4)", async () => {

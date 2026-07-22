@@ -3755,12 +3755,16 @@
   }
 }
 
-/* KPI tiles (D) — icon-square-left layout scoped to Overview's 4 top tiles only; @admitto/ui's
- * generic Stat (small icon circle, top-right) is unchanged for every other page that uses it. */
+/* KPI tiles (D, E2) — icon-square-left layout scoped to Overview's 4 top tiles only;
+ * @admitto/ui's generic Stat (small icon circle, top-right) is unchanged for every other page
+ * that uses it. The icon+text block is centered as a unit (not pinned to the left edge) and
+ * sized up a second time in round 4 (E2) — a bigger icon square and bolder/larger value type so
+ * the tile reads as deliberately composed instead of a small cluster adrift in an oversized box. */
 .overview-kpi {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  justify-content: center;
+  gap: var(--space-4);
 }
 
 .overview-kpi__icon {
@@ -3768,10 +3772,10 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 3rem;
-  height: 3rem;
+  width: 3.5rem;
+  height: 3.5rem;
   border-radius: var(--radius-md);
-  font-size: 1.5rem;
+  font-size: 1.75rem;
 }
 
 .overview-kpi__icon--primary { background: var(--primary-tint); color: var(--primary-active); }
@@ -3787,10 +3791,10 @@
 }
 
 .overview-kpi__value {
-  font-size: var(--fs-display);
+  font-size: 2rem;
   font-weight: var(--fw-bold);
   color: var(--text-primary);
-  line-height: 1;
+  line-height: 1.1;
   letter-spacing: var(--ls-tight);
 }
 
@@ -3803,21 +3807,6 @@
 .overview-kpi__sub {
   font-size: var(--fs-xs);
   color: var(--text-muted);
-}
-
-.overview-admission-bar {
-  height: 6px;
-  border-radius: 3px;
-  background: var(--surface-sunken);
-  margin-top: var(--space-2);
-  overflow: hidden;
-}
-
-.overview-admission-bar__fill {
-  height: 100%;
-  background: var(--primary);
-  border-radius: 3px;
-  transition: width 0.4s ease;
 }
 
 .overview-archived-note {
@@ -3845,6 +3834,17 @@
   .overview-row {
     grid-template-columns: 1fr;
   }
+}
+
+/* (B) Recent activity's header carries extra content (All/Issues filter pills + a live badge)
+ * that renders taller than a plain text title's line-height alone, so the shared
+ * `.at-card__header`'s fixed padding produces a visibly shorter header on Check-in progress
+ * (title only) next to it in the same grid row. Pin a matching min-height — derived from the
+ * filter pills' real rendered height plus the header's own vertical padding, not a bare magic
+ * number — on both of this row's card headers only; every other page's `.at-card__header` is
+ * untouched. */
+.overview-card--header-fixed .at-card__header {
+  min-height: calc(var(--control-h-sm) + 4px + (var(--space-4) * 2));
 }
 
 .overview-muted {
@@ -4155,13 +4155,31 @@
 /* Fixed height (not max-height) so the card's footprint stays stable regardless of how many
  * items the All/Issues filter matches — max-height let the scroll container (and the whole card)
  * collapse down to a single item's height when "Issues" had few/no matches. Matches the Check-in
- * progress card's own content height; internal scroll handles the rest. */
+ * progress card's own content height; internal scroll handles the rest.
+ * padding-right + a matching negative margin-right (#A1) reserve a gutter for the scrollbar
+ * without shifting the row content — same idea as the mockup's `.ov-activity { padding-right: 8px;
+ * margin-right: -8px }`, adapted to this container. Without it the native scrollbar renders flush
+ * against the timestamp text on the right edge of each row. */
 .overview-timeline {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   height: 312px;
   overflow-y: auto;
+  padding-right: 8px;
+  margin-right: -8px;
+}
+
+/* Zero-result state (#A2): center the single EmptyState block in the fixed-height container
+ * instead of leaving it pinned to the top with a large accidental-looking gap below. A short (1-2
+ * item) result stays top-aligned as before — only the true empty case reads as intentionally
+ * designed rather than sparse. */
+.overview-timeline--empty {
+  justify-content: center;
+}
+
+.overview-timeline--empty .at-empty-state {
+  padding: var(--space-4) var(--space-4);
 }
 
 .overview-timeline__day {
@@ -4231,11 +4249,27 @@
   color: var(--text-secondary);
 }
 
+/* Relative time on top, absolute below (#D) — mirrors the two-line stacked time cell in
+ * AttendeesTable's CheckInCell (primary line + a smaller muted line under it), the closest
+ * existing convention for pairing two time reads in one cell. */
 .overview-activity__time {
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
+}
+
+.overview-activity__time-relative {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.overview-activity__time-absolute {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 /* ── Notes & contacts (merged Pinned note / Key contacts / Links & files) ──────────────

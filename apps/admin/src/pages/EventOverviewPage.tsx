@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useOutletContext } from "react-router-dom";
-import { Avatar, Badge, Button, Card, Input, PageHeader, Select, TICKET_TYPE_COLORS, useToast } from "@admitto/ui";
+import { Avatar, Badge, Button, Card, EmptyState, Input, PageHeader, Select, TICKET_TYPE_COLORS, useToast } from "@admitto/ui";
 import {
   ApiError,
   fetchEventOverview,
@@ -35,6 +35,7 @@ import {
   registerAdmitDedup,
 } from "../checkin/admitDedup.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
+import { useCountdown } from "../utils/event-countdown.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
@@ -87,22 +88,6 @@ function formatBusiestHourRange(hour: string): string {
   if (!Number.isFinite(h)) return hour;
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(h)}:${mm}–${pad((h + 1) % 24)}:${mm}`;
-}
-
-function AdmissionBar({ admitted, total }: { admitted: number; total: number }) {
-  const pct = total > 0 ? Math.round((admitted / total) * 100) : 0;
-  return (
-    <div
-      className="overview-admission-bar"
-      role="progressbar"
-      aria-label="Admission progress"
-      aria-valuenow={pct}
-      aria-valuemin={0}
-      aria-valuemax={100}
-    >
-      <div className="overview-admission-bar__fill" style={{ width: `${pct}%` }} />
-    </div>
-  );
 }
 
 type KpiTone = "primary" | "info" | "ok" | "error";
@@ -277,31 +262,36 @@ function SetupChecklistCard({
 
 /** Check-in progress card (new, Part B): admission ring, ticket-type breakdown, and two glance
  * stats — the ring uses a real conic-gradient over --status-ok / --surface-sunken rather than an
- * SVG/canvas dependency. */
+ * SVG/canvas dependency. Takes the optimistic-delta-inclusive `admittedCount` (not just
+ * `overview.admitted_count`) so the ring still updates instantly on a live check-in — the removed
+ * "Checked in" KPI tile (#E1) used to be the only place that instant bump was visible; this is now
+ * the sole admission display, so it needs to stay just as responsive. */
 function CheckInProgressCard({
   overview,
   loading,
+  admittedCount,
 }: {
   overview: EventOverviewDto | null;
   loading: boolean;
+  admittedCount: number | null;
 }) {
   if (!overview) {
     return (
-      <Card title="Check-in progress">
+      <Card title="Check-in progress" className="overview-card--header-fixed">
         <p className="overview-muted">{loading ? "Loading…" : "Unavailable"}</p>
       </Card>
     );
   }
 
   const total = overview.attendee_count;
-  const admitted = Math.min(overview.admitted_count, total);
+  const admitted = Math.min(admittedCount ?? overview.admitted_count, total);
   const notYet = Math.max(total - admitted, 0);
   const pct = total > 0 ? Math.round((admitted / total) * 100) : 0;
   const breakdown = overview.ticket_type_breakdown.filter((t) => t.count > 0);
   const breakdownTotal = breakdown.reduce((sum, t) => sum + t.count, 0);
 
   return (
-    <Card title="Check-in progress">
+    <Card title="Check-in progress" className="overview-card--header-fixed">
       <div className="overview-progress">
         <div
           className="overview-ring"
@@ -473,14 +463,12 @@ function RecentActivityCard({
   liveCheckins,
   ticketTypes,
   timezone,
-  connected,
 }: {
   eventId: string;
   activity: EventRecentActivityEntry[];
   liveCheckins: StreamCheckinEvent[];
   ticketTypes: TicketTypeDto[];
   timezone: string;
-  connected: boolean;
 }) {
   const [filter, setFilter] = useState<ActivityFilter>("all");
 
@@ -492,6 +480,7 @@ function RecentActivityCard({
   return (
     <Card
       title="Recent activity"
+      className="overview-card--header-fixed"
       actions={
         <>
           {/* Pill-shaped segmented control (staff.css .overview-activity-filter) — no existing
@@ -518,27 +507,40 @@ function RecentActivityCard({
               Issues
             </Button>
           </div>
-          {connected && (
-            // Reuses the app's established dot-badge pattern for a live/active signal (Badge
-            // variant="ok" dot — same as CfAccessEditor/IdentityProvidersPanel's "Active"/"Enabled"
-            // pills) instead of a bespoke dot+text pair; .overview-live-badge only adds the pulse.
-            <Badge variant="ok" dot className="overview-live-badge">
-              live
-            </Badge>
-          )}
+          {/* Reuses the app's established dot-badge pattern for a live/active signal (Badge
+           * variant="ok" dot — same as CfAccessEditor/IdentityProvidersPanel's "Active"/"Enabled"
+           * pills) instead of a bespoke dot+text pair; .overview-live-badge only adds the pulse.
+           * Always rendered (#C review): this affirms "this feed receives live updates" as a
+           * static design element, matching the mockup, not the literal SSE handshake state — it
+           * used to be gated behind `streamConnected`, which is false for a beat right after page
+           * load and during a reconnect, making the badge flicker in and out. The actual
+           * connection health already has its own surface (e.g. CheckInPage's stream status
+           * banner), so this one stays unconditional. */}
+          <Badge variant="ok" dot className="overview-live-badge">
+            live
+          </Badge>
         </>
       }
     >
       {/* Fixed-height scroll container (staff.css .overview-timeline) always renders, even for
        * the 0/1-item case, so the card's footprint never shrinks when the All/Issues filter
-       * narrows the result set. */}
-      <div className="overview-timeline">
+       * narrows the result set. Zero matches get a real centered empty state (not a top-left
+       * paragraph over dead space) via the shared EmptyState component (#A2). */}
+      <div className={`overview-timeline${filtered.length === 0 ? " overview-timeline--empty" : ""}`}>
         {filtered.length === 0 ? (
-          <p className="overview-muted">
-            {filter === "issues"
-              ? "No issues — everything's running smoothly."
-              : "No activity yet — check-ins, mail, and imports will appear here."}
-          </p>
+          filter === "issues" ? (
+            <EmptyState
+              icon={<i className="ti ti-circle-check" aria-hidden="true" />}
+              title="No issues right now"
+              description="Everything's running smoothly."
+            />
+          ) : (
+            <EmptyState
+              icon={<i className="ti ti-history" aria-hidden="true" />}
+              title="No activity yet"
+              description="Check-ins, mail, and imports will appear here."
+            />
+          )
         ) : (
           groups.map((group) => (
             <div key={group.key} className="overview-timeline__group">
@@ -571,12 +573,19 @@ function RecentActivityCard({
                         <strong>{entry.message}</strong>
                       )}
                     </div>
-                    <time
-                      className="overview-activity__time"
-                      dateTime={entry.occurred_at}
-                      title={formatEventDateTime(entry.occurred_at, timezone)}
-                    >
-                      {formatRelativeTime(entry.occurred_at)}
+                    {/* Relative time on top, absolute below in a smaller muted style (#D) — no
+                     * existing relative+absolute pairing to reuse elsewhere (checked check-in
+                     * history, audit log, delivery log: each shows only one or the other), so
+                     * this follows the closest established convention instead, the two-line
+                     * stacked time cell from AttendeesTable's CheckInCell (bold/primary line over
+                     * a smaller muted line). */}
+                    <time className="overview-activity__time" dateTime={entry.occurred_at}>
+                      <span className="overview-activity__time-relative">
+                        {formatRelativeTime(entry.occurred_at)}
+                      </span>
+                      <span className="overview-activity__time-absolute">
+                        {formatEventDateTime(entry.occurred_at, timezone)}
+                      </span>
                     </time>
                   </li>
                 ))}
@@ -1321,7 +1330,7 @@ export function EventOverviewPage() {
     [scheduleReconcile],
   );
 
-  const { connected: streamConnected } = useEventStream(event.id, handleLiveCheckin);
+  useEventStream(event.id, handleLiveCheckin);
 
   const handleSaveNote = useCallback(async (note: string | null) => {
     const capturedEventId = event.id;
@@ -1460,15 +1469,16 @@ export function EventOverviewPage() {
     };
   }, [absorbServerOverview, event.id, reportApiError, addToast]);
 
-  const attendeeCount = currentOverview?.attendee_count ?? event.attendee_count ?? null;
   const admittedCount =
     currentOverview?.admitted_count != null
       ? currentOverview.admitted_count + optimisticAdmittedDelta
       : null;
-  const admitPct =
-    attendeeCount != null && admittedCount != null && attendeeCount > 0
-      ? Math.round((admittedCount / attendeeCount) * 100)
-      : null;
+  const countdownLabel = useCountdown(eventDateIso, eventTimezone);
+  // computeLabel() itself falls back to the plain calendar date for anything more than a week out
+  // (e.g. "29 Sept 2026") - showing that same string again as the tile's sub would just duplicate
+  // the value, so the sub only appears for the relative phrasings ("Tomorrow", "In 5 days", …).
+  const countdownDate = formatEventCalendarDate(eventDateIso);
+  const countdownSub = countdownLabel === countdownDate ? undefined : countdownDate;
   const emailFailedTotal =
     currentOverview != null
       ? currentOverview.email_failed + currentOverview.email_bounced
@@ -1521,17 +1531,18 @@ export function EventOverviewPage() {
                 : "Delivered"
           }
         />
+        {/* Replaces the former "Checked in" tile (#E1) — that duplicated the admission
+         * count/percentage already shown prominently in the Check-in progress card directly
+         * below, so this slot now carries information the KPI row didn't have yet. Reuses the
+         * existing event-countdown util (computeLabel/useCountdown, added for #160, previously
+         * wired into the now-merged EventInfoCard) rather than reimplementing the date math. */}
         <OverviewKpiTile
           tone="ok"
-          icon={<i className="ti ti-user-check" aria-hidden="true" />}
-          label="Checked in"
-          value={admittedCount != null ? String(admittedCount) : loading ? "…" : "—"}
-          sub={admitPct != null ? `${admitPct}% admission rate` : "Check-in stats"}
-        >
-          {admittedCount != null && attendeeCount != null && attendeeCount > 0 && (
-            <AdmissionBar admitted={admittedCount} total={attendeeCount} />
-          )}
-        </OverviewKpiTile>
+          icon={<i className="ti ti-calendar-event" aria-hidden="true" />}
+          label="Days to event"
+          value={countdownLabel}
+          sub={countdownSub}
+        />
         <OverviewKpiTile
           tone="error"
           icon={<i className="ti ti-alert-triangle" aria-hidden="true" />}
@@ -1551,14 +1562,13 @@ export function EventOverviewPage() {
 
       <div className="overview-body">
         <div className="overview-row">
-          <CheckInProgressCard overview={currentOverview} loading={loading} />
+          <CheckInProgressCard overview={currentOverview} loading={loading} admittedCount={admittedCount} />
           <RecentActivityCard
             eventId={event.id}
             activity={currentOverview?.recent_activity ?? []}
             liveCheckins={recentCheckins}
             ticketTypes={ticketTypes}
             timezone={eventTimezone}
-            connected={streamConnected}
           />
         </div>
         <div className="overview-row">
