@@ -14,6 +14,7 @@ const bulkCheckInAttendees = vi.fn();
 const bulkRevokeCheckIn = vi.fn();
 const bulkRevokePass = vi.fn();
 const bulkChangeTicketType = vi.fn();
+const bulkChangeRsvpStatus = vi.fn();
 const exportSelectedAttendees = vi.fn();
 const fetchTicketTypes = vi.fn();
 const fetchEventItems = vi.fn();
@@ -78,6 +79,7 @@ vi.mock("../../src/api/client.js", () => ({
   fetchEventAttendees: (...args: unknown[]) => fetchEventAttendees(...args),
   fetchTicketTypes: (...args: unknown[]) => fetchTicketTypes(...args),
   bulkChangeTicketType: (...args: unknown[]) => bulkChangeTicketType(...args),
+  bulkChangeRsvpStatus: (...args: unknown[]) => bulkChangeRsvpStatus(...args),
   fetchEventMailSettings: (...args: unknown[]) => fetchEventMailSettings(...args),
   fetchEventItems: (...args: unknown[]) => fetchEventItems(...args),
   bulkRevokeItems: (...args: unknown[]) => bulkRevokeItems(...args),
@@ -1586,6 +1588,133 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     });
     // The selection survives the retry — the whole point was not losing it.
     expect(bulkBar().getByText("1")).toBeTruthy();
+  });
+});
+
+describe("AttendeesPage bulk change attendance status", () => {
+  async function selectTwoRowsAndOpenMenu() {
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select John Smith" }));
+    await waitFor(() => expect(bulkBar().getByText("2")).toBeTruthy());
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+  }
+
+  it("opens the picker with the fixed 5 statuses, applies, toasts, and clears the selection", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkChangeRsvpStatus.mockResolvedValue({ updatedCount: 2, alreadySetCount: 0 });
+
+    await selectTwoRowsAndOpenMenu();
+    const item = bulkBar().getByRole("menuitem", { name: /Change attendance status/ });
+    expect(item.textContent).toContain("Set for 2 attendees");
+    fireEvent.click(item);
+
+    const dialog = screen.getByRole("dialog", { name: "Change attendance status" });
+    expect(within(dialog).getByRole("radio", { name: "Confirmed" })).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Declined" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(bulkChangeRsvpStatus).toHaveBeenCalledWith("evt-1", ["att-1", "att-2"], "declined");
+    });
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith('2 attendees set to "Declined"', "success");
+    });
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
+  });
+
+  it("closes the picker on Cancel without applying anything, and keeps the selection", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+
+    await selectTwoRowsAndOpenMenu();
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change attendance status/ }));
+    const dialog = screen.getByRole("dialog", { name: "Change attendance status" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog", { name: "Change attendance status" })).toBeNull();
+    expect(bulkChangeRsvpStatus).not.toHaveBeenCalled();
+    expect(document.querySelector(".attendees-bulkbar")).toBeTruthy();
+  });
+
+  it("notes attendees that already had the status in the success toast", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkChangeRsvpStatus.mockResolvedValue({ updatedCount: 1, alreadySetCount: 1 });
+
+    await selectTwoRowsAndOpenMenu();
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change attendance status/ }));
+    const dialog = screen.getByRole("dialog", { name: "Change attendance status" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith('1 attendee set to "Confirmed" (1 already had it)', "success");
+    });
+  });
+
+  it("toasts info when every selected attendee already has the status", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkChangeRsvpStatus.mockResolvedValue({ updatedCount: 0, alreadySetCount: 2 });
+
+    await selectTwoRowsAndOpenMenu();
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change attendance status/ }));
+    const dialog = screen.getByRole("dialog", { name: "Change attendance status" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        'All selected attendees already have attendance status "Confirmed".',
+        "info",
+      );
+    });
+  });
+
+  it("toasts an error (not the 'already had it' message) when none of the selected attendees could be found", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkChangeRsvpStatus.mockResolvedValue({ updatedCount: 0, alreadySetCount: 0 });
+
+    await selectTwoRowsAndOpenMenu();
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change attendance status/ }));
+    const dialog = screen.getByRole("dialog", { name: "Change attendance status" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        "None of the selected attendees could be found — they may have been removed.",
+        "error",
+      );
+    });
+    expect(addToast).not.toHaveBeenCalledWith(expect.stringContaining("already have"), expect.anything());
+  });
+
+  it("redirects to /login on a 401", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    bulkChangeRsvpStatus.mockRejectedValueOnce(new ApiError(401, "unauthorized"));
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign, pathname: "/admin/events/evt-1/attendees" });
+
+    await selectTwoRowsAndOpenMenu();
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change attendance status/ }));
+    const dialog = screen.getByRole("dialog", { name: "Change attendance status" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(assign).toHaveBeenCalledWith(
+        `/login?next=${encodeURIComponent("/admin/events/evt-1/attendees")}`,
+      );
+    });
+  });
+
+  it("shows a generic inline error in the dialog when the failure isn't an ApiError", async () => {
+    bulkChangeRsvpStatus.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    await selectTwoRowsAndOpenMenu();
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change attendance status/ }));
+    const dialog = screen.getByRole("dialog", { name: "Change attendance status" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(within(dialog).getByRole("alert").textContent).toBe("Failed to change attendance status.");
+    });
   });
 });
 

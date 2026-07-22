@@ -1642,6 +1642,80 @@ export async function handleBulkTicketTypeEventAttendees(
   }
 }
 
+const bulkRsvpBodySchema = z
+  .object({
+    attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+    rsvp_status: rsvpStatusSchema,
+  })
+  .strict();
+
+/** POST /api/admin/events/:eventId/attendees/bulk-rsvp — set the attendance (RSVP) status for
+ * every selected attendee at once, from the Attendees list's row-selection bulk bar. Same plain
+ * field-write shape as bulk-ticket-type above, minus the catalog/advisory-lock step — RSVP
+ * status is a fixed enum, not a per-event catalog, so there's nothing that can be deleted out
+ * from under the write. Ids that don't belong to this event are silently ignored, matching every
+ * other bulk action. Rows already at the target status are left untouched (no rsvp_updated_at
+ * bump, no log entry) and reported back as alreadySetCount for the toast breakdown. */
+export async function handleBulkRsvpEventAttendees(
+  c: Context,
+  db: PrismaClient,
+): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid json" }, 400);
+  }
+  const parsed = bulkRsvpBodySchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "validation_failed" }, 400);
+  const { attendeeIds, rsvp_status } = parsed.data;
+
+  try {
+    const counts = await db.$transaction(async (tx) => {
+      const owned = await tx.attendee.findMany({
+        where: { id: { in: attendeeIds }, event_id: eventId },
+        select: { id: true, rsvp_status: true },
+      });
+      const changed = owned.filter((a) => a.rsvp_status !== rsvp_status);
+      if (changed.length === 0) {
+        return { updatedCount: 0, alreadySetCount: owned.length };
+      }
+
+      await tx.attendee.updateMany({
+        where: { id: { in: changed.map((a) => a.id) } },
+        data: { rsvp_status, rsvp_updated_at: new Date(), rsvp_source: "admin" },
+      });
+
+      // Same action_type + metadata shape as the single-attendee PATCH's RSVP-change log, so
+      // the attendee detail timeline renders a bulk change identically to a manual one.
+      await writeActionLogMany(tx, {
+        event_id: eventId,
+        action_type: "rsvp_status_changed",
+        audit: adminAuditFromContext(c),
+        entries: changed.map((a) => ({
+          attendee_id: a.id,
+          metadata: { from: a.rsvp_status, to: rsvp_status, source: "admin" },
+        })),
+      });
+
+      return { updatedCount: changed.length, alreadySetCount: owned.length - changed.length };
+    });
+
+    return c.json(counts);
+  } catch (err) {
+    if (err instanceof Response) return err;
+    console.error("handleBulkRsvpEventAttendees failed:", err);
+    return c.json({ error: "server error" }, 500);
+  }
+}
+
 const bulkCheckInAttendeesBodySchema = z
   .object({
     attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),

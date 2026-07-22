@@ -3,6 +3,7 @@ import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom
 import { Button, EmptyState, PageHeader, useToast, type ToastVariant } from "@admitto/ui";
 import {
   ApiError,
+  bulkChangeRsvpStatus,
   bulkChangeTicketType,
   bulkCheckInAttendees,
   bulkRevokeCheckIn,
@@ -31,6 +32,7 @@ import type {
 } from "../api/types.js";
 import { AddAttendeeModal } from "../attendees/AddAttendeeModal.js";
 import { AttendeesTable } from "../attendees/AttendeesTable.js";
+import { RSVP_LABELS, RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { useMailConfigured } from "../attendees/useMailConfigured.js";
 import { ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
@@ -457,6 +459,91 @@ function ChangeTicketTypeDialog({
   );
 }
 
+const RSVP_STATUS_OPTIONS: RsvpStatus[] = ["confirmed", "tentative", "declined", "cancelled", "none"];
+
+interface ChangeRsvpStatusDialogProps {
+  open: boolean;
+  busy: boolean;
+  selectedCount: number;
+  value: RsvpStatus;
+  error: string | null;
+  onValueChange: (status: RsvpStatus) => void;
+  onConfirm: () => void;
+  onClose: () => void;
+}
+
+/** Pick one of the fixed 5 attendance (RSVP) statuses for every selected attendee — same
+ * card-picker interaction as ChangeTicketTypeDialog right above, over a fixed enum instead of a
+ * per-event catalog (no "0 configured" empty state is possible here, so unlike that dialog this
+ * one always has a value to pick). */
+function ChangeRsvpStatusDialog({
+  open,
+  busy,
+  selectedCount,
+  value,
+  error,
+  onValueChange,
+  onConfirm,
+  onClose,
+}: Readonly<ChangeRsvpStatusDialogProps>) {
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  useModalFocusTrap(panelRef, open, onClose);
+
+  if (!open) return null;
+
+  return (
+    <div className="add-attendee-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div className="add-attendee-modal__backdrop" role="presentation" onClick={onClose} />
+      <div className="add-attendee-modal__panel" ref={panelRef}>
+        <h2 className="add-attendee-modal__title" id={titleId}>
+          Change attendance status
+        </h2>
+        {error && (
+          <p className="add-attendee-modal__error" role="alert">
+            {error}
+          </p>
+        )}
+        <p className="mail-field-hint">
+          Set the attendance status for {selectedCount} selected attendee{selectedCount === 1 ? "" : "s"}.
+        </p>
+        <div className="change-type-options">
+          {RSVP_STATUS_OPTIONS.map((status) => (
+            <label
+              key={status}
+              className={`change-type-option${value === status ? " change-type-option--selected" : ""}`}
+            >
+              {/* Real radio for keyboard/AT semantics — visually the card is the control. */}
+              <input
+                type="radio"
+                name="bulk-rsvp-status"
+                className="sr-only"
+                value={status}
+                checked={value === status}
+                disabled={busy}
+                onChange={() => onValueChange(status)}
+                aria-label={RSVP_LABELS[status]}
+              />
+              <RsvpStatusBadge status={status} />
+              {value === status && (
+                <i className="ti ti-check change-type-option__check" aria-hidden="true" />
+              )}
+            </label>
+          ))}
+        </div>
+        <div className="change-type-actions">
+          <Button type="button" variant="secondary" disabled={busy} onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="button" variant="primary" disabled={busy} onClick={onConfirm}>
+            {busy ? "Applying…" : "Apply"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type ExportFormat = "xlsx" | "csv" | "pdf";
 
 interface ExportMenuProps {
@@ -576,6 +663,10 @@ export function AttendeesPage() {
   const [changeTypeBusy, setChangeTypeBusy] = useState(false);
   const [changeTypeError, setChangeTypeError] = useState<string | null>(null);
   const [changeTypeValue, setChangeTypeValue] = useState("");
+  const [changeRsvpOpen, setChangeRsvpOpen] = useState(false);
+  const [changeRsvpBusy, setChangeRsvpBusy] = useState(false);
+  const [changeRsvpError, setChangeRsvpError] = useState<string | null>(null);
+  const [changeRsvpValue, setChangeRsvpValue] = useState<RsvpStatus>("confirmed");
   const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
   const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null);
@@ -1026,6 +1117,42 @@ export function AttendeesPage() {
     });
   };
 
+  /** Bulk attendance (RSVP) status change for an explicit subset of selected attendees — same
+   * shape (and same three-way success split, same code-review reasoning) as
+   * handleBulkChangeTicketTypeConfirm above: updatedCount and alreadySetCount both zero means
+   * none of the selected ids resolved to an attendee in this event anymore (removed by someone
+   * else between opening the picker and clicking Apply), distinct from "found but already set". */
+  const handleBulkChangeRsvpConfirm = () =>
+    runBulkAction({
+      eventId,
+      eventIdRef,
+      selectedCount: selectedIds.size,
+      reportApiError,
+      setBusy: setChangeRsvpBusy,
+      setError: setChangeRsvpError,
+      addToast,
+      apiErrorFallback: "Change failed.",
+      genericFallback: "Failed to change attendance status.",
+      action: (id) => bulkChangeRsvpStatus(id, [...selectedIds], changeRsvpValue),
+      onSuccess: ({ updatedCount, alreadySetCount }) => {
+        const label = RSVP_LABELS[changeRsvpValue];
+        if (updatedCount === 0 && alreadySetCount === 0) {
+          addToast("None of the selected attendees could be found — they may have been removed.", "error");
+        } else if (updatedCount === 0) {
+          addToast(`All selected attendees already have attendance status "${label}".`, "info");
+        } else {
+          const alreadyNote = alreadySetCount > 0 ? ` (${alreadySetCount} already had it)` : "";
+          addToast(
+            `${updatedCount} attendee${updatedCount === 1 ? "" : "s"} set to "${label}"${alreadyNote}`,
+            "success",
+          );
+        }
+        setChangeRsvpOpen(false);
+        clearSelection();
+        setReloadToken((n) => n + 1);
+      },
+    });
+
   /** Bulk GDPR erasure for an explicit subset of selected attendees — same effect as running
    * the attendee detail page's "Delete attendee" once per selected row. Guards every
    * completion effect against the operator navigating to a different event's Attendees list
@@ -1289,6 +1416,11 @@ export function AttendeesPage() {
           setChangeTypeValue(ticketTypes[0]?.key ?? "");
           setChangeTypeOpen(true);
         }}
+        onBulkChangeRsvpStatus={() => {
+          setChangeRsvpError(null);
+          setChangeRsvpValue("confirmed");
+          setChangeRsvpOpen(true);
+        }}
         itemCount={eventItemCount}
         itemsError={eventItemsError}
         onRetryItems={() => setEventItemsRetryToken((n) => n + 1)}
@@ -1329,6 +1461,19 @@ export function AttendeesPage() {
         onConfirm={() => void handleBulkChangeTicketTypeConfirm()}
         onClose={() => {
           if (!changeTypeBusy) setChangeTypeOpen(false);
+        }}
+      />
+
+      <ChangeRsvpStatusDialog
+        open={changeRsvpOpen}
+        busy={changeRsvpBusy}
+        selectedCount={selectedIds.size}
+        value={changeRsvpValue}
+        error={changeRsvpError}
+        onValueChange={setChangeRsvpValue}
+        onConfirm={() => void handleBulkChangeRsvpConfirm()}
+        onClose={() => {
+          if (!changeRsvpBusy) setChangeRsvpOpen(false);
         }}
       />
 

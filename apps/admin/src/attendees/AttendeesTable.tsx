@@ -292,6 +292,7 @@ export interface AttendeesTableProps {
   onBulkExportSelected: () => void;
   bulkExportBusy: boolean;
   onBulkChangeTicketType: () => void;
+  onBulkChangeRsvpStatus: () => void;
   itemCount: number;
   itemsError?: string | null;
   onRetryItems?: () => void;
@@ -427,6 +428,7 @@ function BulkMoreActionsMenu({
   ticketTypesError,
   onRetryTicketTypes,
   onChangeTicketType,
+  onChangeRsvpStatus,
   itemCount,
   revokableItemsCount,
   canRevokeItems,
@@ -461,6 +463,7 @@ function BulkMoreActionsMenu({
   ticketTypesError?: string | null;
   onRetryTicketTypes?: () => void;
   onChangeTicketType: () => void;
+  onChangeRsvpStatus: () => void;
   itemCount: number;
   revokableItemsCount: number;
   /** At least one selected attendee has something issued and an active pass - there's something
@@ -588,6 +591,32 @@ function BulkMoreActionsMenu({
               Retry loading ticket types
             </button>
           )}
+          {/* Fixed 5-value enum, unlike Change ticket type above - no per-event catalog to be
+           * empty, so archived is the only disabled reason. */}
+          <Tooltip
+            content={archived ? ARCHIVED_ACTION_TOOLTIP : undefined}
+            className="more-actions-menu__item-wrapper"
+            axis="horizontal"
+          >
+            <button
+              type="button"
+              role="menuitem"
+              className="more-actions-menu__item"
+              disabled={archived}
+              onClick={() => {
+                setOpen(false);
+                onChangeRsvpStatus();
+              }}
+            >
+              <i className="ti ti-calendar-event" aria-hidden="true" />
+              <span className="more-actions-menu__item-text">
+                <span>Change attendance status</span>
+                <span className="more-actions-menu__item-hint">
+                  Set for {selectedCount} attendee{selectedCount === 1 ? "" : "s"}
+                </span>
+              </span>
+            </button>
+          </Tooltip>
           {/* Desktop already has a direct "Check in" button in the bulk bar, but no direct
            * revoke button anywhere — this menu is the only place for the reverse action, at
            * every screen size, unlike Send tickets above which is mobile-only (PO review, #522
@@ -761,6 +790,7 @@ function BulkBar({
   ticketTypesError,
   onRetryTicketTypes,
   onBulkChangeTicketType,
+  onBulkChangeRsvpStatus,
   itemCount,
   revokableItemsCount,
   canRevokeItems,
@@ -797,6 +827,7 @@ function BulkBar({
   ticketTypesError?: string | null;
   onRetryTicketTypes?: () => void;
   onBulkChangeTicketType: () => void;
+  onBulkChangeRsvpStatus: () => void;
   itemCount: number;
   revokableItemsCount: number;
   canRevokeItems: boolean;
@@ -894,6 +925,7 @@ function BulkBar({
           ticketTypesError={ticketTypesError}
           onRetryTicketTypes={onRetryTicketTypes}
           onChangeTicketType={onBulkChangeTicketType}
+          onChangeRsvpStatus={onBulkChangeRsvpStatus}
           itemCount={itemCount}
           revokableItemsCount={revokableItemsCount}
           canRevokeItems={canRevokeItems}
@@ -1355,6 +1387,7 @@ export function AttendeesTable({
   onBulkExportSelected,
   bulkExportBusy,
   onBulkChangeTicketType,
+  onBulkChangeRsvpStatus,
   itemCount,
   itemsError,
   onRetryItems,
@@ -1431,6 +1464,7 @@ export function AttendeesTable({
           ticketTypesError={ticketTypesError}
           onRetryTicketTypes={onRetryTicketTypes}
           onBulkChangeTicketType={onBulkChangeTicketType}
+          onBulkChangeRsvpStatus={onBulkChangeRsvpStatus}
           itemCount={itemCount}
           revokableItemsCount={revokableItemsCount}
           canRevokeItems={canRevokeItems}

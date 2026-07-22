@@ -3650,3 +3650,168 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-ticket-type", () => {
     expect(malformed.status).toBe(400);
   });
 });
+
+describe("POST /api/admin/events/:eventId/attendees/bulk-rsvp", () => {
+  afterAll(async () => {
+    await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-rsvp-" } } });
+    await prisma.attendee.deleteMany({ where: { id: { startsWith: "att-bulk-rsvp-" } } });
+  });
+
+  async function seedRsvp(ids: string[], rsvp_status = "none") {
+    await prisma.attendee.createMany({
+      data: ids.map((id) => ({
+        id,
+        event_id: EVENT_A,
+        email: `${id}@example.com`,
+        name: `Bulk Rsvp ${id}`,
+        rsvp_status,
+        token_hash: hashToken(generateToken()),
+        token_enc: encryptToString(generateToken()),
+      })),
+    });
+  }
+
+  function postBulkRsvp(eventId: string, body: unknown) {
+    return app.request(`/api/admin/events/${eventId}/attendees/bulk-rsvp`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("sets the status for every selected attendee and writes per-attendee rsvp_status_changed logs with from→to", async () => {
+    const ids = ["att-bulk-rsvp-1", "att-bulk-rsvp-2"];
+    await seedRsvp([ids[0]!], "none");
+    await seedRsvp([ids[1]!], "tentative");
+
+    const res = await postBulkRsvp(EVENT_A, { attendeeIds: ids, rsvp_status: "confirmed" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updatedCount: 2, alreadySetCount: 0 });
+
+    const after = await prisma.attendee.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, rsvp_status: true, rsvp_source: true },
+    });
+    expect(after.every((a) => a.rsvp_status === "confirmed" && a.rsvp_source === "admin")).toBe(true);
+
+    const logs = await prisma.attendeeActionLog.findMany({
+      where: { attendee_id: { in: ids }, action_type: "rsvp_status_changed" },
+    });
+    expect(logs).toHaveLength(2);
+    const byId = new Map(logs.map((l) => [l.attendee_id, l.metadata as Record<string, unknown>]));
+    expect(byId.get(ids[0]!)).toEqual({ from: "none", to: "confirmed", source: "admin" });
+    expect(byId.get(ids[1]!)).toEqual({ from: "tentative", to: "confirmed", source: "admin" });
+  });
+
+  it("leaves rows already at the target status untouched — no update, no log, no rsvp_updated_at bump", async () => {
+    const already = "att-bulk-rsvp-already";
+    const fresh = "att-bulk-rsvp-fresh";
+    await seedRsvp([already], "confirmed");
+    await seedRsvp([fresh], "none");
+    const before = await prisma.attendee.findUniqueOrThrow({
+      where: { id: already },
+      select: { rsvp_updated_at: true },
+    });
+
+    const res = await postBulkRsvp(EVENT_A, { attendeeIds: [already, fresh], rsvp_status: "confirmed" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 1 });
+
+    const after = await prisma.attendee.findUniqueOrThrow({
+      where: { id: already },
+      select: { rsvp_updated_at: true },
+    });
+    expect(after.rsvp_updated_at?.toISOString()).toBe(before.rsvp_updated_at?.toISOString());
+    const logs = await prisma.attendeeActionLog.findMany({
+      where: { attendee_id: already, action_type: "rsvp_status_changed" },
+    });
+    expect(logs).toHaveLength(0);
+  });
+
+  it("updates nothing and writes no logs when every selected attendee already has the status", async () => {
+    const ids = ["att-bulk-rsvp-all-already-1", "att-bulk-rsvp-all-already-2"];
+    await seedRsvp(ids, "declined");
+
+    const res = await postBulkRsvp(EVENT_A, { attendeeIds: ids, rsvp_status: "declined" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updatedCount: 0, alreadySetCount: 2 });
+    const logs = await prisma.attendeeActionLog.findMany({
+      where: { attendee_id: { in: ids }, action_type: "rsvp_status_changed" },
+    });
+    expect(logs).toHaveLength(0);
+  });
+
+  it("returns a generic 500 without leaking the underlying error for an unexpected failure", async () => {
+    const id = "att-bulk-rsvp-transaction-fails";
+    await seedRsvp([id], "none");
+    const spy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("db exploded"));
+    try {
+      const res = await postBulkRsvp(EVENT_A, { attendeeIds: [id], rsvp_status: "confirmed" });
+      expect(res.status).toBe(500);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("server error");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("rejects a status that isn't one of the fixed RSVP values", async () => {
+    const id = "att-bulk-rsvp-unknown-status";
+    await seedRsvp([id], "none");
+
+    const res = await postBulkRsvp(EVENT_A, { attendeeIds: [id], rsvp_status: "maybe" });
+
+    expect(res.status).toBe(400);
+    const after = await prisma.attendee.findUniqueOrThrow({ where: { id } });
+    expect(after.rsvp_status).toBe("none");
+  });
+
+  it("silently ignores an id from a different event instead of failing the whole request", async () => {
+    const ownId = "att-bulk-rsvp-own";
+    await seedRsvp([ownId]);
+
+    const res = await postBulkRsvp(EVENT_A, { attendeeIds: [ownId, ATT_B1], rsvp_status: "confirmed" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 0 });
+    const other = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_B1 } });
+    expect(other.rsvp_status).not.toBe("confirmed");
+  });
+
+  it("returns 403 when the event is archived", async () => {
+    const id = "att-bulk-rsvp-archived";
+    await seedRsvp([id], "none");
+    await prisma.event.update({ where: { id: EVENT_A }, data: { archived_at: new Date() } });
+    try {
+      const res = await postBulkRsvp(EVENT_A, { attendeeIds: [id], rsvp_status: "confirmed" });
+      expect(res.status).toBe(403);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe("event_archived");
+      const after = await prisma.attendee.findUniqueOrThrow({ where: { id } });
+      expect(after.rsvp_status).toBe("none");
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_A }, data: { archived_at: null } });
+    }
+  });
+
+  it("returns 403 for an admin outside the event's organization", async () => {
+    const res = await postBulkRsvp(EVENT_B, { attendeeIds: ["att-does-not-matter"], rsvp_status: "confirmed" });
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects an empty selection, a missing status, an invalid status, and a malformed body", async () => {
+    expect((await postBulkRsvp(EVENT_A, { attendeeIds: [], rsvp_status: "confirmed" })).status).toBe(400);
+    expect((await postBulkRsvp(EVENT_A, { attendeeIds: ["x"] })).status).toBe(400);
+    expect((await postBulkRsvp(EVENT_A, { attendeeIds: ["x"], rsvp_status: "" })).status).toBe(400);
+
+    const malformed = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-rsvp`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{not json",
+    });
+    expect(malformed.status).toBe(400);
+  });
+});

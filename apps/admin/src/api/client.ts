@@ -802,6 +802,25 @@ export async function bulkChangeTicketType(
   return parseJson<BulkTicketTypeResponse>(res);
 }
 
+export interface BulkRsvpResponse {
+  updatedCount: number;
+  alreadySetCount: number;
+}
+
+/** Set the attendance (RSVP) status for every selected attendee at once. Ids outside the event
+ * are silently ignored server-side; rows already at the target status are counted separately. */
+export async function bulkChangeRsvpStatus(
+  eventId: string,
+  attendeeIds: string[],
+  rsvpStatus: RsvpStatus,
+): Promise<BulkRsvpResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-rsvp`,
+    jsonPostInit({ attendeeIds, rsvp_status: rsvpStatus }),
+  );
+  return parseJson<BulkRsvpResponse>(res);
+}
+
 /** Manually check in a selection of attendees at once (no QR scan), from the Attendees list's
  * row-selection bulk bar. Same single-use CAS admission path as scan check-in. */
 export async function bulkCheckInAttendees(
