@@ -200,6 +200,20 @@ describe("AttendeesTable bulk revoke check-in (PO review, #522 follow-up)", () =
     expect(screen.queryByRole("menuitem", { name: /Revoke check-in/ })).toBeNull();
   });
 
+  it("shows 'Revoking check-in…' and disables the item while busy", () => {
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[admittedRow]}
+        selectedIds={new Set(["att-1"])}
+        bulkRevokeCheckInBusy
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    const item = screen.getByRole("menuitem", { name: /Revoking check-in…/ }) as HTMLButtonElement;
+    expect(item.disabled).toBe(true);
+  });
+
   it("explains the archived reason on the Revoke check-in item's tooltip, not just the no-one-checked-in reason (code review)", () => {
     render(
       <AttendeesTable
