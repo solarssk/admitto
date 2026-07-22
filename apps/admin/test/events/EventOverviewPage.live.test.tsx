@@ -407,6 +407,21 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(screen.queryByText("Event date")).toBeNull();
   });
 
+  it("renders the 4 KPI tiles with the bespoke icon-square-left layout, not the generic Stat's icon-circle-top-right (D)", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(within(statsRow()).getByText("Attendees")).toBeTruthy();
+    });
+    expect(statsRow().querySelectorAll(".overview-kpi").length).toBe(4);
+    expect(statsRow().querySelectorAll(".overview-kpi__icon").length).toBe(4);
+    // Scoped to Overview only - the shared Stat component (and its icon-circle-top-right layout)
+    // must not render here anymore.
+    expect(statsRow().querySelector(".at-stat")).toBeNull();
+  });
+
   it("merges Needs attention + Event readiness into a single Setup checklist card (#348)", async () => {
     fetchEventOverview.mockResolvedValue(
       overviewFixture(5, { checkin_staff_count: 0, attendee_count: 0, attendees_with_ticket: 0 }),
@@ -558,18 +573,69 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     // All/Issues live in the Card's header row next to "live", not a separate row above the timeline.
     const activityCard = screen.getByText("Recent activity").closest(".at-card") as HTMLElement;
     const header = activityCard.querySelector(".at-card__header") as HTMLElement;
-    expect(within(header).getByRole("button", { name: "All" })).toBeTruthy();
-    expect(within(header).getByRole("button", { name: "Issues" })).toBeTruthy();
-    expect(within(header).getByText("live")).toBeTruthy();
+    const allButton = within(header).getByRole("button", { name: "All" });
+    const issuesButton = within(header).getByRole("button", { name: "Issues" });
+    expect(allButton).toBeTruthy();
+    expect(issuesButton).toBeTruthy();
+    // Live indicator reuses the app's dot-Badge pattern (Badge variant="ok" dot), not a bespoke
+    // dot+text pair.
+    const liveBadge = within(header).getByText("live").closest(".at-badge") as HTMLElement;
+    expect(liveBadge.className).toContain("at-badge--ok");
+    expect(liveBadge.className).toContain("overview-live-badge");
+
+    // All/Issues render as a pill segmented control keyed on aria-pressed, not variant swapping.
+    expect(allButton.getAttribute("aria-pressed")).toBe("true");
+    expect(issuesButton.getAttribute("aria-pressed")).toBe("false");
 
     act(() => {
-      within(header).getByRole("button", { name: "Issues" }).click();
+      issuesButton.click();
     });
 
     await waitFor(() => {
       expect(screen.queryByText("Fine Guest")).toBeNull();
     });
     expect(screen.getByText("Bounced Guest")).toBeTruthy();
+    expect(allButton.getAttribute("aria-pressed")).toBe("false");
+    expect(issuesButton.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("keeps the Recent activity scroll container mounted (stable card height) even when the Issues filter matches nothing, instead of swapping in a bare paragraph", async () => {
+    const recentActivity: EventRecentActivityEntry[] = [
+      {
+        id: "checkin:ok-1",
+        type: "checkin",
+        tone: "ok",
+        attendee_name: "Fine Guest",
+        attendee_id: "att-ok-1",
+        message: "checked in",
+        occurred_at: new Date().toISOString(),
+      },
+    ];
+    fetchEventOverview.mockResolvedValue(overviewFixture(5, { recent_activity: recentActivity }));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Fine Guest")).toBeTruthy();
+    });
+    // .overview-timeline is the fixed-height scroll container (staff.css) - it must already be
+    // present for the populated "All" view.
+    expect(document.querySelector(".overview-timeline")).toBeTruthy();
+
+    const activityCard = screen.getByText("Recent activity").closest(".at-card") as HTMLElement;
+    const header = activityCard.querySelector(".at-card__header") as HTMLElement;
+    act(() => {
+      within(header).getByRole("button", { name: "Issues" }).click();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("No issues — everything's running smoothly.")).toBeTruthy();
+    });
+    // The empty state renders *inside* .overview-timeline, not as a sibling replacing it - so the
+    // container (and the card's footprint) never disappears when a filter matches zero items.
+    const timeline = document.querySelector(".overview-timeline");
+    expect(timeline).toBeTruthy();
+    expect(within(timeline as HTMLElement).getByText("No issues — everything's running smoothly.")).toBeTruthy();
   });
 
   it("links a checkin/mail activity entry with an attendee_id to that attendee's detail page, and leaves attendee-less entries (imports) unlinked (#E4)", async () => {

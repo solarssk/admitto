@@ -3755,6 +3755,56 @@
   }
 }
 
+/* KPI tiles (D) — icon-square-left layout scoped to Overview's 4 top tiles only; @admitto/ui's
+ * generic Stat (small icon circle, top-right) is unchanged for every other page that uses it. */
+.overview-kpi {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.overview-kpi__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 3rem;
+  height: 3rem;
+  border-radius: var(--radius-md);
+  font-size: 1.5rem;
+}
+
+.overview-kpi__icon--primary { background: var(--primary-tint); color: var(--primary-active); }
+.overview-kpi__icon--info    { background: var(--status-info-tint); color: var(--status-info-fg); }
+.overview-kpi__icon--ok      { background: var(--status-ok-tint); color: var(--status-ok-fg); }
+.overview-kpi__icon--error   { background: var(--status-error-tint); color: var(--status-error-fg); }
+
+.overview-kpi__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.overview-kpi__value {
+  font-size: var(--fs-display);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+  line-height: 1;
+  letter-spacing: var(--ls-tight);
+}
+
+.overview-kpi__label {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+}
+
+.overview-kpi__sub {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
 .overview-admission-bar {
   height: 6px;
   border-radius: 3px;
@@ -4057,48 +4107,60 @@
 }
 
 /* Recent activity */
-.overview-live-badge {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: var(--fs-xs);
-  color: var(--status-ok);
-}
-
+/* Live indicator now renders as <Badge variant="ok" dot> (the app's existing dot-badge pattern,
+ * e.g. CfAccessEditor/IdentityProvidersPanel's "Active"/"Enabled" pills) — this class only adds
+ * the pulse that's specific to a live-connection signal, on top of Badge's own pill styling. */
 @keyframes overview-live-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
 }
 
-.overview-live-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--status-ok);
-  flex-shrink: 0;
-}
-
 @media (prefers-reduced-motion: no-preference) {
-  .overview-live-dot {
+  .overview-live-badge .at-badge__dot {
     animation: overview-live-pulse 1.6s ease-in-out infinite;
   }
 }
 
-/* Now rendered as the Card's header `actions` (next to the live badge), not a row of its own
- * above the timeline. */
+/* All/Issues filter — pill-shaped segmented control. Rendered as the Card's header `actions`
+ * (next to the live badge), not a row of its own above the timeline. No existing compact 2-option
+ * toggle fit here: the shared Tabs component is an underline tab bar for page-level nav, and
+ * Communication's MJML/HTML switch is the same plain bordered-button pair this replaces. */
 .overview-activity-filter {
-  display: flex;
-  gap: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-sunken);
+  border-radius: var(--radius-pill);
 }
 
-/* Fixed height matching the Check-in progress card's own content height, so Recent activity
- * doesn't keep growing taller than its grid sibling as more items accumulate — internal scroll
- * for the rest. */
+.overview-activity-filter .at-btn {
+  border-radius: var(--radius-pill);
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.overview-activity-filter .at-btn:hover:not(:disabled) {
+  background: var(--at-gray-100);
+  color: var(--text-primary);
+}
+
+.overview-activity-filter .at-btn[aria-pressed="true"] {
+  background: var(--surface-card);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Fixed height (not max-height) so the card's footprint stays stable regardless of how many
+ * items the All/Issues filter matches — max-height let the scroll container (and the whole card)
+ * collapse down to a single item's height when "Issues" had few/no matches. Matches the Check-in
+ * progress card's own content height; internal scroll handles the rest. */
 .overview-timeline {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  max-height: 312px;
+  height: 312px;
   overflow-y: auto;
 }
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useOutletContext } from "react-router-dom";
-import { Avatar, Badge, Button, Card, Input, PageHeader, Select, Stat, TICKET_TYPE_COLORS, useToast } from "@admitto/ui";
+import { Avatar, Badge, Button, Card, Input, PageHeader, Select, TICKET_TYPE_COLORS, useToast } from "@admitto/ui";
 import {
   ApiError,
   fetchEventOverview,
@@ -102,6 +102,45 @@ function AdmissionBar({ admitted, total }: { admitted: number; total: number }) 
     >
       <div className="overview-admission-bar__fill" style={{ width: `${pct}%` }} />
     </div>
+  );
+}
+
+type KpiTone = "primary" | "info" | "ok" | "error";
+
+/** Overview's own icon-square-left KPI tile (mockup-aligned): a bigger colored icon square beside
+ * a stacked value/label/sub block, instead of @admitto/ui's generic Stat (small icon circle,
+ * top-right corner). ReportsPage's own KPI row (checked first) has no bespoke tile layout of its
+ * own to reuse — it also renders the generic Stat — so this is scoped fresh to these 4 tiles only;
+ * Stat itself is untouched for every other page that still uses it. */
+function OverviewKpiTile({
+  icon,
+  tone,
+  label,
+  value,
+  sub,
+  children,
+}: {
+  icon: ReactNode;
+  tone: KpiTone;
+  label: string;
+  value: ReactNode;
+  sub?: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <Card>
+      <div className="overview-kpi">
+        <span className={`overview-kpi__icon overview-kpi__icon--${tone}`} aria-hidden="true">
+          {icon}
+        </span>
+        <div className="overview-kpi__body">
+          <span className="overview-kpi__value">{value}</span>
+          <span className="overview-kpi__label">{label}</span>
+          {sub != null && <span className="overview-kpi__sub">{sub}</span>}
+        </div>
+      </div>
+      {children}
+    </Card>
   );
 }
 
@@ -455,10 +494,14 @@ function RecentActivityCard({
       title="Recent activity"
       actions={
         <>
+          {/* Pill-shaped segmented control (staff.css .overview-activity-filter) — no existing
+           * compact 2-option toggle fits: the shared Tabs component is an underline tab bar for
+           * page-level nav, and Communication's MJML/HTML switch is the same plain bordered-button
+           * pair this replaces. */}
           <div className="overview-activity-filter" role="group" aria-label="Filter activity">
             <Button
               type="button"
-              variant={filter === "all" ? "secondary" : "ghost"}
+              variant="ghost"
               size="sm"
               aria-pressed={filter === "all"}
               onClick={() => setFilter("all")}
@@ -467,7 +510,7 @@ function RecentActivityCard({
             </Button>
             <Button
               type="button"
-              variant={filter === "issues" ? "secondary" : "ghost"}
+              variant="ghost"
               size="sm"
               aria-pressed={filter === "issues"}
               onClick={() => setFilter("issues")}
@@ -476,23 +519,28 @@ function RecentActivityCard({
             </Button>
           </div>
           {connected && (
-            <span className="overview-live-badge">
-              <span className="overview-live-dot" aria-hidden="true" />
+            // Reuses the app's established dot-badge pattern for a live/active signal (Badge
+            // variant="ok" dot — same as CfAccessEditor/IdentityProvidersPanel's "Active"/"Enabled"
+            // pills) instead of a bespoke dot+text pair; .overview-live-badge only adds the pulse.
+            <Badge variant="ok" dot className="overview-live-badge">
               live
-            </span>
+            </Badge>
           )}
         </>
       }
     >
-      {filtered.length === 0 ? (
-        <p className="overview-muted">
-          {filter === "issues"
-            ? "No issues — everything's running smoothly."
-            : "No activity yet — check-ins, mail, and imports will appear here."}
-        </p>
-      ) : (
-        <div className="overview-timeline">
-          {groups.map((group) => (
+      {/* Fixed-height scroll container (staff.css .overview-timeline) always renders, even for
+       * the 0/1-item case, so the card's footprint never shrinks when the All/Issues filter
+       * narrows the result set. */}
+      <div className="overview-timeline">
+        {filtered.length === 0 ? (
+          <p className="overview-muted">
+            {filter === "issues"
+              ? "No issues — everything's running smoothly."
+              : "No activity yet — check-ins, mail, and imports will appear here."}
+          </p>
+        ) : (
+          groups.map((group) => (
             <div key={group.key} className="overview-timeline__group">
               <div className="overview-timeline__day">{group.label}</div>
               <ul className="overview-activity">
@@ -534,9 +582,9 @@ function RecentActivityCard({
                 ))}
               </ul>
             </div>
-          ))}
-        </div>
-      )}
+          ))
+        )}
+      </div>
     </Card>
   );
 }
@@ -1444,64 +1492,61 @@ export function EventOverviewPage() {
       )}
 
       <div className="overview-stats">
-        <Card>
-          <Stat
-            icon={<i className="ti ti-users" aria-hidden="true" />}
-            label="Attendees"
-            // No raw event.attendee_count fallback here on purpose (#374) — that picker total
-            // includes revoked attendees, so falling back to it flashed a higher number (e.g.
-            // 5 -> 4) the instant the real active-only overview count arrived.
-            value={currentOverview != null ? String(currentOverview.attendee_count) : loading ? "…" : "—"}
-            sub={
-              currentOverview?.event.capacity != null
-                ? `of ${currentOverview.event.capacity} capacity`
-                : "Active"
-            }
-          />
-        </Card>
-        <Card>
-          <Stat
-            icon={<i className="ti ti-mail-check" aria-hidden="true" />}
-            label="Tickets sent"
-            value={currentOverview != null ? String(currentOverview.email_sent) : loading ? "…" : "—"}
-            sub={
-              currentOverview == null
-                ? loading
-                  ? "Loading…"
-                  : "Unavailable"
-                : currentOverview.email_queued > 0
-                  ? `${currentOverview.email_queued} queued`
-                  : "Delivered"
-            }
-          />
-        </Card>
-        <Card>
-          <Stat
-            icon={<i className="ti ti-user-check" aria-hidden="true" />}
-            label="Checked in"
-            value={admittedCount != null ? String(admittedCount) : loading ? "…" : "—"}
-            sub={admitPct != null ? `${admitPct}% admission rate` : "Check-in stats"}
-          />
+        <OverviewKpiTile
+          tone="primary"
+          icon={<i className="ti ti-users" aria-hidden="true" />}
+          label="Attendees"
+          // No raw event.attendee_count fallback here on purpose (#374) — that picker total
+          // includes revoked attendees, so falling back to it flashed a higher number (e.g.
+          // 5 -> 4) the instant the real active-only overview count arrived.
+          value={currentOverview != null ? String(currentOverview.attendee_count) : loading ? "…" : "—"}
+          sub={
+            currentOverview?.event.capacity != null
+              ? `of ${currentOverview.event.capacity} capacity`
+              : "Active"
+          }
+        />
+        <OverviewKpiTile
+          tone="info"
+          icon={<i className="ti ti-mail-check" aria-hidden="true" />}
+          label="Tickets sent"
+          value={currentOverview != null ? String(currentOverview.email_sent) : loading ? "…" : "—"}
+          sub={
+            currentOverview == null
+              ? loading
+                ? "Loading…"
+                : "Unavailable"
+              : currentOverview.email_queued > 0
+                ? `${currentOverview.email_queued} queued`
+                : "Delivered"
+          }
+        />
+        <OverviewKpiTile
+          tone="ok"
+          icon={<i className="ti ti-user-check" aria-hidden="true" />}
+          label="Checked in"
+          value={admittedCount != null ? String(admittedCount) : loading ? "…" : "—"}
+          sub={admitPct != null ? `${admitPct}% admission rate` : "Check-in stats"}
+        >
           {admittedCount != null && attendeeCount != null && attendeeCount > 0 && (
             <AdmissionBar admitted={admittedCount} total={attendeeCount} />
           )}
-        </Card>
-        <Card>
-          <Stat
-            icon={<i className="ti ti-alert-triangle" aria-hidden="true" />}
-            label="Failed delivery"
-            value={currentOverview != null ? String(emailFailedTotal) : loading ? "…" : "—"}
-            sub={
-              currentOverview == null
-                ? loading
-                  ? "Loading…"
-                  : "Unavailable"
-                : emailFailedTotal > 0
-                  ? "Needs attention"
-                  : "No failures"
-            }
-          />
-        </Card>
+        </OverviewKpiTile>
+        <OverviewKpiTile
+          tone="error"
+          icon={<i className="ti ti-alert-triangle" aria-hidden="true" />}
+          label="Failed delivery"
+          value={currentOverview != null ? String(emailFailedTotal) : loading ? "…" : "—"}
+          sub={
+            currentOverview == null
+              ? loading
+                ? "Loading…"
+                : "Unavailable"
+              : emailFailedTotal > 0
+                ? "Needs attention"
+                : "No failures"
+          }
+        />
       </div>
 
       <div className="overview-body">
