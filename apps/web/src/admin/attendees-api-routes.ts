@@ -1193,7 +1193,7 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
 
   let allowedFields: EventItemContent[] | undefined;
   async function loadAllowedFieldsOnce(): Promise<EventItemContent[]> {
-    if (!allowedFields) allowedFields = await loadEventCustomDataFields(db, eventId);
+    allowedFields ??= await loadEventCustomDataFields(db, eventId);
     return allowedFields;
   }
 

@@ -224,7 +224,7 @@ function ImportHistoryCard(props: Readonly<ImportHistoryCardProps>) {
 
 /** Row/Reason table shared by the preview step's parse.invalidRows and the done step's
  * commit-time invalidRows - same shape, same rendering, different source. */
-function InvalidRowsTable({ rows }: { rows: readonly { rowIndex: number; reason: string }[] }) {
+function InvalidRowsTable({ rows }: Readonly<{ rows: readonly { rowIndex: number; reason: string }[] }>) {
   return (
     <div className="attendees-table-wrap">
       <table className="table">
@@ -245,6 +245,68 @@ function InvalidRowsTable({ rows }: { rows: readonly { rowIndex: number; reason:
       </table>
     </div>
   );
+}
+
+/** Toast copy for a caught API error - the 401 redirect is handled by the caller before this
+ * runs, so this only needs to turn a non-redirect ApiError (or a non-ApiError failure) into the
+ * message/duration pair addToast expects (Sonar S3776: keeps this branching out of ImportPage's
+ * own cognitive-complexity count). */
+function importApiErrorToast(err: unknown): { message: string; duration?: number } {
+  if (!(err instanceof ApiError)) {
+    return { message: "Request failed." };
+  }
+  const message = operatorApiErrorMessage(err, "Request failed.");
+  const duration =
+    hasApiErrorCode(err, "file too large") ||
+    hasApiErrorCode(err, "too many rows") ||
+    hasApiErrorCode(err, "invalid file content")
+      ? 7000
+      : undefined;
+  return { message, duration };
+}
+
+/** Narrows a commit-import failure to its capacity-blocked shape (409 event_full) - returns the
+ * capacity payload when the error is that specific shape, else null (Sonar S3776: the guard's
+ * chain of && checks was adding nesting inside the commit handler's catch block). */
+function extractCapacityBlockedMeta(err: unknown): EventFullMeta | null {
+  if (!(err instanceof ApiError)) return null;
+  if (err.status !== 409 || err.code !== "event_full") return null;
+  return err.eventFull ?? null;
+}
+
+/** Commit is only enabled once a preview with valid rows exists, nothing is in flight, and any
+ * capacity block has been explicitly overridden by a superadmin (Sonar S3776: the original nested
+ * `!(a && !(b && c))` boolean expression was adding several points of nesting to ImportPage). */
+function computeCanCommit(
+  preview: ImportPreviewResponse | null,
+  loading: boolean,
+  capacityBlocked: EventFullMeta | null,
+  superadmin: boolean,
+  forceCapacity: boolean,
+): boolean {
+  if (preview === null || preview.parse.validCount === 0 || loading) return false;
+  if (capacityBlocked === null) return true;
+  return superadmin && forceCapacity;
+}
+
+/** Routes a failed preview/commit call to the right feedback surface: a hard 401 redirect (session
+ * expired), or a toast otherwise. Extracted out of the component (Sonar S3776: this closure's own
+ * branching, nested inside ImportPage, was counting against the component's complexity). */
+function handleImportApiError(
+  err: unknown,
+  reportApiError: (status: number) => void,
+  addToast: (message: string, variant: "error", duration?: number) => void,
+): void {
+  if (err instanceof ApiError) {
+    reportApiError(err.status);
+    if (err.status === 401) {
+      const next = encodeURIComponent(window.location.pathname);
+      window.location.assign(`/login?next=${next}`);
+      return;
+    }
+  }
+  const { message, duration } = importApiErrorToast(err);
+  addToast(message, "error", duration);
 }
 
 /** Admin flow: upload CSV/XLSX → preview counts → commit import. */
@@ -290,26 +352,7 @@ export function ImportPage() {
     };
   }, [eventId]);
 
-  const handleApiError = (err: unknown) => {
-    if (err instanceof ApiError) {
-      reportApiError(err.status);
-      if (err.status === 401) {
-        const next = encodeURIComponent(window.location.pathname);
-        window.location.assign(`/login?next=${next}`);
-        return;
-      }
-      const msg = operatorApiErrorMessage(err, "Request failed.");
-      const duration =
-        hasApiErrorCode(err, "file too large") ||
-        hasApiErrorCode(err, "too many rows") ||
-        hasApiErrorCode(err, "invalid file content")
-          ? 7000
-          : undefined;
-      addToast(msg, "error", duration);
-    } else {
-      addToast("Request failed.", "error");
-    }
-  };
+  const handleApiError = (err: unknown) => handleImportApiError(err, reportApiError, addToast);
 
   useEffect(() => {
     if (!eventId) return;
@@ -405,8 +448,9 @@ export function ImportPage() {
         "success",
       );
     } catch (err) {
-      if (err instanceof ApiError && err.status === 409 && err.code === "event_full" && err.eventFull) {
-        setCapacityBlocked(err.eventFull);
+      const capacityMeta = extractCapacityBlockedMeta(err);
+      if (capacityMeta) {
+        setCapacityBlocked(capacityMeta);
       } else {
         handleApiError(err);
       }
@@ -415,11 +459,7 @@ export function ImportPage() {
     }
   };
 
-  const canCommit =
-    preview !== null &&
-    preview.parse.validCount > 0 &&
-    !loading &&
-    !(capacityBlocked != null && !(superadmin && forceCapacity));
+  const canCommit = computeCanCommit(preview, loading, capacityBlocked, superadmin, forceCapacity);
 
   const importCount =
     preview !== null ? preview.summary.toCreate + preview.summary.toUpdate : 0;

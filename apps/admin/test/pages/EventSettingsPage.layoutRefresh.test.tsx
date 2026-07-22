@@ -103,7 +103,7 @@ describe("EventSettingsPage layout refresh after mutations", () => {
     });
     renderSettings();
 
-    await waitFor(() => screen.getByRole("tab", { name: "Danger zone" }));
+    await screen.findByRole("tab", { name: "Danger zone" });
     fireEvent.click(screen.getByRole("tab", { name: "Danger zone" }));
 
     await waitFor(() => {

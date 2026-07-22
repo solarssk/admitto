@@ -230,7 +230,8 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
           Upload extra images (like sponsor logos) and give each one a short name. Use{" "}
           <code>{"{{name}}"}</code> in an email template to add it.
         </p>
-        <div
+        <button
+          type="button"
           className={[
             "image-asset-library__dropzone",
             dragging && "image-asset-library__dropzone--dragging",
@@ -239,6 +240,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
           ]
             .filter(Boolean)
             .join(" ")}
+          disabled={disabled}
           onClick={openFilePicker}
           onDrop={(e) => {
             e.preventDefault();
@@ -252,9 +254,6 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
             if (!disabled && !uploading) setDragging(true);
           }}
           onDragLeave={() => setDragging(false)}
-          role="button"
-          tabIndex={disabled ? undefined : 0}
-          aria-disabled={disabled || undefined}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault();
@@ -267,18 +266,18 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
             {file ? file.name : "Drop image here or click to browse"}
           </span>
           <span className="image-asset-library__dropzone-hint">PNG, JPG, WebP · max 2 MB</span>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            className="image-asset-library__file-input"
-            disabled={disabled || uploading}
-            onChange={(e) => handleFilePick(e.target.files?.[0] ?? null)}
-            aria-label="Image file"
-            aria-hidden="true"
-            tabIndex={-1}
-          />
-        </div>
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          className="image-asset-library__file-input"
+          disabled={disabled || uploading}
+          onChange={(e) => handleFilePick(e.target.files?.[0] ?? null)}
+          aria-label="Image file"
+          aria-hidden="true"
+          tabIndex={-1}
+        />
         <div className="image-asset-library__add-fields">
           <div className="image-asset-library__token-field">
             <Input

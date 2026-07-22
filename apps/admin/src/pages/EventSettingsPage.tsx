@@ -444,7 +444,7 @@ export function EventSettingsPage() {
     return (
       <div className="event-settings-page screen">
         <PageHeader title="Event settings" subtitle={EVENT_SETTINGS_SUBTITLE} />
-        <p role="status">Loading event settings…</p>
+        <output>Loading event settings…</output>
       </div>
     );
   }

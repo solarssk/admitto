@@ -446,47 +446,26 @@ describe("MailTransportPanel — test send gating (#410)", () => {
     expect(isDisabled(screen.getByLabelText("Recipient"))).toBe(false);
   });
 
-  it("shows a toast and does not call the API when the recipient email is invalid", async () => {
-    mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
-    renderWithToast(<MailTransportPanel />);
-    await waitFor(() => {
-      expect(isDisabled(screen.getByRole("button", { name: "Send test email" }))).toBe(false);
-    });
-    fireEvent.change(screen.getByLabelText("Recipient"), { target: { value: "not-an-email" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send test email" }));
-    await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Enter a valid email address/);
-    });
-    expect(mockTest).not.toHaveBeenCalled();
-  });
-
-  it("rejects a recipient containing whitespace without calling the API", async () => {
-    mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
-    renderWithToast(<MailTransportPanel />);
-    await waitFor(() => {
-      expect(isDisabled(screen.getByRole("button", { name: "Send test email" }))).toBe(false);
-    });
-    fireEvent.change(screen.getByLabelText("Recipient"), { target: { value: "tester @example.com" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send test email" }));
-    await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Enter a valid email address/);
-    });
-    expect(mockTest).not.toHaveBeenCalled();
-  });
-
-  it("rejects a recipient with an empty domain part without calling the API", async () => {
-    mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
-    renderWithToast(<MailTransportPanel />);
-    await waitFor(() => {
-      expect(isDisabled(screen.getByRole("button", { name: "Send test email" }))).toBe(false);
-    });
-    fireEvent.change(screen.getByLabelText("Recipient"), { target: { value: "tester@" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send test email" }));
-    await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Enter a valid email address/);
-    });
-    expect(mockTest).not.toHaveBeenCalled();
-  });
+  it.each([
+    ["not-an-email", "not an email address"],
+    ["tester @example.com", "contains whitespace"],
+    ["tester@", "has an empty domain part"],
+  ])(
+    "shows a toast and does not call the API when the recipient email %s (%s)",
+    async (invalidRecipient) => {
+      mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
+      renderWithToast(<MailTransportPanel />);
+      await waitFor(() => {
+        expect(isDisabled(screen.getByRole("button", { name: "Send test email" }))).toBe(false);
+      });
+      fireEvent.change(screen.getByLabelText("Recipient"), { target: { value: invalidRecipient } });
+      fireEvent.click(screen.getByRole("button", { name: "Send test email" }));
+      await waitFor(() => {
+        expect(screen.getByTestId("at-toast").textContent).toMatch(/Enter a valid email address/);
+      });
+      expect(mockTest).not.toHaveBeenCalled();
+    },
+  );
 
   it("export_only never allows test send even when saved", async () => {
     mockFetch.mockResolvedValueOnce(makeResponse(exportOnlyFields(), { isProduction: false }));

@@ -73,6 +73,36 @@ function LogoPreview({
   );
 }
 
+interface LogoZoneClassNameFlags {
+  readonly uploading: boolean;
+  readonly dragging: boolean;
+  readonly hasPreview: boolean;
+  readonly hasError: boolean;
+  readonly disabled: boolean;
+}
+
+// Extracted out of LogoUploadZone (SonarCloud S3776: each modifier below is its own
+// short-circuit expression, which otherwise adds to the component's own cognitive-complexity
+// count alongside the JSX conditionals it renders).
+function buildLogoZoneClassName({
+  uploading,
+  dragging,
+  hasPreview,
+  hasError,
+  disabled,
+}: LogoZoneClassNameFlags): string {
+  return [
+    "logo-upload__zone",
+    uploading && "logo-upload__zone--busy",
+    dragging && "logo-upload__zone--dragging",
+    hasPreview && "logo-upload__zone--has-preview",
+    hasError && "logo-upload__zone--invalid",
+    disabled && "logo-upload__zone--disabled",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 /** Upload to server or link an external HTTPS image — both are supported. */
 export function LogoUploadZone({
   value,
@@ -157,16 +187,13 @@ export function LogoUploadZone({
         Upload an image file below, or use a link to an image that&apos;s already online.
       </p>
       <div
-        className={[
-          "logo-upload__zone",
-          uploading && "logo-upload__zone--busy",
-          dragging && "logo-upload__zone--dragging",
-          previewSrc && showPreview && "logo-upload__zone--has-preview",
-          zoneError && "logo-upload__zone--invalid",
-          disabled && "logo-upload__zone--disabled",
-        ]
-          .filter(Boolean)
-          .join(" ")}
+        className={buildLogoZoneClassName({
+          uploading,
+          dragging,
+          hasPreview: showPreview,
+          hasError: zoneError !== null,
+          disabled,
+        })}
         onDrop={(e) => void onDrop(e)}
         onDragOver={(e) => {
           e.preventDefault();
