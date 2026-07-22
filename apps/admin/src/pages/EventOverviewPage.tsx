@@ -35,7 +35,7 @@ import {
   registerAdmitDedup,
 } from "../checkin/admitDedup.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
-import { useCountdown } from "../utils/event-countdown.js";
+import { useCountdown, daysUntilEvent } from "../utils/event-countdown.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
@@ -1474,11 +1474,20 @@ export function EventOverviewPage() {
       ? currentOverview.admitted_count + optimisticAdmittedDelta
       : null;
   const countdownLabel = useCountdown(eventDateIso, eventTimezone);
-  // computeLabel() itself falls back to the plain calendar date for anything more than a week out
-  // (e.g. "29 Sept 2026") - showing that same string again as the tile's sub would just duplicate
-  // the value, so the sub only appears for the relative phrasings ("Tomorrow", "In 5 days", …).
+  const daysUntil = daysUntilEvent(eventDateIso, eventTimezone);
   const countdownDate = formatEventCalendarDate(eventDateIso);
-  const countdownSub = countdownLabel === countdownDate ? undefined : countdownDate;
+  // computeLabel() itself falls back to the plain calendar date for anything more than a week out
+  // (fine for the header's prose chip, wrong for this numeric tile — it would just repeat the date
+  // already shown in the page header). Show the raw day count instead in that range; the short
+  // phrasings for everything within a week ("Today"/"Tomorrow"/"In N days"/"Ended …") already read
+  // fine as a tile value as-is.
+  const countdownValue = daysUntil != null && daysUntil > 7 ? String(daysUntil) : countdownLabel;
+  const countdownSub =
+    daysUntil != null && daysUntil > 7
+      ? "days to go"
+      : countdownLabel === countdownDate
+        ? undefined
+        : countdownDate;
   const emailFailedTotal =
     currentOverview != null
       ? currentOverview.email_failed + currentOverview.email_bounced
@@ -1540,7 +1549,7 @@ export function EventOverviewPage() {
           tone="ok"
           icon={<i className="ti ti-calendar-event" aria-hidden="true" />}
           label="Days to event"
-          value={countdownLabel}
+          value={countdownValue}
           sub={countdownSub}
         />
         <OverviewKpiTile

@@ -460,6 +460,31 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     }
   });
 
+  it("shows a raw day count (not the calendar date) on the Days to event tile for events more than a week out", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      // 30 calendar days before the fixture's 2026-07-01 event date - computeLabel() itself would
+      // fall back to the plain calendar date here, which is wrong for this numeric KPI tile (and
+      // would just repeat the date already shown in the page header).
+      vi.setSystemTime(new Date("2026-06-01T10:00:00.000Z"));
+      fetchEventOverview.mockResolvedValue(overviewFixture(5));
+
+      renderPage();
+
+      await waitFor(() => {
+        expect(within(statsRow()).getByText("Attendees")).toBeTruthy();
+      });
+
+      expect(within(statsRow()).getByText("30")).toBeTruthy();
+      expect(within(statsRow()).getByText("days to go")).toBeTruthy();
+      expect(
+        within(statsRow()).queryByText(formatEventCalendarDate("2026-07-01T18:00:00.000Z")),
+      ).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("merges Needs attention + Event readiness into a single Setup checklist card (#348)", async () => {
     fetchEventOverview.mockResolvedValue(
       overviewFixture(5, { checkin_staff_count: 0, attendee_count: 0, attendees_with_ticket: 0 }),

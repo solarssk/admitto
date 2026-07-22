@@ -23,6 +23,22 @@ function calendarDaysBetween(from: string, to: string): number {
   return Math.round((toUtc - fromUtc) / 86_400_000);
 }
 
+function daysUntilInTz(iso: string, timezone: string): number {
+  const eventDay = eventCalendarDay(iso);
+  const todayStr = calendarDayInTz(Date.now(), timezone);
+  return calendarDaysBetween(todayStr, eventDay);
+}
+
+/**
+ * Raw day count until the event (negative once it's past), event-timezone calendar comparison.
+ * For KPI tiles that need a number — computeLabel() intentionally falls back to a calendar date
+ * past 7 days out (fine for a prose header chip), which is the wrong shape for a numeric tile.
+ */
+export function daysUntilEvent(iso: string | null, timezone: string): number | null {
+  if (!iso) return null;
+  return daysUntilInTz(iso, timezone);
+}
+
 /**
  * Countdown label for event overview — calendar-day comparison in event timezone.
  * Event day comes from the stored UTC calendar date; “today” is evaluated in event TZ.
@@ -35,7 +51,7 @@ export function computeLabel(iso: string | null, timezone: string): string {
   const todayStr = calendarDayInTz(Date.now(), timezone);
   const tomorrowStr = addCalendarDays(todayStr, 1);
   const yesterdayStr = addCalendarDays(todayStr, -1);
-  const daysUntil = calendarDaysBetween(todayStr, eventDay);
+  const daysUntil = daysUntilInTz(iso, timezone);
   const daysSince = calendarDaysBetween(eventDay, todayStr);
 
   // Event TZ calendar already past the stored day while UTC-noon sentinel is still ahead (+14 edge case).
