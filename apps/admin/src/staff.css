@@ -4290,7 +4290,8 @@
 }
 
 /* Links a checkin/mail activity entry to the attendee's detail view — kept low-key (inherited
- * color, underline only on hover/focus) rather than the usual link blue, so the timeline doesn't
+ * color, no underline even on hover/focus — matches .overview-checklist__link's PO-preferred
+ * treatment: a color shift instead) rather than the usual link blue, so the timeline doesn't
  * read as more colorful/noisy than before. */
 .overview-activity__attendee-link {
   display: block;
@@ -4303,7 +4304,7 @@
 }
 .overview-activity__attendee-link:hover,
 .overview-activity__attendee-link:focus-visible {
-  text-decoration: underline;
+  color: var(--primary);
 }
 
 .overview-activity__info span {
