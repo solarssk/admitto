@@ -520,11 +520,12 @@ export function CheckInPage({
   // camera stays on swaps which surface renders without cameraActive ever
   // changing, and a boolean derived from either would miss it (code review).
   type ActiveCameraSurface = "none" | "inline" | "overlay";
-  const activeCameraSurface: ActiveCameraSurface = showInlineCamera
-    ? "inline"
-    : showMobileOverlay
-      ? "overlay"
-      : "none";
+  let activeCameraSurface: ActiveCameraSurface = "none";
+  if (showInlineCamera) {
+    activeCameraSurface = "inline";
+  } else if (showMobileOverlay) {
+    activeCameraSurface = "overlay";
+  }
   const prevActiveCameraSurfaceRef = useRef(activeCameraSurface);
   useEffect(() => {
     if (prevActiveCameraSurfaceRef.current !== activeCameraSurface) clearDisplayedResult();

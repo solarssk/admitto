@@ -43,8 +43,8 @@ function mapsUrl(location: string): string {
 }
 
 export interface AdminShellProps {
-  event: EventDto;
-  refreshEvent: () => Promise<void>;
+  readonly event: EventDto;
+  readonly refreshEvent: () => Promise<void>;
 }
 
 /** Event-scoped admin layout: lifecycle sidebar, top bar, and nested route outlet. */

@@ -51,7 +51,7 @@ export function useDropdownMenu<
       if (e.key === "ArrowDown") items[(activeIndex + 1) % items.length]?.focus();
       else if (e.key === "ArrowUp") items[(activeIndex - 1 + items.length) % items.length]?.focus();
       else if (e.key === "Home") items[0]?.focus();
-      else items[items.length - 1]?.focus();
+      else items.at(-1)?.focus();
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
