@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TimezoneSelect } from "../../src/components/TimezoneSelect.js";
 
@@ -146,13 +146,16 @@ describe("TimezoneSelect", () => {
     expect(screen.getByRole("listbox")).toBeTruthy();
 
     const nextField = screen.getByRole("button", { name: "Next field" });
-    fireEvent.focusIn(nextField);
+    // Real focus transfer (not just a synthetic focusin dispatch) — this is what actually
+    // lands `document.activeElement` on the next control, the way a real Tab keypress would.
+    // act()-wrapped so the resulting setOpen(false) flushes before the assertions below.
+    act(() => nextField.focus());
 
     expect(screen.queryByRole("listbox")).toBeNull();
     // Unlike Escape, a Tab-driven close must not pull focus back to the trigger — that
     // would trap keyboard navigation instead of letting it continue to the next field.
     await waitFor(() => {
-      expect(document.activeElement).not.toBe(trigger);
+      expect(document.activeElement).toBe(nextField);
     });
   });
 });

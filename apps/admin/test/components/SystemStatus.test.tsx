@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { resetSystemStatusCache, SystemStatus } from "../../src/components/SystemStatus.js";
@@ -249,9 +249,12 @@ describe("SystemStatus", () => {
 
     // Tab from inside the open SystemStatus panel straight to UserMenu's trigger — no
     // pointerdown in between, the exact keyboard-only path the two dropdowns used to both
-    // stay open for.
-    fireEvent.focusIn(screen.getByRole("button", { name: /Ada Superadmin/ }));
+    // stay open for. Real focus transfer, not just a synthetic focusin dispatch, so this
+    // also proves SystemStatus's close doesn't yank focus back off the trigger just tabbed to.
+    const userMenuTrigger = screen.getByRole("button", { name: /Ada Superadmin/ });
+    act(() => userMenuTrigger.focus());
 
     expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(userMenuTrigger);
   });
 });

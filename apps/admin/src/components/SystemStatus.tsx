@@ -147,7 +147,9 @@ export function SystemStatus({
   const { state: connectionState } = useConnectionState();
   const { open, setOpen, close, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
   const superadmin = isSuperadmin(assignments);
-  const [checks, setChecks] = useState<SetupChecksResponse["checks"] | null>(checksCache?.data ?? null);
+  const [checks, setChecks] = useState<SetupChecksResponse["checks"] | null>(
+    checksCache && checksCache.expiresAt > Date.now() ? checksCache.data : null,
+  );
   const [checksFailed, setChecksFailed] = useState(false);
 
   useEffect(() => {
@@ -196,7 +198,7 @@ export function SystemStatus({
       <button
         type="button"
         className="sys-status__trigger"
-        aria-haspopup={hasMenuItem ? "menu" : "true"}
+        aria-haspopup={hasMenuItem ? "menu" : undefined}
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         ref={triggerRef}

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
 import { DatePicker } from "../../src/components/DatePicker.js";
@@ -196,13 +196,16 @@ describe("DatePicker", () => {
     expect(screen.getByRole("dialog", { name: "Choose date" })).toBeTruthy();
 
     const nextField = screen.getByRole("button", { name: "Next field" });
-    fireEvent.focusIn(nextField);
+    // Real focus transfer (not just a synthetic focusin dispatch) — this is what actually
+    // lands `document.activeElement` on the next control, the way a real Tab keypress would.
+    // act()-wrapped so the resulting setOpen(false) flushes before the assertions below.
+    act(() => nextField.focus());
 
     expect(screen.queryByRole("dialog", { name: "Choose date" })).toBeNull();
     // Unlike Escape, a Tab-driven close must not pull focus back to the input — that would
     // trap keyboard navigation instead of letting it continue to the next field.
     await waitFor(() => {
-      expect(document.activeElement).not.toBe(screen.getByLabelText(/date/i));
+      expect(document.activeElement).toBe(nextField);
     });
   });
 
