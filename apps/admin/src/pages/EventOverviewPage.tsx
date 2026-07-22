@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useOutletContext } from "react-router-dom";
 import { Avatar, Badge, Button, Card, Input, PageHeader, Select, Stat, TICKET_TYPE_COLORS, useToast } from "@admitto/ui";
 import {
@@ -36,6 +36,7 @@ import {
 } from "../checkin/admitDedup.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 
 const OVERVIEW_REFRESH_MS = 30_000;
@@ -521,6 +522,242 @@ function NotesSection({
   );
 }
 
+/** Shared modal shell for the three Notes & contacts add/edit forms (pinned note, contact,
+ * resource) — same dialog/backdrop/panel structure and `useModalFocusTrap` other admin modals
+ * use (e.g. `NoteModal`, `EventCustomFieldModal`), just scoped to this page instead of a new
+ * shared component. Add and edit for a given entity render through the same instance, so the
+ * two modes can never drift apart in width/layout — only the field values and submit label
+ * differ (fixes the PO's add-vs-edit width mismatch). */
+function OverviewModal({
+  titleId,
+  title,
+  onClose,
+  footer,
+  children,
+}: {
+  titleId: string;
+  title: string;
+  onClose: () => void;
+  footer: ReactNode;
+  children: ReactNode;
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  useModalFocusTrap(panelRef, true, onClose);
+
+  return (
+    <div className="overview-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div className="overview-modal__backdrop" role="presentation" onClick={onClose} />
+      <div ref={panelRef} className="overview-modal__panel">
+        <h2 id={titleId} className="overview-modal__title">
+          {title}
+        </h2>
+        <div className="overview-modal__body">{children}</div>
+        <div className="overview-modal__footer">{footer}</div>
+      </div>
+    </div>
+  );
+}
+
+function PinnedNoteModal({
+  note,
+  onClose,
+  onSave,
+}: {
+  note: string | null;
+  onClose: () => void;
+  onSave: (note: string | null) => Promise<void>;
+}) {
+  const titleId = useId();
+  const [draft, setDraft] = useState(note ?? "");
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await onSave(draft.trim() || null);
+      onClose();
+    } catch {
+      // onSave already surfaced the error via toast; keep the modal open so staff can retry.
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <OverviewModal
+      titleId={titleId}
+      title={note ? "Edit pinned note" : "Add pinned note"}
+      onClose={onClose}
+      footer={
+        <>
+          <Button type="button" variant="secondary" onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button type="button" variant="primary" onClick={() => void handleSave()} disabled={saving}>
+            {saving ? "Saving…" : "Save"}
+          </Button>
+        </>
+      }
+    >
+      <textarea
+        className="overview-note-textarea"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder="Short operational note visible to all staff…"
+        rows={4}
+        autoFocus
+      />
+    </OverviewModal>
+  );
+}
+
+function ContactModal({
+  contact,
+  onClose,
+  onAdd,
+  onUpdate,
+}: {
+  contact: EventContactDto | null;
+  onClose: () => void;
+  onAdd: (data: { name: string; role?: string | null; phone?: string | null; email?: string | null }) => Promise<void>;
+  onUpdate: (id: string, data: { name: string; role?: string | null; phone?: string | null; email?: string | null }) => Promise<void>;
+}) {
+  const titleId = useId();
+  const [form, setForm] = useState({
+    name: contact?.name ?? "",
+    role: contact?.role ?? "",
+    phone: contact?.phone ?? "",
+    email: contact?.email ?? "",
+  });
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!form.name.trim() || saving) return;
+    setSaving(true);
+    try {
+      const data = {
+        name: form.name.trim(),
+        role: form.role.trim() || null,
+        phone: form.phone.trim() || null,
+        email: form.email.trim() || null,
+      };
+      if (contact) {
+        await onUpdate(contact.id, data);
+      } else {
+        await onAdd(data);
+      }
+      onClose();
+    } catch {
+      // onAdd/onUpdate already surfaced the error via toast; keep the modal open so staff can retry.
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <OverviewModal
+      titleId={titleId}
+      title={contact ? "Edit contact" : "Add contact"}
+      onClose={onClose}
+      footer={
+        <>
+          <Button type="button" variant="secondary" onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="primary"
+            onClick={() => void handleSubmit()}
+            disabled={saving || !form.name.trim()}
+          >
+            {saving ? "Saving…" : contact ? "Save" : "Add"}
+          </Button>
+        </>
+      }
+    >
+      <Input label="Name *" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} autoFocus />
+      <Input label="Role" value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))} />
+      <Input label="Phone" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
+      <Input label="Email" type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
+    </OverviewModal>
+  );
+}
+
+function ResourceModal({
+  resource,
+  onClose,
+  onAdd,
+  onUpdate,
+}: {
+  resource: EventResourceDto | null;
+  onClose: () => void;
+  onAdd: (data: { title: string; type: "link" | "file"; url: string; description?: string | null }) => Promise<void>;
+  onUpdate: (id: string, data: { title: string; type: "link" | "file"; url: string; description?: string | null }) => Promise<void>;
+}) {
+  const titleId = useId();
+  const [form, setForm] = useState({
+    title: resource?.title ?? "",
+    type: resource?.type ?? ("link" as "link" | "file"),
+    url: resource?.url ?? "",
+    description: resource?.description ?? "",
+  });
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!form.title.trim() || !form.url.trim() || saving) return;
+    setSaving(true);
+    try {
+      const data = {
+        title: form.title.trim(),
+        type: form.type,
+        url: form.url.trim(),
+        description: form.description.trim() || null,
+      };
+      if (resource) {
+        await onUpdate(resource.id, data);
+      } else {
+        await onAdd(data);
+      }
+      onClose();
+    } catch {
+      // onAdd/onUpdate already surfaced the error via toast; keep the modal open so staff can retry.
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <OverviewModal
+      titleId={titleId}
+      title={resource ? "Edit link or file" : "Add link or file"}
+      onClose={onClose}
+      footer={
+        <>
+          <Button type="button" variant="secondary" onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="primary"
+            onClick={() => void handleSubmit()}
+            disabled={saving || !form.title.trim() || !form.url.trim()}
+          >
+            {saving ? "Saving…" : resource ? "Save" : "Add"}
+          </Button>
+        </>
+      }
+    >
+      <Input label="Title *" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} autoFocus />
+      <Select label="Type" value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as "link" | "file" }))}>
+        <option value="link">Link</option>
+        <option value="file">File</option>
+      </Select>
+      <Input label="URL *" value={form.url} onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))} />
+      <Input label="Description" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
+    </OverviewModal>
+  );
+}
+
 function PinnedNoteSection({
   note,
   loading,
@@ -532,106 +769,57 @@ function PinnedNoteSection({
   archived: boolean;
   onSave: (note: string | null) => Promise<void>;
 }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(note ?? "");
-  const [saving, setSaving] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
 
-  const handleEdit = () => {
-    setDraft(note ?? "");
-    setEditing(true);
-  };
+  // The pin icon renders in both the empty and filled states (previously filled-only), so the
+  // header's icon+label never shifts when a note is added or cleared (PO: "headers move").
+  const label = (
+    <>
+      <i className="ti ti-pin overview-notes-section__icon overview-pinned-note__pin" aria-hidden="true" /> Pinned note
+    </>
+  );
 
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      await onSave(draft.trim() || null);
-      setEditing(false);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleCancel = () => {
-    setDraft(note ?? "");
-    setEditing(false);
-  };
-
-  if (editing) {
-    return (
-      <NotesSection label="Pinned note">
-        <div className="overview-note-edit">
-          <textarea
-            className="overview-note-textarea"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="Short operational note visible to all staff…"
-            rows={3}
-            autoFocus
-          />
-          <div className="overview-note-actions">
-            <Button type="button" variant="ghost" size="sm" onClick={handleCancel} disabled={saving}>
-              Cancel
-            </Button>
-            <Button type="button" variant="primary" size="sm" onClick={() => void handleSave()} disabled={saving}>
-              {saving ? "Saving…" : "Save"}
-            </Button>
-          </div>
-        </div>
-      </NotesSection>
-    );
-  }
-
-  if (!note) {
-    return (
-      <NotesSection
-        label="Pinned note"
-        action={
-          !loading && !archived ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              icon={<i className="ti ti-plus" aria-hidden="true" />}
-              onClick={handleEdit}
-            >
-              Add note
-            </Button>
-          ) : undefined
-        }
-      >
-        <p className="overview-muted">
-          {loading ? "Loading…" : "No operational note. Add one to share a quick reminder with all staff."}
-        </p>
-      </NotesSection>
+  let body: ReactNode;
+  if (note) {
+    body = <p className="overview-pinned-note__body">{note}</p>;
+  } else if (loading) {
+    body = <p className="overview-muted">Loading…</p>;
+  } else if (archived) {
+    body = <p className="overview-muted">No operational note.</p>;
+  } else {
+    body = (
+      <button type="button" className="overview-note-empty" onClick={() => setModalOpen(true)}>
+        <i className="ti ti-plus" aria-hidden="true" />
+        Add a pinned note for staff
+      </button>
     );
   }
 
   return (
-    // Filled state renders on the standard section surface, no warn tint (#347) — the pin stays
-    // as a small accent inside the label instead of a colored background.
-    <NotesSection
-      label={
-        <>
-          <i className="ti ti-pin overview-pinned-note__pin" aria-hidden="true" /> Pinned note
-        </>
-      }
-      action={
-        !archived ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            icon={<i className="ti ti-pencil" aria-hidden="true" />}
-            onClick={handleEdit}
-            aria-label="Edit pinned note"
-          >
-            Edit
-          </Button>
-        ) : undefined
-      }
-    >
-      <p className="overview-pinned-note__body">{note}</p>
-    </NotesSection>
+    <>
+      <NotesSection
+        label={label}
+        action={
+          // Unchanged from before: the Edit button only ever appears once a note exists — adding
+          // the first note is now triggered by the empty-state box above instead of a header action.
+          note && !archived ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              icon={<i className="ti ti-pencil" aria-hidden="true" />}
+              onClick={() => setModalOpen(true)}
+              aria-label="Edit pinned note"
+            >
+              Edit
+            </Button>
+          ) : undefined
+        }
+      >
+        {body}
+      </NotesSection>
+      {modalOpen && <PinnedNoteModal note={note} onClose={() => setModalOpen(false)} onSave={onSave} />}
+    </>
   );
 }
 
@@ -650,47 +838,10 @@ function KeyContactsSection({
   onUpdate: (id: string, data: { name: string; role?: string | null; phone?: string | null; email?: string | null }) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }) {
-  const [addOpen, setAddOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "", role: "", phone: "", email: "" });
+  const [modalTarget, setModalTarget] = useState<"add" | EventContactDto | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-
-  const openAdd = () => {
-    setForm({ name: "", role: "", phone: "", email: "" });
-    setEditingId(null);
-    setAddOpen(true);
-  };
-
-  const openEdit = (c: EventContactDto) => {
-    setForm({ name: c.name, role: c.role ?? "", phone: c.phone ?? "", email: c.email ?? "" });
-    setEditingId(c.id);
-    setAddOpen(false);
-  };
-
-  const handleSubmit = async () => {
-    if (!form.name.trim()) return;
-    setSaving(true);
-    try {
-      const data = {
-        name: form.name.trim(),
-        role: form.role.trim() || null,
-        phone: form.phone.trim() || null,
-        email: form.email.trim() || null,
-      };
-      if (editingId) {
-        await onUpdate(editingId, data);
-        setEditingId(null);
-      } else {
-        await onAdd(data);
-        setAddOpen(false);
-      }
-      setForm({ name: "", role: "", phone: "", email: "" });
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const handleDelete = async (id: string) => {
     setSaving(true);
@@ -705,78 +856,66 @@ function KeyContactsSection({
     }
   };
 
-  const cancel = () => { setAddOpen(false); setEditingId(null); };
-
-  const inlineForm = (
-    <div className="overview-contact-form">
-      <Input placeholder="Name *" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-      <Input placeholder="Role" value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))} />
-      <Input placeholder="Phone" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
-      <Input placeholder="Email" type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
-      <div className="overview-contact-form__actions">
-        <Button type="button" variant="ghost" size="sm" onClick={cancel} disabled={saving}>Cancel</Button>
-        <Button type="button" variant="primary" size="sm" onClick={() => void handleSubmit()} disabled={saving || !form.name.trim()}>
-          {saving ? "Saving…" : editingId ? "Save" : "Add"}
-        </Button>
-      </div>
-    </div>
-  );
-
   return (
     <NotesSection
-      label="Key contacts"
+      label={
+        <>
+          <i className="ti ti-address-book overview-notes-section__icon" aria-hidden="true" /> Key contacts
+        </>
+      }
       action={
         !archived ? (
-          <Button type="button" variant="ghost" size="sm" icon={<i className="ti ti-plus" aria-hidden="true" />} onClick={openAdd}>
+          <Button type="button" variant="ghost" size="sm" icon={<i className="ti ti-plus" aria-hidden="true" />} onClick={() => setModalTarget("add")}>
             Add
           </Button>
         ) : undefined
       }
     >
-      {contacts.length === 0 && !addOpen ? (
+      {contacts.length === 0 ? (
         <p className="overview-muted">{loading ? "Loading…" : "No contacts yet."}</p>
       ) : (
         <ul className="overview-contacts">
           {contacts.map((contact) => (
             <li key={contact.id} className="overview-contact">
-              {editingId === contact.id ? (
-                inlineForm
-              ) : (
-                <>
-                  <Avatar name={contact.name} size="sm" />
-                  <div className="overview-contact__info">
-                    <strong>{contact.name}</strong>
-                    {contact.role && <span>{contact.role}</span>}
-                    {contact.note && <span className="overview-contact__note">{contact.note}</span>}
-                  </div>
-                  <div className="overview-contact__actions">
-                    {contact.phone && (
-                      <a href={`tel:${contact.phone}`} className="overview-contact__action" aria-label={`Call ${contact.name}`}>
-                        <i className="ti ti-phone" aria-hidden="true" />
-                      </a>
-                    )}
-                    {contact.email && (
-                      <a href={`mailto:${contact.email}`} className="overview-contact__action" aria-label={`Email ${contact.name}`}>
-                        <i className="ti ti-mail" aria-hidden="true" />
-                      </a>
-                    )}
-                    {!archived && (
-                      <>
-                        <button className="overview-contact__action" onClick={() => openEdit(contact)} aria-label={`Edit ${contact.name}`}>
-                          <i className="ti ti-pencil" aria-hidden="true" />
-                        </button>
-                        <button className="overview-contact__action overview-contact__action--delete" onClick={() => { setDeleteError(null); setConfirmDeleteId(contact.id); }} aria-label={`Delete ${contact.name}`}>
-                          <i className="ti ti-trash" aria-hidden="true" />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </>
-              )}
+              <Avatar name={contact.name} size="sm" />
+              <div className="overview-contact__info">
+                <strong>{contact.name}</strong>
+                {contact.role && <span>{contact.role}</span>}
+                {contact.note && <span className="overview-contact__note">{contact.note}</span>}
+              </div>
+              <div className="overview-contact__actions">
+                {contact.phone && (
+                  <a href={`tel:${contact.phone}`} className="overview-contact__action" aria-label={`Call ${contact.name}`}>
+                    <i className="ti ti-phone" aria-hidden="true" />
+                  </a>
+                )}
+                {contact.email && (
+                  <a href={`mailto:${contact.email}`} className="overview-contact__action" aria-label={`Email ${contact.name}`}>
+                    <i className="ti ti-mail" aria-hidden="true" />
+                  </a>
+                )}
+                {!archived && (
+                  <>
+                    <button className="overview-contact__action" onClick={() => setModalTarget(contact)} aria-label={`Edit ${contact.name}`}>
+                      <i className="ti ti-pencil" aria-hidden="true" />
+                    </button>
+                    <button className="overview-contact__action overview-contact__action--delete" onClick={() => { setDeleteError(null); setConfirmDeleteId(contact.id); }} aria-label={`Delete ${contact.name}`}>
+                      <i className="ti ti-trash" aria-hidden="true" />
+                    </button>
+                  </>
+                )}
+              </div>
             </li>
           ))}
-          {addOpen && <li className="overview-contact overview-contact--form">{inlineForm}</li>}
         </ul>
+      )}
+      {modalTarget && (
+        <ContactModal
+          contact={modalTarget === "add" ? null : modalTarget}
+          onClose={() => setModalTarget(null)}
+          onAdd={onAdd}
+          onUpdate={onUpdate}
+        />
       )}
       <ConfirmDialog
         open={confirmDeleteId !== null}
@@ -810,45 +949,13 @@ function LinksFilesSection({
 }) {
   const PREVIEW_MAX = 4;
   const [showAll, setShowAll] = useState(false);
-  const [addOpen, setAddOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState({ title: "", type: "link" as "link" | "file", url: "", description: "" });
+  const [modalTarget, setModalTarget] = useState<"add" | EventResourceDto | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const visible = showAll ? resources : resources.slice(0, PREVIEW_MAX);
   const hiddenCount = resources.length - PREVIEW_MAX;
-
-  const openAdd = () => {
-    setForm({ title: "", type: "link", url: "", description: "" });
-    setEditingId(null);
-    setAddOpen(true);
-  };
-
-  const openEdit = (r: EventResourceDto) => {
-    setForm({ title: r.title, type: r.type, url: r.url, description: r.description ?? "" });
-    setEditingId(r.id);
-    setAddOpen(false);
-  };
-
-  const handleSubmit = async () => {
-    if (!form.title.trim() || !form.url.trim()) return;
-    setSaving(true);
-    try {
-      const data = { title: form.title.trim(), type: form.type, url: form.url.trim(), description: form.description.trim() || null };
-      if (editingId) {
-        await onUpdate(editingId, data);
-        setEditingId(null);
-      } else {
-        await onAdd(data);
-        setAddOpen(false);
-      }
-      setForm({ title: "", type: "link", url: "", description: "" });
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const handleDelete = async (id: string) => {
     setSaving(true);
@@ -863,76 +970,52 @@ function LinksFilesSection({
     }
   };
 
-  const cancel = () => { setAddOpen(false); setEditingId(null); };
-
-  const inlineForm = (
-    <div className="overview-resource-form">
-      <Input placeholder="Title *" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
-      <div className="overview-resource-form__row">
-        <Select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as "link" | "file" }))}>
-          <option value="link">Link</option>
-          <option value="file">File</option>
-        </Select>
-        <Input placeholder="URL *" value={form.url} onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))} />
-      </div>
-      <Input placeholder="Description (optional)" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
-      <div className="overview-resource-form__actions">
-        <Button type="button" variant="ghost" size="sm" onClick={cancel} disabled={saving}>Cancel</Button>
-        <Button type="button" variant="primary" size="sm" onClick={() => void handleSubmit()} disabled={saving || !form.title.trim() || !form.url.trim()}>
-          {saving ? "Saving…" : editingId ? "Save" : "Add"}
-        </Button>
-      </div>
-    </div>
-  );
-
   return (
     <NotesSection
-      label="Links & files"
+      label={
+        <>
+          <i className="ti ti-paperclip overview-notes-section__icon" aria-hidden="true" /> Links & files
+        </>
+      }
       action={
         !archived ? (
-          <Button type="button" variant="ghost" size="sm" icon={<i className="ti ti-plus" aria-hidden="true" />} onClick={openAdd}>
+          <Button type="button" variant="ghost" size="sm" icon={<i className="ti ti-plus" aria-hidden="true" />} onClick={() => setModalTarget("add")}>
             Add
           </Button>
         ) : undefined
       }
     >
-      {resources.length === 0 && !addOpen ? (
+      {resources.length === 0 ? (
         <p className="overview-muted">{loading ? "Loading…" : "No links or files yet."}</p>
       ) : (
         <>
           <ul className="overview-resources">
             {visible.map((r) => (
               <li key={r.id} className="overview-resource">
-                {editingId === r.id ? (
-                  inlineForm
-                ) : (
-                  <>
-                    <i
-                      className={`ti ${r.type === "file" ? "ti-file" : "ti-link"} overview-resource__icon`}
-                      aria-hidden="true"
-                    />
-                    <div className="overview-resource__info">
-                      <a
-                        href={safeHref(r.url)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="overview-resource__title"
-                      >
-                        {r.title}
-                      </a>
-                      {r.description && <span className="overview-resource__desc">{r.description}</span>}
-                    </div>
-                    {!archived && (
-                      <div className="overview-resource__actions">
-                        <button className="overview-contact__action" onClick={() => openEdit(r)} aria-label={`Edit ${r.title}`}>
-                          <i className="ti ti-pencil" aria-hidden="true" />
-                        </button>
-                        <button className="overview-contact__action overview-contact__action--delete" onClick={() => { setDeleteError(null); setConfirmDeleteId(r.id); }} aria-label={`Delete ${r.title}`}>
-                          <i className="ti ti-trash" aria-hidden="true" />
-                        </button>
-                      </div>
-                    )}
-                  </>
+                <i
+                  className={`ti ${r.type === "file" ? "ti-file" : "ti-link"} overview-resource__icon`}
+                  aria-hidden="true"
+                />
+                <div className="overview-resource__info">
+                  <a
+                    href={safeHref(r.url)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="overview-resource__title"
+                  >
+                    {r.title}
+                  </a>
+                  {r.description && <span className="overview-resource__desc">{r.description}</span>}
+                </div>
+                {!archived && (
+                  <div className="overview-resource__actions">
+                    <button className="overview-contact__action" onClick={() => setModalTarget(r)} aria-label={`Edit ${r.title}`}>
+                      <i className="ti ti-pencil" aria-hidden="true" />
+                    </button>
+                    <button className="overview-contact__action overview-contact__action--delete" onClick={() => { setDeleteError(null); setConfirmDeleteId(r.id); }} aria-label={`Delete ${r.title}`}>
+                      <i className="ti ti-trash" aria-hidden="true" />
+                    </button>
+                  </div>
                 )}
               </li>
             ))}
@@ -942,10 +1025,15 @@ function LinksFilesSection({
               View all resources ({hiddenCount} more)
             </button>
           )}
-          {addOpen && (
-            <div className="overview-resource overview-resource--form">{inlineForm}</div>
-          )}
         </>
+      )}
+      {modalTarget && (
+        <ResourceModal
+          resource={modalTarget === "add" ? null : modalTarget}
+          onClose={() => setModalTarget(null)}
+          onAdd={onAdd}
+          onUpdate={onUpdate}
+        />
       )}
       <ConfirmDialog
         open={confirmDeleteId !== null}

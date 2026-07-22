@@ -4164,13 +4164,20 @@
   margin-bottom: var(--space-2);
 }
 
+/* Shared leading-icon treatment for all three section headers (pin / address book / paperclip) —
+ * always rendered regardless of empty/filled state so the header never reflows (PO: "headers
+ * move"). Pinned note keeps its warn-tinted color as a small accent on top of this. */
+.overview-notes-section__icon {
+  font-size: 0.9em;
+  color: var(--text-muted);
+}
+
 /* ── Pinned note ─────────────────────────────────────────────────── */
 /* Filled state renders on the standard Card/--surface-card background (#347) — no warn tint.
  * The pin icon stays as a small accent inside the section header instead. */
 
 .overview-pinned-note__pin {
   color: var(--status-warn);
-  font-size: 0.9em;
 }
 
 .overview-pinned-note__body {
@@ -4181,10 +4188,30 @@
   white-space: pre-wrap;
 }
 
-.overview-note-edit {
+/* Empty-state affordance — a clickable dashed box spanning the section width, replacing the old
+ * header-only "Add note" button so an empty section's header stays icon+label only. */
+.overview-note-empty {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: var(--space-2);
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-3);
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: border-color 0.1s, color 0.1s, background 0.1s;
+}
+.overview-note-empty:hover,
+.overview-note-empty:focus-visible {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-tint);
 }
 
 .overview-note-textarea {
@@ -4202,12 +4229,6 @@
 .overview-note-textarea:focus {
   outline: 2px solid var(--primary);
   outline-offset: 1px;
-}
-
-.overview-note-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-2);
 }
 
 /* ── Key contacts ─────────────────────────────────────────────────── */
@@ -4229,10 +4250,6 @@
   border-bottom: 1px solid var(--border);
 }
 .overview-contact:last-child { border-bottom: none; }
-.overview-contact--form {
-  display: block;
-  padding: var(--space-2) 0;
-}
 
 .overview-contact__info {
   flex: 1;
@@ -4296,18 +4313,6 @@
   color: var(--status-error);
 }
 
-.overview-contact-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-2) 0;
-}
-.overview-contact-form__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-2);
-}
-
 /* ── Links & files ───────────────────────────────────────────────── */
 
 .overview-resources {
@@ -4326,10 +4331,6 @@
   border-bottom: 1px solid var(--border);
 }
 .overview-resource:last-child { border-bottom: none; }
-.overview-resource--form {
-  display: block;
-  padding: var(--space-2) 0;
-}
 
 .overview-resource__icon {
   flex-shrink: 0;
@@ -4384,17 +4385,52 @@
 }
 .overview-resources__show-more:hover { text-decoration: underline; }
 
-.overview-resource-form {
+/* ── Notes & contacts modals (pinned note / contact / resource) ──────────────────────
+ * One shared shell for all three add/edit forms — add and edit share the same panel width for
+ * a given render, so the two modes can't visually drift apart. */
+.overview-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+}
+
+.overview-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.overview-modal__panel {
+  position: relative;
+  width: min(480px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  background: var(--surface-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-5);
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-4);
 }
-.overview-resource-form__row {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: var(--space-2);
+
+.overview-modal__title {
+  margin: 0;
+  font-size: var(--fs-h3);
+  font-weight: 600;
 }
-.overview-resource-form__actions {
+
+.overview-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.overview-modal__footer {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-2);

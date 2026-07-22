@@ -1,9 +1,14 @@
 // @vitest-environment jsdom
-import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { EventOverviewPage } from "../../src/pages/EventOverviewPage.js";
-import type { EventOverviewDto, EventRecentActivityEntry } from "../../src/api/types.js";
+import type {
+  EventContactDto,
+  EventOverviewDto,
+  EventRecentActivityEntry,
+  EventResourceDto,
+} from "../../src/api/types.js";
 import type { StreamCheckinEvent } from "../../src/hooks/useEventStream.js";
 import { makeTicketType, renderWithToast } from "../test-utils.js";
 
@@ -63,6 +68,18 @@ vi.mock("../../src/api/client.js", () => ({
   updateEventResource: vi.fn(),
   deleteEventResource: vi.fn(),
 }));
+
+import {
+  patchEventNote,
+  createEventContact,
+  updateEventContact,
+  createEventResource,
+} from "../../src/api/client.js";
+
+const mockPatchEventNote = vi.mocked(patchEventNote);
+const mockCreateEventContact = vi.mocked(createEventContact);
+const mockUpdateEventContact = vi.mocked(updateEventContact);
+const mockCreateEventResource = vi.mocked(createEventResource);
 
 const overviewFixture = (
   admitted = 5,
@@ -524,7 +541,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(screen.getByText("Bounced Guest")).toBeTruthy();
   });
 
-  it("merges Pinned note, Key contacts, and Links & files into one Notes & contacts card (#344, #345, #346)", async () => {
+  it("merges Pinned note, Key contacts, and Links & files into one Notes & contacts card, each with a leading header icon (#344, #345, #346)", async () => {
     fetchEventOverview.mockResolvedValue(overviewFixture(5));
 
     renderPage();
@@ -540,17 +557,171 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(within(notesCard).getByText("Links & files")).toBeTruthy();
     expect(screen.queryByText("Important links & files")).toBeNull();
 
-    // Both Key contacts and Links & files have an "Add" header button - scope to the Key
-    // contacts sub-section specifically since the accessible name alone is ambiguous now that
-    // both live under the same outer card.
+    // All three headers read as a consistent family: each has a leading icon, always present
+    // (not only once its section has content).
+    expect(notesCard.querySelector(".ti-pin")).toBeTruthy();
+    expect(notesCard.querySelector(".ti-address-book")).toBeTruthy();
+    expect(notesCard.querySelector(".ti-paperclip")).toBeTruthy();
+  });
+
+  it("opens Key contacts' add flow as a modal dialog instead of expanding inline, and updates the list on save", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+    mockCreateEventContact.mockResolvedValueOnce({
+      id: "c1",
+      name: "Jane Doe",
+      role: "Security lead",
+      phone: null,
+      email: null,
+      note: null,
+      sort_order: 0,
+    } satisfies EventContactDto);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Notes & contacts")).toBeTruthy();
+    });
+
     const keyContactsSection = screen.getByText("Key contacts").closest(".overview-notes-section") as HTMLElement;
+    expect(screen.queryByRole("dialog")).toBeNull();
     act(() => {
       within(keyContactsSection).getByRole("button", { name: "Add" }).click();
     });
 
-    const nameInput = await screen.findByPlaceholderText("Name *");
-    expect(nameInput.className).toContain("at-input");
+    // Renders as a modal dialog, not an inline-expanding form pushing the card content down.
+    const dialog = await screen.findByRole("dialog", { name: "Add contact" });
+    expect(within(dialog).getByLabelText("Name *")).toBeTruthy();
     expect(document.querySelector(".btn")).toBeNull();
+
+    fireEvent.change(within(dialog).getByLabelText("Name *"), { target: { value: "Jane Doe" } });
+    fireEvent.change(within(dialog).getByLabelText("Role"), { target: { value: "Security lead" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      expect(mockCreateEventContact).toHaveBeenCalledWith("evt-1", {
+        name: "Jane Doe",
+        role: "Security lead",
+        phone: null,
+        email: null,
+      });
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(within(keyContactsSection).getByText("Jane Doe")).toBeTruthy();
+  });
+
+  it("opens Key contacts' row edit icon as the same modal used for Add, pre-filled with the contact's data", async () => {
+    fetchEventOverview.mockResolvedValue(
+      overviewFixture(5, {
+        contacts: [
+          { id: "c1", name: "Jane Doe", role: "Security lead", phone: null, email: null, note: null, sort_order: 0 },
+        ],
+      }),
+    );
+    mockUpdateEventContact.mockResolvedValueOnce({
+      id: "c1",
+      name: "Jane Doe",
+      role: "Ops lead",
+      phone: null,
+      email: null,
+      note: null,
+      sort_order: 0,
+    } satisfies EventContactDto);
+
+    renderPage();
+
+    const editButton = await screen.findByRole("button", { name: "Edit Jane Doe" });
+    fireEvent.click(editButton);
+
+    const dialog = await screen.findByRole("dialog", { name: "Edit contact" });
+    // Same shared modal/panel as Add - only the field values and submit label differ.
+    expect(dialog.querySelector(".overview-modal__panel")).toBeTruthy();
+    const nameField = within(dialog).getByLabelText("Name *") as HTMLInputElement;
+    expect(nameField.value).toBe("Jane Doe");
+
+    fireEvent.change(within(dialog).getByLabelText("Role"), { target: { value: "Ops lead" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockUpdateEventContact).toHaveBeenCalledWith("evt-1", "c1", {
+        name: "Jane Doe",
+        role: "Ops lead",
+        phone: null,
+        email: null,
+      });
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+  });
+
+  it("opens Links & files' add flow as a modal dialog and updates the list on save", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+    mockCreateEventResource.mockResolvedValueOnce({
+      id: "r1",
+      title: "Venue floor plan",
+      type: "link",
+      url: "https://example.com/floor-plan",
+      description: null,
+      sort_order: 0,
+    } satisfies EventResourceDto);
+
+    renderPage();
+
+    const linksSection = await screen.findByText("Links & files").then((el) => el.closest(".overview-notes-section") as HTMLElement);
+    act(() => {
+      within(linksSection).getByRole("button", { name: "Add" }).click();
+    });
+
+    const dialog = await screen.findByRole("dialog", { name: "Add link or file" });
+    fireEvent.change(within(dialog).getByLabelText("Title *"), { target: { value: "Venue floor plan" } });
+    fireEvent.change(within(dialog).getByLabelText("URL *"), {
+      target: { value: "https://example.com/floor-plan" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      expect(mockCreateEventResource).toHaveBeenCalledWith("evt-1", {
+        title: "Venue floor plan",
+        type: "link",
+        url: "https://example.com/floor-plan",
+        description: null,
+      });
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(within(linksSection).getByText("Venue floor plan")).toBeTruthy();
+  });
+
+  it("renders the Pinned note empty state as a dashed add button (not a header button), and saving through its modal fills the section without an inline expansion", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+    mockPatchEventNote.mockResolvedValueOnce(undefined);
+
+    renderPage();
+
+    const addNote = await screen.findByRole("button", { name: "Add a pinned note for staff" });
+    expect(addNote.className).toContain("overview-note-empty");
+    // The old header-level "Add note" action is gone - only the dashed empty-state button remains.
+    expect(screen.queryByRole("button", { name: "Add note" })).toBeNull();
+
+    fireEvent.click(addNote);
+    const dialog = await screen.findByRole("dialog", { name: "Add pinned note" });
+    fireEvent.change(within(dialog).getByPlaceholderText("Short operational note visible to all staff…"), {
+      target: { value: "Gate B is closed today" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockPatchEventNote).toHaveBeenCalledWith("evt-1", "Gate B is closed today");
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(screen.getByText("Gate B is closed today")).toBeTruthy();
+    // Filled state now shows the standard Edit action, same placement as before this change.
+    expect(screen.getByRole("button", { name: "Edit pinned note" })).toBeTruthy();
   });
 
   it("renders the Pinned note filled state on the standard card surface, not a custom warn-tinted wrapper (#347)", async () => {
