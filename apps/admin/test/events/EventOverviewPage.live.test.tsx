@@ -831,6 +831,62 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     }
   });
 
+  it("reconciles a live check-in against its server row by attendee_id, not name+timestamp, since SSE's admittedAt and the server's DB-default occurred_at never match exactly (CodeRabbit)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      fetchEventOverview.mockResolvedValueOnce(overviewFixture(5));
+
+      renderPage();
+
+      await waitFor(() => {
+        expect(admittedLegendValue()).toBe("5");
+      });
+
+      act(() => {
+        streamHandler?.({ ...liveEvent, attendeeId: "att-9", attendeeName: "Same Person", admittedAt: "2026-07-22T10:00:00.000Z" });
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Same Person")).toBeTruthy();
+      });
+
+      // Reconcile poll's server row is for the SAME attendee (att-9) but a slightly different
+      // timestamp - CheckIn.checked_in_at's own DB-side default, not the app's admittedAt clock.
+      fetchEventOverview.mockResolvedValue(
+        overviewFixture(5, {
+          recent_activity: [
+            {
+              id: "checkin:att-9",
+              type: "checkin",
+              tone: "ok",
+              attendee_name: "Same Person",
+              attendee_id: "att-9",
+              message: "checked in",
+              occurred_at: "2026-07-22T10:00:00.842Z",
+            },
+          ],
+        }),
+      );
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+
+      await waitFor(() => {
+        expect(fetchEventOverview).toHaveBeenCalledTimes(2);
+      });
+
+      // Exactly one row for this attendee - the live entry was dropped once the server's own
+      // row for the same attendee_id reconciled, not left duplicated by a timestamp mismatch.
+      const rows = Array.from(document.querySelectorAll(".overview-activity__item")).filter((el) =>
+        el.textContent?.includes("Same Person"),
+      );
+      expect(rows).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("merges Pinned note, Key contacts, and Links & files into one Notes & contacts card, each with a leading header icon (#344, #345, #346)", async () => {
     fetchEventOverview.mockResolvedValue(overviewFixture(5));
 

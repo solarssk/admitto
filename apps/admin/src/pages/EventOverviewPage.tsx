@@ -459,13 +459,17 @@ function mergeActivity(
   server: EventRecentActivityEntry[],
   liveCheckins: StreamCheckinEvent[],
 ): DisplayActivityEntry[] {
-  const seen = new Set(
-    server
-      .filter((e) => e.type === "checkin")
-      .map((e) => `${e.attendee_name ?? ""}|${e.occurred_at}`),
+  // Matched on attendee_id, not name+timestamp: SSE's admittedAt is the app's own `new Date()`
+  // at admit time, while the server's occurred_at is CheckIn.checked_in_at's DB-side default —
+  // those two clocks never line up exactly, so a string match on the pair always missed and left
+  // both the live and server rows visible after reconcile (CodeRabbit). attendee_id is safe here
+  // because revoking a check-in deletes its CheckIn row outright, so at most one "checkin" row
+  // per attendee can ever be live at once.
+  const seenAttendeeIds = new Set(
+    server.filter((e) => e.type === "checkin" && e.attendee_id).map((e) => e.attendee_id),
   );
   const live = liveCheckinsAsActivity(liveCheckins).filter(
-    (e) => !seen.has(`${e.attendee_name ?? ""}|${e.occurred_at}`),
+    (e) => !(e.attendee_id && seenAttendeeIds.has(e.attendee_id)),
   );
   return [...live, ...server]
     .sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime())
