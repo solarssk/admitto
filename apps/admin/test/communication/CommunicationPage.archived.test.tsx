@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { CommunicationPage } from "../../src/pages/CommunicationPage.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
-import { renderWithToast } from "../test-utils.js";
+import { getTooltipText, renderWithToast } from "../test-utils.js";
 
 const fetchEventTemplates = vi.fn();
 const fetchEventTemplate = vi.fn();
@@ -141,7 +141,7 @@ function expectArchivedLock(control: HTMLElement) {
   expect(describedBy).toBeTruthy();
   const description = document.getElementById(describedBy!);
   expect(description?.textContent).toBe(ARCHIVED_ACTION_TOOLTIP);
-  expect(control.closest(".at-tooltip")).toBeTruthy();
+  expect(getTooltipText(control)).toBe(ARCHIVED_ACTION_TOOLTIP);
 }
 
 describe("CommunicationPage archived lockdown", () => {
@@ -171,8 +171,7 @@ describe("CommunicationPage archived lockdown", () => {
     const subjectInput = screen.getByLabelText("Subject");
     const editorFieldset = subjectInput.closest("fieldset");
     expect(editorFieldset?.disabled).toBe(true);
-    expect(editorFieldset?.className).toContain("at-tooltip");
-    expect(editorFieldset?.getAttribute("data-tooltip")).toBe(ARCHIVED_ACTION_TOOLTIP);
+    expect(getTooltipText(editorFieldset as HTMLElement)).toBe(ARCHIVED_ACTION_TOOLTIP);
 
     // Inserting a placeholder or switching MJML/HTML only touches local component
     // state — no API call — so these stay usable even though Save is blocked.

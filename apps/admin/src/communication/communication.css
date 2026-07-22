@@ -123,6 +123,13 @@
   min-width: 0;
 }
 
+/* Tooltip's trigger wrapper defaults to inline-flex (shrink-to-fit) - override to block/full
+   width so wrapping the fieldset in <Tooltip> doesn't change its layout in this stacked form. */
+.communication-editor-fieldset-wrapper {
+  display: block;
+  width: 100%;
+}
+
 .communication-ph-row {
   margin-bottom: var(--space-3);
 }

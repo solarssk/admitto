@@ -10,6 +10,7 @@ import {
   Select,
   Skeleton,
   Tabs,
+  Tooltip,
   useToast,
 } from "@admitto/ui";
 import {
@@ -179,7 +180,6 @@ function MoreActionsMenu({
                 ? "No mail transport configured for this event. Set one up in Event Settings → Mailing."
                 : undefined
             }
-            placement="below"
           >
             {(guard) => (
               <button
@@ -700,7 +700,7 @@ export function AttendeeDetailPage() {
         subtitle="Manage this attendee's profile, ticket, and check-in status."
         actions={
           <>
-            <ArchivedGuard event={event} reasonId="edit-profile-reason" placement="below">
+            <ArchivedGuard event={event} reasonId="edit-profile-reason">
               {(guard) => (
                 <Button
                   type="button"
@@ -718,7 +718,6 @@ export function AttendeeDetailPage() {
                 event={event}
                 reasonId="restore-pass-reason"
                 disabled={revokeBusy}
-                placement="below"
               >
                 {(guard) => (
                   <Button
@@ -735,7 +734,7 @@ export function AttendeeDetailPage() {
                 )}
               </ArchivedGuard>
             ) : (
-              <ArchivedGuard event={event} reasonId="revoke-menu-reason" placement="below">
+              <ArchivedGuard event={event} reasonId="revoke-menu-reason">
                 {(guard) => (
                   <RevokeActionMenu
                     canRevokeCheckIn={canRevokeCheckIn({
@@ -1055,105 +1054,104 @@ export function AttendeeDetailPage() {
                 </Button>
               </div>
             )}
-            <fieldset
-              className={["attendee-form__fieldset", isEventArchived(event) && "at-tooltip"]
-                .filter(Boolean)
-                .join(" ")}
-              data-tooltip={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
-              disabled={isEventArchived(event)}
+            <Tooltip
+              content={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
+              className="attendee-form__fieldset-wrapper"
             >
-              <Select
-                label="Attendance"
-                value={form.rsvp_status}
-                onChange={(e) => setForm({ ...form, rsvp_status: e.target.value as RsvpStatus })}
-              >
-                <option value="none">Registered</option>
-                <option value="confirmed">Confirmed</option>
-                <option value="declined">Declined</option>
-                <option value="tentative">Tentative</option>
-                <option value="cancelled">Cancelled</option>
-              </Select>
-              <Input
-                label="Email"
-                type="text"
-                inputMode="email"
-                icon={<i className="ti ti-mail" aria-hidden="true" />}
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                required
-                {...NO_AUTOFILL_PROPS}
-              />
-              {emailChanged && (
-                <p className="attendee-form__warn">
-                  This changes the attendee&apos;s primary address. To send a ticket elsewhere, use Resend ticket.
-                </p>
-              )}
-              {emailConflict && (
-                <p className="attendee-form__error">This email is already used by another attendee in this event.</p>
-              )}
-              <Input
-                label="Name"
-                icon={<i className="ti ti-user" aria-hidden="true" />}
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                required
-                {...NO_AUTOFILL_PROPS}
-              />
-              <Input
-                label="Company"
-                icon={<i className="ti ti-building" aria-hidden="true" />}
-                value={form.company}
-                onChange={(e) => setForm({ ...form, company: e.target.value })}
-              />
-              <Input
-                label="Department"
-                icon={<i className="ti ti-sitemap" aria-hidden="true" />}
-                value={form.department}
-                onChange={(e) => setForm({ ...form, department: e.target.value })}
-              />
-              <Select
-                label="Ticket type"
-                value={form.ticket_type}
-                onChange={(e) => setForm({ ...form, ticket_type: e.target.value })}
-              >
-                <option value="">—</option>
-                {orphanedTicketType && (
-                  <option
-                    value={orphanedTicketType}
-                    title="Not in this event's ticket-type catalog — it may have been deleted after being assigned. Picking another option here replaces it."
-                  >
-                    {orphanedTicketType} (not in catalog)
-                  </option>
-                )}
-                {ticketTypes.map((type) => (
-                  <option key={type.key} value={type.key}>
-                    {type.label}
-                  </option>
-                ))}
-              </Select>
-              {ticketTypesError && (
-                <p className="attendee-form__error">
-                  {ticketTypesError}{" "}
-                  <button type="button" className="link-btn" onClick={loadTicketTypes}>
-                    Retry
-                  </button>
-                </p>
-              )}
-              {attributeFields.map((field) => (
-                <CustomDataFieldInput
-                  key={field.source_field}
-                  field={field}
-                  value={form.customFields[field.source_field] ?? ""}
-                  disabled={saving || reloading || staleWrite}
-                  onChange={(next) =>
-                    setForm({
-                      ...form,
-                      customFields: { ...form.customFields, [field.source_field]: next },
-                    })
-                  }
+              <fieldset className="attendee-form__fieldset" disabled={isEventArchived(event)}>
+                <Select
+                  label="Attendance"
+                  value={form.rsvp_status}
+                  onChange={(e) => setForm({ ...form, rsvp_status: e.target.value as RsvpStatus })}
+                >
+                  <option value="none">Registered</option>
+                  <option value="confirmed">Confirmed</option>
+                  <option value="declined">Declined</option>
+                  <option value="tentative">Tentative</option>
+                  <option value="cancelled">Cancelled</option>
+                </Select>
+                <Input
+                  label="Email"
+                  type="text"
+                  inputMode="email"
+                  icon={<i className="ti ti-mail" aria-hidden="true" />}
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  required
+                  {...NO_AUTOFILL_PROPS}
                 />
-              ))}
-            </fieldset>
+                {emailChanged && (
+                  <p className="attendee-form__warn">
+                    This changes the attendee&apos;s primary address. To send a ticket elsewhere, use Resend ticket.
+                  </p>
+                )}
+                {emailConflict && (
+                  <p className="attendee-form__error">This email is already used by another attendee in this event.</p>
+                )}
+                <Input
+                  label="Name"
+                  icon={<i className="ti ti-user" aria-hidden="true" />}
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  required
+                  {...NO_AUTOFILL_PROPS}
+                />
+                <Input
+                  label="Company"
+                  icon={<i className="ti ti-building" aria-hidden="true" />}
+                  value={form.company}
+                  onChange={(e) => setForm({ ...form, company: e.target.value })}
+                />
+                <Input
+                  label="Department"
+                  icon={<i className="ti ti-sitemap" aria-hidden="true" />}
+                  value={form.department}
+                  onChange={(e) => setForm({ ...form, department: e.target.value })}
+                />
+                <Select
+                  label="Ticket type"
+                  value={form.ticket_type}
+                  onChange={(e) => setForm({ ...form, ticket_type: e.target.value })}
+                >
+                  <option value="">—</option>
+                  {orphanedTicketType && (
+                    <option
+                      value={orphanedTicketType}
+                      title="Not in this event's ticket-type catalog — it may have been deleted after being assigned. Picking another option here replaces it."
+                    >
+                      {orphanedTicketType} (not in catalog)
+                    </option>
+                  )}
+                  {ticketTypes.map((type) => (
+                    <option key={type.key} value={type.key}>
+                      {type.label}
+                    </option>
+                  ))}
+                </Select>
+                {ticketTypesError && (
+                  <p className="attendee-form__error">
+                    {ticketTypesError}{" "}
+                    <button type="button" className="link-btn" onClick={loadTicketTypes}>
+                      Retry
+                    </button>
+                  </p>
+                )}
+                {attributeFields.map((field) => (
+                  <CustomDataFieldInput
+                    key={field.source_field}
+                    field={field}
+                    value={form.customFields[field.source_field] ?? ""}
+                    disabled={saving || reloading || staleWrite}
+                    onChange={(next) =>
+                      setForm({
+                        ...form,
+                        customFields: { ...form.customFields, [field.source_field]: next },
+                      })
+                    }
+                  />
+                ))}
+              </fieldset>
+            </Tooltip>
             <div className="attendee-form__actions">
               <Button type="button" variant="secondary" onClick={handleCancelEdit} disabled={saving}>
                 Cancel
