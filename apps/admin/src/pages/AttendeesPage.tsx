@@ -956,6 +956,12 @@ export function AttendeesPage() {
     !rsvpStatusFilter &&
     !mailStatusFilter;
 
+  // How many of the selection the bulk "Revoke items" confirm dialog would actually affect, not
+  // the raw selection size (PO review) — matches the bulk bar's own menu-item hint.
+  const revokableItemsCount = items.filter(
+    (row) => selectedIds.has(row.id) && row.has_issued_items,
+  ).length;
+
   if (!eventId) return <p>Missing event.</p>;
 
   return (
@@ -1219,7 +1225,7 @@ export function AttendeesPage() {
 
       <ConfirmDialog
         open={bulkRevokeItemsConfirmOpen}
-        title={`Revoke items for ${selectedIds.size} attendee${selectedIds.size === 1 ? "" : "s"}?`}
+        title={`Revoke items for ${revokableItemsCount} attendee${revokableItemsCount === 1 ? "" : "s"}?`}
         message="Every issued item (badge, wristband, giftbag, …) for the selected attendees is reset to pending. Items can be re-issued from the check-in screen at any time."
         errorMessage={bulkRevokeItemsError}
         confirmLabel="Revoke items"

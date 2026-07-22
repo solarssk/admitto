@@ -46,6 +46,7 @@ import {
   assertTicketTypeInCatalog,
   UnknownTicketTypeError,
   acquireEventTicketTypesLock,
+  REVOCABLE_ITEM_STATES,
   type AdmitResult,
   type AttendeeMailStatusFilter,
   type AttendeeSortBy,
@@ -418,6 +419,10 @@ export type AttendeeRowDto = {
   updated_at: string;
   last_mail_status: string | null;
   rsvp_status: RsvpStatus;
+  /** Whether this attendee currently has at least one issued/returned item hand-out — lets the
+   * Attendees list's bulk "Revoke items" action report how many of the selection it would
+   * actually affect, not just the raw selection size. */
+  has_issued_items: boolean;
 };
 
 export type AttendeeActionLogEntryDto = {
@@ -605,6 +610,19 @@ async function lastMailStatusByAttendee(
   return map;
 }
 
+/** Attendee ids (within the given set) that currently have at least one issued/returned item
+ * hand-out — backs the Attendees list's `has_issued_items` row field. */
+async function issuedItemsAttendeeIds(db: PrismaClient, attendeeIds: string[]): Promise<Set<string>> {
+  if (attendeeIds.length === 0) return new Set();
+
+  const states = await db.attendeeItemState.findMany({
+    where: { attendee_id: { in: attendeeIds }, state: { in: REVOCABLE_ITEM_STATES } },
+    select: { attendee_id: true },
+    distinct: ["attendee_id"],
+  });
+  return new Set(states.map((s) => s.attendee_id));
+}
+
 
 function truncateTicketRef(value: string): string {
   if (value.length <= 12) return value;
@@ -693,6 +711,7 @@ function serializeAttendeeRow(
     rsvp_status: string;
   },
   lastMail: Map<string, string>,
+  issuedItems: Set<string>,
 ): AttendeeRowDto {
   const { company, department } = resolveCompanyDepartment(row);
   return {
@@ -708,6 +727,7 @@ function serializeAttendeeRow(
     updated_at: row.updated_at.toISOString(),
     last_mail_status: lastMail.get(row.id) ?? null,
     rsvp_status: row.rsvp_status as RsvpStatus,
+    has_issued_items: issuedItems.has(row.id),
   };
 }
 
@@ -783,14 +803,15 @@ export async function handleListEventAttendees(c: Context, db: PrismaClient): Pr
     findFilteredAttendeesForList(db, eventId, filterParams, page, pageSize, sortBy, sortDir),
   ]);
 
-  const lastMail = await lastMailStatusByAttendee(
-    db,
-    rows.map((r) => r.id),
-  );
+  const attendeeIds = rows.map((r) => r.id);
+  const [lastMail, issuedItems] = await Promise.all([
+    lastMailStatusByAttendee(db, attendeeIds),
+    issuedItemsAttendeeIds(db, attendeeIds),
+  ]);
 
   c.header("Cache-Control", "no-store");
   return c.json({
-    items: rows.map((r) => serializeAttendeeRow(r, lastMail)),
+    items: rows.map((r) => serializeAttendeeRow(r, lastMail, issuedItems)),
     total,
     page,
     pageSize,

@@ -18,6 +18,7 @@ const baseRow: AttendeeRowDto = {
   updated_at: "2026-06-01T10:00:00.000Z",
   last_mail_status: "sent",
   rsvp_status: "confirmed",
+  has_issued_items: true,
 };
 
 const otherRow: AttendeeRowDto = {
@@ -196,6 +197,21 @@ describe("AttendeesTable bulk revoke items (#551)", () => {
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     const item = screen.getByRole("menuitem", { name: /Revoking items…/ }) as HTMLButtonElement;
     expect(item.disabled).toBe(true);
+  });
+
+  it("reports how many of the selection actually have something issued, not the raw selection size (PO review)", () => {
+    const nothingIssuedRow = { ...otherRow, has_issued_items: false };
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow, nothingIssuedRow]}
+        selectedIds={new Set(["att-1", "att-2"])}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    const item = screen.getByRole("menuitem", { name: /Revoke items/ });
+    expect(item.textContent).toContain("Reset all issued items for 1 attendee");
+    expect(item.textContent).not.toContain("for 2 attendees");
   });
 });
 

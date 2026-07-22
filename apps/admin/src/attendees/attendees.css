@@ -812,6 +812,17 @@
   background: var(--status-error-tint);
 }
 
+/* Lighter-weight than --danger — for reversible-but-impactful bulk actions (revoke check-in,
+ * revoke items) that shouldn't read as alarming as truly destructive/irreversible ones (revoke
+ * pass, delete). */
+.more-actions-menu__item--warning {
+  color: var(--status-warn);
+}
+
+.more-actions-menu__item--warning:hover {
+  background: var(--status-warn-tint);
+}
+
 .attendees-export-menu {
   position: relative;
   display: inline-flex;

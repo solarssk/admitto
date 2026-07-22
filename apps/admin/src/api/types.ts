@@ -170,6 +170,9 @@ export interface AttendeeRowDto {
   updated_at: string;
   last_mail_status: string | null;
   rsvp_status: RsvpStatus;
+  /** Whether this attendee currently has at least one issued/returned item hand-out — lets the
+   * bulk "Revoke items" action report how many of the selection it would actually affect. */
+  has_issued_items: boolean;
 }
 
 export interface DeliveryDto {

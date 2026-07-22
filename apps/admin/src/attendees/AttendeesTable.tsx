@@ -403,6 +403,7 @@ function BulkMoreActionsMenu({
   onRetryTicketTypes,
   onChangeTicketType,
   itemCount,
+  revokableItemsCount,
   itemsError,
   onRetryItems,
   onBulkRevokeItems,
@@ -423,6 +424,7 @@ function BulkMoreActionsMenu({
   onRetryTicketTypes?: () => void;
   onChangeTicketType: () => void;
   itemCount: number;
+  revokableItemsCount: number;
   itemsError?: string | null;
   onRetryItems?: () => void;
   onBulkRevokeItems: () => void;
@@ -539,7 +541,7 @@ function BulkMoreActionsMenu({
           <button
             type="button"
             role="menuitem"
-            className="more-actions-menu__item"
+            className="more-actions-menu__item more-actions-menu__item--warning"
             disabled={archived || bulkRevokeItemsBusy || itemCount === 0}
             title={archived || itemCount === 0 ? bulkRevokeItemsReason(archived, itemsError) : undefined}
             onClick={() => {
@@ -551,7 +553,7 @@ function BulkMoreActionsMenu({
             <span className="more-actions-menu__item-text">
               <span>{bulkRevokeItemsBusy ? "Revoking items…" : "Revoke items"}</span>
               <span className="more-actions-menu__item-hint">
-                Reset all issued items for {selectedCount} attendee{selectedCount === 1 ? "" : "s"}
+                Reset all issued items for {revokableItemsCount} attendee{revokableItemsCount === 1 ? "" : "s"}
               </span>
             </span>
           </button>
@@ -623,6 +625,7 @@ function BulkBar({
   onRetryTicketTypes,
   onBulkChangeTicketType,
   itemCount,
+  revokableItemsCount,
   itemsError,
   onRetryItems,
   onBulkRevokeItems,
@@ -644,6 +647,7 @@ function BulkBar({
   onRetryTicketTypes?: () => void;
   onBulkChangeTicketType: () => void;
   itemCount: number;
+  revokableItemsCount: number;
   itemsError?: string | null;
   onRetryItems?: () => void;
   onBulkRevokeItems: () => void;
@@ -726,6 +730,7 @@ function BulkBar({
           onRetryTicketTypes={onRetryTicketTypes}
           onChangeTicketType={onBulkChangeTicketType}
           itemCount={itemCount}
+          revokableItemsCount={revokableItemsCount}
           itemsError={itemsError}
           onRetryItems={onRetryItems}
           onBulkRevokeItems={onBulkRevokeItems}
@@ -1191,6 +1196,11 @@ export function AttendeesTable({
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(page * pageSize, total);
+  // "Revoke items" hint reports how many of the selection actually have something issued, not
+  // the raw selection size (PO review) — mirrors "Revoke check-in"/"Revoke pass" reporting only
+  // the attendees they'd actually affect.
+  const selectedRows = items.filter((row) => selectedIds.has(row.id));
+  const revokableItemsCount = selectedRows.filter((row) => row.has_issued_items).length;
 
   return (
     <Card padded={false}>
@@ -1211,6 +1221,7 @@ export function AttendeesTable({
           onRetryTicketTypes={onRetryTicketTypes}
           onBulkChangeTicketType={onBulkChangeTicketType}
           itemCount={itemCount}
+          revokableItemsCount={revokableItemsCount}
           itemsError={itemsError}
           onRetryItems={onRetryItems}
           onBulkRevokeItems={onBulkRevokeItems}

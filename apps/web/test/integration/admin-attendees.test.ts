@@ -439,6 +439,33 @@ describe("GET /api/admin/events/:eventId/attendees", () => {
     });
     expect(res.status).toBe(403);
   });
+
+  it("reports has_issued_items per attendee, for the Attendees list's bulk Revoke items hint", async () => {
+    const giftbag = await prisma.eventItem.findFirstOrThrow({
+      where: { event_id: EVENT_A, key: "giftbag" },
+      select: { id: true },
+    });
+    await prisma.attendeeItemState.upsert({
+      where: { attendee_id_event_item_id: { attendee_id: ATT_A1, event_item_id: giftbag.id } },
+      create: { attendee_id: ATT_A1, event_item_id: giftbag.id, state: "issued" },
+      update: { state: "issued" },
+    });
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+        headers: { Cookie: adminCookie },
+      });
+      const body = (await res.json()) as { items: { id: string; has_issued_items: boolean }[] };
+      const a1 = body.items.find((i) => i.id === ATT_A1);
+      const a2 = body.items.find((i) => i.id === ATT_A2);
+      expect(a1?.has_issued_items).toBe(true);
+      expect(a2?.has_issued_items).toBe(false);
+    } finally {
+      await prisma.attendeeItemState.update({
+        where: { attendee_id_event_item_id: { attendee_id: ATT_A1, event_item_id: giftbag.id } },
+        data: { state: "pending" },
+      });
+    }
+  });
 });
 
 describe("GET /api/admin/events/:eventId/attendees/:id", () => {

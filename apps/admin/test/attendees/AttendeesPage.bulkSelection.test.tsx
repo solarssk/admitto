@@ -43,6 +43,7 @@ function makeRow(id: string, name: string): AttendeeRowDto {
     updated_at: "2026-06-01T10:00:00.000Z",
     last_mail_status: "sent",
     rsvp_status: "confirmed",
+    has_issued_items: true,
   };
 }
 
