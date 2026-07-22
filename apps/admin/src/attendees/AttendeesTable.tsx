@@ -397,6 +397,7 @@ function BulkMoreActionsMenu({
   onBulkRevokeCheckIn,
   bulkRevokeCheckInBusy,
   canRevokeCheckIn,
+  revokableCheckInCount,
   bulkSendBusy,
   canBulkSend,
   onBulkSendTickets,
@@ -416,6 +417,10 @@ function BulkMoreActionsMenu({
   bulkRevokeCheckInBusy: boolean;
   /** At least one selected attendee is currently checked in - there's something to revoke. */
   canRevokeCheckIn: boolean;
+  /** How many of the selection are actually checked in - the count this action would affect,
+   * not the raw selection size (PO review: was showing the full selection count even when
+   * only some of it was checked in). */
+  revokableCheckInCount: number;
   bulkSendBusy: boolean;
   canBulkSend: boolean;
   onBulkSendTickets: () => void;
@@ -474,31 +479,6 @@ function BulkMoreActionsMenu({
               </span>
             </button>
           )}
-          {/* Desktop already has a direct "Check in" button in the bulk bar, but no direct
-           * revoke button anywhere — this menu is the only place for the reverse action, at
-           * every screen size, unlike Send tickets above which is mobile-only (PO review, #522
-           * follow-up: "revoke czy tam undo check in" for a selection). Disabled (not hidden)
-           * when nothing in the selection is currently checked in, same convention as Change
-           * ticket type below. */}
-          <button
-            type="button"
-            role="menuitem"
-            className="more-actions-menu__item"
-            disabled={archived || bulkRevokeCheckInBusy || !canRevokeCheckIn}
-            title={bulkRevokeCheckInTooltip(archived, canRevokeCheckIn)}
-            onClick={() => {
-              setOpen(false);
-              onBulkRevokeCheckIn();
-            }}
-          >
-            <i className="ti ti-qrcode-off" aria-hidden="true" />
-            <span className="more-actions-menu__item-text">
-              <span>{bulkRevokeCheckInBusy ? "Revoking check-in…" : "Revoke check-in"}</span>
-              <span className="more-actions-menu__item-hint">
-                Undo check-in for {selectedCount} attendee{selectedCount === 1 ? "" : "s"}
-              </span>
-            </span>
-          </button>
           {/* Not ArchivedGuard'd — exporting a selection is read-only, so it stays legal
            * after an event is archived. */}
           <button
@@ -555,6 +535,32 @@ function BulkMoreActionsMenu({
               Retry loading ticket types
             </button>
           )}
+          {/* Desktop already has a direct "Check in" button in the bulk bar, but no direct
+           * revoke button anywhere — this menu is the only place for the reverse action, at
+           * every screen size, unlike Send tickets above which is mobile-only (PO review, #522
+           * follow-up: "revoke czy tam undo check in" for a selection). Disabled (not hidden)
+           * when nothing in the selection is currently checked in, same convention as Change
+           * ticket type below. Styled as a caution item (not full danger) — it's reversible via
+           * Check in again, unlike Delete below (PO review). */}
+          <button
+            type="button"
+            role="menuitem"
+            className="more-actions-menu__item more-actions-menu__item--warning"
+            disabled={archived || bulkRevokeCheckInBusy || !canRevokeCheckIn}
+            title={bulkRevokeCheckInTooltip(archived, canRevokeCheckIn)}
+            onClick={() => {
+              setOpen(false);
+              onBulkRevokeCheckIn();
+            }}
+          >
+            <i className="ti ti-qrcode-off" aria-hidden="true" />
+            <span className="more-actions-menu__item-text">
+              <span>{bulkRevokeCheckInBusy ? "Revoking check-in…" : "Revoke check-in"}</span>
+              <span className="more-actions-menu__item-hint">
+                Undo check-in for {revokableCheckInCount} attendee{revokableCheckInCount === 1 ? "" : "s"}
+              </span>
+            </span>
+          </button>
           <hr className="more-actions-menu__divider" />
           {/* Not ArchivedGuard'd — GDPR erasure requests can legally arrive after an event
            * ends; the DELETE endpoint doesn't block on archived_at either. */}
@@ -604,6 +610,7 @@ function BulkBar({
   onBulkRevokeCheckIn,
   bulkRevokeCheckInBusy,
   canRevokeCheckIn,
+  revokableCheckInCount,
   bulkExportBusy,
   onBulkExportSelected,
   ticketTypes,
@@ -626,6 +633,9 @@ function BulkBar({
   bulkRevokeCheckInBusy: boolean;
   /** At least one selected attendee is currently checked in - there's something to revoke. */
   canRevokeCheckIn: boolean;
+  /** How many of the selection are actually checked in - threaded down to the menu item's hint
+   * text instead of the raw selection size (PO review). */
+  revokableCheckInCount: number;
   bulkExportBusy: boolean;
   onBulkExportSelected: () => void;
   ticketTypes: TicketTypeDto[];
@@ -706,6 +716,7 @@ function BulkBar({
           onBulkRevokeCheckIn={onBulkRevokeCheckIn}
           bulkRevokeCheckInBusy={bulkRevokeCheckInBusy}
           canRevokeCheckIn={canRevokeCheckIn}
+          revokableCheckInCount={revokableCheckInCount}
           bulkSendBusy={bulkSendBusy}
           canBulkSend={canBulkSend}
           onBulkSendTickets={onBulkSendTickets}
@@ -1183,6 +1194,10 @@ export function AttendeesTable({
   const allSelectedAdmitted =
     selectedRows.length > 0 && selectedRows.every((row) => row.check_in_status === "admitted");
   const anySelectedAdmitted = selectedRows.some((row) => row.check_in_status === "admitted");
+  // How many of the selection "Revoke check-in" would actually affect - the More actions menu's
+  // hint text shows this instead of the raw selection size (PO review: a mixed selection was
+  // claiming to undo check-in for attendees who were never checked in to begin with).
+  const admittedSelectedCount = selectedRows.filter((row) => row.check_in_status === "admitted").length;
 
   return (
     <Card padded={false}>
@@ -1200,6 +1215,7 @@ export function AttendeesTable({
           onBulkRevokeCheckIn={onBulkRevokeCheckIn}
           bulkRevokeCheckInBusy={bulkRevokeCheckInBusy}
           canRevokeCheckIn={anySelectedAdmitted}
+          revokableCheckInCount={admittedSelectedCount}
           bulkExportBusy={bulkExportBusy}
           onBulkExportSelected={onBulkExportSelected}
           ticketTypes={ticketTypes}

@@ -214,6 +214,22 @@ describe("AttendeesTable bulk revoke check-in (PO review, #522 follow-up)", () =
       "This event is archived — editing is disabled.",
     );
   });
+
+  it("shows the accurate admitted count in the hint text for a mixed selection, not the raw selection size (PO review)", () => {
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[admittedRow, otherRow]}
+        selectedIds={new Set(["att-1", "att-2"])}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    const item = screen.getByRole("menuitem", { name: /Revoke check-in/ });
+    // 2 selected, but only 1 (admittedRow) is actually checked in - the hint should reflect
+    // that, not the full selection size.
+    expect(item.textContent).toContain("Undo check-in for 1 attendee");
+    expect(item.textContent).not.toContain("2 attendee");
+  });
 });
 
 describe("AttendeesTable mobile bulk bar — 'More' menu's Send tickets item", () => {
