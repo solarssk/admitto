@@ -5,6 +5,8 @@ import {
   ApiError,
   bulkChangeTicketType,
   bulkCheckInAttendees,
+  bulkRevokeCheckIn,
+  bulkRevokePass,
   bulkDeleteAttendees,
   bulkResendTickets,
   exportAttendees,
@@ -122,6 +124,67 @@ function notifyBulkCheckInResult(
   }
 
   addToast(`No attendees checked in${noteSuffix}.`, "error");
+}
+
+/** Standard "N check-ins revoked (M weren't checked in)" toast for a bulk revoke-check-in
+ * result — shared shape with notifyBulkCheckInResult above. */
+function notifyBulkRevokeCheckInResult(
+  result: { revoked: number; notAdmitted: number; blocked: number; errored: number },
+  addToast: (message: string, variant?: ToastVariant) => void,
+) {
+  const { revoked, notAdmitted, blocked, errored } = result;
+  const notes: string[] = [];
+  if (notAdmitted > 0) notes.push(`${notAdmitted} weren't checked in`);
+  if (blocked > 0) notes.push(`${blocked} pass no longer active`);
+  if (errored > 0) notes.push(`${errored} failed unexpectedly`);
+  const noteSuffix = notes.length > 0 ? ` (${notes.join(", ")})` : "";
+
+  if (revoked > 0) {
+    addToast(
+      `${revoked} ${pluralize(revoked, "check-in")} revoked${noteSuffix}.`,
+      errored > 0 ? "warning" : "success",
+    );
+    return;
+  }
+
+  // Only the clean "nobody had anything to revoke" case gets its own reassuring copy - a mix
+  // with blocked/errored falls through to the generic message below, whose noteSuffix already
+  // spells out every reason (code review: this branch used to fire on notAdmitted alone, so a
+  // blocked-pass attendee - who WAS checked in - got misreported as "nobody was checked in").
+  if (notAdmitted > 0 && blocked === 0 && errored === 0) {
+    addToast("None of the selected attendees were checked in.", "info");
+    return;
+  }
+
+  addToast(`No check-ins revoked${noteSuffix}.`, "error");
+}
+
+/** Standard "N passes revoked (M already revoked or cancelled)" toast for a bulk revoke-pass
+ * result — shared shape with notifyBulkRevokeCheckInResult above (extracted, not inlined in the
+ * handler, to keep handleBulkRevokePassSelected's own cognitive complexity within Sonar's
+ * threshold). */
+function notifyBulkRevokePassResult(
+  result: { revoked: number; skipped: number; errored: number },
+  addToast: (message: string, variant?: ToastVariant) => void,
+) {
+  const { revoked, skipped, errored } = result;
+  const notes: string[] = [];
+  if (skipped > 0) notes.push(`${skipped} already revoked or cancelled`);
+  if (errored > 0) notes.push(`${errored} failed unexpectedly`);
+  const noteSuffix = notes.length > 0 ? ` (${notes.join(", ")})` : "";
+
+  if (revoked > 0) {
+    // Not pluralize() - "pass" needs "passes", not the naive "passs" a bare +s would give.
+    addToast(`${revoked} ${revoked === 1 ? "pass" : "passes"} revoked${noteSuffix}.`, errored > 0 ? "warning" : "success");
+    return;
+  }
+
+  if (skipped > 0 && errored === 0) {
+    addToast("All selected attendees were already revoked or cancelled.", "info");
+    return;
+  }
+
+  addToast(`No passes revoked${noteSuffix}.`, "error");
 }
 
 interface SendTicketsDialogProps {
@@ -403,6 +466,7 @@ export function AttendeesPage() {
   const [bulkSendBusy, setBulkSendBusy] = useState(false);
   const [bulkSendConfirmOpen, setBulkSendConfirmOpen] = useState(false);
   const [bulkCheckInBusy, setBulkCheckInBusy] = useState(false);
+  const [bulkRevokeCheckInBusy, setBulkRevokeCheckInBusy] = useState(false);
   const [bulkExportBusy, setBulkExportBusy] = useState(false);
   const [changeTypeOpen, setChangeTypeOpen] = useState(false);
   const [changeTypeBusy, setChangeTypeBusy] = useState(false);
@@ -411,6 +475,9 @@ export function AttendeesPage() {
   const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
   const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null);
+  const [bulkRevokePassBusy, setBulkRevokePassBusy] = useState(false);
+  const [bulkRevokePassConfirmOpen, setBulkRevokePassConfirmOpen] = useState(false);
+  const [bulkRevokePassError, setBulkRevokePassError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [revokeOpen, setRevokeOpen] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<AttendeeRowDto | null>(null);
@@ -748,6 +815,38 @@ export function AttendeesPage() {
     }
   };
 
+  /** Bulk "Revoke check-in" from the More actions menu — same no-confirmation-dialog reasoning
+   * as handleBulkCheckInSelected above (reversible internal state change), same
+   * still-on-this-event guard pattern. */
+  const handleBulkRevokeCheckInSelected = async () => {
+    if (!eventId || selectedIds.size === 0) return;
+    const initiatingEventId = eventId;
+    const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
+    setBulkRevokeCheckInBusy(true);
+    try {
+      const result = await bulkRevokeCheckIn(initiatingEventId, [...selectedIds]);
+      if (!isStillOnEvent()) return;
+      notifyBulkRevokeCheckInResult(result, addToast);
+      clearSelection();
+      setReloadToken((n) => n + 1);
+    } catch (err) {
+      if (!isStillOnEvent()) return;
+      if (err instanceof ApiError) {
+        reportApiError(err.status);
+        if (err.status === 401) {
+          const next = encodeURIComponent(window.location.pathname);
+          window.location.assign(`/login?next=${next}`);
+          return;
+        }
+        addToast(operatorApiErrorMessage(err, "Revoke check-in failed."), "error");
+      } else {
+        addToast("Failed to revoke check-in.", "error");
+      }
+    } finally {
+      if (isStillOnEvent()) setBulkRevokeCheckInBusy(false);
+    }
+  };
+
   /** CSV export of an explicit subset of selected attendees — separate from the header
    * "Export" dropdown (which exports the whole filtered view): the server bypasses list
    * filters when attendee_ids is present. CSV only, per the design mockup. No success toast
@@ -879,6 +978,43 @@ export function AttendeesPage() {
     }
   };
 
+  /** Bulk "Revoke pass" for an explicit subset of selected attendees — same effect as the
+   * attendee detail page's single "Revoke pass" action, run once per selected attendee. Same
+   * dialog-stays-open-with-inline-error-on-failure convention as handleBulkDeleteSelected above
+   * (destructive-ish action, doesn't also toast the same message). An attendee already revoked
+   * or cancelled is left untouched server-side and counted separately, not treated as a
+   * failure - reported in the success toast rather than surfaced as an error. */
+  const handleBulkRevokePassSelected = async () => {
+    if (!eventId || selectedIds.size === 0) return;
+    const initiatingEventId = eventId;
+    const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
+    setBulkRevokePassBusy(true);
+    setBulkRevokePassError(null);
+    try {
+      const result = await bulkRevokePass(initiatingEventId, [...selectedIds]);
+      if (!isStillOnEvent()) return;
+      notifyBulkRevokePassResult(result, addToast);
+      setBulkRevokePassConfirmOpen(false);
+      clearSelection();
+      setReloadToken((n) => n + 1);
+    } catch (err) {
+      if (!isStillOnEvent()) return;
+      if (err instanceof ApiError) {
+        reportApiError(err.status);
+        if (err.status === 401) {
+          const next = encodeURIComponent(window.location.pathname);
+          window.location.assign(`/login?next=${next}`);
+          return;
+        }
+        setBulkRevokePassError(operatorApiErrorMessage(err, "Revoke pass failed."));
+      } else {
+        setBulkRevokePassError("Failed to revoke pass.");
+      }
+    } finally {
+      if (isStillOnEvent()) setBulkRevokePassBusy(false);
+    }
+  };
+
   const isUnfilteredEmpty =
     total === 0 &&
     !searchQuery &&
@@ -886,6 +1022,13 @@ export function AttendeesPage() {
     !ticketTypeFilter &&
     !rsvpStatusFilter &&
     !mailStatusFilter;
+
+  // How many of the selection actually have an active pass to revoke - shown in the confirm
+  // dialog's title instead of the raw selection size, so a mixed selection doesn't overstate
+  // the impact (PO review follow-up, #549).
+  const revokablePassCount = items.filter(
+    (row) => selectedIds.has(row.id) && row.status !== "cancelled" && row.status !== "revoked",
+  ).length;
 
   if (!eventId) return <p>Missing event.</p>;
 
@@ -1027,6 +1170,8 @@ export function AttendeesPage() {
         canBulkSend={mailConfigured !== false}
         onBulkCheckIn={() => void handleBulkCheckInSelected()}
         bulkCheckInBusy={bulkCheckInBusy}
+        onBulkRevokeCheckIn={() => void handleBulkRevokeCheckInSelected()}
+        bulkRevokeCheckInBusy={bulkRevokeCheckInBusy}
         onBulkExportSelected={() => void handleBulkExportSelected()}
         bulkExportBusy={bulkExportBusy}
         onBulkChangeTicketType={() => {
@@ -1034,6 +1179,11 @@ export function AttendeesPage() {
           setChangeTypeValue(ticketTypes[0]?.key ?? "");
           setChangeTypeOpen(true);
         }}
+        onBulkRevokePass={() => {
+          setBulkRevokePassError(null);
+          setBulkRevokePassConfirmOpen(true);
+        }}
+        bulkRevokePassBusy={bulkRevokePassBusy}
         onBulkDelete={() => {
           setBulkDeleteError(null);
           setBulkDeleteConfirmOpen(true);
@@ -1139,6 +1289,23 @@ export function AttendeesPage() {
           <li>Check-in history</li>
         </ul>
       </ConfirmDialog>
+
+      <ConfirmDialog
+        open={bulkRevokePassConfirmOpen}
+        title={`Revoke the pass for ${revokablePassCount} attendee${revokablePassCount === 1 ? "" : "s"}?`}
+        message="They will no longer be able to check in until the pass is restored. Already revoked or cancelled attendees are left untouched."
+        errorMessage={bulkRevokePassError}
+        confirmLabel="Revoke pass"
+        confirmVariant="danger"
+        loading={bulkRevokePassBusy}
+        onConfirm={() => void handleBulkRevokePassSelected()}
+        onCancel={() => {
+          if (!bulkRevokePassBusy) {
+            setBulkRevokePassConfirmOpen(false);
+            setBulkRevokePassError(null);
+          }
+        }}
+      />
     </>
   );
 }

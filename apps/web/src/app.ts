@@ -111,6 +111,8 @@ import {
   handleDeleteEventAttendee,
   handleBulkDeleteEventAttendees,
   handleBulkCheckInEventAttendees,
+  handleBulkRevokeCheckInEventAttendees,
+  handleBulkRevokeAttendeePass,
   handleBulkTicketTypeEventAttendees,
   handleResendEventAttendeeTicket,
   handleBulkResendTickets,
@@ -706,6 +708,18 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     guardArchivedEvent((c) => handleBulkCheckInEventAttendees(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/bulk-revoke-checkin",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleBulkRevokeCheckInEventAttendees(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/bulk-revoke-pass",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleBulkRevokeAttendeePass(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-ticket-type",

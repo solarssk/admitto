@@ -358,6 +358,26 @@ export interface BulkCheckInResponse {
   errored: number;
 }
 
+/** Bulk revoke-check-in summary from POST .../attendees/bulk-revoke-checkin. */
+export interface BulkRevokeCheckInResponse {
+  revoked: number;
+  /** Wasn't currently checked in (or lost a concurrent race) - nothing to revoke. */
+  notAdmitted: number;
+  /** Attendee's pass is already revoked/cancelled, blocking the item-reset cascade. */
+  blocked: number;
+  /** revokeCheckInMutation threw for this id (unexpected) - safe to retry. */
+  errored: number;
+}
+
+/** Bulk revoke-pass summary from POST .../attendees/bulk-revoke-pass. */
+export interface BulkRevokePassResponse {
+  revoked: number;
+  /** Already revoked or cancelled - nothing to revoke, left untouched. */
+  skipped: number;
+  /** revokeOneAttendeePass threw for this id (unexpected) - safe to retry. */
+  errored: number;
+}
+
 /** Admin SPA DTOs for event item configuration (mirror of web API).
  * `content_fields` references EventCustomField rows by source_field (see below) - it does not
  * embed field definitions. */
