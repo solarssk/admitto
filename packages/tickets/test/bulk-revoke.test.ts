@@ -18,7 +18,11 @@ import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
-import { revokeAllCheckInsForEvent, revokeAllItemsForEvent } from "../src/bulk-revoke.js";
+import {
+  revokeAllCheckInsForEvent,
+  revokeAllItemsForEvent,
+  revokeItemsForAttendees,
+} from "../src/bulk-revoke.js";
 import type { OpsAuditContext } from "../src/ops-audit.js";
 import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 
@@ -415,5 +419,120 @@ describe("revokeAllItemsForEvent", () => {
     ]);
     expect(stateJ?.state).toBe("issued");
     expect(stateK?.state).toBe("pending");
+  });
+});
+
+describe("revokeItemsForAttendees", () => {
+  it("returns 0 for an id with nothing issued", async () => {
+    const n = await prisma.attendee.create({
+      data: { event_id: EVENT_ID, email: "items-selection-n@example.com", name: "Selection N" },
+    });
+    const count = await revokeItemsForAttendees(prisma, {
+      eventId: EVENT_ID,
+      attendeeIds: [n.id],
+      audit,
+    });
+    expect(count).toBe(0);
+  });
+
+  it("only resets items for the selected attendees, leaving an unselected attendee's issued item untouched", async () => {
+    const [o, p] = await Promise.all([
+      prisma.attendee.create({
+        data: { event_id: EVENT_ID, email: "items-selection-o@example.com", name: "Selection O" },
+      }),
+      prisma.attendee.create({
+        data: { event_id: EVENT_ID, email: "items-selection-p@example.com", name: "Selection P" },
+      }),
+    ]);
+    await prisma.attendeeItemState.createMany({
+      data: [
+        { attendee_id: o.id, event_item_id: giftbagItemId, state: "issued" },
+        { attendee_id: p.id, event_item_id: giftbagItemId, state: "issued" },
+      ],
+    });
+
+    const count = await revokeItemsForAttendees(prisma, {
+      eventId: EVENT_ID,
+      attendeeIds: [o.id],
+      audit,
+    });
+    expect(count).toBe(1);
+
+    const [stateO, stateP] = await Promise.all([
+      prisma.attendeeItemState.findUnique({
+        where: { attendee_id_event_item_id: { attendee_id: o.id, event_item_id: giftbagItemId } },
+      }),
+      prisma.attendeeItemState.findUnique({
+        where: { attendee_id_event_item_id: { attendee_id: p.id, event_item_id: giftbagItemId } },
+      }),
+    ]);
+    expect(stateO?.state).toBe("pending");
+    expect(stateP?.state).toBe("issued");
+  });
+
+  it("ignores an id from a different event", async () => {
+    const otherEvent = await prisma.event.create({
+      data: {
+        title: "Other Bulk Revoke Items Selection Event",
+        slug: "other-bulk-revoke-items-selection-event",
+        date: new Date("2026-09-03T09:00:00Z"),
+        organization_id: "org_default",
+      },
+    });
+    const other = await prisma.attendee.create({
+      data: { event_id: otherEvent.id, email: "other-event-items@example.com", name: "Other Event" },
+    });
+
+    const count = await revokeItemsForAttendees(prisma, {
+      eventId: EVENT_ID,
+      attendeeIds: [other.id],
+      audit,
+    });
+    expect(count).toBe(0);
+
+    await prisma.attendee.deleteMany({ where: { event_id: otherEvent.id } });
+    await prisma.event.delete({ where: { id: otherEvent.id } });
+  });
+
+  it("skips a selected attendee whose pass is blocked, without touching their issued item", async () => {
+    const q = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "items-selection-blocked-q@example.com",
+        name: "Selection Blocked Q",
+        status: "revoked",
+      },
+    });
+    await prisma.attendeeItemState.create({
+      data: { attendee_id: q.id, event_item_id: giftbagItemId, state: "issued" },
+    });
+
+    const count = await revokeItemsForAttendees(prisma, {
+      eventId: EVENT_ID,
+      attendeeIds: [q.id],
+      audit,
+    });
+    expect(count).toBe(0);
+
+    const stateQ = await prisma.attendeeItemState.findUnique({
+      where: { attendee_id_event_item_id: { attendee_id: q.id, event_item_id: giftbagItemId } },
+    });
+    expect(stateQ?.state).toBe("issued");
+  });
+
+  it("processes a duplicate id in the selection only once (code review)", async () => {
+    const r = await prisma.attendee.create({
+      data: { event_id: EVENT_ID, email: "items-selection-dup-r@example.com", name: "Selection Dup R" },
+    });
+    await prisma.attendeeItemState.create({
+      data: { attendee_id: r.id, event_item_id: giftbagItemId, state: "issued" },
+    });
+
+    const count = await revokeItemsForAttendees(prisma, {
+      eventId: EVENT_ID,
+      attendeeIds: [r.id, r.id],
+      audit,
+    });
+    expect(count).toBe(1);
   });
 });

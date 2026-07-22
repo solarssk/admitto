@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AttendeesTable } from "../../src/attendees/AttendeesTable.js";
-import { mockMatchMedia } from "../test-utils.js";
+import { getTooltipText, mockMatchMedia } from "../test-utils.js";
 import type { AttendeeRowDto } from "../../src/api/types.js";
 
 const baseRow: AttendeeRowDto = {
@@ -18,6 +18,7 @@ const baseRow: AttendeeRowDto = {
   updated_at: "2026-06-01T10:00:00.000Z",
   last_mail_status: "sent",
   rsvp_status: "confirmed",
+  has_issued_items: true,
 };
 
 const otherRow: AttendeeRowDto = {
@@ -64,6 +65,9 @@ const tableProps = {
   onBulkExportSelected: vi.fn(),
   bulkExportBusy: false,
   onBulkChangeTicketType: vi.fn(),
+  itemCount: 1,
+  onBulkRevokeItems: vi.fn(),
+  bulkRevokeItemsBusy: false,
   onBulkRevokePass: vi.fn(),
   bulkRevokePassBusy: false,
   onBulkDelete: vi.fn(),
@@ -226,7 +230,7 @@ describe("AttendeesTable bulk revoke check-in (PO review, #522 follow-up)", () =
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
-    expect(screen.getByRole("menuitem", { name: /Revoke check-in/ }).getAttribute("title")).toBe(
+    expect(getTooltipText(screen.getByRole("menuitem", { name: /Revoke check-in/ }))).toBe(
       "This event is archived — editing is disabled.",
     );
   });
@@ -245,6 +249,114 @@ describe("AttendeesTable bulk revoke check-in (PO review, #522 follow-up)", () =
     // that, not the full selection size.
     expect(item.textContent).toContain("Undo check-in for 1 attendee");
     expect(item.textContent).not.toContain("2 attendee");
+  });
+});
+
+describe("AttendeesTable bulk revoke items (#551)", () => {
+  beforeEach(() => {
+    mockMatchMedia(true);
+  });
+
+  it("is enabled for a non-empty selection when the event has configured items", () => {
+    render(<AttendeesTable {...tableProps} items={[baseRow]} selectedIds={new Set(["att-1"])} />);
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(
+      (screen.getByRole("menuitem", { name: /Revoke items/ }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
+
+  it("disables with a 'no items configured' title when the event has no configured items", () => {
+    render(
+      <AttendeesTable {...tableProps} items={[baseRow]} selectedIds={new Set(["att-1"])} itemCount={0} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    const item = screen.getByRole("menuitem", { name: /Revoke items/ }) as HTMLButtonElement;
+    expect(item.disabled).toBe(true);
+    expect(getTooltipText(item)).toContain("No items configured");
+  });
+
+  it("disables with the archived tooltip when the event is archived, even with configured items", () => {
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow]}
+        selectedIds={new Set(["att-1"])}
+        event={{ archived_at: "2026-01-01T00:00:00.000Z" }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    const item = screen.getByRole("menuitem", { name: /Revoke items/ }) as HTMLButtonElement;
+    expect(item.disabled).toBe(true);
+    expect(getTooltipText(item)).toBe("This event is archived.");
+  });
+
+  it("disables the menu item when nothing in the selection has anything issued, even though the event has configured items (CodeRabbit review)", () => {
+    const nothingIssuedRow = { ...baseRow, has_issued_items: false };
+    render(
+      <AttendeesTable {...tableProps} items={[nothingIssuedRow]} selectedIds={new Set(["att-1"])} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    const item = screen.getByRole("menuitem", { name: /Revoke items/ }) as HTMLButtonElement;
+    expect(item.disabled).toBe(true);
+    expect(getTooltipText(item)).toBe("None of the selected attendees have anything issued.");
+  });
+
+  it("fires onBulkRevokeItems and closes the menu when the item is clicked", () => {
+    const onBulkRevokeItems = vi.fn();
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow]}
+        selectedIds={new Set(["att-1"])}
+        onBulkRevokeItems={onBulkRevokeItems}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Revoke items/ }));
+
+    expect(onBulkRevokeItems).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("menuitem", { name: /Revoke items/ })).toBeNull();
+  });
+
+  it("shows 'Revoking items…' and disables the item while busy", () => {
+    render(
+      <AttendeesTable {...tableProps} items={[baseRow]} selectedIds={new Set(["att-1"])} bulkRevokeItemsBusy />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    const item = screen.getByRole("menuitem", { name: /Revoking items…/ }) as HTMLButtonElement;
+    expect(item.disabled).toBe(true);
+  });
+
+  it("reports how many of the selection actually have something issued, not the raw selection size (PO review)", () => {
+    const nothingIssuedRow = { ...otherRow, has_issued_items: false };
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow, nothingIssuedRow]}
+        selectedIds={new Set(["att-1", "att-2"])}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    const item = screen.getByRole("menuitem", { name: /Revoke items/ });
+    expect(item.textContent).toContain("Reset all issued items for 1 attendee");
+    expect(item.textContent).not.toContain("for 2 attendees");
+  });
+
+  it("excludes a blocked-pass attendee from the count even when they have something issued (CodeRabbit review)", () => {
+    const blockedButIssuedRow = { ...otherRow, has_issued_items: true, status: "revoked" as const };
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow, blockedButIssuedRow]}
+        selectedIds={new Set(["att-1", "att-2"])}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    const item = screen.getByRole("menuitem", { name: /Revoke items/ });
+    // Both rows have has_issued_items: true, but the server's own isAdmittable guard would
+    // refuse to reset the revoked attendee's items - the hint must not promise to affect them.
+    expect(item.textContent).toContain("Reset all issued items for 1 attendee");
+    expect(item.textContent).not.toContain("for 2 attendees");
   });
 });
 
@@ -287,7 +399,7 @@ describe("AttendeesTable bulk revoke pass (PO review, #549)", () => {
       <AttendeesTable {...tableProps} items={[revokedRow]} selectedIds={new Set(["att-1"])} />,
     );
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
-    expect(screen.getByRole("menuitem", { name: /Revoke pass/ }).getAttribute("title")).toBe(
+    expect(getTooltipText(screen.getByRole("menuitem", { name: /Revoke pass/ }))).toBe(
       "The selected attendees' passes are already revoked or cancelled.",
     );
   });
@@ -304,7 +416,7 @@ describe("AttendeesTable bulk revoke pass (PO review, #549)", () => {
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     const item = screen.getByRole("menuitem", { name: /Revoke pass/ }) as HTMLButtonElement;
     expect(item.disabled).toBe(true);
-    expect(item.getAttribute("title")).toBe("This event is archived — editing is disabled.");
+    expect(getTooltipText(item)).toBe("This event is archived — editing is disabled.");
   });
 
   it("fires onBulkRevokePass and closes the menu when the item is clicked", () => {
@@ -372,7 +484,7 @@ describe("AttendeesTable mobile bulk bar — 'More' menu's Send tickets item", (
     );
 
     fireEvent.click(screen.getByRole("button", { name: "More" }));
-    expect(screen.getByRole("menuitem", { name: /Send tickets/ }).getAttribute("title")).toBe(
+    expect(getTooltipText(screen.getByRole("menuitem", { name: /Send tickets/ }))).toBe(
       "This event is archived — editing is disabled.",
     );
   });
@@ -388,7 +500,7 @@ describe("AttendeesTable mobile bulk bar — 'More' menu's Send tickets item", (
     );
 
     fireEvent.click(screen.getByRole("button", { name: "More" }));
-    expect(screen.getByRole("menuitem", { name: /Send tickets/ }).getAttribute("title")).toBe(
+    expect(getTooltipText(screen.getByRole("menuitem", { name: /Send tickets/ }))).toBe(
       "No mail transport configured for this event. Set one up in Event Settings → Mailing.",
     );
   });

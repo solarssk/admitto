@@ -170,6 +170,9 @@ export interface AttendeeRowDto {
   updated_at: string;
   last_mail_status: string | null;
   rsvp_status: RsvpStatus;
+  /** Whether this attendee currently has at least one issued/returned item hand-out — lets the
+   * bulk "Revoke items" action report how many of the selection it would actually affect. */
+  has_issued_items: boolean;
 }
 
 export interface DeliveryDto {
@@ -356,6 +359,12 @@ export interface BulkCheckInResponse {
   invalid: number;
   /** admitAttendee threw for this id (unexpected, e.g. a data-consistency guard) - safe to retry. */
   errored: number;
+}
+
+/** Bulk revoke-items summary from POST .../attendees/bulk-revoke-items. */
+export interface BulkRevokeItemsResponse {
+  /** Individual item hand-outs reset back to pending, across the whole selection. */
+  revokedCount: number;
 }
 
 /** Bulk revoke-check-in summary from POST .../attendees/bulk-revoke-checkin. */

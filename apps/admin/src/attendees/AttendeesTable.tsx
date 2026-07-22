@@ -1,5 +1,5 @@
 import { useRef, type ReactNode } from "react";
-import { Button, Card, Checkbox, EmptyState, IconButton, Input, Select, Skeleton } from "@admitto/ui";
+import { Button, Card, Checkbox, EmptyState, IconButton, Input, Select, Skeleton, Tooltip } from "@admitto/ui";
 import type {
   AttendeeMailStatusFilter,
   AttendeeRowDto,
@@ -292,6 +292,11 @@ export interface AttendeesTableProps {
   onBulkExportSelected: () => void;
   bulkExportBusy: boolean;
   onBulkChangeTicketType: () => void;
+  itemCount: number;
+  itemsError?: string | null;
+  onRetryItems?: () => void;
+  onBulkRevokeItems: () => void;
+  bulkRevokeItemsBusy: boolean;
   onBulkRevokePass: () => void;
   bulkRevokePassBusy: boolean;
   onBulkDelete: () => void;
@@ -422,6 +427,13 @@ function BulkMoreActionsMenu({
   ticketTypesError,
   onRetryTicketTypes,
   onChangeTicketType,
+  itemCount,
+  revokableItemsCount,
+  canRevokeItems,
+  itemsError,
+  onRetryItems,
+  onBulkRevokeItems,
+  bulkRevokeItemsBusy,
   onBulkRevokePass,
   bulkRevokePassBusy,
   canRevokePass,
@@ -449,6 +461,16 @@ function BulkMoreActionsMenu({
   ticketTypesError?: string | null;
   onRetryTicketTypes?: () => void;
   onChangeTicketType: () => void;
+  itemCount: number;
+  revokableItemsCount: number;
+  /** At least one selected attendee has something issued and an active pass - there's something
+   * to revoke (CodeRabbit/PO review: was only gated on the event's catalog size, not the
+   * selection). */
+  canRevokeItems: boolean;
+  itemsError?: string | null;
+  onRetryItems?: () => void;
+  onBulkRevokeItems: () => void;
+  bulkRevokeItemsBusy: boolean;
   onBulkRevokePass: () => void;
   bulkRevokePassBusy: boolean;
   canRevokePass: boolean;
@@ -480,25 +502,30 @@ function BulkMoreActionsMenu({
            * count and "Check in" (attendees.css), so it lives here instead on mobile, first
            * in the list since it's still one of the two most common bulk actions. */}
           {!isDesktop && (
-            <button
-              type="button"
-              role="menuitem"
-              className="more-actions-menu__item"
-              disabled={archived || bulkSendBusy || !canBulkSend}
-              title={bulkSendTicketsTooltip(archived, canBulkSend)}
-              onClick={() => {
-                setOpen(false);
-                onBulkSendTickets();
-              }}
+            <Tooltip
+              content={bulkSendTicketsTooltip(archived, canBulkSend)}
+              className="more-actions-menu__item-wrapper"
+              axis="horizontal"
             >
-              <i className="ti ti-send" aria-hidden="true" />
-              <span className="more-actions-menu__item-text">
-                <span>{bulkSendBusy ? "Sending…" : "Send tickets"}</span>
-                <span className="more-actions-menu__item-hint">
-                  Email tickets to {selectedCount} attendee{selectedCount === 1 ? "" : "s"}
+              <button
+                type="button"
+                role="menuitem"
+                className="more-actions-menu__item"
+                disabled={archived || bulkSendBusy || !canBulkSend}
+                onClick={() => {
+                  setOpen(false);
+                  onBulkSendTickets();
+                }}
+              >
+                <i className="ti ti-send" aria-hidden="true" />
+                <span className="more-actions-menu__item-text">
+                  <span>{bulkSendBusy ? "Sending…" : "Send tickets"}</span>
+                  <span className="more-actions-menu__item-hint">
+                    Email tickets to {selectedCount} attendee{selectedCount === 1 ? "" : "s"}
+                  </span>
                 </span>
-              </span>
-            </button>
+              </button>
+            </Tooltip>
           )}
           {/* Not ArchivedGuard'd — exporting a selection is read-only, so it stays legal
            * after an event is archived. */}
@@ -523,25 +550,30 @@ function BulkMoreActionsMenu({
           {/* Disabled (not hidden) on archived events and when the catalog is empty — the
            * endpoint is guardArchivedEvent'd, and with no configured types there's nothing
            * to pick; the title explains why instead of the item silently vanishing. */}
-          <button
-            type="button"
-            role="menuitem"
-            className="more-actions-menu__item"
-            disabled={changeTicketTypeDisabled}
-            title={changeTicketTypeDisabled ? changeTicketTypeDisabledReason : undefined}
-            onClick={() => {
-              setOpen(false);
-              onChangeTicketType();
-            }}
+          <Tooltip
+            content={changeTicketTypeDisabled ? changeTicketTypeDisabledReason : undefined}
+            className="more-actions-menu__item-wrapper"
+            axis="horizontal"
           >
-            <i className="ti ti-ticket" aria-hidden="true" />
-            <span className="more-actions-menu__item-text">
-              <span>Change ticket type</span>
-              <span className="more-actions-menu__item-hint">
-                Choose from {ticketTypeCount} configured type{ticketTypeCount === 1 ? "" : "s"}
+            <button
+              type="button"
+              role="menuitem"
+              className="more-actions-menu__item"
+              disabled={changeTicketTypeDisabled}
+              onClick={() => {
+                setOpen(false);
+                onChangeTicketType();
+              }}
+            >
+              <i className="ti ti-ticket" aria-hidden="true" />
+              <span className="more-actions-menu__item-text">
+                <span>Change ticket type</span>
+                <span className="more-actions-menu__item-hint">
+                  Choose from {ticketTypeCount} configured type{ticketTypeCount === 1 ? "" : "s"}
+                </span>
               </span>
-            </span>
-          </button>
+            </button>
+          </Tooltip>
           {/* The catalog fetch's own retry lives behind the Type filter, which this bulk bar
            * replaces while rows are selected — without this, the only way to retry was to
            * clear the selection first, losing the batch the operator was about to act on
@@ -563,49 +595,99 @@ function BulkMoreActionsMenu({
            * when nothing in the selection is currently checked in, same convention as Change
            * ticket type below. Styled as a caution item (not full danger) — it's reversible via
            * Check in again, unlike Delete below (PO review). */}
-          <button
-            type="button"
-            role="menuitem"
-            className="more-actions-menu__item more-actions-menu__item--warning"
-            disabled={archived || bulkRevokeCheckInBusy || !canRevokeCheckIn}
-            title={bulkRevokeCheckInTooltip(archived, canRevokeCheckIn)}
-            onClick={() => {
-              setOpen(false);
-              onBulkRevokeCheckIn();
-            }}
+          <Tooltip
+            content={bulkRevokeCheckInTooltip(archived, canRevokeCheckIn)}
+            className="more-actions-menu__item-wrapper"
+            axis="horizontal"
           >
-            <i className="ti ti-qrcode-off" aria-hidden="true" />
-            <span className="more-actions-menu__item-text">
-              <span>{bulkRevokeCheckInBusy ? "Revoking check-in…" : "Revoke check-in"}</span>
-              <span className="more-actions-menu__item-hint">
-                Undo check-in for {revokableCheckInCount} attendee{revokableCheckInCount === 1 ? "" : "s"}
+            <button
+              type="button"
+              role="menuitem"
+              className="more-actions-menu__item more-actions-menu__item--warning"
+              disabled={archived || bulkRevokeCheckInBusy || !canRevokeCheckIn}
+              onClick={() => {
+                setOpen(false);
+                onBulkRevokeCheckIn();
+              }}
+            >
+              <i className="ti ti-qrcode-off" aria-hidden="true" />
+              <span className="more-actions-menu__item-text">
+                <span>{bulkRevokeCheckInBusy ? "Revoking check-in…" : "Revoke check-in"}</span>
+                <span className="more-actions-menu__item-hint">
+                  Undo check-in for {revokableCheckInCount} attendee{revokableCheckInCount === 1 ? "" : "s"}
+                </span>
               </span>
-            </span>
-          </button>
+            </button>
+          </Tooltip>
+          {/* Disabled (not hidden) on archived events and when the event has no configured
+           * items - same convention as Change ticket type above. Always resets every
+           * configured item for the selection at once (no per-item picker, PO review, #551:
+           * "od tego mamy check in widok" - for precise per-attendee/per-item
+           * control, that already exists on the check-in screen). Independent of check-in
+           * status, matching the Danger Zone's event-wide "Revoke all items issued". */}
+          <Tooltip
+            content={bulkRevokeItemsTooltip(archived, itemCount, itemsError, canRevokeItems)}
+            className="more-actions-menu__item-wrapper"
+            axis="horizontal"
+          >
+            <button
+              type="button"
+              role="menuitem"
+              className="more-actions-menu__item more-actions-menu__item--warning"
+              disabled={archived || bulkRevokeItemsBusy || itemCount === 0 || !canRevokeItems}
+              onClick={() => {
+                setOpen(false);
+                onBulkRevokeItems();
+              }}
+            >
+              <i className="ti ti-package" aria-hidden="true" />
+              <span className="more-actions-menu__item-text">
+                <span>{bulkRevokeItemsBusy ? "Revoking items…" : "Revoke items"}</span>
+                <span className="more-actions-menu__item-hint">
+                  Reset all issued items for {revokableItemsCount} attendee{revokableItemsCount === 1 ? "" : "s"}
+                </span>
+              </span>
+            </button>
+          </Tooltip>
+          {!archived && itemCount === 0 && itemsError && onRetryItems && (
+            <button
+              type="button"
+              role="menuitem"
+              className="more-actions-menu__retry link-btn"
+              onClick={onRetryItems}
+            >
+              Retry loading items
+            </button>
+          )}
           {/* Disabled once every selected attendee is already revoked/cancelled — a guaranteed
            * no-op otherwise, same "nothing to do" gate as "Revoke check-in" (PO review
            * follow-up, #549). A mixed selection stays enabled: the server already leaves an
            * already-revoked/cancelled attendee untouched and reports it separately in the
            * result toast. */}
-          <button
-            type="button"
-            role="menuitem"
-            className="more-actions-menu__item more-actions-menu__item--danger"
-            disabled={archived || bulkRevokePassBusy || !canRevokePass}
-            title={bulkRevokePassTooltip(archived, canRevokePass)}
-            onClick={() => {
-              setOpen(false);
-              onBulkRevokePass();
-            }}
+          <Tooltip
+            content={bulkRevokePassTooltip(archived, canRevokePass)}
+            className="more-actions-menu__item-wrapper"
+            axis="horizontal"
           >
-            <i className="ti ti-ban" aria-hidden="true" />
-            <span className="more-actions-menu__item-text">
-              <span>{bulkRevokePassBusy ? "Revoking pass…" : "Revoke pass"}</span>
-              <span className="more-actions-menu__item-hint">
-                Block check-in for {revokablePassCount} attendee{revokablePassCount === 1 ? "" : "s"}
+            <button
+              type="button"
+              role="menuitem"
+              className="more-actions-menu__item more-actions-menu__item--danger"
+              disabled={archived || bulkRevokePassBusy || !canRevokePass}
+              onClick={() => {
+                setOpen(false);
+                onBulkRevokePass();
+              }}
+            >
+              <i className="ti ti-ban" aria-hidden="true" />
+              <span className="more-actions-menu__item-text">
+                <span>{bulkRevokePassBusy ? "Revoking pass…" : "Revoke pass"}</span>
+                <span className="more-actions-menu__item-hint">
+                  Block check-in for {revokablePassCount} attendee{revokablePassCount === 1 ? "" : "s"}
+                </span>
               </span>
-            </span>
-          </button>
+            </button>
+          </Tooltip>
           <hr className="more-actions-menu__divider" />
           {/* Not ArchivedGuard'd — GDPR erasure requests can legally arrive after an event
            * ends; the DELETE endpoint doesn't block on archived_at either. */}
@@ -639,6 +721,23 @@ function bulkChangeTicketTypeReason(archived: boolean, ticketTypesError?: string
   return "No ticket types configured for this event. Add some in Event Settings → Ticket types.";
 }
 
+/** "Revoke items" menu item's disabled-title — checks the event-level catalog (no items
+ * configured / failed to load) same as before, plus the same "nothing to do" selection-level
+ * gate "Revoke check-in"/"Revoke pass" already have (CodeRabbit/PO review: was only checking the
+ * event's catalog size, so a selection with nothing issued still opened the confirm dialog). */
+function bulkRevokeItemsTooltip(
+  archived: boolean,
+  itemCount: number,
+  itemsError: string | null | undefined,
+  canRevokeItems: boolean,
+): string | undefined {
+  if (archived) return "This event is archived.";
+  if (itemsError) return "Couldn't load items — try again.";
+  if (itemCount === 0) return "No items configured for this event. Add some in Requirements.";
+  if (!canRevokeItems) return "None of the selected attendees have anything issued.";
+  return undefined;
+}
+
 /** Selection count + "Send tickets" / "More actions" — replaces the search/filter toolbar in
  * place while rows are selected, so the card never grows taller just because something is
  * selected. */
@@ -662,6 +761,13 @@ function BulkBar({
   ticketTypesError,
   onRetryTicketTypes,
   onBulkChangeTicketType,
+  itemCount,
+  revokableItemsCount,
+  canRevokeItems,
+  itemsError,
+  onRetryItems,
+  onBulkRevokeItems,
+  bulkRevokeItemsBusy,
   onBulkRevokePass,
   bulkRevokePassBusy,
   canRevokePass,
@@ -691,6 +797,13 @@ function BulkBar({
   ticketTypesError?: string | null;
   onRetryTicketTypes?: () => void;
   onBulkChangeTicketType: () => void;
+  itemCount: number;
+  revokableItemsCount: number;
+  canRevokeItems: boolean;
+  itemsError?: string | null;
+  onRetryItems?: () => void;
+  onBulkRevokeItems: () => void;
+  bulkRevokeItemsBusy: boolean;
   onBulkRevokePass: () => void;
   bulkRevokePassBusy: boolean;
   canRevokePass: boolean;
@@ -781,6 +894,13 @@ function BulkBar({
           ticketTypesError={ticketTypesError}
           onRetryTicketTypes={onRetryTicketTypes}
           onChangeTicketType={onBulkChangeTicketType}
+          itemCount={itemCount}
+          revokableItemsCount={revokableItemsCount}
+          canRevokeItems={canRevokeItems}
+          itemsError={itemsError}
+          onRetryItems={onRetryItems}
+          onBulkRevokeItems={onBulkRevokeItems}
+          bulkRevokeItemsBusy={bulkRevokeItemsBusy}
           onBulkRevokePass={onBulkRevokePass}
           bulkRevokePassBusy={bulkRevokePassBusy}
           canRevokePass={canRevokePass}
@@ -1235,6 +1355,11 @@ export function AttendeesTable({
   onBulkExportSelected,
   bulkExportBusy,
   onBulkChangeTicketType,
+  itemCount,
+  itemsError,
+  onRetryItems,
+  onBulkRevokeItems,
+  bulkRevokeItemsBusy,
   onBulkRevokePass,
   bulkRevokePassBusy,
   onBulkDelete,
@@ -1257,6 +1382,18 @@ export function AttendeesTable({
   // hint text shows this instead of the raw selection size (PO review: a mixed selection was
   // claiming to undo check-in for attendees who were never checked in to begin with).
   const admittedSelectedCount = selectedRows.filter((row) => row.check_in_status === "admitted").length;
+  // "Revoke items" hint reports how many of the selection actually have something issued, not
+  // the raw selection size (PO review) — mirrors "Revoke check-in"/"Revoke pass" reporting only
+  // the attendees they'd actually affect. A blocked-pass attendee is excluded even if
+  // has_issued_items is true: the server's own isAdmittable guard refuses to reset their items
+  // (CodeRabbit review).
+  const revokableItemsCount = selectedRows.filter(
+    (row) => row.has_issued_items && row.status !== "cancelled" && row.status !== "revoked",
+  ).length;
+  // "Revoke items" is a no-op once nothing in the selection has anything issued - disabled
+  // rather than left clickable into a confirm dialog reporting "0 attendees" (CodeRabbit/PO
+  // review: was only gated on the event's catalog size via itemCount, not the selection).
+  const canRevokeItems = revokableItemsCount > 0;
   // "Revoke pass" is a no-op once every selected attendee is already revoked/cancelled -
   // disabled rather than left clickable into a confirm dialog that just reports nothing
   // changed, same "nothing to do" gate as "Revoke check-in" (PO review follow-up, #549). A
@@ -1294,6 +1431,13 @@ export function AttendeesTable({
           ticketTypesError={ticketTypesError}
           onRetryTicketTypes={onRetryTicketTypes}
           onBulkChangeTicketType={onBulkChangeTicketType}
+          itemCount={itemCount}
+          revokableItemsCount={revokableItemsCount}
+          canRevokeItems={canRevokeItems}
+          itemsError={itemsError}
+          onRetryItems={onRetryItems}
+          onBulkRevokeItems={onBulkRevokeItems}
+          bulkRevokeItemsBusy={bulkRevokeItemsBusy}
           onBulkRevokePass={onBulkRevokePass}
           bulkRevokePassBusy={bulkRevokePassBusy}
           canRevokePass={anySelectedPassActive}

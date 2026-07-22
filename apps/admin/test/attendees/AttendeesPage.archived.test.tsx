@@ -57,6 +57,9 @@ vi.mock("../../src/api/client.js", () => ({
   },
   fetchEventAttendees: (...args: unknown[]) => fetchEventAttendees(...args),
   fetchTicketTypes: vi.fn().mockResolvedValue([]),
+  fetchEventItems: vi.fn().mockResolvedValue([
+    { id: "item-1", key: "badge", label: "Badge", description: null, type: "custom", enabled: true, icon: null, config: null },
+  ]),
   fetchEventTemplates: vi.fn().mockResolvedValue([
     {
       id: "tpl-ticket",
@@ -210,6 +213,10 @@ describe("AttendeesPage archived lockdown", () => {
     // bulk check-in above) - disabled even though the selection has someone to revoke.
     const revokeCheckInItem = within(bar).getByRole("menuitem", { name: /Revoke check-in/ });
     expect((revokeCheckInItem as HTMLButtonElement).disabled).toBe(true);
+    // Resetting issued items for an event that's already over doesn't make sense (matches
+    // Check in above) - locked on archived events, unlike Delete/Export which stay reachable.
+    const revokeItemsItem = within(bar).getByRole("menuitem", { name: /Revoke items/ });
+    expect((revokeItemsItem as HTMLButtonElement).disabled).toBe(true);
     // Revoking a pass for an event that's already over doesn't make sense (matches Check in
     // above) - locked on archived events, unlike Delete/Export which stay reachable.
     const revokePassItem = within(bar).getByRole("menuitem", { name: /Revoke pass/ });

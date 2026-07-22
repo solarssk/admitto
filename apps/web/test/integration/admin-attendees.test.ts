@@ -249,6 +249,16 @@ describe("GET /api/admin/events/:eventId/attendees", () => {
     expect(new Date(item.updated_at).toISOString()).toBe(item.updated_at);
   });
 
+  it("returns an empty items array (and does not query per-attendee lookups) when nothing matches", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees?q=no-such-attendee-zzz`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: unknown[]; total: number };
+    expect(body.items).toEqual([]);
+    expect(body.total).toBe(0);
+  });
+
   it("filters by q and status", async () => {
     const search = await app.request(
       `/api/admin/events/${EVENT_A}/attendees?q=anna&status=all`,
@@ -438,6 +448,33 @@ describe("GET /api/admin/events/:eventId/attendees", () => {
       headers: { Cookie: opCookie },
     });
     expect(res.status).toBe(403);
+  });
+
+  it("reports has_issued_items per attendee, for the Attendees list's bulk Revoke items hint", async () => {
+    const giftbag = await prisma.eventItem.findFirstOrThrow({
+      where: { event_id: EVENT_A, key: "giftbag" },
+      select: { id: true },
+    });
+    await prisma.attendeeItemState.upsert({
+      where: { attendee_id_event_item_id: { attendee_id: ATT_A1, event_item_id: giftbag.id } },
+      create: { attendee_id: ATT_A1, event_item_id: giftbag.id, state: "issued" },
+      update: { state: "issued" },
+    });
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+        headers: { Cookie: adminCookie },
+      });
+      const body = (await res.json()) as { items: { id: string; has_issued_items: boolean }[] };
+      const a1 = body.items.find((i) => i.id === ATT_A1);
+      const a2 = body.items.find((i) => i.id === ATT_A2);
+      expect(a1?.has_issued_items).toBe(true);
+      expect(a2?.has_issued_items).toBe(false);
+    } finally {
+      await prisma.attendeeItemState.update({
+        where: { attendee_id_event_item_id: { attendee_id: ATT_A1, event_item_id: giftbag.id } },
+        data: { state: "pending" },
+      });
+    }
   });
 });
 
@@ -1224,6 +1261,196 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-revoke-checkin", () => 
       expect(body.code).toBe("event_archived");
       const after = await prisma.attendee.findUnique({ where: { id: ids[0] } });
       expect(after?.admitted_at).not.toBeNull();
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_A }, data: { archived_at: null } });
+    }
+  });
+});
+
+describe("POST /api/admin/events/:eventId/attendees/bulk-revoke-items", () => {
+  afterAll(async () => {
+    await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-revoke-items-" } } });
+    await prisma.attendeeItemState.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-revoke-items-" } } });
+    await prisma.attendee.deleteMany({ where: { id: { startsWith: "att-bulk-revoke-items-" } } });
+  });
+
+  async function seedWithIssuedGiftbag(id: string, overrides: Partial<{ status: string }> = {}) {
+    await prisma.attendee.create({
+      data: {
+        id,
+        event_id: EVENT_A,
+        email: `${id}@example.com`,
+        name: `Bulk Revoke Items ${id}`,
+        token_hash: hashToken(generateToken()),
+        token_enc: encryptToString(generateToken()),
+        ...overrides,
+      },
+    });
+    await getAttendeeCard(EVENT_A, id, prisma);
+    const giftbag = await prisma.eventItem.findFirstOrThrow({ where: { event_id: EVENT_A, key: "giftbag" } });
+    await prisma.attendeeItemState.update({
+      where: { attendee_id_event_item_id: { attendee_id: id, event_item_id: giftbag.id } },
+      data: { state: "issued" },
+    });
+    return giftbag.id;
+  }
+
+  it("resets every issued item for the selected attendees back to pending", async () => {
+    const ids = ["att-bulk-revoke-items-1", "att-bulk-revoke-items-2"];
+    await Promise.all(ids.map((id) => seedWithIssuedGiftbag(id)));
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-revoke-items`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: ids }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ revokedCount: 2 });
+
+    const states = await prisma.attendeeItemState.findMany({
+      where: { attendee_id: { in: ids }, event_item: { key: "giftbag" } },
+    });
+    expect(states.every((s) => s.state === "pending")).toBe(true);
+  });
+
+  it("only resets items for the selected attendees, leaving an unselected attendee's issued item untouched", async () => {
+    const selectedId = "att-bulk-revoke-items-selected";
+    const otherId = "att-bulk-revoke-items-other";
+    await seedWithIssuedGiftbag(selectedId);
+    await seedWithIssuedGiftbag(otherId);
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-revoke-items`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: [selectedId] }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ revokedCount: 1 });
+
+    const otherState = await prisma.attendeeItemState.findFirst({
+      where: { attendee_id: otherId, event_item: { key: "giftbag" } },
+    });
+    expect(otherState?.state).toBe("issued");
+  });
+
+  it("does not check in status - resets items independently of check-in state", async () => {
+    const id = "att-bulk-revoke-items-checked-in";
+    await prisma.attendee.create({
+      data: {
+        id,
+        event_id: EVENT_A,
+        email: `${id}@example.com`,
+        name: "Bulk Revoke Items checked in",
+        token_hash: hashToken(generateToken()),
+        token_enc: encryptToString(generateToken()),
+        admitted_at: new Date("2026-10-01T10:00:00Z"),
+      },
+    });
+    await getAttendeeCard(EVENT_A, id, prisma);
+    const giftbag = await prisma.eventItem.findFirstOrThrow({ where: { event_id: EVENT_A, key: "giftbag" } });
+    await prisma.attendeeItemState.update({
+      where: { attendee_id_event_item_id: { attendee_id: id, event_item_id: giftbag.id } },
+      data: { state: "issued" },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-revoke-items`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: [id] }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ revokedCount: 1 });
+
+    const after = await prisma.attendee.findUniqueOrThrow({ where: { id } });
+    expect(after.admitted_at).not.toBeNull();
+  });
+
+  it("skips a selected attendee whose pass is blocked, without touching their issued item", async () => {
+    const id = "att-bulk-revoke-items-blocked";
+    await seedWithIssuedGiftbag(id, { status: "revoked" });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-revoke-items`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: [id] }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ revokedCount: 0 });
+
+    const state = await prisma.attendeeItemState.findFirst({
+      where: { attendee_id: id, event_item: { key: "giftbag" } },
+    });
+    expect(state?.state).toBe("issued");
+  });
+
+  it("rejects a malformed JSON body", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-revoke-items`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{not json",
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects an empty selection", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-revoke-items`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: [] }),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 403 for an admin outside the event's organization", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_B}/attendees/bulk-revoke-items`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: ["att-does-not-matter"] }),
+    });
+
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects operator", async () => {
+    const id = "att-bulk-revoke-items-op";
+    await seedWithIssuedGiftbag(id);
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-revoke-items`, {
+      method: "POST",
+      headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: [id] }),
+    });
+
+    expect(res.status).toBe(403);
+    const state = await prisma.attendeeItemState.findFirst({
+      where: { attendee_id: id, event_item: { key: "giftbag" } },
+    });
+    expect(state?.state).toBe("issued");
+  });
+
+  it("returns 403 when the event is archived", async () => {
+    const id = "att-bulk-revoke-items-archived";
+    await seedWithIssuedGiftbag(id);
+    await prisma.event.update({ where: { id: EVENT_A }, data: { archived_at: new Date() } });
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-revoke-items`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ attendeeIds: [id] }),
+      });
+      expect(res.status).toBe(403);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe("event_archived");
+      const state = await prisma.attendeeItemState.findFirst({
+        where: { attendee_id: id, event_item: { key: "giftbag" } },
+      });
+      expect(state?.state).toBe("issued");
     } finally {
       await prisma.event.update({ where: { id: EVENT_A }, data: { archived_at: null } });
     }

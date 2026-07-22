@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { render, type RenderOptions } from "@testing-library/react";
+import { fireEvent, render, screen, type RenderOptions } from "@testing-library/react";
 import { vi } from "vitest";
 import { ToastProvider } from "@admitto/ui";
 import type { TicketTypeDto } from "../src/api/types.js";
@@ -20,6 +20,19 @@ export function makeTicketType(key: string, label: string): TicketTypeDto {
     attendee_count: 0,
     created_at: "2026-01-01T00:00:00.000Z",
   };
+}
+
+/** A disabled control's reason now shows via the shared <Tooltip> (packages/ui) - a
+ * hover-triggered, portal-rendered bubble (role="tooltip"), not a static title= attribute.
+ * Mouse hover, not focus: a `disabled` element is never focusable in a real browser (jsdom's
+ * fireEvent.focus doesn't enforce that, so a focus-based helper would pass here while never
+ * actually working for a real user tabbing through a disabled control). mouseenter doesn't
+ * bubble, so it's dispatched on the element's own parent - the <Tooltip> trigger wrapper that
+ * actually owns the listener - not the element itself. */
+export function getTooltipText(element: HTMLElement): string | null {
+  fireEvent.mouseEnter(element.parentElement ?? element);
+  const bubble = screen.queryByRole("tooltip");
+  return bubble ? bubble.textContent : null;
 }
 
 export interface MockMediaQueryList {

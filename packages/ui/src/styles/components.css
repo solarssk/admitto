@@ -41,6 +41,39 @@
 .at-btn--success { background: var(--status-ok); color: var(--text-on-primary); }
 .at-btn--success:hover:not(:disabled) { background: var(--status-ok-hover); }
 
+/* Caution tier, between primary and danger — reversible-but-impactful bulk actions (e.g. Revoke
+   items/check-in). --status-warn-fg (not the raw, much brighter --status-warn) since there's no
+   dedicated warn-hover shade in the palette yet; darkening on hover matches --danger/--success. */
+.at-btn--warning { background: var(--status-warn-fg); color: var(--text-on-primary); }
+.at-btn--warning:hover:not(:disabled) { filter: brightness(0.9); }
+
+/* ---------------- Tooltip ---------------- */
+/* Trigger wrapper - inline-flex by default (shrink-to-fit, sits next to sibling controls);
+   callers needing a full-width block-level wrapper (e.g. a stacked menu item list) pass an
+   extra className overriding display. */
+.at-tooltip-trigger {
+  display: inline-flex;
+}
+
+/* Bubble is portal-rendered into document.body with JS-computed position (Tooltip.tsx) - same
+   visual treatment the old .at-tooltip::after pseudo-element used, just on a real, measurable
+   element instead of one JS can't read the size of. */
+.at-tooltip-bubble {
+  background: var(--text-primary);
+  color: var(--surface-card);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.3;
+  padding: 4px 8px;
+  border-radius: 4px;
+  white-space: normal;
+  width: max-content;
+  max-width: 220px;
+  text-align: left;
+  pointer-events: none;
+  z-index: var(--z-tooltip);
+}
+
 /* ---------------- Icon button ---------------- */
 .at-iconbtn {
   display: inline-grid; place-items: center; cursor: pointer;
