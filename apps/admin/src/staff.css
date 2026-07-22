@@ -2809,12 +2809,25 @@
   gap: var(--space-3);
 }
 
+/* Tooltip's own wrapper defaults to inline-flex (shrink-to-fit) - as a grid item it
+ * stretches to fill the column, but that only sizes the wrapper itself. The button
+ * inside it still won't fill that wrapper on its own: unlike a plain div/span, a
+ * <button> keeps its intrinsic shrink-to-fit sizing for width:auto even once
+ * `display` is overridden to flex, so it needs its own explicit width:100% too -
+ * without both, every tile leaves a dead (hover-only, unclickable) gap in any
+ * column wider than its label. */
+.transport-tile-wrapper {
+  display: block;
+  width: 100%;
+}
+
 .transport-tile {
   position: relative;
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: var(--space-2);
+  width: 100%;
   text-align: left;
   padding: var(--space-3);
   border: 1.5px solid var(--border);

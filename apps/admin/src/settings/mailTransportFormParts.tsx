@@ -312,7 +312,11 @@ export function TransportTileGrid({
         const parenIndex = opt.label.indexOf("(");
         const shortLabel = parenIndex === -1 ? opt.label : opt.label.slice(0, parenIndex).trimEnd();
         return (
-          <Tooltip key={opt.value || "none"} content={PROVIDER_GUIDE[opt.value]}>
+          <Tooltip
+            key={opt.value || "none"}
+            content={PROVIDER_GUIDE[opt.value]}
+            className="transport-tile-wrapper"
+          >
             <button
               ref={(el) => {
                 tileRefs.current[index] = el;
