@@ -381,10 +381,12 @@ const ACTIVITY_ICONS: Record<EventRecentActivityEntry["type"], string> = {
   import: "ti-upload",
 };
 
+// Uniform icon+tone treatment across every activity type, checkin included — was previously an
+// Avatar (name initials) special-case for checkin only, inconsistent with every other row's
+// action-colored circle (mail bounce = error red, import = muted, etc.) in the same list (PO
+// review). tone is already "ok" for checkin, so this renders the same green-toned circle used
+// elsewhere for a successful action.
 function ActivityIcon({ entry }: { entry: DisplayActivityEntry }) {
-  if (entry.type === "checkin") {
-    return <Avatar name={entry.attendee_name ?? "?"} size="sm" />;
-  }
   return (
     <span className={`status-circle status-circle--sm status-circle--${entry.tone}`} aria-hidden="true">
       <i className={`ti ${ACTIVITY_ICONS[entry.type]}`} />
