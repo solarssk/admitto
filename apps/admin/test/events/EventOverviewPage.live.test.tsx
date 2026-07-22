@@ -452,6 +452,26 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(screen.getByText("13:00–14:00")).toBeTruthy();
   });
 
+  it("shows an honest em-dash placeholder for Last check-in and Busiest hour with zero check-ins, not a fabricated value (#F1)", async () => {
+    // last_check_in_at/busiest_hour both null is the default overviewFixture() shape - the
+    // zero-check-ins case - so this also guards against a stale hardcoded demo fallback (the
+    // mockup source had literal "2 min ago" / "13:00-14:00" strings) leaking into these tiles.
+    fetchEventOverview.mockResolvedValue(overviewFixture(0));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Check-in progress")).toBeTruthy();
+    });
+    const glanceTiles = document.querySelectorAll(".overview-glance__tile");
+    expect(glanceTiles).toHaveLength(2);
+    glanceTiles.forEach((tile) => {
+      expect(within(tile as HTMLElement).getByText("—")).toBeTruthy();
+    });
+    expect(screen.queryByText("2 min ago")).toBeNull();
+    expect(screen.queryByText("13:00–14:00")).toBeNull();
+  });
+
   it("renders the ticket-type breakdown bar only when more than one type has attendees", async () => {
     fetchEventOverview.mockResolvedValue(
       overviewFixture(5, {
@@ -478,6 +498,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
         type: "checkin",
         tone: "ok",
         attendee_name: "Historic Guest",
+        attendee_id: "att-hist-1",
         message: "checked in",
         occurred_at: new Date().toISOString(),
       },
@@ -486,6 +507,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
         type: "mail_failed",
         tone: "error",
         attendee_name: "Failed Guest",
+        attendee_id: "att-hist-2",
         message: "Ticket email failed for failed@example.com",
         occurred_at: new Date().toISOString(),
       },
@@ -503,13 +525,14 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(streamHandler).not.toBeNull();
   });
 
-  it("filters Recent activity to warn/error entries only via the Issues toggle", async () => {
+  it("filters Recent activity to warn/error entries only via the Issues toggle, rendered in the card header alongside the live badge (#E2)", async () => {
     const recentActivity: EventRecentActivityEntry[] = [
       {
         id: "checkin:ok-1",
         type: "checkin",
         tone: "ok",
         attendee_name: "Fine Guest",
+        attendee_id: "att-ok-1",
         message: "checked in",
         occurred_at: new Date().toISOString(),
       },
@@ -518,6 +541,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
         type: "mail_bounced",
         tone: "error",
         attendee_name: "Bounced Guest",
+        attendee_id: "att-err-1",
         message: "Ticket email bounced for bounced@example.com",
         occurred_at: new Date().toISOString(),
       },
@@ -531,14 +555,52 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     });
     expect(screen.getByText("Bounced Guest")).toBeTruthy();
 
+    // All/Issues live in the Card's header row next to "live", not a separate row above the timeline.
+    const activityCard = screen.getByText("Recent activity").closest(".at-card") as HTMLElement;
+    const header = activityCard.querySelector(".at-card__header") as HTMLElement;
+    expect(within(header).getByRole("button", { name: "All" })).toBeTruthy();
+    expect(within(header).getByRole("button", { name: "Issues" })).toBeTruthy();
+    expect(within(header).getByText("live")).toBeTruthy();
+
     act(() => {
-      screen.getByRole("button", { name: "Issues" }).click();
+      within(header).getByRole("button", { name: "Issues" }).click();
     });
 
     await waitFor(() => {
       expect(screen.queryByText("Fine Guest")).toBeNull();
     });
     expect(screen.getByText("Bounced Guest")).toBeTruthy();
+  });
+
+  it("links a checkin/mail activity entry with an attendee_id to that attendee's detail page, and leaves attendee-less entries (imports) unlinked (#E4)", async () => {
+    const recentActivity: EventRecentActivityEntry[] = [
+      {
+        id: "checkin:linked-1",
+        type: "checkin",
+        tone: "ok",
+        attendee_name: "Linked Guest",
+        attendee_id: "att-linked-1",
+        message: "checked in",
+        occurred_at: new Date().toISOString(),
+      },
+      {
+        id: "import:batch-1",
+        type: "import",
+        tone: "muted",
+        attendee_id: null,
+        message: "4 attendees imported",
+        occurred_at: new Date().toISOString(),
+      },
+    ];
+    fetchEventOverview.mockResolvedValue(overviewFixture(5, { recent_activity: recentActivity }));
+
+    renderPage();
+
+    const attendeeLink = await screen.findByRole("link", { name: "Linked Guest" });
+    expect(attendeeLink.getAttribute("href")).toBe("/admin/events/evt-1/attendees/att-linked-1");
+
+    // The import entry has no single attendee - its message renders as plain text, not a link.
+    expect(screen.getByText("4 attendees imported").closest("a")).toBeNull();
   });
 
   it("merges Pinned note, Key contacts, and Links & files into one Notes & contacts card, each with a leading header icon (#344, #345, #346)", async () => {
@@ -693,6 +755,35 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
       expect(screen.queryByRole("dialog")).toBeNull();
     });
     expect(within(linksSection).getByText("Venue floor plan")).toBeTruthy();
+  });
+
+  it("shows a specific inline validation message for an invalid URL instead of a vague save failure, and never calls the API (#D3)", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+
+    renderPage();
+
+    const linksSection = await screen.findByText("Links & files").then((el) => el.closest(".overview-notes-section") as HTMLElement);
+    act(() => {
+      within(linksSection).getByRole("button", { name: "Add" }).click();
+    });
+
+    const dialog = await screen.findByRole("dialog", { name: "Add link or file" });
+    fireEvent.change(within(dialog).getByLabelText("Title *"), { target: { value: "Broken link" } });
+    fireEvent.change(within(dialog).getByLabelText("URL *"), { target: { value: "not-a-url" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    expect(
+      within(dialog).getByText("Enter a valid URL starting with http:// or https://"),
+    ).toBeTruthy();
+    expect(mockCreateEventResource).not.toHaveBeenCalled();
+
+    // Editing the field clears the inline error instead of leaving a stale message.
+    fireEvent.change(within(dialog).getByLabelText("URL *"), {
+      target: { value: "https://example.com/fixed" },
+    });
+    expect(
+      within(dialog).queryByText("Enter a valid URL starting with http:// or https://"),
+    ).toBeNull();
   });
 
   it("renders the Pinned note empty state as a dashed add button (not a header button), and saving through its modal fills the section without an inline expansion", async () => {

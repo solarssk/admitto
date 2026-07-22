@@ -957,6 +957,9 @@ export interface EventRecentActivityEntry {
   type: "checkin" | "mail_bounced" | "mail_failed" | "mail_resent" | "import";
   tone: "ok" | "warn" | "error" | "info" | "muted";
   attendee_name?: string | null;
+  /** Links the entry to the attendee's detail view; null for entries with no single attendee
+   * (import batches). */
+  attendee_id: string | null;
   message: string;
   occurred_at: string;
 }

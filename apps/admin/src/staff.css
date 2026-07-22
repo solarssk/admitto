@@ -3824,52 +3824,36 @@
 .overview-checklist {
   display: flex;
   flex-direction: column;
-}
-
-.overview-checklist__row {
-  display: flex;
-  align-items: center;
   gap: var(--space-3);
-  padding: 7px 0;
-  border-bottom: 1px solid var(--border);
 }
 
-.overview-checklist__row:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-
-.overview-checklist__row:first-child {
-  padding-top: 0;
-}
-
-.overview-checklist__dot {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  flex-shrink: 0;
+/* Mockup-aligned readiness row: a circular status-tinted icon (reuses @admitto/ui's shared
+ * .status-circle, same class ActivityIcon already uses) beside a two-line stacked body, instead
+ * of the old flat single-line "dot + label … value" table row (#G polish). */
+.overview-readiness-item {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
+  align-items: flex-start;
+  gap: var(--space-3);
 }
 
-.overview-checklist__dot--warn  { background: var(--status-warn-tint); color: var(--status-warn-fg); }
-.overview-checklist__dot--error { background: var(--status-error-tint); color: var(--status-error); }
+.overview-readiness-item__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding-top: 2px;
+}
 
-.overview-checklist__label {
-  flex: 1;
+.overview-readiness-item__body strong {
   font-size: var(--fs-sm);
+  font-weight: 600;
   color: var(--text);
 }
 
-.overview-checklist__value {
+.overview-readiness-item__detail {
   font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
 }
-
-.overview-checklist__value--warn  { color: var(--status-warn-fg); }
-.overview-checklist__value--error { color: var(--status-error); }
 
 .overview-checklist__link {
   display: flex;
@@ -3950,6 +3934,11 @@
   margin-top: var(--space-4);
 }
 
+.overview-tt-breakdown .overline {
+  display: block;
+  margin-bottom: var(--space-2);
+}
+
 .overview-tt-bar {
   display: flex;
   height: 8px;
@@ -4002,9 +3991,15 @@
 }
 
 .overview-glance__label {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: var(--fs-xs);
   color: var(--text-muted);
+}
+
+.overview-glance__label .ti {
+  font-size: 0.9em;
 }
 
 .overview-glance__value {
@@ -4070,6 +4065,11 @@
   color: var(--status-ok);
 }
 
+@keyframes overview-live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
 .overview-live-dot {
   width: 6px;
   height: 6px;
@@ -4078,16 +4078,28 @@
   flex-shrink: 0;
 }
 
+@media (prefers-reduced-motion: no-preference) {
+  .overview-live-dot {
+    animation: overview-live-pulse 1.6s ease-in-out infinite;
+  }
+}
+
+/* Now rendered as the Card's header `actions` (next to the live badge), not a row of its own
+ * above the timeline. */
 .overview-activity-filter {
   display: flex;
   gap: var(--space-2);
-  margin-bottom: var(--space-3);
 }
 
+/* Fixed height matching the Check-in progress card's own content height, so Recent activity
+ * doesn't keep growing taller than its grid sibling as more items accumulate — internal scroll
+ * for the rest. */
 .overview-timeline {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  max-height: 312px;
+  overflow-y: auto;
 }
 
 .overview-timeline__day {
@@ -4135,6 +4147,23 @@
   text-overflow: ellipsis;
 }
 
+/* Links a checkin/mail activity entry to the attendee's detail view — kept low-key (inherited
+ * color, underline only on hover/focus) rather than the usual link blue, so the timeline doesn't
+ * read as more colorful/noisy than before. */
+.overview-activity__attendee-link {
+  display: block;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.overview-activity__attendee-link:hover,
+.overview-activity__attendee-link:focus-visible {
+  text-decoration: underline;
+}
+
 .overview-activity__info span {
   font-size: var(--fs-xs);
   color: var(--text-secondary);
@@ -4149,8 +4178,15 @@
 
 /* ── Notes & contacts (merged Pinned note / Key contacts / Links & files) ──────────────
  * The three cards below share one outer Card instead of three separate card borders — each
- * keeps its own overline label + header actions, separated by a thin top divider. */
-.overview-notes-section + .overview-notes-section {
+ * keeps its own overline label + header actions, separated by a thin top divider.
+ * `:not(:first-child)` rather than an adjacent-sibling selector (`X + X`) on purpose (#A1/#A2):
+ * PinnedNoteSection renders its edit/add modal as a sibling of its .overview-notes-section (not
+ * nested inside, unlike the Key contacts/Links & files modals), so while it's open the Key
+ * contacts section's *immediately preceding* sibling is briefly `.overview-modal`, not another
+ * `.overview-notes-section` — an adjacent-sibling rule would drop that divider for as long as the
+ * modal stays open. Position-in-parent doesn't have that failure mode: every section but the
+ * first is "not the first child" regardless of what else briefly sits between them in the DOM. */
+.overview-notes-section:not(:first-child) {
   margin-top: var(--space-4);
   padding-top: var(--space-4);
   border-top: 1px solid var(--border);
@@ -4242,14 +4278,15 @@
   gap: 0;
 }
 
+/* No per-row border (B: "too many divider lines... looks like an Excel spreadsheet") — the
+ * section-level divider above already separates Key contacts from its neighbors; rows lean on
+ * padding for rhythm instead of a hard rule between every pair. */
 .overview-contact {
   display: flex;
   align-items: flex-start;
   gap: var(--space-3);
   padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--border);
 }
-.overview-contact:last-child { border-bottom: none; }
 
 .overview-contact__info {
   flex: 1;
@@ -4323,18 +4360,19 @@
   flex-direction: column;
 }
 
+/* No per-row border (B — same reasoning as .overview-contact above). align-items: center (not
+ * flex-start) so the edit/delete icons stay centered against the row's full height regardless of
+ * whether a description makes it one line or two (#D4 — they used to anchor to the top, sitting
+ * noticeably too high once a description added a second line). */
 .overview-resource {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--border);
 }
-.overview-resource:last-child { border-bottom: none; }
 
 .overview-resource__icon {
   flex-shrink: 0;
-  margin-top: 2px;
   font-size: 16px;
   color: var(--text-muted);
 }
@@ -4434,6 +4472,15 @@
   display: flex;
   justify-content: flex-end;
   gap: var(--space-2);
+}
+
+/* Widens the Type select to match the modal's other fields (#D2) — a pre-existing legacy
+ * `.at-select { max-width: 24rem }` rule elsewhere in this file (predating @admitto/ui's own
+ * Select styling) otherwise caps every select in the admin app at 384px regardless of its
+ * container width, which read as a visibly cramped dropdown next to the full-width Inputs here.
+ * Scoped to this modal rather than changing that shared rule app-wide. */
+.overview-resource-modal__type {
+  max-width: none;
 }
 
 .event-card__hint {

@@ -636,21 +636,25 @@ describe("GET /api/admin/events/:eventId/overview", () => {
       type: "checkin",
       tone: "ok",
       attendee_name: "Activity VIP One",
+      attendee_id: ATT_ACT_VIP_1,
       message: "checked in",
     });
     expect(bounced).toMatchObject({
       type: "mail_bounced",
       tone: "error",
+      attendee_id: ATT_ACT_STD_1,
       message: "Ticket email bounced for bounced-guest@example.com",
     });
     expect(failed).toMatchObject({
       type: "mail_failed",
       tone: "error",
+      attendee_id: ATT_ACT_VIP_1,
       message: "Ticket email failed for failed-guest@example.com",
     });
     expect(imported).toMatchObject({
       type: "import",
       tone: "muted",
+      attendee_id: null,
       message: "4 attendees imported",
     });
     // Length 6 (not 7) confirms the 23:00 ALREADY_CHECKED_IN noise row was excluded - a VALID-only

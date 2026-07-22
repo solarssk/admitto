@@ -38,6 +38,7 @@ import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
+import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 
 const OVERVIEW_REFRESH_MS = 30_000;
 const RECENT_CHECKINS_MAX = 8;
@@ -48,6 +49,18 @@ function safeHref(url: string): string {
     return parsed.protocol === "https:" || parsed.protocol === "http:" ? url : "#";
   } catch {
     return "#";
+  }
+}
+
+/** Same http(s)-only rule the backend enforces (validateHttpUrl in @admitto/mail-templates) —
+ * checked client-side first so an invalid URL surfaces a specific inline message (D3) instead of
+ * the modal's generic save-failed toast. */
+function isValidResourceUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
   }
 }
 
@@ -95,7 +108,9 @@ function AdmissionBar({ admitted, total }: { admitted: number; total: number }) 
 interface ReadinessItem {
   label: string;
   status: "ok" | "warn" | "error" | "neutral";
-  value: string;
+  /** Explanatory sentence shown under the label for not-ok items — no reusable readiness widget
+   * exists yet under Event settings (checked before building this), so this stays local. */
+  detail: string;
 }
 
 /** Merges the former "Needs attention" + "Event readiness" cards into one compact checklist
@@ -124,7 +139,10 @@ function SetupChecklistCard({
     {
       label: "Attendees imported",
       status: overview.attendee_count > 0 ? "ok" : "warn",
-      value: overview.attendee_count > 0 ? `${overview.attendee_count} guests` : "None yet",
+      detail:
+        overview.attendee_count > 0
+          ? `${overview.attendee_count} attendee${overview.attendee_count === 1 ? "" : "s"} imported.`
+          : "No attendees have been imported yet.",
     },
     {
       label: "Tickets sent",
@@ -136,31 +154,36 @@ function SetupChecklistCard({
             : overview.attendees_with_ticket > 0
               ? "warn"
               : "error",
-      value:
+      detail:
         overview.attendee_count === 0
-          ? "—"
-          : `${overview.attendees_with_ticket} / ${overview.attendee_count}`,
+          ? "Import attendees before sending tickets."
+          : overview.attendees_with_ticket > 0
+            ? `${overview.attendees_with_ticket} of ${overview.attendee_count} attendees have received their ticket.`
+            : "No attendees have received their ticket yet.",
     },
     {
       label: "Delivery healthy",
       status: failed === 0 ? "ok" : "error",
-      value: failed === 0 ? "No failures" : `${failed} failed`,
+      detail:
+        failed === 0
+          ? "No delivery failures."
+          : `${failed} ticket email${failed === 1 ? "" : "s"} failed or bounced.`,
     },
     {
       label: "Check-in staff",
       status: overview.checkin_staff_count > 0 ? "ok" : "warn",
-      value:
+      detail:
         overview.checkin_staff_count > 0
-          ? `${overview.checkin_staff_count} user${overview.checkin_staff_count > 1 ? "s" : ""}`
-          : "None active",
+          ? `${overview.checkin_staff_count} user${overview.checkin_staff_count > 1 ? "s" : ""} can perform check-in.`
+          : "No staff can perform check-in yet.",
     },
     {
       label: "Event items",
       status: "neutral",
-      value:
+      detail:
         overview.requirements_count > 0
-          ? `${overview.requirements_count} configured`
-          : "None",
+          ? `${overview.requirements_count} configured.`
+          : "None configured.",
     },
   ];
 
@@ -190,18 +213,18 @@ function SetupChecklistCard({
       ) : (
         <div className="overview-checklist">
           {notOk.map((item) => (
-            <div key={item.label} className="overview-checklist__row">
-              <span className={`overview-checklist__dot overview-checklist__dot--${item.status}`}>
+            <div key={item.label} className="overview-readiness-item">
+              <span className={`status-circle status-circle--${item.status}`} aria-hidden="true">
                 {item.status === "error" ? (
                   <i className="ti ti-x" aria-hidden="true" />
                 ) : (
                   <i className="ti ti-alert-triangle" aria-hidden="true" />
                 )}
               </span>
-              <span className="overview-checklist__label">{item.label}</span>
-              <span className={`overview-checklist__value overview-checklist__value--${item.status}`}>
-                {item.value}
-              </span>
+              <div className="overview-readiness-item__body">
+                <strong>{item.label}</strong>
+                <span className="overview-readiness-item__detail">{item.detail}</span>
+              </div>
             </div>
           ))}
         </div>
@@ -267,6 +290,7 @@ function CheckInProgressCard({
 
       {breakdown.length > 1 && (
         <div className="overview-tt-breakdown">
+          <span className="overline">By ticket type</span>
           <div className="overview-tt-bar">
             {breakdown.map((t) => (
               <span
@@ -295,11 +319,15 @@ function CheckInProgressCard({
 
       <div className="overview-glance">
         <div className="overview-glance__tile">
-          <span className="overview-glance__label">Last check-in</span>
+          <span className="overview-glance__label">
+            <i className="ti ti-clock" aria-hidden="true" /> Last check-in
+          </span>
           <span className="overview-glance__value">{formatRelativeTime(overview.last_check_in_at)}</span>
         </div>
         <div className="overview-glance__tile">
-          <span className="overview-glance__label">Busiest hour</span>
+          <span className="overview-glance__label">
+            <i className="ti ti-trending-up" aria-hidden="true" /> Busiest hour
+          </span>
           <span className="overview-glance__value">
             {overview.busiest_hour ? formatBusiestHourRange(overview.busiest_hour.hour) : "—"}
           </span>
@@ -343,6 +371,7 @@ function liveCheckinsAsActivity(checkins: StreamCheckinEvent[]): DisplayActivity
     type: "checkin",
     tone: "ok",
     attendee_name: c.attendeeName,
+    attendee_id: c.attendeeId,
     message: "checked in",
     occurred_at: c.admittedAt,
     ticketType: c.ticketType,
@@ -400,12 +429,14 @@ type ActivityFilter = "all" | "issues";
 /** Recent activity card (replaces "Recent check-ins", #373 + Part B): a day-grouped timeline of
  * check-ins, mail failures/bounces, and imports, with an All/Issues filter. */
 function RecentActivityCard({
+  eventId,
   activity,
   liveCheckins,
   ticketTypes,
   timezone,
   connected,
 }: {
+  eventId: string;
   activity: EventRecentActivityEntry[];
   liveCheckins: StreamCheckinEvent[];
   ticketTypes: TicketTypeDto[];
@@ -423,35 +454,36 @@ function RecentActivityCard({
     <Card
       title="Recent activity"
       actions={
-        connected ? (
-          <span className="overview-live-badge">
-            <span className="overview-live-dot" aria-hidden="true" />
-            live
-          </span>
-        ) : undefined
+        <>
+          <div className="overview-activity-filter" role="group" aria-label="Filter activity">
+            <Button
+              type="button"
+              variant={filter === "all" ? "secondary" : "ghost"}
+              size="sm"
+              aria-pressed={filter === "all"}
+              onClick={() => setFilter("all")}
+            >
+              All
+            </Button>
+            <Button
+              type="button"
+              variant={filter === "issues" ? "secondary" : "ghost"}
+              size="sm"
+              aria-pressed={filter === "issues"}
+              onClick={() => setFilter("issues")}
+            >
+              Issues
+            </Button>
+          </div>
+          {connected && (
+            <span className="overview-live-badge">
+              <span className="overview-live-dot" aria-hidden="true" />
+              live
+            </span>
+          )}
+        </>
       }
     >
-      <div className="overview-activity-filter" role="group" aria-label="Filter activity">
-        <Button
-          type="button"
-          variant={filter === "all" ? "secondary" : "ghost"}
-          size="sm"
-          aria-pressed={filter === "all"}
-          onClick={() => setFilter("all")}
-        >
-          All
-        </Button>
-        <Button
-          type="button"
-          variant={filter === "issues" ? "secondary" : "ghost"}
-          size="sm"
-          aria-pressed={filter === "issues"}
-          onClick={() => setFilter("issues")}
-        >
-          Issues
-        </Button>
-      </div>
-
       {filtered.length === 0 ? (
         <p className="overview-muted">
           {filter === "issues"
@@ -470,7 +502,16 @@ function RecentActivityCard({
                     <div className="overview-activity__info">
                       {entry.attendee_name ? (
                         <>
-                          <strong>{entry.attendee_name}</strong>
+                          {entry.attendee_id ? (
+                            <Link
+                              to={`/admin/events/${eventId}/attendees/${entry.attendee_id}`}
+                              className="overview-activity__attendee-link"
+                            >
+                              <strong>{entry.attendee_name}</strong>
+                            </Link>
+                          ) : (
+                            <strong>{entry.attendee_name}</strong>
+                          )}
                           <span>
                             {entry.message}
                             {entry.ticketType !== undefined && (
@@ -675,10 +716,37 @@ function ContactModal({
         </>
       }
     >
-      <Input label="Name *" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} autoFocus />
-      <Input label="Role" value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))} />
-      <Input label="Phone" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
-      <Input label="Email" type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
+      <Input
+        label="Name *"
+        icon={<i className="ti ti-user" aria-hidden="true" />}
+        value={form.name}
+        onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+        autoFocus
+      />
+      <Input
+        label="Role"
+        icon={<i className="ti ti-briefcase" aria-hidden="true" />}
+        value={form.role}
+        onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
+      />
+      <Input
+        label="Phone"
+        icon={<i className="ti ti-phone" aria-hidden="true" />}
+        value={form.phone}
+        onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+      />
+      <Input
+        label="Email"
+        type="email"
+        icon={<i className="ti ti-mail" aria-hidden="true" />}
+        value={form.email}
+        onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+        // Suppresses password-manager / iCloud "Hide My Email" autofill suggestions on this
+        // non-auth contact field — same opt-out combination as mailTransportFormParts.tsx's other
+        // non-auth email inputs; full suppression isn't guaranteed in every browser.
+        {...NO_AUTOFILL_PROPS}
+        name="event-contact-email"
+      />
     </OverviewModal>
   );
 }
@@ -702,15 +770,21 @@ function ResourceModal({
     description: resource?.description ?? "",
   });
   const [saving, setSaving] = useState(false);
+  const [urlError, setUrlError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
     if (!form.title.trim() || !form.url.trim() || saving) return;
+    const trimmedUrl = form.url.trim();
+    if (!isValidResourceUrl(trimmedUrl)) {
+      setUrlError("Enter a valid URL starting with http:// or https://");
+      return;
+    }
     setSaving(true);
     try {
       const data = {
         title: form.title.trim(),
         type: form.type,
-        url: form.url.trim(),
+        url: trimmedUrl,
         description: form.description.trim() || null,
       };
       if (resource) {
@@ -747,13 +821,38 @@ function ResourceModal({
         </>
       }
     >
-      <Input label="Title *" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} autoFocus />
-      <Select label="Type" value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as "link" | "file" }))}>
+      <Input
+        label="Title *"
+        icon={<i className="ti ti-heading" aria-hidden="true" />}
+        value={form.title}
+        onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+        autoFocus
+      />
+      <Select
+        label="Type"
+        className="overview-resource-modal__type"
+        value={form.type}
+        onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as "link" | "file" }))}
+      >
         <option value="link">Link</option>
         <option value="file">File</option>
       </Select>
-      <Input label="URL *" value={form.url} onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))} />
-      <Input label="Description" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
+      <Input
+        label="URL *"
+        icon={<i className="ti ti-link" aria-hidden="true" />}
+        value={form.url}
+        error={urlError ?? undefined}
+        onChange={(e) => {
+          setForm((f) => ({ ...f, url: e.target.value }));
+          setUrlError(null);
+        }}
+      />
+      <Input
+        label="Description"
+        icon={<i className="ti ti-file-text" aria-hidden="true" />}
+        value={form.description}
+        onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+      />
     </OverviewModal>
   );
 }
@@ -1409,6 +1508,7 @@ export function EventOverviewPage() {
         <div className="overview-row">
           <CheckInProgressCard overview={currentOverview} loading={loading} />
           <RecentActivityCard
+            eventId={event.id}
             activity={currentOverview?.recent_activity ?? []}
             liveCheckins={recentCheckins}
             ticketTypes={ticketTypes}

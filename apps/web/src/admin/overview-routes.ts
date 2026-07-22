@@ -66,6 +66,9 @@ export interface EventRecentActivityEntry {
   type: "checkin" | "mail_bounced" | "mail_failed" | "mail_resent" | "import";
   tone: "ok" | "warn" | "error" | "info" | "muted";
   attendee_name?: string | null;
+  /** Links the entry to the attendee's detail view in the admin UI; null for entries with no
+   * single attendee (import batches). */
+  attendee_id: string | null;
   message: string;
   occurred_at: string;
 }
@@ -137,13 +140,14 @@ async function loadRecentCheckInActivity(db: PrismaClient, eventId: string): Pro
     where: { event_id: eventId, status: "VALID" },
     orderBy: { checked_in_at: "desc" },
     take: RECENT_ACTIVITY_LIMIT,
-    select: { id: true, checked_in_at: true, attendee: { select: { name: true } } },
+    select: { id: true, checked_in_at: true, attendee_id: true, attendee: { select: { name: true } } },
   });
   return rows.map((row) => ({
     id: `checkin:${row.id}`,
     type: "checkin",
     tone: "ok",
     attendee_name: row.attendee.name,
+    attendee_id: row.attendee_id,
     message: "checked in",
     occurred_at: row.checked_in_at.toISOString(),
   }));
@@ -165,6 +169,7 @@ async function loadRecentMailFailureActivity(
       recipient_email: true,
       failed_at: true,
       updated_at: true,
+      attendee_id: true,
       attendee: { select: { name: true, email: true } },
     },
   });
@@ -176,6 +181,7 @@ async function loadRecentMailFailureActivity(
       type: bounced ? "mail_bounced" : "mail_failed",
       tone: "error",
       attendee_name: row.attendee.name,
+      attendee_id: row.attendee_id,
       message: `Ticket email ${bounced ? "bounced" : "failed"} for ${email}`,
       occurred_at: (row.failed_at ?? row.updated_at).toISOString(),
     };
@@ -190,6 +196,7 @@ async function loadRecentImportActivity(db: PrismaClient, eventId: string): Prom
       id: `import:${entry.id}`,
       type: "import",
       tone: "muted",
+      attendee_id: null,
       message: `${total} attendee${total === 1 ? "" : "s"} imported`,
       occurred_at: entry.created_at,
     };
