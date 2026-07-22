@@ -330,6 +330,23 @@ describe("AttendeesTable bulk revoke items (#551)", () => {
     expect(item.textContent).toContain("Reset all issued items for 1 attendee");
     expect(item.textContent).not.toContain("for 2 attendees");
   });
+
+  it("excludes a blocked-pass attendee from the count even when they have something issued (CodeRabbit review)", () => {
+    const blockedButIssuedRow = { ...otherRow, has_issued_items: true, status: "revoked" as const };
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow, blockedButIssuedRow]}
+        selectedIds={new Set(["att-1", "att-2"])}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    const item = screen.getByRole("menuitem", { name: /Revoke items/ });
+    // Both rows have has_issued_items: true, but the server's own isAdmittable guard would
+    // refuse to reset the revoked attendee's items - the hint must not promise to affect them.
+    expect(item.textContent).toContain("Reset all issued items for 1 attendee");
+    expect(item.textContent).not.toContain("for 2 attendees");
+  });
 });
 
 describe("AttendeesTable bulk revoke pass (PO review, #549)", () => {

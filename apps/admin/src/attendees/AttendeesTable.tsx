@@ -1340,8 +1340,12 @@ export function AttendeesTable({
   const admittedSelectedCount = selectedRows.filter((row) => row.check_in_status === "admitted").length;
   // "Revoke items" hint reports how many of the selection actually have something issued, not
   // the raw selection size (PO review) — mirrors "Revoke check-in"/"Revoke pass" reporting only
-  // the attendees they'd actually affect.
-  const revokableItemsCount = selectedRows.filter((row) => row.has_issued_items).length;
+  // the attendees they'd actually affect. A blocked-pass attendee is excluded even if
+  // has_issued_items is true: the server's own isAdmittable guard refuses to reset their items
+  // (CodeRabbit review).
+  const revokableItemsCount = selectedRows.filter(
+    (row) => row.has_issued_items && row.status !== "cancelled" && row.status !== "revoked",
+  ).length;
   // "Revoke pass" is a no-op once every selected attendee is already revoked/cancelled -
   // disabled rather than left clickable into a confirm dialog that just reports nothing
   // changed, same "nothing to do" gate as "Revoke check-in" (PO review follow-up, #549). A

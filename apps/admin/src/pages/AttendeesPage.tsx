@@ -1103,9 +1103,16 @@ export function AttendeesPage() {
     !mailStatusFilter;
 
   // How many of the selection the bulk "Revoke items" confirm dialog would actually affect, not
-  // the raw selection size (PO review) — matches the bulk bar's own menu-item hint.
+  // the raw selection size (PO review) — matches the bulk bar's own menu-item hint. A
+  // blocked-pass attendee is excluded even if has_issued_items is true: the server's own
+  // isAdmittable guard refuses to reset their items, so counting them here would overstate the
+  // impact and could report a real revoke as "no issued items to revoke" (CodeRabbit review).
   const revokableItemsCount = items.filter(
-    (row) => selectedIds.has(row.id) && row.has_issued_items,
+    (row) =>
+      selectedIds.has(row.id) &&
+      row.has_issued_items &&
+      row.status !== "cancelled" &&
+      row.status !== "revoked",
   ).length;
 
   // How many of the selection actually have an active pass to revoke - shown in the confirm
@@ -1389,7 +1396,6 @@ export function AttendeesPage() {
         message="Every issued item (badge, wristband, giftbag, …) for the selected attendees is reset to pending. Items can be re-issued from the check-in screen at any time."
         errorMessage={bulkRevokeItemsError}
         confirmLabel="Revoke items"
-        confirmVariant="danger"
         loading={bulkRevokeItemsBusy}
         onConfirm={() => void handleBulkRevokeItemsSelected()}
         onCancel={() => {
