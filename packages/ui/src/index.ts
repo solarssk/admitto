@@ -1,4 +1,5 @@
 export { Button, type ButtonProps, type ButtonVariant, type ButtonSize } from "./components/Button.js";
+export { Tooltip, type TooltipProps } from "./components/Tooltip.js";
 export { IconButton, type IconButtonProps } from "./components/IconButton.js";
 export { Input, type InputProps } from "./components/Input.js";
 export {

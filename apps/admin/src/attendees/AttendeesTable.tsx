@@ -1,5 +1,5 @@
 import { useRef, type ReactNode } from "react";
-import { Button, Card, Checkbox, EmptyState, IconButton, Input, Select, Skeleton } from "@admitto/ui";
+import { Button, Card, Checkbox, EmptyState, IconButton, Input, Select, Skeleton, Tooltip } from "@admitto/ui";
 import type {
   AttendeeMailStatusFilter,
   AttendeeRowDto,
@@ -381,16 +381,6 @@ function AttendeeCard({
 }
 
 /** Mobile "Send tickets" menu item's disabled-title (Sonar S3358: was a nested ternary). */
-/** className + title pair for a "More actions" menu item's disabled-reason tooltip. Plain
- * title= (browser-native), not the shared .at-tooltip hover treatment used elsewhere: measured
- * live, the dark styled tooltip needs ~35-50px of clearance above/below its trigger (its own
- * height for 1-3 wrapped lines at max-width 220px) that this densely-packed menu (~2px gaps
- * between items, staff.css `.more-actions-menu__panel`) never has - it visually overlapped
- * whichever menu item sat next to the disabled one (PO review: "nic nie widać"). */
-function menuItemTooltipProps(baseClassName: string, tooltip: string | undefined) {
-  return { className: baseClassName, title: tooltip };
-}
-
 function bulkSendTicketsTooltip(archived: boolean, canBulkSend: boolean): string | undefined {
   if (archived) return ARCHIVED_ACTION_TOOLTIP;
   if (!canBulkSend) return "No mail transport configured for this event. Set one up in Event Settings → Mailing.";
@@ -512,24 +502,30 @@ function BulkMoreActionsMenu({
            * count and "Check in" (attendees.css), so it lives here instead on mobile, first
            * in the list since it's still one of the two most common bulk actions. */}
           {!isDesktop && (
-            <button
-              type="button"
-              role="menuitem"
-              {...menuItemTooltipProps("more-actions-menu__item", bulkSendTicketsTooltip(archived, canBulkSend))}
-              disabled={archived || bulkSendBusy || !canBulkSend}
-              onClick={() => {
-                setOpen(false);
-                onBulkSendTickets();
-              }}
+            <Tooltip
+              content={bulkSendTicketsTooltip(archived, canBulkSend)}
+              className="more-actions-menu__item-wrapper"
+              axis="horizontal"
             >
-              <i className="ti ti-send" aria-hidden="true" />
-              <span className="more-actions-menu__item-text">
-                <span>{bulkSendBusy ? "Sending…" : "Send tickets"}</span>
-                <span className="more-actions-menu__item-hint">
-                  Email tickets to {selectedCount} attendee{selectedCount === 1 ? "" : "s"}
+              <button
+                type="button"
+                role="menuitem"
+                className="more-actions-menu__item"
+                disabled={archived || bulkSendBusy || !canBulkSend}
+                onClick={() => {
+                  setOpen(false);
+                  onBulkSendTickets();
+                }}
+              >
+                <i className="ti ti-send" aria-hidden="true" />
+                <span className="more-actions-menu__item-text">
+                  <span>{bulkSendBusy ? "Sending…" : "Send tickets"}</span>
+                  <span className="more-actions-menu__item-hint">
+                    Email tickets to {selectedCount} attendee{selectedCount === 1 ? "" : "s"}
+                  </span>
                 </span>
-              </span>
-            </button>
+              </button>
+            </Tooltip>
           )}
           {/* Not ArchivedGuard'd — exporting a selection is read-only, so it stays legal
            * after an event is archived. */}
@@ -554,27 +550,30 @@ function BulkMoreActionsMenu({
           {/* Disabled (not hidden) on archived events and when the catalog is empty — the
            * endpoint is guardArchivedEvent'd, and with no configured types there's nothing
            * to pick; the title explains why instead of the item silently vanishing. */}
-          <button
-            type="button"
-            role="menuitem"
-            {...menuItemTooltipProps(
-              "more-actions-menu__item",
-              changeTicketTypeDisabled ? changeTicketTypeDisabledReason : undefined,
-            )}
-            disabled={changeTicketTypeDisabled}
-            onClick={() => {
-              setOpen(false);
-              onChangeTicketType();
-            }}
+          <Tooltip
+            content={changeTicketTypeDisabled ? changeTicketTypeDisabledReason : undefined}
+            className="more-actions-menu__item-wrapper"
+            axis="horizontal"
           >
-            <i className="ti ti-ticket" aria-hidden="true" />
-            <span className="more-actions-menu__item-text">
-              <span>Change ticket type</span>
-              <span className="more-actions-menu__item-hint">
-                Choose from {ticketTypeCount} configured type{ticketTypeCount === 1 ? "" : "s"}
+            <button
+              type="button"
+              role="menuitem"
+              className="more-actions-menu__item"
+              disabled={changeTicketTypeDisabled}
+              onClick={() => {
+                setOpen(false);
+                onChangeTicketType();
+              }}
+            >
+              <i className="ti ti-ticket" aria-hidden="true" />
+              <span className="more-actions-menu__item-text">
+                <span>Change ticket type</span>
+                <span className="more-actions-menu__item-hint">
+                  Choose from {ticketTypeCount} configured type{ticketTypeCount === 1 ? "" : "s"}
+                </span>
               </span>
-            </span>
-          </button>
+            </button>
+          </Tooltip>
           {/* The catalog fetch's own retry lives behind the Type filter, which this bulk bar
            * replaces while rows are selected — without this, the only way to retry was to
            * clear the selection first, losing the batch the operator was about to act on
@@ -596,54 +595,60 @@ function BulkMoreActionsMenu({
            * when nothing in the selection is currently checked in, same convention as Change
            * ticket type below. Styled as a caution item (not full danger) — it's reversible via
            * Check in again, unlike Delete below (PO review). */}
-          <button
-            type="button"
-            role="menuitem"
-            {...menuItemTooltipProps(
-              "more-actions-menu__item more-actions-menu__item--warning",
-              bulkRevokeCheckInTooltip(archived, canRevokeCheckIn),
-            )}
-            disabled={archived || bulkRevokeCheckInBusy || !canRevokeCheckIn}
-            onClick={() => {
-              setOpen(false);
-              onBulkRevokeCheckIn();
-            }}
+          <Tooltip
+            content={bulkRevokeCheckInTooltip(archived, canRevokeCheckIn)}
+            className="more-actions-menu__item-wrapper"
+            axis="horizontal"
           >
-            <i className="ti ti-qrcode-off" aria-hidden="true" />
-            <span className="more-actions-menu__item-text">
-              <span>{bulkRevokeCheckInBusy ? "Revoking check-in…" : "Revoke check-in"}</span>
-              <span className="more-actions-menu__item-hint">
-                Undo check-in for {revokableCheckInCount} attendee{revokableCheckInCount === 1 ? "" : "s"}
+            <button
+              type="button"
+              role="menuitem"
+              className="more-actions-menu__item more-actions-menu__item--warning"
+              disabled={archived || bulkRevokeCheckInBusy || !canRevokeCheckIn}
+              onClick={() => {
+                setOpen(false);
+                onBulkRevokeCheckIn();
+              }}
+            >
+              <i className="ti ti-qrcode-off" aria-hidden="true" />
+              <span className="more-actions-menu__item-text">
+                <span>{bulkRevokeCheckInBusy ? "Revoking check-in…" : "Revoke check-in"}</span>
+                <span className="more-actions-menu__item-hint">
+                  Undo check-in for {revokableCheckInCount} attendee{revokableCheckInCount === 1 ? "" : "s"}
+                </span>
               </span>
-            </span>
-          </button>
+            </button>
+          </Tooltip>
           {/* Disabled (not hidden) on archived events and when the event has no configured
            * items - same convention as Change ticket type above. Always resets every
            * configured item for the selection at once (no per-item picker, PO review, #551:
            * "od tego mamy check in widok" - for precise per-attendee/per-item
            * control, that already exists on the check-in screen). Independent of check-in
            * status, matching the Danger Zone's event-wide "Revoke all items issued". */}
-          <button
-            type="button"
-            role="menuitem"
-            {...menuItemTooltipProps(
-              "more-actions-menu__item more-actions-menu__item--warning",
-              bulkRevokeItemsTooltip(archived, itemCount, itemsError, canRevokeItems),
-            )}
-            disabled={archived || bulkRevokeItemsBusy || itemCount === 0 || !canRevokeItems}
-            onClick={() => {
-              setOpen(false);
-              onBulkRevokeItems();
-            }}
+          <Tooltip
+            content={bulkRevokeItemsTooltip(archived, itemCount, itemsError, canRevokeItems)}
+            className="more-actions-menu__item-wrapper"
+            axis="horizontal"
           >
-            <i className="ti ti-package" aria-hidden="true" />
-            <span className="more-actions-menu__item-text">
-              <span>{bulkRevokeItemsBusy ? "Revoking items…" : "Revoke items"}</span>
-              <span className="more-actions-menu__item-hint">
-                Reset all issued items for {revokableItemsCount} attendee{revokableItemsCount === 1 ? "" : "s"}
+            <button
+              type="button"
+              role="menuitem"
+              className="more-actions-menu__item more-actions-menu__item--warning"
+              disabled={archived || bulkRevokeItemsBusy || itemCount === 0 || !canRevokeItems}
+              onClick={() => {
+                setOpen(false);
+                onBulkRevokeItems();
+              }}
+            >
+              <i className="ti ti-package" aria-hidden="true" />
+              <span className="more-actions-menu__item-text">
+                <span>{bulkRevokeItemsBusy ? "Revoking items…" : "Revoke items"}</span>
+                <span className="more-actions-menu__item-hint">
+                  Reset all issued items for {revokableItemsCount} attendee{revokableItemsCount === 1 ? "" : "s"}
+                </span>
               </span>
-            </span>
-          </button>
+            </button>
+          </Tooltip>
           {!archived && itemCount === 0 && itemsError && onRetryItems && (
             <button
               type="button"
@@ -659,27 +664,30 @@ function BulkMoreActionsMenu({
            * follow-up, #549). A mixed selection stays enabled: the server already leaves an
            * already-revoked/cancelled attendee untouched and reports it separately in the
            * result toast. */}
-          <button
-            type="button"
-            role="menuitem"
-            {...menuItemTooltipProps(
-              "more-actions-menu__item more-actions-menu__item--danger",
-              bulkRevokePassTooltip(archived, canRevokePass),
-            )}
-            disabled={archived || bulkRevokePassBusy || !canRevokePass}
-            onClick={() => {
-              setOpen(false);
-              onBulkRevokePass();
-            }}
+          <Tooltip
+            content={bulkRevokePassTooltip(archived, canRevokePass)}
+            className="more-actions-menu__item-wrapper"
+            axis="horizontal"
           >
-            <i className="ti ti-ban" aria-hidden="true" />
-            <span className="more-actions-menu__item-text">
-              <span>{bulkRevokePassBusy ? "Revoking pass…" : "Revoke pass"}</span>
-              <span className="more-actions-menu__item-hint">
-                Block check-in for {revokablePassCount} attendee{revokablePassCount === 1 ? "" : "s"}
+            <button
+              type="button"
+              role="menuitem"
+              className="more-actions-menu__item more-actions-menu__item--danger"
+              disabled={archived || bulkRevokePassBusy || !canRevokePass}
+              onClick={() => {
+                setOpen(false);
+                onBulkRevokePass();
+              }}
+            >
+              <i className="ti ti-ban" aria-hidden="true" />
+              <span className="more-actions-menu__item-text">
+                <span>{bulkRevokePassBusy ? "Revoking pass…" : "Revoke pass"}</span>
+                <span className="more-actions-menu__item-hint">
+                  Block check-in for {revokablePassCount} attendee{revokablePassCount === 1 ? "" : "s"}
+                </span>
               </span>
-            </span>
-          </button>
+            </button>
+          </Tooltip>
           <hr className="more-actions-menu__divider" />
           {/* Not ArchivedGuard'd — GDPR erasure requests can legally arrive after an event
            * ends; the DELETE endpoint doesn't block on archived_at either. */}

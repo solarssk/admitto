@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryRouter, MemoryRouter, RouterProvider, Route, Routes } from "react-router-dom";
 import { AttendeesPage } from "../../src/pages/AttendeesPage.js";
-import { mockMatchMedia } from "../test-utils.js";
+import { getTooltipText, mockMatchMedia } from "../test-utils.js";
 import type { AttendeeRowDto } from "../../src/api/types.js";
 
 const fetchEventAttendees = vi.fn();
@@ -1539,7 +1539,7 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
 
     const item = bulkBar().getByRole("menuitem", { name: /Change ticket type/ }) as HTMLButtonElement;
     expect(item.disabled).toBe(true);
-    expect(item.title).toContain("No ticket types configured");
+    expect(getTooltipText(item)).toContain("No ticket types configured");
   });
 
   it("blames a failed catalog load, not 'no types configured', when the fetch itself failed (#521 code review)", async () => {
@@ -1559,8 +1559,8 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
 
     const item = bulkBar().getByRole("menuitem", { name: /Change ticket type/ }) as HTMLButtonElement;
     expect(item.disabled).toBe(true);
-    expect(item.title).not.toContain("No ticket types configured");
-    expect(item.title).toContain("Couldn't load ticket types");
+    expect(getTooltipText(item)).not.toContain("No ticket types configured");
+    expect(getTooltipText(item)).toContain("Couldn't load ticket types");
   });
 
   it("lets the operator retry the catalog load from the bulk bar's More actions menu, without losing the selection (Codex review)", async () => {
@@ -1794,7 +1794,7 @@ describe("AttendeesPage bulk revoke items (#551)", () => {
 
     const item = bulkBar().getByRole("menuitem", { name: /Revoke items/ }) as HTMLButtonElement;
     expect(item.disabled).toBe(true);
-    expect(item.title).toContain("No items configured");
+    expect(getTooltipText(item)).toContain("No items configured");
   });
 
   it("disables the menu item when nothing in the selection has anything issued, even though the event has configured items (CodeRabbit review)", async () => {
@@ -1810,7 +1810,7 @@ describe("AttendeesPage bulk revoke items (#551)", () => {
 
     const item = bulkBar().getByRole("menuitem", { name: /Revoke items/ }) as HTMLButtonElement;
     expect(item.disabled).toBe(true);
-    expect(item.title).toBe("None of the selected attendees have anything issued.");
+    expect(getTooltipText(item)).toBe("None of the selected attendees have anything issued.");
   });
 
   it("lets the operator retry the items load from the bulk bar's More actions menu, without losing the selection", async () => {

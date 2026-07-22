@@ -696,6 +696,14 @@
   gap: 2px;
 }
 
+/* Tooltip's trigger wrapper defaults to inline-flex (shrink-to-fit) - override to block/full
+   width here so wrapping a menu item in <Tooltip> doesn't change its layout in this stacked,
+   full-width list. */
+.more-actions-menu__item-wrapper {
+  display: block;
+  width: 100%;
+}
+
 .more-actions-menu__item {
   display: flex;
   align-items: center;

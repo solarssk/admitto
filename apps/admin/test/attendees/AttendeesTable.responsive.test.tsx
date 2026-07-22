@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AttendeesTable } from "../../src/attendees/AttendeesTable.js";
-import { mockMatchMedia } from "../test-utils.js";
+import { getTooltipText, mockMatchMedia } from "../test-utils.js";
 import type { AttendeeRowDto } from "../../src/api/types.js";
 
 const baseRow: AttendeeRowDto = {
@@ -230,7 +230,7 @@ describe("AttendeesTable bulk revoke check-in (PO review, #522 follow-up)", () =
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
-    expect(screen.getByRole("menuitem", { name: /Revoke check-in/ }).getAttribute("title")).toBe(
+    expect(getTooltipText(screen.getByRole("menuitem", { name: /Revoke check-in/ }))).toBe(
       "This event is archived — editing is disabled.",
     );
   });
@@ -272,7 +272,7 @@ describe("AttendeesTable bulk revoke items (#551)", () => {
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     const item = screen.getByRole("menuitem", { name: /Revoke items/ }) as HTMLButtonElement;
     expect(item.disabled).toBe(true);
-    expect(item.getAttribute("title")).toContain("No items configured");
+    expect(getTooltipText(item)).toContain("No items configured");
   });
 
   it("disables with the archived tooltip when the event is archived, even with configured items", () => {
@@ -287,7 +287,7 @@ describe("AttendeesTable bulk revoke items (#551)", () => {
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     const item = screen.getByRole("menuitem", { name: /Revoke items/ }) as HTMLButtonElement;
     expect(item.disabled).toBe(true);
-    expect(item.getAttribute("title")).toBe("This event is archived.");
+    expect(getTooltipText(item)).toBe("This event is archived.");
   });
 
   it("disables the menu item when nothing in the selection has anything issued, even though the event has configured items (CodeRabbit review)", () => {
@@ -298,7 +298,7 @@ describe("AttendeesTable bulk revoke items (#551)", () => {
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     const item = screen.getByRole("menuitem", { name: /Revoke items/ }) as HTMLButtonElement;
     expect(item.disabled).toBe(true);
-    expect(item.getAttribute("title")).toBe("None of the selected attendees have anything issued.");
+    expect(getTooltipText(item)).toBe("None of the selected attendees have anything issued.");
   });
 
   it("fires onBulkRevokeItems and closes the menu when the item is clicked", () => {
@@ -399,7 +399,7 @@ describe("AttendeesTable bulk revoke pass (PO review, #549)", () => {
       <AttendeesTable {...tableProps} items={[revokedRow]} selectedIds={new Set(["att-1"])} />,
     );
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
-    expect(screen.getByRole("menuitem", { name: /Revoke pass/ }).getAttribute("title")).toBe(
+    expect(getTooltipText(screen.getByRole("menuitem", { name: /Revoke pass/ }))).toBe(
       "The selected attendees' passes are already revoked or cancelled.",
     );
   });
@@ -416,7 +416,7 @@ describe("AttendeesTable bulk revoke pass (PO review, #549)", () => {
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     const item = screen.getByRole("menuitem", { name: /Revoke pass/ }) as HTMLButtonElement;
     expect(item.disabled).toBe(true);
-    expect(item.getAttribute("title")).toBe("This event is archived — editing is disabled.");
+    expect(getTooltipText(item)).toBe("This event is archived — editing is disabled.");
   });
 
   it("fires onBulkRevokePass and closes the menu when the item is clicked", () => {
@@ -484,7 +484,7 @@ describe("AttendeesTable mobile bulk bar — 'More' menu's Send tickets item", (
     );
 
     fireEvent.click(screen.getByRole("button", { name: "More" }));
-    expect(screen.getByRole("menuitem", { name: /Send tickets/ }).getAttribute("title")).toBe(
+    expect(getTooltipText(screen.getByRole("menuitem", { name: /Send tickets/ }))).toBe(
       "This event is archived — editing is disabled.",
     );
   });
@@ -500,7 +500,7 @@ describe("AttendeesTable mobile bulk bar — 'More' menu's Send tickets item", (
     );
 
     fireEvent.click(screen.getByRole("button", { name: "More" }));
-    expect(screen.getByRole("menuitem", { name: /Send tickets/ }).getAttribute("title")).toBe(
+    expect(getTooltipText(screen.getByRole("menuitem", { name: /Send tickets/ }))).toBe(
       "No mail transport configured for this event. Set one up in Event Settings → Mailing.",
     );
   });
