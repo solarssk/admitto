@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { SystemStatus } from "../../src/components/SystemStatus.js";
+import { resetSystemStatusCache, SystemStatus } from "../../src/components/SystemStatus.js";
 import type { RoleAssignment } from "../../src/api/types.js";
 import { connectionStateValue } from "../checkin/connectionStateMock.js";
 
@@ -26,15 +26,16 @@ const OK_CHECKS = {
   base_url: { ok: true, detail: "https://tickets.example.com" },
 };
 
-function renderStatus(assignments: RoleAssignment[]) {
+function renderStatus(
+  assignments: RoleAssignment[],
+  mailerStatus: { configured: boolean; provider: string | null } | null = { configured: true, provider: "smtp" },
+) {
   return render(
     <MemoryRouter>
       <Routes>
         <Route
           path="/"
-          element={
-            <SystemStatus assignments={assignments} mailerStatus={{ configured: true, provider: "smtp" }} />
-          }
+          element={<SystemStatus assignments={assignments} mailerStatus={mailerStatus} />}
         />
         <Route path="/admin/settings" element={<div>settings-page</div>} />
       </Routes>
@@ -43,12 +44,15 @@ function renderStatus(assignments: RoleAssignment[]) {
 }
 
 function openMenu() {
-  fireEvent.click(screen.getByRole("button", { name: /All systems normal|Degraded performance|Action needed/ }));
+  fireEvent.click(
+    screen.getByRole("button", { name: /All systems normal|Degraded performance|Action needed/ }),
+  );
 }
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  resetSystemStatusCache();
 });
 
 describe("SystemStatus", () => {
@@ -129,16 +133,77 @@ describe("SystemStatus", () => {
     expect(screen.getByText("Responding slowly")).toBeTruthy();
   });
 
-  it("never calls fetchSetupChecks for a non-superadmin and only shows the connection row", () => {
+  it("shows 'Action needed' and marks rows 'Unavailable' when fetchSetupChecks rejects, instead of getting stuck 'Checking…' forever", async () => {
+    useConnectionState.mockReturnValue(connectionStateValue("connected"));
+    fetchSetupChecks.mockRejectedValueOnce(new Error("network error"));
+
+    renderStatus(SUPERADMIN);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Action needed/ })).toBeTruthy();
+    });
+    openMenu();
+    expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Checking…")).toBeNull();
+  });
+
+  it("caches a successful setup-checks result across remounts within the TTL", async () => {
+    useConnectionState.mockReturnValue(connectionStateValue("connected"));
+    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
+
+    const { unmount } = renderStatus(SUPERADMIN);
+    await waitFor(() => expect(screen.getByRole("button", { name: /All systems normal/ })).toBeTruthy());
+    unmount();
+
+    renderStatus(SUPERADMIN);
+    // Shows the cached result immediately — no second "Checking…" flash and no second fetch.
+    expect(screen.getByRole("button", { name: /All systems normal/ })).toBeTruthy();
+    expect(fetchSetupChecks).toHaveBeenCalledTimes(1);
+  });
+
+  it("omits the Email sending row (no false alarm) when mailerStatus hasn't reached this session yet", async () => {
+    useConnectionState.mockReturnValue(connectionStateValue("connected"));
+    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
+
+    renderStatus(SUPERADMIN, null);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: /All systems normal/ })).toBeTruthy());
+    openMenu();
+    expect(screen.queryByText("Email sending")).toBeNull();
+  });
+
+  it("shows the Email sending row to a non-superadmin when mailerStatus is available (not superadmin-gated)", () => {
     useConnectionState.mockReturnValue(connectionStateValue("connected"));
 
     renderStatus(OPERATOR);
 
     openMenu();
     expect(fetchSetupChecks).not.toHaveBeenCalled();
+    expect(screen.getByText("Email sending")).toBeTruthy();
     expect(screen.getByText("Check-in connection")).toBeTruthy();
     expect(screen.queryByText("Database")).toBeNull();
     expect(screen.queryByRole("menuitem", { name: /View system logs/ })).toBeNull();
+  });
+
+  it("uses role=menu for a superadmin, who has an actionable 'View system logs' item", async () => {
+    useConnectionState.mockReturnValue(connectionStateValue("connected"));
+    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
+
+    renderStatus(SUPERADMIN);
+    await waitFor(() => expect(screen.getByRole("button", { name: /All systems normal/ })).toBeTruthy());
+    openMenu();
+
+    expect(screen.getByRole("menu")).toBeTruthy();
+  });
+
+  it("uses role=group (not menu) for a non-superadmin, whose panel is purely informational", () => {
+    useConnectionState.mockReturnValue(connectionStateValue("connected"));
+
+    renderStatus(OPERATOR);
+    openMenu();
+
+    expect(screen.getByRole("group", { name: "System status" })).toBeTruthy();
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 
   it("navigates to Settings → Security when 'View system logs' is clicked", async () => {

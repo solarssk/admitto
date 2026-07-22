@@ -502,13 +502,9 @@
 .sys-status__check--pending {
   display: inline-block;
   color: var(--text-muted);
-  animation: sys-status-spin 0.9s linear infinite;
-}
-
-@keyframes sys-status-spin {
-  to {
-    transform: rotate(360deg);
-  }
+  /* Reuses @admitto/ui's shared `at-spin` keyframe (packages/ui/src/styles/components/
+     spinner.css) instead of a new one-off — always loaded globally via the shell. */
+  animation: at-spin 0.9s linear infinite;
 }
 
 .operator-shell__user-link {

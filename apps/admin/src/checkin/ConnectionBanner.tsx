@@ -40,6 +40,17 @@ export const CONNECTION_COPY: Record<CheckinConnectionVisual, { icon: string; me
   },
 };
 
+/** Short form of `CONNECTION_COPY`'s message, for SystemStatus's topbar row — the full
+ * sentence reads fine as a standalone banner/live-region alert but is too long next to
+ * every other row's one-word status there. Kept next to `CONNECTION_COPY` on purpose: if
+ * you reword one, check whether the other still matches. */
+export const CONNECTION_ROW_DETAIL: Record<CheckinConnectionVisual, string> = {
+  connected: "Connected",
+  offline: "Offline",
+  degraded: "Connection error",
+  session_ended: "Session ended",
+};
+
 export const CONNECTION_SEVERITY: Record<CheckinConnectionVisual, "ok" | "warn" | "error"> = {
   connected: "ok",
   offline: "error",

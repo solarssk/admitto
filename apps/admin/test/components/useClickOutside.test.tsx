@@ -10,9 +10,13 @@ function Harness({ open, onOutside }: { open: boolean; onOutside: () => void }) 
   return (
     <div>
       <div ref={ref} data-testid="inside">
-        inside
+        <button type="button" data-testid="inside-button">
+          inside
+        </button>
       </div>
-      <div data-testid="outside">outside</div>
+      <button type="button" data-testid="outside">
+        outside
+      </button>
     </div>
   );
 }
@@ -38,6 +42,27 @@ describe("useClickOutside", () => {
     const onOutside = vi.fn();
     render(<Harness open={false} onOutside={onOutside} />);
     fireEvent.pointerDown(screen.getByTestId("outside"));
+    expect(onOutside).not.toHaveBeenCalled();
+  });
+
+  it("calls onOutside when focus moves outside the container (e.g. Tab to another control, with no pointerdown)", () => {
+    const onOutside = vi.fn();
+    render(<Harness open onOutside={onOutside} />);
+    fireEvent.focusIn(screen.getByTestId("outside"));
+    expect(onOutside).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not call onOutside when focus moves within the container", () => {
+    const onOutside = vi.fn();
+    render(<Harness open onOutside={onOutside} />);
+    fireEvent.focusIn(screen.getByTestId("inside-button"));
+    expect(onOutside).not.toHaveBeenCalled();
+  });
+
+  it("does not react to focus changes while closed", () => {
+    const onOutside = vi.fn();
+    render(<Harness open={false} onOutside={onOutside} />);
+    fireEvent.focusIn(screen.getByTestId("outside"));
     expect(onOutside).not.toHaveBeenCalled();
   });
 });

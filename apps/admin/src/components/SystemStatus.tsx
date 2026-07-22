@@ -3,11 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { fetchSetupChecks } from "../api/client.js";
 import type { MailerStatus, RoleAssignment, SetupCheckResult, SetupChecksResponse } from "../api/types.js";
 import { isSuperadmin } from "../auth/capabilities.js";
-import {
-  type CheckinConnectionVisual,
-  CONNECTION_SEVERITY,
-  mapConnectionState,
-} from "../checkin/ConnectionBanner.js";
+import { CONNECTION_ROW_DETAIL, CONNECTION_SEVERITY, mapConnectionState } from "../checkin/ConnectionBanner.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import type { ConnectionState } from "../connection/types.js";
 import { SETTINGS_INDEX_PATH } from "../settings/settingsTabs.js";
@@ -51,15 +47,18 @@ const TRIGGER_META: Record<"ok" | "degraded" | "down", { dot: string; label: str
   down: { dot: "sys-status__dot--err", label: "Action needed", shortLabel: "Alert" },
 };
 
-/** Short form for this row specifically — the full explanatory sentence from
- * `CONNECTION_COPY` (shared with the check-in page banner/live-region) reads fine as a
- * standalone alert but is too long next to every other row's one-word status here. */
-const CONNECTION_ROW_DETAIL: Record<CheckinConnectionVisual, string> = {
-  connected: "Connected",
-  offline: "Offline",
-  degraded: "Connection error",
-  session_ended: "Session ended",
-};
+/** In-memory cache for `GET /api/admin/setup/checks` — StaffShell (and SystemStatus with
+ * it) remounts on every top-level shell switch (EventsListShell/AdminShell/
+ * InstanceSettingsShell aren't nested under one another), so without this a superadmin
+ * clicking between them re-issues the same health check every few seconds. Module-level
+ * so it survives the remount; a short TTL keeps it from ever showing very stale data. Use
+ * `resetSystemStatusCache()` between tests to avoid leaking state across cases. */
+const CHECKS_CACHE_MS = 30_000;
+let checksCache: { data: SetupChecksResponse["checks"]; expiresAt: number } | null = null;
+
+export function resetSystemStatusCache(): void {
+  checksCache = null;
+}
 
 function connectionRow(state: ConnectionState): StatusRow {
   const visual = mapConnectionState(state) ?? "connected";
@@ -72,8 +71,17 @@ function connectionRow(state: ConnectionState): StatusRow {
   };
 }
 
-function mailerRow(mailerStatus: MailerStatus | null | undefined): StatusRow {
-  const configured = !!mailerStatus?.configured;
+/** `null` when mailer status hasn't reached this session at all (e.g. a superadmin whose
+ * first page load landed on an operator route, which doesn't return it) — that's "we don't
+ * know", not "not configured", so the row is omitted entirely rather than shown as a false
+ * alarm. Not superadmin-gated: unlike the setup-checks endpoint, mailer status already
+ * reaches every role, so this row shows for everyone once it's available. Deliberately
+ * doesn't name the provider (SMTP/Graph/Power Automate) the old MailerStatusBadge's
+ * tooltip did — plain-language scope decision (PO review), the provider name is a
+ * Settings → Mail concern, not a topbar-glance one. */
+function mailerRow(mailerStatus: MailerStatus | null | undefined): StatusRow | null {
+  if (mailerStatus == null) return null;
+  const configured = mailerStatus.configured;
   return {
     key: "mailer",
     icon: "mail",
@@ -89,15 +97,18 @@ function setupCheckRow(
   label: string,
   result: SetupCheckResult | undefined,
   loaded: boolean,
+  failed: boolean,
 ): StatusRow {
+  if (failed) return { key, icon, label, state: "down", detail: "Unavailable" };
   if (!loaded) return { key, icon, label, state: "pending", detail: "Checking…" };
   const state: "ok" | "degraded" | "down" = !result || !result.ok ? "down" : result.warn ? "degraded" : "ok";
   return { key, icon, label, state, detail: PLAIN_DETAIL[key][state] };
 }
 
-/** Topbar system-health dropdown. Superadmins (the only role authorized to call
- * `GET /api/admin/setup/checks`) see the full instance-health picture; everyone else
- * still gets the check-in connection row, since operators rely on it during check-in. */
+/** Topbar system-health dropdown. Database/Session storage/Data encryption are
+ * superadmin-only, matching `GET /api/admin/setup/checks`'s own server-side authorization
+ * exactly; Email sending and Check-in connection aren't gated by anything and show for
+ * every role, since operators and admins rely on them too. */
 export function SystemStatus({
   assignments,
   mailerStatus,
@@ -109,31 +120,40 @@ export function SystemStatus({
   const { state: connectionState } = useConnectionState();
   const { open, setOpen, close, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
   const superadmin = isSuperadmin(assignments);
-  const [checks, setChecks] = useState<SetupChecksResponse["checks"] | null>(null);
+  const [checks, setChecks] = useState<SetupChecksResponse["checks"] | null>(checksCache?.data ?? null);
+  const [checksFailed, setChecksFailed] = useState(false);
 
   useEffect(() => {
     if (!superadmin) return;
+    if (checksCache && checksCache.expiresAt > Date.now()) {
+      setChecks(checksCache.data);
+      return;
+    }
     const ac = new AbortController();
+    setChecksFailed(false);
     void (async () => {
       try {
         const data = await fetchSetupChecks(ac.signal);
-        if (!ac.signal.aborted) setChecks(data.checks);
+        if (ac.signal.aborted) return;
+        setChecks(data.checks);
+        checksCache = { data: data.checks, expiresAt: Date.now() + CHECKS_CACHE_MS };
       } catch {
-        // Leave checks null — the affected rows fall back to "Unavailable" below.
+        if (!ac.signal.aborted) setChecksFailed(true);
       }
     })();
     return () => ac.abort();
   }, [superadmin]);
 
+  const mailer = mailerRow(mailerStatus);
   const rows: StatusRow[] = superadmin
     ? [
-        setupCheckRow("database", "database", "Database", checks?.database, checks !== null),
-        setupCheckRow("redis", "server-2", "Session storage", checks?.redis, checks !== null),
-        mailerRow(mailerStatus),
-        setupCheckRow("encryption", "lock", "Data encryption", checks?.encryption, checks !== null),
+        setupCheckRow("database", "database", "Database", checks?.database, checks !== null, checksFailed),
+        setupCheckRow("redis", "server-2", "Session storage", checks?.redis, checks !== null, checksFailed),
+        ...(mailer ? [mailer] : []),
+        setupCheckRow("encryption", "lock", "Data encryption", checks?.encryption, checks !== null, checksFailed),
         connectionRow(connectionState),
       ]
-    : [connectionRow(connectionState)];
+    : [...(mailer ? [mailer] : []), connectionRow(connectionState)];
 
   const worst: "ok" | "degraded" | "down" = rows.some((r) => r.state === "down")
     ? "down"
@@ -141,12 +161,18 @@ export function SystemStatus({
       ? "degraded"
       : "ok";
 
+  // Only the superadmin's "View system logs" row is an actionable menuitem — for every
+  // other role the panel is purely informational, so it shouldn't claim ARIA menu
+  // semantics (useDropdownMenu's focus-management already no-ops safely either way, but a
+  // screen reader announcing "menu" with zero menuitem children is an invalid structure).
+  const hasMenuItem = superadmin;
+
   return (
     <div className="user-menu" ref={rootRef}>
       <button
         type="button"
         className="sys-status__trigger"
-        aria-haspopup="menu"
+        aria-haspopup={hasMenuItem ? "menu" : "true"}
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         ref={triggerRef}
@@ -157,7 +183,12 @@ export function SystemStatus({
         <i className="ti ti-chevron-down user-menu__chevron" aria-hidden="true" />
       </button>
       {open && (
-        <div className="user-menu__panel sys-status__panel" role="menu" ref={panelRef}>
+        <div
+          className="user-menu__panel sys-status__panel"
+          role={hasMenuItem ? "menu" : "group"}
+          aria-label={hasMenuItem ? undefined : "System status"}
+          ref={panelRef}
+        >
           {rows.map((row) => (
             <div
               key={row.key}
