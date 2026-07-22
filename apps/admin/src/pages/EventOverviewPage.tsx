@@ -312,78 +312,96 @@ function CheckInProgressCard({
   const breakdown = overview.ticket_type_breakdown.filter((t) => t.count > 0);
   const breakdownTotal = breakdown.reduce((sum, t) => sum + t.count, 0);
 
-  return (
-    <Card title="Check-in progress" className="overview-card--header-fixed">
-      <div className="overview-progress">
-        <div
-          className="overview-ring"
-          style={{
-            background: `conic-gradient(var(--status-ok) 0% ${pct}%, var(--surface-sunken) ${pct}% 100%)`,
-          }}
-          role="img"
-          aria-label={`${pct}% of attendees checked in`}
-        >
-          <div className="overview-ring__hole">
-            <span className="overview-ring__pct">{pct}%</span>
+  // A ring at a permanent 0% is noise, not information, when there's nobody to check in yet —
+  // same icon+text placeholder treatment as Recent activity's empty state instead (PO review).
+  const body =
+    total === 0 ? (
+      <EmptyState
+        icon={<i className="ti ti-users" aria-hidden="true" />}
+        title="No attendees yet"
+        description="Import attendees to start tracking check-ins."
+      />
+    ) : (
+      <>
+        <div className="overview-progress">
+          <div
+            className="overview-ring"
+            style={{
+              background: `conic-gradient(var(--status-ok) 0% ${pct}%, var(--surface-sunken) ${pct}% 100%)`,
+            }}
+            role="img"
+            aria-label={`${pct}% of attendees checked in`}
+          >
+            <div className="overview-ring__hole">
+              <span className="overview-ring__pct">{pct}%</span>
+            </div>
+          </div>
+          <div className="overview-progress__legend">
+            <div className="overview-progress__legend-item">
+              <span className="overview-progress__legend-dot" style={{ background: "var(--status-ok)" }} />{" "}
+              Checked in <strong>{admitted}</strong>
+            </div>
+            <div className="overview-progress__legend-item">
+              <span className="overview-progress__legend-dot" style={{ background: "var(--surface-sunken)" }} />{" "}
+              Not yet <strong>{notYet}</strong>
+            </div>
           </div>
         </div>
-        <div className="overview-progress__legend">
-          <div className="overview-progress__legend-item">
-            <span className="overview-progress__legend-dot" style={{ background: "var(--status-ok)" }} />{" "}
-            Checked in <strong>{admitted}</strong>
-          </div>
-          <div className="overview-progress__legend-item">
-            <span className="overview-progress__legend-dot" style={{ background: "var(--surface-sunken)" }} />{" "}
-            Not yet <strong>{notYet}</strong>
-          </div>
-        </div>
-      </div>
 
-      {breakdown.length > 1 && (
-        <div className="overview-tt-breakdown">
-          <span className="overline">By ticket type</span>
-          <div className="overview-tt-bar">
-            {breakdown.map((t) => (
-              <span
-                key={t.key}
-                className="overview-tt-bar__seg"
-                style={{
-                  width: `${breakdownTotal > 0 ? (t.count / breakdownTotal) * 100 : 0}%`,
-                  background: (TICKET_TYPE_COLORS[t.color] ?? TICKET_TYPE_COLORS.gray).solid,
-                }}
-              />
-            ))}
-          </div>
-          <div className="overview-tt-legend">
-            {breakdown.map((t) => (
-              <span key={t.key} className="overview-tt-legend__item">
+        {breakdown.length > 1 && (
+          <div className="overview-tt-breakdown">
+            <span className="overline">By ticket type</span>
+            <div className="overview-tt-bar">
+              {breakdown.map((t) => (
                 <span
-                  className="overview-tt-legend__dot"
-                  style={{ background: (TICKET_TYPE_COLORS[t.color] ?? TICKET_TYPE_COLORS.gray).solid }}
+                  key={t.key}
+                  className="overview-tt-bar__seg"
+                  style={{
+                    width: `${breakdownTotal > 0 ? (t.count / breakdownTotal) * 100 : 0}%`,
+                    background: (TICKET_TYPE_COLORS[t.color] ?? TICKET_TYPE_COLORS.gray).solid,
+                  }}
                 />
-                {t.label} <span className="overview-tt-legend__count">{t.count}</span>
-              </span>
-            ))}
+              ))}
+            </div>
+            <div className="overview-tt-legend">
+              {breakdown.map((t) => (
+                <span key={t.key} className="overview-tt-legend__item">
+                  <span
+                    className="overview-tt-legend__dot"
+                    style={{ background: (TICKET_TYPE_COLORS[t.color] ?? TICKET_TYPE_COLORS.gray).solid }}
+                  />
+                  {t.label} <span className="overview-tt-legend__count">{t.count}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="overview-glance">
+          <div className="overview-glance__tile">
+            <span className="overview-glance__label">
+              <i className="ti ti-clock" aria-hidden="true" /> Last check-in
+            </span>
+            <span className="overview-glance__value">{formatRelativeTime(overview.last_check_in_at)}</span>
+          </div>
+          <div className="overview-glance__tile">
+            <span className="overview-glance__label">
+              <i className="ti ti-trending-up" aria-hidden="true" /> Busiest hour
+            </span>
+            <span className="overview-glance__value">
+              {overview.busiest_hour ? formatBusiestHourRange(overview.busiest_hour.hour) : "—"}
+            </span>
           </div>
         </div>
-      )}
+      </>
+    );
 
-      <div className="overview-glance">
-        <div className="overview-glance__tile">
-          <span className="overview-glance__label">
-            <i className="ti ti-clock" aria-hidden="true" /> Last check-in
-          </span>
-          <span className="overview-glance__value">{formatRelativeTime(overview.last_check_in_at)}</span>
-        </div>
-        <div className="overview-glance__tile">
-          <span className="overview-glance__label">
-            <i className="ti ti-trending-up" aria-hidden="true" /> Busiest hour
-          </span>
-          <span className="overview-glance__value">
-            {overview.busiest_hour ? formatBusiestHourRange(overview.busiest_hour.hour) : "—"}
-          </span>
-        </div>
-      </div>
+  return (
+    <Card
+      title="Check-in progress"
+      className={`overview-card--header-fixed${total === 0 ? " overview-card--empty" : ""}`}
+    >
+      {body}
     </Card>
   );
 }
@@ -1064,6 +1082,60 @@ function KeyContactsSection({
     }
   };
 
+  // Same empty-state affordance as PinnedNoteSection (dashed clickable box, header action only
+  // once there's something to add more to) instead of a plain "No contacts yet." line + header
+  // Add button, so all three Notes & contacts sub-sections read the same way when empty (PO review).
+  let body: ReactNode;
+  if (contacts.length > 0) {
+    body = (
+      <ul className="overview-contacts">
+        {contacts.map((contact) => (
+          <li key={contact.id} className="overview-contact">
+            <Avatar name={contact.name} size="sm" />
+            <div className="overview-contact__info">
+              <strong>{contact.name}</strong>
+              {contact.role && <span>{contact.role}</span>}
+              {contact.note && <span className="overview-contact__note">{contact.note}</span>}
+            </div>
+            <div className="overview-contact__actions">
+              {contact.phone && (
+                <a href={`tel:${contact.phone}`} className="overview-contact__action" aria-label={`Call ${contact.name}`}>
+                  <i className="ti ti-phone" aria-hidden="true" />
+                </a>
+              )}
+              {contact.email && (
+                <a href={`mailto:${contact.email}`} className="overview-contact__action" aria-label={`Email ${contact.name}`}>
+                  <i className="ti ti-mail" aria-hidden="true" />
+                </a>
+              )}
+              {!archived && (
+                <>
+                  <button type="button" className="overview-contact__action" onClick={() => setModalTarget(contact)} aria-label={`Edit ${contact.name}`}>
+                    <i className="ti ti-pencil" aria-hidden="true" />
+                  </button>
+                  <button type="button" className="overview-contact__action overview-contact__action--delete" onClick={() => { setDeleteError(null); setConfirmDeleteId(contact.id); }} aria-label={`Delete ${contact.name}`}>
+                    <i className="ti ti-trash" aria-hidden="true" />
+                  </button>
+                </>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+    );
+  } else if (loading) {
+    body = <p className="overview-muted">Loading…</p>;
+  } else if (archived) {
+    body = <p className="overview-muted">No contacts yet.</p>;
+  } else {
+    body = (
+      <button type="button" className="overview-note-empty" onClick={() => setModalTarget("add")}>
+        <i className="ti ti-plus" aria-hidden="true" />{" "}
+        Add a key contact
+      </button>
+    );
+  }
+
   return (
     <NotesSection
       label={
@@ -1072,51 +1144,14 @@ function KeyContactsSection({
         </>
       }
       action={
-        !archived ? (
+        !archived && contacts.length > 0 ? (
           <Button type="button" variant="ghost" size="sm" icon={<i className="ti ti-plus" aria-hidden="true" />} onClick={() => setModalTarget("add")}>
             Add
           </Button>
         ) : undefined
       }
     >
-      {contacts.length === 0 ? (
-        <p className="overview-muted">{loading ? "Loading…" : "No contacts yet."}</p>
-      ) : (
-        <ul className="overview-contacts">
-          {contacts.map((contact) => (
-            <li key={contact.id} className="overview-contact">
-              <Avatar name={contact.name} size="sm" />
-              <div className="overview-contact__info">
-                <strong>{contact.name}</strong>
-                {contact.role && <span>{contact.role}</span>}
-                {contact.note && <span className="overview-contact__note">{contact.note}</span>}
-              </div>
-              <div className="overview-contact__actions">
-                {contact.phone && (
-                  <a href={`tel:${contact.phone}`} className="overview-contact__action" aria-label={`Call ${contact.name}`}>
-                    <i className="ti ti-phone" aria-hidden="true" />
-                  </a>
-                )}
-                {contact.email && (
-                  <a href={`mailto:${contact.email}`} className="overview-contact__action" aria-label={`Email ${contact.name}`}>
-                    <i className="ti ti-mail" aria-hidden="true" />
-                  </a>
-                )}
-                {!archived && (
-                  <>
-                    <button type="button" className="overview-contact__action" onClick={() => setModalTarget(contact)} aria-label={`Edit ${contact.name}`}>
-                      <i className="ti ti-pencil" aria-hidden="true" />
-                    </button>
-                    <button type="button" className="overview-contact__action overview-contact__action--delete" onClick={() => { setDeleteError(null); setConfirmDeleteId(contact.id); }} aria-label={`Delete ${contact.name}`}>
-                      <i className="ti ti-trash" aria-hidden="true" />
-                    </button>
-                  </>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+      {body}
       {modalTarget && (
         <ContactModal
           contact={modalTarget === "add" ? null : modalTarget}
@@ -1178,6 +1213,62 @@ function LinksFilesSection({
     }
   };
 
+  // Same empty-state affordance as PinnedNoteSection/KeyContactsSection (PO review).
+  let body: ReactNode;
+  if (resources.length > 0) {
+    body = (
+      <>
+        <ul className="overview-resources">
+          {visible.map((r) => (
+            <li key={r.id} className="overview-resource">
+              <i
+                className={`ti ${r.type === "file" ? "ti-file" : "ti-link"} overview-resource__icon`}
+                aria-hidden="true"
+              />
+              <div className="overview-resource__info">
+                <a
+                  href={safeHref(r.url)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="overview-resource__title"
+                >
+                  {r.title}
+                </a>
+                {r.description && <span className="overview-resource__desc">{r.description}</span>}
+              </div>
+              {!archived && (
+                <div className="overview-resource__actions">
+                  <button type="button" className="overview-contact__action" onClick={() => setModalTarget(r)} aria-label={`Edit ${r.title}`}>
+                    <i className="ti ti-pencil" aria-hidden="true" />
+                  </button>
+                  <button type="button" className="overview-contact__action overview-contact__action--delete" onClick={() => { setDeleteError(null); setConfirmDeleteId(r.id); }} aria-label={`Delete ${r.title}`}>
+                    <i className="ti ti-trash" aria-hidden="true" />
+                  </button>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+        {!showAll && hiddenCount > 0 && (
+          <button type="button" className="overview-resources__show-more" onClick={() => setShowAll(true)}>
+            View all resources ({hiddenCount} more)
+          </button>
+        )}
+      </>
+    );
+  } else if (loading) {
+    body = <p className="overview-muted">Loading…</p>;
+  } else if (archived) {
+    body = <p className="overview-muted">No links or files yet.</p>;
+  } else {
+    body = (
+      <button type="button" className="overview-note-empty" onClick={() => setModalTarget("add")}>
+        <i className="ti ti-plus" aria-hidden="true" />{" "}
+        Add a link or file
+      </button>
+    );
+  }
+
   return (
     <NotesSection
       label={
@@ -1186,55 +1277,14 @@ function LinksFilesSection({
         </>
       }
       action={
-        !archived ? (
+        !archived && resources.length > 0 ? (
           <Button type="button" variant="ghost" size="sm" icon={<i className="ti ti-plus" aria-hidden="true" />} onClick={() => setModalTarget("add")}>
             Add
           </Button>
         ) : undefined
       }
     >
-      {resources.length === 0 ? (
-        <p className="overview-muted">{loading ? "Loading…" : "No links or files yet."}</p>
-      ) : (
-        <>
-          <ul className="overview-resources">
-            {visible.map((r) => (
-              <li key={r.id} className="overview-resource">
-                <i
-                  className={`ti ${r.type === "file" ? "ti-file" : "ti-link"} overview-resource__icon`}
-                  aria-hidden="true"
-                />
-                <div className="overview-resource__info">
-                  <a
-                    href={safeHref(r.url)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="overview-resource__title"
-                  >
-                    {r.title}
-                  </a>
-                  {r.description && <span className="overview-resource__desc">{r.description}</span>}
-                </div>
-                {!archived && (
-                  <div className="overview-resource__actions">
-                    <button type="button" className="overview-contact__action" onClick={() => setModalTarget(r)} aria-label={`Edit ${r.title}`}>
-                      <i className="ti ti-pencil" aria-hidden="true" />
-                    </button>
-                    <button type="button" className="overview-contact__action overview-contact__action--delete" onClick={() => { setDeleteError(null); setConfirmDeleteId(r.id); }} aria-label={`Delete ${r.title}`}>
-                      <i className="ti ti-trash" aria-hidden="true" />
-                    </button>
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-          {!showAll && hiddenCount > 0 && (
-            <button type="button" className="overview-resources__show-more" onClick={() => setShowAll(true)}>
-              View all resources ({hiddenCount} more)
-            </button>
-          )}
-        </>
-      )}
+      {body}
       {modalTarget && (
         <ResourceModal
           resource={modalTarget === "add" ? null : modalTarget}

@@ -874,8 +874,10 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
 
     const keyContactsSection = screen.getByText("Key contacts").closest(".overview-notes-section") as HTMLElement;
     expect(screen.queryByRole("dialog")).toBeNull();
+    // Starting from zero contacts, the add flow opens from the dashed empty-state tile, not a
+    // header button (that only appears once there's at least one contact to add more alongside).
     act(() => {
-      within(keyContactsSection).getByRole("button", { name: "Add" }).click();
+      within(keyContactsSection).getByRole("button", { name: "Add a key contact" }).click();
     });
 
     // Renders as a modal dialog, not an inline-expanding form pushing the card content down.
@@ -960,8 +962,9 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     renderPage();
 
     const linksSection = await screen.findByText("Links & files").then((el) => el.closest(".overview-notes-section") as HTMLElement);
+    // Starting from zero resources, the add flow opens from the dashed empty-state tile.
     act(() => {
-      within(linksSection).getByRole("button", { name: "Add" }).click();
+      within(linksSection).getByRole("button", { name: "Add a link or file" }).click();
     });
 
     const dialog = await screen.findByRole("dialog", { name: "Add link or file" });
@@ -991,8 +994,9 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     renderPage();
 
     const linksSection = await screen.findByText("Links & files").then((el) => el.closest(".overview-notes-section") as HTMLElement);
+    // Starting from zero resources, the add flow opens from the dashed empty-state tile.
     act(() => {
-      within(linksSection).getByRole("button", { name: "Add" }).click();
+      within(linksSection).getByRole("button", { name: "Add a link or file" }).click();
     });
 
     const dialog = await screen.findByRole("dialog", { name: "Add link or file" });
@@ -1041,6 +1045,62 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(screen.getByText("Gate B is closed today")).toBeTruthy();
     // Filled state now shows the standard Edit action, same placement as before this change.
     expect(screen.getByRole("button", { name: "Edit pinned note" })).toBeTruthy();
+  });
+
+  it("renders Key contacts and Links & files empty states as the same dashed add tile as Pinned note, with no header Add button until something exists (PO review)", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+
+    renderPage();
+
+    const keyContactsSection = await screen
+      .findByText("Key contacts")
+      .then((el) => el.closest(".overview-notes-section") as HTMLElement);
+    const addContact = within(keyContactsSection).getByRole("button", { name: "Add a key contact" });
+    expect(addContact.className).toContain("overview-note-empty");
+    expect(within(keyContactsSection).queryByRole("button", { name: "Add" })).toBeNull();
+
+    const linksSection = screen.getByText("Links & files").closest(".overview-notes-section") as HTMLElement;
+    const addLink = within(linksSection).getByRole("button", { name: "Add a link or file" });
+    expect(addLink.className).toContain("overview-note-empty");
+    expect(within(linksSection).queryByRole("button", { name: "Add" })).toBeNull();
+  });
+
+  it("shows the header Add button (not the dashed tile) for Key contacts and Links & files once at least one row already exists", async () => {
+    fetchEventOverview.mockResolvedValue(
+      overviewFixture(5, {
+        contacts: [
+          { id: "c1", name: "Jane Doe", role: "Security lead", phone: null, email: null, note: null, sort_order: 0 },
+        ],
+        resources: [
+          { id: "r1", title: "Venue floor plan", type: "link", url: "https://example.com/floor-plan", description: null, sort_order: 0 },
+        ],
+      }),
+    );
+
+    renderPage();
+
+    const keyContactsSection = await screen
+      .findByText("Key contacts")
+      .then((el) => el.closest(".overview-notes-section") as HTMLElement);
+    expect(within(keyContactsSection).getByRole("button", { name: "Add" })).toBeTruthy();
+    expect(within(keyContactsSection).queryByRole("button", { name: "Add a key contact" })).toBeNull();
+
+    const linksSection = screen.getByText("Links & files").closest(".overview-notes-section") as HTMLElement;
+    expect(within(linksSection).getByRole("button", { name: "Add" })).toBeTruthy();
+    expect(within(linksSection).queryByRole("button", { name: "Add a link or file" })).toBeNull();
+  });
+
+  it("shows an icon empty state instead of a permanent 0% ring on Check-in progress when the event has no attendees yet (PO review)", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(0, { attendee_count: 0 }));
+
+    renderPage();
+
+    const checkInCard = await screen
+      .findByText("Check-in progress")
+      .then((el) => el.closest(".at-card") as HTMLElement);
+    expect(within(checkInCard).getByText("No attendees yet")).toBeTruthy();
+    expect(within(checkInCard).getByText("Import attendees to start tracking check-ins.")).toBeTruthy();
+    expect(checkInCard.querySelector(".overview-ring")).toBeNull();
   });
 
   it("renders the Pinned note filled state on the standard card surface, not a custom warn-tinted wrapper (#347)", async () => {
