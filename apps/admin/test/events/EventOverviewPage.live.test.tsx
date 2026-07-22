@@ -422,8 +422,8 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     await waitFor(() => {
       expect(within(statsRow()).getByText("Attendees")).toBeTruthy();
     });
-    expect(statsRow().querySelectorAll(".overview-kpi").length).toBe(4);
-    expect(statsRow().querySelectorAll(".overview-kpi__icon").length).toBe(4);
+    expect(statsRow().querySelectorAll(".overview-kpi")).toHaveLength(4);
+    expect(statsRow().querySelectorAll(".overview-kpi__icon")).toHaveLength(4);
     // Scoped to Overview only - the shared Stat component (and its icon-circle-top-right layout)
     // must not render here anymore.
     expect(statsRow().querySelector(".at-stat")).toBeNull();

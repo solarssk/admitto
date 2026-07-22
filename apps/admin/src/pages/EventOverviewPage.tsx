@@ -104,14 +104,14 @@ function OverviewKpiTile({
   value,
   sub,
   children,
-}: {
+}: Readonly<{
   icon: ReactNode;
   tone: KpiTone;
   label: string;
   value: ReactNode;
   sub?: ReactNode;
   children?: ReactNode;
-}) {
+}>) {
   return (
     <Card>
       <div className="overview-kpi">
@@ -140,15 +140,92 @@ interface ReadinessItem {
 /** Merges the former "Needs attention" + "Event readiness" cards into one compact checklist
  * (#348) — same readiness computation the old EventReadinessCard used, just surfaced as a short
  * "what still needs doing" list instead of two full-height cards. */
+// Ticket-sent status has 3 outcomes (not counted / needs attention / fully done), so it gets its
+// own small function instead of a nested ternary chain (readability, SonarCloud S3358).
+function ticketsSentReadiness(overview: EventOverviewDto): Pick<ReadinessItem, "status" | "detail"> {
+  if (overview.attendee_count === 0) {
+    return { status: "neutral", detail: "Import attendees before sending tickets." };
+  }
+  const detail = `${overview.attendees_with_ticket} of ${overview.attendee_count} attendees have received their ticket.`;
+  if (overview.attendees_with_ticket >= overview.attendee_count) {
+    return { status: "ok", detail };
+  }
+  if (overview.attendees_with_ticket > 0) {
+    return { status: "warn", detail };
+  }
+  return { status: "error", detail: "No attendees have received their ticket yet." };
+}
+
+// Extracted out of SetupChecklistCard (SonarCloud S3776: keeps the branching/pluralization logic
+// out of the component's own cognitive-complexity count, which the JSX below also contributes to).
+function buildReadinessItems(overview: EventOverviewDto): ReadinessItem[] {
+  const failed = overview.email_failed + overview.email_bounced;
+  const ticketsSent = ticketsSentReadiness(overview);
+
+  const attendeePlural = overview.attendee_count === 1 ? "" : "s";
+  const attendeesImportedDetail =
+    overview.attendee_count > 0
+      ? `${overview.attendee_count} attendee${attendeePlural} imported.`
+      : "No attendees have been imported yet.";
+  const emailPlural = failed === 1 ? "" : "s";
+  const deliveryHealthyDetail =
+    failed === 0 ? "No delivery failures." : `${failed} ticket email${emailPlural} failed or bounced.`;
+  const staffPlural = overview.checkin_staff_count > 1 ? "s" : "";
+  const checkinStaffDetail =
+    overview.checkin_staff_count > 0
+      ? `${overview.checkin_staff_count} user${staffPlural} can perform check-in.`
+      : "No staff can perform check-in yet.";
+  const eventItemsDetail =
+    overview.requirements_count > 0 ? `${overview.requirements_count} configured.` : "None configured.";
+
+  return [
+    {
+      label: "Attendees imported",
+      status: overview.attendee_count > 0 ? "ok" : "warn",
+      detail: attendeesImportedDetail,
+    },
+    {
+      label: "Tickets sent",
+      status: ticketsSent.status,
+      detail: ticketsSent.detail,
+    },
+    {
+      label: "Delivery healthy",
+      status: failed === 0 ? "ok" : "error",
+      detail: deliveryHealthyDetail,
+    },
+    {
+      label: "Check-in staff",
+      status: overview.checkin_staff_count > 0 ? "ok" : "warn",
+      detail: checkinStaffDetail,
+    },
+    {
+      label: "Event items",
+      status: "neutral",
+      detail: eventItemsDetail,
+    },
+  ];
+}
+
+// Errors before warnings so the most urgent item is never bumped off the top-3 by an earlier,
+// less pressing warning (mirrors the old Needs attention card's own priority order).
+function topUnresolvedReadinessItems(items: ReadinessItem[]): ReadinessItem[] {
+  const urgency: Record<ReadinessItem["status"], number> = { error: 0, warn: 1, ok: 2, neutral: 3 };
+  return items
+    .filter((i) => i.status === "warn" || i.status === "error")
+    .sort((a, b) => urgency[a.status] - urgency[b.status])
+    .slice(0, 3);
+}
+
 function SetupChecklistCard({
   overview,
   loading,
   eventId,
-}: {
+}: Readonly<{
   overview: EventOverviewDto | null;
   loading: boolean;
   eventId: string;
-}) {
+}>) {
   if (!overview) {
     return (
       <Card title="Setup checklist">
@@ -157,68 +234,10 @@ function SetupChecklistCard({
     );
   }
 
-  const failed = overview.email_failed + overview.email_bounced;
-
-  const items: ReadinessItem[] = [
-    {
-      label: "Attendees imported",
-      status: overview.attendee_count > 0 ? "ok" : "warn",
-      detail:
-        overview.attendee_count > 0
-          ? `${overview.attendee_count} attendee${overview.attendee_count === 1 ? "" : "s"} imported.`
-          : "No attendees have been imported yet.",
-    },
-    {
-      label: "Tickets sent",
-      status:
-        overview.attendee_count === 0
-          ? "neutral"
-          : overview.attendees_with_ticket >= overview.attendee_count
-            ? "ok"
-            : overview.attendees_with_ticket > 0
-              ? "warn"
-              : "error",
-      detail:
-        overview.attendee_count === 0
-          ? "Import attendees before sending tickets."
-          : overview.attendees_with_ticket > 0
-            ? `${overview.attendees_with_ticket} of ${overview.attendee_count} attendees have received their ticket.`
-            : "No attendees have received their ticket yet.",
-    },
-    {
-      label: "Delivery healthy",
-      status: failed === 0 ? "ok" : "error",
-      detail:
-        failed === 0
-          ? "No delivery failures."
-          : `${failed} ticket email${failed === 1 ? "" : "s"} failed or bounced.`,
-    },
-    {
-      label: "Check-in staff",
-      status: overview.checkin_staff_count > 0 ? "ok" : "warn",
-      detail:
-        overview.checkin_staff_count > 0
-          ? `${overview.checkin_staff_count} user${overview.checkin_staff_count > 1 ? "s" : ""} can perform check-in.`
-          : "No staff can perform check-in yet.",
-    },
-    {
-      label: "Event items",
-      status: "neutral",
-      detail:
-        overview.requirements_count > 0
-          ? `${overview.requirements_count} configured.`
-          : "None configured.",
-    },
-  ];
-
+  const items = buildReadinessItems(overview);
   const okCount = items.filter((i) => i.status === "ok").length;
   const total = items.filter((i) => i.status !== "neutral").length;
-  // Errors before warnings so the most urgent item is never bumped off the top-3 by an earlier,
-  // less pressing warning (mirrors the old Needs attention card's own priority order).
-  const notOk = items
-    .filter((i) => i.status === "warn" || i.status === "error")
-    .sort((a, b) => (a.status === b.status ? 0 : a.status === "error" ? -1 : 1))
-    .slice(0, 3);
+  const notOk = topUnresolvedReadinessItems(items);
 
   return (
     <Card
@@ -270,11 +289,11 @@ function CheckInProgressCard({
   overview,
   loading,
   admittedCount,
-}: {
+}: Readonly<{
   overview: EventOverviewDto | null;
   loading: boolean;
   admittedCount: number | null;
-}) {
+}>) {
   if (!overview) {
     return (
       <Card title="Check-in progress" className="overview-card--header-fixed">
@@ -307,11 +326,11 @@ function CheckInProgressCard({
         </div>
         <div className="overview-progress__legend">
           <div className="overview-progress__legend-item">
-            <span className="overview-progress__legend-dot" style={{ background: "var(--status-ok)" }} />
+            <span className="overview-progress__legend-dot" style={{ background: "var(--status-ok)" }} />{" "}
             Checked in <strong>{admitted}</strong>
           </div>
           <div className="overview-progress__legend-item">
-            <span className="overview-progress__legend-dot" style={{ background: "var(--surface-sunken)" }} />
+            <span className="overview-progress__legend-dot" style={{ background: "var(--surface-sunken)" }} />{" "}
             Not yet <strong>{notYet}</strong>
           </div>
         </div>
@@ -386,7 +405,7 @@ const ACTIVITY_ICONS: Record<EventRecentActivityEntry["type"], string> = {
 // action-colored circle (mail bounce = error red, import = muted, etc.) in the same list (PO
 // review). tone is already "ok" for checkin, so this renders the same green-toned circle used
 // elsewhere for a successful action.
-function ActivityIcon({ entry }: { entry: DisplayActivityEntry }) {
+function ActivityIcon({ entry }: Readonly<{ entry: DisplayActivityEntry }>) {
   return (
     <span className={`status-circle status-circle--sm status-circle--${entry.tone}`} aria-hidden="true">
       <i className={`ti ${ACTIVITY_ICONS[entry.type]}`} />
@@ -445,8 +464,8 @@ function groupActivityByDay(
   const groups: Array<{ key: string; label: string; items: DisplayActivityEntry[] }> = [];
   for (const entry of entries) {
     const key = calendarDateInZone(entry.occurred_at, timezone);
-    const last = groups[groups.length - 1];
-    if (last && last.key === key) {
+    const last = groups.at(-1);
+    if (last?.key === key) {
       last.items.push(entry);
     } else {
       groups.push({ key, label: activityDayLabel(entry.occurred_at, timezone), items: [entry] });
@@ -465,19 +484,33 @@ function RecentActivityCard({
   liveCheckins,
   ticketTypes,
   timezone,
-}: {
+}: Readonly<{
   eventId: string;
   activity: EventRecentActivityEntry[];
   liveCheckins: StreamCheckinEvent[];
   ticketTypes: TicketTypeDto[];
   timezone: string;
-}) {
+}>) {
   const [filter, setFilter] = useState<ActivityFilter>("all");
 
   const merged = useMemo(() => mergeActivity(activity, liveCheckins), [activity, liveCheckins]);
   const filtered =
     filter === "issues" ? merged.filter((e) => e.tone === "warn" || e.tone === "error") : merged;
   const groups = useMemo(() => groupActivityByDay(filtered, timezone), [filtered, timezone]);
+  const emptyState =
+    filter === "issues" ? (
+      <EmptyState
+        icon={<i className="ti ti-circle-check" aria-hidden="true" />}
+        title="No issues right now"
+        description="Everything's running smoothly."
+      />
+    ) : (
+      <EmptyState
+        icon={<i className="ti ti-history" aria-hidden="true" />}
+        title="No activity yet"
+        description="Check-ins, mail, and imports will appear here."
+      />
+    );
 
   return (
     <Card
@@ -489,7 +522,7 @@ function RecentActivityCard({
            * compact 2-option toggle fits: the shared Tabs component is an underline tab bar for
            * page-level nav, and Communication's MJML/HTML switch is the same plain bordered-button
            * pair this replaces. */}
-          <div className="overview-activity-filter" role="group" aria-label="Filter activity">
+          <fieldset className="overview-activity-filter" aria-label="Filter activity">
             <Button
               type="button"
               variant="ghost"
@@ -508,7 +541,7 @@ function RecentActivityCard({
             >
               Issues
             </Button>
-          </div>
+          </fieldset>
           {/* Reuses the app's established dot-badge pattern for a live/active signal (Badge
            * variant="ok" dot — same as CfAccessEditor/IdentityProvidersPanel's "Active"/"Enabled"
            * pills) instead of a bespoke dot+text pair; .overview-live-badge only adds the pulse.
@@ -530,19 +563,7 @@ function RecentActivityCard({
        * paragraph over dead space) via the shared EmptyState component (#A2). */}
       <div className={`overview-timeline${filtered.length === 0 ? " overview-timeline--empty" : ""}`}>
         {filtered.length === 0 ? (
-          filter === "issues" ? (
-            <EmptyState
-              icon={<i className="ti ti-circle-check" aria-hidden="true" />}
-              title="No issues right now"
-              description="Everything's running smoothly."
-            />
-          ) : (
-            <EmptyState
-              icon={<i className="ti ti-history" aria-hidden="true" />}
-              title="No activity yet"
-              description="Check-ins, mail, and imports will appear here."
-            />
-          )
+          emptyState
         ) : (
           groups.map((group) => (
             <div key={group.key} className="overview-timeline__group">
@@ -606,11 +627,11 @@ function NotesSection({
   label,
   action,
   children,
-}: {
+}: Readonly<{
   label: ReactNode;
   action?: ReactNode;
   children: ReactNode;
-}) {
+}>) {
   return (
     <div className="overview-notes-section">
       <div className="overview-notes-section__header">
@@ -634,13 +655,13 @@ function OverviewModal({
   onClose,
   footer,
   children,
-}: {
+}: Readonly<{
   titleId: string;
   title: string;
   onClose: () => void;
   footer: ReactNode;
   children: ReactNode;
-}) {
+}>) {
   const panelRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(panelRef, true, onClose);
 
@@ -662,11 +683,11 @@ function PinnedNoteModal({
   note,
   onClose,
   onSave,
-}: {
+}: Readonly<{
   note: string | null;
   onClose: () => void;
   onSave: (note: string | null) => Promise<void>;
-}) {
+}>) {
   const titleId = useId();
   const [draft, setDraft] = useState(note ?? "");
   const [saving, setSaving] = useState(false);
@@ -716,12 +737,12 @@ function ContactModal({
   onClose,
   onAdd,
   onUpdate,
-}: {
+}: Readonly<{
   contact: EventContactDto | null;
   onClose: () => void;
   onAdd: (data: { name: string; role?: string | null; phone?: string | null; email?: string | null }) => Promise<void>;
   onUpdate: (id: string, data: { name: string; role?: string | null; phone?: string | null; email?: string | null }) => Promise<void>;
-}) {
+}>) {
   const titleId = useId();
   const [form, setForm] = useState({
     name: contact?.name ?? "",
@@ -754,6 +775,15 @@ function ContactModal({
     }
   };
 
+  let submitLabel: string;
+  if (saving) {
+    submitLabel = "Saving…";
+  } else if (contact) {
+    submitLabel = "Save";
+  } else {
+    submitLabel = "Add";
+  }
+
   return (
     <OverviewModal
       titleId={titleId}
@@ -770,7 +800,7 @@ function ContactModal({
             onClick={() => void handleSubmit()}
             disabled={saving || !form.name.trim()}
           >
-            {saving ? "Saving…" : contact ? "Save" : "Add"}
+            {submitLabel}
           </Button>
         </>
       }
@@ -818,12 +848,12 @@ function ResourceModal({
   onClose,
   onAdd,
   onUpdate,
-}: {
+}: Readonly<{
   resource: EventResourceDto | null;
   onClose: () => void;
   onAdd: (data: { title: string; type: "link" | "file"; url: string; description?: string | null }) => Promise<void>;
   onUpdate: (id: string, data: { title: string; type: "link" | "file"; url: string; description?: string | null }) => Promise<void>;
-}) {
+}>) {
   const titleId = useId();
   const [form, setForm] = useState({
     title: resource?.title ?? "",
@@ -862,6 +892,15 @@ function ResourceModal({
     }
   };
 
+  let submitLabel: string;
+  if (saving) {
+    submitLabel = "Saving…";
+  } else if (resource) {
+    submitLabel = "Save";
+  } else {
+    submitLabel = "Add";
+  }
+
   return (
     <OverviewModal
       titleId={titleId}
@@ -878,7 +917,7 @@ function ResourceModal({
             onClick={() => void handleSubmit()}
             disabled={saving || !form.title.trim() || !form.url.trim()}
           >
-            {saving ? "Saving…" : resource ? "Save" : "Add"}
+            {submitLabel}
           </Button>
         </>
       }
@@ -924,12 +963,12 @@ function PinnedNoteSection({
   loading,
   archived,
   onSave,
-}: {
+}: Readonly<{
   note: string | null;
   loading: boolean;
   archived: boolean;
   onSave: (note: string | null) => Promise<void>;
-}) {
+}>) {
   const [modalOpen, setModalOpen] = useState(false);
 
   // The pin icon renders in both the empty and filled states (previously filled-only), so the
@@ -950,7 +989,7 @@ function PinnedNoteSection({
   } else {
     body = (
       <button type="button" className="overview-note-empty" onClick={() => setModalOpen(true)}>
-        <i className="ti ti-plus" aria-hidden="true" />
+        <i className="ti ti-plus" aria-hidden="true" />{" "}
         Add a pinned note for staff
       </button>
     );
@@ -991,14 +1030,14 @@ function KeyContactsSection({
   onAdd,
   onUpdate,
   onDelete,
-}: {
+}: Readonly<{
   contacts: EventContactDto[];
   loading: boolean;
   archived: boolean;
   onAdd: (data: { name: string; role?: string | null; phone?: string | null; email?: string | null }) => Promise<void>;
   onUpdate: (id: string, data: { name: string; role?: string | null; phone?: string | null; email?: string | null }) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
-}) {
+}>) {
   const [modalTarget, setModalTarget] = useState<"add" | EventContactDto | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -1057,10 +1096,10 @@ function KeyContactsSection({
                 )}
                 {!archived && (
                   <>
-                    <button className="overview-contact__action" onClick={() => setModalTarget(contact)} aria-label={`Edit ${contact.name}`}>
+                    <button type="button" className="overview-contact__action" onClick={() => setModalTarget(contact)} aria-label={`Edit ${contact.name}`}>
                       <i className="ti ti-pencil" aria-hidden="true" />
                     </button>
-                    <button className="overview-contact__action overview-contact__action--delete" onClick={() => { setDeleteError(null); setConfirmDeleteId(contact.id); }} aria-label={`Delete ${contact.name}`}>
+                    <button type="button" className="overview-contact__action overview-contact__action--delete" onClick={() => { setDeleteError(null); setConfirmDeleteId(contact.id); }} aria-label={`Delete ${contact.name}`}>
                       <i className="ti ti-trash" aria-hidden="true" />
                     </button>
                   </>
@@ -1100,14 +1139,14 @@ function LinksFilesSection({
   onAdd,
   onUpdate,
   onDelete,
-}: {
+}: Readonly<{
   resources: EventResourceDto[];
   loading: boolean;
   archived: boolean;
   onAdd: (data: { title: string; type: "link" | "file"; url: string; description?: string | null }) => Promise<void>;
   onUpdate: (id: string, data: { title: string; type: "link" | "file"; url: string; description?: string | null }) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
-}) {
+}>) {
   const PREVIEW_MAX = 4;
   const [showAll, setShowAll] = useState(false);
   const [modalTarget, setModalTarget] = useState<"add" | EventResourceDto | null>(null);
@@ -1170,10 +1209,10 @@ function LinksFilesSection({
                 </div>
                 {!archived && (
                   <div className="overview-resource__actions">
-                    <button className="overview-contact__action" onClick={() => setModalTarget(r)} aria-label={`Edit ${r.title}`}>
+                    <button type="button" className="overview-contact__action" onClick={() => setModalTarget(r)} aria-label={`Edit ${r.title}`}>
                       <i className="ti ti-pencil" aria-hidden="true" />
                     </button>
-                    <button className="overview-contact__action overview-contact__action--delete" onClick={() => { setDeleteError(null); setConfirmDeleteId(r.id); }} aria-label={`Delete ${r.title}`}>
+                    <button type="button" className="overview-contact__action overview-contact__action--delete" onClick={() => { setDeleteError(null); setConfirmDeleteId(r.id); }} aria-label={`Delete ${r.title}`}>
                       <i className="ti ti-trash" aria-hidden="true" />
                     </button>
                   </div>
@@ -1182,7 +1221,7 @@ function LinksFilesSection({
             ))}
           </ul>
           {!showAll && hiddenCount > 0 && (
-            <button className="overview-resources__show-more" onClick={() => setShowAll(true)}>
+            <button type="button" className="overview-resources__show-more" onClick={() => setShowAll(true)}>
               View all resources ({hiddenCount} more)
             </button>
           )}
@@ -1214,7 +1253,7 @@ function LinksFilesSection({
 /** Merges the former Pinned note / Key contacts / Important links & files cards (#344, #345,
  * #346) into one Card with three labeled sub-sections, matching the mockup's Overview layout —
  * only the outer wrapping changed, each section keeps its own state/handlers/rows untouched. */
-function NotesAndContactsCard(props: {
+function NotesAndContactsCard(props: Readonly<{
   pinnedNote: string | null;
   loading: boolean;
   archived: boolean;
@@ -1227,7 +1266,7 @@ function NotesAndContactsCard(props: {
   onAddResource: (data: { title: string; type: "link" | "file"; url: string; description?: string | null }) => Promise<void>;
   onUpdateResource: (id: string, data: { title: string; type: "link" | "file"; url: string; description?: string | null }) => Promise<void>;
   onDeleteResource: (id: string) => Promise<void>;
-}) {
+}>) {
   return (
     <Card title="Notes & contacts">
       <PinnedNoteSection
@@ -1254,6 +1293,14 @@ function NotesAndContactsCard(props: {
       />
     </Card>
   );
+}
+
+/** A KPI tile's numeric value has 3 states: the real count once loaded, an ellipsis while the
+ * initial fetch is in flight, or a dash if it never arrived — extracted so the 3 tiles reading
+ * straight off `currentOverview` don't each repeat the same nested ternary. */
+function kpiCountText(value: number | null, loading: boolean): string {
+  if (value != null) return String(value);
+  return loading ? "…" : "—";
 }
 
 /** Event-scoped dashboard — event command center with KPIs, a setup checklist, check-in progress,
@@ -1522,13 +1569,13 @@ export function EventOverviewPage() {
           // No raw event.attendee_count fallback here on purpose (#374) — that picker total
           // includes revoked attendees, so falling back to it flashed a higher number (e.g.
           // 5 -> 4) the instant the real active-only overview count arrived.
-          value={currentOverview != null ? String(currentOverview.attendee_count) : loading ? "…" : "—"}
+          value={kpiCountText(currentOverview?.attendee_count ?? null, loading)}
         />
         <OverviewKpiTile
           tone="info"
           icon={<i className="ti ti-mail-check" aria-hidden="true" />}
           label="Tickets sent"
-          value={currentOverview != null ? String(currentOverview.email_sent) : loading ? "…" : "—"}
+          value={kpiCountText(currentOverview?.email_sent ?? null, loading)}
         />
         {/* Replaces the former "Checked in" tile (#E1) — that duplicated the admission
          * count/percentage already shown prominently in the Check-in progress card directly
@@ -1545,7 +1592,7 @@ export function EventOverviewPage() {
           tone="error"
           icon={<i className="ti ti-alert-triangle" aria-hidden="true" />}
           label="Failed delivery"
-          value={currentOverview != null ? String(emailFailedTotal) : loading ? "…" : "—"}
+          value={kpiCountText(currentOverview != null ? emailFailedTotal : null, loading)}
         />
       </div>
 

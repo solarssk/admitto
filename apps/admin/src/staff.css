@@ -4170,6 +4170,9 @@
   align-items: center;
   gap: 2px;
   padding: 2px;
+  margin: 0;
+  border: 0;
+  min-width: 0;
   background: var(--surface-sunken);
   border-radius: var(--radius-pill);
 }
