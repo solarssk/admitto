@@ -158,12 +158,12 @@ describe("CheckInPage — admin Revoke check-in (#379/#380/#381 follow-up)", () 
     fetchAttendeeCard.mockResolvedValue(admittedCard);
 
     renderPage();
-    await waitFor(() => expect(screen.getByLabelText("QR scan or search")).toBeTruthy());
+    await screen.findByLabelText("QR scan or search");
     const input = screen.getByLabelText("QR scan or search") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "anna" } });
-    await waitFor(() => expect(screen.getByText("Anna Alpha")).toBeTruthy());
+    await screen.findByText("Anna Alpha");
     fireEvent.click(screen.getByText("Anna Alpha"));
-    await waitFor(() => expect(screen.getByText("Already checked in")).toBeTruthy());
+    await screen.findByText("Already checked in");
 
     expect(screen.queryByRole("button", { name: "Revoke check-in" })).toBeNull();
   });
@@ -258,9 +258,9 @@ describe("CheckInPage — admin per-item Revoke wiring (item revocation feature)
     renderPage();
     const input = await screen.findByLabelText("QR scan or search");
     fireEvent.change(input, { target: { value: "anna" } });
-    await waitFor(() => expect(screen.getByText("Anna Alpha")).toBeTruthy());
+    await screen.findByText("Anna Alpha");
     fireEvent.click(screen.getByText("Anna Alpha"));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Revoke Gift bag" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Revoke Gift bag" });
   }
 
   it("resets the item to pending through the client and updates the card", async () => {
@@ -276,7 +276,7 @@ describe("CheckInPage — admin per-item Revoke wiring (item revocation feature)
     await waitFor(() => expect(revokeItemState).toHaveBeenCalledWith("evt-live", "att-1", "gift_bag"));
     // Card refreshed to the pending state — the operator-facing Mark button
     // comes back and the Revoke button is gone.
-    await waitFor(() => expect(screen.getByRole("button", { name: "Mark gift bag given" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Mark gift bag given" });
     expect(screen.queryByRole("button", { name: "Revoke Gift bag" })).toBeNull();
   });
 
@@ -305,9 +305,9 @@ describe("CheckInPage — admin per-item Revoke wiring (item revocation feature)
     renderPage();
     const input = await screen.findByLabelText("QR scan or search");
     fireEvent.change(input, { target: { value: "anna" } });
-    await waitFor(() => expect(screen.getByText("Anna Alpha")).toBeTruthy());
+    await screen.findByText("Anna Alpha");
     fireEvent.click(screen.getByText("Anna Alpha"));
-    await waitFor(() => expect(screen.getByText("Already checked in")).toBeTruthy());
+    await screen.findByText("Already checked in");
 
     expect(screen.queryByRole("button", { name: "Revoke Gift bag" })).toBeNull();
   });
