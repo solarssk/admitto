@@ -3837,6 +3837,17 @@
   }
 }
 
+/* Check-in progress / Recent activity row only (round 5, item B): grid items default to
+ * `align-items: stretch`, but the base `.overview-row` above opts every row out of that so each
+ * card keeps its own natural height — right for the checklist/notes row below, wrong here, where
+ * Recent activity's fixed-height scroll box (`.overview-timeline`) made its card visibly taller
+ * than Check-in progress's shorter natural content. Stretch just this row's two cards to match;
+ * paired with the flex rule below so Check-in progress's own content fills the extra height
+ * sensibly instead of leaving dead space under it. */
+.overview-row--stretch {
+  align-items: stretch;
+}
+
 /* (B) Recent activity's header carries extra content (All/Issues filter pills + a live badge)
  * that renders taller than a plain text title's line-height alone, so the shared
  * `.at-card__header`'s fixed padding produces a visibly shorter header on Check-in progress
@@ -3846,6 +3857,24 @@
  * untouched. */
 .overview-card--header-fixed .at-card__header {
   min-height: calc(var(--control-h-sm) + 4px + (var(--space-4) * 2));
+}
+
+/* Stretching the row (above) makes both cards the height of the taller one, but a plain `.at-card`
+ * is a block box — its body wouldn't fill that extra height on its own, just leave blank space
+ * under its content. Turn the card into a flex column and let its body absorb the slack;
+ * `justify-content: space-between` spreads Check-in progress's few content blocks out to use the
+ * space instead of clumping at the top. Recent activity's body has a single fixed-height child
+ * (`.overview-timeline`), so this is a no-op there — space-between with one child. */
+.overview-card--header-fixed {
+  display: flex;
+  flex-direction: column;
+}
+
+.overview-card--header-fixed .at-card__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
 .overview-muted {
@@ -4169,6 +4198,36 @@
   overflow-y: auto;
   padding-right: 8px;
   margin-right: -8px;
+  /* (D1) The padding/margin gutter above keeps content off the scrollbar, but it's a fixed 8px —
+   * the real native scrollbar can render wider, so item width still shifted when filtering
+   * toggled the list between overflowing and not. `scrollbar-gutter: stable` reserves the
+   * browser's actual scrollbar width up front, always, regardless of overflow state — no
+   * documented browser-support floor exists in this repo, and unsupported browsers just ignore
+   * the property (reverting to the pre-existing behavior), so it's a safe progressive addition. */
+  scrollbar-gutter: stable;
+  /* (D2) Slim, on-theme scrollbar instead of the default browser chrome — no existing scrollbar
+   * treatment to reuse elsewhere in the app (ScrollFadeTabs hides its scrollbar entirely instead,
+   * a different UX for a different case). Standards-based properties for Firefox... */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+/* ...plus the WebKit/Blink-specific pseudo-elements (Chrome, Safari, Edge). */
+.overview-timeline::-webkit-scrollbar {
+  width: 8px;
+}
+
+.overview-timeline::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.overview-timeline::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+}
+
+.overview-timeline::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
 }
 
 /* Zero-result state (#A2): center the single EmptyState block in the fixed-height container

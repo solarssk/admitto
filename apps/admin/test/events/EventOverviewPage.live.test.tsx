@@ -449,15 +449,16 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
       expect(labels).toEqual(["Attendees", "Tickets sent", "Days to event", "Failed delivery"]);
       expect(within(statsRow()).queryByText("Checked in")).toBeNull();
       expect(within(statsRow()).getByText("In 5 days")).toBeTruthy();
+      // No sub-line (round 5, item A) - the calendar date is only shown in the page header now.
       expect(
-        within(statsRow()).getByText(formatEventCalendarDate("2026-07-01T18:00:00.000Z")),
-      ).toBeTruthy();
+        within(statsRow()).queryByText(formatEventCalendarDate("2026-07-01T18:00:00.000Z")),
+      ).toBeNull();
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("shows a raw day count (not the calendar date) on the Days to event tile for events more than a week out", async () => {
+  it("shows a raw day count under the 'Days to event' label for events more than a week out", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       // 30 calendar days before the fixture's 2026-07-01 event date - computeLabel() itself would
@@ -473,10 +474,35 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
       });
 
       expect(within(statsRow()).getByText("30")).toBeTruthy();
-      expect(within(statsRow()).getByText("days to go")).toBeTruthy();
+      // Still upcoming, so the label stays "Days to event" (only the far-past case swaps it) and
+      // there's no "days to go" sub-line anymore - direction reads from the label alone.
+      expect(within(statsRow()).getByText("Days to event")).toBeTruthy();
+      expect(within(statsRow()).queryByText("days to go")).toBeNull();
       expect(
         within(statsRow()).queryByText(formatEventCalendarDate("2026-07-01T18:00:00.000Z")),
       ).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("switches the label to 'Days since event' for events more than a week in the past", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      // 30 calendar days after the fixture's 2026-07-01 event date.
+      vi.setSystemTime(new Date("2026-07-31T10:00:00.000Z"));
+      fetchEventOverview.mockResolvedValue(overviewFixture(5));
+
+      renderPage();
+
+      await waitFor(() => {
+        expect(within(statsRow()).getByText("Attendees")).toBeTruthy();
+      });
+
+      expect(within(statsRow()).getByText("Days since event")).toBeTruthy();
+      expect(within(statsRow()).getByText("30")).toBeTruthy();
+      expect(within(statsRow()).queryByText("Days to event")).toBeNull();
+      expect(within(statsRow()).queryByText("days ago")).toBeNull();
     } finally {
       vi.useRealTimers();
     }

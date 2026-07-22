@@ -1475,7 +1475,6 @@ export function EventOverviewPage() {
       : null;
   const countdownLabel = useCountdown(eventDateIso, eventTimezone);
   const daysUntil = daysUntilEvent(eventDateIso, eventTimezone);
-  const countdownDate = formatEventCalendarDate(eventDateIso);
   // computeLabel() itself falls back to the plain calendar date for anything more than a week out
   // (fine for the header's prose chip, wrong for this numeric tile — it would just repeat the date
   // already shown in the page header). Show the raw day count instead beyond that week window, on
@@ -1484,14 +1483,10 @@ export function EventOverviewPage() {
   // week ("Today"/"Tomorrow"/"Yesterday"/"In N days"/"Ended N days ago") already read fine as-is.
   const countdownValue =
     daysUntil != null && Math.abs(daysUntil) > 7 ? String(Math.abs(daysUntil)) : countdownLabel;
-  const countdownSub =
-    daysUntil != null && Math.abs(daysUntil) > 7
-      ? daysUntil > 0
-        ? "days to go"
-        : "days ago"
-      : countdownLabel === countdownDate
-        ? undefined
-        : countdownDate;
+  // No sub-line (it broke KPI row icon alignment — this was the only tile with a 3rd line).
+  // The far-past bare-number case disambiguates direction via the label itself instead.
+  const daysToEventLabel =
+    daysUntil != null && daysUntil < -7 ? "Days since event" : "Days to event";
   const emailFailedTotal =
     currentOverview != null
       ? currentOverview.email_failed + currentOverview.email_bounced
@@ -1538,9 +1533,8 @@ export function EventOverviewPage() {
         <OverviewKpiTile
           tone="ok"
           icon={<i className="ti ti-calendar-event" aria-hidden="true" />}
-          label="Days to event"
+          label={daysToEventLabel}
           value={countdownValue}
-          sub={countdownSub}
         />
         <OverviewKpiTile
           tone="error"
@@ -1551,7 +1545,7 @@ export function EventOverviewPage() {
       </div>
 
       <div className="overview-body">
-        <div className="overview-row">
+        <div className="overview-row overview-row--stretch">
           <CheckInProgressCard overview={currentOverview} loading={loading} admittedCount={admittedCount} />
           <RecentActivityCard
             eventId={event.id}
