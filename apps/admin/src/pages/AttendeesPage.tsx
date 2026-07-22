@@ -159,6 +159,34 @@ function notifyBulkRevokeCheckInResult(
   addToast(`No check-ins revoked${noteSuffix}.`, "error");
 }
 
+/** Standard "N passes revoked (M already revoked or cancelled)" toast for a bulk revoke-pass
+ * result — shared shape with notifyBulkRevokeCheckInResult above (extracted, not inlined in the
+ * handler, to keep handleBulkRevokePassSelected's own cognitive complexity within Sonar's
+ * threshold). */
+function notifyBulkRevokePassResult(
+  result: { revoked: number; skipped: number; errored: number },
+  addToast: (message: string, variant?: ToastVariant) => void,
+) {
+  const { revoked, skipped, errored } = result;
+  const notes: string[] = [];
+  if (skipped > 0) notes.push(`${skipped} already revoked or cancelled`);
+  if (errored > 0) notes.push(`${errored} failed unexpectedly`);
+  const noteSuffix = notes.length > 0 ? ` (${notes.join(", ")})` : "";
+
+  if (revoked > 0) {
+    // Not pluralize() - "pass" needs "passes", not the naive "passs" a bare +s would give.
+    addToast(`${revoked} ${revoked === 1 ? "pass" : "passes"} revoked${noteSuffix}.`, errored > 0 ? "warning" : "success");
+    return;
+  }
+
+  if (skipped > 0 && errored === 0) {
+    addToast("All selected attendees were already revoked or cancelled.", "info");
+    return;
+  }
+
+  addToast(`No passes revoked${noteSuffix}.`, "error");
+}
+
 interface SendTicketsDialogProps {
   open: boolean;
   busy: boolean;
@@ -963,20 +991,9 @@ export function AttendeesPage() {
     setBulkRevokePassBusy(true);
     setBulkRevokePassError(null);
     try {
-      const { revoked, skipped, errored } = await bulkRevokePass(initiatingEventId, [...selectedIds]);
+      const result = await bulkRevokePass(initiatingEventId, [...selectedIds]);
       if (!isStillOnEvent()) return;
-      const notes: string[] = [];
-      if (skipped > 0) notes.push(`${skipped} already revoked or cancelled`);
-      if (errored > 0) notes.push(`${errored} failed unexpectedly`);
-      const noteSuffix = notes.length > 0 ? ` (${notes.join(", ")})` : "";
-      if (revoked > 0) {
-        // Not pluralize() - "pass" needs "passes", not the naive "passs" a bare +s would give.
-        addToast(`${revoked} ${revoked === 1 ? "pass" : "passes"} revoked${noteSuffix}.`, errored > 0 ? "warning" : "success");
-      } else if (skipped > 0 && errored === 0) {
-        addToast("All selected attendees were already revoked or cancelled.", "info");
-      } else {
-        addToast(`No passes revoked${noteSuffix}.`, "error");
-      }
+      notifyBulkRevokePassResult(result, addToast);
       setBulkRevokePassConfirmOpen(false);
       clearSelection();
       setReloadToken((n) => n + 1);

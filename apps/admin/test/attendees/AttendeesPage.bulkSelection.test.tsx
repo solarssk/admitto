@@ -586,6 +586,132 @@ describe("AttendeesPage bulk revoke pass (#549)", () => {
     expect(document.querySelector(".attendees-bulkbar")).toBeTruthy();
   });
 
+  it("redirects to /login on a 401", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    const assignSpy = vi.fn();
+    const locationDescriptor = Object.getOwnPropertyDescriptor(window, "location");
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { pathname: "/admin/events/evt-1/attendees", assign: assignSpy },
+    });
+    try {
+      fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+      bulkRevokePass.mockRejectedValueOnce(new ApiError(401, "unauthorized"));
+
+      renderPage();
+
+      await screen.findByText("Jane Doe");
+      fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+      await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+      fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+      fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke pass/ }));
+      const dialog = screen.getByRole("dialog");
+      fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
+
+      await waitFor(() => {
+        expect(assignSpy).toHaveBeenCalledWith(expect.stringContaining("/login?next="));
+      });
+      expect(reportApiError).toHaveBeenCalledWith(401);
+    } finally {
+      if (locationDescriptor) Object.defineProperty(window, "location", locationDescriptor);
+    }
+  });
+
+  it("shows a generic inline error when bulkRevokePass rejects with something other than ApiError", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkRevokePass.mockRejectedValueOnce(new Error("network down"));
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke pass/ }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
+
+    await screen.findByText("Failed to revoke pass.");
+    expect(addToast).not.toHaveBeenCalled();
+  });
+
+  it("ignores a stale bulk-revoke-pass error after navigating to a different event mid-request", async () => {
+    let rejectRevoke!: (err: unknown) => void;
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkRevokePass.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectRevoke = reject;
+      }),
+    );
+
+    const router = createMemoryRouter(
+      [{ path: "/admin/events/:eventId/attendees", element: <AttendeesPage /> }],
+      { initialEntries: ["/admin/events/evt-1/attendees"] },
+    );
+    render(<RouterProvider router={router} />);
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke pass/ }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
+
+    await act(async () => router.navigate("/admin/events/evt-2/attendees"));
+    await waitFor(() => {
+      expect(fetchEventAttendees).toHaveBeenCalledWith("evt-2", expect.anything(), expect.anything());
+    });
+
+    await act(async () => {
+      rejectRevoke(new Error("network down"));
+      await Promise.resolve();
+    });
+
+    expect(addToast).not.toHaveBeenCalled();
+    expect(screen.queryByText("Failed to revoke pass.")).toBeNull();
+  });
+
+  it("ignores a stale bulk-revoke-pass completion after navigating to a different event mid-request", async () => {
+    let resolveRevoke!: (value: { revoked: number; skipped: number; errored: number }) => void;
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkRevokePass.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRevoke = resolve;
+      }),
+    );
+
+    const router = createMemoryRouter(
+      [{ path: "/admin/events/:eventId/attendees", element: <AttendeesPage /> }],
+      { initialEntries: ["/admin/events/evt-1/attendees"] },
+    );
+    render(<RouterProvider router={router} />);
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke pass/ }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
+
+    await act(async () => router.navigate("/admin/events/evt-2/attendees"));
+    await waitFor(() => {
+      expect(fetchEventAttendees).toHaveBeenCalledWith("evt-2", expect.anything(), expect.anything());
+    });
+
+    await act(async () => {
+      resolveRevoke({ revoked: 1, skipped: 0, errored: 0 });
+      await Promise.resolve();
+    });
+
+    expect(addToast).not.toHaveBeenCalledWith(expect.stringContaining("revoked"), "success");
+  });
+
   it("Cancel closes the bulk-revoke-pass dialog without calling bulkRevokePass", async () => {
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
 
