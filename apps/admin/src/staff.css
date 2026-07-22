@@ -3768,19 +3768,62 @@
   }
 }
 
-.overview-admission-bar {
-  height: 6px;
-  border-radius: 3px;
-  background: var(--surface-sunken);
-  margin-top: var(--space-2);
-  overflow: hidden;
+/* KPI tiles (D, E2) — icon-square-left layout scoped to Overview's 4 top tiles only;
+ * @admitto/ui's generic Stat (small icon circle, top-right) is unchanged for every other page
+ * that uses it. Left-anchored (not centered as a unit) so all 4 tiles' icons line up in one
+ * column regardless of value/label length — centering each tile's content independently made
+ * icons drift sideways per tile, which read worse than the "empty" space it was meant to fix. */
+.overview-kpi {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
 }
 
-.overview-admission-bar__fill {
-  height: 100%;
-  background: var(--primary);
-  border-radius: 3px;
-  transition: width 0.4s ease;
+.overview-kpi__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: var(--radius-md);
+  font-size: 1.75rem;
+}
+
+.overview-kpi__icon--primary { background: var(--primary-tint); color: var(--primary-active); }
+.overview-kpi__icon--info    { background: var(--status-info-tint); color: var(--status-info-fg); }
+.overview-kpi__icon--ok      { background: var(--status-ok-tint); color: var(--status-ok-fg); }
+.overview-kpi__icon--error   { background: var(--status-error-tint); color: var(--status-error-fg); }
+
+.overview-kpi__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.overview-kpi__value {
+  /* --fs-display is this codebase's own "hero number" token (also what the generic Stat
+   * component's .at-stat__value uses) — matching it instead of an off-scale custom size. */
+  font-size: var(--fs-display);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+  line-height: 1.1;
+  letter-spacing: var(--ls-tight);
+}
+
+.overview-kpi__label {
+  /* Same size/weight as .at-card__title (the app's standard card-title tier) — the label is
+   * effectively this tile's title, and fs-sm/fw-medium (PO review: "too big a jump" from the
+   * fs-display value above it) was borrowed from generic secondary-text styling instead. */
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+}
+
+.overview-kpi__sub {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
 }
 
 .overview-archived-note {
@@ -3789,24 +3832,72 @@
   color: var(--text-secondary);
 }
 
+/* Two stacked, genuinely symmetric 1fr/1fr rows (mockup-aligned) instead of a wide-left +
+ * narrow-fixed-width sidebar — same breakpoint the KPI stat row above already collapses at. */
 .overview-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: var(--space-4);
-  align-items: start;
-}
-
-.overview-body__left,
-.overview-body__right {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
 }
 
+.overview-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  align-items: start;
+}
+
 @media (max-width: 900px) {
-  .overview-body {
+  .overview-row {
     grid-template-columns: 1fr;
   }
+}
+
+/* Check-in progress / Recent activity row only (round 5, item B): grid items default to
+ * `align-items: stretch`, but the base `.overview-row` above opts every row out of that so each
+ * card keeps its own natural height — right for the checklist/notes row below, wrong here, where
+ * Recent activity's fixed-height scroll box (`.overview-timeline`) made its card visibly taller
+ * than Check-in progress's shorter natural content. Stretch just this row's two cards to match;
+ * paired with the flex rule below so Check-in progress's own content fills the extra height
+ * sensibly instead of leaving dead space under it. */
+.overview-row--stretch {
+  align-items: stretch;
+}
+
+/* (B) Recent activity's header carries extra content (All/Issues filter pills + a live badge)
+ * that renders taller than a plain text title's line-height alone, so the shared
+ * `.at-card__header`'s fixed padding produces a visibly shorter header on Check-in progress
+ * (title only) next to it in the same grid row. Pin a matching min-height — derived from the
+ * filter pills' real rendered height plus the header's own vertical padding, not a bare magic
+ * number — on both of this row's card headers only; every other page's `.at-card__header` is
+ * untouched. */
+.overview-card--header-fixed .at-card__header {
+  min-height: calc(var(--control-h-sm) + 4px + (var(--space-4) * 2));
+}
+
+/* Stretching the row (above) makes both cards the height of the taller one, but a plain `.at-card`
+ * is a block box — its body wouldn't fill that extra height on its own, just leave blank space
+ * under its content. Turn the card into a flex column and let its body absorb the slack;
+ * `justify-content: space-between` spreads Check-in progress's few content blocks out to use the
+ * space instead of clumping at the top. Recent activity's body has a single fixed-height child
+ * (`.overview-timeline`), so this is a no-op there — space-between with one child. */
+.overview-card--header-fixed {
+  display: flex;
+  flex-direction: column;
+}
+
+.overview-card--header-fixed .at-card__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+/* Check-in progress with zero attendees (its own EmptyState, not the ring): same "center the
+ * single block in the stretched card" treatment as Recent activity's `.overview-timeline--empty`,
+ * instead of `space-between`'s single-child default of pinning it to the top. */
+.overview-card--header-fixed.overview-card--empty .at-card__body {
+  justify-content: center;
 }
 
 .overview-muted {
@@ -3826,118 +3917,209 @@
   font-size: 1rem;
 }
 
-/* Needs attention */
-.overview-alerts {
-  display: flex;
-  flex-direction: column;
-}
-
-.overview-alert {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-  padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.overview-alert:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-
-.overview-alert:first-child {
-  padding-top: 0;
-}
-
-.overview-alert__icon {
-  font-size: 1rem;
-  flex-shrink: 0;
-  margin-top: 1px;
-}
-
-.overview-alert--error .overview-alert__icon { color: var(--status-error); }
-.overview-alert--warn  .overview-alert__icon { color: var(--status-warn); }
-
-.overview-alert__body {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.overview-alert__title {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  color: var(--text);
-}
-
-.overview-alert--error .overview-alert__title { color: var(--status-error-fg, var(--text)); }
-
-.overview-alert__desc {
-  font-size: var(--fs-xs);
-  color: var(--text-secondary);
-}
-
-/* Event readiness */
+/* Setup checklist (#348 — merged "Needs attention" + "Event readiness") */
 .overview-readiness-score {
   font-size: var(--fs-xs);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 
-.overview-readiness {
+.overview-checklist {
   display: flex;
   flex-direction: column;
-}
-
-.overview-readiness__row {
-  display: flex;
-  align-items: center;
   gap: var(--space-3);
-  padding: 7px 0;
-  border-bottom: 1px solid var(--border);
 }
 
-.overview-readiness__row:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-
-.overview-readiness__row:first-child {
-  padding-top: 0;
-}
-
-.overview-readiness__dot {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  flex-shrink: 0;
+/* Mockup-aligned readiness row: a circular status-tinted icon (reuses @admitto/ui's shared
+ * .status-circle, same class ActivityIcon already uses) beside a two-line stacked body, instead
+ * of the old flat single-line "dot + label … value" table row (#G polish). */
+.overview-readiness-item {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
+  align-items: flex-start;
+  gap: var(--space-3);
 }
 
-.overview-readiness__dot--ok      { background: var(--status-ok-tint);   color: var(--status-ok); }
-.overview-readiness__dot--warn    { background: var(--status-warn-tint); color: var(--status-warn-fg); }
-.overview-readiness__dot--error   { background: var(--status-error-tint); color: var(--status-error); }
-.overview-readiness__dot--neutral { background: var(--surface-sunken);   color: var(--text-muted); }
+.overview-readiness-item__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding-top: 2px;
+}
 
-.overview-readiness__label {
-  flex: 1;
+.overview-readiness-item__body strong {
   font-size: var(--fs-sm);
+  font-weight: 600;
   color: var(--text);
 }
 
-.overview-readiness__value {
+.overview-readiness-item__detail {
   font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+.overview-checklist__link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-sm);
+  color: var(--primary);
+  text-decoration: none;
+}
+.overview-checklist__link i { transition: transform var(--dur-fast, 120ms); }
+/* text-decoration: none must be repeated here, not just on the base rule above — the global
+ * `a:hover { text-decoration: underline }` (packages/ui tokens/base.css) has higher specificity
+ * than a plain `.overview-checklist__link { text-decoration: none }` once :hover is in play (both
+ * are class-tier 0,1,x, but a:hover's extra type selector wins the tiebreak) — same gotcha
+ * .overview-contact__action's own comment already documents for the tel:/mailto: links (#345). */
+.overview-checklist__link:hover { color: var(--primary-active); text-decoration: none; }
+.overview-checklist__link:hover i { transform: translateX(2px); }
+
+/* Check-in progress (Part B) */
+.overview-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.overview-ring {
+  --ring-size: 108px;
+
+  width: var(--ring-size);
+  height: var(--ring-size);
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+}
+
+.overview-ring__hole {
+  width: calc(var(--ring-size) - 22px);
+  height: calc(var(--ring-size) - 22px);
+  border-radius: 50%;
+  background: var(--surface-card);
+  display: grid;
+  place-items: center;
+}
+
+.overview-ring__pct {
+  font-size: var(--fs-h2);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
 
-.overview-readiness__value--ok      { color: var(--status-ok); }
-.overview-readiness__value--warn    { color: var(--status-warn-fg); }
-.overview-readiness__value--error   { color: var(--status-error); }
-.overview-readiness__value--neutral { color: var(--text-muted); }
+.overview-progress__legend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  min-width: 0;
+}
+
+.overview-progress__legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.overview-progress__legend-item strong {
+  margin-left: auto;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.overview-progress__legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.overview-tt-breakdown {
+  margin-top: var(--space-4);
+}
+
+.overview-tt-breakdown .overline {
+  display: block;
+  margin-bottom: var(--space-2);
+}
+
+.overview-tt-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--surface-sunken);
+}
+
+.overview-tt-bar__seg {
+  height: 100%;
+}
+
+.overview-tt-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.overview-tt-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+.overview-tt-legend__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.overview-tt-legend__count {
+  color: var(--text-muted);
+}
+
+.overview-glance {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.overview-glance__tile {
+  background: var(--surface-sunken);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+
+.overview-glance__label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.overview-glance__label .ti {
+  font-size: 0.9em;
+}
+
+.overview-glance__value {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+}
 
 /* Email delivery */
 .overview-delivery {
@@ -3985,21 +4167,122 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Recent check-ins */
-.overview-live-badge {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: var(--fs-xs);
-  color: var(--status-ok);
+/* Recent activity */
+/* Live indicator now renders as <Badge variant="ok" dot> (the app's existing dot-badge pattern,
+ * e.g. CfAccessEditor/IdentityProvidersPanel's "Active"/"Enabled" pills) — this class only adds
+ * the pulse that's specific to a live-connection signal, on top of Badge's own pill styling. */
+@keyframes overview-live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }
 
-.overview-live-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--status-ok);
-  flex-shrink: 0;
+@media (prefers-reduced-motion: no-preference) {
+  .overview-live-badge .at-badge__dot {
+    animation: overview-live-pulse 1.6s ease-in-out infinite;
+  }
+}
+
+/* All/Issues filter — pill-shaped segmented control. Rendered as the Card's header `actions`
+ * (next to the live badge), not a row of its own above the timeline. No existing compact 2-option
+ * toggle fit here: the shared Tabs component is an underline tab bar for page-level nav, and
+ * Communication's MJML/HTML switch is the same plain bordered-button pair this replaces. */
+.overview-activity-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  margin: 0;
+  border: 0;
+  min-width: 0;
+  background: var(--surface-sunken);
+  border-radius: var(--radius-pill);
+}
+
+.overview-activity-filter .at-btn {
+  border-radius: var(--radius-pill);
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.overview-activity-filter .at-btn:hover:not(:disabled) {
+  background: var(--at-gray-100);
+  color: var(--text-primary);
+}
+
+.overview-activity-filter .at-btn[aria-pressed="true"] {
+  background: var(--surface-card);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Fixed height (not max-height) so the card's footprint stays stable regardless of how many
+ * items the All/Issues filter matches — max-height let the scroll container (and the whole card)
+ * collapse down to a single item's height when "Issues" had few/no matches. Matches the Check-in
+ * progress card's own content height; internal scroll handles the rest.
+ * padding-right + a matching negative margin-right (#A1) reserve a gutter for the scrollbar
+ * without shifting the row content — same idea as the mockup's `.ov-activity { padding-right: 8px;
+ * margin-right: -8px }`, adapted to this container. Without it the native scrollbar renders flush
+ * against the timestamp text on the right edge of each row. */
+.overview-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  height: 312px;
+  overflow-y: auto;
+  padding-right: 8px;
+  margin-right: -8px;
+  /* (D1) The padding/margin gutter above keeps content off the scrollbar, but it's a fixed 8px —
+   * the real native scrollbar can render wider, so item width still shifted when filtering
+   * toggled the list between overflowing and not. `scrollbar-gutter: stable` reserves the
+   * browser's actual scrollbar width up front, always, regardless of overflow state — no
+   * documented browser-support floor exists in this repo, and unsupported browsers just ignore
+   * the property (reverting to the pre-existing behavior), so it's a safe progressive addition. */
+  scrollbar-gutter: stable;
+  /* (D2) Slim, on-theme scrollbar instead of the default browser chrome — no existing scrollbar
+   * treatment to reuse elsewhere in the app (ScrollFadeTabs hides its scrollbar entirely instead,
+   * a different UX for a different case). Standards-based properties for Firefox... */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+/* ...plus the WebKit/Blink-specific pseudo-elements (Chrome, Safari, Edge). */
+.overview-timeline::-webkit-scrollbar {
+  width: 8px;
+}
+
+.overview-timeline::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.overview-timeline::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+}
+
+.overview-timeline::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Zero-result state (#A2): center the single EmptyState block in the fixed-height container
+ * instead of leaving it pinned to the top with a large accidental-looking gap below. A short (1-2
+ * item) result stays top-aligned as before — only the true empty case reads as intentionally
+ * designed rather than sparse. */
+.overview-timeline--empty {
+  justify-content: center;
+}
+
+.overview-timeline--empty .at-empty-state {
+  padding: var(--space-4) var(--space-4);
+}
+
+.overview-timeline__day {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-caps);
+  color: var(--text-muted);
+  margin-bottom: var(--space-1);
 }
 
 .overview-activity {
@@ -4038,84 +4321,94 @@
   text-overflow: ellipsis;
 }
 
+/* Links a checkin/mail activity entry to the attendee's detail view — kept low-key (inherited
+ * color, no underline even on hover/focus — matches .overview-checklist__link's PO-preferred
+ * treatment: a color shift instead) rather than the usual link blue, so the timeline doesn't
+ * read as more colorful/noisy than before. */
+.overview-activity__attendee-link {
+  display: block;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* text-decoration: none must be repeated here, not just on the base rule above — see
+ * .overview-checklist__link:hover's comment for why the global a:hover rule otherwise wins. */
+.overview-activity__attendee-link:hover,
+.overview-activity__attendee-link:focus-visible {
+  color: var(--primary);
+  text-decoration: none;
+}
+
 .overview-activity__info span {
   font-size: var(--fs-xs);
   color: var(--text-secondary);
 }
 
+/* Relative time on top, absolute below (#D) — mirrors the two-line stacked time cell in
+ * AttendeesTable's CheckInCell (primary line + a smaller muted line under it), the closest
+ * existing convention for pairing two time reads in one cell. */
 .overview-activity__time {
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
 
-/* Event info */
-.overview-info {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.overview-info__row {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-}
-
-.overview-info__icon {
-  font-size: 0.9rem;
-  color: var(--text-muted);
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
-.overview-info__content {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-
-.overview-info__label {
+.overview-activity__time-relative {
   font-size: var(--fs-xs);
   color: var(--text-muted);
 }
 
-.overview-info__value {
-  font-size: var(--fs-sm);
-  color: var(--text);
+.overview-activity__time-absolute {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
-/* ── Pinned note ─────────────────────────────────────────────────── */
-
-.overview-pinned-note {
-  background: color-mix(in srgb, var(--status-warn) 12%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--status-warn) 30%, transparent);
-  border-radius: var(--radius-md);
-  padding: var(--space-3) var(--space-4);
+/* ── Notes & contacts (merged Pinned note / Key contacts / Links & files) ──────────────
+ * The three cards below share one outer Card instead of three separate card borders — each
+ * keeps its own overline label + header actions, separated by a thin top divider.
+ * `:not(:first-child)` rather than an adjacent-sibling selector (`X + X`) on purpose (#A1/#A2):
+ * PinnedNoteSection renders its edit/add modal as a sibling of its .overview-notes-section (not
+ * nested inside, unlike the Key contacts/Links & files modals), so while it's open the Key
+ * contacts section's *immediately preceding* sibling is briefly `.overview-modal`, not another
+ * `.overview-notes-section` — an adjacent-sibling rule would drop that divider for as long as the
+ * modal stays open. Position-in-parent doesn't have that failure mode: every section but the
+ * first is "not the first child" regardless of what else briefly sits between them in the DOM. */
+.overview-notes-section:not(:first-child) {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
 }
 
-.overview-pinned-note__header {
+.overview-notes-section__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-2);
   margin-bottom: var(--space-2);
 }
 
-.overview-pinned-note__title {
-  font-size: var(--fs-sm);
-  font-weight: 600;
+/* Shared leading-icon treatment for all three section headers (pin / address book / paperclip) —
+ * always rendered regardless of empty/filled state so the header never reflows (PO: "headers
+ * move"). Pinned note keeps its warn-tinted color as a small accent on top of this. */
+.overview-notes-section__icon {
+  font-size: 0.9em;
   color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
 }
 
-.overview-pinned-note__edit {
-  opacity: 0.7;
+/* ── Pinned note ─────────────────────────────────────────────────── */
+/* Filled state renders on the standard Card/--surface-card background (#347) — no warn tint.
+ * The pin icon stays as a small accent inside the section header instead. */
+
+.overview-pinned-note__pin {
+  color: var(--status-warn);
 }
-.overview-pinned-note__edit:hover { opacity: 1; }
 
 .overview-pinned-note__body {
   margin: 0;
@@ -4125,10 +4418,30 @@
   white-space: pre-wrap;
 }
 
-.overview-note-edit {
+/* Empty-state affordance — a clickable dashed box spanning the section width, replacing the old
+ * header-only "Add note" button so an empty section's header stays icon+label only. */
+.overview-note-empty {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: var(--space-2);
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-3);
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: border-color 0.1s, color 0.1s, background 0.1s;
+}
+.overview-note-empty:hover,
+.overview-note-empty:focus-visible {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-tint);
 }
 
 .overview-note-textarea {
@@ -4148,12 +4461,6 @@
   outline-offset: 1px;
 }
 
-.overview-note-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-2);
-}
-
 /* ── Key contacts ─────────────────────────────────────────────────── */
 
 .overview-contacts {
@@ -4165,16 +4472,13 @@
   gap: 0;
 }
 
+/* No per-row border (B: "too many divider lines... looks like an Excel spreadsheet") — the
+ * section-level divider above already separates Key contacts from its neighbors; rows lean on
+ * padding for rhythm instead of a hard rule between every pair. */
 .overview-contact {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-3);
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--border);
-}
-.overview-contact:last-child { border-bottom: none; }
-.overview-contact--form {
-  display: block;
   padding: var(--space-2) 0;
 }
 
@@ -4184,14 +4488,19 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
+  /* Icons stay always-visible (not hover-reveal) so they're reachable on touch and discoverable
+   * without a pointer — the name wraps to two lines instead of truncating hard (#345). */
+  padding-top: 3px;
 }
 .overview-contact__info strong {
   font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text);
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: break-word;
 }
 .overview-contact__info span {
   font-size: var(--fs-xs);
@@ -4226,24 +4535,16 @@
 .overview-contact__action:hover {
   background: var(--surface-sunken);
   color: var(--text);
+  /* Without this, the global `a:hover { text-decoration: underline }` (base.css) wins the cascade
+   * on the tel:/mailto: anchors here — same specificity tier as this rule, higher type-selector
+   * count (#345). */
+  text-decoration: none;
 }
 .overview-contact__action--delete:hover {
   color: var(--status-error);
 }
 
-.overview-contact-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-2) 0;
-}
-.overview-contact-form__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-2);
-}
-
-/* ── Important links & files ─────────────────────────────────────── */
+/* ── Links & files ───────────────────────────────────────────────── */
 
 .overview-resources {
   list-style: none;
@@ -4253,22 +4554,19 @@
   flex-direction: column;
 }
 
+/* No per-row border (B — same reasoning as .overview-contact above). align-items: center (not
+ * flex-start) so the edit/delete icons stay centered against the row's full height regardless of
+ * whether a description makes it one line or two (#D4 — they used to anchor to the top, sitting
+ * noticeably too high once a description added a second line). */
 .overview-resource {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-3);
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--border);
-}
-.overview-resource:last-child { border-bottom: none; }
-.overview-resource--form {
-  display: block;
   padding: var(--space-2) 0;
 }
 
 .overview-resource__icon {
   flex-shrink: 0;
-  margin-top: 2px;
   font-size: 16px;
   color: var(--text-muted);
 }
@@ -4319,20 +4617,64 @@
 }
 .overview-resources__show-more:hover { text-decoration: underline; }
 
-.overview-resource-form {
+/* ── Notes & contacts modals (pinned note / contact / resource) ──────────────────────
+ * One shared shell for all three add/edit forms — add and edit share the same panel width for
+ * a given render, so the two modes can't visually drift apart. */
+.overview-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+}
+
+.overview-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.overview-modal__panel {
+  position: relative;
+  width: min(480px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  background: var(--surface-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-5);
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-4);
 }
-.overview-resource-form__row {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: var(--space-2);
+
+.overview-modal__title {
+  margin: 0;
+  font-size: var(--fs-h3);
+  font-weight: 600;
 }
-.overview-resource-form__actions {
+
+.overview-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.overview-modal__footer {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-2);
+}
+
+/* Widens the Type select to match the modal's other fields (#D2) — a pre-existing legacy
+ * `.at-select { max-width: 24rem }` rule elsewhere in this file (predating @admitto/ui's own
+ * Select styling) otherwise caps every select in the admin app at 384px regardless of its
+ * container width, which read as a visibly cramped dropdown next to the full-width Inputs here.
+ * Scoped to this modal rather than changing that shared rule app-wide. */
+.overview-resource-modal__type {
+  max-width: none;
 }
 
 .event-card__hint {

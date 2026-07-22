@@ -981,6 +981,18 @@ export interface EventResourceDto {
   sort_order: number;
 }
 
+export interface EventRecentActivityEntry {
+  id: string;
+  type: "checkin" | "mail_bounced" | "mail_failed" | "mail_resent" | "import";
+  tone: "ok" | "warn" | "error" | "info" | "muted";
+  attendee_name?: string | null;
+  /** Links the entry to the attendee's detail view; null for entries with no single attendee
+   * (import batches). */
+  attendee_id: string | null;
+  message: string;
+  occurred_at: string;
+}
+
 export interface EventOverviewDto {
   event: {
     id: string;
@@ -1003,6 +1015,10 @@ export interface EventOverviewDto {
   requirements_count: number;
   checkin_staff_count: number;
   attendees_with_ticket: number;
+  last_check_in_at: string | null;
+  busiest_hour: { hour: string; count: number } | null;
+  ticket_type_breakdown: Array<{ key: string; label: string; color: TicketTypeColor; count: number }>;
+  recent_activity: EventRecentActivityEntry[];
   contacts: EventContactDto[];
   resources: EventResourceDto[];
 }
