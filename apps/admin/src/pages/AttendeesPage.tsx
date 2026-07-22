@@ -6,6 +6,7 @@ import {
   bulkChangeTicketType,
   bulkCheckInAttendees,
   bulkRevokeCheckIn,
+  bulkRevokePass,
   bulkDeleteAttendees,
   bulkResendTickets,
   bulkRevokeItems,
@@ -172,6 +173,34 @@ function notifyBulkRevokeItemsResult(
   } else {
     addToast("No issued items to revoke for the selected attendees.", "info");
   }
+}
+
+/** Standard "N passes revoked (M already revoked or cancelled)" toast for a bulk revoke-pass
+ * result — shared shape with notifyBulkRevokeCheckInResult above (extracted, not inlined in the
+ * handler, to keep handleBulkRevokePassSelected's own cognitive complexity within Sonar's
+ * threshold). */
+function notifyBulkRevokePassResult(
+  result: { revoked: number; skipped: number; errored: number },
+  addToast: (message: string, variant?: ToastVariant) => void,
+) {
+  const { revoked, skipped, errored } = result;
+  const notes: string[] = [];
+  if (skipped > 0) notes.push(`${skipped} already revoked or cancelled`);
+  if (errored > 0) notes.push(`${errored} failed unexpectedly`);
+  const noteSuffix = notes.length > 0 ? ` (${notes.join(", ")})` : "";
+
+  if (revoked > 0) {
+    // Not pluralize() - "pass" needs "passes", not the naive "passs" a bare +s would give.
+    addToast(`${revoked} ${revoked === 1 ? "pass" : "passes"} revoked${noteSuffix}.`, errored > 0 ? "warning" : "success");
+    return;
+  }
+
+  if (skipped > 0 && errored === 0) {
+    addToast("All selected attendees were already revoked or cancelled.", "info");
+    return;
+  }
+
+  addToast(`No passes revoked${noteSuffix}.`, "error");
 }
 
 interface SendTicketsDialogProps {
@@ -470,6 +499,9 @@ export function AttendeesPage() {
   const [bulkRevokeItemsBusy, setBulkRevokeItemsBusy] = useState(false);
   const [bulkRevokeItemsConfirmOpen, setBulkRevokeItemsConfirmOpen] = useState(false);
   const [bulkRevokeItemsError, setBulkRevokeItemsError] = useState<string | null>(null);
+  const [bulkRevokePassBusy, setBulkRevokePassBusy] = useState(false);
+  const [bulkRevokePassConfirmOpen, setBulkRevokePassConfirmOpen] = useState(false);
+  const [bulkRevokePassError, setBulkRevokePassError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [revokeOpen, setRevokeOpen] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<AttendeeRowDto | null>(null);
@@ -1025,6 +1057,43 @@ export function AttendeesPage() {
     }
   };
 
+  /** Bulk "Revoke pass" for an explicit subset of selected attendees — same effect as the
+   * attendee detail page's single "Revoke pass" action, run once per selected attendee. Same
+   * dialog-stays-open-with-inline-error-on-failure convention as handleBulkDeleteSelected above
+   * (destructive-ish action, doesn't also toast the same message). An attendee already revoked
+   * or cancelled is left untouched server-side and counted separately, not treated as a
+   * failure - reported in the success toast rather than surfaced as an error. */
+  const handleBulkRevokePassSelected = async () => {
+    if (!eventId || selectedIds.size === 0) return;
+    const initiatingEventId = eventId;
+    const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
+    setBulkRevokePassBusy(true);
+    setBulkRevokePassError(null);
+    try {
+      const result = await bulkRevokePass(initiatingEventId, [...selectedIds]);
+      if (!isStillOnEvent()) return;
+      notifyBulkRevokePassResult(result, addToast);
+      setBulkRevokePassConfirmOpen(false);
+      clearSelection();
+      setReloadToken((n) => n + 1);
+    } catch (err) {
+      if (!isStillOnEvent()) return;
+      if (err instanceof ApiError) {
+        reportApiError(err.status);
+        if (err.status === 401) {
+          const next = encodeURIComponent(window.location.pathname);
+          window.location.assign(`/login?next=${next}`);
+          return;
+        }
+        setBulkRevokePassError(operatorApiErrorMessage(err, "Revoke pass failed."));
+      } else {
+        setBulkRevokePassError("Failed to revoke pass.");
+      }
+    } finally {
+      if (isStillOnEvent()) setBulkRevokePassBusy(false);
+    }
+  };
+
   const isUnfilteredEmpty =
     total === 0 &&
     !searchQuery &&
@@ -1037,6 +1106,13 @@ export function AttendeesPage() {
   // the raw selection size (PO review) — matches the bulk bar's own menu-item hint.
   const revokableItemsCount = items.filter(
     (row) => selectedIds.has(row.id) && row.has_issued_items,
+  ).length;
+
+  // How many of the selection actually have an active pass to revoke - shown in the confirm
+  // dialog's title instead of the raw selection size, so a mixed selection doesn't overstate
+  // the impact (PO review follow-up, #549).
+  const revokablePassCount = items.filter(
+    (row) => selectedIds.has(row.id) && row.status !== "cancelled" && row.status !== "revoked",
   ).length;
 
   if (!eventId) return <p>Missing event.</p>;
@@ -1196,6 +1272,11 @@ export function AttendeesPage() {
           setBulkRevokeItemsConfirmOpen(true);
         }}
         bulkRevokeItemsBusy={bulkRevokeItemsBusy}
+        onBulkRevokePass={() => {
+          setBulkRevokePassError(null);
+          setBulkRevokePassConfirmOpen(true);
+        }}
+        bulkRevokePassBusy={bulkRevokePassBusy}
         onBulkDelete={() => {
           setBulkDeleteError(null);
           setBulkDeleteConfirmOpen(true);
@@ -1315,6 +1396,23 @@ export function AttendeesPage() {
           if (!bulkRevokeItemsBusy) {
             setBulkRevokeItemsConfirmOpen(false);
             setBulkRevokeItemsError(null);
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={bulkRevokePassConfirmOpen}
+        title={`Revoke the pass for ${revokablePassCount} attendee${revokablePassCount === 1 ? "" : "s"}?`}
+        message="They will no longer be able to check in until the pass is restored. Already revoked or cancelled attendees are left untouched."
+        errorMessage={bulkRevokePassError}
+        confirmLabel="Revoke pass"
+        confirmVariant="danger"
+        loading={bulkRevokePassBusy}
+        onConfirm={() => void handleBulkRevokePassSelected()}
+        onCancel={() => {
+          if (!bulkRevokePassBusy) {
+            setBulkRevokePassConfirmOpen(false);
+            setBulkRevokePassError(null);
           }
         }}
       />

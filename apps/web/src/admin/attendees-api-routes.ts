@@ -42,6 +42,8 @@ import {
   revokeItemsForAttendees,
   getAttendeeCard,
   UndoNotAllowedError,
+  type OpsAuditContext,
+  ADMITTABLE_STATUS_LIST,
   IllegalItemTransitionError,
   loadEventTicketTypes,
   assertTicketTypeInCatalog,
@@ -1744,6 +1746,12 @@ const bulkRevokeCheckInAttendeesBodySchema = z
   })
   .strict();
 
+const bulkRevokePassAttendeesBodySchema = z
+  .object({
+    attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+  })
+  .strict();
+
 /** POST /api/admin/events/:eventId/attendees/bulk-revoke-checkin — undo check-in for a selection
  * of attendees at once, from the Attendees list's row-selection bulk bar. Mirrors bulk-checkin's
  * shape (owned-id lookup, chunked Promise.allSettled, per-attendee independent transaction) but
@@ -1849,6 +1857,107 @@ export async function handleBulkRevokeAttendeeItems(c: Context, db: PrismaClient
   });
 
   return c.json({ revokedCount });
+}
+
+/** Revokes a single attendee's pass (status -> revoked), same effect as the single-attendee
+ * PATCH's status-change branch but scoped to just that transition - no profile/RSVP fields, no
+ * expected_updated_at optimistic-concurrency check (a bulk selection doesn't carry a per-row
+ * version to compare against, so a plain CAS on status is the concurrency guard instead: only
+ * attendees still in an admittable status get flipped - `ADMITTABLE_STATUS_LIST` rather than a
+ * literal ["revoked","cancelled"] exclusion, so this stays correct if the status enum this route
+ * accepts ever widens, matching the single-attendee PATCH handler's own isAdmittable() guard).
+ * Skips (does not touch) an attendee whose status is already "revoked" or "cancelled" - matches
+ * the single-attendee "Revoke pass" row button, which is hidden (not just disabled) in both
+ * those cases, so a bulk selection that happens to include one is simply left alone rather than
+ * treated as a failure.
+ *
+ * Mirrors the single-attendee route's cascade: an admitted attendee whose pass is revoked must
+ * not keep a stale admission (restoring the pass later would otherwise resurrect a "checked in"
+ * state without a new scan). Always attempts `revokeCheckInMutation` rather than gating on a
+ * pre-batch `admitted_at` snapshot (code review) - attendeeIds can be up to BULK_SEND_LIMIT,
+ * processed in sequential chunks, so a snapshot read before the batch started could be stale by
+ * the time this specific attendee's own transaction runs (e.g. an operator scans them in mid-
+ * batch); `revokeCheckInMutation` re-reads `admitted_at` fresh inside this same transaction and
+ * throws `UndoNotAllowedError` (caught below, not a failure) if there's genuinely nothing to
+ * clear. `resetItems` defaults to false - handed-out items stay handed out when only the pass is
+ * revoked, same as the single-attendee path; only the explicit "Revoke check-in" action clears
+ * items. */
+async function revokeOneAttendeePass(
+  eventId: string,
+  attendeeId: string,
+  previousStatus: AttendeeStatus,
+  audit: OpsAuditContext,
+  db: PrismaClient,
+): Promise<"revoked" | "skipped"> {
+  return db.$transaction(async (tx) => {
+    const updated = await tx.attendee.updateMany({
+      where: { id: attendeeId, event_id: eventId, status: { in: ADMITTABLE_STATUS_LIST } },
+      data: { status: "revoked" },
+    });
+    if (updated.count === 0) return "skipped";
+
+    try {
+      await revokeCheckInMutation({ eventId, attendeeId, audit }, tx);
+    } catch (err) {
+      if (!(err instanceof UndoNotAllowedError)) throw err;
+    }
+
+    await writeActionLog(tx, {
+      event_id: eventId,
+      attendee_id: attendeeId,
+      action_type: "pass_revoked",
+      audit,
+      metadata: { previous_status: previousStatus },
+    });
+
+    return "revoked";
+  });
+}
+
+/** POST /api/admin/events/:eventId/attendees/bulk-revoke-pass — revoke the pass for a selection
+ * of attendees at once, from the Attendees list's row-selection bulk bar. Same
+ * owned-id/chunked-Promise.allSettled shape as the sibling bulk endpoints in this file. */
+export async function handleBulkRevokeAttendeePass(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid json" }, 400);
+  }
+  const parsed = bulkRevokePassAttendeesBodySchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "validation_failed" }, 400);
+
+  const owned = await db.attendee.findMany({
+    where: { id: { in: parsed.data.attendeeIds }, event_id: eventId },
+    select: { id: true, status: true },
+  });
+
+  const audit = adminAuditFromContext(c);
+  const counts = { revoked: 0, skipped: 0, errored: 0 };
+  for (const batch of chunk(owned, BULK_CHECKIN_CONCURRENCY)) {
+    const settled = await Promise.allSettled(
+      batch.map((a) =>
+        revokeOneAttendeePass(eventId, a.id, a.status as AttendeeStatus, audit, db),
+      ),
+    );
+    for (const outcome of settled) {
+      if (outcome.status === "rejected") {
+        console.error("bulk revoke pass: revokeOneAttendeePass failed:", outcome.reason);
+        counts.errored += 1;
+        continue;
+      }
+      counts[outcome.value] += 1;
+    }
+  }
+
+  return c.json(counts);
 }
 
 /** POST /api/admin/events/:eventId/attendees — manual attendee create (admin/superadmin). */

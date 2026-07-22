@@ -297,6 +297,8 @@ export interface AttendeesTableProps {
   onRetryItems?: () => void;
   onBulkRevokeItems: () => void;
   bulkRevokeItemsBusy: boolean;
+  onBulkRevokePass: () => void;
+  bulkRevokePassBusy: boolean;
   onBulkDelete: () => void;
   eventTimezone: string;
   event: ArchivedGuardEvent;
@@ -391,6 +393,17 @@ function bulkRevokeCheckInTooltip(archived: boolean, canRevokeCheckIn: boolean):
   return undefined;
 }
 
+/** "Revoke pass" menu item's disabled-title — same "nothing to do" gate as "Revoke check-in"
+ * (PO review follow-up): a selection where every attendee is already revoked/cancelled is a
+ * guaranteed no-op, so it's disabled rather than left clickable into a confirm dialog that just
+ * reports nothing changed. A mixed selection stays enabled — there's still real work for the
+ * still-active ones. */
+function bulkRevokePassTooltip(archived: boolean, canRevokePass: boolean): string | undefined {
+  if (archived) return ARCHIVED_ACTION_TOOLTIP;
+  if (!canRevokePass) return "The selected attendees' passes are already revoked or cancelled.";
+  return undefined;
+}
+
 /** Bulk "More actions" — Export selected, Change ticket type, and Delete, styled as a menu
  * (not bare buttons) so the destructive bulk action takes an extra click to even reach,
  * matching the design mockup's More actions panel and the same danger-item treatment already
@@ -420,6 +433,10 @@ function BulkMoreActionsMenu({
   onRetryItems,
   onBulkRevokeItems,
   bulkRevokeItemsBusy,
+  onBulkRevokePass,
+  bulkRevokePassBusy,
+  canRevokePass,
+  revokablePassCount,
   onDelete,
 }: Readonly<{
   selectedCount: number;
@@ -449,6 +466,10 @@ function BulkMoreActionsMenu({
   onRetryItems?: () => void;
   onBulkRevokeItems: () => void;
   bulkRevokeItemsBusy: boolean;
+  onBulkRevokePass: () => void;
+  bulkRevokePassBusy: boolean;
+  canRevokePass: boolean;
+  revokablePassCount: number;
   onDelete: () => void;
 }>) {
   const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
@@ -613,6 +634,30 @@ function BulkMoreActionsMenu({
               Retry loading items
             </button>
           )}
+          {/* Disabled once every selected attendee is already revoked/cancelled — a guaranteed
+           * no-op otherwise, same "nothing to do" gate as "Revoke check-in" (PO review
+           * follow-up, #549). A mixed selection stays enabled: the server already leaves an
+           * already-revoked/cancelled attendee untouched and reports it separately in the
+           * result toast. */}
+          <button
+            type="button"
+            role="menuitem"
+            className="more-actions-menu__item more-actions-menu__item--danger"
+            disabled={archived || bulkRevokePassBusy || !canRevokePass}
+            title={bulkRevokePassTooltip(archived, canRevokePass)}
+            onClick={() => {
+              setOpen(false);
+              onBulkRevokePass();
+            }}
+          >
+            <i className="ti ti-ban" aria-hidden="true" />
+            <span className="more-actions-menu__item-text">
+              <span>{bulkRevokePassBusy ? "Revoking pass…" : "Revoke pass"}</span>
+              <span className="more-actions-menu__item-hint">
+                Block check-in for {revokablePassCount} attendee{revokablePassCount === 1 ? "" : "s"}
+              </span>
+            </span>
+          </button>
           <hr className="more-actions-menu__divider" />
           {/* Not ArchivedGuard'd — GDPR erasure requests can legally arrive after an event
            * ends; the DELETE endpoint doesn't block on archived_at either. */}
@@ -681,6 +726,10 @@ function BulkBar({
   onRetryItems,
   onBulkRevokeItems,
   bulkRevokeItemsBusy,
+  onBulkRevokePass,
+  bulkRevokePassBusy,
+  canRevokePass,
+  revokablePassCount,
   onBulkDelete,
 }: Readonly<{
   selectedIds: ReadonlySet<string>;
@@ -712,6 +761,10 @@ function BulkBar({
   onRetryItems?: () => void;
   onBulkRevokeItems: () => void;
   bulkRevokeItemsBusy: boolean;
+  onBulkRevokePass: () => void;
+  bulkRevokePassBusy: boolean;
+  canRevokePass: boolean;
+  revokablePassCount: number;
   onBulkDelete: () => void;
 }>) {
   const archived = event.archived_at != null;
@@ -804,6 +857,10 @@ function BulkBar({
           onRetryItems={onRetryItems}
           onBulkRevokeItems={onBulkRevokeItems}
           bulkRevokeItemsBusy={bulkRevokeItemsBusy}
+          onBulkRevokePass={onBulkRevokePass}
+          bulkRevokePassBusy={bulkRevokePassBusy}
+          canRevokePass={canRevokePass}
+          revokablePassCount={revokablePassCount}
           onDelete={onBulkDelete}
         />
       </div>
@@ -1259,6 +1316,8 @@ export function AttendeesTable({
   onRetryItems,
   onBulkRevokeItems,
   bulkRevokeItemsBusy,
+  onBulkRevokePass,
+  bulkRevokePassBusy,
   onBulkDelete,
   eventTimezone,
   event,
@@ -1283,6 +1342,19 @@ export function AttendeesTable({
   // the raw selection size (PO review) — mirrors "Revoke check-in"/"Revoke pass" reporting only
   // the attendees they'd actually affect.
   const revokableItemsCount = selectedRows.filter((row) => row.has_issued_items).length;
+  // "Revoke pass" is a no-op once every selected attendee is already revoked/cancelled -
+  // disabled rather than left clickable into a confirm dialog that just reports nothing
+  // changed, same "nothing to do" gate as "Revoke check-in" (PO review follow-up, #549). A
+  // mixed selection stays enabled: there's still real work for the still-active ones.
+  const anySelectedPassActive = selectedRows.some(
+    (row) => row.status !== "cancelled" && row.status !== "revoked",
+  );
+  // How many of the selection actually have an active pass to revoke - shown in the "Revoke
+  // pass" menu item's hint instead of the raw selection size, so a mixed selection doesn't
+  // overstate the impact (PO review follow-up, #549).
+  const activeSelectedPassCount = selectedRows.filter(
+    (row) => row.status !== "cancelled" && row.status !== "revoked",
+  ).length;
 
   return (
     <Card padded={false}>
@@ -1313,6 +1385,10 @@ export function AttendeesTable({
           onRetryItems={onRetryItems}
           onBulkRevokeItems={onBulkRevokeItems}
           bulkRevokeItemsBusy={bulkRevokeItemsBusy}
+          onBulkRevokePass={onBulkRevokePass}
+          bulkRevokePassBusy={bulkRevokePassBusy}
+          canRevokePass={anySelectedPassActive}
+          revokablePassCount={activeSelectedPassCount}
           onBulkDelete={onBulkDelete}
         />
       ) : (
