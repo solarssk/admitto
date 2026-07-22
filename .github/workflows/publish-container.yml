@@ -42,9 +42,15 @@ jobs:
 
       - name: Resolve release tag
         id: release
+        env:
+          # inputs.ref is attacker-controllable (anyone with dispatch access chooses it) — never
+          # interpolate it directly into the run: script text, which GitHub substitutes as raw
+          # characters before bash parses them (script injection, SonarCloud githubactions:S7630).
+          # Passing it through env: makes it a normal shell variable value instead.
+          DISPATCH_REF: ${{ inputs.ref }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            REF="${{ inputs.ref }}"
+            REF="$DISPATCH_REF"
           else
             REF="${GITHUB_REF}"
           fi
