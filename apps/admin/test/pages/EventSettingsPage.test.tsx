@@ -247,7 +247,7 @@ describe("EventSettingsPage tabs", () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     vi.mocked(fetchTicketTypes).mockRejectedValueOnce(new Error("network down"));
     renderSettings();
-    await waitFor(() => screen.getByRole("tab", { name: "Ticket types" }));
+    await screen.findByRole("tab", { name: "Ticket types" });
     fireEvent.click(screen.getByRole("tab", { name: "Ticket types" }));
 
     expect(await screen.findByText("Could not load ticket types")).toBeTruthy();
@@ -291,7 +291,7 @@ describe("EventSettingsPage tabs", () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     vi.mocked(uploadEventBrandingFile).mockResolvedValueOnce({ url: "/uploads/default/logo.png" });
     renderSettings();
-    await waitFor(() => screen.getByRole("tab", { name: "Branding" }));
+    await screen.findByRole("tab", { name: "Branding" });
     fireEvent.click(screen.getByRole("tab", { name: "Branding" }));
     await screen.findByText("Event branding");
 
@@ -312,7 +312,7 @@ describe("EventSettingsPage tabs", () => {
       new Promise((resolve) => (resolveLogo = resolve)),
     );
     renderSettings();
-    await waitFor(() => screen.getByLabelText("Event title"));
+    await screen.findByLabelText("Event title");
 
     // Dirty the page via an unrelated field first — this is what makes the button
     // enabled-except-for-upload-state observable (it isn't just `!dirty` gating it).
@@ -352,7 +352,7 @@ describe("EventSettingsPage tabs", () => {
       },
     });
     renderSettings();
-    await waitFor(() => screen.getByRole("tab", { name: "Branding" }));
+    await screen.findByRole("tab", { name: "Branding" });
     fireEvent.click(screen.getByRole("tab", { name: "Branding" }));
     await screen.findByText("Event branding");
 
@@ -360,7 +360,7 @@ describe("EventSettingsPage tabs", () => {
     fireEvent.change(logoInput!, {
       target: { files: [new File(["x"], "logo.png", { type: "image/png" })] },
     });
-    await waitFor(() => screen.getByAltText("Event logo preview"));
+    await screen.findByAltText("Event logo preview");
 
     // The alt-text preview and the Save button's label flip in separate React commits
     // (the button label only updates once LogoUploadZone's onUploadingChange effect fires
@@ -378,7 +378,7 @@ describe("EventSettingsPage tabs", () => {
   it("disables branding upload zones when the event is archived", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(archivedEvent);
     renderSettings("/admin/events/evt-2/settings");
-    await waitFor(() => screen.getByRole("tab", { name: "Branding" }));
+    await screen.findByRole("tab", { name: "Branding" });
     fireEvent.click(screen.getByRole("tab", { name: "Branding" }));
     await screen.findByText("Event branding");
 
@@ -402,7 +402,7 @@ describe("EventSettingsPage tabs", () => {
   it("switches to the Wallet tab and shows the roadmap placeholder", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
-    await waitFor(() => screen.getByRole("tab", { name: "Wallet" }));
+    await screen.findByRole("tab", { name: "Wallet" });
     fireEvent.click(screen.getByRole("tab", { name: "Wallet" }));
     expect(await screen.findByText("Wallet passes are on the roadmap")).toBeTruthy();
   });
@@ -410,7 +410,7 @@ describe("EventSettingsPage tabs", () => {
   it("switches to the Danger zone tab and shows Archive + Export personal data actions", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
-    await waitFor(() => screen.getByRole("tab", { name: "Danger zone" }));
+    await screen.findByRole("tab", { name: "Danger zone" });
     fireEvent.click(screen.getByRole("tab", { name: "Danger zone" }));
     expect(await screen.findByRole("button", { name: /Archive event/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Export personal data/ })).toBeTruthy();
@@ -422,7 +422,7 @@ describe("EventSettingsPage tabs", () => {
     vi.mocked(unarchiveEvent).mockResolvedValueOnce(undefined);
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...archivedEvent, status: "active" });
     renderSettings("/admin/events/evt-2/settings");
-    await waitFor(() => screen.getByRole("tab", { name: "Danger zone" }));
+    await screen.findByRole("tab", { name: "Danger zone" });
     fireEvent.click(screen.getByRole("tab", { name: "Danger zone" }));
     fireEvent.click(await screen.findByRole("button", { name: /Unarchive event/ }));
 
@@ -446,7 +446,7 @@ describe("EventSettingsPage tabs", () => {
     vi.mocked(archiveEvent).mockResolvedValueOnce(undefined);
     renderSettings();
 
-    await waitFor(() => screen.getByRole("tab", { name: "Mailing" }));
+    await screen.findByRole("tab", { name: "Mailing" });
     fireEvent.click(screen.getByRole("tab", { name: "Mailing" }));
     await waitFor(() => expect(fetchEventMailSettings).toHaveBeenCalledTimes(1));
     await screen.findByRole("radio", { name: "Organization mail" });
@@ -478,7 +478,7 @@ describe("EventSettingsPage tabs", () => {
   it("keeps the Danger zone header title-only and shows the impact notice outside the panel", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
-    await waitFor(() => screen.getByRole("tab", { name: "Danger zone" }));
+    await screen.findByRole("tab", { name: "Danger zone" });
     fireEvent.click(screen.getByRole("tab", { name: "Danger zone" }));
     await screen.findByRole("button", { name: /Archive event/ });
 
@@ -504,7 +504,7 @@ describe("EventSettingsPage Integrations tab (superadmin-only)", () => {
     mockAssignments = superadminAssignments;
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
-    await waitFor(() => screen.getByRole("tab", { name: "Integrations" }));
+    await screen.findByRole("tab", { name: "Integrations" });
     fireEvent.click(screen.getByRole("tab", { name: "Integrations" }));
     expect(
       await screen.findByText("Ingest and RSVP API tokens are on the roadmap"),
@@ -515,7 +515,7 @@ describe("EventSettingsPage Integrations tab (superadmin-only)", () => {
     mockAssignments = orgAdminAssignments;
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
-    await waitFor(() => screen.getByRole("tab", { name: "General" }));
+    await screen.findByRole("tab", { name: "General" });
     expect(screen.queryByRole("tab", { name: "Integrations" })).toBeNull();
   });
 
@@ -523,7 +523,7 @@ describe("EventSettingsPage Integrations tab (superadmin-only)", () => {
     mockAssignments = orgAdminAssignments;
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings("/admin/events/evt-1/settings?tab=integrations");
-    await waitFor(() => screen.getByLabelText("Event title"));
+    await screen.findByLabelText("Event title");
     expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
     expect(
       screen.queryByText("Ingest and RSVP API tokens are on the roadmap"),
@@ -561,7 +561,7 @@ describe("EventSettingsPage Mailing tab (superadmin-only)", () => {
 
 describe("EventSettingsPage — delete event (#395)", () => {
   async function openDangerZone() {
-    await waitFor(() => screen.getByRole("tab", { name: "Danger zone" }));
+    await screen.findByRole("tab", { name: "Danger zone" });
     fireEvent.click(screen.getByRole("tab", { name: "Danger zone" }));
   }
 
@@ -768,7 +768,7 @@ describe("EventSettingsPage — delete event (#395)", () => {
 
 describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone follow-up)", () => {
   async function openDangerZone() {
-    await waitFor(() => screen.getByRole("tab", { name: "Danger zone" }));
+    await screen.findByRole("tab", { name: "Danger zone" });
     fireEvent.click(screen.getByRole("tab", { name: "Danger zone" }));
   }
 
@@ -824,7 +824,7 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
   it("warns in the Revoke all check-ins dialog when the page has unsaved changes elsewhere", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, admitted_count: 1 });
     renderSettings();
-    await waitFor(() => screen.getByLabelText("Event title"));
+    await screen.findByLabelText("Event title");
     fireEvent.change(screen.getByLabelText("Event title"), { target: { value: "Summit 2027" } });
 
     fireEvent.click(screen.getByRole("tab", { name: "Danger zone" }));
@@ -1117,7 +1117,7 @@ describe("EventSettingsPage — ticket types cross-event staleness", () => {
       expect(updateTicketType).toHaveBeenCalledWith("evt-1", "tt-vip", { label: "VIP Gold" });
     });
     await waitFor(() => {
-      expect(vi.mocked(fetchTicketTypes).mock.calls.length).toBe(2);
+      expect(vi.mocked(fetchTicketTypes).mock.calls).toHaveLength(2);
     });
 
     // The background refresh must not blank the card out while it's in flight.
