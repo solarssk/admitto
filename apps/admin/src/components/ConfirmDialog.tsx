@@ -11,7 +11,7 @@ export type ConfirmDialogProps = {
   errorMessage?: string | null;
   confirmLabel?: string;
   cancelLabel?: string;
-  confirmVariant?: "primary" | "danger";
+  confirmVariant?: "primary" | "danger" | "warning";
   loading?: boolean;
   /**
    * When set, the confirm button stays disabled until the user types this exact

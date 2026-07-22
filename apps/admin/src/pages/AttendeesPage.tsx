@@ -46,6 +46,9 @@ const DEBOUNCE_MS = 300;
 /** Matches EventSettingsPage's Danger Zone bulk actions — a brief "don't act on reflex" pause
  * before a bulk, irreversible action's confirm button becomes clickable. */
 const BULK_DELETE_CONFIRM_DELAY_SECONDS = 10;
+/** Same "don't act on reflex" pause as BULK_DELETE_CONFIRM_DELAY_SECONDS above, for the bulk
+ * Revoke check-in/items/pass dialogs — was missing on all three (PO review). */
+const BULK_REVOKE_CONFIRM_DELAY_SECONDS = 10;
 
 function mergeAttendeeRow(prev: AttendeeRowDto, updated: AttendeeDetailDto): AttendeeRowDto {
   return {
@@ -488,6 +491,8 @@ export function AttendeesPage() {
   const [bulkSendConfirmOpen, setBulkSendConfirmOpen] = useState(false);
   const [bulkCheckInBusy, setBulkCheckInBusy] = useState(false);
   const [bulkRevokeCheckInBusy, setBulkRevokeCheckInBusy] = useState(false);
+  const [bulkRevokeCheckInConfirmOpen, setBulkRevokeCheckInConfirmOpen] = useState(false);
+  const [bulkRevokeCheckInError, setBulkRevokeCheckInError] = useState<string | null>(null);
   const [bulkExportBusy, setBulkExportBusy] = useState(false);
   const [changeTypeOpen, setChangeTypeOpen] = useState(false);
   const [changeTypeBusy, setChangeTypeBusy] = useState(false);
@@ -857,18 +862,21 @@ export function AttendeesPage() {
     }
   };
 
-  /** Bulk "Revoke check-in" from the More actions menu — same no-confirmation-dialog reasoning
-   * as handleBulkCheckInSelected above (reversible internal state change), same
-   * still-on-this-event guard pattern. */
+  /** Bulk "Revoke check-in" for an explicit subset of selected attendees — behind a confirm
+   * dialog with the same dialog-stays-open-with-inline-error convention and confirm-delay
+   * cooldown as handleBulkRevokeItemsSelected/handleBulkRevokePassSelected below (PO review:
+   * this used to fire immediately from the menu with no confirmation at all). */
   const handleBulkRevokeCheckInSelected = async () => {
     if (!eventId || selectedIds.size === 0) return;
     const initiatingEventId = eventId;
     const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
     setBulkRevokeCheckInBusy(true);
+    setBulkRevokeCheckInError(null);
     try {
       const result = await bulkRevokeCheckIn(initiatingEventId, [...selectedIds]);
       if (!isStillOnEvent()) return;
       notifyBulkRevokeCheckInResult(result, addToast);
+      setBulkRevokeCheckInConfirmOpen(false);
       clearSelection();
       setReloadToken((n) => n + 1);
     } catch (err) {
@@ -880,9 +888,9 @@ export function AttendeesPage() {
           window.location.assign(`/login?next=${next}`);
           return;
         }
-        addToast(operatorApiErrorMessage(err, "Revoke check-in failed."), "error");
+        setBulkRevokeCheckInError(operatorApiErrorMessage(err, "Revoke check-in failed."));
       } else {
-        addToast("Failed to revoke check-in.", "error");
+        setBulkRevokeCheckInError("Failed to revoke check-in.");
       }
     } finally {
       if (isStillOnEvent()) setBulkRevokeCheckInBusy(false);
@@ -1102,6 +1110,12 @@ export function AttendeesPage() {
     !rsvpStatusFilter &&
     !mailStatusFilter;
 
+  // How many of the selection the bulk "Revoke check-in" confirm dialog would actually affect,
+  // not the raw selection size — matches the bulk bar's own menu-item hint (PO review).
+  const revokableCheckInCount = items.filter(
+    (row) => selectedIds.has(row.id) && row.check_in_status === "admitted",
+  ).length;
+
   // How many of the selection the bulk "Revoke items" confirm dialog would actually affect, not
   // the raw selection size (PO review) — matches the bulk bar's own menu-item hint. A
   // blocked-pass attendee is excluded even if has_issued_items is true: the server's own
@@ -1262,7 +1276,10 @@ export function AttendeesPage() {
         canBulkSend={mailConfigured !== false}
         onBulkCheckIn={() => void handleBulkCheckInSelected()}
         bulkCheckInBusy={bulkCheckInBusy}
-        onBulkRevokeCheckIn={() => void handleBulkRevokeCheckInSelected()}
+        onBulkRevokeCheckIn={() => {
+          setBulkRevokeCheckInError(null);
+          setBulkRevokeCheckInConfirmOpen(true);
+        }}
         bulkRevokeCheckInBusy={bulkRevokeCheckInBusy}
         onBulkExportSelected={() => void handleBulkExportSelected()}
         bulkExportBusy={bulkExportBusy}
@@ -1391,11 +1408,31 @@ export function AttendeesPage() {
       </ConfirmDialog>
 
       <ConfirmDialog
+        open={bulkRevokeCheckInConfirmOpen}
+        title={`Revoke check-in for ${revokableCheckInCount} attendee${revokableCheckInCount === 1 ? "" : "s"}?`}
+        message="They will be marked as not checked in. They can check in again at any time."
+        errorMessage={bulkRevokeCheckInError}
+        confirmLabel="Revoke check-in"
+        confirmVariant="warning"
+        confirmDelaySeconds={BULK_REVOKE_CONFIRM_DELAY_SECONDS}
+        loading={bulkRevokeCheckInBusy}
+        onConfirm={() => void handleBulkRevokeCheckInSelected()}
+        onCancel={() => {
+          if (!bulkRevokeCheckInBusy) {
+            setBulkRevokeCheckInConfirmOpen(false);
+            setBulkRevokeCheckInError(null);
+          }
+        }}
+      />
+
+      <ConfirmDialog
         open={bulkRevokeItemsConfirmOpen}
         title={`Revoke items for ${revokableItemsCount} attendee${revokableItemsCount === 1 ? "" : "s"}?`}
         message="Every issued item (badge, wristband, giftbag, …) for the selected attendees is reset to pending. Items can be re-issued from the check-in screen at any time."
         errorMessage={bulkRevokeItemsError}
         confirmLabel="Revoke items"
+        confirmVariant="warning"
+        confirmDelaySeconds={BULK_REVOKE_CONFIRM_DELAY_SECONDS}
         loading={bulkRevokeItemsBusy}
         onConfirm={() => void handleBulkRevokeItemsSelected()}
         onCancel={() => {
@@ -1413,6 +1450,7 @@ export function AttendeesPage() {
         errorMessage={bulkRevokePassError}
         confirmLabel="Revoke pass"
         confirmVariant="danger"
+        confirmDelaySeconds={BULK_REVOKE_CONFIRM_DELAY_SECONDS}
         loading={bulkRevokePassBusy}
         onConfirm={() => void handleBulkRevokePassSelected()}
         onCancel={() => {

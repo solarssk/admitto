@@ -290,6 +290,17 @@ describe("AttendeesTable bulk revoke items (#551)", () => {
     expect(item.getAttribute("title")).toBe("This event is archived.");
   });
 
+  it("disables the menu item when nothing in the selection has anything issued, even though the event has configured items (CodeRabbit review)", () => {
+    const nothingIssuedRow = { ...baseRow, has_issued_items: false };
+    render(
+      <AttendeesTable {...tableProps} items={[nothingIssuedRow]} selectedIds={new Set(["att-1"])} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    const item = screen.getByRole("menuitem", { name: /Revoke items/ }) as HTMLButtonElement;
+    expect(item.disabled).toBe(true);
+    expect(item.getAttribute("title")).toBe("None of the selected attendees have anything issued.");
+  });
+
   it("fires onBulkRevokeItems and closes the menu when the item is clicked", () => {
     const onBulkRevokeItems = vi.fn();
     render(

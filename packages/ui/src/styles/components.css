@@ -41,6 +41,12 @@
 .at-btn--success { background: var(--status-ok); color: var(--text-on-primary); }
 .at-btn--success:hover:not(:disabled) { background: var(--status-ok-hover); }
 
+/* Caution tier, between primary and danger — reversible-but-impactful bulk actions (e.g. Revoke
+   items/check-in). --status-warn-fg (not the raw, much brighter --status-warn) since there's no
+   dedicated warn-hover shade in the palette yet; darkening on hover matches --danger/--success. */
+.at-btn--warning { background: var(--status-warn-fg); color: var(--text-on-primary); }
+.at-btn--warning:hover:not(:disabled) { filter: brightness(0.9); }
+
 /* ---------------- Icon button ---------------- */
 .at-iconbtn {
   display: inline-grid; place-items: center; cursor: pointer;

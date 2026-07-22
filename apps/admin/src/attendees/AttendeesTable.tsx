@@ -381,6 +381,16 @@ function AttendeeCard({
 }
 
 /** Mobile "Send tickets" menu item's disabled-title (Sonar S3358: was a nested ternary). */
+/** className + title pair for a "More actions" menu item's disabled-reason tooltip. Plain
+ * title= (browser-native), not the shared .at-tooltip hover treatment used elsewhere: measured
+ * live, the dark styled tooltip needs ~35-50px of clearance above/below its trigger (its own
+ * height for 1-3 wrapped lines at max-width 220px) that this densely-packed menu (~2px gaps
+ * between items, staff.css `.more-actions-menu__panel`) never has - it visually overlapped
+ * whichever menu item sat next to the disabled one (PO review: "nic nie widać"). */
+function menuItemTooltipProps(baseClassName: string, tooltip: string | undefined) {
+  return { className: baseClassName, title: tooltip };
+}
+
 function bulkSendTicketsTooltip(archived: boolean, canBulkSend: boolean): string | undefined {
   if (archived) return ARCHIVED_ACTION_TOOLTIP;
   if (!canBulkSend) return "No mail transport configured for this event. Set one up in Event Settings → Mailing.";
@@ -429,6 +439,7 @@ function BulkMoreActionsMenu({
   onChangeTicketType,
   itemCount,
   revokableItemsCount,
+  canRevokeItems,
   itemsError,
   onRetryItems,
   onBulkRevokeItems,
@@ -462,6 +473,10 @@ function BulkMoreActionsMenu({
   onChangeTicketType: () => void;
   itemCount: number;
   revokableItemsCount: number;
+  /** At least one selected attendee has something issued and an active pass - there's something
+   * to revoke (CodeRabbit/PO review: was only gated on the event's catalog size, not the
+   * selection). */
+  canRevokeItems: boolean;
   itemsError?: string | null;
   onRetryItems?: () => void;
   onBulkRevokeItems: () => void;
@@ -500,9 +515,8 @@ function BulkMoreActionsMenu({
             <button
               type="button"
               role="menuitem"
-              className="more-actions-menu__item"
+              {...menuItemTooltipProps("more-actions-menu__item", bulkSendTicketsTooltip(archived, canBulkSend))}
               disabled={archived || bulkSendBusy || !canBulkSend}
-              title={bulkSendTicketsTooltip(archived, canBulkSend)}
               onClick={() => {
                 setOpen(false);
                 onBulkSendTickets();
@@ -543,9 +557,11 @@ function BulkMoreActionsMenu({
           <button
             type="button"
             role="menuitem"
-            className="more-actions-menu__item"
+            {...menuItemTooltipProps(
+              "more-actions-menu__item",
+              changeTicketTypeDisabled ? changeTicketTypeDisabledReason : undefined,
+            )}
             disabled={changeTicketTypeDisabled}
-            title={changeTicketTypeDisabled ? changeTicketTypeDisabledReason : undefined}
             onClick={() => {
               setOpen(false);
               onChangeTicketType();
@@ -583,9 +599,11 @@ function BulkMoreActionsMenu({
           <button
             type="button"
             role="menuitem"
-            className="more-actions-menu__item more-actions-menu__item--warning"
+            {...menuItemTooltipProps(
+              "more-actions-menu__item more-actions-menu__item--warning",
+              bulkRevokeCheckInTooltip(archived, canRevokeCheckIn),
+            )}
             disabled={archived || bulkRevokeCheckInBusy || !canRevokeCheckIn}
-            title={bulkRevokeCheckInTooltip(archived, canRevokeCheckIn)}
             onClick={() => {
               setOpen(false);
               onBulkRevokeCheckIn();
@@ -608,9 +626,11 @@ function BulkMoreActionsMenu({
           <button
             type="button"
             role="menuitem"
-            className="more-actions-menu__item more-actions-menu__item--warning"
-            disabled={archived || bulkRevokeItemsBusy || itemCount === 0}
-            title={archived || itemCount === 0 ? bulkRevokeItemsReason(archived, itemsError) : undefined}
+            {...menuItemTooltipProps(
+              "more-actions-menu__item more-actions-menu__item--warning",
+              bulkRevokeItemsTooltip(archived, itemCount, itemsError, canRevokeItems),
+            )}
+            disabled={archived || bulkRevokeItemsBusy || itemCount === 0 || !canRevokeItems}
             onClick={() => {
               setOpen(false);
               onBulkRevokeItems();
@@ -642,9 +662,11 @@ function BulkMoreActionsMenu({
           <button
             type="button"
             role="menuitem"
-            className="more-actions-menu__item more-actions-menu__item--danger"
+            {...menuItemTooltipProps(
+              "more-actions-menu__item more-actions-menu__item--danger",
+              bulkRevokePassTooltip(archived, canRevokePass),
+            )}
             disabled={archived || bulkRevokePassBusy || !canRevokePass}
-            title={bulkRevokePassTooltip(archived, canRevokePass)}
             onClick={() => {
               setOpen(false);
               onBulkRevokePass();
@@ -691,10 +713,21 @@ function bulkChangeTicketTypeReason(archived: boolean, ticketTypesError?: string
   return "No ticket types configured for this event. Add some in Event Settings → Ticket types.";
 }
 
-function bulkRevokeItemsReason(archived: boolean, itemsError?: string | null): string {
+/** "Revoke items" menu item's disabled-title — checks the event-level catalog (no items
+ * configured / failed to load) same as before, plus the same "nothing to do" selection-level
+ * gate "Revoke check-in"/"Revoke pass" already have (CodeRabbit/PO review: was only checking the
+ * event's catalog size, so a selection with nothing issued still opened the confirm dialog). */
+function bulkRevokeItemsTooltip(
+  archived: boolean,
+  itemCount: number,
+  itemsError: string | null | undefined,
+  canRevokeItems: boolean,
+): string | undefined {
   if (archived) return "This event is archived.";
   if (itemsError) return "Couldn't load items — try again.";
-  return "No items configured for this event. Add some in Requirements.";
+  if (itemCount === 0) return "No items configured for this event. Add some in Requirements.";
+  if (!canRevokeItems) return "None of the selected attendees have anything issued.";
+  return undefined;
 }
 
 /** Selection count + "Send tickets" / "More actions" — replaces the search/filter toolbar in
@@ -722,6 +755,7 @@ function BulkBar({
   onBulkChangeTicketType,
   itemCount,
   revokableItemsCount,
+  canRevokeItems,
   itemsError,
   onRetryItems,
   onBulkRevokeItems,
@@ -757,6 +791,7 @@ function BulkBar({
   onBulkChangeTicketType: () => void;
   itemCount: number;
   revokableItemsCount: number;
+  canRevokeItems: boolean;
   itemsError?: string | null;
   onRetryItems?: () => void;
   onBulkRevokeItems: () => void;
@@ -853,6 +888,7 @@ function BulkBar({
           onChangeTicketType={onBulkChangeTicketType}
           itemCount={itemCount}
           revokableItemsCount={revokableItemsCount}
+          canRevokeItems={canRevokeItems}
           itemsError={itemsError}
           onRetryItems={onRetryItems}
           onBulkRevokeItems={onBulkRevokeItems}
@@ -1346,6 +1382,10 @@ export function AttendeesTable({
   const revokableItemsCount = selectedRows.filter(
     (row) => row.has_issued_items && row.status !== "cancelled" && row.status !== "revoked",
   ).length;
+  // "Revoke items" is a no-op once nothing in the selection has anything issued - disabled
+  // rather than left clickable into a confirm dialog reporting "0 attendees" (CodeRabbit/PO
+  // review: was only gated on the event's catalog size via itemCount, not the selection).
+  const canRevokeItems = revokableItemsCount > 0;
   // "Revoke pass" is a no-op once every selected attendee is already revoked/cancelled -
   // disabled rather than left clickable into a confirm dialog that just reports nothing
   // changed, same "nothing to do" gate as "Revoke check-in" (PO review follow-up, #549). A
@@ -1385,6 +1425,7 @@ export function AttendeesTable({
           onBulkChangeTicketType={onBulkChangeTicketType}
           itemCount={itemCount}
           revokableItemsCount={revokableItemsCount}
+          canRevokeItems={canRevokeItems}
           itemsError={itemsError}
           onRetryItems={onRetryItems}
           onBulkRevokeItems={onBulkRevokeItems}

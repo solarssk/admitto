@@ -131,10 +131,23 @@ function bulkBar() {
  * (ConfirmDialog's confirmDelaySeconds - an "arm before confirming" pause). Fake-timers just
  * the open+arm step, matching EventSettingsPage's own bulk-danger-action tests. */
 function openAndArmDeleteDialog() {
+  return openMenuItemAndArmDialog(/^Delete/);
+}
+
+/** Opens the "More actions" menu, then clicks the given menu item and arms the resulting confirm
+ * dialog - see clickMenuItemAndArmDialog below. */
+function openMenuItemAndArmDialog(menuItemName: RegExp, dialogName?: string) {
   fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+  return clickMenuItemAndArmDialog(menuItemName, dialogName);
+}
+
+/** Same "arm before confirming" cooldown as openAndArmDeleteDialog above, generalized for the
+ * bulk Revoke check-in/items/pass dialogs (all three also carry confirmDelaySeconds) - for tests
+ * where the "More actions" menu is already open (e.g. via a per-describe-block helper). */
+function clickMenuItemAndArmDialog(menuItemName: RegExp, dialogName?: string) {
   vi.useFakeTimers();
-  fireEvent.click(bulkBar().getByRole("menuitem", { name: /^Delete/ }));
-  const dialog = screen.getByRole("dialog");
+  fireEvent.click(bulkBar().getByRole("menuitem", { name: menuItemName }));
+  const dialog = dialogName ? screen.getByRole("dialog", { name: dialogName }) : screen.getByRole("dialog");
   act(() => {
     vi.advanceTimersByTime(10_000);
   });
@@ -509,9 +522,7 @@ describe("AttendeesPage bulk revoke pass (#549)", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select John Smith" }));
     await waitFor(() => expect(bulkBar().getByText("2")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke pass/ }));
-    const dialog = screen.getByRole("dialog");
+    const dialog = openMenuItemAndArmDialog(/Revoke pass/);
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
 
     await waitFor(() => {
@@ -533,9 +544,7 @@ describe("AttendeesPage bulk revoke pass (#549)", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke pass/ }));
-    const dialog = screen.getByRole("dialog");
+    const dialog = openMenuItemAndArmDialog(/Revoke pass/);
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
 
     await waitFor(() => {
@@ -553,9 +562,7 @@ describe("AttendeesPage bulk revoke pass (#549)", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke pass/ }));
-    const dialog = screen.getByRole("dialog");
+    const dialog = openMenuItemAndArmDialog(/Revoke pass/);
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
 
     await waitFor(() => {
@@ -581,9 +588,7 @@ describe("AttendeesPage bulk revoke pass (#549)", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke pass/ }));
-    const dialog = screen.getByRole("dialog");
+    const dialog = openMenuItemAndArmDialog(/Revoke pass/);
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
 
     // Inline in the dialog, not a toast - matches bulk delete's own convention.
@@ -610,9 +615,7 @@ describe("AttendeesPage bulk revoke pass (#549)", () => {
       fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
       await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-      fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
-      fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke pass/ }));
-      const dialog = screen.getByRole("dialog");
+      const dialog = openMenuItemAndArmDialog(/Revoke pass/);
       fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
 
       await waitFor(() => {
@@ -634,9 +637,7 @@ describe("AttendeesPage bulk revoke pass (#549)", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke pass/ }));
-    const dialog = screen.getByRole("dialog");
+    const dialog = openMenuItemAndArmDialog(/Revoke pass/);
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
 
     await screen.findByText("Failed to revoke pass.");
@@ -662,9 +663,7 @@ describe("AttendeesPage bulk revoke pass (#549)", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke pass/ }));
-    const dialog = screen.getByRole("dialog");
+    const dialog = openMenuItemAndArmDialog(/Revoke pass/);
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
 
     await act(async () => router.navigate("/admin/events/evt-2/attendees"));
@@ -700,9 +699,7 @@ describe("AttendeesPage bulk revoke pass (#549)", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke pass/ }));
-    const dialog = screen.getByRole("dialog");
+    const dialog = openMenuItemAndArmDialog(/Revoke pass/);
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
 
     await act(async () => router.navigate("/admin/events/evt-2/attendees"));
@@ -727,9 +724,7 @@ describe("AttendeesPage bulk revoke pass (#549)", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke pass/ }));
-    const dialog = screen.getByRole("dialog");
+    const dialog = openMenuItemAndArmDialog(/Revoke pass/);
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -982,8 +977,8 @@ describe("AttendeesPage bulk revoke check-in (#522 follow-up)", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke check-in/ }));
+    const dialog = openMenuItemAndArmDialog(/Revoke check-in/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke check-in" }));
 
     await waitFor(() => {
       expect(bulkRevokeCheckIn).toHaveBeenCalledWith("evt-1", ["att-1"]);
@@ -1004,8 +999,8 @@ describe("AttendeesPage bulk revoke check-in (#522 follow-up)", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke check-in/ }));
+    const dialog = openMenuItemAndArmDialog(/Revoke check-in/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke check-in" }));
 
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith("None of the selected attendees were checked in.", "info");
@@ -1022,8 +1017,8 @@ describe("AttendeesPage bulk revoke check-in (#522 follow-up)", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke check-in/ }));
+    const dialog = openMenuItemAndArmDialog(/Revoke check-in/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke check-in" }));
 
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith(
@@ -1034,7 +1029,7 @@ describe("AttendeesPage bulk revoke check-in (#522 follow-up)", () => {
     expect(addToast).not.toHaveBeenCalledWith("None of the selected attendees were checked in.", "info");
   });
 
-  it("toasts an operator-safe error and keeps the selection when bulkRevokeCheckIn fails", async () => {
+  it("shows an operator-safe error inside the dialog and keeps the selection when bulkRevokeCheckIn fails", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     fetchEventAttendees.mockResolvedValue({ items: [rowAdmitted, rowB, rowC], total: 3, page: 1, pageSize: 25 });
     bulkRevokeCheckIn.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
@@ -1045,12 +1040,12 @@ describe("AttendeesPage bulk revoke check-in (#522 follow-up)", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke check-in/ }));
+    const dialog = openMenuItemAndArmDialog(/Revoke check-in/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke check-in" }));
 
-    await waitFor(() => {
-      expect(addToast).toHaveBeenCalledWith("Revoke check-in failed.", "error");
-    });
+    // Inline in the dialog, not a toast - matches bulk revoke pass/items' own convention.
+    await screen.findByText("Revoke check-in failed.");
+    expect(addToast).not.toHaveBeenCalled();
     expect(document.querySelector(".attendees-bulkbar")).toBeTruthy();
   });
 
@@ -1064,8 +1059,8 @@ describe("AttendeesPage bulk revoke check-in (#522 follow-up)", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke check-in/ }));
+    const dialog = openMenuItemAndArmDialog(/Revoke check-in/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke check-in" }));
 
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith("1 check-in revoked (2 failed unexpectedly).", "warning");
@@ -1090,8 +1085,8 @@ describe("AttendeesPage bulk revoke check-in (#522 follow-up)", () => {
       fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
       await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-      fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
-      fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke check-in/ }));
+      const dialog = openMenuItemAndArmDialog(/Revoke check-in/);
+      fireEvent.click(within(dialog).getByRole("button", { name: "Revoke check-in" }));
 
       await waitFor(() => {
         expect(assignSpy).toHaveBeenCalledWith(expect.stringContaining("/login?next="));
@@ -1102,7 +1097,7 @@ describe("AttendeesPage bulk revoke check-in (#522 follow-up)", () => {
     }
   });
 
-  it("shows a generic error toast when the request throws a non-API error", async () => {
+  it("shows a generic inline error when bulkRevokeCheckIn rejects with something other than ApiError", async () => {
     fetchEventAttendees.mockResolvedValue({ items: [rowAdmitted, rowB, rowC], total: 3, page: 1, pageSize: 25 });
     bulkRevokeCheckIn.mockRejectedValueOnce(new Error("network down"));
 
@@ -1112,12 +1107,11 @@ describe("AttendeesPage bulk revoke check-in (#522 follow-up)", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke check-in/ }));
+    const dialog = openMenuItemAndArmDialog(/Revoke check-in/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke check-in" }));
 
-    await waitFor(() => {
-      expect(addToast).toHaveBeenCalledWith("Failed to revoke check-in.", "error");
-    });
+    await screen.findByText("Failed to revoke check-in.");
+    expect(addToast).not.toHaveBeenCalled();
   });
 
   it("ignores a stale bulk-revoke-check-in error after navigating to a different event mid-request", async () => {
@@ -1139,8 +1133,8 @@ describe("AttendeesPage bulk revoke check-in (#522 follow-up)", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke check-in/ }));
+    const dialog = openMenuItemAndArmDialog(/Revoke check-in/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke check-in" }));
 
     await act(async () => router.navigate("/admin/events/evt-2/attendees"));
     await waitFor(() => {
@@ -1180,8 +1174,8 @@ describe("AttendeesPage bulk revoke check-in (#522 follow-up)", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke check-in/ }));
+    const dialog = openMenuItemAndArmDialog(/Revoke check-in/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke check-in" }));
 
     await act(async () => router.navigate("/admin/events/evt-2/attendees"));
     await waitFor(() => {
@@ -1194,6 +1188,24 @@ describe("AttendeesPage bulk revoke check-in (#522 follow-up)", () => {
     });
 
     expect(addToast).not.toHaveBeenCalledWith(expect.stringContaining("revoked"), "success");
+  });
+
+  it("Cancel closes the bulk-revoke-check-in dialog without calling bulkRevokeCheckIn", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowAdmitted, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke check-in/ }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(bulkRevokeCheckIn).not.toHaveBeenCalled();
   });
 });
 
@@ -1608,9 +1620,7 @@ describe("AttendeesPage bulk revoke items (#551)", () => {
     await selectTwoRowsAndOpenMenu();
     const item = bulkBar().getByRole("menuitem", { name: /Revoke items/ });
     expect(item.textContent).toContain("Reset all issued items for 2 attendees");
-    fireEvent.click(item);
-
-    const dialog = screen.getByRole("dialog", { name: "Revoke items for 2 attendees?" });
+    const dialog = clickMenuItemAndArmDialog(/Revoke items/, "Revoke items for 2 attendees?");
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke items" }));
 
     await waitFor(() => {
@@ -1628,8 +1638,7 @@ describe("AttendeesPage bulk revoke items (#551)", () => {
     bulkRevokeItems.mockResolvedValue({ revokedCount: 0 });
 
     await selectTwoRowsAndOpenMenu();
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke items/ }));
-    const dialog = screen.getByRole("dialog", { name: "Revoke items for 2 attendees?" });
+    const dialog = clickMenuItemAndArmDialog(/Revoke items/, "Revoke items for 2 attendees?");
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke items" }));
 
     await waitFor(() => {
@@ -1642,8 +1651,7 @@ describe("AttendeesPage bulk revoke items (#551)", () => {
     fetchEventItems.mockResolvedValue(items);
 
     await selectTwoRowsAndOpenMenu();
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke items/ }));
-    const dialog = screen.getByRole("dialog", { name: "Revoke items for 2 attendees?" });
+    const dialog = clickMenuItemAndArmDialog(/Revoke items/, "Revoke items for 2 attendees?");
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
     expect(screen.queryByRole("dialog", { name: "Revoke items for 2 attendees?" })).toBeNull();
@@ -1658,8 +1666,7 @@ describe("AttendeesPage bulk revoke items (#551)", () => {
     bulkRevokeItems.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
 
     await selectTwoRowsAndOpenMenu();
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke items/ }));
-    const dialog = screen.getByRole("dialog", { name: "Revoke items for 2 attendees?" });
+    const dialog = clickMenuItemAndArmDialog(/Revoke items/, "Revoke items for 2 attendees?");
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke items" }));
 
     await screen.findByText("Revoke items failed.");
@@ -1677,8 +1684,7 @@ describe("AttendeesPage bulk revoke items (#551)", () => {
     vi.stubGlobal("location", { ...window.location, assign, pathname: "/admin/events/evt-1/attendees" });
 
     await selectTwoRowsAndOpenMenu();
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke items/ }));
-    const dialog = screen.getByRole("dialog", { name: "Revoke items for 2 attendees?" });
+    const dialog = clickMenuItemAndArmDialog(/Revoke items/, "Revoke items for 2 attendees?");
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke items" }));
 
     await waitFor(() => {
@@ -1694,8 +1700,7 @@ describe("AttendeesPage bulk revoke items (#551)", () => {
     bulkRevokeItems.mockRejectedValueOnce(new Error("network down"));
 
     await selectTwoRowsAndOpenMenu();
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke items/ }));
-    const dialog = screen.getByRole("dialog", { name: "Revoke items for 2 attendees?" });
+    const dialog = clickMenuItemAndArmDialog(/Revoke items/, "Revoke items for 2 attendees?");
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke items" }));
 
     await screen.findByText("Failed to revoke items.");
@@ -1723,8 +1728,7 @@ describe("AttendeesPage bulk revoke items (#551)", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select John Smith" }));
     await waitFor(() => expect(bulkBar().getByText("2")).toBeTruthy());
     fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke items/ }));
-    const dialog = screen.getByRole("dialog", { name: "Revoke items for 2 attendees?" });
+    const dialog = clickMenuItemAndArmDialog(/Revoke items/, "Revoke items for 2 attendees?");
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke items" }));
 
     await act(async () => router.navigate("/admin/events/evt-2/attendees"));
@@ -1762,8 +1766,7 @@ describe("AttendeesPage bulk revoke items (#551)", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select John Smith" }));
     await waitFor(() => expect(bulkBar().getByText("2")).toBeTruthy());
     fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke items/ }));
-    const dialog = screen.getByRole("dialog", { name: "Revoke items for 2 attendees?" });
+    const dialog = clickMenuItemAndArmDialog(/Revoke items/, "Revoke items for 2 attendees?");
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke items" }));
 
     await act(async () => router.navigate("/admin/events/evt-2/attendees"));
@@ -1792,6 +1795,22 @@ describe("AttendeesPage bulk revoke items (#551)", () => {
     const item = bulkBar().getByRole("menuitem", { name: /Revoke items/ }) as HTMLButtonElement;
     expect(item.disabled).toBe(true);
     expect(item.title).toContain("No items configured");
+  });
+
+  it("disables the menu item when nothing in the selection has anything issued, even though the event has configured items (CodeRabbit review)", async () => {
+    const nothingIssuedRow = { ...rowA, has_issued_items: false };
+    fetchEventAttendees.mockResolvedValue({ items: [nothingIssuedRow, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchEventItems.mockResolvedValue(items);
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+
+    const item = bulkBar().getByRole("menuitem", { name: /Revoke items/ }) as HTMLButtonElement;
+    expect(item.disabled).toBe(true);
+    expect(item.title).toBe("None of the selected attendees have anything issued.");
   });
 
   it("lets the operator retry the items load from the bulk bar's More actions menu, without losing the selection", async () => {
