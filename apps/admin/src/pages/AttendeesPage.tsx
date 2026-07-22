@@ -1147,7 +1147,7 @@ export function AttendeesPage() {
         actions={
           <>
             {isEventArchived(event) ? (
-              <ArchivedGuard event={event} reasonId="import-attendees-reason" placement="below">
+              <ArchivedGuard event={event} reasonId="import-attendees-reason">
                 {(guard) => (
                   <Button variant="secondary" {...guard}>
                     Import
@@ -1159,7 +1159,7 @@ export function AttendeesPage() {
                 <Button variant="secondary">Import</Button>
               </Link>
             )}
-            <ArchivedGuard event={event} reasonId="add-attendee-reason" placement="below">
+            <ArchivedGuard event={event} reasonId="add-attendee-reason">
               {(guard) => (
                 <Button variant="primary" {...guard} onClick={() => setAddOpen(true)}>
                   {/* Shortened below 768px (attendees.css compacts these 4 buttons to fit one
@@ -1178,7 +1178,6 @@ export function AttendeesPage() {
                   ? "No mail transport configured for this event. Set one up in Event Settings → Mailing."
                   : undefined
               }
-              placement="below"
             >
               {(guard) => (
                 <Button

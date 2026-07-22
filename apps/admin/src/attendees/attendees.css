@@ -567,6 +567,13 @@
   gap: var(--space-3);
 }
 
+/* Tooltip's trigger wrapper defaults to inline-flex (shrink-to-fit) - override to block/full
+   width so wrapping the fieldset in <Tooltip> doesn't change its layout in this stacked form. */
+.attendee-form__fieldset-wrapper {
+  display: block;
+  width: 100%;
+}
+
 .attendee-form__warn {
   padding: var(--space-3);
   background: var(--status-warn-bg, #fff8e6);

@@ -294,56 +294,16 @@
   transition: background 0.1s, color 0.1s;
 }
 
-.contents-row__type-btn:first-child {
+.contents-row__type-picker > .at-tooltip-trigger:first-child .contents-row__type-btn {
   border-top-left-radius: var(--radius-sm);
   border-bottom-left-radius: var(--radius-sm);
 }
 
-.contents-row__type-btn:last-child {
+.contents-row__type-picker > .at-tooltip-trigger:last-child .contents-row__type-btn {
   border-top-right-radius: var(--radius-sm);
   border-bottom-right-radius: var(--radius-sm);
   border-right: none;
 }
-
-.contents-row__type-btn::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  bottom: calc(100% + 5px);
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--text-primary);
-  color: var(--surface-card);
-  font-size: 11px;
-  line-height: 1;
-  padding: 3px 7px;
-  border-radius: 4px;
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.12s;
-  z-index: 500;
-}
-
-.contents-row__type-btn:hover::after {
-  opacity: 1;
-}
-
-/* Anchor edge buttons' tooltips to their own edge instead of centering, so
-   they can't be clipped by the modal's overflow-x: hidden when the picker
-   sits near the panel boundary. */
-.contents-row__type-btn:first-child::after {
-  left: 0;
-  transform: none;
-}
-
-.contents-row__type-btn:last-child::after {
-  left: auto;
-  right: 0;
-  transform: none;
-}
-
-/* .at-tooltip moved to staff.css (global stylesheet) so it can be reused
-   outside Requirements — see staff.css for the rule. */
 
 .contents-row__type-btn:hover:not(.contents-row__type-btn--active) {
   background: var(--surface-hover, var(--surface-sunken));

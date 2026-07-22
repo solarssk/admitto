@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import { Link, useOutletContext, useParams } from "react-router-dom";
-import { Button, Card, PageHeader, Switch, useToast } from "@admitto/ui";
+import { Button, Card, PageHeader, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
   ApiError,
   commitImport,
@@ -461,80 +461,76 @@ export function ImportPage() {
               }
             >
               <div className="import-form">
-                <fieldset
-                  className={[
-                    "import-upload-fieldset",
-                    isEventArchived(event) && "at-tooltip at-tooltip--below",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                  data-tooltip={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
-                  disabled={isEventArchived(event)}
+                <Tooltip
+                  content={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
+                  className="import-upload-fieldset-wrapper"
                 >
-                  {file ? (
-                    <div className="import-file-chip">
-                      <i className="ti ti-file-text" aria-hidden="true" />
-                      <div className="import-file-chip__info">
-                        <strong>{file.name}</strong>
-                        <span className="import-file-chip__meta">
-                          {preview
-                            ? `${preview.parse.validCount} valid ${pluralize(preview.parse.validCount, "row")}`
-                            : formatFileSize(file.size)}
-                        </span>
+                  <fieldset className="import-upload-fieldset" disabled={isEventArchived(event)}>
+                    {file ? (
+                      <div className="import-file-chip">
+                        <i className="ti ti-file-text" aria-hidden="true" />
+                        <div className="import-file-chip__info">
+                          <strong>{file.name}</strong>
+                          <span className="import-file-chip__meta">
+                            {preview
+                              ? `${preview.parse.validCount} valid ${pluralize(preview.parse.validCount, "row")}`
+                              : formatFileSize(file.size)}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          className="import-file-chip__remove"
+                          aria-label="Remove file"
+                          disabled={loading}
+                          onClick={() => selectFile(null)}
+                        >
+                          <i className="ti ti-x" aria-hidden="true" />
+                        </button>
                       </div>
+                    ) : (
                       <button
                         type="button"
-                        className="import-file-chip__remove"
-                        aria-label="Remove file"
-                        disabled={loading}
-                        onClick={() => selectFile(null)}
+                        className={["import-dropzone", dragOver && "import-dropzone--over"]
+                          .filter(Boolean)
+                          .join(" ")}
+                        tabIndex={isEventArchived(event) ? -1 : 0}
+                        aria-label="Upload a CSV or XLSX file"
+                        onClick={openFilePicker}
+                        onKeyDown={onDropzoneKeyDown}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          if (!loading && !isEventArchived(event)) setDragOver(true);
+                        }}
+                        onDragLeave={() => setDragOver(false)}
+                        onDrop={onDrop}
                       >
-                        <i className="ti ti-x" aria-hidden="true" />
+                        <i className="ti ti-cloud-upload" aria-hidden="true" />
+                        <b>Drop CSV/XLSX here</b>
+                        <span>or click to browse · max 5 MB · max 50 000 rows</span>
                       </button>
+                    )}
+                    {/* Visually hidden but still labelled — the dropzone proxies clicks to it, and
+                     * it stays the real form control (tests and assistive tech target it). */}
+                    <div className="import-field sr-only">
+                      <label className="import-label" htmlFor="import-file">
+                        File (.csv or .xlsx)
+                      </label>
+                      <input
+                        id="import-file"
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".csv,.xlsx"
+                        disabled={loading || step === "preview"}
+                        // Out of the tab order — the visible dropzone button right before it is
+                        // the real keyboard activation path; without this, Tab from the dropzone
+                        // landed on this invisible native control next, with no visible focus
+                        // target (Codex review).
+                        tabIndex={-1}
+                        onChange={(e) => selectFile(e.target.files?.[0] ?? null)}
+                      />
                     </div>
-                  ) : (
-                    <button
-                      type="button"
-                      className={["import-dropzone", dragOver && "import-dropzone--over"]
-                        .filter(Boolean)
-                        .join(" ")}
-                      tabIndex={isEventArchived(event) ? -1 : 0}
-                      aria-label="Upload a CSV or XLSX file"
-                      onClick={openFilePicker}
-                      onKeyDown={onDropzoneKeyDown}
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        if (!loading && !isEventArchived(event)) setDragOver(true);
-                      }}
-                      onDragLeave={() => setDragOver(false)}
-                      onDrop={onDrop}
-                    >
-                      <i className="ti ti-cloud-upload" aria-hidden="true" />
-                      <b>Drop CSV/XLSX here</b>
-                      <span>or click to browse · max 5 MB · max 50 000 rows</span>
-                    </button>
-                  )}
-                  {/* Visually hidden but still labelled — the dropzone proxies clicks to it, and
-                   * it stays the real form control (tests and assistive tech target it). */}
-                  <div className="import-field sr-only">
-                    <label className="import-label" htmlFor="import-file">
-                      File (.csv or .xlsx)
-                    </label>
-                    <input
-                      id="import-file"
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".csv,.xlsx"
-                      disabled={loading || step === "preview"}
-                      // Out of the tab order — the visible dropzone button right before it is
-                      // the real keyboard activation path; without this, Tab from the dropzone
-                      // landed on this invisible native control next, with no visible focus
-                      // target (Codex review).
-                      tabIndex={-1}
-                      onChange={(e) => selectFile(e.target.files?.[0] ?? null)}
-                    />
-                  </div>
-                </fieldset>
+                  </fieldset>
+                </Tooltip>
 
                 <details className="import-columns-info">
                   <summary>Required CSV columns</summary>
@@ -645,48 +641,44 @@ export function ImportPage() {
                 ) : undefined
               }
             >
-              <fieldset
-                className={[
-                  "import-upload-fieldset",
-                  isEventArchived(event) && "at-tooltip at-tooltip--below",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                data-tooltip={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
-                disabled={isEventArchived(event)}
+              <Tooltip
+                content={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
+                className="import-upload-fieldset-wrapper"
               >
-                <div className="import-option">
-                  <Switch
-                    label="Dry run (validate only, no writes)"
-                    checked={dryRun}
-                    // Only togglable once a validation summary is actually on screen — otherwise
-                    // an operator could turn it off during the upload step, before ever seeing
-                    // what a commit would do, and Commit import would arm the instant the
-                    // preview arrived (Codex review).
-                    disabled={loading || step !== "preview"}
-                    onChange={(e) => setDryRun(e.target.checked)}
-                  />
-                  <span className="import-checkbox__hint">
-                    Validation never writes anything. Turn this off after reviewing the summary to
-                    enable committing.
-                  </span>
-                </div>
-                <div className="import-option">
-                  <Switch
-                    label="Overwrite existing attendees"
-                    checked={overwrite}
-                    // Togglable at any step, including preview — flip it after seeing an existing
-                    // attendee skipped in the Validation summary, then Re-validate (PO feedback:
-                    // this used to lock the instant a summary appeared, with no way back except
-                    // picking a new file).
-                    disabled={loading}
-                    onChange={(e) => setOverwrite(e.target.checked)}
-                  />
-                  <span className="import-checkbox__hint">
-                    When off, existing attendees matched by email are skipped.
-                  </span>
-                </div>
-              </fieldset>
+                <fieldset className="import-upload-fieldset" disabled={isEventArchived(event)}>
+                  <div className="import-option">
+                    <Switch
+                      label="Dry run (validate only, no writes)"
+                      checked={dryRun}
+                      // Only togglable once a validation summary is actually on screen — otherwise
+                      // an operator could turn it off during the upload step, before ever seeing
+                      // what a commit would do, and Commit import would arm the instant the
+                      // preview arrived (Codex review).
+                      disabled={loading || step !== "preview"}
+                      onChange={(e) => setDryRun(e.target.checked)}
+                    />
+                    <span className="import-checkbox__hint">
+                      Validation never writes anything. Turn this off after reviewing the summary to
+                      enable committing.
+                    </span>
+                  </div>
+                  <div className="import-option">
+                    <Switch
+                      label="Overwrite existing attendees"
+                      checked={overwrite}
+                      // Togglable at any step, including preview — flip it after seeing an existing
+                      // attendee skipped in the Validation summary, then Re-validate (PO feedback:
+                      // this used to lock the instant a summary appeared, with no way back except
+                      // picking a new file).
+                      disabled={loading}
+                      onChange={(e) => setOverwrite(e.target.checked)}
+                    />
+                    <span className="import-checkbox__hint">
+                      When off, existing attendees matched by email are skipped.
+                    </span>
+                  </div>
+                </fieldset>
+              </Tooltip>
             </Card>
 
             {step === "preview" && preview && (

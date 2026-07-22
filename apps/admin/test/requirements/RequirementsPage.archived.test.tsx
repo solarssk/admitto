@@ -6,6 +6,7 @@ import { ToastProvider } from "@admitto/ui";
 import { RequirementsPage } from "../../src/pages/RequirementsPage.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
 import type { EventItemDto, OpsConfigDto } from "../../src/api/types.js";
+import { getTooltipText } from "../test-utils.js";
 
 const fetchEventItems = vi.fn();
 const fetchEventCustomFields = vi.fn();
@@ -92,7 +93,7 @@ function expectArchivedLock(control: HTMLElement) {
   expect(describedBy).toBeTruthy();
   const description = document.getElementById(describedBy!);
   expect(description?.textContent).toBe(ARCHIVED_ACTION_TOOLTIP);
-  expect(control.closest(".at-tooltip")).toBeTruthy();
+  expect(getTooltipText(control)).toBe(ARCHIVED_ACTION_TOOLTIP);
 }
 
 describe("RequirementsPage archived lockdown", () => {

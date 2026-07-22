@@ -276,6 +276,13 @@ fieldset:disabled .import-dropzone {
   gap: var(--space-4);
 }
 
+/* Tooltip's trigger wrapper defaults to inline-flex (shrink-to-fit) - override to block/full
+   width so wrapping the fieldset in <Tooltip> doesn't change its layout in this stacked form. */
+.import-upload-fieldset-wrapper {
+  display: block;
+  width: 100%;
+}
+
 .import-label {
   font-size: var(--fs-sm);
   font-weight: 600;

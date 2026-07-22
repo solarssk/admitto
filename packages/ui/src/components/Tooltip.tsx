@@ -101,14 +101,18 @@ export function Tooltip({ content, children, className, axis = "vertical" }: Rea
     setStyle({ position: "fixed", top, left, visibility: "visible" });
   }, [visible, content, axis]);
 
-  if (!content) return <>{children}</>;
-
-  const show = () => setVisible(true);
+  const show = () => content && setVisible(true);
   const hide = () => {
     setVisible(false);
     setStyle((s) => ({ ...s, visibility: "hidden" }));
   };
 
+  // Always the same wrapper element, whether or not there's content right now: some callers'
+  // condition for showing a tooltip (e.g. "this control is disabled") can flip while the child
+  // control stays mounted (a focused input, an open menu). Swapping between this <span> and a
+  // bare fragment across renders would change the child's parent element, which unmounts and
+  // remounts it - losing focus/typed state/DOM identity every time the reason appears or
+  // disappears.
   return (
     <span
       ref={wrapperRef}
@@ -120,6 +124,7 @@ export function Tooltip({ content, children, className, axis = "vertical" }: Rea
     >
       {children}
       {visible &&
+        content &&
         createPortal(
           <div ref={bubbleRef} role="tooltip" className="at-tooltip-bubble" style={style}>
             {content}

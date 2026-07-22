@@ -6,6 +6,7 @@ import {
   ArchivedGuard,
   isEventArchived,
 } from "../../src/components/ArchivedGuard.js";
+import { getTooltipText } from "../test-utils.js";
 
 afterEach(() => {
   cleanup();
@@ -37,8 +38,7 @@ describe("ArchivedGuard", () => {
     const button = screen.getByRole("button", { name: "Do thing" }) as HTMLButtonElement;
     expect(button.disabled).toBe(false);
     expect(button.hasAttribute("aria-describedby")).toBe(false);
-    expect(button.parentElement?.hasAttribute("data-tooltip")).toBe(false);
-    expect(button.parentElement?.className).toBe("");
+    expect(getTooltipText(button)).toBeNull();
   });
 
   it("disables the control and shows the archived tooltip once the event is archived", () => {
@@ -55,7 +55,7 @@ describe("ArchivedGuard", () => {
     expect(button.disabled).toBe(true);
     expect(button.getAttribute("aria-describedby")).toBe("r2");
     expect(screen.getByText(ARCHIVED_ACTION_TOOLTIP).id).toBe("r2");
-    expect(button.closest(".at-tooltip")?.getAttribute("data-tooltip")).toBe(ARCHIVED_ACTION_TOOLTIP);
+    expect(getTooltipText(button)).toBe(ARCHIVED_ACTION_TOOLTIP);
   });
 
   it("respects a fallback disabled/tooltip condition when the event is not archived", () => {
@@ -138,38 +138,4 @@ describe("ArchivedGuard", () => {
     expect(button.hasAttribute("aria-describedby")).toBe(false);
   });
 
-  it("defaults to the upward tooltip placement, with no extra class, when archived", () => {
-    render(
-      <ArchivedGuard event={{ archived_at: "2026-01-01T00:00:00.000Z" }} reasonId="r7">
-        {(guard) => (
-          <button type="button" {...guard}>
-            Do thing
-          </button>
-        )}
-      </ArchivedGuard>,
-    );
-    const button = screen.getByRole("button", { name: "Do thing" }) as HTMLButtonElement;
-    const wrapper = button.closest(".at-tooltip");
-    expect(wrapper?.className).toBe("at-tooltip");
-    expect(wrapper?.classList.contains("at-tooltip--below")).toBe(false);
-  });
-
-  it("adds the below-placement class when placement=\"below\" is requested, for controls near the page top", () => {
-    render(
-      <ArchivedGuard
-        event={{ archived_at: "2026-01-01T00:00:00.000Z" }}
-        reasonId="r8"
-        placement="below"
-      >
-        {(guard) => (
-          <button type="button" {...guard}>
-            Do thing
-          </button>
-        )}
-      </ArchivedGuard>,
-    );
-    const button = screen.getByRole("button", { name: "Do thing" }) as HTMLButtonElement;
-    const wrapper = button.closest(".at-tooltip");
-    expect(wrapper?.classList.contains("at-tooltip--below")).toBe(true);
-  });
 });

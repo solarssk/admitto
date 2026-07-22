@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ImportPage } from "../../src/pages/ImportPage.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
-import { renderWithToast } from "../test-utils.js";
+import { getTooltipText, renderWithToast } from "../test-utils.js";
 
 const fetchEventCustomFields = vi.fn();
 
@@ -72,16 +72,12 @@ describe("ImportPage archived lockdown", () => {
     const describedBy = validateButton.getAttribute("aria-describedby");
     expect(describedBy).toBeTruthy();
     expect(document.getElementById(describedBy!)?.textContent).toBe(ARCHIVED_ACTION_TOOLTIP);
-    expect(validateButton.closest(".at-tooltip")).toBeTruthy();
+    expect(getTooltipText(validateButton)).toBe(ARCHIVED_ACTION_TOOLTIP);
 
     const fileInput = screen.getByLabelText("File (.csv or .xlsx)");
     const uploadFieldset = fileInput.closest("fieldset");
     expect(uploadFieldset?.disabled).toBe(true);
-    expect(uploadFieldset?.className).toContain("at-tooltip");
-    expect(uploadFieldset?.getAttribute("data-tooltip")).toBe(ARCHIVED_ACTION_TOOLTIP);
-    // Sits at the very top of the page — tooltip grows downward so the scroll
-    // container's overflow boundary doesn't clip it (real bug found in testing).
-    expect(uploadFieldset?.classList.contains("at-tooltip--below")).toBe(true);
+    expect(getTooltipText(uploadFieldset as HTMLElement)).toBe(ARCHIVED_ACTION_TOOLTIP);
 
     // The dropzone is keyboard-unfocusable and inert inside the disabled fieldset.
     const dropzone = screen.getByRole("button", { name: "Upload a CSV or XLSX file" });
@@ -93,7 +89,7 @@ describe("ImportPage archived lockdown", () => {
     const optionsFieldset = overwriteCheckbox.closest("fieldset");
     expect(optionsFieldset).not.toBe(uploadFieldset);
     expect(optionsFieldset?.disabled).toBe(true);
-    expect(optionsFieldset?.getAttribute("data-tooltip")).toBe(ARCHIVED_ACTION_TOOLTIP);
+    expect(getTooltipText(optionsFieldset as HTMLElement)).toBe(ARCHIVED_ACTION_TOOLTIP);
     expect(screen.getByLabelText(/Dry run/).closest("fieldset")).toBe(optionsFieldset);
 
     // Read-only navigation stays usable.

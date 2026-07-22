@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import type { EventCustomFieldDto, EventItemDto } from "../../src/api/types.js";
 import { EventItemDrawer } from "../../src/requirements/EventItemDrawer.js";
-import { renderWithToast } from "../test-utils.js";
+import { getTooltipText, renderWithToast } from "../test-utils.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -101,16 +101,14 @@ describe("EventItemDrawer", () => {
     renderDrawer(badgeWithNullConfig);
     const deleteButton = screen.getByRole("button", { name: "Delete item" }) as HTMLButtonElement;
     expect(deleteButton.disabled).toBe(true);
-    expect(deleteButton.closest(".at-tooltip")?.getAttribute("data-tooltip")).toMatch(
-      /Default item/,
-    );
+    expect(getTooltipText(deleteButton)).toMatch(/Default item/);
   });
 
   it("keeps delete enabled for non-default items", () => {
     renderDrawer(giftbagItem);
     const deleteButton = screen.getByRole("button", { name: "Delete item" }) as HTMLButtonElement;
     expect(deleteButton.disabled).toBe(false);
-    expect(deleteButton.closest(".at-tooltip")).toBeNull();
+    expect(getTooltipText(deleteButton)).toBeNull();
   });
 
   it("fires toast when delete returns default_item", async () => {

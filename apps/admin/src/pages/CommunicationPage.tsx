@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useBlocker, useOutletContext, useParams } from "react-router-dom";
-import { Badge, Button, Card, Input, PageHeader, Select, StatusBadge, Tabs, useToast } from "@admitto/ui";
+import { Badge, Button, Card, Input, PageHeader, Select, StatusBadge, Tabs, Tooltip, useToast } from "@admitto/ui";
 import {
   ApiError,
   createEventTemplate,
@@ -1059,23 +1059,22 @@ export function CommunicationPage() {
                 </div>
               </div>
 
-              <fieldset
-                className={["communication-editor-fieldset", isEventArchived(event) && "at-tooltip"]
-                  .filter(Boolean)
-                  .join(" ")}
-                data-tooltip={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
-                disabled={isEventArchived(event)}
+              <Tooltip
+                content={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
+                className="communication-editor-fieldset-wrapper"
               >
-                <Input
-                  ref={subjectRef}
-                  label="Subject"
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  onFocus={() => setActiveField("subject")}
-                  onClick={() => setActiveField("subject")}
-                  disabled={editorSnapshotMissing}
-                />
-              </fieldset>
+                <fieldset className="communication-editor-fieldset" disabled={isEventArchived(event)}>
+                  <Input
+                    ref={subjectRef}
+                    label="Subject"
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    onFocus={() => setActiveField("subject")}
+                    onClick={() => setActiveField("subject")}
+                    disabled={editorSnapshotMissing}
+                  />
+                </fieldset>
+              </Tooltip>
 
               <div className="communication-format-row">
                 <Button
@@ -1097,26 +1096,25 @@ export function CommunicationPage() {
                 </span>
               </div>
 
-              <fieldset
-                className={["communication-editor-fieldset", isEventArchived(event) && "at-tooltip"]
-                  .filter(Boolean)
-                  .join(" ")}
-                data-tooltip={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
-                disabled={isEventArchived(event)}
+              <Tooltip
+                content={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
+                className="communication-editor-fieldset-wrapper"
               >
-                <div className="communication-body-field">
-                  <label htmlFor="communication-body">{format === "mjml" ? "MJML body" : "HTML body"}</label>
-                  <textarea
-                    id="communication-body"
-                    ref={bodyRef}
-                    className="communication-textarea"
-                    value={body}
-                    onChange={(e) => setBody(e.target.value)}
-                    onFocus={() => setActiveField("body")}
-                    disabled={editorSnapshotMissing}
-                  />
-                </div>
-              </fieldset>
+                <fieldset className="communication-editor-fieldset" disabled={isEventArchived(event)}>
+                  <div className="communication-body-field">
+                    <label htmlFor="communication-body">{format === "mjml" ? "MJML body" : "HTML body"}</label>
+                    <textarea
+                      id="communication-body"
+                      ref={bodyRef}
+                      className="communication-textarea"
+                      value={body}
+                      onChange={(e) => setBody(e.target.value)}
+                      onFocus={() => setActiveField("body")}
+                      disabled={editorSnapshotMissing}
+                    />
+                  </div>
+                </fieldset>
+              </Tooltip>
 
               {validationErrors.length > 0 && (
                 <div className="communication-errors" role="alert">
