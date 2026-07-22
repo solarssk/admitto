@@ -21,10 +21,10 @@ export function resolveTicketTypeLabel(
 export function TicketTypeBadge({
   ticketType,
   catalog = [],
-}: {
+}: Readonly<{
   ticketType: string | null;
   catalog?: TicketTypeDto[];
-}) {
+}>) {
   if (!ticketType) {
     return <span className="attendee-readonly">—</span>;
   }

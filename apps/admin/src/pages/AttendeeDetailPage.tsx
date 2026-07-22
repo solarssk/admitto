@@ -259,6 +259,243 @@ function itemStateTone(state: string): "ok" | "muted" {
   return state === "issued" ? "ok" : "muted";
 }
 
+/** Whether the edit form differs from the last-loaded/saved attendee (field-by-field, including
+ * custom data) — extracted out of the component (SonarCloud S3776: keeps the comparison chain out
+ * of the component's own cognitive-complexity count, the same way EventOverviewPage.tsx extracts
+ * buildReadinessItems). */
+function isAttendeeFormDirty(form: AttendeeFormState | null, baseline: AttendeeFormState | null): boolean {
+  if (form === null || baseline === null) return false;
+  return (
+    form.name !== baseline.name ||
+    form.email !== baseline.email ||
+    form.company !== baseline.company ||
+    form.department !== baseline.department ||
+    form.ticket_type !== baseline.ticket_type ||
+    form.rsvp_status !== baseline.rsvp_status ||
+    JSON.stringify(form.customFields) !== JSON.stringify(baseline.customFields)
+  );
+}
+
+/** A stored ticket_type with no matching catalog entry (type deleted after assignment, or legacy
+ * pre-catalog data) has no <option> to bind to — surfaced as its own option instead of silently
+ * falling back to the blank "—" option (fail-open, same philosophy as ticketTypeBadge.tsx's
+ * catalog resolver). Extracted out of the component (SonarCloud S3776). */
+function resolveOrphanedTicketType(ticketType: string, ticketTypes: TicketTypeDto[]): string | null {
+  if (!ticketType) return null;
+  return ticketTypes.some((type) => type.key === ticketType) ? null : ticketType;
+}
+
+/** Overview tab: read-only profile, additional info, wallet placeholder, event-day items, and
+ * mail delivery history — extracted out of the component (SonarCloud S3776: keeps this tab's own
+ * conditional rendering out of the component's cognitive-complexity count). */
+function AttendeeOverviewTab({
+  detail,
+  ticketTypes,
+  attendeeSource,
+  customDataEntries,
+  eventItems,
+  event,
+}: Readonly<{
+  detail: AttendeeDetailDto;
+  ticketTypes: TicketTypeDto[];
+  attendeeSource: string | null;
+  customDataEntries: Array<[string, string, string]>;
+  eventItems: AttendeeDetailDto["event_items"];
+  event: EventDto;
+}>) {
+  return (
+    <div className="attendee-detail-grid">
+      <div className="attendee-detail-main">
+        <Card title="Profile" className="attendee-detail-profile">
+          <div className="attendee-detail-readonly">
+            <div className="attendee-detail-row">
+              <span>Email</span>
+              <span className="mono">{detail.email}</span>
+            </div>
+            <div className="attendee-detail-row">
+              <span>Ticket type</span>
+              <TicketTypeBadge ticketType={detail.ticket_type} catalog={ticketTypes} />
+            </div>
+            <div className="attendee-detail-row">
+              <span>Company</span>
+              <span>{detail.company ?? "—"}</span>
+            </div>
+            <div className="attendee-detail-row">
+              <span>Department</span>
+              <span>{detail.department ?? "—"}</span>
+            </div>
+            {attendeeSource && (
+              <div className="attendee-detail-row">
+                <span>Added via</span>
+                <span>{attendeeSource}</span>
+              </div>
+            )}
+            <div className="attendee-detail-row">
+              <span>Registered on</span>
+              <span className="mono">
+                {formatEventDateTime(detail.created_at, detail.client_timezone ?? event.timezone)}
+              </span>
+            </div>
+          </div>
+        </Card>
+
+        <Card title="Additional information">
+          {customDataEntries.length === 0 ? (
+            <EmptyState
+              icon={<i className="ti ti-list-details" aria-hidden="true" />}
+              title="No additional information"
+              description="Custom fields will appear here once this attendee has some."
+            />
+          ) : (
+            <div className="attendee-detail-readonly">
+              {customDataEntries.map(([key, label, value]) => (
+                <div className="attendee-detail-row" key={key}>
+                  <span>{label}</span>
+                  <span>{value}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <Card title="Wallet">
+          <EmptyState
+            icon={<i className="ti ti-wallet" aria-hidden="true" />}
+            title="Not added to a wallet"
+            description="Apple Wallet and Google Wallet support isn't available yet."
+          />
+        </Card>
+      </div>
+
+      <div className="attendee-detail-side">
+        <Card title="Event-day items">
+          {eventItems.length === 0 ? (
+            <EmptyState
+              icon={<i className="ti ti-package" aria-hidden="true" />}
+              title="No event-day items"
+              description="This event has no hand-out items configured yet."
+            />
+          ) : (
+            <ul className="attendee-items-list">
+              {eventItems.map((item) => (
+                <li className="attendee-items-row" key={item.key}>
+                  <span
+                    className={[
+                      "attendee-items-row__icon",
+                      itemIconModifier(item.state) &&
+                        `attendee-items-row__icon--${itemIconModifier(item.state)}`,
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                  >
+                    <i
+                      className={`ti ti-${item.state === "issued" || item.state === "returned" ? "circle-check" : (item.icon ?? "package")}`}
+                      aria-hidden="true"
+                    />
+                  </span>
+                  <span className="attendee-items-row__label">{item.label}</span>
+                  <span
+                    className={`attendee-items-row__state attendee-items-row__state--${itemStateTone(item.state)}`}
+                  >
+                    {itemStateLabel(item.state)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <Card title="Mail delivery history">
+          {detail.deliveries.length === 0 ? (
+            <EmptyState
+              icon={<i className="ti ti-mail-off" aria-hidden="true" />}
+              title="No delivery attempts yet"
+              description="Ticket emails and resends will appear here once one is sent."
+            />
+          ) : (
+            <ul className="attendee-deliveries">
+              {detail.deliveries.map((delivery) => (
+                <li className="attendee-delivery" key={delivery.id}>
+                  <div className="attendee-delivery__subject">
+                    {delivery.rendered_subject ?? "Ticket email"}
+                  </div>
+                  <div className="attendee-delivery__meta">
+                    <MailStatusBadge status={delivery.status} />
+                    <span className="mono">
+                      {formatEventDateTime(
+                        delivery.sent_at ?? delivery.accepted_at ?? delivery.queued_at,
+                        delivery.client_timezone ?? event.timezone,
+                      )}
+                    </span>
+                    {delivery.recipient_email && delivery.recipient_email !== detail.email && (
+                      <span>to {delivery.recipient_email}</span>
+                    )}
+                  </div>
+                  {delivery.error_code && (
+                    <p className="attendee-delivery__error">{delivery.error_code}</p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/** Activity tab: chronological action log — extracted out of the component (SonarCloud S3776:
+ * keeps this tab's own conditional rendering out of the component's cognitive-complexity count). */
+function AttendeeActivityTab({
+  actionLog,
+  attributeFields,
+  eventItems,
+  event,
+}: Readonly<{
+  actionLog: AttendeeDetailDto["action_log"];
+  attributeFields: CustomDataFieldDef[];
+  eventItems: AttendeeDetailDto["event_items"];
+  event: EventDto;
+}>) {
+  return (
+    <Card padded>
+      {actionLog.length === 0 ? (
+        <EmptyState
+          icon={<i className="ti ti-history" aria-hidden="true" />}
+          title="No activity yet"
+          description="Events will appear here as you work with this attendee."
+        />
+      ) : (
+        <ul className="at-timeline">
+          {actionLog.map((entry) => {
+            const detailText = getTimelineDetail(entry, attributeFields, eventItems);
+            return (
+              <li key={entry.id} className="at-tl-item">
+                <div className={`at-tl-dot at-tl-dot--${getTimelineTone(entry)}`}>
+                  <i className={`ti ti-${getTimelineIcon(entry.action_type)}`} aria-hidden="true" />
+                </div>
+                <div className="at-tl-body">
+                  <b>{getTimelineLabel(entry)}</b>
+                  {detailText && <span>{detailText}</span>}
+                </div>
+                <div className="at-tl-meta">
+                  <time className="at-tl-time" dateTime={entry.created_at}>
+                    {formatActivityTimestamp(entry.created_at, entry.client_timezone, event.timezone)}
+                  </time>
+                  <span className="at-tl-actor">
+                    <i className="ti ti-user" aria-hidden="true" />
+                    {getTimelineActor(entry)}
+                  </span>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
 /** Event attendee detail: profile edit, pass revoke/restore, resend, and activity log. */
 export function AttendeeDetailPage() {
   const { eventId, attendeeId } = useParams();
@@ -379,16 +616,7 @@ export function AttendeeDetailPage() {
   const mailConfigured = useMailConfigured(eventId);
 
   const baseline = detail != null ? toAttendeeForm(detail, attributeFields) : null;
-  const isDirty =
-    form !== null &&
-    baseline !== null &&
-    (form.name !== baseline.name ||
-      form.email !== baseline.email ||
-      form.company !== baseline.company ||
-      form.department !== baseline.department ||
-      form.ticket_type !== baseline.ticket_type ||
-      form.rsvp_status !== baseline.rsvp_status ||
-      JSON.stringify(form.customFields) !== JSON.stringify(baseline.customFields));
+  const isDirty = isAttendeeFormDirty(form, baseline);
 
   const goBack = () => {
     if (eventId) navigate(`/admin/events/${eventId}/attendees`);
@@ -682,10 +910,7 @@ export function AttendeeDetailPage() {
   // silently fall back to the blank "—" option while form.ticket_type still holds the orphaned
   // value, hiding it from the admin. Surface it as its own option instead (fail-open, same
   // philosophy as ticketTypeBadge.tsx's catalog resolver).
-  const orphanedTicketType =
-    form.ticket_type && !ticketTypes.some((type) => type.key === form.ticket_type)
-      ? form.ticket_type
-      : null;
+  const orphanedTicketType = resolveOrphanedTicketType(form.ticket_type, ticketTypes);
   const attendeeSource = deriveAttendeeSource(detail.action_log);
   const customDataEntries = allCustomDataEntries(detail.custom_data, attributeFields, humanizeFieldKey);
   // Falls back to [] against a stale API response missing this field (e.g. an apps/web dev
@@ -854,181 +1079,23 @@ export function AttendeeDetailPage() {
       />
 
       {tab === "overview" && (
-        <div className="attendee-detail-grid">
-          <div className="attendee-detail-main">
-            <Card title="Profile" className="attendee-detail-profile">
-              <div className="attendee-detail-readonly">
-                <div className="attendee-detail-row">
-                  <span>Email</span>
-                  <span className="mono">{detail.email}</span>
-                </div>
-                <div className="attendee-detail-row">
-                  <span>Ticket type</span>
-                  <TicketTypeBadge ticketType={detail.ticket_type} catalog={ticketTypes} />
-                </div>
-                <div className="attendee-detail-row">
-                  <span>Company</span>
-                  <span>{detail.company ?? "—"}</span>
-                </div>
-                <div className="attendee-detail-row">
-                  <span>Department</span>
-                  <span>{detail.department ?? "—"}</span>
-                </div>
-                {attendeeSource && (
-                  <div className="attendee-detail-row">
-                    <span>Added via</span>
-                    <span>{attendeeSource}</span>
-                  </div>
-                )}
-                <div className="attendee-detail-row">
-                  <span>Registered on</span>
-                  <span className="mono">
-                    {formatEventDateTime(detail.created_at, detail.client_timezone ?? event.timezone)}
-                  </span>
-                </div>
-              </div>
-            </Card>
-
-            <Card title="Additional information">
-              {customDataEntries.length === 0 ? (
-                <EmptyState
-                  icon={<i className="ti ti-list-details" aria-hidden="true" />}
-                  title="No additional information"
-                  description="Custom fields will appear here once this attendee has some."
-                />
-              ) : (
-                <div className="attendee-detail-readonly">
-                  {customDataEntries.map(([key, label, value]) => (
-                    <div className="attendee-detail-row" key={key}>
-                      <span>{label}</span>
-                      <span>{value}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-
-            <Card title="Wallet">
-              <EmptyState
-                icon={<i className="ti ti-wallet" aria-hidden="true" />}
-                title="Not added to a wallet"
-                description="Apple Wallet and Google Wallet support isn't available yet."
-              />
-            </Card>
-          </div>
-
-          <div className="attendee-detail-side">
-            <Card title="Event-day items">
-              {eventItems.length === 0 ? (
-                <EmptyState
-                  icon={<i className="ti ti-package" aria-hidden="true" />}
-                  title="No event-day items"
-                  description="This event has no hand-out items configured yet."
-                />
-              ) : (
-                <ul className="attendee-items-list">
-                  {eventItems.map((item) => (
-                    <li className="attendee-items-row" key={item.key}>
-                      <span
-                        className={[
-                          "attendee-items-row__icon",
-                          itemIconModifier(item.state) &&
-                            `attendee-items-row__icon--${itemIconModifier(item.state)}`,
-                        ]
-                          .filter(Boolean)
-                          .join(" ")}
-                      >
-                        <i
-                          className={`ti ti-${item.state === "issued" || item.state === "returned" ? "circle-check" : (item.icon ?? "package")}`}
-                          aria-hidden="true"
-                        />
-                      </span>
-                      <span className="attendee-items-row__label">{item.label}</span>
-                      <span
-                        className={`attendee-items-row__state attendee-items-row__state--${itemStateTone(item.state)}`}
-                      >
-                        {itemStateLabel(item.state)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Card>
-
-            <Card title="Mail delivery history">
-              {detail.deliveries.length === 0 ? (
-                <EmptyState
-                  icon={<i className="ti ti-mail-off" aria-hidden="true" />}
-                  title="No delivery attempts yet"
-                  description="Ticket emails and resends will appear here once one is sent."
-                />
-              ) : (
-                <ul className="attendee-deliveries">
-                  {detail.deliveries.map((delivery) => (
-                    <li className="attendee-delivery" key={delivery.id}>
-                      <div className="attendee-delivery__subject">
-                        {delivery.rendered_subject ?? "Ticket email"}
-                      </div>
-                      <div className="attendee-delivery__meta">
-                        <MailStatusBadge status={delivery.status} />
-                        <span className="mono">
-                          {formatEventDateTime(
-                            delivery.sent_at ?? delivery.accepted_at ?? delivery.queued_at,
-                            delivery.client_timezone ?? event.timezone,
-                          )}
-                        </span>
-                        {delivery.recipient_email && delivery.recipient_email !== detail.email && (
-                          <span>to {delivery.recipient_email}</span>
-                        )}
-                      </div>
-                      {delivery.error_code && (
-                        <p className="attendee-delivery__error">{delivery.error_code}</p>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Card>
-          </div>
-        </div>
+        <AttendeeOverviewTab
+          detail={detail}
+          ticketTypes={ticketTypes}
+          attendeeSource={attendeeSource}
+          customDataEntries={customDataEntries}
+          eventItems={eventItems}
+          event={event}
+        />
       )}
 
       {tab === "activity" && (
-        <Card padded>
-          {detail.action_log.length === 0 ? (
-            <EmptyState
-              icon={<i className="ti ti-history" aria-hidden="true" />}
-              title="No activity yet"
-              description="Events will appear here as you work with this attendee."
-            />
-          ) : (
-            <ul className="at-timeline">
-              {detail.action_log.map((entry) => {
-                const detailText = getTimelineDetail(entry, attributeFields, eventItems);
-                return (
-                  <li key={entry.id} className="at-tl-item">
-                    <div className={`at-tl-dot at-tl-dot--${getTimelineTone(entry)}`}>
-                      <i className={`ti ti-${getTimelineIcon(entry.action_type)}`} aria-hidden="true" />
-                    </div>
-                    <div className="at-tl-body">
-                      <b>{getTimelineLabel(entry)}</b>
-                      {detailText && <span>{detailText}</span>}
-                    </div>
-                    <div className="at-tl-meta">
-                      <time className="at-tl-time" dateTime={entry.created_at}>
-                        {formatActivityTimestamp(entry.created_at, entry.client_timezone, event.timezone)}
-                      </time>
-                      <span className="at-tl-actor">
-                        <i className="ti ti-user" aria-hidden="true" />
-                        {getTimelineActor(entry)}
-                      </span>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </Card>
+        <AttendeeActivityTab
+          actionLog={detail.action_log}
+          attributeFields={attributeFields}
+          eventItems={eventItems}
+          event={event}
+        />
       )}
 
       {editMode && (

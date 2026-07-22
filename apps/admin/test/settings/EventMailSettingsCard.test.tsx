@@ -179,7 +179,7 @@ describe("EventMailSettingsCard — inherited (organization) mode", () => {
     mockFetch.mockResolvedValue(inheritedResponse());
     renderCard();
 
-    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+    await screen.findByText(SMTP_SUMMARY_TEXT);
     expect(
       screen.getByRole("radio", { name: "Organization mail" }).getAttribute("aria-checked"),
     ).toBe("true");
@@ -206,7 +206,7 @@ describe("EventMailSettingsCard — inherited (organization) mode", () => {
     mockFetch.mockResolvedValue(inheritedResponse());
     renderCard();
 
-    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+    await screen.findByText(SMTP_SUMMARY_TEXT);
     expect(screen.queryByText("Open instance settings")).toBeNull();
     expect(screen.getByText(/Only a superadmin can view or change the organization/)).toBeTruthy();
   });
@@ -215,7 +215,7 @@ describe("EventMailSettingsCard — inherited (organization) mode", () => {
     mockFetch.mockResolvedValue(inheritedResponse());
     renderCard();
 
-    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+    await screen.findByText(SMTP_SUMMARY_TEXT);
     expect(screen.queryByText(DEDICATED_HINT)).toBeNull();
   });
 
@@ -223,7 +223,7 @@ describe("EventMailSettingsCard — inherited (organization) mode", () => {
     mockFetch.mockResolvedValue(inheritedResponse());
     renderCard();
 
-    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+    await screen.findByText(SMTP_SUMMARY_TEXT);
     expect(document.querySelector(".org-mail-summary--configured")).not.toBeNull();
   });
 
@@ -231,7 +231,7 @@ describe("EventMailSettingsCard — inherited (organization) mode", () => {
     mockFetch.mockResolvedValue(inheritedResponse({ fields: baseFields() }));
     renderCard();
 
-    await waitFor(() => screen.getByText("Organization mail transport not set up"));
+    await screen.findByText("Organization mail transport not set up");
     expect(document.querySelector(".org-mail-summary--configured")).toBeNull();
   });
 });
@@ -240,7 +240,7 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
   it("starts blank on first toggle, not prefilled with the inherited org values", async () => {
     mockFetch.mockResolvedValue(inheritedResponse());
     renderCard();
-    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+    await screen.findByText(SMTP_SUMMARY_TEXT);
 
     fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
 
@@ -257,7 +257,7 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
     mockFetch.mockResolvedValue(dedicatedResponse());
     renderCard();
 
-    await waitFor(() => screen.getByText(DEDICATED_HINT));
+    await screen.findByText(DEDICATED_HINT);
     expect((screen.getByLabelText("SMTP host") as HTMLInputElement).value).toBe(
       "smtp.dedicated.example.com",
     );
@@ -266,7 +266,7 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
   it("preserves in-progress edits when toggling away and back before saving", async () => {
     mockFetch.mockResolvedValue(inheritedResponse());
     renderCard();
-    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+    await screen.findByText(SMTP_SUMMARY_TEXT);
 
     fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
     fireEvent.click(screen.getByRole("radio", { name: "SMTP (recommended)" }));
@@ -285,7 +285,7 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
   it("excludes the Not configured tile in dedicated mode", async () => {
     mockFetch.mockResolvedValue(inheritedResponse());
     renderCard();
-    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+    await screen.findByText(SMTP_SUMMARY_TEXT);
 
     fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
 
@@ -296,7 +296,7 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
     mockFetch.mockResolvedValue(inheritedResponse());
     mockSave.mockResolvedValue(dedicatedResponse());
     renderCard();
-    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+    await screen.findByText(SMTP_SUMMARY_TEXT);
 
     fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
     fireEvent.click(screen.getByRole("radio", { name: "SMTP (recommended)" }));
@@ -323,7 +323,7 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
   it("Reset reverts the toggle and discards the draft", async () => {
     mockFetch.mockResolvedValue(inheritedResponse());
     renderCard();
-    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+    await screen.findByText(SMTP_SUMMARY_TEXT);
 
     fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
     expect(screen.getByText(DEDICATED_HINT)).toBeTruthy();
@@ -338,7 +338,7 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
   it("shows validation errors and does not save an incomplete SMTP draft", async () => {
     mockFetch.mockResolvedValue(inheritedResponse());
     renderCard();
-    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+    await screen.findByText(SMTP_SUMMARY_TEXT);
 
     fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
     fireEvent.click(screen.getByRole("radio", { name: "SMTP (recommended)" }));
@@ -354,7 +354,7 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
     mockFetch.mockResolvedValue(inheritedResponse());
     mockSave.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderCard();
-    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+    await screen.findByText(SMTP_SUMMARY_TEXT);
 
     fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
     fireEvent.click(screen.getByRole("radio", { name: "SMTP (recommended)" }));
@@ -377,7 +377,7 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
   it("renders the Graph card when the Microsoft Graph tile is selected", async () => {
     mockFetch.mockResolvedValue(inheritedResponse());
     renderCard();
-    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+    await screen.findByText(SMTP_SUMMARY_TEXT);
 
     fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
     fireEvent.click(screen.getByRole("radio", { name: "Microsoft Graph" }));
@@ -389,7 +389,7 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
   it("renders the Power Automate card when the Power Automate tile is selected", async () => {
     mockFetch.mockResolvedValue(inheritedResponse());
     renderCard();
-    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+    await screen.findByText(SMTP_SUMMARY_TEXT);
 
     fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
     fireEvent.click(screen.getByRole("radio", { name: "Power Automate" }));
@@ -403,7 +403,7 @@ describe("EventMailSettingsCard — reverting to organization", () => {
   it("shows a revert warning instead of an org summary while a saved override is still toggled off", async () => {
     mockFetch.mockResolvedValue(dedicatedResponse());
     renderCard();
-    await waitFor(() => screen.getByText(DEDICATED_HINT));
+    await screen.findByText(DEDICATED_HINT);
 
     fireEvent.click(screen.getByRole("radio", { name: "Organization mail" }));
 
@@ -414,7 +414,7 @@ describe("EventMailSettingsCard — reverting to organization", () => {
     mockFetch.mockResolvedValue(dedicatedResponse());
     mockClear.mockResolvedValue(inheritedResponse());
     renderCard();
-    await waitFor(() => screen.getByText(DEDICATED_HINT));
+    await screen.findByText(DEDICATED_HINT);
 
     fireEvent.click(screen.getByRole("radio", { name: "Organization mail" }));
     fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
@@ -431,7 +431,7 @@ describe("EventMailSettingsCard — reverting to organization", () => {
   it("cancelling the confirm dialog leaves the dedicated override in place", async () => {
     mockFetch.mockResolvedValue(dedicatedResponse());
     renderCard();
-    await waitFor(() => screen.getByText(DEDICATED_HINT));
+    await screen.findByText(DEDICATED_HINT);
 
     fireEvent.click(screen.getByRole("radio", { name: "Organization mail" }));
     fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
@@ -445,7 +445,7 @@ describe("EventMailSettingsCard — reverting to organization", () => {
     mockFetch.mockResolvedValue(dedicatedResponse());
     mockClear.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderCard();
-    await waitFor(() => screen.getByText(DEDICATED_HINT));
+    await screen.findByText(DEDICATED_HINT);
 
     fireEvent.click(screen.getByRole("radio", { name: "Organization mail" }));
     fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
@@ -465,7 +465,7 @@ describe("EventMailSettingsCard — test send", () => {
     mockFetch.mockResolvedValue(inheritedResponse());
     mockTest.mockResolvedValue({ status: "sent", provider: "smtp" });
     renderCard();
-    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+    await screen.findByText(SMTP_SUMMARY_TEXT);
 
     fireEvent.change(screen.getByLabelText("Recipient"), {
       target: { value: "tester@example.com" },
@@ -473,14 +473,14 @@ describe("EventMailSettingsCard — test send", () => {
     fireEvent.click(screen.getByRole("button", { name: /Send test email/ }));
 
     await waitFor(() => expect(mockTest).toHaveBeenCalledWith("evt-1", "tester@example.com"));
-    await waitFor(() => screen.getByText(/Sent successfully via SMTP/));
+    await screen.findByText(/Sent successfully via SMTP/);
   });
 
   it("shows the mailbox for a successful Graph test send", async () => {
     mockFetch.mockResolvedValue(inheritedResponse({ fields: graphFields() }));
     mockTest.mockResolvedValue({ status: "sent", provider: "graph" });
     renderCard();
-    await waitFor(() => screen.getByText("Microsoft Graph · sends as org@example.com"));
+    await screen.findByText("Microsoft Graph · sends as org@example.com");
 
     fireEvent.change(screen.getByLabelText("Recipient"), {
       target: { value: "tester@example.com" },
@@ -488,7 +488,7 @@ describe("EventMailSettingsCard — test send", () => {
     fireEvent.click(screen.getByRole("button", { name: /Send test email/ }));
 
     await waitFor(() => expect(mockTest).toHaveBeenCalledWith("evt-1", "tester@example.com"));
-    await waitFor(() => screen.getByText("Mailbox"));
+    await screen.findByText("Mailbox");
     expect(screen.getByText("shared@example.com")).toBeTruthy();
   });
 
@@ -496,7 +496,7 @@ describe("EventMailSettingsCard — test send", () => {
     mockFetch.mockResolvedValue(inheritedResponse());
     mockTest.mockResolvedValue({ status: "failed", provider: "smtp" });
     renderCard();
-    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+    await screen.findByText(SMTP_SUMMARY_TEXT);
 
     fireEvent.change(screen.getByLabelText("Recipient"), {
       target: { value: "tester@example.com" },
@@ -510,7 +510,7 @@ describe("EventMailSettingsCard — test send", () => {
   it("disables test-send while the toggle has unsaved changes", async () => {
     mockFetch.mockResolvedValue(inheritedResponse());
     renderCard();
-    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+    await screen.findByText(SMTP_SUMMARY_TEXT);
 
     fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
 
@@ -522,7 +522,7 @@ describe("EventMailSettingsCard — archived event", () => {
   it("hides the Save/Reset footer and shows an archived note instead", async () => {
     mockFetch.mockResolvedValue(inheritedResponse());
     renderCard(true);
-    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+    await screen.findByText(SMTP_SUMMARY_TEXT);
 
     expect(screen.queryByRole("button", { name: "Reset" })).toBeNull();
     expect(screen.getByText(/This event is archived - mail settings cannot be changed/)).toBeTruthy();
@@ -531,7 +531,7 @@ describe("EventMailSettingsCard — archived event", () => {
   it("disables the mode toggle and test-send", async () => {
     mockFetch.mockResolvedValue(inheritedResponse());
     renderCard(true);
-    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+    await screen.findByText(SMTP_SUMMARY_TEXT);
 
     expect(isDisabled(screen.getByRole("radio", { name: "Dedicated for this event" }))).toBe(true);
     expect(isDisabled(screen.getByRole("button", { name: /Send test email/ }))).toBe(true);

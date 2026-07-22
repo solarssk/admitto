@@ -166,6 +166,51 @@ function isInsideQuotedAttributeValue(value: string, index: number): boolean {
   return inQuote !== null;
 }
 
+/**
+ * Resolves where and what to insert into an MJML template body — adjusting away from the raw
+ * cursor selection when it's somewhere the requested markup can't safely land. Three MJML-
+ * specific hazards this guards against, in order — each one found by bot review on a previous
+ * edit:
+ *
+ * 1. Cursor inside an existing quoted attribute value (e.g. filling in `<mj-image src="">`):
+ *    always the bare token, right there, never a full element — an element spliced inside an
+ *    attribute value is nested-inside-a-string markup that fails to compile.
+ * 2. Cursor outside the `<mjml>...</mjml>` root, or inside the root but between components
+ *    (not inside any `<mj-column>`): MJML silently drops content there with no error — redirect
+ *    into the template's last `<mj-column>` instead, wrapping a bare token in its own
+ *    `<mj-text>` so it isn't itself dropped as loose text between components.
+ * 3. Image markup specifically landing inside an existing `<mj-text>`: not silently dropped,
+ *    outright invalid (`<mj-image>` can't nest inside `<mj-text>`) — redirect the same way as
+ *    (2). A bare token inside `<mj-text>` is fine as-is and skips this case.
+ *
+ * Returns the unchanged selection and `token` as-is when none of the hazards apply.
+ */
+function resolveMjmlInsertion(
+  value: string,
+  start: number,
+  end: number,
+  token: string,
+  bareToken: string,
+): { start: number; end: number; insertion: string } {
+  if (isInsideQuotedAttributeValue(value, start)) {
+    return { start, end, insertion: bareToken };
+  }
+  const isImageMarkup = token.startsWith("<mj-");
+  const needsFallback =
+    !isWithinMjmlRoot(value, start, end) ||
+    !isInsideMjColumn(value, start, end) ||
+    (isImageMarkup && isInsideMjText(value, start, end));
+  if (!needsFallback) {
+    return { start, end, insertion: token };
+  }
+  const fallbackIdx = findMjmlColumnFallbackIndex(value);
+  if (fallbackIdx === -1) {
+    return { start, end, insertion: token };
+  }
+  const insertion = token.startsWith("<mj-") ? token : `<mj-text>${token}</mj-text>`;
+  return { start: fallbackIdx, end: fallbackIdx, insertion };
+}
+
 const DELIVERY_PAGE_SIZE = 25;
 
 type DirtyProtectedAction =
@@ -693,19 +738,8 @@ export function CommunicationPage() {
   /**
    * Inserts `token` (the caller's preferred markup — possibly a full `<mj-image>`/`<img>`
    * element) at the field's cursor, falling back to `bareToken` (always just `{{name}}`) instead
-   * when the preferred markup can't safely go where the cursor actually is. Three MJML-specific
-   * hazards this guards against, in order — each one found by bot review on a previous edit:
-   *
-   * 1. Cursor inside an existing quoted attribute value (e.g. filling in `<mj-image src="">`):
-   *    always the bare token, right there, never a full element — an element spliced inside an
-   *    attribute value is nested-inside-a-string markup that fails to compile.
-   * 2. Cursor outside the `<mjml>...</mjml>` root, or inside the root but between components
-   *    (not inside any `<mj-column>`): MJML silently drops content there with no error — redirect
-   *    into the template's last `<mj-column>` instead, wrapping a bare token in its own
-   *    `<mj-text>` so it isn't itself dropped as loose text between components.
-   * 3. Image markup specifically landing inside an existing `<mj-text>`: not silently dropped,
-   *    outright invalid (`<mj-image>` can't nest inside `<mj-text>`) — redirect the same way as
-   *    (2). A bare token inside `<mj-text>` is fine as-is and skips this case.
+   * when the preferred markup can't safely go where the cursor actually is — see
+   * `resolveMjmlInsertion` for the MJML-specific hazards this guards against.
    */
   function insertTokenIntoField(
     el: HTMLInputElement | HTMLTextAreaElement | null,
@@ -719,23 +753,7 @@ export function CommunicationPage() {
     let insertion = token;
 
     if (el === bodyRef.current && format === "mjml") {
-      if (isInsideQuotedAttributeValue(el.value, start)) {
-        insertion = bareToken;
-      } else {
-        const isImageMarkup = insertion.startsWith("<mj-");
-        if (
-          !isWithinMjmlRoot(el.value, start, end) ||
-          !isInsideMjColumn(el.value, start, end) ||
-          (isImageMarkup && isInsideMjText(el.value, start, end))
-        ) {
-          const fallbackIdx = findMjmlColumnFallbackIndex(el.value);
-          if (fallbackIdx !== -1) {
-            start = fallbackIdx;
-            end = fallbackIdx;
-            insertion = token.startsWith("<mj-") ? token : `<mj-text>${token}</mj-text>`;
-          }
-        }
-      }
+      ({ start, end, insertion } = resolveMjmlInsertion(el.value, start, end, token, bareToken));
     }
 
     const newValue = insertAtCursor(el.value, insertion, start, end);
