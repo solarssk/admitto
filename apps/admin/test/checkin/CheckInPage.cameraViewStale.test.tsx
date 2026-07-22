@@ -148,10 +148,10 @@ describe("check-in card/scanResult — mobile camera view no longer inherits sta
       fireEvent.change(input, { target: { value: token.slice(0, i) } });
     }
     fireEvent.keyDown(input, { key: "Enter" });
-    await waitFor(() => expect(screen.getByText("Anna Alpha")).toBeTruthy());
+    await screen.findByText("Anna Alpha");
 
     fireEvent.click(screen.getByRole("button", { name: "Use camera" }));
-    await waitFor(() => expect(screen.getByLabelText("Camera check-in")).toBeTruthy());
+    await screen.findByLabelText("Camera check-in");
 
     // The camera overlay opened fresh — it shows its own live viewfinder
     // hint, not Anna Alpha's card from before it was turned on.
@@ -162,7 +162,7 @@ describe("check-in card/scanResult — mobile camera view no longer inherits sta
   it("closing the mobile camera after a scan clears the card, so the scan-bar view doesn't inherit it", async () => {
     mockPageBootstrap();
     renderPage();
-    await waitFor(() => expect(screen.getByLabelText("Camera check-in")).toBeTruthy());
+    await screen.findByLabelText("Camera check-in");
     await waitFor(() => expect(capturedOnScan).toBeTypeOf("function"));
 
     submitCheckInScan.mockResolvedValueOnce({
@@ -191,7 +191,7 @@ describe("check-in card/scanResult — mobile camera view no longer inherits sta
     mockPageBootstrap();
     renderPage();
     // Starts on the mobile overlay (camera defaults on on mobile).
-    await waitFor(() => expect(screen.getByLabelText("Camera check-in")).toBeTruthy());
+    await screen.findByLabelText("Camera check-in");
     await waitFor(() => expect(capturedOnScan).toBeTypeOf("function"));
 
     submitCheckInScan.mockResolvedValueOnce({

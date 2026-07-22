@@ -347,7 +347,7 @@ describe("AccountPage toasts", () => {
     await waitFor(() => {
       expect(within(dialog).getByText("Invalid authenticator or backup code.")).toBeTruthy();
     });
-    expect(screen.queryByRole("dialog")).toBeTruthy();
+    expect(screen.getByRole("dialog")).toBeTruthy();
     expect((screen.getByLabelText("Current password") as HTMLInputElement).value).toBe("old-password-1");
   });
 

@@ -664,9 +664,7 @@ describe("CheckInPage scan queue — #262/bot review (Enter/paste routing)", () 
     // genuine keyboard-wedge burst, which made a real pasted/typed code fall
     // through to a doomed name/email lookup instead of the scan attempt it
     // obviously was).
-    await act(async () => {
-      fireEvent.keyDown(input, { key: "Enter" });
-    });
+    fireEvent.keyDown(input, { key: "Enter" });
 
     await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", query, "desk-1"));
     expect(lookupCheckInAttendees).not.toHaveBeenCalled();
@@ -693,9 +691,7 @@ describe("CheckInPage scan queue — #262/bot review (Enter/paste routing)", () 
 
     // An explicit Enter, though, is a deliberate submit regardless of how the
     // text arrived.
-    await act(async () => {
-      fireEvent.keyDown(input, { key: "Enter" });
-    });
+    fireEvent.keyDown(input, { key: "Enter" });
     await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", pasted, "desk-1"));
     expect(lookupCheckInAttendees).not.toHaveBeenCalled();
   });
@@ -723,9 +719,7 @@ describe("CheckInPage scan queue — #262/bot review (Enter/paste routing)", () 
     });
     expect(submitCheckInScan).not.toHaveBeenCalled();
 
-    await act(async () => {
-      fireEvent.keyDown(input, { key: "Enter" });
-    });
+    fireEvent.keyDown(input, { key: "Enter" });
     await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", token, "desk-1"));
     expect(lookupCheckInAttendees).not.toHaveBeenCalled();
   });
@@ -779,9 +773,7 @@ describe("CheckInPage scan queue — #262/bot review (Enter/paste routing)", () 
     });
     expect(submitCheckInScan).not.toHaveBeenCalled();
 
-    await act(async () => {
-      fireEvent.keyDown(input, { key: "Enter" });
-    });
+    fireEvent.keyDown(input, { key: "Enter" });
     await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", value, "desk-1"));
     await vi.waitFor(() => expect(lookupCheckInAttendees).toHaveBeenCalledWith("evt-live", value));
   });
@@ -818,9 +810,7 @@ describe("CheckInPage scan queue — #262/bot review (Enter/paste routing)", () 
     const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
 
     await typeWedge(input, code, { gapMs: 2 });
-    await act(async () => {
-      fireEvent.keyDown(input, { key: "Enter" });
-    });
+    fireEvent.keyDown(input, { key: "Enter" });
 
     await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", code, "desk-1"));
     expect(lookupCheckInAttendees).not.toHaveBeenCalled();
@@ -842,9 +832,7 @@ describe("CheckInPage scan queue — #262/bot review (Enter/paste routing)", () 
 
     await typeWedge(input, token, { gapMs: 2 });
     // Enter fires immediately — well before the 50ms auto-submit debounce.
-    await act(async () => {
-      fireEvent.keyDown(input, { key: "Enter" });
-    });
+    fireEvent.keyDown(input, { key: "Enter" });
 
     await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", token, "desk-1"));
     expect(lookupCheckInAttendees).not.toHaveBeenCalled();
@@ -873,14 +861,10 @@ describe("CheckInPage scan queue — #262/bot review (Enter/paste routing)", () 
     const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
 
     await typeWedge(input, value, { gapMs: 60 });
-    await act(async () => {
-      fireEvent.keyDown(input, { key: "Enter" });
-    });
+    fireEvent.keyDown(input, { key: "Enter" });
 
-    await waitFor(() =>
-      expect(
-        screen.getByText("This code is not valid for this event. Check the QR or use manual lookup."),
-      ).toBeTruthy(),
+    await screen.findByText(
+      "This code is not valid for this event. Check the QR or use manual lookup.",
     );
     expect(
       screen.queryByText("Manual lookup is disabled for this event — use QR scan only."),
