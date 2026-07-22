@@ -105,7 +105,7 @@ describe("mobile manual-entry overlay — closes only once the real outcome is k
     submitCheckInScan.mockReturnValueOnce(scan.promise);
 
     renderPage();
-    await waitFor(() => expect(screen.getByRole("button", { name: /manual search/i })).toBeTruthy());
+    await screen.findByRole("button", { name: /manual search/i });
     fireEvent.click(screen.getByRole("button", { name: /manual search/i }));
 
     const input = await screen.findByLabelText("Search by name or email");

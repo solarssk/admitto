@@ -93,7 +93,7 @@ describe("AddAttendeeModal", () => {
     );
 
     const select = await screen.findByLabelText<HTMLSelectElement>("Ticket type");
-    await waitFor(() => expect(screen.getByRole("option", { name: "VIP" })).toBeTruthy());
+    await screen.findByRole("option", { name: "VIP" });
 
     fireEvent.change(screen.getByLabelText("Name *"), { target: { value: "Jan Kowalski" } });
     fireEvent.change(screen.getByLabelText("Email *"), { target: { value: "jan@example.com" } });
@@ -191,7 +191,7 @@ describe("AddAttendeeModal", () => {
     );
 
     const select = await screen.findByLabelText<HTMLSelectElement>("Ticket type");
-    await waitFor(() => expect(screen.getByRole("option", { name: "VIP" })).toBeTruthy());
+    await screen.findByRole("option", { name: "VIP" });
     fireEvent.change(screen.getByLabelText("Name *"), { target: { value: "Jan Kowalski" } });
     fireEvent.change(screen.getByLabelText("Email *"), { target: { value: "jan@example.com" } });
     fireEvent.change(select, { target: { value: "vip" } });

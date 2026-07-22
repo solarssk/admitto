@@ -43,10 +43,8 @@ describe("AttendeeCard — item action button (review finding)", () => {
     );
 
     const button = screen.getByRole("button", { name: "Mark badge issued" });
-    act(() => {
-      fireEvent.click(button);
-      fireEvent.click(button);
-    });
+    fireEvent.click(button);
+    fireEvent.click(button);
 
     expect(onItemAction).toHaveBeenCalledTimes(1);
   });
@@ -85,10 +83,8 @@ describe("AttendeeCard — item action button (review finding)", () => {
     );
 
     const button = screen.getByRole("button", { name: "Undo check-in" });
-    act(() => {
-      fireEvent.click(button);
-      fireEvent.click(button);
-    });
+    fireEvent.click(button);
+    fireEvent.click(button);
 
     expect(onUndo).toHaveBeenCalledTimes(1);
   });

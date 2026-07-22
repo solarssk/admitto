@@ -114,9 +114,7 @@ describe("TicketTypesCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove VIP" }));
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
 
-    await waitFor(() =>
-      expect(screen.getByText(/Can't remove "VIP" — attendees still have this type\./)).toBeTruthy(),
-    );
+    expect(await screen.findByText(/Can't remove "VIP" — attendees still have this type\./)).toBeTruthy();
     // The dialog itself (not just a toast) is still open, with the same target and a Cancel path.
     expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
   });

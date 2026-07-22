@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AttendeeCardDto } from "../../src/api/types.js";
 import { AttendeeCard } from "../../src/checkin/AttendeeCard.js";
@@ -80,10 +80,8 @@ describe("AttendeeCard — admin per-item Revoke (item revocation feature)", () 
       <AttendeeCard card={issuedItemCard} eventTimezone="UTC" canAct onRevokeItem={onRevokeItem} />,
     );
     const button = screen.getByRole("button", { name: "Revoke Gift bag" });
-    act(() => {
-      fireEvent.click(button);
-      fireEvent.click(button);
-    });
+    fireEvent.click(button);
+    fireEvent.click(button);
     expect(onRevokeItem).toHaveBeenCalledTimes(1);
   });
 

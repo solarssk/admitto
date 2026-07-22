@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { CameraOverlay } from "../../src/checkin/CameraOverlay.js";
 import type { AttendeeCardDto, AttendeeCardItemDto, CheckInScanResponse } from "../../src/api/types.js";
 
@@ -235,7 +235,7 @@ describe("CameraOverlay item issuing (#434)", () => {
     // `items` still shows the badge as pending (the update never landed) —
     // the optimistic mark must be dropped, or a false "issued" would
     // misrepresent the item as actually handed out and recorded.
-    await waitFor(() => expect(screen.getByText("1 item skipped")).toBeTruthy());
+    await screen.findByText("1 item skipped");
   });
 
   it("summary reads as a genuine success only when every item was actually issued, not just skipped through", () => {
@@ -470,10 +470,8 @@ describe("CameraOverlay item issuing (#434)", () => {
     );
 
     const button = screen.getByRole("button", { name: "Mark badge issued" });
-    act(() => {
-      fireEvent.click(button);
-      fireEvent.click(button);
-    });
+    fireEvent.click(button);
+    fireEvent.click(button);
 
     expect(onItemAction).toHaveBeenCalledTimes(1);
   });
@@ -493,10 +491,8 @@ describe("CameraOverlay item issuing (#434)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Mark badge issued" }));
     const undoButton = screen.getByRole("button", { name: "Undo last check-in" });
-    act(() => {
-      fireEvent.click(undoButton);
-      fireEvent.click(undoButton);
-    });
+    fireEvent.click(undoButton);
+    fireEvent.click(undoButton);
 
     expect(onUndo).toHaveBeenCalledTimes(1);
   });

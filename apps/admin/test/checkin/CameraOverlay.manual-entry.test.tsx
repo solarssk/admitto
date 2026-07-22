@@ -91,7 +91,7 @@ describe("CameraOverlay manual search (#433)", () => {
     fireEvent.change(input, { target: { value: "Alice" } });
     await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
 
-    await waitFor(() => expect(screen.getByText("Alice Smith")).toBeTruthy());
+    await screen.findByText("Alice Smith");
     expect(screen.getByText("Acme · VIP")).toBeTruthy();
 
     fireEvent.click(screen.getByText("Alice Smith"));
@@ -116,7 +116,7 @@ describe("CameraOverlay manual search (#433)", () => {
       target: { value: "Alice" },
     });
     await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
-    await waitFor(() => expect(screen.getByText("checked in")).toBeTruthy());
+    await screen.findByText("checked in");
   });
 
   it("shows an empty state when nothing matches", async () => {
@@ -135,9 +135,7 @@ describe("CameraOverlay manual search (#433)", () => {
       target: { value: "nomatch" },
     });
     await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
-    await waitFor(() =>
-      expect(screen.getByText('No attendees found for "nomatch"')).toBeTruthy(),
-    );
+    await screen.findByText('No attendees found for "nomatch"');
   });
 
   it("never calls onSearch when manual lookup is disabled for the event", async () => {
