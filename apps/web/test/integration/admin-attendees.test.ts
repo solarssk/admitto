@@ -1051,6 +1051,185 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-checkin", () => {
   });
 });
 
+describe("POST /api/admin/events/:eventId/attendees/bulk-revoke-checkin", () => {
+  afterAll(async () => {
+    await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-revoke-checkin-" } } });
+    await prisma.checkIn.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-revoke-checkin-" } } });
+    await prisma.attendee.deleteMany({ where: { id: { startsWith: "att-bulk-revoke-checkin-" } } });
+  });
+
+  async function seedAdmitted(ids: string[]) {
+    await prisma.attendee.createMany({
+      data: ids.map((id) => ({
+        id,
+        event_id: EVENT_A,
+        email: `${id}@example.com`,
+        name: `Bulk Revoke Checkin ${id}`,
+        token_hash: hashToken(generateToken()),
+        token_enc: encryptToString(generateToken()),
+        admitted_at: new Date("2026-10-01T10:00:00Z"),
+      })),
+    });
+  }
+
+  it("revokes check-in for every requested attendee, clears admitted_at, and writes per-attendee check_in_revoked logs", async () => {
+    const ids = ["att-bulk-revoke-checkin-1", "att-bulk-revoke-checkin-2"];
+    await seedAdmitted(ids);
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-revoke-checkin`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: ids }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ revoked: 2, notAdmitted: 0, blocked: 0, errored: 0 });
+
+    const after = await prisma.attendee.findMany({
+      where: { id: { in: ids } },
+      select: { admitted_at: true },
+    });
+    expect(after.every((a) => a.admitted_at === null)).toBe(true);
+
+    const logs = await prisma.attendeeActionLog.findMany({
+      where: { attendee_id: { in: ids }, action_type: "check_in_revoked" },
+    });
+    expect(logs).toHaveLength(2);
+  });
+
+  it("counts an attendee who wasn't checked in as notAdmitted instead of failing the request", async () => {
+    const admittedId = "att-bulk-revoke-checkin-mixed-admitted";
+    const freshId = "att-bulk-revoke-checkin-mixed-fresh";
+    await seedAdmitted([admittedId]);
+    await prisma.attendee.create({
+      data: {
+        id: freshId,
+        event_id: EVENT_A,
+        email: `${freshId}@example.com`,
+        name: "Bulk Revoke Checkin fresh",
+        token_hash: hashToken(generateToken()),
+        token_enc: encryptToString(generateToken()),
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-revoke-checkin`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: [admittedId, freshId] }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ revoked: 1, notAdmitted: 1, blocked: 0, errored: 0 });
+  });
+
+  // Same guard as the single-attendee revoke-checkin route (resetItems: true cascades into
+  // isAdmittable check) - a bulk selection that happens to include a blocked attendee must not
+  // fail the whole request, and must not touch that attendee's admission or issued item.
+  it("counts an attendee with a blocked pass as blocked, without touching their admission or issued item", async () => {
+    const attId = "att-bulk-revoke-checkin-blocked-pass";
+    await prisma.attendee.create({
+      data: {
+        id: attId,
+        event_id: EVENT_A,
+        email: `${attId}@example.com`,
+        name: "Blocked Pass Bulk Revoke",
+        token_hash: hashToken(generateToken()),
+        status: "cancelled",
+        admitted_at: new Date("2026-10-01T10:00:00Z"),
+      },
+    });
+    await getAttendeeCard(EVENT_A, attId, prisma);
+    const giftbag = await prisma.eventItem.findFirstOrThrow({
+      where: { event_id: EVENT_A, key: "giftbag" },
+    });
+    await prisma.attendeeItemState.update({
+      where: { attendee_id_event_item_id: { attendee_id: attId, event_item_id: giftbag.id } },
+      data: { state: "issued" },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-revoke-checkin`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: [attId] }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ revoked: 0, notAdmitted: 0, blocked: 1, errored: 0 });
+
+    const after = await prisma.attendee.findUniqueOrThrow({ where: { id: attId } });
+    expect(after.admitted_at).not.toBeNull();
+    const item = await prisma.attendeeItemState.findFirst({
+      where: { attendee_id: attId, event_item: { key: "giftbag" } },
+    });
+    expect(item?.state).toBe("issued");
+  });
+
+  it("rejects a malformed JSON body", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-revoke-checkin`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{not json",
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects an empty selection", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-revoke-checkin`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: [] }),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 403 for an admin outside the event's organization", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_B}/attendees/bulk-revoke-checkin`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: ["att-does-not-matter"] }),
+    });
+
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects operator", async () => {
+    const ids = ["att-bulk-revoke-checkin-op"];
+    await seedAdmitted(ids);
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-revoke-checkin`, {
+      method: "POST",
+      headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: ids }),
+    });
+
+    expect(res.status).toBe(403);
+    const after = await prisma.attendee.findUnique({ where: { id: ids[0] } });
+    expect(after?.admitted_at).not.toBeNull();
+  });
+
+  it("returns 403 when the event is archived", async () => {
+    const ids = ["att-bulk-revoke-checkin-archived"];
+    await seedAdmitted(ids);
+    await prisma.event.update({ where: { id: EVENT_A }, data: { archived_at: new Date() } });
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-revoke-checkin`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ attendeeIds: ids }),
+      });
+      expect(res.status).toBe(403);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe("event_archived");
+      const after = await prisma.attendee.findUnique({ where: { id: ids[0] } });
+      expect(after?.admitted_at).not.toBeNull();
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_A }, data: { archived_at: null } });
+    }
+  });
+});
+
 describe("POST /api/admin/events/:eventId/attendees/bulk-revoke-pass", () => {
   afterAll(async () => {
     await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-revoke-pass-" } } });

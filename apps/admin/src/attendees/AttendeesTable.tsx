@@ -287,6 +287,8 @@ export interface AttendeesTableProps {
   canBulkSend: boolean;
   onBulkCheckIn: () => void;
   bulkCheckInBusy: boolean;
+  onBulkRevokeCheckIn: () => void;
+  bulkRevokeCheckInBusy: boolean;
   onBulkExportSelected: () => void;
   bulkExportBusy: boolean;
   onBulkChangeTicketType: () => void;
@@ -380,6 +382,12 @@ function bulkSendTicketsTooltip(archived: boolean, canBulkSend: boolean): string
   return undefined;
 }
 
+function bulkRevokeCheckInTooltip(archived: boolean, canRevokeCheckIn: boolean): string | undefined {
+  if (archived) return ARCHIVED_ACTION_TOOLTIP;
+  if (!canRevokeCheckIn) return "None of the selected attendees are checked in.";
+  return undefined;
+}
+
 /** "Revoke pass" menu item's disabled-title — same "nothing to do" gate as "Revoke check-in"
  * (PO review follow-up): a selection where every attendee is already revoked/cancelled is a
  * guaranteed no-op, so it's disabled rather than left clickable into a confirm dialog that just
@@ -399,6 +407,10 @@ function bulkRevokePassTooltip(archived: boolean, canRevokePass: boolean): strin
 function BulkMoreActionsMenu({
   selectedCount,
   archived,
+  onBulkRevokeCheckIn,
+  bulkRevokeCheckInBusy,
+  canRevokeCheckIn,
+  revokableCheckInCount,
   bulkSendBusy,
   canBulkSend,
   onBulkSendTickets,
@@ -418,6 +430,14 @@ function BulkMoreActionsMenu({
 }: Readonly<{
   selectedCount: number;
   archived: boolean;
+  onBulkRevokeCheckIn: () => void;
+  bulkRevokeCheckInBusy: boolean;
+  /** At least one selected attendee is currently checked in - there's something to revoke. */
+  canRevokeCheckIn: boolean;
+  /** How many of the selection are actually checked in - the count this action would affect,
+   * not the raw selection size (PO review: was showing the full selection count even when
+   * only some of it was checked in). */
+  revokableCheckInCount: number;
   bulkSendBusy: boolean;
   canBulkSend: boolean;
   onBulkSendTickets: () => void;
@@ -536,6 +556,32 @@ function BulkMoreActionsMenu({
               Retry loading ticket types
             </button>
           )}
+          {/* Desktop already has a direct "Check in" button in the bulk bar, but no direct
+           * revoke button anywhere — this menu is the only place for the reverse action, at
+           * every screen size, unlike Send tickets above which is mobile-only (PO review, #522
+           * follow-up: "revoke czy tam undo check in" for a selection). Disabled (not hidden)
+           * when nothing in the selection is currently checked in, same convention as Change
+           * ticket type below. Styled as a caution item (not full danger) — it's reversible via
+           * Check in again, unlike Delete below (PO review). */}
+          <button
+            type="button"
+            role="menuitem"
+            className="more-actions-menu__item more-actions-menu__item--warning"
+            disabled={archived || bulkRevokeCheckInBusy || !canRevokeCheckIn}
+            title={bulkRevokeCheckInTooltip(archived, canRevokeCheckIn)}
+            onClick={() => {
+              setOpen(false);
+              onBulkRevokeCheckIn();
+            }}
+          >
+            <i className="ti ti-qrcode-off" aria-hidden="true" />
+            <span className="more-actions-menu__item-text">
+              <span>{bulkRevokeCheckInBusy ? "Revoking check-in…" : "Revoke check-in"}</span>
+              <span className="more-actions-menu__item-hint">
+                Undo check-in for {revokableCheckInCount} attendee{revokableCheckInCount === 1 ? "" : "s"}
+              </span>
+            </span>
+          </button>
           {/* Disabled once every selected attendee is already revoked/cancelled — a guaranteed
            * no-op otherwise, same "nothing to do" gate as "Revoke check-in" (PO review
            * follow-up, #549). A mixed selection stays enabled: the server already leaves an
@@ -605,6 +651,11 @@ function BulkBar({
   onBulkSendTickets,
   bulkCheckInBusy,
   onBulkCheckIn,
+  checkInDisabled,
+  onBulkRevokeCheckIn,
+  bulkRevokeCheckInBusy,
+  canRevokeCheckIn,
+  revokableCheckInCount,
   bulkExportBusy,
   onBulkExportSelected,
   ticketTypes,
@@ -625,6 +676,15 @@ function BulkBar({
   onBulkSendTickets: () => void;
   bulkCheckInBusy: boolean;
   onBulkCheckIn: () => void;
+  /** Every selected attendee is already checked in - nothing for this action to do. */
+  checkInDisabled: boolean;
+  onBulkRevokeCheckIn: () => void;
+  bulkRevokeCheckInBusy: boolean;
+  /** At least one selected attendee is currently checked in - there's something to revoke. */
+  canRevokeCheckIn: boolean;
+  /** How many of the selection are actually checked in - threaded down to the menu item's hint
+   * text instead of the raw selection size (PO review). */
+  revokableCheckInCount: number;
   bulkExportBusy: boolean;
   onBulkExportSelected: () => void;
   ticketTypes: TicketTypeDto[];
@@ -686,7 +746,12 @@ function BulkBar({
             )}
           </ArchivedGuard>
         )}
-        <ArchivedGuard event={event} reasonId="bulk-checkin-reason" disabled={bulkCheckInBusy}>
+        <ArchivedGuard
+          event={event}
+          reasonId="bulk-checkin-reason"
+          disabled={bulkCheckInBusy || checkInDisabled}
+          tooltip={checkInDisabled ? "Every selected attendee is already checked in." : undefined}
+        >
           {(guard) => (
             <Button
               variant="ghost"
@@ -701,6 +766,10 @@ function BulkBar({
         <BulkMoreActionsMenu
           selectedCount={selectedIds.size}
           archived={archived}
+          onBulkRevokeCheckIn={onBulkRevokeCheckIn}
+          bulkRevokeCheckInBusy={bulkRevokeCheckInBusy}
+          canRevokeCheckIn={canRevokeCheckIn}
+          revokableCheckInCount={revokableCheckInCount}
           bulkSendBusy={bulkSendBusy}
           canBulkSend={canBulkSend}
           onBulkSendTickets={onBulkSendTickets}
@@ -1161,6 +1230,8 @@ export function AttendeesTable({
   canBulkSend,
   onBulkCheckIn,
   bulkCheckInBusy,
+  onBulkRevokeCheckIn,
+  bulkRevokeCheckInBusy,
   onBulkExportSelected,
   bulkExportBusy,
   onBulkChangeTicketType,
@@ -1174,11 +1245,22 @@ export function AttendeesTable({
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(page * pageSize, total);
+  const selectedRows = items.filter((row) => selectedIds.has(row.id));
+  // "Check in" is a no-op once every selected attendee is already admitted - disabled rather
+  // than left clickable into a toast that just says so (PO review, #522 follow-up). A mixed
+  // selection stays enabled: there's still real work for the not-yet-admitted ones, and the
+  // bulk endpoint already reports "N already checked in" for those, same as today.
+  const allSelectedAdmitted =
+    selectedRows.length > 0 && selectedRows.every((row) => row.check_in_status === "admitted");
+  const anySelectedAdmitted = selectedRows.some((row) => row.check_in_status === "admitted");
+  // How many of the selection "Revoke check-in" would actually affect - the More actions menu's
+  // hint text shows this instead of the raw selection size (PO review: a mixed selection was
+  // claiming to undo check-in for attendees who were never checked in to begin with).
+  const admittedSelectedCount = selectedRows.filter((row) => row.check_in_status === "admitted").length;
   // "Revoke pass" is a no-op once every selected attendee is already revoked/cancelled -
   // disabled rather than left clickable into a confirm dialog that just reports nothing
   // changed, same "nothing to do" gate as "Revoke check-in" (PO review follow-up, #549). A
   // mixed selection stays enabled: there's still real work for the still-active ones.
-  const selectedRows = items.filter((row) => selectedIds.has(row.id));
   const anySelectedPassActive = selectedRows.some(
     (row) => row.status !== "cancelled" && row.status !== "revoked",
   );
@@ -1201,6 +1283,11 @@ export function AttendeesTable({
           onBulkSendTickets={onBulkSendTickets}
           bulkCheckInBusy={bulkCheckInBusy}
           onBulkCheckIn={onBulkCheckIn}
+          checkInDisabled={allSelectedAdmitted}
+          onBulkRevokeCheckIn={onBulkRevokeCheckIn}
+          bulkRevokeCheckInBusy={bulkRevokeCheckInBusy}
+          canRevokeCheckIn={anySelectedAdmitted}
+          revokableCheckInCount={admittedSelectedCount}
           bulkExportBusy={bulkExportBusy}
           onBulkExportSelected={onBulkExportSelected}
           ticketTypes={ticketTypes}

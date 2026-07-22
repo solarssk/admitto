@@ -43,6 +43,7 @@ import {
   UndoNotAllowedError,
   type OpsAuditContext,
   ADMITTABLE_STATUS_LIST,
+  IllegalItemTransitionError,
   loadEventTicketTypes,
   assertTicketTypeInCatalog,
   UnknownTicketTypeError,
@@ -1627,10 +1628,12 @@ const bulkCheckInAttendeesBodySchema = z
 
 /**
  * How many attendees' own per-attendee transactions run concurrently within one chunk of a bulk
- * check-in. Each attendee still gets its own `admitAttendee` transaction (unchanged); this only
- * bounds how many of those transactions are in flight at once, matching
- * `packages/tickets/src/bulk-revoke.ts`'s BULK_REVOKE_CONCURRENCY for the same shape of
- * per-attendee transaction fan-out.
+ * check-in *or* its bulk-revoke-checkin sibling below (shared, despite the name — the two bound
+ * the same shape of per-attendee transaction fan-out, so a throughput change to one is a
+ * throughput change to both; tune deliberately). Each attendee still gets its own
+ * `admitAttendee`/`revokeCheckInMutation` transaction (unchanged); this only bounds how many of
+ * those are in flight at once, matching `packages/tickets/src/bulk-revoke.ts`'s
+ * BULK_REVOKE_CONCURRENCY for the same shape of per-attendee transaction fan-out.
  */
 const BULK_CHECKIN_CONCURRENCY = 10;
 
@@ -1715,11 +1718,83 @@ export async function handleBulkCheckInEventAttendees(c: Context, db: PrismaClie
   return c.json(counts);
 }
 
+const bulkRevokeCheckInAttendeesBodySchema = z
+  .object({
+    attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+  })
+  .strict();
+
 const bulkRevokePassAttendeesBodySchema = z
   .object({
     attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
   })
   .strict();
+
+/** POST /api/admin/events/:eventId/attendees/bulk-revoke-checkin — undo check-in for a selection
+ * of attendees at once, from the Attendees list's row-selection bulk bar. Mirrors bulk-checkin's
+ * shape (owned-id lookup, chunked Promise.allSettled, per-attendee independent transaction) but
+ * calls `revokeCheckInMutation` directly rather than `revokeCheckIn` — a bulk response only needs
+ * counts, not each attendee's full AttendeeCardDto, so this skips the per-attendee
+ * getAttendeeCard query that `revokeCheckIn`/`revokeCheckInTx` would otherwise pay for
+ * needlessly. `resetItems: true` matches the single-attendee "Revoke check-in" action (not the
+ * pass-status-change path's resetItems: false), so a bulk revoke also clears handed-out items,
+ * same as revoking one attendee at a time.
+ *
+ * `UndoNotAllowedError` (not currently admitted, or lost a concurrent race) and
+ * `IllegalItemTransitionError` (pass already revoked/cancelled, so the item-reset cascade
+ * refuses) are both routine, expected per-attendee outcomes for a bulk selection that may mix
+ * already-clean attendees in with ones to revoke — counted, not treated as failures. Only a
+ * genuinely unexpected throw counts as `errored`. */
+export async function handleBulkRevokeCheckInEventAttendees(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid json" }, 400);
+  }
+  const parsed = bulkRevokeCheckInAttendeesBodySchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "validation_failed" }, 400);
+
+  const owned = await db.attendee.findMany({
+    where: { id: { in: parsed.data.attendeeIds }, event_id: eventId },
+    select: { id: true },
+  });
+
+  const audit = adminAuditFromContext(c);
+  const counts = { revoked: 0, notAdmitted: 0, blocked: 0, errored: 0 };
+  for (const batch of chunk(owned, BULK_CHECKIN_CONCURRENCY)) {
+    const settled = await Promise.allSettled(
+      batch.map(({ id }) =>
+        db.$transaction((tx) =>
+          revokeCheckInMutation({ eventId, attendeeId: id, audit, resetItems: true }, tx),
+        ),
+      ),
+    );
+    for (const outcome of settled) {
+      if (outcome.status === "fulfilled") {
+        counts.revoked += 1;
+        continue;
+      }
+      if (outcome.reason instanceof UndoNotAllowedError) {
+        counts.notAdmitted += 1;
+      } else if (outcome.reason instanceof IllegalItemTransitionError) {
+        counts.blocked += 1;
+      } else {
+        console.error("bulk revoke check-in: revokeCheckInMutation failed:", outcome.reason);
+        counts.errored += 1;
+      }
+    }
+  }
+
+  return c.json(counts);
+}
 
 /** Revokes a single attendee's pass (status -> revoked), same effect as the single-attendee
  * PATCH's status-change branch but scoped to just that transition - no profile/RSVP fields, no
