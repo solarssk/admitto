@@ -1446,6 +1446,97 @@ describe("AttendeesPage bulk revoke items (#551)", () => {
     });
   });
 
+  it("shows a generic inline error when bulkRevokeItems rejects with something other than ApiError", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchEventItems.mockResolvedValue(items);
+    bulkRevokeItems.mockRejectedValueOnce(new Error("network down"));
+
+    await selectTwoRowsAndOpenMenu();
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke items/ }));
+    const dialog = screen.getByRole("dialog", { name: "Revoke items for 2 attendees?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke items" }));
+
+    await screen.findByText("Failed to revoke items.");
+    expect(addToast).not.toHaveBeenCalled();
+  });
+
+  it("ignores a stale bulk-revoke-items error after navigating to a different event mid-request", async () => {
+    let rejectRevoke!: (err: unknown) => void;
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchEventItems.mockResolvedValue(items);
+    bulkRevokeItems.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectRevoke = reject;
+      }),
+    );
+
+    const router = createMemoryRouter(
+      [{ path: "/admin/events/:eventId/attendees", element: <AttendeesPage /> }],
+      { initialEntries: ["/admin/events/evt-1/attendees"] },
+    );
+    render(<RouterProvider router={router} />);
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select John Smith" }));
+    await waitFor(() => expect(bulkBar().getByText("2")).toBeTruthy());
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke items/ }));
+    const dialog = screen.getByRole("dialog", { name: "Revoke items for 2 attendees?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke items" }));
+
+    await act(async () => router.navigate("/admin/events/evt-2/attendees"));
+    await waitFor(() => {
+      expect(fetchEventAttendees).toHaveBeenCalledWith("evt-2", expect.anything(), expect.anything());
+    });
+
+    await act(async () => {
+      rejectRevoke(new Error("network down"));
+      await Promise.resolve();
+    });
+
+    expect(addToast).not.toHaveBeenCalled();
+    expect(screen.queryByText("Failed to revoke items.")).toBeNull();
+  });
+
+  it("ignores a stale bulk-revoke-items completion after navigating to a different event mid-request", async () => {
+    let resolveRevoke!: (value: { revokedCount: number }) => void;
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchEventItems.mockResolvedValue(items);
+    bulkRevokeItems.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRevoke = resolve;
+      }),
+    );
+
+    const router = createMemoryRouter(
+      [{ path: "/admin/events/:eventId/attendees", element: <AttendeesPage /> }],
+      { initialEntries: ["/admin/events/evt-1/attendees"] },
+    );
+    render(<RouterProvider router={router} />);
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select John Smith" }));
+    await waitFor(() => expect(bulkBar().getByText("2")).toBeTruthy());
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Revoke items/ }));
+    const dialog = screen.getByRole("dialog", { name: "Revoke items for 2 attendees?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke items" }));
+
+    await act(async () => router.navigate("/admin/events/evt-2/attendees"));
+    await waitFor(() => {
+      expect(fetchEventAttendees).toHaveBeenCalledWith("evt-2", expect.anything(), expect.anything());
+    });
+
+    await act(async () => {
+      resolveRevoke({ revokedCount: 2 });
+      await Promise.resolve();
+    });
+
+    expect(addToast).not.toHaveBeenCalledWith(expect.stringContaining("revoked"), "success");
+  });
+
   it("disables the menu item when the event has no configured items", async () => {
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
     fetchEventItems.mockResolvedValue([]);

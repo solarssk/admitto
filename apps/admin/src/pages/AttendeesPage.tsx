@@ -160,6 +160,20 @@ function notifyBulkRevokeCheckInResult(
   addToast(`No check-ins revoked${noteSuffix}.`, "error");
 }
 
+/** Standard "N items revoked" / "nothing to revoke" toast for a bulk revoke-items result —
+ * extracted (not inlined in the handler) to keep handleBulkRevokeItemsSelected's own cognitive
+ * complexity within Sonar's threshold, same reasoning as notifyBulkRevokePassResult above. */
+function notifyBulkRevokeItemsResult(
+  revokedCount: number,
+  addToast: (message: string, variant?: ToastVariant) => void,
+) {
+  if (revokedCount > 0) {
+    addToast(`${revokedCount} item${revokedCount === 1 ? "" : "s"} revoked.`, "success");
+  } else {
+    addToast("No issued items to revoke for the selected attendees.", "info");
+  }
+}
+
 interface SendTicketsDialogProps {
   open: boolean;
   busy: boolean;
@@ -989,11 +1003,7 @@ export function AttendeesPage() {
     try {
       const { revokedCount } = await bulkRevokeItems(initiatingEventId, [...selectedIds]);
       if (!isStillOnEvent()) return;
-      if (revokedCount > 0) {
-        addToast(`${revokedCount} item${revokedCount === 1 ? "" : "s"} revoked.`, "success");
-      } else {
-        addToast("No issued items to revoke for the selected attendees.", "info");
-      }
+      notifyBulkRevokeItemsResult(revokedCount, addToast);
       setBulkRevokeItemsConfirmOpen(false);
       clearSelection();
       setReloadToken((n) => n + 1);

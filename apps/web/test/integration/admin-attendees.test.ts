@@ -249,6 +249,16 @@ describe("GET /api/admin/events/:eventId/attendees", () => {
     expect(new Date(item.updated_at).toISOString()).toBe(item.updated_at);
   });
 
+  it("returns an empty items array (and does not query per-attendee lookups) when nothing matches", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees?q=no-such-attendee-zzz`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: unknown[]; total: number };
+    expect(body.items).toEqual([]);
+    expect(body.total).toBe(0);
+  });
+
   it("filters by q and status", async () => {
     const search = await app.request(
       `/api/admin/events/${EVENT_A}/attendees?q=anna&status=all`,
