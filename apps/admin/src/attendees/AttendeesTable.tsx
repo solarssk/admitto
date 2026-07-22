@@ -413,6 +413,7 @@ function BulkMoreActionsMenu({
   onBulkRevokePass,
   bulkRevokePassBusy,
   canRevokePass,
+  revokablePassCount,
   onDelete,
 }: Readonly<{
   selectedCount: number;
@@ -431,6 +432,7 @@ function BulkMoreActionsMenu({
   onBulkRevokePass: () => void;
   bulkRevokePassBusy: boolean;
   canRevokePass: boolean;
+  revokablePassCount: number;
   onDelete: () => void;
 }>) {
   const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
@@ -554,7 +556,7 @@ function BulkMoreActionsMenu({
             <span className="more-actions-menu__item-text">
               <span>{bulkRevokePassBusy ? "Revoking pass…" : "Revoke pass"}</span>
               <span className="more-actions-menu__item-hint">
-                Block check-in for {selectedCount} attendee{selectedCount === 1 ? "" : "s"}
+                Block check-in for {revokablePassCount} attendee{revokablePassCount === 1 ? "" : "s"}
               </span>
             </span>
           </button>
@@ -612,6 +614,7 @@ function BulkBar({
   onBulkRevokePass,
   bulkRevokePassBusy,
   canRevokePass,
+  revokablePassCount,
   onBulkDelete,
 }: Readonly<{
   selectedIds: ReadonlySet<string>;
@@ -631,6 +634,7 @@ function BulkBar({
   onBulkRevokePass: () => void;
   bulkRevokePassBusy: boolean;
   canRevokePass: boolean;
+  revokablePassCount: number;
   onBulkDelete: () => void;
 }>) {
   const archived = event.archived_at != null;
@@ -711,6 +715,7 @@ function BulkBar({
           onBulkRevokePass={onBulkRevokePass}
           bulkRevokePassBusy={bulkRevokePassBusy}
           canRevokePass={canRevokePass}
+          revokablePassCount={revokablePassCount}
           onDelete={onBulkDelete}
         />
       </div>
@@ -1177,6 +1182,12 @@ export function AttendeesTable({
   const anySelectedPassActive = selectedRows.some(
     (row) => row.status !== "cancelled" && row.status !== "revoked",
   );
+  // How many of the selection actually have an active pass to revoke - shown in the "Revoke
+  // pass" menu item's hint instead of the raw selection size, so a mixed selection doesn't
+  // overstate the impact (PO review follow-up, #549).
+  const activeSelectedPassCount = selectedRows.filter(
+    (row) => row.status !== "cancelled" && row.status !== "revoked",
+  ).length;
 
   return (
     <Card padded={false}>
@@ -1199,6 +1210,7 @@ export function AttendeesTable({
           onBulkRevokePass={onBulkRevokePass}
           bulkRevokePassBusy={bulkRevokePassBusy}
           canRevokePass={anySelectedPassActive}
+          revokablePassCount={activeSelectedPassCount}
           onBulkDelete={onBulkDelete}
         />
       ) : (

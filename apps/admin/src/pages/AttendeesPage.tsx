@@ -939,6 +939,13 @@ export function AttendeesPage() {
     !rsvpStatusFilter &&
     !mailStatusFilter;
 
+  // How many of the selection actually have an active pass to revoke - shown in the confirm
+  // dialog's title instead of the raw selection size, so a mixed selection doesn't overstate
+  // the impact (PO review follow-up, #549).
+  const revokablePassCount = items.filter(
+    (row) => selectedIds.has(row.id) && row.status !== "cancelled" && row.status !== "revoked",
+  ).length;
+
   if (!eventId) return <p>Missing event.</p>;
 
   return (
@@ -1199,7 +1206,7 @@ export function AttendeesPage() {
 
       <ConfirmDialog
         open={bulkRevokePassConfirmOpen}
-        title={`Revoke the pass for ${selectedIds.size} attendee${selectedIds.size === 1 ? "" : "s"}?`}
+        title={`Revoke the pass for ${revokablePassCount} attendee${revokablePassCount === 1 ? "" : "s"}?`}
         message="They will no longer be able to check in until the pass is restored. Already revoked or cancelled attendees are left untouched."
         errorMessage={bulkRevokePassError}
         confirmLabel="Revoke pass"

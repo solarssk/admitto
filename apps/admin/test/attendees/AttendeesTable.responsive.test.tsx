@@ -222,6 +222,23 @@ describe("AttendeesTable bulk revoke pass (PO review, #549)", () => {
     const item = screen.getByRole("menuitem", { name: /Revoking pass…/ }) as HTMLButtonElement;
     expect(item.disabled).toBe(true);
   });
+
+  it("shows the accurate active-pass count in the hint, not the raw selection size, for a mixed selection", () => {
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[revokedRow, otherRow]}
+        selectedIds={new Set(["att-1", "att-2"])}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    // 2 selected, but only 1 (otherRow) still has an active pass - the hint must say "1
+    // attendee", not "2 attendees" (PO review follow-up, #549).
+    expect(
+      screen.getByText("Block check-in for 1 attendee", { exact: false }),
+    ).toBeTruthy();
+    expect(screen.queryByText("Block check-in for 2 attendees", { exact: false })).toBeNull();
+  });
 });
 
 describe("AttendeesTable mobile bulk bar — 'More' menu's Send tickets item", () => {
