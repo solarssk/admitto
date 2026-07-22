@@ -11,7 +11,7 @@ import { ReportsPage } from "../../src/pages/ReportsPage.js";
 import { EventsPickerPage } from "../../src/pages/EventsPickerPage.js";
 import { ImportPage } from "../../src/pages/ImportPage.js";
 import { DeviceLabelStep } from "../../src/pages/DeviceLabelStep.js";
-import { renderWithToast } from "../test-utils.js";
+import { getTooltipText, renderWithToast } from "../test-utils.js";
 
 const superadminAssignments = [
   { role: "superadmin", scope_type: "instance", scope_id: null },
@@ -413,9 +413,7 @@ describe("RequirementsPage operator errors", () => {
       name: "Issue badge at entry",
     }) as HTMLInputElement;
     expect(toggle.disabled).toBe(true);
-    expect(toggle.closest(".at-tooltip")?.getAttribute("data-tooltip")).toMatch(
-      /badge item is disabled/,
-    );
+    expect(getTooltipText(toggle)).toMatch(/badge item is disabled/);
   });
 
   it("disables Issue badge at entry when the badge item has Issue on check-in off", async () => {
@@ -430,9 +428,7 @@ describe("RequirementsPage operator errors", () => {
       name: "Issue badge at entry",
     }) as HTMLInputElement;
     expect(toggle.disabled).toBe(true);
-    expect(toggle.closest(".at-tooltip")?.getAttribute("data-tooltip")).toMatch(
-      /Issue on check-in/,
-    );
+    expect(getTooltipText(toggle)).toMatch(/Issue on check-in/);
   });
 
   it("keeps Issue badge at entry enabled when the badge item is active", async () => {
@@ -444,7 +440,7 @@ describe("RequirementsPage operator errors", () => {
       name: "Issue badge at entry",
     }) as HTMLInputElement;
     expect(toggle.disabled).toBe(false);
-    expect(toggle.closest(".at-tooltip")).toBeNull();
+    expect(getTooltipText(toggle)).toBeNull();
   });
 
   it("toasts when enabling badge_at_entry is rejected as badge_item_inactive", async () => {

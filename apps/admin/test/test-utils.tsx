@@ -27,12 +27,18 @@ export function makeTicketType(key: string, label: string): TicketTypeDto {
  * Mouse hover, not focus: a `disabled` element is never focusable in a real browser (jsdom's
  * fireEvent.focus doesn't enforce that, so a focus-based helper would pass here while never
  * actually working for a real user tabbing through a disabled control). mouseenter doesn't
- * bubble, so it's dispatched on the element's own parent - the <Tooltip> trigger wrapper that
- * actually owns the listener - not the element itself. */
+ * bubble, so it's dispatched on the actual <Tooltip> trigger wrapper (found via `closest`, since
+ * some controls - e.g. Switch's <label><input/></label> - put a level of markup between the
+ * queried element and the wrapper that owns the listener), not the element itself. Leaves again
+ * before returning - otherwise a test asserting several disabled controls on one page leaves
+ * every earlier tooltip open too, and a later screen.queryByRole("tooltip") sees more than one. */
 export function getTooltipText(element: HTMLElement): string | null {
-  fireEvent.mouseEnter(element.parentElement ?? element);
+  const trigger = element.closest(".at-tooltip-trigger") ?? element;
+  fireEvent.mouseEnter(trigger);
   const bubble = screen.queryByRole("tooltip");
-  return bubble ? bubble.textContent : null;
+  const text = bubble ? bubble.textContent : null;
+  fireEvent.mouseLeave(trigger);
+  return text;
 }
 
 export interface MockMediaQueryList {

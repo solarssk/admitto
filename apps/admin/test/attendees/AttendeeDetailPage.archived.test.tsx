@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
-import { renderWithToast } from "../test-utils.js";
+import { getTooltipText, renderWithToast } from "../test-utils.js";
 
 const loadAttendeeDetailData = vi.fn();
 
@@ -101,7 +101,7 @@ function expectArchivedLock(control: HTMLElement) {
   expect(describedBy).toBeTruthy();
   const description = document.getElementById(describedBy!);
   expect(description?.textContent).toBe(ARCHIVED_ACTION_TOOLTIP);
-  expect(control.closest(".at-tooltip")).toBeTruthy();
+  expect(getTooltipText(control)).toBe(ARCHIVED_ACTION_TOOLTIP);
 }
 
 describe("AttendeeDetailPage archived lockdown", () => {

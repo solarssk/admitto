@@ -1,3 +1,4 @@
+import { Tooltip } from "@admitto/ui";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import type { ConnectionState } from "../connection/types.js";
 
@@ -78,18 +79,15 @@ export function ServerConnectionBadge() {
   const { icon, message } = COPY[visual];
 
   return (
-    // role="img" (not "status") — a generic <span> with just aria-label isn't reliably
-    // exposed to screen readers, but this renders on every page including CheckInPage,
-    // which already has its own role="status" aria-live region (CheckinConnectionLiveRegion
-    // below) for the same state; role="status" here too would double-announce there.
-    <span
-      className={`status-circle status-circle--${BADGE_VARIANT[visual]} at-tooltip at-tooltip--below at-tooltip--left`}
-      data-tooltip={message}
-      role="img"
-      aria-label={message}
-    >
-      <i className={`ti ${icon}`} aria-hidden="true" />
-    </span>
+    <Tooltip content={message} className={`status-circle status-circle--${BADGE_VARIANT[visual]}`}>
+      {/* role="img" (not "status") — a generic <span> with just aria-label isn't reliably
+          exposed to screen readers, but this renders on every page including CheckInPage,
+          which already has its own role="status" aria-live region (CheckinConnectionLiveRegion
+          below) for the same state; role="status" here too would double-announce there. */}
+      <span role="img" aria-label={message}>
+        <i className={`ti ${icon}`} aria-hidden="true" />
+      </span>
+    </Tooltip>
   );
 }
 

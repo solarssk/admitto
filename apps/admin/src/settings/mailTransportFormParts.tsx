@@ -5,7 +5,7 @@
  * are identical between the two scopes; only what fetches/saves/tests differs.
  */
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
-import { Badge, Button, Card, Input, Switch } from "@admitto/ui";
+import { Badge, Button, Card, Input, Switch, Tooltip } from "@admitto/ui";
 import type {
   MailPlainFieldDto,
   MailProvider,
@@ -312,27 +312,31 @@ export function TransportTileGrid({
         const parenIndex = opt.label.indexOf("(");
         const shortLabel = parenIndex === -1 ? opt.label : opt.label.slice(0, parenIndex).trimEnd();
         return (
-          <button
+          <Tooltip
             key={opt.value || "none"}
-            ref={(el) => {
-              tileRefs.current[index] = el;
-            }}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            aria-label={opt.label}
-            data-tooltip={PROVIDER_GUIDE[opt.value]}
-            tabIndex={active || (!hasActiveTile && index === 0) ? 0 : -1}
-            className={`transport-tile at-tooltip${active ? " transport-tile--active" : ""}`}
-            disabled={locked}
-            onClick={() => onSelect(opt.value)}
-            onKeyDown={(e) => handleKeyDown(e, index)}
+            content={PROVIDER_GUIDE[opt.value]}
+            className="transport-tile-wrapper"
           >
-            <span className="transport-tile__icon">
-              <i className={`ti ti-${TRANSPORT_ICON[opt.value]}`} aria-hidden="true" />
-            </span>
-            <strong>{shortLabel}</strong>
-          </button>
+            <button
+              ref={(el) => {
+                tileRefs.current[index] = el;
+              }}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              aria-label={opt.label}
+              tabIndex={active || (!hasActiveTile && index === 0) ? 0 : -1}
+              className={`transport-tile${active ? " transport-tile--active" : ""}`}
+              disabled={locked}
+              onClick={() => onSelect(opt.value)}
+              onKeyDown={(e) => handleKeyDown(e, index)}
+            >
+              <span className="transport-tile__icon">
+                <i className={`ti ti-${TRANSPORT_ICON[opt.value]}`} aria-hidden="true" />
+              </span>
+              <strong>{shortLabel}</strong>
+            </button>
+          </Tooltip>
         );
       })}
     </div>

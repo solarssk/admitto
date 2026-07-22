@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from "react";
-import { Button, IconButton, Input, Switch, useToast } from "@admitto/ui";
+import { Button, IconButton, Input, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
   ApiError,
   deleteEventItem,
@@ -275,13 +275,8 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
             <Button type="submit" form="item-edit-form" variant="primary" disabled={saving}>
               {saving ? "Saving…" : "Save changes"}
             </Button>
-            {/* Tooltip wraps the button rather than living on it directly: a
-                disabled button gets opacity:0.5 from .at-btn:disabled, which
-                would otherwise wash out the tooltip's own dark background
-                since it's rendered as that button's ::after pseudo-element. */}
-            <span
-              className={isDefaultItem ? "at-tooltip" : undefined}
-              data-tooltip={
+            <Tooltip
+              content={
                 isDefaultItem
                   ? "Default item — required for “Issue badge at entry”. Turn off Active instead."
                   : undefined
@@ -301,7 +296,7 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
               >
                 Delete item
               </Button>
-            </span>
+            </Tooltip>
           </div>
         </div>
       </div>

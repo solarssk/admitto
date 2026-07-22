@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AttendeesPage } from "../../src/pages/AttendeesPage.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
-import { mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { getTooltipText, mockMatchMedia, renderWithToast } from "../test-utils.js";
 import type { AttendeeRowDto } from "../../src/api/types.js";
 
 const fetchEventAttendees = vi.fn();
@@ -152,18 +152,7 @@ describe("AttendeesPage archived lockdown", () => {
       expect(describedBy).toBeTruthy();
       const description = document.getElementById(describedBy!);
       expect(description?.textContent).toBe(ARCHIVED_ACTION_TOOLTIP);
-      expect(control.closest(".at-tooltip")).toBeTruthy();
-    }
-
-    // The page-header toolbar buttons sit at the very top of the page — their
-    // tooltip grows downward so the scroll container's overflow boundary can't
-    // clip it (real bug found in testing). Per-row controls further down the
-    // table keep the default upward placement.
-    for (const control of [importButton, addButton, sendTicketsButton]) {
-      expect(control.closest(".at-tooltip")?.classList.contains("at-tooltip--below")).toBe(true);
-    }
-    for (const control of [revokeButton, restoreButton]) {
-      expect(control.closest(".at-tooltip")?.classList.contains("at-tooltip--below")).toBe(false);
+      expect(getTooltipText(control)).toBe(ARCHIVED_ACTION_TOOLTIP);
     }
 
     // Read-only controls stay usable on archived events — the export formats now live behind a

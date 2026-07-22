@@ -2,6 +2,7 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { MailerStatusBadge } from "../../src/components/MailerStatusBadge.js";
+import { getTooltipText } from "../test-utils.js";
 
 afterEach(cleanup);
 
@@ -17,9 +18,9 @@ describe("MailerStatusBadge", () => {
     );
     const badge = container.querySelector(".status-circle--ok");
     expect(badge).toBeTruthy();
-    expect(badge?.getAttribute("aria-label")).toBe("Mailer configured (SMTP)");
-    expect(badge?.getAttribute("data-tooltip")).toBe("Mailer configured (SMTP)");
-    expect(badge?.getAttribute("role")).toBe("img");
+    const icon = badge?.querySelector('[role="img"]') as HTMLElement;
+    expect(icon.getAttribute("aria-label")).toBe("Mailer configured (SMTP)");
+    expect(getTooltipText(icon)).toBe("Mailer configured (SMTP)");
     expect(container.querySelector(".ti-mail")).toBeTruthy();
   });
 
@@ -29,7 +30,9 @@ describe("MailerStatusBadge", () => {
     );
     const badge = container.querySelector(".status-circle--neutral");
     expect(badge).toBeTruthy();
-    expect(badge?.getAttribute("aria-label")).toBe("Mailer not configured");
+    expect(badge?.querySelector('[role="img"]')?.getAttribute("aria-label")).toBe(
+      "Mailer not configured",
+    );
     expect(container.querySelector(".ti-mail-off")).toBeTruthy();
   });
 
@@ -38,14 +41,14 @@ describe("MailerStatusBadge", () => {
       // @ts-expect-error — exercising the unknown-provider fallback branch
       <MailerStatusBadge status={{ configured: true, provider: "custom_relay" }} />,
     );
-    expect(container.querySelector(".status-circle")?.getAttribute("aria-label")).toBe(
+    expect(container.querySelector(".status-circle [role='img']")?.getAttribute("aria-label")).toBe(
       "Mailer configured (custom_relay)",
     );
   });
 
   it("shows an em dash when configured but no provider is set", () => {
     const { container } = render(<MailerStatusBadge status={{ configured: true, provider: null }} />);
-    expect(container.querySelector(".status-circle")?.getAttribute("aria-label")).toBe(
+    expect(container.querySelector(".status-circle [role='img']")?.getAttribute("aria-label")).toBe(
       "Mailer configured (—)",
     );
   });

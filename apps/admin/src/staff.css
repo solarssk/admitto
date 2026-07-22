@@ -2809,12 +2809,25 @@
   gap: var(--space-3);
 }
 
+/* Tooltip's own wrapper defaults to inline-flex (shrink-to-fit) - as a grid item it
+ * stretches to fill the column, but that only sizes the wrapper itself. The button
+ * inside it still won't fill that wrapper on its own: unlike a plain div/span, a
+ * <button> keeps its intrinsic shrink-to-fit sizing for width:auto even once
+ * `display` is overridden to flex, so it needs its own explicit width:100% too -
+ * without both, every tile leaves a dead (hover-only, unclickable) gap in any
+ * column wider than its label. */
+.transport-tile-wrapper {
+  display: block;
+  width: 100%;
+}
+
 .transport-tile {
   position: relative;
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: var(--space-2);
+  width: 100%;
   text-align: left;
   padding: var(--space-3);
   border: 1.5px solid var(--border);
@@ -4775,57 +4788,4 @@
 /* Settings tab bar's horizontal scroll + edge-fade behavior now lives in the
    shared ScrollFadeTabs component (apps/admin/src/components/ScrollFadeTabs.tsx),
    used instead of the plain <Tabs> in SettingsLayout.tsx. */
-
-/* Generic hover tooltip via data-tooltip attribute — works on any element,
-   including disabled buttons (disabled only suppresses click, not :hover).
-   Anchored to the right edge (growing leftward) since usage so far is on
-   right-aligned controls inside containers with overflow:hidden — a
-   centered tooltip would spill past the right edge and get clipped. */
-.at-tooltip {
-  position: relative;
-}
-
-.at-tooltip::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  bottom: calc(100% + 5px);
-  right: 0;
-  background: var(--text-primary);
-  color: var(--surface-card);
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 1.3;
-  padding: 4px 8px;
-  border-radius: 4px;
-  white-space: normal;
-  width: max-content;
-  max-width: 220px;
-  text-align: left;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.12s;
-  z-index: 500;
-}
-
-.at-tooltip:hover::after {
-  opacity: 1;
-}
-
-/* Opt-in variant for controls that sit near the very top of a scrollable page
-   (e.g. Attendees toolbar, Import upload area) — the default upward-popping
-   tooltip gets visually clipped by the scroll container's overflow boundary
-   there, so these instead grow downward from the control. */
-.at-tooltip--below::after {
-  bottom: auto;
-  top: calc(100% + 5px);
-}
-
-/* Opt-in variant for controls that sit near the LEFT edge of their row (e.g. the
-   first of several icons in the topbar, followed by more content to its right) —
-   the default right-anchored growth spills past the left edge of a narrow
-   viewport before it can render, since there isn't 220px of room to the left. */
-.at-tooltip--left::after {
-  right: auto;
-  left: 0;
-}
 

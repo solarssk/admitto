@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Button, IconButton, useToast } from "@admitto/ui";
+import { Button, IconButton, Tooltip, useToast } from "@admitto/ui";
 import { createEventCustomField, updateEventCustomField } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventCustomFieldDto } from "../api/types.js";
@@ -157,16 +157,17 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
                 autoFocus
               />
               <div className="contents-row__type-picker">
-                <button
-                  type="button"
-                  className={`contents-row__type-btn${form.required ? " contents-row__type-btn--active" : ""}`}
-                  onClick={() => setForm((f) => ({ ...f, required: !f.required }))}
-                  data-tooltip="Required"
-                  aria-pressed={form.required}
-                  aria-label="Required"
-                >
-                  <i className="ti ti-asterisk" />
-                </button>
+                <Tooltip content="Required">
+                  <button
+                    type="button"
+                    className={`contents-row__type-btn${form.required ? " contents-row__type-btn--active" : ""}`}
+                    onClick={() => setForm((f) => ({ ...f, required: !f.required }))}
+                    aria-pressed={form.required}
+                    aria-label="Required"
+                  >
+                    <i className="ti ti-asterisk" />
+                  </button>
+                </Tooltip>
               </div>
             </div>
             <span className="at-hint">
@@ -198,20 +199,20 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
               aria-labelledby="cf-type-label"
             >
               {CUSTOM_FIELD_TYPES.map(({ value, icon, label: btnLabel }) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={`contents-row__type-btn${form.type === value ? " contents-row__type-btn--active" : ""}`}
-                  onClick={() => {
-                    setError(null);
-                    setForm((f) => ({ ...f, type: value, options: value === "select" ? f.options : "" }));
-                  }}
-                  data-tooltip={btnLabel}
-                  aria-pressed={form.type === value}
-                  aria-label={btnLabel}
-                >
-                  <i className={`ti ${icon}`} />
-                </button>
+                <Tooltip key={value} content={btnLabel}>
+                  <button
+                    type="button"
+                    className={`contents-row__type-btn${form.type === value ? " contents-row__type-btn--active" : ""}`}
+                    onClick={() => {
+                      setError(null);
+                      setForm((f) => ({ ...f, type: value, options: value === "select" ? f.options : "" }));
+                    }}
+                    aria-pressed={form.type === value}
+                    aria-label={btnLabel}
+                  >
+                    <i className={`ti ${icon}`} />
+                  </button>
+                </Tooltip>
               ))}
             </div>
           </div>

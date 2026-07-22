@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Card, Input, Button, useToast } from "@admitto/ui";
+import { Card, Input, Button, Tooltip, useToast } from "@admitto/ui";
 import {
   clearEventMailSettings,
   fetchEventMailSettings,
@@ -485,7 +485,7 @@ export function EventMailSettingsCard({
             disabled={!!testSendReason}
             {...NO_AUTOFILL_PROPS}
           />
-          <span className={testSendReason ? "at-tooltip" : undefined} data-tooltip={testSendReason}>
+          <Tooltip content={testSendReason}>
             {testSendReason && (
               <span id="event-mail-test-send-reason" className="sr-only">
                 {testSendReason}
@@ -500,7 +500,7 @@ export function EventMailSettingsCard({
             >
               {testSending ? "Sending…" : "Send test email"}
             </Button>
-          </span>
+          </Tooltip>
         </div>
         {testResult && <TestResultPreview testResult={testResult} />}
       </Card>

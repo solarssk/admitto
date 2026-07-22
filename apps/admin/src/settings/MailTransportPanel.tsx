@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Card, Input, Button, useToast } from "@admitto/ui";
+import { Card, Input, Button, Tooltip, useToast } from "@admitto/ui";
 import { fetchMailSettings, saveMailSettings, sendMailTransportTest } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { MailSettingsResponse } from "../api/types.js";
@@ -274,7 +274,7 @@ export function MailTransportPanel() {
             disabled={!!testSendReason}
             {...NO_AUTOFILL_PROPS}
           />
-          <span className={testSendReason ? "at-tooltip" : undefined} data-tooltip={testSendReason}>
+          <Tooltip content={testSendReason}>
             {testSendReason && (
               <span id="mail-test-send-reason" className="sr-only">
                 {testSendReason}
@@ -289,7 +289,7 @@ export function MailTransportPanel() {
             >
               {testSending ? "Sending…" : "Send test email"}
             </Button>
-          </span>
+          </Tooltip>
         </div>
         {testResult && <TestResultPreview testResult={testResult} />}
       </Card>
