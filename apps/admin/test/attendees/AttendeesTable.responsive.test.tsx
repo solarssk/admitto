@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AttendeesTable } from "../../src/attendees/AttendeesTable.js";
+import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
 import { getTooltipText, mockMatchMedia } from "../test-utils.js";
 import type { AttendeeRowDto } from "../../src/api/types.js";
 
@@ -287,7 +288,7 @@ describe("AttendeesTable bulk revoke items (#551)", () => {
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     const item = screen.getByRole("menuitem", { name: /Revoke items/ }) as HTMLButtonElement;
     expect(item.disabled).toBe(true);
-    expect(getTooltipText(item)).toBe("This event is archived.");
+    expect(getTooltipText(item)).toBe(ARCHIVED_ACTION_TOOLTIP);
   });
 
   it("disables the menu item when nothing in the selection has anything issued, even though the event has configured items (CodeRabbit review)", () => {

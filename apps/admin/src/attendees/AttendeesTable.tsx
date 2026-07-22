@@ -716,7 +716,7 @@ function BulkMoreActionsMenu({
 
 /** "Change ticket type" menu item's disabled-title (Sonar S3358: was a nested ternary). */
 function bulkChangeTicketTypeReason(archived: boolean, ticketTypesError?: string | null): string {
-  if (archived) return "This event is archived.";
+  if (archived) return ARCHIVED_ACTION_TOOLTIP;
   if (ticketTypesError) return "Couldn't load ticket types — try again from the Type filter above.";
   return "No ticket types configured for this event. Add some in Event Settings → Ticket types.";
 }
@@ -731,7 +731,7 @@ function bulkRevokeItemsTooltip(
   itemsError: string | null | undefined,
   canRevokeItems: boolean,
 ): string | undefined {
-  if (archived) return "This event is archived.";
+  if (archived) return ARCHIVED_ACTION_TOOLTIP;
   if (itemsError) return "Couldn't load items — try again.";
   if (itemCount === 0) return "No items configured for this event. Add some in Requirements.";
   if (!canRevokeItems) return "None of the selected attendees have anything issued.";
