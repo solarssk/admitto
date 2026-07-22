@@ -794,13 +794,16 @@ function ContactModal({
       />
       <Input
         label="Email"
-        type="email"
+        // type="email" is what actually triggers Safari's iCloud "Hide My Email" suggestion chip
+        // regardless of autocomplete/data-* opt-outs below — AddAttendeeModal.tsx and
+        // AttendeeDetailPage.tsx already work around this the same way (type="text" +
+        // inputMode="email" for the mobile keyboard); no native email-format validation was
+        // actually relied on here (handleSubmit only trims/nulls it), so nothing is lost.
+        type="text"
+        inputMode="email"
         icon={<i className="ti ti-mail" aria-hidden="true" />}
         value={form.email}
         onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-        // Suppresses password-manager / iCloud "Hide My Email" autofill suggestions on this
-        // non-auth contact field — same opt-out combination as mailTransportFormParts.tsx's other
-        // non-auth email inputs; full suppression isn't guaranteed in every browser.
         {...NO_AUTOFILL_PROPS}
         name="event-contact-email"
       />
