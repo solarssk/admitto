@@ -3947,7 +3947,9 @@
   color: var(--primary);
   text-decoration: none;
 }
-.overview-checklist__link:hover { text-decoration: underline; }
+.overview-checklist__link i { transition: transform var(--dur-fast, 120ms); }
+.overview-checklist__link:hover { color: var(--primary-active); }
+.overview-checklist__link:hover i { transform: translateX(2px); }
 
 /* Check-in progress (Part B) */
 .overview-progress {
