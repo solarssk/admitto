@@ -309,7 +309,10 @@ function CheckInProgressCard({
   const admitted = Math.min(admittedCount ?? overview.admitted_count, total);
   const notYet = Math.max(total - admitted, 0);
   const pct = total > 0 ? Math.round((admitted / total) * 100) : 0;
-  const breakdown = overview.ticket_type_breakdown.filter((t) => t.count > 0);
+  // Defensive fallback: a stale apps/web dev process (no watch mode) still running from before
+  // this field existed on the overview API would otherwise crash the whole page (same class of
+  // gap already hardened on the Attendee Detail page's `event_items ?? []`).
+  const breakdown = (overview.ticket_type_breakdown ?? []).filter((t) => t.count > 0);
   const breakdownTotal = breakdown.reduce((sum, t) => sum + t.count, 0);
 
   // A ring at a permanent 0% is noise, not information, when there's nobody to check in yet —

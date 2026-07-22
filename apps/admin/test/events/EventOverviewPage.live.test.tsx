@@ -592,6 +592,22 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(screen.getByText("VIP")).toBeTruthy();
   });
 
+  it("doesn't crash Check-in progress when ticket_type_breakdown is entirely absent from the response (stale apps/web dev process predating this field)", async () => {
+    const staleOverview = overviewFixture(5);
+    // apps/web has no watch mode — a dev server running an older build genuinely omits fields
+    // added since, unlike the fixture default `[]`. Simulate that instead of an empty array. If
+    // the page ever reverts to reading this field without a fallback, `renderPage()` below throws
+    // synchronously (no error boundary in this test tree) and fails the test.
+    delete (staleOverview as Partial<EventOverviewDto>).ticket_type_breakdown;
+    fetchEventOverview.mockResolvedValue(staleOverview);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Check-in progress")).toBeTruthy();
+    });
+  });
+
   it("hydrates Recent activity from the initial overview fetch, not only from a live SSE event (#373)", async () => {
     const recentActivity: EventRecentActivityEntry[] = [
       {
