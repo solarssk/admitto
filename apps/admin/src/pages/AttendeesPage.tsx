@@ -206,15 +206,10 @@ function notifyBulkRevokePassResult(
   addToast(`No passes revoked${noteSuffix}.`, "error");
 }
 
-interface RunBulkActionParams<T> {
-  eventId: string | undefined;
-  /** Detects the operator navigating to a different event's Attendees list before the request
-   * resolves — every bulk action below skips its success/error side effects once this fires,
-   * matching the guard handleBulkDeleteSelected established first (CodeRabbit review). */
-  eventIdRef: RefObject<string | undefined>;
-  selectedCount: number;
+/** The error-surfacing half of {@link RunBulkActionParams} — split out so
+ * {@link reportBulkActionError} can take just these, independent of the action's result type T. */
+interface BulkActionErrorReporters {
   reportApiError: (status: number) => void;
-  setBusy: (busy: boolean) => void;
   /** Inline dialog error setter. Omit for an action with no confirm dialog (Send tickets, Check
    * in) — those toast the error instead, matching AGENTS.md's toast-vs-inline convention. */
   setError?: (message: string | null) => void;
@@ -229,8 +224,40 @@ interface RunBulkActionParams<T> {
   /** Overrides the default operatorApiErrorMessage(err, apiErrorFallback) computation for a
    * recognized ApiError — e.g. Change ticket type's unknown_ticket_type code needs its own copy. */
   mapErrorMessage?: (err: ApiError) => string;
+}
+
+interface RunBulkActionParams<T> extends BulkActionErrorReporters {
+  eventId: string | undefined;
+  /** Detects the operator navigating to a different event's Attendees list before the request
+   * resolves — every bulk action below skips its success/error side effects once this fires,
+   * matching the guard handleBulkDeleteSelected established first (CodeRabbit review). */
+  eventIdRef: RefObject<string | undefined>;
+  selectedCount: number;
+  setBusy: (busy: boolean) => void;
   action: (eventId: string) => Promise<T>;
   onSuccess: (result: T) => void;
+}
+
+/** Resolves and surfaces a bulk action's caught error — the 401 redirect, the
+ * mapErrorMessage/operatorApiErrorMessage selection, and the setError-vs-addToast branching.
+ * Extracted out of runBulkAction to keep its own cognitive complexity under SonarCloud's
+ * threshold (bot review). */
+function reportBulkActionError(err: unknown, reporters: BulkActionErrorReporters): void {
+  const { reportApiError, setError, addToast, apiErrorFallback, genericFallback, mapErrorMessage } = reporters;
+  if (!(err instanceof ApiError)) {
+    if (setError) setError(genericFallback);
+    else addToast(genericFallback, "error");
+    return;
+  }
+  reportApiError(err.status);
+  if (err.status === 401) {
+    const next = encodeURIComponent(window.location.pathname);
+    window.location.assign(`/login?next=${next}`);
+    return;
+  }
+  const message = mapErrorMessage ? mapErrorMessage(err) : operatorApiErrorMessage(err, apiErrorFallback);
+  if (setError) setError(message);
+  else addToast(message, "error");
 }
 
 /** Shared skeleton for the Attendees list's bulk actions (send tickets/check in/revoke check-in/
@@ -243,44 +270,27 @@ async function runBulkAction<T>({
   eventId,
   eventIdRef,
   selectedCount,
-  reportApiError,
   setBusy,
-  setError,
-  addToast,
-  apiErrorFallback,
-  genericFallback,
-  mapErrorMessage,
   action,
   onSuccess,
+  ...errorReporters
 }: RunBulkActionParams<T>): Promise<void> {
   if (!eventId || selectedCount === 0) return;
   const initiatingEventId = eventId;
   const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
   setBusy(true);
-  setError?.(null);
+  errorReporters.setError?.(null);
   try {
     const result = await action(initiatingEventId);
     if (!isStillOnEvent()) return;
     onSuccess(result);
   } catch (err) {
-    if (!isStillOnEvent()) return;
-    if (err instanceof ApiError) {
-      reportApiError(err.status);
-      if (err.status === 401) {
-        const next = encodeURIComponent(window.location.pathname);
-        window.location.assign(`/login?next=${next}`);
-        return;
-      }
-      const message = mapErrorMessage ? mapErrorMessage(err) : operatorApiErrorMessage(err, apiErrorFallback);
-      if (setError) setError(message);
-      else addToast(message, "error");
-    } else if (setError) {
-      setError(genericFallback);
-    } else {
-      addToast(genericFallback, "error");
-    }
+    // Busy cleanup below is unconditional regardless of isStillOnEvent() — it's this
+    // component's own busy-flag state, not tied to which event initiated the request, and stays
+    // stuck true forever otherwise once the operator has navigated away (CodeRabbit review).
+    if (isStillOnEvent()) reportBulkActionError(err, errorReporters);
   } finally {
-    if (isStillOnEvent()) setBusy(false);
+    setBusy(false);
   }
 }
 
