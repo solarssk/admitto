@@ -152,6 +152,149 @@ function metadataEqual(a: LegacyContentRow, b: LegacyContentRow): boolean {
   );
 }
 
+/** Per-event registry slot map: source_field -> the legacy row currently occupying that slot
+ * (`null` means the slot predates this run - see the caller's comment on `slotsByEvent`). Loads
+ * from the DB once per event and caches the map for subsequent items in the same run. */
+async function getEventSlots(
+  prisma: PrismaClient,
+  slotsByEvent: Map<string, Map<string, LegacyContentRow | null>>,
+  eventId: string,
+): Promise<Map<string, LegacyContentRow | null>> {
+  const cached = slotsByEvent.get(eventId);
+  if (cached) return cached;
+  const existing = await prisma.eventCustomField.findMany({
+    where: { event_id: eventId },
+    select: { source_field: true },
+  });
+  const slots = new Map(existing.map((row) => [row.source_field, null] as const));
+  slotsByEvent.set(eventId, slots);
+  return slots;
+}
+
+/** Merges `row` onto the registry slot already won by `winner`, persisting the merged metadata
+ * when it changed and updating `slots` in place. Returns the conflict message when the merge lost
+ * data (see `mergeLegacyRow`), or `null` when nothing was lost. */
+async function mergeRowIntoExistingSlot(
+  prisma: PrismaClient,
+  eventId: string,
+  itemId: string,
+  row: LegacyContentRow,
+  winner: LegacyContentRow,
+  slots: Map<string, LegacyContentRow | null>,
+): Promise<string | null> {
+  const { merged, lostData } = mergeLegacyRow(winner, row);
+  const conflict = lostData
+    ? `${eventId}/${row.source_field}: kept "${winner.label}" (${winner.type ?? "text"}), item ${itemId} also defined it as "${row.label}" (${row.type ?? "text"}) - could not fully reconcile`
+    : null;
+  if (!metadataEqual(winner, merged)) {
+    await prisma.eventCustomField.update({
+      where: { event_id_source_field: { event_id: eventId, source_field: row.source_field } },
+      data: {
+        required: merged.required ?? false,
+        type: merged.type ?? "text",
+        options: merged.options ?? Prisma.JsonNull,
+      },
+    });
+  }
+  slots.set(row.source_field, merged);
+  return conflict;
+}
+
+/** Claims a fresh registry slot for `row` and persists it via upsert. Caller has already checked
+ * the per-event field cap. */
+async function createSlotForRow(
+  prisma: PrismaClient,
+  eventId: string,
+  row: LegacyContentRow,
+  slots: Map<string, LegacyContentRow | null>,
+): Promise<void> {
+  slots.set(row.source_field, row);
+  await prisma.eventCustomField.upsert({
+    where: { event_id_source_field: { event_id: eventId, source_field: row.source_field } },
+    create: {
+      event_id: eventId,
+      source_field: row.source_field,
+      label: row.label,
+      type: row.type ?? "text",
+      required: row.required ?? false,
+      options: row.options ?? Prisma.JsonNull,
+    },
+    update: {},
+  });
+}
+
+type LegacyRowOutcome = {
+  contentField: string | null;
+  fieldCreated: boolean;
+  conflict: string | null;
+  skippedReason: string | null;
+};
+
+/** Applies a single legacy row to the event's slot map: merges onto an existing slot, claims a
+ * new one (unless the per-event field cap is reached), or reports why it was skipped. */
+async function applyLegacyRow(
+  prisma: PrismaClient,
+  eventId: string,
+  itemId: string,
+  row: LegacyContentRow,
+  slots: Map<string, LegacyContentRow | null>,
+): Promise<LegacyRowOutcome> {
+  if (slots.has(row.source_field)) {
+    const winner = slots.get(row.source_field);
+    const conflict = winner ? await mergeRowIntoExistingSlot(prisma, eventId, itemId, row, winner, slots) : null;
+    return { contentField: row.source_field, fieldCreated: false, conflict, skippedReason: null };
+  }
+
+  if (slots.size >= MAX_CUSTOM_FIELDS_PER_EVENT) {
+    return {
+      contentField: null,
+      fieldCreated: false,
+      conflict: null,
+      skippedReason: `${eventId}/${row.source_field}: skipped, event already has ${MAX_CUSTOM_FIELDS_PER_EVENT} custom fields`,
+    };
+  }
+
+  await createSlotForRow(prisma, eventId, row, slots);
+  return { contentField: row.source_field, fieldCreated: true, conflict: null, skippedReason: null };
+}
+
+/** Applies every legacy row from one item to the event's slot map, collecting the item's
+ * deduplicated `content_fields` list alongside how many new registry rows were created and any
+ * conflicts/skips encountered. */
+async function processLegacyRows(
+  prisma: PrismaClient,
+  eventId: string,
+  itemId: string,
+  rows: LegacyContentRow[],
+  slots: Map<string, LegacyContentRow | null>,
+): Promise<{ contentFields: string[]; fieldsCreated: number; conflicts: string[]; skipped: string[] }> {
+  const contentFields: string[] = [];
+  const conflicts: string[] = [];
+  const skipped: string[] = [];
+  let fieldsCreated = 0;
+
+  for (const row of rows) {
+    const outcome = await applyLegacyRow(prisma, eventId, itemId, row, slots);
+    if (outcome.contentField && !contentFields.includes(outcome.contentField)) {
+      contentFields.push(outcome.contentField);
+    }
+    if (outcome.fieldCreated) fieldsCreated += 1;
+    if (outcome.conflict) conflicts.push(outcome.conflict);
+    if (outcome.skippedReason) skipped.push(outcome.skippedReason);
+  }
+
+  return { contentFields, fieldsCreated, conflicts, skipped };
+}
+
+/** Rewrites an item's config: drops the legacy `contents` array and writes the deduplicated
+ * `content_fields` slug list that now points at the registry. */
+function buildUpdatedConfig(config: unknown, contentFields: string[]): Prisma.InputJsonValue {
+  const nextConfig = { ...(config as Record<string, unknown>) };
+  delete nextConfig.contents;
+  nextConfig.content_fields = contentFields;
+  return nextConfig as Prisma.InputJsonValue;
+}
+
 /**
  * Idempotent backfill: an EventItem saved before the EventCustomField registry existed carries
  * its field definitions embedded in config.contents[]. This creates a registry row for each
@@ -203,73 +346,16 @@ export async function backfillEventCustomFields(prisma: PrismaClient): Promise<{
     }
     if (rows.length === 0) continue;
 
-    let slots = slotsByEvent.get(item.event_id);
-    if (!slots) {
-      const existing = await prisma.eventCustomField.findMany({
-        where: { event_id: item.event_id },
-        select: { source_field: true },
-      });
-      slots = new Map(existing.map((row) => [row.source_field, null] as const));
-      slotsByEvent.set(item.event_id, slots);
-    }
+    const slots = await getEventSlots(prisma, slotsByEvent, item.event_id);
+    const result = await processLegacyRows(prisma, item.event_id, item.id, rows, slots);
+    fieldsCreated += result.fieldsCreated;
+    conflicts.push(...result.conflicts);
+    skipped.push(...result.skipped);
 
-    const content_fields: string[] = [];
-    for (const row of rows) {
-      if (slots.has(row.source_field)) {
-        if (!content_fields.includes(row.source_field)) content_fields.push(row.source_field);
-        const winner = slots.get(row.source_field);
-        if (winner) {
-          const { merged, lostData } = mergeLegacyRow(winner, row);
-          if (lostData) {
-            conflicts.push(
-              `${item.event_id}/${row.source_field}: kept "${winner.label}" (${winner.type ?? "text"}), item ${item.id} also defined it as "${row.label}" (${row.type ?? "text"}) - could not fully reconcile`,
-            );
-          }
-          if (!metadataEqual(winner, merged)) {
-            await prisma.eventCustomField.update({
-              where: { event_id_source_field: { event_id: item.event_id, source_field: row.source_field } },
-              data: {
-                required: merged.required ?? false,
-                type: merged.type ?? "text",
-                options: merged.options ?? Prisma.JsonNull,
-              },
-            });
-          }
-          slots.set(row.source_field, merged);
-        }
-        continue;
-      }
-
-      if (slots.size >= MAX_CUSTOM_FIELDS_PER_EVENT) {
-        skipped.push(
-          `${item.event_id}/${row.source_field}: skipped, event already has ${MAX_CUSTOM_FIELDS_PER_EVENT} custom fields`,
-        );
-        continue;
-      }
-
-      slots.set(row.source_field, row);
-      await prisma.eventCustomField.upsert({
-        where: { event_id_source_field: { event_id: item.event_id, source_field: row.source_field } },
-        create: {
-          event_id: item.event_id,
-          source_field: row.source_field,
-          label: row.label,
-          type: row.type ?? "text",
-          required: row.required ?? false,
-          options: row.options ?? Prisma.JsonNull,
-        },
-        update: {},
-      });
-      fieldsCreated += 1;
-      if (!content_fields.includes(row.source_field)) content_fields.push(row.source_field);
-    }
-
-    const nextConfig = { ...(item.config as Record<string, unknown>) };
-    delete nextConfig.contents;
-    nextConfig.content_fields = content_fields;
+    const nextConfig = buildUpdatedConfig(item.config, result.contentFields);
     await prisma.eventItem.update({
       where: { id: item.id },
-      data: { config: nextConfig as Prisma.InputJsonValue },
+      data: { config: nextConfig },
     });
     itemsUpdated += 1;
   }

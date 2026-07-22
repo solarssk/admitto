@@ -318,7 +318,7 @@ describe("backfillEventCustomFields", () => {
     expect(fields.map((f) => f.source_field)).toEqual(["shirt_size"]);
 
     const eventSkips = result.skipped.filter((s) => s.includes(event.id));
-    expect(eventSkips.length).toBe(5);
+    expect(eventSkips).toHaveLength(5);
   });
 
   it("stops creating new fields once an event reaches the per-event field cap", async () => {

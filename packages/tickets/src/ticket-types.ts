@@ -46,7 +46,8 @@ export function slugifyTicketTypeKey(label: string): string {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
+    .replace(/^_+/, "")
+    .replace(/_+$/, "")
     .replace(/_+/g, "_")
     .slice(0, KEY_MAX_LENGTH);
 }
