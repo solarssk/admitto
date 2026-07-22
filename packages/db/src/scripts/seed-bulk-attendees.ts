@@ -45,7 +45,7 @@ function pickWeighted<T extends string>(
     roll -= w.weight;
     if (roll <= 0) return w.value;
   }
-  return weights[weights.length - 1]!.value;
+  return weights.at(-1)!.value;
 }
 
 const FIRST_NAMES = [
@@ -271,7 +271,7 @@ async function main(): Promise<void> {
   const ticketTypeWeights = buildTicketTypeWeights(ticketTypes.map((t) => t.key));
 
   const before = await prisma.attendee.count({ where: { event_id: event.id } });
-  const rng = mulberry32(42_026_0708);
+  const rng = mulberry32(420_260_708);
 
   const rows: Prisma.AttendeeCreateManyInput[] = [];
   for (let i = 1; i <= COUNT; i++) {
@@ -305,9 +305,11 @@ async function main(): Promise<void> {
   console.log(`  DELETE FROM "Attendee" WHERE event_id = '${event.id}' AND email LIKE 'loadtest.%@${EMAIL_DOMAIN}';`);
 }
 
-main()
-  .catch((err: unknown) => {
-    console.error(err);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());
+try {
+  await main();
+} catch (err: unknown) {
+  console.error(err);
+  process.exit(1);
+} finally {
+  await prisma.$disconnect();
+}
