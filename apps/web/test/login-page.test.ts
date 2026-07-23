@@ -2,6 +2,15 @@ import { describe, expect, it } from "vitest";
 import { renderLoginForm, renderOperatorLanding } from "../src/login-page.js";
 
 describe("login page rendering", () => {
+  it("omits the SSO next query when there is no target path", () => {
+    const html = renderLoginForm("test-nonce", undefined, undefined, [
+      { id: "contoso", button_label: "Contoso SSO" },
+    ]);
+
+    expect(html).toContain('href="/api/auth/oidc/contoso/start"');
+    expect(html).not.toContain("/start?next=");
+  });
+
   it("renders an SSO target with an encoded next path", () => {
     const html = renderLoginForm("test-nonce", undefined, "/operator?tab=checkin", [
       { id: "contoso", button_label: "Contoso SSO" },
