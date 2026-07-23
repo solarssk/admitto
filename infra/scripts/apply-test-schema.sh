@@ -25,7 +25,9 @@ export PGPASSWORD
 export DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:5432/${DB_NAME}"
 
 run_migrate_deploy() {
-  npx prisma migrate deploy --schema packages/db/prisma/schema.prisma
+  # --no-install: use only the already-installed, lockfile-pinned prisma binary, never an
+  # on-demand npx download (SonarCloud shell:S6505 — same fix already applied to ci.yml).
+  npx --no-install prisma migrate deploy --schema packages/db/prisma/schema.prisma
 }
 
 migrate_output=""
@@ -54,5 +56,5 @@ if [[ -n "${CI:-}" ]]; then
 fi
 
 echo "migrate deploy failed locally — falling back to db push (ADR 0015 integration parity)…" >&2
-npx prisma db push --schema packages/db/prisma/schema.prisma --skip-generate --accept-data-loss
+npx --no-install prisma db push --schema packages/db/prisma/schema.prisma --skip-generate --accept-data-loss
 echo "db push OK (${DB_NAME})"
