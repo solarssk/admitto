@@ -16,7 +16,7 @@ import {
   todayIsoDate,
 } from "../utils/event-dates.js";
 import { useModalFocusTrap } from "./useModalFocusTrap.js";
-import { useClickOutside } from "./useClickOutside.js";
+import { useClickOutside, type OutsideInteraction } from "./useClickOutside.js";
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -108,9 +108,12 @@ export function DatePicker({
   const days = daysInMonth(viewYear, viewMonth);
   const offset = mondayFirstOffset(viewYear, viewMonth);
 
-  const closePanel = () => {
+  // `reason === "focus"` means the user already tabbed focus elsewhere on purpose — pulling
+  // it back to this input would trap keyboard navigation, so only restore focus for every
+  // other close path (Escape, picking a date, an outside pointerdown, typing a valid date).
+  const closePanel = (reason?: OutsideInteraction) => {
     setOpen(false);
-    window.setTimeout(() => inputRef.current?.focus(), 0);
+    if (reason !== "focus") window.setTimeout(() => inputRef.current?.focus(), 0);
   };
 
   useEffect(() => {
