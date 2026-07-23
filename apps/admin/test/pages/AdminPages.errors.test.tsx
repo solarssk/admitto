@@ -534,6 +534,35 @@ describe("ReportsPage ticket type breakdown", () => {
   });
 });
 
+describe("ReportsPage hourly chart", () => {
+  it("renders bars only for the visible range around non-zero hours", async () => {
+    vi.mocked(fetchEventReports).mockResolvedValue({
+      ...emptyReport,
+      summary: { ...emptyReport.summary, total_attendees: 2, admitted: 2, admission_rate_pct: 100 },
+      by_hour: [
+        { hour: "08:00", count: 0 },
+        { hour: "09:00", count: 1 },
+        { hour: "10:00", count: 0 },
+        { hour: "11:00", count: 1 },
+        { hour: "12:00", count: 0 },
+      ],
+    });
+    const { container } = renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(container.querySelectorAll(".reports-chart__bar-wrap").length).toBeGreaterThan(0);
+    });
+    // Padded by one hour on each side of the first/last non-zero hour (08:00-12:00), not the
+    // full 5-row range collapsed to just the two non-zero rows.
+    expect(container.querySelectorAll(".reports-chart__bar-wrap")).toHaveLength(5);
+  });
+});
+
 describe("ReportsPage admission log", () => {
   it("labels an untyped admission as (none), matching the breakdown/filter instead of the Attendees table's dash", async () => {
     // mockResolvedValue (not ...Once): the mocked useConnectionState() below returns a fresh
