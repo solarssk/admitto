@@ -3515,7 +3515,7 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-ticket-type", () => {
     const res = await postBulkType(EVENT_A, { attendeeIds: ids, ticket_type: "vip" });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ updatedCount: 2, alreadySetCount: 0 });
+    expect(await res.json()).toEqual({ updatedCount: 2, alreadySetCount: 0, conflictCount: 0 });
 
     const after = await prisma.attendee.findMany({
       where: { id: { in: ids } },
@@ -3551,7 +3551,7 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-ticket-type", () => {
     const res = await postBulkType(EVENT_A, { attendeeIds: [already, fresh], ticket_type: "vip" });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 1 });
+    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 1, conflictCount: 0 });
 
     const after = await prisma.attendee.findUniqueOrThrow({
       where: { id: already },
@@ -3571,7 +3571,7 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-ticket-type", () => {
     const res = await postBulkType(EVENT_A, { attendeeIds: ids, ticket_type: "vip" });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ updatedCount: 0, alreadySetCount: 2 });
+    expect(await res.json()).toEqual({ updatedCount: 0, alreadySetCount: 2, conflictCount: 0 });
     const logs = await prisma.attendeeActionLog.findMany({
       where: { attendee_id: { in: ids }, action_type: "attendee_edited" },
     });
@@ -3590,6 +3590,57 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-ticket-type", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+
+  it("does not clobber a row a concurrent single-attendee PATCH changed mid-transaction, and logs no fabricated 'from' for it (code review, PR #569)", async () => {
+    const raced = "att-bulk-tt-race-victim";
+    const safe = "att-bulk-tt-race-safe";
+    await seedTyped([raced, safe], "standard");
+
+    // Simulates a concurrent single-attendee PATCH clearing `raced`'s ticket_type between this
+    // request's findMany read and its own per-row CAS UPDATE - the exact TOCTOU window the code
+    // review flagged (a blanket `id IN (...)` updateMany can't see this and would silently
+    // overwrite it back to the bulk's target). Prisma middleware also runs for queries issued
+    // inside `$transaction` callbacks, so this intercepts the route handler's own
+    // `tx.attendee.findMany`. Fires once, then becomes a permanent no-op, since `prisma` is
+    // shared for the rest of this file and `$use` middleware can't be unregistered.
+    let armed = true;
+    prisma.$use(async (params, next) => {
+      const result = await next(params);
+      if (armed && params.model === "Attendee" && params.action === "findMany") {
+        armed = false;
+        await prisma.attendee.update({ where: { id: raced }, data: { ticket_type: null } });
+      }
+      return result;
+    });
+
+    const res = await postBulkType(EVENT_A, { attendeeIds: [raced, safe], ticket_type: "vip" });
+
+    expect(armed).toBe(false); // sanity check: the injected concurrent update actually ran
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 0, conflictCount: 1 });
+
+    const after = await prisma.attendee.findMany({
+      where: { id: { in: [raced, safe] } },
+      select: { id: true, ticket_type: true },
+    });
+    const byId = new Map(after.map((a) => [a.id, a.ticket_type]));
+    // The concurrent write's outcome must survive untouched - not reverted to "vip" and not left
+    // at the stale "standard" this request read.
+    expect(byId.get(raced)).toBeNull();
+    expect(byId.get(safe)).toBe("vip");
+
+    const logs = await prisma.attendeeActionLog.findMany({
+      where: { attendee_id: { in: [raced, safe] }, action_type: "attendee_edited" },
+    });
+    // Exactly one log entry - for `safe` only. A fabricated `raced` entry claiming
+    // `from: "standard"` would misrepresent what the row actually held at write time.
+    expect(logs).toHaveLength(1);
+    expect(logs[0]!.attendee_id).toBe(safe);
+    expect(logs[0]!.metadata).toEqual({
+      fields: ["ticket_type"],
+      field_changes: { ticket_type: { from: "standard", to: "vip" } },
+    });
   });
 
   it("rejects a type that is not in the event's catalog", async () => {
@@ -3611,7 +3662,7 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-ticket-type", () => {
     const res = await postBulkType(EVENT_A, { attendeeIds: [ownId, ATT_B1], ticket_type: "vip" });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 0 });
+    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 0, conflictCount: 0 });
     const other = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_B1 } });
     expect(other.ticket_type).not.toBe("vip");
   });
@@ -3687,7 +3738,7 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-rsvp", () => {
     const res = await postBulkRsvp(EVENT_A, { attendeeIds: ids, rsvp_status: "confirmed" });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ updatedCount: 2, alreadySetCount: 0 });
+    expect(await res.json()).toEqual({ updatedCount: 2, alreadySetCount: 0, conflictCount: 0 });
 
     const after = await prisma.attendee.findMany({
       where: { id: { in: ids } },
@@ -3717,7 +3768,7 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-rsvp", () => {
     const res = await postBulkRsvp(EVENT_A, { attendeeIds: [already, fresh], rsvp_status: "confirmed" });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 1 });
+    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 1, conflictCount: 0 });
 
     const after = await prisma.attendee.findUniqueOrThrow({
       where: { id: already },
@@ -3737,7 +3788,7 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-rsvp", () => {
     const res = await postBulkRsvp(EVENT_A, { attendeeIds: ids, rsvp_status: "declined" });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ updatedCount: 0, alreadySetCount: 2 });
+    expect(await res.json()).toEqual({ updatedCount: 0, alreadySetCount: 2, conflictCount: 0 });
     const logs = await prisma.attendeeActionLog.findMany({
       where: { attendee_id: { in: ids }, action_type: "rsvp_status_changed" },
     });
@@ -3758,6 +3809,55 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-rsvp", () => {
     }
   });
 
+  it("does not clobber a row a concurrent single-attendee PATCH changed mid-transaction, and logs no fabricated 'from' for it (code review, PR #569)", async () => {
+    const raced = "att-bulk-rsvp-race-victim";
+    const safe = "att-bulk-rsvp-race-safe";
+    await seedRsvp([raced, safe], "none");
+
+    // Simulates a concurrent single-attendee PATCH committing "declined" for `raced` between
+    // this request's findMany read and its own per-row CAS UPDATE - the exact TOCTOU window the
+    // code review flagged (a blanket `id IN (...)` updateMany can't see this and would silently
+    // overwrite it back to the bulk's target, with the activity log recording a "from" value the
+    // row never actually held at write time). Prisma middleware also runs for queries issued
+    // inside `$transaction` callbacks, so this intercepts the route handler's own
+    // `tx.attendee.findMany`. Fires once, then becomes a permanent no-op, since `prisma` is
+    // shared for the rest of this file and `$use` middleware can't be unregistered.
+    let armed = true;
+    prisma.$use(async (params, next) => {
+      const result = await next(params);
+      if (armed && params.model === "Attendee" && params.action === "findMany") {
+        armed = false;
+        await prisma.attendee.update({ where: { id: raced }, data: { rsvp_status: "declined" } });
+      }
+      return result;
+    });
+
+    const res = await postBulkRsvp(EVENT_A, { attendeeIds: [raced, safe], rsvp_status: "confirmed" });
+
+    expect(armed).toBe(false); // sanity check: the injected concurrent update actually ran
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 0, conflictCount: 1 });
+
+    const after = await prisma.attendee.findMany({
+      where: { id: { in: [raced, safe] } },
+      select: { id: true, rsvp_status: true },
+    });
+    const byId = new Map(after.map((a) => [a.id, a.rsvp_status]));
+    // The concurrent write's outcome must survive untouched - not reverted to "confirmed" and
+    // not left at the stale "none" this request read.
+    expect(byId.get(raced)).toBe("declined");
+    expect(byId.get(safe)).toBe("confirmed");
+
+    const logs = await prisma.attendeeActionLog.findMany({
+      where: { attendee_id: { in: [raced, safe] }, action_type: "rsvp_status_changed" },
+    });
+    // Exactly one log entry - for `safe` only. A fabricated `raced` entry claiming
+    // `from: "none"` would misrepresent what the row actually held at write time.
+    expect(logs).toHaveLength(1);
+    expect(logs[0]!.attendee_id).toBe(safe);
+    expect(logs[0]!.metadata).toEqual({ from: "none", to: "confirmed", source: "admin" });
+  });
+
   it("rejects a status that isn't one of the fixed RSVP values", async () => {
     const id = "att-bulk-rsvp-unknown-status";
     await seedRsvp([id], "none");
@@ -3776,7 +3876,7 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-rsvp", () => {
     const res = await postBulkRsvp(EVENT_A, { attendeeIds: [ownId, ATT_B1], rsvp_status: "confirmed" });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 0 });
+    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 0, conflictCount: 0 });
     const other = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_B1 } });
     expect(other.rsvp_status).not.toBe("confirmed");
   });

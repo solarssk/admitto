@@ -786,6 +786,10 @@ export async function bulkDeleteAttendees(
 export interface BulkTicketTypeResponse {
   updatedCount: number;
   alreadySetCount: number;
+  /** Rows skipped because a concurrent write changed them between the server's read and its
+   * per-row CAS write (e.g. another admin's single-attendee edit) - left untouched rather than
+   * silently overwritten. */
+  conflictCount: number;
 }
 
 /** Assign one catalog ticket type to every selected attendee. Ids outside the event are

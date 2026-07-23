@@ -1559,25 +1559,36 @@ export async function handleBulkDeleteEventAttendees(c: Context, db: PrismaClien
 }
 
 /** One row's computed bulk write, shared by every "assign one field to every selected
- * attendee" endpoint below: the update payload for that row's value, and the audit-log metadata
- * to record for it. `null` means the row is already at the target value. */
-type BulkFieldChange = { data: Prisma.AttendeeUncheckedUpdateInput; metadata: Record<string, unknown> };
+ * attendee" endpoint below: the value this row held for the field being changed *before* this
+ * request — the per-row CAS key `applyBulkAttendeeChanges` re-validates at write time, so a
+ * concurrent edit (e.g. the single-attendee PATCH) that changes it first isn't silently
+ * clobbered and doesn't get a log entry recording a "from" value the row no longer actually
+ * held (code review, PR #569) — and the audit-log metadata to record for it. `null` means the
+ * row is already at the target value. */
+type BulkFieldChange = { oldValue: string | null; metadata: Record<string, unknown> };
 
 function computeTicketTypeChange(existingTicketType: string | null, target: string): BulkFieldChange | null {
   if (existingTicketType === target) return null;
   return {
-    data: { ticket_type: target },
+    oldValue: existingTicketType,
     metadata: { fields: ["ticket_type"], field_changes: { ticket_type: { from: existingTicketType, to: target } } },
   };
 }
 
 /** Diffs already-fetched owned rows against a target, writes only the ones that actually
- * change, logs one entry per changed row, and reports updated/already-set counts for the bulk
- * bar's toast — the part of a "plain bulk field write" endpoint that's genuinely identical
- * regardless of which field is being assigned (bot review: bulk-ticket-type and bulk-rsvp had
- * independently duplicated this whole tail end). Each caller still does its own findMany (own
- * select) and any pre-transaction validation/locking (e.g. the ticket-type catalog lock) before
- * calling this. */
+ * change, logs one entry per changed row, and reports updated/already-set/conflict counts for
+ * the bulk bar's toast — the part of a "plain bulk field write" endpoint that's genuinely
+ * identical regardless of which field is being assigned (bot review: bulk-ticket-type and
+ * bulk-rsvp had independently duplicated this whole tail end). The write itself is a single
+ * per-row-conditional `UPDATE ... FROM (VALUES ...)` statement, not a blanket `id IN (...)`
+ * updateMany: one round trip regardless of selection size (up to BULK_SEND_LIMIT), keyed on
+ * each row's own `oldValue` above, so a row a concurrent write changes in the window between
+ * the caller's findMany and this statement is left untouched instead of overwritten (code
+ * review, PR #569) — mirrors handleBulkDeleteEventAttendees's raw DELETE ... RETURNING above for
+ * the same "report exactly which rows this statement actually touched" reason. Each caller still
+ * does its own findMany (own select) and any pre-transaction validation/locking (e.g. the
+ * ticket-type catalog lock) before calling this, and supplies the SET clause and target column
+ * for its own field (`write` below) since those genuinely differ per caller. */
 async function applyBulkAttendeeChanges<Row extends { id: string }>(
   tx: Prisma.TransactionClient,
   eventId: string,
@@ -1585,29 +1596,52 @@ async function applyBulkAttendeeChanges<Row extends { id: string }>(
   computeChange: (row: Row) => BulkFieldChange | null,
   actionType: string,
   audit: OpsAuditContext,
-): Promise<{ updatedCount: number; alreadySetCount: number }> {
-  const changes: Array<{ id: string; change: BulkFieldChange }> = [];
+  write: {
+    /** Quoted column identifier the per-row CAS re-validates, e.g. `Prisma.raw('"ticket_type"')`. */
+    column: Prisma.Sql;
+    /** True when the column is nullable — an unset value needs `IS NOT DISTINCT FROM`, not `=`,
+     * to correlate (a plain `=` never matches NULL = NULL). */
+    nullable: boolean;
+    setClause: Prisma.Sql;
+  },
+): Promise<{ updatedCount: number; alreadySetCount: number; conflictCount: number }> {
+  const changes: Array<{ id: string; oldValue: string | null; metadata: Record<string, unknown> }> = [];
   for (const row of owned) {
     const change = computeChange(row);
-    if (change) changes.push({ id: row.id, change });
+    if (change) changes.push({ id: row.id, oldValue: change.oldValue, metadata: change.metadata });
   }
   if (changes.length === 0) {
-    return { updatedCount: 0, alreadySetCount: owned.length };
+    return { updatedCount: 0, alreadySetCount: owned.length, conflictCount: 0 };
   }
 
-  await tx.attendee.updateMany({
-    where: { id: { in: changes.map((x) => x.id) } },
-    data: changes[0]!.change.data,
-  });
+  const values = Prisma.join(changes.map((x) => Prisma.sql`(${x.id}::text, ${x.oldValue}::text)`));
+  const comparison = write.nullable ? Prisma.sql`IS NOT DISTINCT FROM` : Prisma.sql`=`;
+  const updated = await tx.$queryRaw<{ id: string }[]>`
+    UPDATE "Attendee" AS t
+    SET ${write.setClause}
+    FROM (VALUES ${values}) AS v(id, old_value)
+    WHERE t.id = v.id AND t.event_id = ${eventId} AND t.${write.column} ${comparison} v.old_value
+    RETURNING t.id
+  `;
+  const updatedIds = new Set(updated.map((r) => r.id));
+  const succeeded = changes.filter((x) => updatedIds.has(x.id));
 
-  await writeActionLogMany(tx, {
-    event_id: eventId,
-    action_type: actionType,
-    audit,
-    entries: changes.map((x) => ({ attendee_id: x.id, metadata: x.change.metadata })),
-  });
+  // Only for rows the CAS above actually touched — a row that lost the race never got this
+  // write, so logging it here would fabricate a "from" value the row didn't hold at write time.
+  if (succeeded.length > 0) {
+    await writeActionLogMany(tx, {
+      event_id: eventId,
+      action_type: actionType,
+      audit,
+      entries: succeeded.map((x) => ({ attendee_id: x.id, metadata: x.metadata })),
+    });
+  }
 
-  return { updatedCount: changes.length, alreadySetCount: owned.length - changes.length };
+  return {
+    updatedCount: succeeded.length,
+    alreadySetCount: owned.length - changes.length,
+    conflictCount: changes.length - succeeded.length,
+  };
 }
 
 const bulkTicketTypeBodySchema = z
@@ -1618,15 +1652,18 @@ const bulkTicketTypeBodySchema = z
   .strict();
 
 /** POST /api/admin/events/:eventId/attendees/bulk-ticket-type — assign one catalog ticket type
- * to every selected attendee at once, from the Attendees list's row-selection bulk bar. A plain
- * field write — no per-attendee CAS and no expected_updated_at (unlike bulk check-in): the list
- * reloads after the action and re-applying the same type is harmless. Ids that don't belong to
- * this event are silently ignored, matching bulk delete/check-in. Catalog membership is
- * validated once inside the transaction, under the same advisory lock ticket-type DELETE takes
- * (TOCTOU — same rationale as the single-attendee PATCH), so the picked type can't be deleted
- * out from under the write between the picker opening and submit. Rows that already have the
- * target type are left untouched (no updated_at bump, no log entry) and reported back as
- * alreadySetCount for the toast breakdown. */
+ * to every selected attendee at once, from the Attendees list's row-selection bulk bar. No
+ * expected_updated_at from the client (unlike the single-attendee PATCH) — the list reloads
+ * after the action and re-applying the same type is harmless — but `applyBulkAttendeeChanges`'s
+ * write is still a per-row CAS on the exact ticket_type value read below, not a blanket write:
+ * see its own doc comment. Ids that don't belong to this event are silently ignored, matching
+ * bulk delete/check-in. Catalog membership is validated once inside the transaction, under the
+ * same advisory lock ticket-type DELETE takes (TOCTOU — same rationale as the single-attendee
+ * PATCH), so the picked type can't be deleted out from under the write between the picker
+ * opening and submit. Rows that already have the target type are left untouched (no updated_at
+ * bump, no log entry) and reported back as alreadySetCount; rows that lost the race against a
+ * concurrent write are also left untouched and reported back as conflictCount, both for the
+ * toast breakdown. */
 export async function handleBulkTicketTypeEventAttendees(
   c: Context,
   db: PrismaClient,
@@ -1665,6 +1702,11 @@ export async function handleBulkTicketTypeEventAttendees(
         (a) => computeTicketTypeChange(a.ticket_type, ticket_type),
         "attendee_edited",
         adminAuditFromContext(c),
+        {
+          column: Prisma.raw('"ticket_type"'),
+          nullable: true,
+          setClause: Prisma.sql`ticket_type = ${ticket_type}, updated_at = NOW()`,
+        },
       );
     });
 
@@ -1684,12 +1726,15 @@ const bulkRsvpBodySchema = z
   .strict();
 
 /** POST /api/admin/events/:eventId/attendees/bulk-rsvp — set the attendance (RSVP) status for
- * every selected attendee at once, from the Attendees list's row-selection bulk bar. Same plain
- * field-write shape as bulk-ticket-type above, minus the catalog/advisory-lock step — RSVP
- * status is a fixed enum, not a per-event catalog, so there's nothing that can be deleted out
- * from under the write. Ids that don't belong to this event are silently ignored, matching every
- * other bulk action. Rows already at the target status are left untouched (no rsvp_updated_at
- * bump, no log entry) and reported back as alreadySetCount for the toast breakdown. */
+ * every selected attendee at once, from the Attendees list's row-selection bulk bar. Same
+ * per-row-CAS write shape as bulk-ticket-type above (see `applyBulkAttendeeChanges`'s doc
+ * comment for the full rationale), minus the catalog/advisory-lock step — RSVP status is a
+ * fixed enum, not a per-event catalog, so there's nothing that can be deleted out from under the
+ * write. Ids that don't belong to this event are silently ignored, matching every other bulk
+ * action. Rows already at the target status are left untouched (no rsvp_updated_at bump, no log
+ * entry) and reported back as alreadySetCount; rows that lost the race against a concurrent
+ * write are also left untouched and reported back as conflictCount, both for the toast
+ * breakdown. */
 export async function handleBulkRsvpEventAttendees(
   c: Context,
   db: PrismaClient,
@@ -1717,19 +1762,25 @@ export async function handleBulkRsvpEventAttendees(
         where: { id: { in: attendeeIds }, event_id: eventId },
         select: { id: true, rsvp_status: true },
       });
-      // Reuses computeRsvpChange - the same "is this actually a change, what does the write
-      // payload/log entry look like" logic the single-attendee PATCH path uses - so the two
-      // paths can't silently diverge (e.g. if rsvp_source is later derived per-actor there).
+      // Reuses computeRsvpChange - the same "is this actually a change, what's the from/to for
+      // the log entry" logic the single-attendee PATCH path uses - so the two paths can't
+      // silently diverge (e.g. if rsvp_source is later derived per-actor there). Its own
+      // `.data` isn't used here - the write below sets rsvp_updated_at/rsvp_source itself.
       return applyBulkAttendeeChanges(
         tx,
         eventId,
         owned,
         (a) => {
           const change = computeRsvpChange(a.rsvp_status, rsvp_status);
-          return change && { data: change.data, metadata: { from: change.from, to: change.to, source: "admin" } };
+          return change && { oldValue: change.from, metadata: { from: change.from, to: change.to, source: "admin" } };
         },
         "rsvp_status_changed",
         adminAuditFromContext(c),
+        {
+          column: Prisma.raw('"rsvp_status"'),
+          nullable: false,
+          setClause: Prisma.sql`rsvp_status = ${rsvp_status}, rsvp_updated_at = NOW(), rsvp_source = 'admin', updated_at = NOW()`,
+        },
       );
     });
 
