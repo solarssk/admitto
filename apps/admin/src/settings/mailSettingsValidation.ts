@@ -34,7 +34,7 @@ export type SecretEdits = Record<
   { mode: SecretEditMode; value: string }
 >;
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@.]+\.[^\s@]+$/;
 
 export function emptyMailDraft(): MailDraft {
   return {

@@ -61,7 +61,7 @@ export function getStashedEnrollmentBackupCodes(sessionId: string): string[] | u
 }
 
 function normalizeCodeSet(codes: string[]): string[] {
-  return codes.map((code) => code.replace(/[\s-]/g, "").toUpperCase()).sort();
+  return codes.map((code) => code.replace(/[\s-]/g, "").toUpperCase()).sort((a, b) => a.localeCompare(b));
 }
 
 /** True when submitted codes exactly match the server-stashed enrollment set (no hash work). */

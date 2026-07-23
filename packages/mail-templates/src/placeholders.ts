@@ -49,7 +49,7 @@ export const WALLET_PLACEHOLDERS = new Set([
 export const IMAGE_PLACEHOLDERS = new Set(["logo_url", "header_image_url", "qr_image_url"]);
 
 /** Matches any {{...}} token, including empty {{}} (malformed). */
-const ANY_PLACEHOLDER_RE = /\{\{([^}]*)\}\}/g;
+const ANY_PLACEHOLDER_RE = /\{\{([^}]*)\}\}/g; // NOSONAR — single negated-class quantifier between two literal delimiters, no nesting/overlap
 
 /** Valid placeholder name: lowercase snake_case. */
 const VALID_PLACEHOLDER_NAME_RE = /^[a-z][a-z0-9_]*$/;
@@ -67,7 +67,7 @@ export function findPlaceholdersInHtmlComments(html: string): string[] {
       names.add(match[1]!);
     }
   }
-  return [...names].sort();
+  return [...names].sort((a, b) => a.localeCompare(b));
 }
 
 /** Attribute names that use unquoted placeholder values (invalid / unsafe markup). */
@@ -83,7 +83,7 @@ export function findUnquotedAttributePlaceholders(html: string): string[] {
       attributes.add(`{{${match[1]!}}}`);
     }
   }
-  return [...attributes].sort();
+  return [...attributes].sort((a, b) => a.localeCompare(b));
 }
 
 /** Returns inner text of every {{...}} token in the string. */
@@ -138,5 +138,5 @@ export function findUnknownPlaceholders(
       }
     }
   }
-  return [...issues].sort();
+  return [...issues].sort((a, b) => a.localeCompare(b));
 }

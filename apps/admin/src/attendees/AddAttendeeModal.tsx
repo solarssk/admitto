@@ -22,7 +22,7 @@ type AddAttendeeModalProps = {
 };
 
 function isValidEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  return /^[^\s@]+@[^\s@.]+\.[^\s@]+$/.test(value);
 }
 
 export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly<AddAttendeeModalProps>) {

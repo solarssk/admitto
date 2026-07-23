@@ -48,7 +48,7 @@ export function findMissingRequiredPlaceholders(subject: string, body: string): 
     ...extractPlaceholderNames(subject),
     ...extractPlaceholderNames(body),
   ]);
-  return [...REQUIRED_URL_PLACEHOLDERS].filter((p) => !found.has(p)).sort();
+  return [...REQUIRED_URL_PLACEHOLDERS].filter((p) => !found.has(p)).sort((a, b) => a.localeCompare(b));
 }
 
 /** Throws when the source contains unknown placeholders or unsafe HTML markup. `extraAllowed`

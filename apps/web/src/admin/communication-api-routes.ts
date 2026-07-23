@@ -656,7 +656,8 @@ function slugifyTemplateLabel(label: string): string {
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
+    .replace(/^_+/, "")
+    .replace(/_+$/, "") // NOSONAR — single anchored quantifier, no alternation/nesting; cannot backtrack combinatorially regardless of input length
     .slice(0, 64);
   return slug || "template";
 }

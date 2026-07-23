@@ -500,7 +500,7 @@ export function TimezoneSelect({
                     {item.label}
                   </li>
                 ) : (
-                  <li
+                  <li // NOSONAR — mouse-only click convenience; keyboard selection already works via the search input's onKeyDown (Enter selects the highlighted option, see onSearchKeyDown above)
                     key={item.id}
                     role="option"
                     data-option-index={item.optionIndex}
