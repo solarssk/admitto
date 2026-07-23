@@ -8,11 +8,13 @@ on:
 
 env:
   # Shared by every job below (only test-web/test-admin/test-rest actually use these; harmless
-  # unused strings in lint-and-typecheck). Defined once at workflow level, not per-job - repeating
-  # this same connection string in 4 job-level env: blocks tripped SonarCloud's hardcoded-secret
-  # rule (secrets:S6698) once per occurrence, even though it's the same non-production, CI-only
-  # ephemeral Postgres service password that was already here before this job was split in four.
-  DATABASE_URL: postgresql://admitto:admitto@localhost:5432/admitto
+  # unused strings in lint-and-typecheck). Defined once at workflow level, not per-job.
+  # No password: the Postgres service containers below run with POSTGRES_HOST_AUTH_METHOD=trust
+  # (network-unreachable outside this job's own steps, so there's nothing to protect with a
+  # password) — closes SonarCloud's hardcoded-secret rule (secrets:S6698) without a repo secret,
+  # which would resolve to empty (and fail Postgres startup) on a fork-originated pull_request run
+  # since GitHub withholds secrets from those by default (caught by Codex review on PR #570).
+  DATABASE_URL: postgresql://admitto@localhost:5432/admitto
   REDIS_URL: redis://localhost:6379
   # Fixed test key — 32 bytes. Not a production secret; used only in CI test runs.
   ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
@@ -62,7 +64,7 @@ jobs:
         image: postgres:16-alpine
         env:
           POSTGRES_USER: admitto
-          POSTGRES_PASSWORD: admitto
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: admitto
         ports:
           - 5432:5432
@@ -97,7 +99,7 @@ jobs:
         run: bash infra/scripts/create-test-dbs.sh
       - name: Migrate web integration test database
         env:
-          DATABASE_URL: postgresql://admitto:admitto@localhost:5432/admitto_web_test
+          DATABASE_URL: postgresql://admitto@localhost:5432/admitto_web_test
         working-directory: packages/db
         # --no-install: use only the already-installed, lockfile-pinned prisma binary, never an
         # on-demand npx download (SonarCloud githubactions:S6505 / S8543).
@@ -175,7 +177,7 @@ jobs:
         image: postgres:16-alpine
         env:
           POSTGRES_USER: admitto
-          POSTGRES_PASSWORD: admitto
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: admitto
         ports:
           - 5432:5432
@@ -212,7 +214,7 @@ jobs:
         run: npm run db:migrate -w @admitto/db
       - name: Migrate auth integration test database
         env:
-          DATABASE_URL: postgresql://admitto:admitto@localhost:5432/admitto_auth_test
+          DATABASE_URL: postgresql://admitto@localhost:5432/admitto_auth_test
         working-directory: packages/db
         # --no-install: use only the already-installed, lockfile-pinned prisma binary, never an
         # on-demand npx download (SonarCloud githubactions:S6505 / S8543).
@@ -288,7 +290,7 @@ jobs:
           persist-credentials: false
       - name: gitleaks
         run: |
-          curl -sSfL -o gitleaks.tar.gz \
+          curl -sSfL --proto '=https' --proto-redir '=https' -o gitleaks.tar.gz \
             https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz
           echo "ba6dbb656933921c775ee5a2d1c13a91046e7952e9d919f9bac4cec61d628e7d  gitleaks.tar.gz" | sha256sum -c -
           tar -xzf gitleaks.tar.gz gitleaks

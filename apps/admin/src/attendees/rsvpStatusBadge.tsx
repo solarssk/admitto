@@ -2,11 +2,11 @@ import { Badge } from "@admitto/ui";
 import type { RsvpStatus } from "../api/types.js";
 
 export const RSVP_LABELS: Record<RsvpStatus, string> = {
-  none: "Registered",
   confirmed: "Confirmed",
-  declined: "Declined",
   tentative: "Tentative",
+  declined: "Declined",
   cancelled: "Cancelled",
+  none: "Registered",
 };
 
 const RSVP_VARIANTS: Record<RsvpStatus, "neutral" | "ok" | "error" | "warn"> = {

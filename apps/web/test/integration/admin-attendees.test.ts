@@ -3515,7 +3515,7 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-ticket-type", () => {
     const res = await postBulkType(EVENT_A, { attendeeIds: ids, ticket_type: "vip" });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ updatedCount: 2, alreadySetCount: 0 });
+    expect(await res.json()).toEqual({ updatedCount: 2, alreadySetCount: 0, conflictCount: 0 });
 
     const after = await prisma.attendee.findMany({
       where: { id: { in: ids } },
@@ -3551,7 +3551,7 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-ticket-type", () => {
     const res = await postBulkType(EVENT_A, { attendeeIds: [already, fresh], ticket_type: "vip" });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 1 });
+    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 1, conflictCount: 0 });
 
     const after = await prisma.attendee.findUniqueOrThrow({
       where: { id: already },
@@ -3571,7 +3571,7 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-ticket-type", () => {
     const res = await postBulkType(EVENT_A, { attendeeIds: ids, ticket_type: "vip" });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ updatedCount: 0, alreadySetCount: 2 });
+    expect(await res.json()).toEqual({ updatedCount: 0, alreadySetCount: 2, conflictCount: 0 });
     const logs = await prisma.attendeeActionLog.findMany({
       where: { attendee_id: { in: ids }, action_type: "attendee_edited" },
     });
@@ -3590,6 +3590,57 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-ticket-type", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+
+  it("does not clobber a row a concurrent single-attendee PATCH changed mid-transaction, and logs no fabricated 'from' for it (code review, PR #569)", async () => {
+    const raced = "att-bulk-tt-race-victim";
+    const safe = "att-bulk-tt-race-safe";
+    await seedTyped([raced, safe], "standard");
+
+    // Simulates a concurrent single-attendee PATCH clearing `raced`'s ticket_type between this
+    // request's findMany read and its own per-row CAS UPDATE - the exact TOCTOU window the code
+    // review flagged (a blanket `id IN (...)` updateMany can't see this and would silently
+    // overwrite it back to the bulk's target). Prisma middleware also runs for queries issued
+    // inside `$transaction` callbacks, so this intercepts the route handler's own
+    // `tx.attendee.findMany`. Fires once, then becomes a permanent no-op, since `prisma` is
+    // shared for the rest of this file and `$use` middleware can't be unregistered.
+    let armed = true;
+    prisma.$use(async (params, next) => {
+      const result = await next(params);
+      if (armed && params.model === "Attendee" && params.action === "findMany") {
+        armed = false;
+        await prisma.attendee.update({ where: { id: raced }, data: { ticket_type: null } });
+      }
+      return result;
+    });
+
+    const res = await postBulkType(EVENT_A, { attendeeIds: [raced, safe], ticket_type: "vip" });
+
+    expect(armed).toBe(false); // sanity check: the injected concurrent update actually ran
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 0, conflictCount: 1 });
+
+    const after = await prisma.attendee.findMany({
+      where: { id: { in: [raced, safe] } },
+      select: { id: true, ticket_type: true },
+    });
+    const byId = new Map(after.map((a) => [a.id, a.ticket_type]));
+    // The concurrent write's outcome must survive untouched - not reverted to "vip" and not left
+    // at the stale "standard" this request read.
+    expect(byId.get(raced)).toBeNull();
+    expect(byId.get(safe)).toBe("vip");
+
+    const logs = await prisma.attendeeActionLog.findMany({
+      where: { attendee_id: { in: [raced, safe] }, action_type: "attendee_edited" },
+    });
+    // Exactly one log entry - for `safe` only. A fabricated `raced` entry claiming
+    // `from: "standard"` would misrepresent what the row actually held at write time.
+    expect(logs).toHaveLength(1);
+    expect(logs[0]!.attendee_id).toBe(safe);
+    expect(logs[0]!.metadata).toEqual({
+      fields: ["ticket_type"],
+      field_changes: { ticket_type: { from: "standard", to: "vip" } },
+    });
   });
 
   it("rejects a type that is not in the event's catalog", async () => {
@@ -3611,7 +3662,7 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-ticket-type", () => {
     const res = await postBulkType(EVENT_A, { attendeeIds: [ownId, ATT_B1], ticket_type: "vip" });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 0 });
+    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 0, conflictCount: 0 });
     const other = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_B1 } });
     expect(other.ticket_type).not.toBe("vip");
   });
@@ -3643,6 +3694,220 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-ticket-type", () => {
     expect((await postBulkType(EVENT_A, { attendeeIds: ["x"], ticket_type: "" })).status).toBe(400);
 
     const malformed = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-ticket-type`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{not json",
+    });
+    expect(malformed.status).toBe(400);
+  });
+});
+
+describe("POST /api/admin/events/:eventId/attendees/bulk-rsvp", () => {
+  afterAll(async () => {
+    await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-rsvp-" } } });
+    await prisma.attendee.deleteMany({ where: { id: { startsWith: "att-bulk-rsvp-" } } });
+  });
+
+  async function seedRsvp(ids: string[], rsvp_status = "none") {
+    await prisma.attendee.createMany({
+      data: ids.map((id) => ({
+        id,
+        event_id: EVENT_A,
+        email: `${id}@example.com`,
+        name: `Bulk Rsvp ${id}`,
+        rsvp_status,
+        token_hash: hashToken(generateToken()),
+        token_enc: encryptToString(generateToken()),
+      })),
+    });
+  }
+
+  function postBulkRsvp(eventId: string, body: unknown) {
+    return app.request(`/api/admin/events/${eventId}/attendees/bulk-rsvp`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("sets the status for every selected attendee and writes per-attendee rsvp_status_changed logs with from→to", async () => {
+    const ids = ["att-bulk-rsvp-1", "att-bulk-rsvp-2"];
+    await seedRsvp([ids[0]!], "none");
+    await seedRsvp([ids[1]!], "tentative");
+
+    const res = await postBulkRsvp(EVENT_A, { attendeeIds: ids, rsvp_status: "confirmed" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updatedCount: 2, alreadySetCount: 0, conflictCount: 0 });
+
+    const after = await prisma.attendee.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, rsvp_status: true, rsvp_source: true },
+    });
+    expect(after.every((a) => a.rsvp_status === "confirmed" && a.rsvp_source === "admin")).toBe(true);
+
+    const logs = await prisma.attendeeActionLog.findMany({
+      where: { attendee_id: { in: ids }, action_type: "rsvp_status_changed" },
+    });
+    expect(logs).toHaveLength(2);
+    const byId = new Map(logs.map((l) => [l.attendee_id, l.metadata as Record<string, unknown>]));
+    expect(byId.get(ids[0]!)).toEqual({ from: "none", to: "confirmed", source: "admin" });
+    expect(byId.get(ids[1]!)).toEqual({ from: "tentative", to: "confirmed", source: "admin" });
+  });
+
+  it("leaves rows already at the target status untouched — no update, no log, no rsvp_updated_at bump", async () => {
+    const already = "att-bulk-rsvp-already";
+    const fresh = "att-bulk-rsvp-fresh";
+    await seedRsvp([already], "confirmed");
+    await seedRsvp([fresh], "none");
+    const before = await prisma.attendee.findUniqueOrThrow({
+      where: { id: already },
+      select: { rsvp_updated_at: true },
+    });
+
+    const res = await postBulkRsvp(EVENT_A, { attendeeIds: [already, fresh], rsvp_status: "confirmed" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 1, conflictCount: 0 });
+
+    const after = await prisma.attendee.findUniqueOrThrow({
+      where: { id: already },
+      select: { rsvp_updated_at: true },
+    });
+    expect(after.rsvp_updated_at?.toISOString()).toBe(before.rsvp_updated_at?.toISOString());
+    const logs = await prisma.attendeeActionLog.findMany({
+      where: { attendee_id: already, action_type: "rsvp_status_changed" },
+    });
+    expect(logs).toHaveLength(0);
+  });
+
+  it("updates nothing and writes no logs when every selected attendee already has the status", async () => {
+    const ids = ["att-bulk-rsvp-all-already-1", "att-bulk-rsvp-all-already-2"];
+    await seedRsvp(ids, "declined");
+
+    const res = await postBulkRsvp(EVENT_A, { attendeeIds: ids, rsvp_status: "declined" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updatedCount: 0, alreadySetCount: 2, conflictCount: 0 });
+    const logs = await prisma.attendeeActionLog.findMany({
+      where: { attendee_id: { in: ids }, action_type: "rsvp_status_changed" },
+    });
+    expect(logs).toHaveLength(0);
+  });
+
+  it("returns a generic 500 without leaking the underlying error for an unexpected failure", async () => {
+    const id = "att-bulk-rsvp-transaction-fails";
+    await seedRsvp([id], "none");
+    const spy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("db exploded"));
+    try {
+      const res = await postBulkRsvp(EVENT_A, { attendeeIds: [id], rsvp_status: "confirmed" });
+      expect(res.status).toBe(500);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("server error");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("does not clobber a row a concurrent single-attendee PATCH changed mid-transaction, and logs no fabricated 'from' for it (code review, PR #569)", async () => {
+    const raced = "att-bulk-rsvp-race-victim";
+    const safe = "att-bulk-rsvp-race-safe";
+    await seedRsvp([raced, safe], "none");
+
+    // Simulates a concurrent single-attendee PATCH committing "declined" for `raced` between
+    // this request's findMany read and its own per-row CAS UPDATE - the exact TOCTOU window the
+    // code review flagged (a blanket `id IN (...)` updateMany can't see this and would silently
+    // overwrite it back to the bulk's target, with the activity log recording a "from" value the
+    // row never actually held at write time). Prisma middleware also runs for queries issued
+    // inside `$transaction` callbacks, so this intercepts the route handler's own
+    // `tx.attendee.findMany`. Fires once, then becomes a permanent no-op, since `prisma` is
+    // shared for the rest of this file and `$use` middleware can't be unregistered.
+    let armed = true;
+    prisma.$use(async (params, next) => {
+      const result = await next(params);
+      if (armed && params.model === "Attendee" && params.action === "findMany") {
+        armed = false;
+        await prisma.attendee.update({ where: { id: raced }, data: { rsvp_status: "declined" } });
+      }
+      return result;
+    });
+
+    const res = await postBulkRsvp(EVENT_A, { attendeeIds: [raced, safe], rsvp_status: "confirmed" });
+
+    expect(armed).toBe(false); // sanity check: the injected concurrent update actually ran
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 0, conflictCount: 1 });
+
+    const after = await prisma.attendee.findMany({
+      where: { id: { in: [raced, safe] } },
+      select: { id: true, rsvp_status: true },
+    });
+    const byId = new Map(after.map((a) => [a.id, a.rsvp_status]));
+    // The concurrent write's outcome must survive untouched - not reverted to "confirmed" and
+    // not left at the stale "none" this request read.
+    expect(byId.get(raced)).toBe("declined");
+    expect(byId.get(safe)).toBe("confirmed");
+
+    const logs = await prisma.attendeeActionLog.findMany({
+      where: { attendee_id: { in: [raced, safe] }, action_type: "rsvp_status_changed" },
+    });
+    // Exactly one log entry - for `safe` only. A fabricated `raced` entry claiming
+    // `from: "none"` would misrepresent what the row actually held at write time.
+    expect(logs).toHaveLength(1);
+    expect(logs[0]!.attendee_id).toBe(safe);
+    expect(logs[0]!.metadata).toEqual({ from: "none", to: "confirmed", source: "admin" });
+  });
+
+  it("rejects a status that isn't one of the fixed RSVP values", async () => {
+    const id = "att-bulk-rsvp-unknown-status";
+    await seedRsvp([id], "none");
+
+    const res = await postBulkRsvp(EVENT_A, { attendeeIds: [id], rsvp_status: "maybe" });
+
+    expect(res.status).toBe(400);
+    const after = await prisma.attendee.findUniqueOrThrow({ where: { id } });
+    expect(after.rsvp_status).toBe("none");
+  });
+
+  it("silently ignores an id from a different event instead of failing the whole request", async () => {
+    const ownId = "att-bulk-rsvp-own";
+    await seedRsvp([ownId]);
+
+    const res = await postBulkRsvp(EVENT_A, { attendeeIds: [ownId, ATT_B1], rsvp_status: "confirmed" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 0, conflictCount: 0 });
+    const other = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_B1 } });
+    expect(other.rsvp_status).not.toBe("confirmed");
+  });
+
+  it("returns 403 when the event is archived", async () => {
+    const id = "att-bulk-rsvp-archived";
+    await seedRsvp([id], "none");
+    await prisma.event.update({ where: { id: EVENT_A }, data: { archived_at: new Date() } });
+    try {
+      const res = await postBulkRsvp(EVENT_A, { attendeeIds: [id], rsvp_status: "confirmed" });
+      expect(res.status).toBe(403);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe("event_archived");
+      const after = await prisma.attendee.findUniqueOrThrow({ where: { id } });
+      expect(after.rsvp_status).toBe("none");
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_A }, data: { archived_at: null } });
+    }
+  });
+
+  it("returns 403 for an admin outside the event's organization", async () => {
+    const res = await postBulkRsvp(EVENT_B, { attendeeIds: ["att-does-not-matter"], rsvp_status: "confirmed" });
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects an empty selection, a missing status, an invalid status, and a malformed body", async () => {
+    expect((await postBulkRsvp(EVENT_A, { attendeeIds: [], rsvp_status: "confirmed" })).status).toBe(400);
+    expect((await postBulkRsvp(EVENT_A, { attendeeIds: ["x"] })).status).toBe(400);
+    expect((await postBulkRsvp(EVENT_A, { attendeeIds: ["x"], rsvp_status: "" })).status).toBe(400);
+
+    const malformed = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-rsvp`, {
       method: "POST",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: "{not json",

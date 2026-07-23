@@ -66,9 +66,9 @@ describe("AdminCheckInRoute header (#378)", () => {
     expect(screen.queryByText(/Warsaw/)).toBeNull();
   });
 
-  // The connection badge itself moved to the global StaffShell topbar
-  // (rendered once for the whole app, next to MailerStatusBadge) — see
-  // ServerConnectionBadge tests in ConnectionBanner.test.tsx.
+  // The connection indicator itself lives in the global StaffShell topbar's
+  // SystemStatus dropdown (rendered once for the whole app) — see
+  // SystemStatus.test.tsx.
 });
 
 describe("AdminCheckInRoute camera toggle (#381)", () => {

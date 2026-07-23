@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
 import { DatePicker } from "../../src/components/DatePicker.js";
@@ -168,6 +168,44 @@ describe("DatePicker", () => {
     expect(screen.queryByRole("dialog", { name: "Choose date" })).toBeNull();
     await waitFor(() => {
       expect(document.activeElement).toBe(input);
+    });
+  });
+
+  it("closes without stealing focus back when the user tabs to a control outside the panel", async () => {
+    vi.spyOn(eventDates, "todayIsoDate").mockReturnValue("2026-07-02");
+    vi.spyOn(eventDates, "formatCalendarMonth").mockReturnValue("July 2026");
+    vi.spyOn(eventDates, "getWeekdayLabelsShort").mockReturnValue([
+      "Mon",
+      "Tue",
+      "Wed",
+      "Thu",
+      "Fri",
+      "Sat",
+      "Sun",
+    ]);
+    vi.spyOn(eventDates, "formatIsoCalendarDate").mockImplementation((iso) => iso);
+    vi.spyOn(eventDates, "localeDateInputPattern").mockReturnValue("dd.mm.yyyy");
+
+    render(
+      <div>
+        <DatePicker value="" onChange={() => {}} label="Date" />
+        <button type="button">Next field</button>
+      </div>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
+    expect(screen.getByRole("dialog", { name: "Choose date" })).toBeTruthy();
+
+    const nextField = screen.getByRole("button", { name: "Next field" });
+    // Real focus transfer (not just a synthetic focusin dispatch) — this is what actually
+    // lands `document.activeElement` on the next control, the way a real Tab keypress would.
+    // act()-wrapped so the resulting setOpen(false) flushes before the assertions below.
+    act(() => nextField.focus());
+
+    expect(screen.queryByRole("dialog", { name: "Choose date" })).toBeNull();
+    // Unlike Escape, a Tab-driven close must not pull focus back to the input — that would
+    // trap keyboard navigation instead of letting it continue to the next field.
+    await waitFor(() => {
+      expect(document.activeElement).toBe(nextField);
     });
   });
 

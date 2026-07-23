@@ -1,8 +1,19 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom";
-import { Button, EmptyState, PageHeader, useToast, type ToastVariant } from "@admitto/ui";
+import { Button, EmptyState, PageHeader, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
 import {
   ApiError,
+  bulkChangeRsvpStatus,
   bulkChangeTicketType,
   bulkCheckInAttendees,
   bulkRevokeCheckIn,
@@ -31,6 +42,7 @@ import type {
 } from "../api/types.js";
 import { AddAttendeeModal } from "../attendees/AddAttendeeModal.js";
 import { AttendeesTable } from "../attendees/AttendeesTable.js";
+import { RSVP_LABELS, RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { useMailConfigured } from "../attendees/useMailConfigured.js";
 import { ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
@@ -49,6 +61,11 @@ const BULK_DELETE_CONFIRM_DELAY_SECONDS = 10;
 /** Same "don't act on reflex" pause as BULK_DELETE_CONFIRM_DELAY_SECONDS above, for the bulk
  * Revoke check-in/items/pass dialogs — was missing on all three (PO review). */
 const BULK_REVOKE_CONFIRM_DELAY_SECONDS = 10;
+/** Same "don't act on reflex" pause as the constants above, for the CardPickerDialog Apply
+ * button (bulk change ticket type / change attendance status) — a misclick on a large batch
+ * would otherwise overwrite everyone's ticket type or RSVP status in one shot with no
+ * confirmation at all (code review on #569). */
+const BULK_CARD_PICKER_CONFIRM_DELAY_SECONDS = 10;
 
 function mergeAttendeeRow(prev: AttendeeRowDto, updated: AttendeeDetailDto): AttendeeRowDto {
   return {
@@ -204,6 +221,49 @@ function notifyBulkRevokePassResult(
   }
 
   addToast(`No passes revoked${noteSuffix}.`, "error");
+}
+
+/** Shared three-way "none found / already set / N changed" toast for a bulk field-assignment
+ * result — change ticket type and change attendance status independently duplicated this exact
+ * branching (bot review). `labels` lets each caller keep its own copy (e.g. quoted vs unquoted,
+ * with or without a leading phrase like "attendance status") while sharing the decision logic.
+ * `conflictCount` (rows a concurrent edit raced between the server's read and its per-row CAS
+ * write, added alongside that fix) is surfaced as a trailing note rather than silently dropped —
+ * it was passed through here unused until this pass, which also fixed the "none found" guard to
+ * require conflictCount === 0 too: a fully-conflicted selection was genuinely found, just raced,
+ * so it shouldn't read as "may have been removed". */
+function notifyBulkAssignResult(
+  result: { updatedCount: number; alreadySetCount: number; conflictCount: number },
+  labels: { alreadyHave: string; setTo: string },
+  addToast: (message: string, variant?: ToastVariant) => void,
+) {
+  const { updatedCount, alreadySetCount, conflictCount = 0 } = result;
+  const conflictNote = conflictCount > 0 ? ` (${conflictCount} skipped — changed by someone else just now)` : "";
+
+  if (updatedCount === 0 && alreadySetCount === 0 && conflictCount === 0) {
+    // None of the selected ids resolved to an attendee in this event — most likely they were
+    // deleted by someone else between opening the picker and clicking Apply (code review: this
+    // used to fall into the "already had it" branch below, which is wrong — nothing was found
+    // at all, let alone already set to the type).
+    addToast("None of the selected attendees could be found — they may have been removed.", "error");
+    return;
+  }
+
+  if (updatedCount === 0 && alreadySetCount === 0) {
+    addToast(`No attendees were updated${conflictNote}.`, "warning");
+    return;
+  }
+
+  if (updatedCount === 0) {
+    addToast(`All selected attendees already have ${labels.alreadyHave}${conflictNote}.`, "info");
+    return;
+  }
+
+  const alreadyNote = alreadySetCount > 0 ? ` (${alreadySetCount} already had it)` : "";
+  addToast(
+    `${updatedCount} attendee${updatedCount === 1 ? "" : "s"} set to ${labels.setTo}${alreadyNote}${conflictNote}`,
+    "success",
+  );
 }
 
 /** The error-surfacing half of {@link RunBulkActionParams} — split out so
@@ -380,38 +440,75 @@ function SendTicketsDialog({
   );
 }
 
-interface ChangeTicketTypeDialogProps {
+/** Derived from RSVP_LABELS' own keys (a Record<RsvpStatus, string>) instead of a hand-typed
+ * literal, so a future change to the RsvpStatus union can't silently drift out of sync here -
+ * RSVP_LABELS itself fails to compile until every union member is accounted for. */
+const RSVP_STATUS_OPTIONS = Object.keys(RSVP_LABELS) as RsvpStatus[];
+
+interface CardPickerDialogProps<T> {
   open: boolean;
   busy: boolean;
   selectedCount: number;
-  ticketTypes: TicketTypeDto[];
-  value: string;
+  title: string;
+  /** Used in the "Set the {fieldLabel} for N selected attendees." hint line. */
+  fieldLabel: string;
   error: string | null;
+  options: T[];
+  getKey: (option: T) => string;
+  getAriaLabel: (option: T) => string;
+  renderBadge: (option: T) => ReactNode;
+  value: string;
   onValueChange: (key: string) => void;
+  radioGroupName: string;
+  /** Apply also stays disabled with no value picked — only relevant for a dynamic, possibly-
+   * empty catalog (ticket types); a fixed enum (RSVP status) always has one. */
+  requireValue?: boolean;
+  /** Same "don't act on reflex" pause as ConfirmDialog's own confirmDelaySeconds (identical
+   * armed/countdown-bar mechanics, ported here since this dialog shape predates it) — ties the
+   * Apply button, not picking a card, to the cooldown, matching every other bulk action in this
+   * file (code review on #569). */
+  confirmDelaySeconds?: number;
   onConfirm: () => void;
   onClose: () => void;
 }
 
-/** Pick one of the event's configured ticket types for every selected attendee (#521). The
- * catalog is per-event (batch 04), so this is a dynamic list rather than the mockup's
- * hardcoded VIP/Standard buttons — each option is a card carrying the type's colored badge
- * (the operator picks by the same chip the table shows) with a check on the selected one
- * (PO review). Errors render inline — the dialog has focus, so a toast behind it would go
- * unseen (AGENTS.md toast-vs-inline table). */
-function ChangeTicketTypeDialog({
+/** Pick one card from a badge-styled list for every selected attendee (real radios underneath
+ * for keyboard/AT semantics) — shared by bulk Change ticket type (#521) and Change attendance
+ * status, which independently duplicated this exact dialog (bot review). Errors render inline —
+ * the dialog has focus, so a toast behind it would go unseen (AGENTS.md toast-vs-inline table). */
+function CardPickerDialog<T>({
   open,
   busy,
   selectedCount,
-  ticketTypes,
-  value,
+  title,
+  fieldLabel,
   error,
+  options,
+  getKey,
+  getAriaLabel,
+  renderBadge,
+  value,
   onValueChange,
+  radioGroupName,
+  requireValue,
+  confirmDelaySeconds,
   onConfirm,
   onClose,
-}: Readonly<ChangeTicketTypeDialogProps>) {
+}: Readonly<CardPickerDialogProps<T>>) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const [armed, setArmed] = useState(confirmDelaySeconds === undefined);
   useModalFocusTrap(panelRef, open, onClose);
+
+  // Layout effect, not a plain effect — matches ConfirmDialog's own reasoning: the dialog stays
+  // mounted while closed, so `armed` could still read true from the previous open, and resetting
+  // before paint means a reopen never shows an enabled Apply button for a frame.
+  useLayoutEffect(() => {
+    if (!open || confirmDelaySeconds === undefined) return;
+    setArmed(false);
+    const timer = window.setTimeout(() => setArmed(true), confirmDelaySeconds * 1000);
+    return () => window.clearTimeout(timer);
+  }, [open, confirmDelaySeconds]);
 
   if (!open) return null;
 
@@ -420,7 +517,7 @@ function ChangeTicketTypeDialog({
       <div className="add-attendee-modal__backdrop" role="presentation" onClick={onClose} />
       <div className="add-attendee-modal__panel" ref={panelRef}>
         <h2 className="add-attendee-modal__title" id={titleId}>
-          Change ticket type
+          {title}
         </h2>
         {error && (
           <p className="add-attendee-modal__error" role="alert">
@@ -428,39 +525,65 @@ function ChangeTicketTypeDialog({
           </p>
         )}
         <p className="mail-field-hint">
-          Set the ticket type for {selectedCount} selected attendee{selectedCount === 1 ? "" : "s"}.
+          Set the {fieldLabel} for {selectedCount} selected attendee{selectedCount === 1 ? "" : "s"}.
         </p>
         <div className="change-type-options">
-          {ticketTypes.map((type) => (
-            <label
-              key={type.id}
-              className={`change-type-option${value === type.key ? " change-type-option--selected" : ""}`}
-            >
-              {/* Real radio for keyboard/AT semantics — visually the card is the control. */}
-              <input
-                type="radio"
-                name="bulk-ticket-type"
-                className="sr-only"
-                value={type.key}
-                checked={value === type.key}
-                disabled={busy}
-                onChange={() => onValueChange(type.key)}
-                aria-label={type.label}
-              />
-              <TicketTypeBadge ticketType={type.key} catalog={ticketTypes} />
-              {value === type.key && (
-                <i className="ti ti-check change-type-option__check" aria-hidden="true" />
-              )}
-            </label>
-          ))}
+          {options.map((option) => {
+            const key = getKey(option);
+            return (
+              <label
+                key={key}
+                className={`change-type-option${value === key ? " change-type-option--selected" : ""}`}
+              >
+                {/* Real radio for keyboard/AT semantics — visually the card is the control. */}
+                <input
+                  type="radio"
+                  name={radioGroupName}
+                  className="sr-only"
+                  value={key}
+                  checked={value === key}
+                  disabled={busy}
+                  onChange={() => onValueChange(key)}
+                  aria-label={getAriaLabel(option)}
+                />
+                {renderBadge(option)}
+                {value === key && (
+                  <i className="ti ti-check change-type-option__check" aria-hidden="true" />
+                )}
+              </label>
+            );
+          })}
         </div>
         <div className="change-type-actions">
           <Button type="button" variant="secondary" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
-          <Button type="button" variant="primary" disabled={busy || !value} onClick={onConfirm}>
-            {busy ? "Applying…" : "Apply"}
-          </Button>
+          <span className="confirm-dialog__confirm-wrap">
+            <Tooltip
+              content={
+                !armed && confirmDelaySeconds !== undefined
+                  ? `Please wait ${confirmDelaySeconds}s before confirming`
+                  : undefined
+              }
+            >
+              <Button
+                type="button"
+                variant="primary"
+                disabled={busy || !armed || (requireValue ? !value : false)}
+                onClick={onConfirm}
+              >
+                {busy ? "Applying…" : "Apply"}
+              </Button>
+            </Tooltip>
+            {!armed && confirmDelaySeconds !== undefined && (
+              <span className="confirm-dialog__arm-track" aria-hidden="true">
+                <span
+                  className="confirm-dialog__arm-bar"
+                  style={{ animationDuration: `${confirmDelaySeconds}s` }}
+                />
+              </span>
+            )}
+          </span>
         </div>
       </div>
     </div>
@@ -586,6 +709,10 @@ export function AttendeesPage() {
   const [changeTypeBusy, setChangeTypeBusy] = useState(false);
   const [changeTypeError, setChangeTypeError] = useState<string | null>(null);
   const [changeTypeValue, setChangeTypeValue] = useState("");
+  const [changeRsvpOpen, setChangeRsvpOpen] = useState(false);
+  const [changeRsvpBusy, setChangeRsvpBusy] = useState(false);
+  const [changeRsvpError, setChangeRsvpError] = useState<string | null>(null);
+  const [changeRsvpValue, setChangeRsvpValue] = useState<RsvpStatus>("confirmed");
   const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
   const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null);
@@ -1013,28 +1140,44 @@ export function AttendeesPage() {
           ? "That ticket type no longer exists — it may have just been deleted. Close and try again."
           : operatorApiErrorMessage(err, "Change failed."),
       action: (id) => bulkChangeTicketType(id, [...selectedIds], changeTypeValue),
-      onSuccess: ({ updatedCount, alreadySetCount }) => {
-        if (updatedCount === 0 && alreadySetCount === 0) {
-          // None of the selected ids resolved to an attendee in this event — most likely they
-          // were deleted by someone else between opening the picker and clicking Apply (code
-          // review: this used to fall into the "already had it" branch below, which is wrong —
-          // nothing was found at all, let alone already set to the type).
-          addToast("None of the selected attendees could be found — they may have been removed.", "error");
-        } else if (updatedCount === 0) {
-          addToast(`All selected attendees already have ${typeLabel}.`, "info");
-        } else {
-          const alreadyNote = alreadySetCount > 0 ? ` (${alreadySetCount} already had it)` : "";
-          addToast(
-            `${updatedCount} attendee${updatedCount === 1 ? "" : "s"} set to ${typeLabel}${alreadyNote}`,
-            "success",
-          );
-        }
+      onSuccess: (result) => {
+        notifyBulkAssignResult(result, { alreadyHave: typeLabel, setTo: typeLabel }, addToast);
         setChangeTypeOpen(false);
         clearSelection();
         setReloadToken((n) => n + 1);
       },
     });
   };
+
+  /** Bulk attendance (RSVP) status change for an explicit subset of selected attendees — same
+   * shape (and same three-way success split, same code-review reasoning) as
+   * handleBulkChangeTicketTypeConfirm above: updatedCount and alreadySetCount both zero means
+   * none of the selected ids resolved to an attendee in this event anymore (removed by someone
+   * else between opening the picker and clicking Apply), distinct from "found but already set". */
+  const handleBulkChangeRsvpConfirm = () =>
+    runBulkAction({
+      eventId,
+      eventIdRef,
+      selectedCount: selectedIds.size,
+      reportApiError,
+      setBusy: setChangeRsvpBusy,
+      setError: setChangeRsvpError,
+      addToast,
+      apiErrorFallback: "Change failed.",
+      genericFallback: "Failed to change attendance status.",
+      action: (id) => bulkChangeRsvpStatus(id, [...selectedIds], changeRsvpValue),
+      onSuccess: (result) => {
+        const label = RSVP_LABELS[changeRsvpValue];
+        notifyBulkAssignResult(
+          result,
+          { alreadyHave: `attendance status "${label}"`, setTo: `"${label}"` },
+          addToast,
+        );
+        setChangeRsvpOpen(false);
+        clearSelection();
+        setReloadToken((n) => n + 1);
+      },
+    });
 
   /** Bulk GDPR erasure for an explicit subset of selected attendees — same effect as running
    * the attendee detail page's "Delete attendee" once per selected row. Guards every
@@ -1299,6 +1442,11 @@ export function AttendeesPage() {
           setChangeTypeValue(ticketTypes[0]?.key ?? "");
           setChangeTypeOpen(true);
         }}
+        onBulkChangeRsvpStatus={() => {
+          setChangeRsvpError(null);
+          setChangeRsvpValue("confirmed");
+          setChangeRsvpOpen(true);
+        }}
         itemCount={eventItemCount}
         itemsError={eventItemsError}
         onRetryItems={() => setEventItemsRetryToken((n) => n + 1)}
@@ -1328,17 +1476,46 @@ export function AttendeesPage() {
         onCreated={handleCreated}
       />
 
-      <ChangeTicketTypeDialog
+      <CardPickerDialog
         open={changeTypeOpen}
         busy={changeTypeBusy}
         selectedCount={selectedIds.size}
-        ticketTypes={ticketTypes}
-        value={changeTypeValue}
+        title="Change ticket type"
+        fieldLabel="ticket type"
         error={changeTypeError}
+        options={ticketTypes}
+        getKey={(t) => t.key}
+        getAriaLabel={(t) => t.label}
+        renderBadge={(t) => <TicketTypeBadge ticketType={t.key} catalog={ticketTypes} />}
+        value={changeTypeValue}
         onValueChange={setChangeTypeValue}
+        radioGroupName="bulk-ticket-type"
+        requireValue
+        confirmDelaySeconds={BULK_CARD_PICKER_CONFIRM_DELAY_SECONDS}
         onConfirm={() => void handleBulkChangeTicketTypeConfirm()}
         onClose={() => {
           if (!changeTypeBusy) setChangeTypeOpen(false);
+        }}
+      />
+
+      <CardPickerDialog
+        open={changeRsvpOpen}
+        busy={changeRsvpBusy}
+        selectedCount={selectedIds.size}
+        title="Change attendance status"
+        fieldLabel="attendance status"
+        error={changeRsvpError}
+        options={RSVP_STATUS_OPTIONS}
+        getKey={(s) => s}
+        getAriaLabel={(s) => RSVP_LABELS[s]}
+        renderBadge={(s) => <RsvpStatusBadge status={s} />}
+        value={changeRsvpValue}
+        onValueChange={(key) => setChangeRsvpValue(key as RsvpStatus)}
+        radioGroupName="bulk-rsvp-status"
+        confirmDelaySeconds={BULK_CARD_PICKER_CONFIRM_DELAY_SECONDS}
+        onConfirm={() => void handleBulkChangeRsvpConfirm()}
+        onClose={() => {
+          if (!changeRsvpBusy) setChangeRsvpOpen(false);
         }}
       />
 
