@@ -146,16 +146,20 @@ function inheritedMailSettingsResponse(): EventMailSettingsResponse {
 }
 
 beforeEach(() => {
+  // The ticket-type staleness tests queue one-off mock implementations. Resetting them before
+  // every test prevents an unconsumed async response in a failed test from affecting the next one.
+  vi.resetAllMocks();
   // The Branding tab also mounts EventImageAssetLibrary, which fetches its own list on mount.
   // Default to an empty library so tests that don't care about it never hit a real network
   // call (jsdom's `fetch` is real, not auto-mocked) or leak an unresolved promise into the
   // next test.
   vi.mocked(fetchEventImageAssets).mockResolvedValue([]);
+  vi.mocked(fetchTicketTypes).mockResolvedValue([]);
+  vi.mocked(fetchEventMailSettings).mockResolvedValue(inheritedMailSettingsResponse());
 });
 
 afterEach(() => {
   cleanup();
-  vi.clearAllMocks();
   vi.useRealTimers();
   mockAssignments = superadminAssignments;
 });
@@ -1104,6 +1108,12 @@ describe("EventSettingsPage — ticket types cross-event staleness", () => {
     await waitFor(() => {
       expect(screen.getByDisplayValue("VIP")).toBeTruthy();
     });
+    // TicketTypeRow synchronizes its local draft from the fetched type in a passive effect.
+    // Let that effect settle before changing + blurring the controlled input, otherwise a busy
+    // CI worker can commit the old label between those two events.
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     // A background refresh only ever follows a successful color/label edit (TicketTypesCard's
     // onChanged) — queue it as the next fetchTicketTypes resolution before triggering that edit.
@@ -1111,6 +1121,9 @@ describe("EventSettingsPage — ticket types cross-event staleness", () => {
 
     const input = screen.getByDisplayValue("VIP") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "VIP Gold" } });
+    await waitFor(() => {
+      expect(input.value).toBe("VIP Gold");
+    });
     fireEvent.blur(input);
 
     await waitFor(() => {
