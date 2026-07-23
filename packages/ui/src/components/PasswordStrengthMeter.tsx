@@ -11,7 +11,7 @@ export function PasswordStrengthMeter({
   password,
   className,
   ...rest
-}: PasswordStrengthMeterProps) {
+}: Readonly<PasswordStrengthMeterProps>) {
   const uid = useId();
   const result = scorePasswordStrength(password);
   if (result.level === "empty") return null;

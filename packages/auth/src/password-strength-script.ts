@@ -78,7 +78,7 @@ export function passwordStrengthAuthScript(scriptNonce: string): string {
   const tooShortSource = tooShortProgressScore.toString();
   const scorerSource = scorePasswordStrengthInline.toString();
   const tipSource = passwordStrengthTip.toString();
-  return `<script nonce="${scriptNonce}">
+  return String.raw`<script nonce="${scriptNonce}">
 (function () {
   var MIN = ${PASSWORD_MIN_LENGTH};
   var tooShortProgressScore = ${tooShortSource};
@@ -86,7 +86,7 @@ export function passwordStrengthAuthScript(scriptNonce: string): string {
   var strengthTip = ${tipSource};
 
   function appendDescribedBy(input, id) {
-    var tokens = (input.getAttribute("aria-describedby") || "").split(/\\s+/).filter(Boolean);
+    var tokens = (input.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean);
     if (tokens.indexOf(id) === -1) tokens.push(id);
     input.setAttribute("aria-describedby", tokens.join(" "));
   }

@@ -7,7 +7,7 @@ export interface StatusBadgeProps extends HTMLAttributes<HTMLSpanElement> {
   label?: string;
 }
 
-export function StatusBadge({ status, label, ...rest }: StatusBadgeProps) {
+export function StatusBadge({ status, label, ...rest }: Readonly<StatusBadgeProps>) {
   const meta = resolveStatusMeta(status);
   return (
     <Badge variant={meta.variant} dot={meta.dot} {...rest}>

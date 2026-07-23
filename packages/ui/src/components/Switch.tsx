@@ -4,7 +4,7 @@ export interface SwitchProps extends Omit<InputHTMLAttributes<HTMLInputElement>,
   label?: string;
 }
 
-export function Switch({ label, id, className, ...rest }: SwitchProps) {
+export function Switch({ label, id, className, ...rest }: Readonly<SwitchProps>) {
   const autoId = id || (label ? `sw-${label.replace(/\s+/g, "-").toLowerCase()}` : undefined);
   return (
     <label className="at-switch">

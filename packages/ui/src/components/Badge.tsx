@@ -15,7 +15,7 @@ export function Badge({
   children,
   className,
   ...rest
-}: BadgeProps) {
+}: Readonly<BadgeProps>) {
   const cls = ["at-badge", `at-badge--${variant}`, outline && "at-badge--outline", className]
     .filter(Boolean)
     .join(" ");

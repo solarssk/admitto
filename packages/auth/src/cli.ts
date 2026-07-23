@@ -11,12 +11,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 import { prisma } from "@admitto/db";
-import { bootstrapSuperadmin, superadminInstanceExists } from "./bootstrap.js";
+import { bootstrapSuperadmin, superadminInstanceExists, userIsInstanceSuperadmin } from "./bootstrap.js";
 import { findUserByEmail, normalizeEmail } from "./user.js";
 import { verifyPassword } from "./password.js";
 import { resetUserMfa } from "./mfa/enrollment.js";
 import { generateEmergencyRecoveryCode } from "./mfa/emergency-recovery.js";
-import { userIsInstanceSuperadmin } from "./bootstrap.js";
 import { logMfaBreakGlass } from "./audit.js";
 import { loadEnvFile } from "./loadDotEnv.js";
 import { assertNoPasswordArgv, CliError, readPasswordFromStdin } from "./cli-helpers.js";
@@ -167,16 +166,16 @@ async function main(): Promise<void> {
   }
 }
 
-main()
-  .catch((err) => {
-    if (err instanceof CliError) {
-      console.error(err.message);
-      process.exitCode = err.exitCode;
-      return;
-    }
+try {
+  await main();
+} catch (err) {
+  if (err instanceof CliError) {
+    console.error(err.message);
+    process.exitCode = err.exitCode;
+  } else {
     console.error(err);
     process.exitCode = 1;
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+  }
+} finally {
+  await prisma.$disconnect();
+}

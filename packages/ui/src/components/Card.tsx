@@ -8,7 +8,7 @@ export interface CardProps extends Omit<HTMLAttributes<HTMLDivElement>, "title">
   children?: ReactNode;
 }
 
-export function Card({ title, actions, footer, padded = true, children, className, ...rest }: CardProps) {
+export function Card({ title, actions, footer, padded = true, children, className, ...rest }: Readonly<CardProps>) {
   return (
     <div className={["at-card", className].filter(Boolean).join(" ")} {...rest}>
       {(title || actions) && (

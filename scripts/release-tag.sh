@@ -73,11 +73,9 @@ if [[ -z "$MESSAGE" ]]; then
   MESSAGE="$TAG"
 fi
 
-if [[ "$SIGN_CHECK" == true ]]; then
-  if ! git config --get user.signingkey >/dev/null; then
-    echo "user.signingkey is not set — configure SSH or GPG signing first (see VERSIONING.md)." >&2
-    exit 1
-  fi
+if [[ "$SIGN_CHECK" == true ]] && ! git config --get user.signingkey >/dev/null; then
+  echo "user.signingkey is not set — configure SSH or GPG signing first (see VERSIONING.md)." >&2
+  exit 1
 fi
 
 if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then

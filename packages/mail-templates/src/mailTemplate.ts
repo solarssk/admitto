@@ -9,9 +9,7 @@ import type {
   TemplateFormat,
   TemplateScope,
 } from "./types.js";
-import { MjmlCompileError, UnknownPlaceholdersError } from "./errors.js";
-
-export { UnknownPlaceholdersError, MjmlCompileError };
+export { MjmlCompileError, UnknownPlaceholdersError } from "./errors.js";
 
 const DEFAULT_TEMPLATE_NAME = "ticket";
 

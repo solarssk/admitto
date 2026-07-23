@@ -6,7 +6,7 @@ export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   children?: ReactNode;
 }
 
-export function Select({ label, hint, id, children, className, ...rest }: SelectProps) {
+export function Select({ label, hint, id, children, className, ...rest }: Readonly<SelectProps>) {
   const uid = useId();
   const autoId = id ?? (label ? `f-${uid}` : undefined);
   const hintId = hint ? `${uid}-hint` : undefined;

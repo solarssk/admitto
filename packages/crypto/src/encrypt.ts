@@ -14,10 +14,10 @@ const GCM_AUTH_TAG_BYTES = 16;
 
 function assertEncryptedPayload(payload: EncryptedData): void {
   if (typeof payload.ciphertext !== "string") {
-    throw new Error("Invalid encrypted payload: missing ciphertext");
+    throw new TypeError("Invalid encrypted payload: missing ciphertext");
   }
   if (typeof payload.iv !== "string" || typeof payload.authTag !== "string") {
-    throw new Error("Invalid encrypted payload: missing iv or authTag");
+    throw new TypeError("Invalid encrypted payload: missing iv or authTag");
   }
   const iv = Buffer.from(payload.iv, "base64");
   const authTag = Buffer.from(payload.authTag, "base64");

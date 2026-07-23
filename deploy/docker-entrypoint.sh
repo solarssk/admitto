@@ -75,19 +75,23 @@ migration_status_output() {
 }
 
 is_connection_error() {
-  printf '%s' "$1" | grep -qiE 'P1001|Can.t reach database|ECONNREFUSED|connection refused|authentication failed|password authentication failed|no pg_hba'
+  check_output="$1"
+  printf '%s' "$check_output" | grep -qiE 'P1001|Can.t reach database|ECONNREFUSED|connection refused|authentication failed|password authentication failed|no pg_hba'
 }
 
 has_pending_migrations() {
-  printf '%s' "$1" | grep -q 'have not yet been applied'
+  check_output="$1"
+  printf '%s' "$check_output" | grep -q 'have not yet been applied'
 }
 
 has_failed_migrations() {
-  printf '%s' "$1" | grep -q 'have failed'
+  check_output="$1"
+  printf '%s' "$check_output" | grep -q 'have failed'
 }
 
 is_schema_up_to_date() {
-  printf '%s' "$1" | grep -q 'Database schema is up to date'
+  check_output="$1"
+  printf '%s' "$check_output" | grep -q 'Database schema is up to date'
 }
 
 check_backup_dir() {

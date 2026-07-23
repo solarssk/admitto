@@ -77,12 +77,16 @@ export class GraphAdapter implements MailerAdapter {
     }
     if (!res.ok) {
       const mapped = mapHttpStatus(res.status);
-      const code = String(data["error"] ?? `HTTP ${res.status}`);
-      const desc = String(data["error_description"] ?? "").split("\n")[0];
+      const errorField = data["error"];
+      const code = typeof errorField === "string" ? errorField : `HTTP ${res.status}`;
+      const errorDescriptionField = data["error_description"];
+      const desc =
+        typeof errorDescriptionField === "string" ? errorDescriptionField.split("\n")[0] : "";
       const detail = desc || raw.slice(0, 200);
       throw new TokenError(`Graph token error: ${code}${detail ? " — " + detail : ""}`, mapped);
     }
-    const accessToken = String(data["access_token"] ?? "");
+    const accessTokenField = data["access_token"];
+    const accessToken = typeof accessTokenField === "string" ? accessTokenField : "";
     const expiresIn = Number(data["expires_in"] ?? 3600);
     if (!accessToken) throw new Error("Graph token error: missing access_token in response");
     this.token = { accessToken, expiresAt: now + expiresIn * 1000 };
@@ -90,7 +94,7 @@ export class GraphAdapter implements MailerAdapter {
   }
 
   async close(): Promise<void> {
-    return Promise.resolve();
+    return;
   }
 
   async send(message: MailMessage): Promise<SendResult> {

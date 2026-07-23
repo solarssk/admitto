@@ -2,7 +2,7 @@ import type { IdentityProvider, Prisma, PrismaClient } from "@prisma/client";
 import { encryptClientSecret, hasClientSecret } from "./provider-secret.js";
 import { PROVIDER_TYPE_OIDC } from "./constants.js";
 import { normalizeSsoLoginButtonLabelInput } from "./login-button-label.js";
-import { fetchOidcDiscovery, testOidcConnection } from "./discovery.js";
+import { fetchOidcDiscovery } from "./discovery.js";
 import { assertSafeOidcFetchUrl } from "./safe-url.js";
 
 /** Admin form / API payload for creating or updating an OIDC identity provider. */
@@ -230,7 +230,7 @@ export async function updateIdentityProvider(
   return updateIdentityProviderWithEndpoints(prisma, id, input, endpoints, existing);
 }
 
-export { testOidcConnection };
+export { testOidcConnection } from "./discovery.js";
 
 /** Build the registered OAuth redirect URI for a provider on this Admitto base URL. */
 export function buildOidcRedirectUri(baseUrl: string, providerId: string): string {

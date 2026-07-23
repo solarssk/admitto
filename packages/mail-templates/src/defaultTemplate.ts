@@ -41,21 +41,19 @@ let compilePromise: Promise<ResolvedTemplate> | undefined;
 /** Pre-compiled built-in default (compiled once, lazily). */
 export async function getBuiltinTemplate(): Promise<ResolvedTemplate> {
   if (cachedBuiltin) return cachedBuiltin;
-  if (!compilePromise) {
-    compilePromise = (async () => {
-      const compiledHtmlTemplate = await compileTemplate(DEFAULT_BODY_MJML, "mjml");
-      cachedBuiltin = {
-        subjectTemplate: DEFAULT_SUBJECT_TEMPLATE,
-        compiledHtmlTemplate,
-        templateFormat: "mjml",
-        source: "builtin",
-      };
-      return cachedBuiltin;
-    })().catch((err: unknown) => {
-      compilePromise = undefined;
-      throw err;
-    });
-  }
+  compilePromise ??= (async () => {
+    const compiledHtmlTemplate = await compileTemplate(DEFAULT_BODY_MJML, "mjml");
+    cachedBuiltin = {
+      subjectTemplate: DEFAULT_SUBJECT_TEMPLATE,
+      compiledHtmlTemplate,
+      templateFormat: "mjml",
+      source: "builtin",
+    };
+    return cachedBuiltin;
+  })().catch((err: unknown) => {
+    compilePromise = undefined;
+    throw err;
+  });
   return compilePromise;
 }
 

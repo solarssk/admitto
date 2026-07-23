@@ -4,7 +4,7 @@ export interface CheckboxProps extends Omit<InputHTMLAttributes<HTMLInputElement
   label?: string;
 }
 
-export function Checkbox({ label, id, className, ...rest }: CheckboxProps) {
+export function Checkbox({ label, id, className, ...rest }: Readonly<CheckboxProps>) {
   const autoId = id || (label ? `cb-${label.replace(/\s+/g, "-").toLowerCase()}` : undefined);
   return (
     <label className="at-check">

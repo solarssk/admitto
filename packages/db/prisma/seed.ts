@@ -133,9 +133,11 @@ async function main() {
   console.log(`Seeded event "${event.slug}" (${event.id.slice(0, 8)}...) with ${upserted} attendees.`);
 }
 
-main()
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());
+try {
+  await main();
+} catch (e) {
+  console.error(e);
+  process.exit(1);
+} finally {
+  await prisma.$disconnect();
+}

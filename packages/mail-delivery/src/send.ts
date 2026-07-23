@@ -324,10 +324,7 @@ export async function sendTicketEmails(
   const baseUrl = options.baseUrl ?? resolveBaseUrl(env);
   const batchId = randomUUID();
 
-  if (
-    options.recipientEmail &&
-    (!options.attendeeIds || options.attendeeIds.length !== 1)
-  ) {
+  if (options.recipientEmail && options.attendeeIds?.length !== 1) {
     throw new Error("recipientEmail requires exactly one attendeeId");
   }
 

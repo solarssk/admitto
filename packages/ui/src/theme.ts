@@ -23,7 +23,7 @@ function clampChannel(n: number): number {
 
 function parseHex(hex: string): { r: number; g: number; b: number } | null {
   if (!HEX_RE.test(hex)) return null;
-  const n = parseInt(hex.slice(1), 16);
+  const n = Number.parseInt(hex.slice(1), 16);
   return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
 }
 

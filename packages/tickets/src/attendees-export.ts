@@ -67,7 +67,7 @@ function formatAdmittedAtLocal(date: Date, timeZone: string): string {
 
 /** RFC 4180 CSV field quoting (escape embedded double quotes). */
 function quoteCsvCell(value: string): string {
-  return `"${value.replace(/"/g, '""')}"`;
+  return `"${value.replaceAll(/"/g, '""')}"`;
 }
 
 /** Resolve company/department from custom_data with legacy column fallback (operator parity). */
