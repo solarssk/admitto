@@ -346,7 +346,7 @@ describe("getRecentCheckIns", () => {
   it("clamps invalid limit to minimum 1", async () => {
     // At this point multiple check-ins exist; -5 must clamp to 1, so exactly 1 row is returned.
     const history = await getRecentCheckIns(EVENT_ID, prisma, -5);
-    expect(history.length).toBe(1);
+    expect(history).toHaveLength(1);
   });
 
   it("attendee info does not include email (no PII)", async () => {

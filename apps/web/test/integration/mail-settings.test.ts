@@ -630,7 +630,7 @@ describe("POST /api/admin/mail-settings/test", () => {
     const body = (await res.json()) as { status: string; provider?: string };
     expect(body.status).toBe("sent");
     expect(body.provider).toBe("export_only");
-    expect(exported.length).toBe(1);
+    expect(exported).toHaveLength(1);
     expect(await prisma.emailDelivery.count()).toBe(before);
 
     const log = await prisma.adminAuditLog.findFirst({

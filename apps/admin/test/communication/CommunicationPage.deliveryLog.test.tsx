@@ -125,7 +125,7 @@ describe("CommunicationPage delivery log", () => {
     });
     fireEvent.click(screen.getByRole("tab", { name: /Delivery log/i }));
 
-    await waitFor(() => expect(screen.getByText("guest@example.com")).toBeTruthy());
+    await screen.findByText("guest@example.com");
     const table = within(screen.getByRole("table"));
     // Accepted row: green Sent badge, timestamp falls back to accepted_at.
     expect(table.getByText("Sent")).toBeTruthy();

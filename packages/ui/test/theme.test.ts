@@ -25,19 +25,22 @@ describe("resolveThemeVars", () => {
     expect(vars["--primary-hover"]).toMatch(/^#/);
   });
 
-  it("rejects unsafe font URL", () => {
+  it.each([
+    ["rejects unsafe font URL", "javascript:alert(1)", "Evil"],
+    [
+      "rejects credentialed HTTPS font URL",
+      "https://user:pass@example.com/fonts/brand.woff2",
+      "Brand Sans",
+    ],
+    [
+      "omits font vars when font name sanitizes to empty",
+      "https://cdn.example.com/fonts/brand.woff2",
+      "</>",
+    ],
+  ])("%s", (_label, fontFamilyUrl, fontFamilyName) => {
     const vars = resolveThemeVars({
-      font_family_url: "javascript:alert(1)",
-      font_family_name: "Evil",
-    });
-    expect(vars["--font-sans"]).toBeUndefined();
-    expect(vars.fontFaceCss).toBeUndefined();
-  });
-
-  it("rejects credentialed HTTPS font URL", () => {
-    const vars = resolveThemeVars({
-      font_family_url: "https://user:pass@example.com/fonts/brand.woff2",
-      font_family_name: "Brand Sans",
+      font_family_url: fontFamilyUrl,
+      font_family_name: fontFamilyName,
     });
     expect(vars["--font-sans"]).toBeUndefined();
     expect(vars.fontFaceCss).toBeUndefined();
@@ -63,15 +66,6 @@ describe("resolveThemeVars", () => {
     expect(vars.fontFaceCss).not.toContain("</style>");
     expect(vars.fontFaceCss).not.toContain("<script");
     expect(vars.fontFaceCss).not.toContain("alert(1)");
-  });
-
-  it("omits font vars when font name sanitizes to empty", () => {
-    const vars = resolveThemeVars({
-      font_family_url: "https://cdn.example.com/fonts/brand.woff2",
-      font_family_name: "</>",
-    });
-    expect(vars["--font-sans"]).toBeUndefined();
-    expect(vars.fontFaceCss).toBeUndefined();
   });
 
   it("emits style block with root vars", () => {

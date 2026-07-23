@@ -204,31 +204,19 @@ describe("GET /api/checkin/history — input validation", () => {
     expect(vi.mocked(getRecentCheckIns)).toHaveBeenCalledWith("evt-1", expect.anything(), 10);
   });
 
-  it("falls back to limit 10 when limit query param is non-numeric", async () => {
+  it.each([
+    ["falls back to limit 10 when limit query param is non-numeric", "not-a-number", 10],
+    ["clamps negative limit to 1 at API layer", "-5", 1],
+    ["passes large limit through to domain capped at 100", "999", 100],
+    ["caps limit=100000 at 100", "100000", 100],
+  ])("%s", async (_label, limitParam, expectedLimit) => {
     vi.mocked(getRecentCheckIns).mockResolvedValueOnce([]);
-    const res = await app.request("/api/checkin/history?eventId=evt-1&limit=not-a-number");
+    const res = await app.request(`/api/checkin/history?eventId=evt-1&limit=${limitParam}`);
     expect(res.status).toBe(200);
-    expect(vi.mocked(getRecentCheckIns)).toHaveBeenCalledWith("evt-1", expect.anything(), 10);
-  });
-
-  it("clamps negative limit to 1 at API layer", async () => {
-    vi.mocked(getRecentCheckIns).mockResolvedValueOnce([]);
-    const res = await app.request("/api/checkin/history?eventId=evt-1&limit=-5");
-    expect(res.status).toBe(200);
-    expect(vi.mocked(getRecentCheckIns)).toHaveBeenCalledWith("evt-1", expect.anything(), 1);
-  });
-
-  it("passes large limit through to domain capped at 100", async () => {
-    vi.mocked(getRecentCheckIns).mockResolvedValueOnce([]);
-    const res = await app.request("/api/checkin/history?eventId=evt-1&limit=999");
-    expect(res.status).toBe(200);
-    expect(vi.mocked(getRecentCheckIns)).toHaveBeenCalledWith("evt-1", expect.anything(), 100);
-  });
-
-  it("caps limit=100000 at 100", async () => {
-    vi.mocked(getRecentCheckIns).mockResolvedValueOnce([]);
-    const res = await app.request("/api/checkin/history?eventId=evt-1&limit=100000");
-    expect(res.status).toBe(200);
-    expect(vi.mocked(getRecentCheckIns)).toHaveBeenCalledWith("evt-1", expect.anything(), 100);
+    expect(vi.mocked(getRecentCheckIns)).toHaveBeenCalledWith(
+      "evt-1",
+      expect.anything(),
+      expectedLimit,
+    );
   });
 });

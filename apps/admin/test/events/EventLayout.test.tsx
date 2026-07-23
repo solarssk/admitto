@@ -87,7 +87,7 @@ describe("EventLayout (#274)", () => {
     // Pre-resolution: the loading state, not the shell.
     expect(document.querySelector(".shell-loading")).toBeTruthy();
 
-    await waitFor(() => expect(screen.getByText("shell:Spring Gala")).toBeTruthy());
+    await screen.findByText("shell:Spring Gala");
     expect(fetchAdminEvents).toHaveBeenCalledTimes(1);
     expect(fetchAdminEvents).toHaveBeenCalledWith({ includeArchived: true });
   });
@@ -100,7 +100,7 @@ describe("EventLayout (#274)", () => {
       state: { event: eventDto("evt-1", "Spring Gala") },
     });
 
-    await waitFor(() => expect(screen.getByText("shell:Autumn Summit")).toBeTruthy());
+    await screen.findByText("shell:Autumn Summit");
     expect(fetchAdminEvents).toHaveBeenCalledTimes(1);
   });
 
@@ -109,7 +109,7 @@ describe("EventLayout (#274)", () => {
 
     renderLayout({ pathname: "/admin/events/evt-unknown/overview" });
 
-    await waitFor(() => expect(screen.getByText("picker")).toBeTruthy());
+    expect(await screen.findByText("picker")).toBeTruthy();
   });
 
   it("still resolves archived events through the fallback fetch", async () => {
@@ -119,7 +119,7 @@ describe("EventLayout (#274)", () => {
 
     renderLayout({ pathname: "/admin/events/evt-old/overview" });
 
-    await waitFor(() => expect(screen.getByText("shell:Past Conference")).toBeTruthy());
+    expect(await screen.findByText("shell:Past Conference")).toBeTruthy();
   });
 
   it("clears the one-shot navigation state after first use, so a later back/forward revisit re-validates via the fallback fetch (Codex review)", async () => {
@@ -150,12 +150,12 @@ describe("EventLayout (#274)", () => {
     // visited in this tab. If the stale event snapshot were trusted again,
     // access would never be re-validated for this navigation.
     await act(async () => router.navigate(-1));
-    await waitFor(() => expect(screen.getByText("picker")).toBeTruthy());
+    await screen.findByText("picker");
 
     await act(async () => router.navigate(1));
 
     await waitFor(() => expect(fetchAdminEvents).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(screen.getByText("shell:Spring Gala")).toBeTruthy());
+    await screen.findByText("shell:Spring Gala");
   });
 
   it("refreshEvent re-fetches and updates the shared event snapshot in place", async () => {

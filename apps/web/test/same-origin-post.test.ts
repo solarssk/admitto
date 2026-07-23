@@ -21,31 +21,21 @@ describe("rejectCrossSitePost", () => {
     vi.unstubAllEnvs();
   });
 
-  it("allows matching Origin scheme and host", async () => {
+  it.each([
+    { name: "allows matching Origin scheme and host", origin: "https://tickets.example.com", expectedStatus: 200 },
+    { name: "rejects cross-host Origin", origin: "https://evil.example", expectedStatus: 403 },
+    {
+      name: "rejects HTTP Origin on HTTPS request (same host)",
+      origin: "http://tickets.example.com",
+      expectedStatus: 403,
+    },
+  ])("$name", async ({ origin, expectedStatus }) => {
     const app = makeApp();
     const res = await app.request("https://tickets.example.com/login", {
       method: "POST",
-      headers: { Origin: "https://tickets.example.com" },
+      headers: { Origin: origin },
     });
-    expect(res.status).toBe(200);
-  });
-
-  it("rejects cross-host Origin", async () => {
-    const app = makeApp();
-    const res = await app.request("https://tickets.example.com/login", {
-      method: "POST",
-      headers: { Origin: "https://evil.example" },
-    });
-    expect(res.status).toBe(403);
-  });
-
-  it("rejects HTTP Origin on HTTPS request (same host)", async () => {
-    const app = makeApp();
-    const res = await app.request("https://tickets.example.com/login", {
-      method: "POST",
-      headers: { Origin: "http://tickets.example.com" },
-    });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(expectedStatus);
   });
 
   it("rejects HTTPS Origin on HTTP request (same host)", async () => {
@@ -81,31 +71,29 @@ describe("rejectCrossSitePost", () => {
     expect(res.status).toBe(403);
   });
 
-  it("accepts same-origin Sec-Fetch-Site when Origin and Referer are absent", async () => {
+  it.each([
+    {
+      name: "accepts same-origin Sec-Fetch-Site when Origin and Referer are absent",
+      value: "same-origin",
+      expectedStatus: 200,
+    },
+    {
+      name: "rejects cross-site Sec-Fetch-Site when Origin and Referer are absent",
+      value: "cross-site",
+      expectedStatus: 403,
+    },
+    {
+      name: "rejects same-site Sec-Fetch-Site when Origin and Referer are absent",
+      value: "same-site",
+      expectedStatus: 403,
+    },
+  ])("$name", async ({ value, expectedStatus }) => {
     const app = makeApp();
     const res = await app.request("https://tickets.example.com/login", {
       method: "POST",
-      headers: { "Sec-Fetch-Site": "same-origin" },
+      headers: { "Sec-Fetch-Site": value },
     });
-    expect(res.status).toBe(200);
-  });
-
-  it("rejects cross-site Sec-Fetch-Site when Origin and Referer are absent", async () => {
-    const app = makeApp();
-    const res = await app.request("https://tickets.example.com/login", {
-      method: "POST",
-      headers: { "Sec-Fetch-Site": "cross-site" },
-    });
-    expect(res.status).toBe(403);
-  });
-
-  it("rejects same-site Sec-Fetch-Site when Origin and Referer are absent", async () => {
-    const app = makeApp();
-    const res = await app.request("https://tickets.example.com/login", {
-      method: "POST",
-      headers: { "Sec-Fetch-Site": "same-site" },
-    });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(expectedStatus);
   });
 
   it("accepts Origin with non-default port when X-Forwarded-Host matches and TRUST_PROXY=true", async () => {

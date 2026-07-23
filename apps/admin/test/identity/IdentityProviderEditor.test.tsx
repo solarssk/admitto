@@ -170,13 +170,13 @@ describe("IdentityProviderEditor — edit", () => {
     mockUpdate.mockResolvedValueOnce(p2Detail);
     const { router } = renderEditorAt("/admin/settings/identity/providers/p1");
 
-    await waitFor(() => expect(screen.getByDisplayValue("Google")).toBeTruthy());
+    await screen.findByDisplayValue("Google");
 
     // In-app nav to a different provider's edit URL: the editor must re-fetch,
     // not keep p1's data on screen (which would let Save PUT p1's config onto p2).
     router.navigate("/admin/settings/identity/providers/p2");
 
-    await waitFor(() => expect(screen.getByDisplayValue("Okta")).toBeTruthy());
+    await screen.findByDisplayValue("Okta");
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith("p2", expect.anything()));
   });
@@ -186,7 +186,7 @@ describe("IdentityProviderEditor — edit", () => {
     mockUpdate.mockResolvedValueOnce(validDetail);
     renderEditorAt("/admin/settings/identity/providers/p1");
 
-    await waitFor(() => expect(screen.getByDisplayValue("Google")).toBeTruthy());
+    await screen.findByDisplayValue("Google");
 
     // Type then clear the secret: touched=true, value="". Validation must pass
     // (blank = keep stored) and the save body must NOT send an empty secret.
@@ -224,9 +224,9 @@ describe("IdentityProviderEditor — edit", () => {
     mockFetch.mockResolvedValueOnce(validDetail);
     renderEditorAt("/admin/settings/identity/providers/p1");
 
-    await waitFor(() => expect(screen.getByText("Couldn't load this provider.")).toBeTruthy());
+    await screen.findByText("Couldn't load this provider.");
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    await waitFor(() => expect(screen.getByDisplayValue("Google")).toBeTruthy());
+    expect(await screen.findByDisplayValue("Google")).toBeTruthy();
   });
 });
 
@@ -287,12 +287,12 @@ describe("IdentityProviderEditor — dirty guard", () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     const { router } = renderEditorAt("/admin/settings/identity/providers/p1");
 
-    await waitFor(() => expect(screen.getByDisplayValue("Google")).toBeTruthy());
+    await screen.findByDisplayValue("Google");
 
     // Dirty p1, then in-app nav to p2 → prompt → confirm → discard → p2 loads.
     fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google X" } });
     router.navigate("/admin/settings/identity/providers/p2");
-    await waitFor(() => expect(screen.getByDisplayValue("Okta")).toBeTruthy());
+    await screen.findByDisplayValue("Okta");
 
     // The bypass must be one-shot: dirty p2 + another navigation must prompt again.
     confirmSpy.mockClear();
@@ -309,16 +309,16 @@ describe("IdentityProviderEditor — dirty guard", () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     const { router } = renderEditorAt("/admin/settings/identity/providers/p1");
 
-    await waitFor(() => expect(screen.getByDisplayValue("Google")).toBeTruthy());
+    await screen.findByDisplayValue("Google");
 
     // Trigger a validation error on p1 by clearing a required field and submitting.
     fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-    await waitFor(() => expect(screen.getByText("Display name is required.")).toBeTruthy());
+    await screen.findByText("Display name is required.");
 
     // Dirty (cleared field) → confirm discard → nav to p2 loads clean, no stale error.
     router.navigate("/admin/settings/identity/providers/p2");
-    await waitFor(() => expect(screen.getByDisplayValue("Okta")).toBeTruthy());
+    await screen.findByDisplayValue("Okta");
     expect(screen.queryByText("Display name is required.")).toBeNull();
     confirmSpy.mockRestore();
   });
@@ -328,7 +328,7 @@ describe("IdentityProviderEditor — dirty guard", () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     renderEditorAt("/admin/settings/identity/providers/p1");
 
-    await waitFor(() => expect(screen.getByDisplayValue("Google")).toBeTruthy());
+    await screen.findByDisplayValue("Google");
 
     // Type then clear the secret: no effective change (blank = keep stored), so
     // the dirty guard must not prompt on a subsequent in-app navigation.
@@ -336,7 +336,7 @@ describe("IdentityProviderEditor — dirty guard", () => {
     fireEvent.change(screen.getByLabelText(/client secret/i), { target: { value: "" } });
     fireEvent.click(screen.getByRole("link", { name: "Providers" }));
 
-    await waitFor(() => expect(screen.getByText("providers-list")).toBeTruthy());
+    await screen.findByText("providers-list");
     expect(confirmSpy).not.toHaveBeenCalled();
     confirmSpy.mockRestore();
   });
@@ -354,7 +354,7 @@ describe("IdentityProviderEditor — coverage", () => {
     fireEvent.change(screen.getByLabelText("Client secret"), { target: { value: "secret-abc" } });
     fireEvent.click(screen.getByRole("button", { name: "Create provider" }));
 
-    await waitFor(() => expect(screen.getByText(/issuer already exists/i)).toBeTruthy());
+    expect(await screen.findByText(/issuer already exists/i)).toBeTruthy();
   });
 
   it("navigates back to the list from the not-found state", async () => {
@@ -362,9 +362,9 @@ describe("IdentityProviderEditor — coverage", () => {
     mockFetch.mockRejectedValueOnce(new ApiError(404, "not_found", "not_found"));
     renderEditorAt("/admin/settings/identity/providers/missing");
 
-    await waitFor(() => expect(screen.getByText("This provider no longer exists.")).toBeTruthy());
+    await screen.findByText("This provider no longer exists.");
     fireEvent.click(screen.getByRole("button", { name: "Back to providers" }));
-    await waitFor(() => expect(screen.getByText("providers-list")).toBeTruthy());
+    expect(await screen.findByText("providers-list")).toBeTruthy();
   });
 
   it("edits endpoint, claim, label, and enabled fields and saves them", async () => {
@@ -372,7 +372,7 @@ describe("IdentityProviderEditor — coverage", () => {
     mockUpdate.mockResolvedValueOnce(validDetail);
     renderEditorAt("/admin/settings/identity/providers/p1");
 
-    await waitFor(() => expect(screen.getByDisplayValue("Google")).toBeTruthy());
+    await screen.findByDisplayValue("Google");
 
     // Change every Endpoints / Claims / Login-button / Enabled input to a value
     // DIFFERENT from what validDetail loaded, so the onChange arrows must fire
@@ -407,11 +407,11 @@ describe("IdentityProviderEditor — coverage", () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     renderEditorAt("/admin/settings/identity/providers/p1");
 
-    await waitFor(() => expect(screen.getByDisplayValue("Google")).toBeTruthy());
+    await screen.findByDisplayValue("Google");
     fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google X" } });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
-    await waitFor(() => expect(screen.getByText("providers-list")).toBeTruthy());
+    await screen.findByText("providers-list");
     expect(confirmSpy).toHaveBeenCalledWith("Discard unsaved changes?");
     confirmSpy.mockRestore();
   });
@@ -420,7 +420,7 @@ describe("IdentityProviderEditor — coverage", () => {
     mockFetch.mockResolvedValueOnce(validDetail);
     renderEditorAt("/admin/settings/identity/providers/p1");
 
-    await waitFor(() => expect(screen.getByDisplayValue("Google")).toBeTruthy());
+    await screen.findByDisplayValue("Google");
     fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google X" } });
 
     // Dispatching beforeunload should call preventDefault on the event.

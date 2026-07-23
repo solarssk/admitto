@@ -371,7 +371,7 @@ describe("OIDC instance superadmin revoke floor-guard", () => {
           scope_id: null,
         },
       });
-      expect(Boolean(floorKeeps) !== Boolean(secondKeeps)).toBe(true);
+      expect(Boolean(floorKeeps)).not.toBe(Boolean(secondKeeps));
     } finally {
       await prisma.oidcRoleGrant.deleteMany({ where: { user_id: secondUser.id } });
       await prisma.roleAssignment.deleteMany({ where: { user_id: secondUser.id } });

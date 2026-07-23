@@ -140,7 +140,7 @@ describe("GraphAdapter", () => {
     await adapter.send({ to: "b@example.com", subject: "y", html: "<p>y</p>" });
 
     const tokenCalls = fetchFn.mock.calls.filter((c) => String(c[0]).includes("/oauth2/v2.0/token"));
-    expect(tokenCalls.length).toBe(1);
+    expect(tokenCalls).toHaveLength(1);
   });
 
   it("returns rejected (no throw) when sendMail returns 403", async () => {

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NoteModal } from "../../src/checkin/NoteModal.js";
 
@@ -43,9 +43,9 @@ describe("NoteModal", () => {
     const onClose = vi.fn();
     render(<NoteModal open onClose={onClose} onSubmit={onSubmit} />);
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "  my note  " } });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add note" })); });
+    fireEvent.click(screen.getByRole("button", { name: "Add note" }));
     expect(onSubmit).toHaveBeenCalledWith("my note");
-    expect(onClose).toHaveBeenCalled();
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
   it("keeps modal open and preserves text when onSubmit rejects", async () => {
@@ -53,7 +53,7 @@ describe("NoteModal", () => {
     const onClose = vi.fn();
     render(<NoteModal open onClose={onClose} onSubmit={onSubmit} />);
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "retry note" } });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add note" })); });
+    fireEvent.click(screen.getByRole("button", { name: "Add note" }));
     expect(onClose).not.toHaveBeenCalled();
     await waitFor(() =>
       expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("retry note"),

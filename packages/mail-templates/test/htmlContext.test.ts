@@ -17,13 +17,21 @@ describe("getHtmlAttributeContext", () => {
     expect(result.unquotedAttributeName).toBeNull();
   });
 
-  it("handles apostrophe inside double-quoted attribute value", () => {
-    const result = ctxAt('<td title="Guest\'s {{first_name}}">Hi</td>');
-    expect(result.inQuotedAttribute).toBe(true);
-  });
-
-  it("handles inner double quotes inside single-quoted attribute", () => {
-    const result = ctxAt("<td title='Badge type=\"VIP\" for {{first_name}}'>Hi</td>");
+  it.each([
+    {
+      name: "handles apostrophe inside double-quoted attribute value",
+      html: '<td title="Guest\'s {{first_name}}">Hi</td>',
+    },
+    {
+      name: "handles inner double quotes inside single-quoted attribute",
+      html: "<td title='Badge type=\"VIP\" for {{first_name}}'>Hi</td>",
+    },
+    {
+      name: "treats placeholder in later attribute on multi-attribute tag as quoted",
+      html: '<td class="label" title="{{first_name}}">Hi</td>',
+    },
+  ])("$name", ({ html }) => {
+    const result = ctxAt(html);
     expect(result.inQuotedAttribute).toBe(true);
   });
 
@@ -60,11 +68,6 @@ describe("getHtmlAttributeContext", () => {
     expect(withValue.inBareTagMarkup).toBe(true);
   });
 
-  it("treats placeholder in later attribute on multi-attribute tag as quoted", () => {
-    const result = ctxAt('<td class="label" title="{{first_name}}">Hi</td>');
-    expect(result.inQuotedAttribute).toBe(true);
-  });
-
   it("treats self-closing tags with quoted attributes as in-tag", () => {
     const result = ctxAt('<img alt="{{first_name}}" width="100" />');
     expect(result.inTag).toBe(true);
@@ -77,18 +80,21 @@ describe("getHtmlAttributeContext", () => {
     expect(result.inQuotedAttribute).toBe(false);
   });
 
-  it("ignores placeholders inside script element text", () => {
-    const result = ctxAt("<script>var x = '{{first_name}}';</script>");
-    expect(result.inTag).toBe(false);
-  });
-
-  it("ignores placeholders inside style element text", () => {
-    const result = ctxAt("<style>.x::before { content: '{{first_name}}'; }</style>");
-    expect(result.inTag).toBe(false);
-  });
-
-  it("treats placeholders in element text as outside attributes", () => {
-    const result = ctxAt("<p>Hello {{first_name}}</p>");
+  it.each([
+    {
+      name: "ignores placeholders inside script element text",
+      html: "<script>var x = '{{first_name}}';</script>",
+    },
+    {
+      name: "ignores placeholders inside style element text",
+      html: "<style>.x::before { content: '{{first_name}}'; }</style>",
+    },
+    {
+      name: "treats placeholders in element text as outside attributes",
+      html: "<p>Hello {{first_name}}</p>",
+    },
+  ])("$name", ({ html }) => {
+    const result = ctxAt(html);
     expect(result.inTag).toBe(false);
   });
 });

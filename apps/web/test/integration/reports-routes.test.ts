@@ -677,7 +677,7 @@ describe("GET /api/admin/events/:eventId/reports/export", () => {
     const text = new TextDecoder().decode(buf);
     const lines = text.replace(/^\uFEFF/, "").split("\r\n");
     expect(lines[0]).toContain('"Admitted at (');
-    expect(lines.length).toBe(6);
+    expect(lines).toHaveLength(6);
     expect(lines[1]).toContain('"VIP One"');
     expect(lines[1]).toContain('"scanner-01"');
     expect(lines[1]).not.toMatch(/T\d{2}:\d{2}:\d{2}\.\d{3}Z/);
@@ -693,7 +693,7 @@ describe("GET /api/admin/events/:eventId/reports/export", () => {
     const text = await res.text();
     const lines = text.replace(/^\uFEFF/, "").split("\r\n");
     expect(lines[0]).toContain('"Admitted at (');
-    expect(lines.length).toBe(1);
+    expect(lines).toHaveLength(1);
   });
 
   it("returns printable HTML for pdf format", async () => {

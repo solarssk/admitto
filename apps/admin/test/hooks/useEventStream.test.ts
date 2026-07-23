@@ -166,7 +166,7 @@ describe("useEventStream", () => {
     act(() => {
       vi.advanceTimersByTime(STREAM_BACKOFF_MS[0]);
     });
-    expect(instances.length).toBe(2);
+    expect(instances).toHaveLength(2);
 
     act(() => {
       instances[1]?.listeners.onerror?.();
@@ -176,12 +176,12 @@ describe("useEventStream", () => {
     act(() => {
       vi.advanceTimersByTime(STREAM_BACKOFF_MS[0]);
     });
-    expect(instances.length).toBe(2);
+    expect(instances).toHaveLength(2);
 
     act(() => {
       vi.advanceTimersByTime(STREAM_BACKOFF_MS[1] - STREAM_BACKOFF_MS[0]);
     });
-    expect(instances.length).toBe(3);
+    expect(instances).toHaveLength(3);
   });
 
   it("resets reconnect backoff after a later successful open", async () => {
@@ -198,7 +198,7 @@ describe("useEventStream", () => {
     act(() => {
       vi.advanceTimersByTime(STREAM_BACKOFF_MS[0]);
     });
-    expect(instances.length).toBe(2);
+    expect(instances).toHaveLength(2);
 
     act(() => {
       instances[1]?.listeners.onopen?.();
@@ -212,12 +212,12 @@ describe("useEventStream", () => {
     act(() => {
       vi.advanceTimersByTime(STREAM_BACKOFF_MS[0] - 1);
     });
-    expect(instances.length).toBe(2);
+    expect(instances).toHaveLength(2);
 
     act(() => {
       vi.advanceTimersByTime(1);
     });
-    expect(instances.length).toBe(3);
+    expect(instances).toHaveLength(3);
   });
 
   it("closes EventSource on unmount", () => {
