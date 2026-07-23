@@ -1,7 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Badge, Button, Switch } from "@admitto/ui";
 import {
-  ApiError,
   fetchAdminEvents,
   fetchAdminOrganizations,
   grantUserRole,
@@ -31,7 +30,7 @@ function roleLabel(role: string): string {
   return role;
 }
 
-export function UserEditModal({ open, user, onClose, onUpdated }: UserEditModalProps) {
+export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserEditModalProps>) {
   const titleId = useId();
   const resetPasswordTitleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);

@@ -11,7 +11,12 @@ export interface CreateTemplateDialogProps {
 }
 
 /** Modal for naming a new event-scoped mail template. */
-export function CreateTemplateDialog({ open, busy, onClose, onCreate }: CreateTemplateDialogProps) {
+export function CreateTemplateDialog({
+  open,
+  busy,
+  onClose,
+  onCreate,
+}: Readonly<CreateTemplateDialogProps>) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const submittingRef = useRef(false);

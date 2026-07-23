@@ -105,32 +105,30 @@ export function useEventStream(
         }
       };
 
-      es.onerror = () => {
+      es.onerror = async () => {
         es?.close();
         es = null;
         if (cancelled) return;
 
         reconnectAttempt += 1;
 
-        void (async () => {
-          if (!everConnected) {
-            initialFailureCount += 1;
-            if (initialFailureCount >= MAX_INITIAL_FAILURES) {
-              const auth = await probeStreamAuth(eventId);
-              if (cancelled) return;
-  // eslint-disable-next-line security/detect-possible-timing-attacks -- non-secret auth probe status string
-              if (auth === "denied") {
-                setStatus("auth_error");
-                return;
-              }
-              initialFailureCount = 0;
+        if (!everConnected) {
+          initialFailureCount += 1;
+          if (initialFailureCount >= MAX_INITIAL_FAILURES) {
+            const auth = await probeStreamAuth(eventId);
+            if (cancelled) return;
+            // eslint-disable-next-line security/detect-possible-timing-attacks -- non-secret auth probe status string
+            if (auth === "denied") {
+              setStatus("auth_error");
+              return;
             }
+            initialFailureCount = 0;
           }
+        }
 
-          if (cancelled) return;
-          setStatus(everConnected ? "reconnecting" : "connecting");
-          scheduleReconnect();
-        })();
+        if (cancelled) return;
+        setStatus(everConnected ? "reconnecting" : "connecting");
+        scheduleReconnect();
       };
     };
 

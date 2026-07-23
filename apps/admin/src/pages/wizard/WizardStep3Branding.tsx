@@ -7,7 +7,7 @@ import {
 } from "react";
 import { Input, useToast } from "@admitto/ui";
 import { LogoUploadZone } from "../../components/LogoUploadZone.js";
-import { ApiError, fetchOrgBranding, patchOrgBranding } from "../../api/client.js";
+import { fetchOrgBranding, patchOrgBranding } from "../../api/client.js";
 import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import { safeBrandingLogoHref } from "../../utils/safeBrandingLogoHref.js";
 import { useWizard } from "./WizardContext.js";

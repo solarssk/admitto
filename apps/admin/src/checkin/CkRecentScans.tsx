@@ -13,7 +13,7 @@ function statusLabel(status: string, source: string | null): string {
   if (normalized === "undo") return source === "admin_revoke" ? "Revoked" : "Undone";
   if (normalized === "revoked") return "Ticket rev.";
   if (normalized === "invalid") return "Invalid";
-  return status.replace(/_/g, " ");
+  return status.replaceAll("_", " ");
 }
 
 function dotClass(status: string, source: string | null): string {
@@ -49,7 +49,7 @@ export function CkRecentScans({
   limit,
   ticketTypes = [],
   onSelectAttendee,
-}: CkRecentScansProps) {
+}: Readonly<CkRecentScansProps>) {
   const rows = limit != null ? history.slice(0, limit) : history;
   // Matches what's actually rendered below (`rows`), not the raw fetched
   // total — with the overlay's limit=6 slicing an 8-entry fetch, the count

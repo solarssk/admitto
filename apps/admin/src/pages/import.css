@@ -426,6 +426,7 @@ fieldset:disabled .import-dropzone {
 .import-sample-table th:nth-child(3),
 .import-sample-table td:nth-child(3) {
   width: 28%;
+  max-width: 240px;
 }
 
 .import-sample-table th,
@@ -434,11 +435,6 @@ fieldset:disabled .import-dropzone {
   max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.import-sample-table th:nth-child(3),
-.import-sample-table td:nth-child(3) {
-  max-width: 240px;
 }
 
 .import-sample__row-num {

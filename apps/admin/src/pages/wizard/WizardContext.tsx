@@ -78,7 +78,7 @@ function readPersistedWizardContext(): PersistedWizardContext | null {
   }
 }
 
-export function WizardProvider({ children }: { children: ReactNode }) {
+export function WizardProvider({ children }: Readonly<{ children: ReactNode }>) {
   const persisted = readPersistedWizardContext();
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(() => new Set());
   const [selectedEventId, setSelectedEventId] = useState<string | null>(
@@ -86,7 +86,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
   );
   const [mailSkipped, setMailSkipped] = useState(() => persisted?.mailSkipped ?? false);
   const [brandingSkipped, setBrandingSkipped] = useState(() => persisted?.brandingSkipped ?? false);
-  const [summary, setSummaryState] = useState<WizardSummary>(
+  const [summary, setSummary] = useState<WizardSummary>(
     () => persisted?.summary ?? DEFAULT_SUMMARY,
   );
 
@@ -98,8 +98,8 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const setSummary = useCallback((patch: Partial<WizardSummary>) => {
-    setSummaryState((prev) => ({ ...prev, ...patch }));
+  const patchSummary = useCallback((patch: Partial<WizardSummary>) => {
+    setSummary((prev) => ({ ...prev, ...patch }));
   }, []);
 
   useEffect(() => {
@@ -127,7 +127,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
       brandingSkipped,
       setBrandingSkipped,
       summary,
-      setSummary,
+      setSummary: patchSummary,
     }),
     [
       completedSteps,
@@ -136,7 +136,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
       mailSkipped,
       brandingSkipped,
       summary,
-      setSummary,
+      patchSummary,
     ],
   );
 

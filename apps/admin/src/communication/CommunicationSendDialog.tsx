@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Button, Select } from "@admitto/ui";
-import { ApiError, fetchBulkSendStatus, fetchTicketTypes, sendEventBulk } from "../api/client.js";
+import { fetchBulkSendStatus, fetchTicketTypes, sendEventBulk } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { BulkSendFilter, RsvpStatus, TicketTypeDto } from "../api/types.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
@@ -20,7 +20,7 @@ export function CommunicationSendDialog({
   eventId,
   templateId,
   onClose,
-}: CommunicationSendDialogProps) {
+}: Readonly<CommunicationSendDialogProps>) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const openRef = useRef(open);
@@ -116,7 +116,7 @@ export function CommunicationSendDialog({
         }, 2000);
       } catch (err) {
         if (cancelled || ac.signal.aborted || !openRef.current) return;
-        setError("Failed to load send status.");
+        setError(operatorApiErrorMessage(err, "Failed to load send status."));
         setPhase("done");
       }
     };

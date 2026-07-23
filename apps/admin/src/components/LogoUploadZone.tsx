@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Button } from "@admitto/ui";
-import { ApiError, uploadFile } from "../api/client.js";
+import { uploadFile } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { brandingLogoImgSrc } from "../utils/safeBrandingLogoHref.js";
 import "./logo-upload.css";
@@ -194,7 +194,7 @@ export function LogoUploadZone({
           hasError: zoneError !== null,
           disabled,
         })}
-        onDrop={(e) => void onDrop(e)}
+        onDrop={onDrop}
         onDragOver={(e) => {
           e.preventDefault();
           if (!disabled) setDragging(true);

@@ -12,7 +12,7 @@ export interface StaffShellProps {
 }
 
 /** App shell: fixed sidebar + topbar chrome, scrollable main content area. */
-export function StaffShell({ sidebar, subnav, children }: StaffShellProps) {
+export function StaffShell({ sidebar, subnav, children }: Readonly<StaffShellProps>) {
   const { user, assignments } = useAuth();
   const [navOpen, setNavOpen] = useState(false);
   const [pinned, setPinned] = useState(readSidebarPinned);

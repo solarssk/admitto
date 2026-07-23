@@ -1,6 +1,6 @@
 import { Badge, resolveStatusMeta } from "@admitto/ui";
 
-export function MailStatusBadge({ status }: { status: string | null }) {
+export function MailStatusBadge({ status }: Readonly<{ status: string | null }>) {
   if (!status) {
     return (
       <Badge variant="neutral" dot={false}>

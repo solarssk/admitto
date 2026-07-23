@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, Card, Input, useToast } from "@admitto/ui";
-import { ApiError, fetchSecuritySettings, patchSecuritySettings } from "../api/client.js";
+import { fetchSecuritySettings, patchSecuritySettings } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { PatchSystemSettingsBody, SystemSettingsDto, SettingSource } from "../api/types.js";
 
@@ -8,7 +8,7 @@ function fieldLocked(source: SettingSource): boolean {
   return source === "env";
 }
 
-function EnvBadge({ source }: { source: SettingSource }) {
+function EnvBadge({ source }: Readonly<{ source: SettingSource }>) {
   if (!fieldLocked(source)) return null;
   return (
     <Badge variant="neutral" className="mail-field-env-badge">

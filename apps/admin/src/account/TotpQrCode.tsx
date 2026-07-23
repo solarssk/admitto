@@ -9,7 +9,7 @@ export type TotpQrCodeProps = {
 };
 
 /** Renders a TOTP enrollment QR code on canvas for authenticator apps. */
-export function TotpQrCode({ uri, onRenderFailed, onRenderSuccess }: TotpQrCodeProps) {
+export function TotpQrCode({ uri, onRenderFailed, onRenderSuccess }: Readonly<TotpQrCodeProps>) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [renderFailed, setRenderFailed] = useState(false);
   const onRenderFailedRef = useRef(onRenderFailed);

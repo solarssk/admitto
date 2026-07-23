@@ -144,7 +144,7 @@ export function AttendeeCard({
   onCancel,
   onRevokeCheckIn,
   onRevokeItem,
-}: Props) {
+}: Readonly<Props>) {
   const resolvedStatus = statusForCard(scanStatus, card.check_in_status);
   const cardClass = `checkin-card checkin-card--${resolvedStatus.toLowerCase()}`;
   const isPreview = resolvedStatus === "PREVIEW";

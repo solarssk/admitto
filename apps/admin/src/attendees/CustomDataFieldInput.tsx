@@ -14,7 +14,7 @@ export function CustomDataFieldInput({
   value,
   disabled,
   onChange,
-}: CustomDataFieldInputProps) {
+}: Readonly<CustomDataFieldInputProps>) {
   const label = customDataFieldLabel(field);
   const type = field.type ?? "text";
 

@@ -13,8 +13,14 @@ interface Props {
  * Auto-advances focus on each digit entry; backspace moves to the previous box.
  * Handles paste of a full 6-digit code.
  */
-export function TotpDigitInput({ value, onChange, disabled, id }: Props) {
+export function TotpDigitInput({ value, onChange, disabled, id }: Readonly<Props>) {
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  // Stable per-box identity for React's key — generated once, independent of
+  // the map callback's own index, since the 6 boxes are fixed slots whose
+  // *content* changes on every keystroke (SonarCloud S6479).
+  const boxKeysRef = useRef<string[]>(
+    Array.from({ length: 6 }, () => Math.random().toString(36).slice(2)),
+  );
   const digits = Array.from({ length: 6 }, (_, i) => value[i] ?? "");
 
   function handleChange(i: number, raw: string) {
@@ -60,7 +66,7 @@ export function TotpDigitInput({ value, onChange, disabled, id }: Props) {
     <div className="account-otp-digits">
       {digits.map((d, i) => (
         <input
-          key={i}
+          key={boxKeysRef.current[i]}
           ref={(el) => {
             inputRefs.current[i] = el;
           }}

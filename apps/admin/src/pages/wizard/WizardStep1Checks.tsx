@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@admitto/ui";
-import { ApiError, fetchSetupChecks } from "../../api/client.js";
+import { fetchSetupChecks } from "../../api/client.js";
 import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import type { SetupChecksResponse } from "../../api/types.js";
 import {
@@ -16,7 +16,7 @@ type WizardStep1ChecksProps = {
 
 type CheckResult = SetupChecksResponse["checks"][SetupCheckKey];
 
-export function WizardStep1Checks({ onChecksOk }: WizardStep1ChecksProps) {
+export function WizardStep1Checks({ onChecksOk }: Readonly<WizardStep1ChecksProps>) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [checks, setChecks] = useState<SetupChecksResponse["checks"] | null>(null);
@@ -101,11 +101,11 @@ function CheckRow({
   checkKey,
   result,
   pending,
-}: {
+}: Readonly<{
   checkKey: SetupCheckKey;
   result: CheckResult | null;
   pending: boolean;
-}) {
+}>) {
   const isPending = pending || !result;
   const isError = !!result && !result.ok;
   const isWarn = !!result?.ok && !!result.warn;

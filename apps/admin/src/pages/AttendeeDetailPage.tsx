@@ -78,13 +78,13 @@ function RevokeActionMenu({
   onRevokeCheckIn,
   disabled = false,
   "aria-describedby": ariaDescribedBy,
-}: {
+}: Readonly<{
   canRevokeCheckIn: boolean;
   onRevokePass: () => void;
   onRevokeCheckIn: () => void;
   disabled?: boolean;
   "aria-describedby"?: string;
-}) {
+}>) {
   const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
 
   return (
@@ -1256,7 +1256,7 @@ export function AttendeeDetailPage() {
                 Same address ({detail.email})
               </label>
               <label>
-                <input type="radio" name="resendMode" checked={resendMode === "other"} onChange={() => setResendMode("other")} />
+                <input type="radio" name="resendMode" checked={resendMode === "other"} onChange={() => setResendMode("other")} />{" "}
                 Other address
               </label>
             </div>
