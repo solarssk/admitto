@@ -352,10 +352,10 @@ export function renderAuthDocument(options: AuthDocumentOptions): string {
   const { step, body, css = AUTH_PAGE_CSS, scripts } = options;
   const esc = (s: string) =>
     s
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;");
   const description = step
     ? `${AUTH_PRODUCT_NAME} staff portal — ${step}`
     : `${AUTH_PRODUCT_NAME} staff portal`;

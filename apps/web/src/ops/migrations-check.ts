@@ -26,8 +26,10 @@ function resolveMigrationsDir(): string | null {
     // ignore — fall through to path candidates
   }
 
-  candidates.push(join(MODULE_DIR, "../../../../packages/db/prisma/migrations"));
-  candidates.push(join(MODULE_DIR, "../../../../../packages/db/prisma/migrations"));
+  candidates.push(
+    join(MODULE_DIR, "../../../../packages/db/prisma/migrations"),
+    join(MODULE_DIR, "../../../../../packages/db/prisma/migrations"),
+  );
 
   const repoRoot = findAdmittoRepoRoot(MODULE_DIR);
   if (repoRoot) {

@@ -1,7 +1,7 @@
 import { hostname } from "node:os";
 import type { Context, Next } from "hono";
 import { routePath } from "hono/route";
-import { logRateLimitExceeded, normalizeEmail, type RateLimitScope } from "@admitto/auth";
+import { logRateLimitExceeded, type RateLimitScope } from "@admitto/auth";
 import { resolveClientIp } from "./client-ip.js";
 import { MAX_REQUESTS, WINDOW_MS } from "./constants.js";
 import type { RateLimitStore } from "./types.js";

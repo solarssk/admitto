@@ -50,7 +50,7 @@ async function main(): Promise<void> {
   const app = createApp(
     isDevelopment ? { mailDeliveryDeps: { exportSink: devConsoleExportSink } } : {},
   );
-  const port = parseInt(process.env["PORT"] ?? "3000", 10);
+  const port = Number.parseInt(process.env["PORT"] ?? "3000", 10);
 
   // Dev-only, opt-in: if a local mkcert cert exists at apps/web/.certs
   // (gitignored — generate with `mkcert -cert-file apps/web/.certs/cert.pem
@@ -98,8 +98,10 @@ async function main(): Promise<void> {
 // import.meta.url/argv[1] comparison, which breaks if the invocation path ever
 // crosses a symlink (e.g. a symlinked release directory).
 if (process.env.NODE_ENV !== "test") {
-  main().catch((err) => {
+  try {
+    await main();
+  } catch (err) {
     console.error(err);
     process.exit(1);
-  });
+  }
 }

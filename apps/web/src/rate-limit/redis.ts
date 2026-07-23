@@ -85,14 +85,12 @@ export class RedisRateLimitStore implements RateLimitStore {
   private async ensureConnected(): Promise<void> {
     if (this.client.isReady) return;
 
-    if (!this.connectPromise) {
-      this.connectPromise = this.client
-        .connect()
-        .then(() => undefined)
-        .finally(() => {
-          this.connectPromise = null;
-        });
-    }
+    this.connectPromise ??= this.client
+      .connect()
+      .then(() => undefined)
+      .finally(() => {
+        this.connectPromise = null;
+      });
     await this.connectPromise;
 
     if (!this.client.isReady) {

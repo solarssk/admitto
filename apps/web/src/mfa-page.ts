@@ -219,7 +219,7 @@ export function renderMfaEnrollStartPage(scriptNonce: string, next?: string): st
 }
 
 function mfaOtpDigitsScript(scriptNonce: string): string {
-  return `<script nonce="${scriptNonce}">
+  return String.raw`<script nonce="${scriptNonce}">
 (function () {
   document.querySelectorAll("[data-auth-otp-digits]").forEach(function (wrap) {
     var hidden = wrap.querySelector('input[type="hidden"][name="code"]');
@@ -261,7 +261,7 @@ function mfaOtpDigitsScript(scriptNonce: string): string {
 
     digits.forEach(function (input, idx) {
       input.addEventListener("input", function () {
-        var v = input.value.replace(/\\D/g, "");
+        var v = input.value.replace(/\D/g, "");
         if (v.length > 1) {
           // Multi-digit value: password manager filled via execCommand (input event, not paste)
           for (var j = 0; j < digits.length; j++) digits[j].value = v[j] || "";
@@ -285,7 +285,7 @@ function mfaOtpDigitsScript(scriptNonce: string): string {
       });
       input.addEventListener("paste", function (e) {
         e.preventDefault();
-        var text = (e.clipboardData || window.clipboardData).getData("text").replace(/\\D/g, "");
+        var text = (e.clipboardData || window.clipboardData).getData("text").replace(/\D/g, "");
         for (var i = 0; i < digits.length; i++) digits[i].value = text[i] || "";
         syncHidden();
         focusDigit(Math.min(text.length, digits.length - 1));
@@ -347,9 +347,9 @@ function mfaEnrollCopyScript(scriptNonce: string): string {
 
 function escapeHtml(s: string): string {
   return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+    .replaceAll(/&/g, "&amp;")
+    .replaceAll(/</g, "&lt;")
+    .replaceAll(/>/g, "&gt;")
+    .replaceAll(/"/g, "&quot;")
+    .replaceAll(/'/g, "&#39;");
 }

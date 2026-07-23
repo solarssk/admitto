@@ -112,7 +112,7 @@ function cellToString(value: ExcelJS.CellValue | undefined): string {
 
 /** Quote and escape a CSV field when it contains special characters. */
 function csvEscape(value: string): string {
-  if (/[",\r\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  if (/[",\r\n]/.test(value)) return `"${value.replaceAll('"', '""')}"`;
   return value;
 }
 

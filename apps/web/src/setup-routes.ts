@@ -7,6 +7,7 @@ import {
   login,
   markSetupIncomplete,
   normalizeEmail,
+  PASSWORD_MIN_LENGTH,
 } from "@admitto/auth";
 import { resolveClientIp } from "./rate-limit/client-ip.js";
 import { setSessionCookie } from "./auth/routes.js";
@@ -17,7 +18,6 @@ import {
   type SetupFormValues,
 } from "./setup-page.js";
 import { createAuthPageScriptNonce } from "./auth-page-security.js";
-import { PASSWORD_MIN_LENGTH } from "@admitto/auth";
 
 const DISPLAY_NAME_MAX = 120;
 

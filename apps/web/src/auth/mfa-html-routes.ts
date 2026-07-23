@@ -1,7 +1,6 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import type { StartTotpEnrollmentResult } from "@admitto/auth";
-import { parseTotpSecretFromOtpauthUri } from "@admitto/auth";
 import { generateQrPng } from "@admitto/tickets";
 import {
   SESSION_STAGE,
@@ -16,6 +15,7 @@ import {
   verifyBackupRecoveryCodesSet,
   regenerateBackupRecoveryCodes,
   markBackupCodesAcknowledged,
+  parseTotpSecretFromOtpauthUri,
 } from "@admitto/auth";
 import {
   getMfaEnrollPageSecurityHeaders,

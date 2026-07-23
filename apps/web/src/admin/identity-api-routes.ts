@@ -90,7 +90,7 @@ const oidcDiscoverPreviewBodySchema = z.strictObject({
 
 function optionalOidcEndpoint(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
-  return trimmed ? trimmed : undefined;
+  return trimmed || undefined;
 }
 
 /** Accept an array of strings or a comma/JSON string and return a clean string array. */

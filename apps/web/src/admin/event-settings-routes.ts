@@ -342,11 +342,11 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
 }
 
 function quoteCsvCell(value: string): string {
-  return `"${value.replace(/"/g, '""')}"`;
+  return `"${value.replaceAll(/"/g, '""')}"`;
 }
 
 function exportContentDisposition(filename: string): string {
-  const safeFilename = filename.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  const safeFilename = filename.replaceAll(/\\/g, String.raw`\\`).replaceAll(/"/g, '\\"');
   return `attachment; filename="${safeFilename}"`;
 }
 
@@ -431,7 +431,7 @@ export async function handleExportEventPii(c: Context, db: PrismaClient): Promis
 
   const csvBody = [header, ...rows].join("\r\n");
   const bom = "\uFEFF";
-  const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const dateStamp = new Date().toISOString().slice(0, 10).replaceAll(/-/g, "");
   const filename = `pii-export-${event.slug}-${dateStamp}.csv`;
 
   await writeAdminAuditLog(db, {

@@ -319,7 +319,7 @@ export async function handleCheckinStats(c: Context, db: PrismaClient): Promise<
 export async function handleCheckinHistory(c: Context, db: PrismaClient): Promise<Response> {
   const eventId = c.req.query("eventId");
   if (!eventId) return c.json({ error: "eventId required" }, 400);
-  const limitParam = parseInt(c.req.query("limit") ?? "10", 10);
+  const limitParam = Number.parseInt(c.req.query("limit") ?? "10", 10);
   const limit = Math.max(1, Math.min(Number.isFinite(limitParam) ? limitParam : 10, 100));
 
   try {

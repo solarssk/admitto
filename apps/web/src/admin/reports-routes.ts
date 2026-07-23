@@ -303,20 +303,20 @@ function formatAdmittedAtExport(date: Date, timeZone: string): string {
 }
 
 function quoteCsvCell(value: string): string {
-  return `"${value.replace(/"/g, '""')}"`;
+  return `"${value.replaceAll(/"/g, '""')}"`;
 }
 
 function exportContentDisposition(filename: string): string {
-  const safeFilename = filename.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  const safeFilename = filename.replaceAll(/\\/g, String.raw`\\`).replaceAll(/"/g, '\\"');
   return `attachment; filename="${safeFilename}"`;
 }
 
 function escapeHtml(value: string): string {
   return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replaceAll(/&/g, "&amp;")
+    .replaceAll(/</g, "&lt;")
+    .replaceAll(/>/g, "&gt;")
+    .replaceAll(/"/g, "&quot;");
 }
 
 /** Append bulk audit row after a successful reports export (CSV or printable HTML). */
@@ -404,7 +404,7 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
 
   const timeZone = resolvePreviewEventTimeZone(event.timezone);
 
-  const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const dateStamp = new Date().toISOString().slice(0, 10).replaceAll(/-/g, "");
 
   if (formatRaw === "csv") {
     const [totalAdmitted, rows, catalog] = await Promise.all([
