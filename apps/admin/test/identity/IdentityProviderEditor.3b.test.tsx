@@ -96,7 +96,7 @@ describe("IdentityProviderEditor — mapping repeater (slice 3b)", () => {
     mockUpdate.mockResolvedValueOnce(validDetail);
     renderEditorAt("/admin/settings/identity/providers/p1");
 
-    await waitFor(() => expect(screen.getByDisplayValue("Google")).toBeTruthy());
+    await screen.findByDisplayValue("Google");
 
     fireEvent.click(screen.getByRole("button", { name: "Add mapping" }));
     // Two "Group" inputs now; the second is the new empty row.
@@ -116,7 +116,7 @@ describe("IdentityProviderEditor — mapping repeater (slice 3b)", () => {
     mockFetch.mockResolvedValueOnce(validDetail);
     renderEditorAt("/admin/settings/identity/providers/p1");
 
-    await waitFor(() => expect(screen.getByDisplayValue("admins")).toBeTruthy());
+    await screen.findByDisplayValue("admins");
     fireEvent.click(screen.getByRole("button", { name: "Remove mapping" }));
     expect(screen.queryByDisplayValue("admins")).toBeNull();
     expect(screen.getByText(/No mappings yet/)).toBeTruthy();
@@ -126,11 +126,11 @@ describe("IdentityProviderEditor — mapping repeater (slice 3b)", () => {
     mockFetch.mockResolvedValueOnce(validDetail);
     renderEditorAt("/admin/settings/identity/providers/p1");
 
-    await waitFor(() => expect(screen.getByDisplayValue("admins")).toBeTruthy());
+    await screen.findByDisplayValue("admins");
     fireEvent.change(screen.getByDisplayValue("admins"), { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
-    await waitFor(() => expect(screen.getByText("Group is required.")).toBeTruthy());
+    await screen.findByText("Group is required.");
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
@@ -138,12 +138,12 @@ describe("IdentityProviderEditor — mapping repeater (slice 3b)", () => {
     mockFetch.mockResolvedValueOnce(validDetail);
     renderEditorAt("/admin/settings/identity/providers/p1");
 
-    await waitFor(() => expect(screen.getByDisplayValue("admins")).toBeTruthy());
+    await screen.findByDisplayValue("admins");
     // Switch the row's Scope select to "organization".
     fireEvent.change(screen.getByLabelText("Scope"), { target: { value: "organization" } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
-    await waitFor(() => expect(screen.getByText("Scope ID is required for this scope.")).toBeTruthy());
+    await screen.findByText("Scope ID is required for this scope.");
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 });
@@ -164,13 +164,11 @@ describe("IdentityProviderEditor — discover & test (slice 3b)", () => {
     });
     renderEditorAt("/admin/settings/identity/providers/p1");
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Discover" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Discover" });
     fireEvent.click(screen.getByRole("button", { name: "Discover" }));
 
     await waitFor(() => expect(mockDiscover).toHaveBeenCalledWith("p1"));
-    await waitFor(() =>
-      expect(screen.getByDisplayValue("https://accounts.google.com/o/oauth2/v2/auth")).toBeTruthy(),
-    );
+    await screen.findByDisplayValue("https://accounts.google.com/o/oauth2/v2/auth");
   });
 
   it("Test connection shows a success toast", async () => {
@@ -178,7 +176,7 @@ describe("IdentityProviderEditor — discover & test (slice 3b)", () => {
     mockTestDraft.mockResolvedValueOnce({ ok: true });
     renderEditorAt("/admin/settings/identity/providers/p1");
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Test connection" });
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
 
     await waitFor(() =>
@@ -186,7 +184,7 @@ describe("IdentityProviderEditor — discover & test (slice 3b)", () => {
         issuer: "https://accounts.google.com",
       }),
     );
-    await waitFor(() => expect(screen.getByText("Connection test passed.")).toBeTruthy());
+    await screen.findByText("Connection test passed.");
   });
 
   it("Test connection surfaces a failure message", async () => {
@@ -194,17 +192,17 @@ describe("IdentityProviderEditor — discover & test (slice 3b)", () => {
     mockTestDraft.mockResolvedValueOnce({ ok: false, error: "JWKS unreachable" });
     renderEditorAt("/admin/settings/identity/providers/p1");
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Test connection" });
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
 
-    await waitFor(() => expect(screen.getByText("JWKS unreachable")).toBeTruthy());
+    await screen.findByText("JWKS unreachable");
   });
 
   it("Test connection on create sends the draft issuer", async () => {
     mockTestDraft.mockResolvedValueOnce({ ok: true });
     renderEditorAt("/admin/settings/identity/providers/new");
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Test connection" });
     fireEvent.change(screen.getByLabelText("Issuer URL"), {
       target: { value: "https://accounts.google.com" },
     });
@@ -215,7 +213,7 @@ describe("IdentityProviderEditor — discover & test (slice 3b)", () => {
         issuer: "https://accounts.google.com",
       }),
     );
-    await waitFor(() => expect(screen.getByText("Connection test passed.")).toBeTruthy());
+    await screen.findByText("Connection test passed.");
   });
 
   it("Discover on create autofills endpoints from the preview API", async () => {
@@ -231,7 +229,7 @@ describe("IdentityProviderEditor — discover & test (slice 3b)", () => {
     });
     renderEditorAt("/admin/settings/identity/providers/new");
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Discover" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Discover" });
     fireEvent.change(screen.getByLabelText("Issuer URL"), {
       target: { value: "https://accounts.google.com" },
     });
@@ -240,9 +238,7 @@ describe("IdentityProviderEditor — discover & test (slice 3b)", () => {
     await waitFor(() =>
       expect(mockDiscoverPreview).toHaveBeenCalledWith("https://accounts.google.com"),
     );
-    await waitFor(() =>
-      expect(screen.getByDisplayValue("https://accounts.google.com/o/oauth2/v2/auth")).toBeTruthy(),
-    );
+    await screen.findByDisplayValue("https://accounts.google.com/o/oauth2/v2/auth");
   });
 
   it("Test connection includes non-empty endpoints in the draft body", async () => {
@@ -251,7 +247,7 @@ describe("IdentityProviderEditor — discover & test (slice 3b)", () => {
     mockTestDraft.mockResolvedValueOnce({ ok: true });
     renderEditorAt("/admin/settings/identity/providers/new");
 
-    await waitFor(() => expect(screen.getByLabelText("Issuer URL")).toBeTruthy());
+    await screen.findByLabelText("Issuer URL");
     fireEvent.change(screen.getByLabelText("Issuer URL"), {
       target: { value: "https://accounts.google.com" },
     });
@@ -283,7 +279,7 @@ describe("IdentityProviderEditor — SSO preview (slice 3b)", () => {
     mockFetch.mockResolvedValueOnce(validDetail);
     renderEditorAt("/admin/settings/identity/providers/p1");
 
-    await waitFor(() => expect(screen.getByDisplayValue("Continue with Google")).toBeTruthy());
+    await screen.findByDisplayValue("Continue with Google");
     expect(screen.getByText("Continue with Google")).toBeTruthy();
   });
 
@@ -291,7 +287,7 @@ describe("IdentityProviderEditor — SSO preview (slice 3b)", () => {
     mockFetch.mockResolvedValueOnce(validDetail);
     renderEditorAt("/admin/settings/identity/providers/p1");
 
-    await waitFor(() => expect(screen.getByDisplayValue("Continue with Google")).toBeTruthy());
+    await screen.findByDisplayValue("Continue with Google");
     fireEvent.change(screen.getByLabelText("SSO login button label"), { target: { value: "" } });
     // Preview now shows the default copy.
     expect(screen.getByText("Continue with SSO")).toBeTruthy();
@@ -301,21 +297,17 @@ describe("IdentityProviderEditor — SSO preview (slice 3b)", () => {
 describe("IdentityProviderEditor — discover & test error paths", () => {
   it("shows error toast when Discover is clicked without an issuer (create mode)", async () => {
     renderEditorAt("/admin/settings/identity/providers/new");
-    await waitFor(() => expect(screen.getByRole("button", { name: "Discover" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Discover" });
     fireEvent.click(screen.getByRole("button", { name: "Discover" }));
-    await waitFor(() =>
-      expect(screen.getByText("Issuer URL is required for discovery.")).toBeTruthy(),
-    );
+    await screen.findByText("Issuer URL is required for discovery.");
     expect(mockDiscoverPreview).not.toHaveBeenCalled();
   });
 
   it("shows error toast when Test is clicked without an issuer", async () => {
     renderEditorAt("/admin/settings/identity/providers/new");
-    await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Test connection" });
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
-    await waitFor(() =>
-      expect(screen.getByText("Issuer URL is required to test the connection.")).toBeTruthy(),
-    );
+    await screen.findByText("Issuer URL is required to test the connection.");
     expect(mockTestDraft).not.toHaveBeenCalled();
   });
 
@@ -330,7 +322,7 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
     });
     try {
       renderEditorAt("/admin/settings/identity/providers/new");
-      await waitFor(() => expect(screen.getByRole("button", { name: "Discover" })).toBeTruthy());
+      await screen.findByRole("button", { name: "Discover" });
       fireEvent.change(screen.getByLabelText("Issuer URL"), {
         target: { value: "https://accounts.google.com" },
       });
@@ -347,12 +339,12 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
     const { ApiError } = await import("../../src/api/client.js");
     mockDiscoverPreview.mockRejectedValueOnce(new ApiError(400, "No OIDC metadata found."));
     renderEditorAt("/admin/settings/identity/providers/new");
-    await waitFor(() => expect(screen.getByRole("button", { name: "Discover" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Discover" });
     fireEvent.change(screen.getByLabelText("Issuer URL"), {
       target: { value: "https://accounts.google.com" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Discover" }));
-    await waitFor(() => expect(screen.getByText("No OIDC metadata found.")).toBeTruthy());
+    await screen.findByText("No OIDC metadata found.");
   });
 
   it("redirects to login when Discover returns 401", async () => {
@@ -367,7 +359,7 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
     });
     try {
       renderEditorAt("/admin/settings/identity/providers/p1");
-      await waitFor(() => expect(screen.getByRole("button", { name: "Discover" })).toBeTruthy());
+      await screen.findByRole("button", { name: "Discover" });
       fireEvent.click(screen.getByRole("button", { name: "Discover" }));
       await waitFor(() =>
         expect(assignSpy).toHaveBeenCalledWith(expect.stringContaining("/login?next=")),
@@ -382,9 +374,9 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
     mockFetch.mockResolvedValueOnce(validDetail);
     mockDiscover.mockRejectedValueOnce(new ApiError(400, "Discovery failed."));
     renderEditorAt("/admin/settings/identity/providers/p1");
-    await waitFor(() => expect(screen.getByRole("button", { name: "Discover" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Discover" });
     fireEvent.click(screen.getByRole("button", { name: "Discover" }));
-    await waitFor(() => expect(screen.getByText("Discovery failed.")).toBeTruthy());
+    await screen.findByText("Discovery failed.");
   });
 
   it("maps discovery_failed machine code to actionable issuer guidance", async () => {
@@ -392,9 +384,9 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
     mockFetch.mockResolvedValueOnce(validDetail);
     mockDiscover.mockRejectedValueOnce(new ApiError(400, "discovery_failed", "discovery_failed"));
     renderEditorAt("/admin/settings/identity/providers/p1");
-    await waitFor(() => expect(screen.getByRole("button", { name: "Discover" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Discover" });
     fireEvent.click(screen.getByRole("button", { name: "Discover" }));
-    await waitFor(() => expect(screen.getByText(/OIDC discovery/)).toBeTruthy());
+    await screen.findByText(/OIDC discovery/);
     expect(screen.queryByText("Discovery failed.")).toBeNull();
   });
 
@@ -410,7 +402,7 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
     });
     try {
       renderEditorAt("/admin/settings/identity/providers/p1");
-      await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
+      await screen.findByRole("button", { name: "Test connection" });
       fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
       await waitFor(() =>
         expect(assignSpy).toHaveBeenCalledWith(expect.stringContaining("/login?next=")),
@@ -425,9 +417,9 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
     mockFetch.mockResolvedValueOnce(validDetail);
     mockTestDraft.mockRejectedValueOnce(new ApiError(500, "Connection test failed."));
     renderEditorAt("/admin/settings/identity/providers/p1");
-    await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Test connection" });
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
-    await waitFor(() => expect(screen.getByText("Connection test failed.")).toBeTruthy());
+    await screen.findByText("Connection test failed.");
   });
 
   it("maps invalid_issuer machine code to HTTPS guidance on test", async () => {
@@ -435,9 +427,9 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
     mockFetch.mockResolvedValueOnce(validDetail);
     mockTestDraft.mockRejectedValueOnce(new ApiError(400, "invalid_issuer", "invalid_issuer"));
     renderEditorAt("/admin/settings/identity/providers/p1");
-    await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Test connection" });
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
-    await waitFor(() => expect(screen.getByText(/Issuer URL must use HTTPS/)).toBeTruthy());
+    await screen.findByText(/Issuer URL must use HTTPS/);
     expect(screen.queryByText("Connection test failed.")).toBeNull();
   });
 
@@ -447,7 +439,7 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
     mockTestDraft.mockReturnValueOnce(new Promise((res) => { resolveTest = res; }));
     renderEditorAt("/admin/settings/identity/providers/p1");
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Test connection" });
     // Test request fires with current issuer (accounts.google.com).
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
 
@@ -468,7 +460,7 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
     mockDiscoverPreview.mockReturnValueOnce(new Promise((res) => { resolveDiscover = res; }));
     renderEditorAt("/admin/settings/identity/providers/new");
 
-    await waitFor(() => expect(screen.getByLabelText("Issuer URL")).toBeTruthy());
+    await screen.findByLabelText("Issuer URL");
     fireEvent.change(screen.getByLabelText("Issuer URL"), {
       target: { value: "https://accounts.google.com" },
     });
@@ -506,7 +498,7 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
     );
     renderEditorAt("/admin/settings/identity/providers/new");
 
-    await waitFor(() => expect(screen.getByLabelText("Issuer URL")).toBeTruthy());
+    await screen.findByLabelText("Issuer URL");
     fireEvent.change(screen.getByLabelText("Issuer URL"), {
       target: { value: "https://a.example.com" },
     });
@@ -543,7 +535,7 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
     mockTestDraft.mockReturnValueOnce(new Promise((res) => { resolveTest = res; }));
     renderEditorAt("/admin/settings/identity/providers/new");
 
-    await waitFor(() => expect(screen.getByLabelText("Issuer URL")).toBeTruthy());
+    await screen.findByLabelText("Issuer URL");
     fireEvent.change(screen.getByLabelText("Issuer URL"), {
       target: { value: "https://a.example.com" },
     });
@@ -567,7 +559,7 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
     mockTestDraft.mockReturnValueOnce(new Promise((res) => { resolveTest = res; }));
     renderEditorAt("/admin/settings/identity/providers/new");
 
-    await waitFor(() => expect(screen.getByLabelText("Issuer URL")).toBeTruthy());
+    await screen.findByLabelText("Issuer URL");
     fireEvent.change(screen.getByLabelText("Issuer URL"), {
       target: { value: "https://idp.example.com" },
     });
@@ -592,7 +584,7 @@ describe("IdentityProviderEditor — repeater onChange coverage", () => {
     mockFetch.mockResolvedValueOnce(validDetail);
     mockUpdate.mockResolvedValueOnce(validDetail);
     renderEditorAt("/admin/settings/identity/providers/p1");
-    await waitFor(() => expect(screen.getByDisplayValue("admins")).toBeTruthy());
+    await screen.findByDisplayValue("admins");
     fireEvent.change(screen.getByLabelText("Role"), { target: { value: "operator" } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
@@ -603,7 +595,7 @@ describe("IdentityProviderEditor — repeater onChange coverage", () => {
     mockFetch.mockResolvedValueOnce(validDetail);
     mockUpdate.mockResolvedValueOnce(validDetail);
     renderEditorAt("/admin/settings/identity/providers/p1");
-    await waitFor(() => expect(screen.getByDisplayValue("admins")).toBeTruthy());
+    await screen.findByDisplayValue("admins");
     fireEvent.change(screen.getByLabelText("Scope"), { target: { value: "organization" } });
     fireEvent.change(screen.getByLabelText("Organization ID"), { target: { value: "org-1" } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
@@ -620,7 +612,7 @@ describe("IdentityProviderEditor — create with a mapping", () => {
     mockCreate.mockResolvedValueOnce(validDetail);
     renderEditorAt("/admin/settings/identity/providers/new");
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Create provider" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Create provider" });
     fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google" } });
     fireEvent.change(screen.getByLabelText("Issuer URL"), { target: { value: "https://accounts.google.com" } });
     fireEvent.change(screen.getByLabelText("Client ID"), { target: { value: "client-123" } });
@@ -661,20 +653,18 @@ describe("IdentityProviderEditor — discover baseline refresh (Codex P2)", () =
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     renderEditorAt("/admin/settings/identity/providers/p1");
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Discover" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Discover" });
     fireEvent.click(screen.getByRole("button", { name: "Discover" }));
 
     await waitFor(() => expect(mockDiscover).toHaveBeenCalledWith("p1"));
     // Wait for the discovered endpoint to land in the field so setDraft/setBaseline
     // have both applied before we exercise the dirty guard.
-    await waitFor(() =>
-      expect(screen.getByDisplayValue("https://accounts.google.com/o/oauth2/v2/auth")).toBeTruthy(),
-    );
+    await screen.findByDisplayValue("https://accounts.google.com/o/oauth2/v2/auth");
     // Endpoints were persisted by Discover, so the form must not be dirty —
     // Cancel navigates away WITHOUT a discard prompt.
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(confirmSpy).not.toHaveBeenCalled();
-    await waitFor(() => expect(screen.getByText("providers-list")).toBeTruthy());
+    await screen.findByText("providers-list");
     confirmSpy.mockRestore();
   });
 
@@ -694,16 +684,14 @@ describe("IdentityProviderEditor — discover baseline refresh (Codex P2)", () =
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     renderEditorAt("/admin/settings/identity/providers/p1");
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Discover" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Discover" });
     fireEvent.click(screen.getByRole("button", { name: "Discover" }));
-    await waitFor(() =>
-      expect(screen.getByDisplayValue("https://accounts.google.com/o/oauth2/v2/auth")).toBeTruthy(),
-    );
+    await screen.findByDisplayValue("https://accounts.google.com/o/oauth2/v2/auth");
     // Fallback path patches baseline with the discovered fields, so the form
     // is not dirty and Cancel navigates without a prompt.
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(confirmSpy).not.toHaveBeenCalled();
-    await waitFor(() => expect(screen.getByText("providers-list")).toBeTruthy());
+    await screen.findByText("providers-list");
     confirmSpy.mockRestore();
   });
 });
@@ -720,7 +708,7 @@ describe("IdentityProviderEditor — submit error paths", () => {
     });
     try {
       renderEditorAt("/admin/settings/identity/providers/p1");
-      await waitFor(() => expect(screen.getByDisplayValue("Google")).toBeTruthy());
+      await screen.findByDisplayValue("Google");
       fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
       await waitFor(() =>
         expect(assignSpy).toHaveBeenCalledWith(expect.stringContaining("/login?next=")),
@@ -740,7 +728,7 @@ describe("IdentityProviderEditor — legacy invalid mapping role (Codex P2)", ()
     mockFetch.mockResolvedValueOnce(legacyDetail);
     renderEditorAt("/admin/settings/identity/providers/p1");
 
-    await waitFor(() => expect(screen.getByDisplayValue("admins")).toBeTruthy());
+    await screen.findByDisplayValue("admins");
     // The legacy role is outside MAPPING_ROLES → an "(invalid — pick a role)"
     // option is rendered so the operator sees the bad value.
     expect(screen.getByText(/owner \(invalid/)).toBeTruthy();
@@ -750,7 +738,7 @@ describe("IdentityProviderEditor — legacy invalid mapping role (Codex P2)", ()
 
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
-    await waitFor(() => expect(screen.getByText("Pick a role.")).toBeTruthy());
+    await screen.findByText("Pick a role.");
     expect(mockUpdate).not.toHaveBeenCalled();
 
     // Bug 2: the role/scope error spans must not become extra grid items — each
@@ -811,14 +799,14 @@ describe("IdentityProviderEditor — stale discover guard (Bugbot high)", () => 
     );
 
     const { router } = renderEditorAt("/admin/settings/identity/providers/a");
-    await waitFor(() => expect(screen.getByDisplayValue("Provider A")).toBeTruthy());
+    await screen.findByDisplayValue("Provider A");
     fireEvent.click(screen.getByRole("button", { name: "Discover" }));
 
     // Navigate to B while A's discover is still in flight.
     await act(async () => {
       await router.navigate("/admin/settings/identity/providers/b");
     });
-    await waitFor(() => expect(screen.getByDisplayValue("Provider B")).toBeTruthy());
+    await screen.findByDisplayValue("Provider B");
 
     // Now resolve A's discover — it must NOT touch B's draft.
     resolveDiscover({

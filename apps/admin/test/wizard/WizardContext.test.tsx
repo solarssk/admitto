@@ -33,7 +33,7 @@ describe("sanitizePersistedSummary", () => {
   it("returns defaults for non-object values", () => {
     expect(sanitizePersistedSummary(null).mailLabel).toBe("Skipped");
     expect(sanitizePersistedSummary("bad").brandingLabel).toBe("Skipped");
-    expect(sanitizePersistedSummary([]).eventTitle).toBe(null);
+    expect(sanitizePersistedSummary([]).eventTitle).toBeNull();
   });
 
   it("keeps valid strings and coerces invalid field types", () => {

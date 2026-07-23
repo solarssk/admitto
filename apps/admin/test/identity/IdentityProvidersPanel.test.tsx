@@ -63,7 +63,7 @@ describe("IdentityProvidersPanel", () => {
       expect(screen.getByText(/Team domain: team.example.com/)).toBeTruthy();
     });
     // Two provider switches rendered (CF "Enabled" badge is not a switch role).
-    expect(screen.getAllByRole("switch").length).toBe(2);
+    expect(screen.getAllByRole("switch")).toHaveLength(2);
     expect(screen.getByText("Managed by environment")).toBeTruthy();
     expect(screen.getByText("Add provider")).toBeTruthy();
   });

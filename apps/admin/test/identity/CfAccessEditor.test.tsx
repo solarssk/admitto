@@ -74,7 +74,7 @@ describe("CfAccessEditor (slice 4)", () => {
       }),
     );
     renderEditorAt();
-    await waitFor(() => expect(screen.getByDisplayValue("https://team.cloudflareaccess.com")).toBeTruthy());
+    await screen.findByDisplayValue("https://team.cloudflareaccess.com");
     expect(screen.getByDisplayValue("aud-1, aud-2")).toBeTruthy();
     expect(screen.getByDisplayValue("/admin, /api/admin")).toBeTruthy();
     expect(screen.getByText("Active")).toBeTruthy();
@@ -86,7 +86,7 @@ describe("CfAccessEditor (slice 4)", () => {
       summary({ enabled: false, teamDomain: "https://new", audience: ["a", "b"], protectedPrefixes: ["/admin"] }),
     );
     renderEditorAt();
-    const teamInput = await waitFor(() => screen.getByDisplayValue("https://old"));
+    const teamInput = await screen.findByDisplayValue("https://old");
     fireEvent.change(teamInput, { target: { value: "https://new" } });
     fireEvent.change(screen.getByDisplayValue("a"), { target: { value: "a, b" } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
@@ -96,16 +96,16 @@ describe("CfAccessEditor (slice 4)", () => {
       audience: ["a", "b"],
       enabled: false,
     });
-    await waitFor(() => expect(screen.getByText("Cloudflare Access settings saved.")).toBeTruthy());
+    await screen.findByText("Cloudflare Access settings saved.");
   });
 
   it("blocks save with a toast when required fields are missing for an enabled config", async () => {
     mockFetch.mockResolvedValueOnce(summary({ enabled: false }));
     renderEditorAt();
-    await waitFor(() => expect(screen.getByRole("switch", { name: /Enable Cloudflare Access/ })).toBeTruthy());
+    await screen.findByRole("switch", { name: /Enable Cloudflare Access/ });
     fireEvent.click(screen.getByRole("switch", { name: /Enable Cloudflare Access/ }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-    await waitFor(() => expect(screen.getByText("Please fix the highlighted fields.")).toBeTruthy());
+    await screen.findByText("Please fix the highlighted fields.");
     expect(mockUpdate).not.toHaveBeenCalled();
     expect(screen.getByText(/Team URL is required/)).toBeTruthy();
     expect(screen.getByText(/At least one Application Audience/)).toBeTruthy();
@@ -115,7 +115,7 @@ describe("CfAccessEditor (slice 4)", () => {
     mockFetch.mockResolvedValueOnce(summary());
     mockUpdate.mockResolvedValueOnce(summary({ audience: ["x", "y"], protectedPrefixes: ["/admin", "/api/admin"] }));
     renderEditorAt();
-    await waitFor(() => expect(screen.getByPlaceholderText("a1b2c3d4-e5f6-7890-abcd-ef1234567890")).toBeTruthy());
+    await screen.findByPlaceholderText("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
     fireEvent.change(screen.getByPlaceholderText("a1b2c3d4-e5f6-7890-abcd-ef1234567890"), { target: { value: "x, y" } });
     fireEvent.change(screen.getByPlaceholderText("/admin, /api/admin"), { target: { value: "/admin, /api/admin" } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
@@ -130,7 +130,7 @@ describe("CfAccessEditor (slice 4)", () => {
     mockFetch.mockResolvedValueOnce(summary());
     mockUpdate.mockResolvedValueOnce(summary({ audience: ["aud-1", "aud-2"], protectedPrefixes: ["/admin"] }));
     renderEditorAt();
-    const audInput = await waitFor(() => screen.getByPlaceholderText("a1b2c3d4-e5f6-7890-abcd-ef1234567890"));
+    const audInput = await screen.findByPlaceholderText("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
     fireEvent.change(audInput, { target: { value: '["aud-1","aud-2"]' } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
@@ -141,19 +141,19 @@ describe("CfAccessEditor (slice 4)", () => {
     mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://team.cloudflareaccess.com" }));
     mockTest.mockResolvedValueOnce({ ok: true });
     renderEditorAt();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Test connection" });
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
     await waitFor(() => expect(mockTest).toHaveBeenCalledWith("https://team.cloudflareaccess.com"));
-    await waitFor(() => expect(screen.getByText("Connection verified.")).toBeTruthy());
+    await screen.findByText("Connection verified.");
   });
 
   it("Test connection surfaces a failure payload as an error toast", async () => {
     mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://t" }));
     mockTest.mockResolvedValueOnce({ ok: false, error: "JWKS unreachable" });
     renderEditorAt();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Test connection" });
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
-    await waitFor(() => expect(screen.getByText("JWKS unreachable")).toBeTruthy());
+    await screen.findByText("JWKS unreachable");
   });
 
   it("Test connection stays enabled when the team domain field is env-locked", async () => {
@@ -161,7 +161,7 @@ describe("CfAccessEditor (slice 4)", () => {
       summary({ teamDomain: "https://t", locks: { enabled: false, teamDomain: true, audience: false, protectedPrefixes: false } }),
     );
     renderEditorAt();
-    await waitFor(() => expect(screen.getByText("Locked by env")).toBeTruthy());
+    await screen.findByText("Locked by env");
     const testBtn = screen.getByRole("button", { name: "Test connection" });
     expect(testBtn.hasAttribute("disabled")).toBe(false);
   });
@@ -197,7 +197,7 @@ describe("CfAccessEditor (slice 4)", () => {
     });
     try {
       renderEditorAt();
-      await waitFor(() => expect(screen.getByDisplayValue("https://t")).toBeTruthy());
+      await screen.findByDisplayValue("https://t");
       fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
       await waitFor(() =>
         expect(assignSpy).toHaveBeenCalledWith(expect.stringContaining("/login?next=")),
@@ -219,7 +219,7 @@ describe("CfAccessEditor (slice 4)", () => {
     });
     try {
       renderEditorAt();
-      await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
+      await screen.findByRole("button", { name: "Test connection" });
       fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
       await waitFor(() =>
         expect(assignSpy).toHaveBeenCalledWith(expect.stringContaining("/login?next=")),
@@ -233,7 +233,7 @@ describe("CfAccessEditor (slice 4)", () => {
     const { ApiError } = await import("../../src/api/client.js");
     mockFetch.mockRejectedValueOnce(new ApiError(500, "server_error"));
     renderEditorAt();
-    await waitFor(() => expect(screen.getByText("Couldn't load the Cloudflare Access configuration.")).toBeTruthy());
+    await screen.findByText("Couldn't load the Cloudflare Access configuration.");
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
   });
 
@@ -241,7 +241,7 @@ describe("CfAccessEditor (slice 4)", () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://t" }));
     const { router } = renderEditorAt();
-    const teamInput = await waitFor(() => screen.getByDisplayValue("https://t"));
+    const teamInput = await screen.findByDisplayValue("https://t");
     fireEvent.change(teamInput, { target: { value: "https://edited" } });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(confirmSpy).toHaveBeenCalledWith("Discard unsaved changes?"));
@@ -252,7 +252,7 @@ describe("CfAccessEditor (slice 4)", () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://t" }));
     const { router } = renderEditorAt();
-    const teamInput = await waitFor(() => screen.getByDisplayValue("https://t"));
+    const teamInput = await screen.findByDisplayValue("https://t");
     fireEvent.change(teamInput, { target: { value: "https://edited" } });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(confirmSpy).toHaveBeenCalled());
@@ -264,7 +264,7 @@ describe("CfAccessEditor (slice 4)", () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://t" }));
     const { router } = renderEditorAt();
-    const teamInput = await waitFor(() => screen.getByDisplayValue("https://t"));
+    const teamInput = await screen.findByDisplayValue("https://t");
     fireEvent.change(teamInput, { target: { value: "https://edited" } });
     act(() => {
       router.navigate("/admin/settings/identity/providers");
@@ -277,7 +277,7 @@ describe("CfAccessEditor (slice 4)", () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://t" }));
     const { router } = renderEditorAt();
-    const teamInput = await waitFor(() => screen.getByDisplayValue("https://t"));
+    const teamInput = await screen.findByDisplayValue("https://t");
     fireEvent.change(teamInput, { target: { value: "https://edited" } });
     act(() => {
       router.navigate("/admin/settings/identity/providers");
@@ -289,7 +289,7 @@ describe("CfAccessEditor (slice 4)", () => {
   it("arms a beforeunload prompt while dirty", async () => {
     mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://t" }));
     renderEditorAt();
-    const teamInput = await waitFor(() => screen.getByDisplayValue("https://t"));
+    const teamInput = await screen.findByDisplayValue("https://t");
     fireEvent.change(teamInput, { target: { value: "https://edited" } });
     const event = new Event("beforeunload", { cancelable: true });
     const preventSpy = vi.spyOn(event, "preventDefault");
@@ -302,9 +302,9 @@ describe("CfAccessEditor (slice 4)", () => {
     mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://t", audience: ["a"], protectedPrefixes: ["/admin"] }));
     mockUpdate.mockRejectedValueOnce(new ApiError(400, "Invalid configuration"));
     renderEditorAt();
-    await waitFor(() => expect(screen.getByDisplayValue("https://t")).toBeTruthy());
+    await screen.findByDisplayValue("https://t");
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-    await waitFor(() => expect(screen.getByText("Invalid configuration")).toBeTruthy());
+    await screen.findByText("Invalid configuration");
   });
 
   it("shows an error toast when Test fails generically (non-401)", async () => {
@@ -312,9 +312,9 @@ describe("CfAccessEditor (slice 4)", () => {
     mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://t", audience: ["a"], protectedPrefixes: ["/admin"] }));
     mockTest.mockRejectedValueOnce(new ApiError(500, "Connection test failed."));
     renderEditorAt();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Test connection" });
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
-    await waitFor(() => expect(screen.getByText("Connection test failed.")).toBeTruthy());
+    await screen.findByText("Connection test failed.");
   });
 
   it("maps invalid_team_domain to actionable team URL guidance", async () => {
@@ -322,9 +322,9 @@ describe("CfAccessEditor (slice 4)", () => {
     mockFetch.mockResolvedValueOnce(summary({ teamDomain: "not-a-url", audience: ["a"], protectedPrefixes: ["/admin"] }));
     mockTest.mockRejectedValueOnce(new ApiError(400, "invalid_team_domain", "invalid_team_domain"));
     renderEditorAt();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Test connection" });
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
-    await waitFor(() => expect(screen.getByText(/HTTPS Cloudflare Access team URL/)).toBeTruthy());
+    await screen.findByText(/HTTPS Cloudflare Access team URL/);
     expect(screen.queryByText("Connection test failed.")).toBeNull();
   });
 
@@ -333,9 +333,9 @@ describe("CfAccessEditor (slice 4)", () => {
     mockFetch.mockResolvedValueOnce(summary({ teamDomain: "", audience: ["a"], protectedPrefixes: ["/admin"] }));
     mockTest.mockRejectedValueOnce(new ApiError(400, "team_domain_required", "team_domain_required"));
     renderEditorAt();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Test connection" });
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
-    await waitFor(() => expect(screen.getByText(/team URL before testing/i)).toBeTruthy());
+    await screen.findByText(/team URL before testing/i);
     expect(screen.queryByText("Connection test failed.")).toBeNull();
   });
 
@@ -343,18 +343,18 @@ describe("CfAccessEditor (slice 4)", () => {
     mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://t", audience: ["a"], protectedPrefixes: ["/admin"] }));
     mockUpdate.mockRejectedValueOnce(new Error("network down"));
     renderEditorAt();
-    await waitFor(() => expect(screen.getByDisplayValue("https://t")).toBeTruthy());
+    await screen.findByDisplayValue("https://t");
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-    await waitFor(() => expect(screen.getByText("Failed to save settings.")).toBeTruthy());
+    await screen.findByText("Failed to save settings.");
   });
 
   it("shows the default test toast when Test throws a non-ApiError", async () => {
     mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://t", audience: ["a"], protectedPrefixes: ["/admin"] }));
     mockTest.mockRejectedValueOnce(new Error("network down"));
     renderEditorAt();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Test connection" });
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
-    await waitFor(() => expect(screen.getByText("Connection test failed.")).toBeTruthy());
+    await screen.findByText("Connection test failed.");
   });
 
   it("renders the env-locked info block when enabled is locked", async () => {
@@ -368,9 +368,7 @@ describe("CfAccessEditor (slice 4)", () => {
       }),
     );
     renderEditorAt();
-    await waitFor(() =>
-      expect(screen.getByText(/enabled and locked by environment/)).toBeTruthy(),
-    );
+    await screen.findByText(/enabled and locked by environment/);
     // The enabled switch is disabled when env-locked.
     expect(screen.getByRole("switch", { name: /Enable Cloudflare Access/ }).hasAttribute("disabled")).toBe(true);
   });
@@ -380,10 +378,10 @@ describe("CfAccessEditor (slice 4)", () => {
       summary({ enabled: false, teamDomain: "https://t", audience: ["a"], protectedPrefixes: ["/admin"] }),
     );
     renderEditorAt();
-    await waitFor(() => expect(screen.getByRole("switch", { name: /Enable Cloudflare Access/ })).toBeTruthy());
+    await screen.findByRole("switch", { name: /Enable Cloudflare Access/ });
     expect(screen.queryByText(/Before you enable/)).toBeNull();
     fireEvent.click(screen.getByRole("switch", { name: /Enable Cloudflare Access/ }));
-    await waitFor(() => expect(screen.getByText(/Before you enable/)).toBeTruthy());
+    await screen.findByText(/Before you enable/);
   });
 
   it("does not show the before-enable warning for an already-active config", async () => {
@@ -391,14 +389,14 @@ describe("CfAccessEditor (slice 4)", () => {
       summary({ enabled: true, teamDomain: "https://t", audience: ["a"], protectedPrefixes: ["/admin"] }),
     );
     renderEditorAt();
-    await waitFor(() => expect(screen.getByText("Active")).toBeTruthy());
+    await screen.findByText("Active");
     expect(screen.queryByText(/Before you enable/)).toBeNull();
   });
 
   it("preserves a trailing comma while typing the AUD list (raw text)", async () => {
     mockFetch.mockResolvedValueOnce(summary({ audience: ["a"] }));
     renderEditorAt();
-    const audInput = await waitFor(() => screen.getByDisplayValue("a"));
+    const audInput = await screen.findByDisplayValue("a");
     fireEvent.change(audInput, { target: { value: "a, " } });
     expect((audInput as HTMLInputElement).value).toBe("a, ");
   });
@@ -406,11 +404,11 @@ describe("CfAccessEditor (slice 4)", () => {
   it("blocks save when the team URL is http:// (not https://)", async () => {
     mockFetch.mockResolvedValueOnce(summary({ enabled: false, teamDomain: "https://t", audience: ["a"], protectedPrefixes: ["/admin"] }));
     renderEditorAt();
-    const teamInput = await waitFor(() => screen.getByDisplayValue("https://t"));
+    const teamInput = await screen.findByDisplayValue("https://t");
     fireEvent.change(teamInput, { target: { value: "http://team.cloudflareaccess.com" } });
     fireEvent.click(screen.getByRole("switch", { name: /Enable Cloudflare Access/ }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-    await waitFor(() => expect(screen.getByText("Please fix the highlighted fields.")).toBeTruthy());
+    await screen.findByText("Please fix the highlighted fields.");
     expect(screen.getByText(/Team URL must use https/)).toBeTruthy();
     expect(mockUpdate).not.toHaveBeenCalled();
   });
@@ -429,7 +427,7 @@ describe("CfAccessEditor (slice 4)", () => {
       summary({ enabled: true, teamDomain: "https://team.cloudflareaccess.com", audience: ["a"], protectedPrefixes: ["/admin"], locks: { enabled: false, teamDomain: true, audience: false, protectedPrefixes: false } }),
     );
     renderEditorAt();
-    await waitFor(() => expect(screen.getByRole("switch", { name: /Enable Cloudflare Access/ })).toBeTruthy());
+    await screen.findByRole("switch", { name: /Enable Cloudflare Access/ });
     // Team domain input is disabled (env-locked) and seeded with the schemeless host.
     expect(screen.getByDisplayValue("team.cloudflareaccess.com").hasAttribute("disabled")).toBe(true);
     fireEvent.click(screen.getByRole("switch", { name: /Enable Cloudflare Access/ }));
@@ -444,7 +442,7 @@ describe("CfAccessEditor (slice 4)", () => {
     const confirmSpy = vi.spyOn(window, "confirm");
     mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://t" }));
     const { router } = renderEditorAt();
-    await waitFor(() => expect(screen.getByDisplayValue("https://t")).toBeTruthy());
+    await screen.findByDisplayValue("https://t");
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(router.state.location.pathname).toBe("/admin/settings/identity/providers"));
     expect(confirmSpy).not.toHaveBeenCalled();
@@ -461,7 +459,7 @@ describe("CfAccessEditor (slice 4)", () => {
       }),
     );
     renderEditorAt();
-    await waitFor(() => expect(screen.getByText(/enabled and locked by environment/)).toBeTruthy());
+    await screen.findByText(/enabled and locked by environment/);
     // Every field is env-locked → every input is disabled and carries a badge.
     expect(screen.getByRole("switch", { name: /Enable Cloudflare Access/ }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByDisplayValue("https://t").hasAttribute("disabled")).toBe(true);

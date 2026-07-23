@@ -194,9 +194,7 @@ describe("CheckInPage live feed", () => {
     for (let i = 1; i <= token.length; i++) {
       fireEvent.change(input, { target: { value: token.slice(0, i) } });
     }
-    await act(async () => {
-      fireEvent.keyDown(input, { key: "Enter" });
-    });
+    fireEvent.keyDown(input, { key: "Enter" });
 
     await waitFor(() => {
       expect(screen.getByText("Alex Example")).toBeTruthy();
@@ -294,9 +292,7 @@ describe("CheckInPage live feed", () => {
     for (let i = 1; i <= token.length; i++) {
       fireEvent.change(input, { target: { value: token.slice(0, i) } });
     }
-    await act(async () => {
-      fireEvent.keyDown(input, { key: "Enter" });
-    });
+    fireEvent.keyDown(input, { key: "Enter" });
 
     await waitFor(() => {
       expect(screen.getByText("2")).toBeTruthy();

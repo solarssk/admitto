@@ -402,7 +402,13 @@ describe("PATCH /api/admin/system-settings", () => {
     expect(body.instance_url.source).toBe("db");
   });
 
-  it("rejects instance_url with trailing slash", async () => {
+  it.each([
+    ["trailing slash", "https://tickets.example.com/"],
+    ["non-HTTPS", "http://tickets.example.com"],
+    ["query string", "https://tickets.example.com?preview=1"],
+    ["fragment", "https://tickets.example.com#section"],
+    ["embedded credentials", "https://user:pass@tickets.example.com"],
+  ])("rejects instance_url with %s", async (_label, instanceUrl) => {
     const res = await app.request("/api/admin/system-settings", {
       method: "PATCH",
       headers: {
@@ -410,67 +416,7 @@ describe("PATCH /api/admin/system-settings", () => {
         "Content-Type": "application/json",
         ...sameOrigin,
       },
-      body: JSON.stringify({ instance_url: "https://tickets.example.com/" }),
-    });
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("validation_error");
-  });
-
-  it("rejects non-HTTPS instance_url", async () => {
-    const res = await app.request("/api/admin/system-settings", {
-      method: "PATCH",
-      headers: {
-        Cookie: superCookie,
-        "Content-Type": "application/json",
-        ...sameOrigin,
-      },
-      body: JSON.stringify({ instance_url: "http://tickets.example.com" }),
-    });
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("validation_error");
-  });
-
-  it("rejects instance_url with query string", async () => {
-    const res = await app.request("/api/admin/system-settings", {
-      method: "PATCH",
-      headers: {
-        Cookie: superCookie,
-        "Content-Type": "application/json",
-        ...sameOrigin,
-      },
-      body: JSON.stringify({ instance_url: "https://tickets.example.com?preview=1" }),
-    });
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("validation_error");
-  });
-
-  it("rejects instance_url with fragment", async () => {
-    const res = await app.request("/api/admin/system-settings", {
-      method: "PATCH",
-      headers: {
-        Cookie: superCookie,
-        "Content-Type": "application/json",
-        ...sameOrigin,
-      },
-      body: JSON.stringify({ instance_url: "https://tickets.example.com#section" }),
-    });
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("validation_error");
-  });
-
-  it("rejects instance_url with embedded credentials", async () => {
-    const res = await app.request("/api/admin/system-settings", {
-      method: "PATCH",
-      headers: {
-        Cookie: superCookie,
-        "Content-Type": "application/json",
-        ...sameOrigin,
-      },
-      body: JSON.stringify({ instance_url: "https://user:pass@tickets.example.com" }),
+      body: JSON.stringify({ instance_url: instanceUrl }),
     });
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };

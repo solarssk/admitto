@@ -909,7 +909,7 @@ describe("multi-template API", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { status: string };
     expect(body.status).toBe("sent");
-    expect(exported.length).toBe(1);
+    expect(exported).toHaveLength(1);
     expect(exported[0]?.message.subject).toContain(TEST_SUBJECT);
     expect(exported[0]?.message.html).toContain("BY-ID-CUSTOM-BODY-MARKER-7f3a");
 
@@ -943,6 +943,6 @@ describe("multi-template API", () => {
     );
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "not_found" });
-    expect(exported.length).toBe(0);
+    expect(exported).toHaveLength(0);
   });
 });

@@ -172,9 +172,7 @@ describe("CheckInPage scan queue (#261)", () => {
     const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
     const tokenFirst = "QRTOKEN-FIRSTPERSON01";
     await typeWedge(input, tokenFirst);
-    await act(async () => {
-      fireEvent.keyDown(input, { key: "Enter" });
-    });
+    fireEvent.keyDown(input, { key: "Enter" });
 
     await waitFor(() => expect(submitCheckInScan).toHaveBeenCalledTimes(1));
     // Root cause of #261: the input used to be disabled while busy, so a
@@ -184,7 +182,7 @@ describe("CheckInPage scan queue (#261)", () => {
     await act(async () => {
       first.resolve(cardResponse("QRTOKEN-FIRSTPERSON01", "First Person"));
     });
-    await waitFor(() => expect(screen.getByText("First Person")).toBeTruthy());
+    await screen.findByText("First Person");
   });
 
   it("processes a second scan that arrives while the first is still in flight, in order", async () => {
@@ -199,17 +197,13 @@ describe("CheckInPage scan queue (#261)", () => {
 
     const tokenFirst = "QRTOKEN-FIRSTPERSON01";
     await typeWedge(input, tokenFirst);
-    await act(async () => {
-      fireEvent.keyDown(input, { key: "Enter" });
-    });
+    fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() => expect(submitCheckInScan).toHaveBeenCalledTimes(1));
 
     // Second wedge scan arrives before the first request has resolved.
     const tokenSecond = "QRTOKEN-SECONDPERSON2";
     await typeWedge(input, tokenSecond);
-    await act(async () => {
-      fireEvent.keyDown(input, { key: "Enter" });
-    });
+    fireEvent.keyDown(input, { key: "Enter" });
 
     // Queued, not dropped and not fired concurrently: still only one call so far.
     expect(submitCheckInScan).toHaveBeenCalledTimes(1);
@@ -217,7 +211,7 @@ describe("CheckInPage scan queue (#261)", () => {
     await act(async () => {
       first.resolve(cardResponse("QRTOKEN-FIRSTPERSON01", "First Person"));
     });
-    await waitFor(() => expect(screen.getByText("First Person")).toBeTruthy());
+    await screen.findByText("First Person");
 
     // Now that the first finished, the queued second scan runs.
     await waitFor(() => expect(submitCheckInScan).toHaveBeenCalledTimes(2));
@@ -227,7 +221,7 @@ describe("CheckInPage scan queue (#261)", () => {
     await act(async () => {
       second.resolve(cardResponse("QRTOKEN-SECONDPERSON2", "Second Person"));
     });
-    await waitFor(() => expect(screen.getByText("Second Person")).toBeTruthy());
+    await screen.findByText("Second Person");
   });
 });
 
@@ -250,9 +244,7 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
 
     const sameToken = "QRTOKEN-SAMEPERSON0001";
     await typeWedge(input, sameToken, { gapMs: 2 });
-    await act(async () => {
-      fireEvent.keyDown(input, { key: "Enter" });
-    });
+    fireEvent.keyDown(input, { key: "Enter" });
     await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledTimes(1));
 
     // The SAME physical scan resubmitted only 100ms later (well inside the
@@ -266,9 +258,7 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
       await vi.advanceTimersByTimeAsync(100);
     });
     await typeWedge(input, sameToken, { gapMs: 2 });
-    await act(async () => {
-      fireEvent.keyDown(input, { key: "Enter" });
-    });
+    fireEvent.keyDown(input, { key: "Enter" });
 
     // The first request only resolves well after the dedup window would have
     // closed (3000ms > 2500ms) — this is what used to defeat the dedup check.
@@ -297,9 +287,7 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
 
     const tokenFirst = "QRTOKEN-FIRSTPERSON01";
     await typeWedge(input, tokenFirst, { gapMs: 2 });
-    await act(async () => {
-      fireEvent.keyDown(input, { key: "Enter" });
-    });
+    fireEvent.keyDown(input, { key: "Enter" });
     await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledTimes(1));
 
     // A second scan arrives and is accepted (enqueued) while the first is
@@ -308,9 +296,7 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
     // this still-visible text.
     const tokenSecond = "QRTOKEN-SECONDPERSON2";
     await typeWedge(input, tokenSecond, { gapMs: 2 });
-    await act(async () => {
-      fireEvent.keyDown(input, { key: "Enter" });
-    });
+    fireEvent.keyDown(input, { key: "Enter" });
 
     expect(input.value).toBe("");
     expect(submitCheckInScan).toHaveBeenCalledTimes(1); // second is still queued
@@ -484,9 +470,7 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
 
     // Person A scans and requires explicit confirmation (not auto-admitted).
     await typeWedge(input, tokenA, { gapMs: 2 });
-    await act(async () => {
-      fireEvent.keyDown(input, { key: "Enter" });
-    });
+    fireEvent.keyDown(input, { key: "Enter" });
     await vi.waitFor(() => expect(screen.getByText("Confirm check-in")).toBeTruthy());
 
     // Operator confirms A — this request is slow (deferred).
@@ -552,9 +536,7 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
     // Operator types a short manual query and submits it (< 20 chars, takes
     // the lookup branch, not the scan branch).
     fireEvent.change(input, { target: { value: "Alice" } });
-    await act(async () => {
-      fireEvent.keyDown(input, { key: "Enter" });
-    });
+    fireEvent.keyDown(input, { key: "Enter" });
     await vi.waitFor(() => expect(lookupCheckInAttendees).toHaveBeenCalledWith("evt-live", "Alice"));
 
     // The buffer must already be empty at this point — cleared the moment
@@ -606,9 +588,7 @@ describe("CheckInPage scan queue — #262/bot review (Enter/paste routing)", () 
     // — only the explicit Enter below decides anything for non-burst input.
     expect(submitCheckInScan).not.toHaveBeenCalled();
 
-    await act(async () => {
-      fireEvent.keyDown(input, { key: "Enter" });
-    });
+    fireEvent.keyDown(input, { key: "Enter" });
 
     // An explicit Enter on a value this long always tries a scan attempt
     // first (round 6 — the server's resolver recognizes every valid code
@@ -640,9 +620,7 @@ describe("CheckInPage scan queue — #262/bot review (Enter/paste routing)", () 
     });
     expect(submitCheckInScan).not.toHaveBeenCalled();
 
-    await act(async () => {
-      fireEvent.keyDown(input, { key: "Enter" });
-    });
+    fireEvent.keyDown(input, { key: "Enter" });
     await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", pasted, "desk-1"));
     await vi.waitFor(() => expect(lookupCheckInAttendees).toHaveBeenCalledWith("evt-live", pasted));
   });
@@ -746,9 +724,7 @@ describe("CheckInPage scan queue — #262/bot review (Enter/paste routing)", () 
     expect(submitCheckInScan).not.toHaveBeenCalled();
 
     // An explicit Enter still attempts it as a scan.
-    await act(async () => {
-      fireEvent.keyDown(input, { key: "Enter" });
-    });
+    fireEvent.keyDown(input, { key: "Enter" });
     await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", value, "desk-1"));
     expect(lookupCheckInAttendees).not.toHaveBeenCalled();
   });
@@ -787,9 +763,7 @@ describe("CheckInPage scan queue — #262/bot review (Enter/paste routing)", () 
     const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
 
     await typeWedge(input, token, { gapMs: 2 });
-    await act(async () => {
-      fireEvent.keyDown(input, { key: "Enter" });
-    });
+    fireEvent.keyDown(input, { key: "Enter" });
 
     await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", token, "desk-1"));
     expect(lookupCheckInAttendees).not.toHaveBeenCalled();
@@ -908,9 +882,7 @@ describe("CheckInPage scan queue — event timestamp vs handler wall-clock (#262
       dateSpy.mockRestore();
     }
 
-    await act(async () => {
-      fireEvent.keyDown(input, { key: "Enter" });
-    });
+    fireEvent.keyDown(input, { key: "Enter" });
 
     await waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", token, "desk-1"));
     expect(lookupCheckInAttendees).not.toHaveBeenCalled();

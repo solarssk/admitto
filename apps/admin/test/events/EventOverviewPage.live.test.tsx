@@ -314,7 +314,7 @@ describe("EventOverviewPage live stats", () => {
 
     await waitFor(
       () => {
-        expect(fetchEventOverview.mock.calls.length).toBe(callsAfterLoad + 1);
+        expect(fetchEventOverview.mock.calls).toHaveLength(callsAfterLoad + 1);
       },
       { timeout: 5000 },
     );

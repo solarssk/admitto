@@ -460,7 +460,7 @@ describe("POST /api/admin/events/:eventId/template/test-send", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { status: string };
     expect(body.status).toBe("sent");
-    expect(exported.length).toBe(1);
+    expect(exported).toHaveLength(1);
 
     const after = await prisma.emailDelivery.count({ where: { event_id: EVENT_A } });
     expect(after).toBe(before);

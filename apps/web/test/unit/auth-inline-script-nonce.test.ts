@@ -62,7 +62,7 @@ describe("auth page inline script nonces (#253)", () => {
     expectAllScriptsNonced(html);
     // Copy handler is emitted once — a duplicate would double-register listeners.
     expect(html.match(/copy-enroll-secret/g)?.filter((m) => m).length).toBeGreaterThan(0);
-    expect((html.match(/getElementById\("copy-enroll-secret"\)/g) ?? []).length).toBe(1);
+    expect(html.match(/getElementById\("copy-enroll-secret"\)/g) ?? []).toHaveLength(1);
   });
 
   it("MFA enroll start and backup-codes pages tag submit script with the nonce", () => {

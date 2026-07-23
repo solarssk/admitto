@@ -777,7 +777,7 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
     };
     expect(body.created).toBe(0);
     expect(body.updated).toBe(0);
-    expect(body.skipped.length).toBe(2);
+    expect(body.skipped).toHaveLength(2);
     expect(body.skipped.every((s) => s.reason.includes("Overwrite existing attendees"))).toBe(true);
   });
 

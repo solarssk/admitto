@@ -242,8 +242,13 @@ describe("first-run staff entry redirect", () => {
     await clearAllUsers(prisma);
   });
 
-  it("redirects GET /login to /setup when database is empty", async () => {
-    const res = await app.request("/login", { redirect: "manual" });
+  it.each([
+    { name: "redirects GET /login to /setup when database is empty", path: "/login" },
+    { name: "redirects GET / to /setup when database is empty", path: "/" },
+    { name: "redirects GET /operator to /setup when database is empty", path: "/operator" },
+    { name: "redirects GET /admin to /setup when database is empty", path: "/admin" },
+  ])("$name", async ({ path }) => {
+    const res = await app.request(path, { redirect: "manual" });
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("/setup");
   });
@@ -262,21 +267,4 @@ describe("first-run staff entry redirect", () => {
     expect(res.headers.get("Location")).toBe("/setup");
   });
 
-  it("redirects GET / to /setup when database is empty", async () => {
-    const res = await app.request("/", { redirect: "manual" });
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/setup");
-  });
-
-  it("redirects GET /operator to /setup when database is empty", async () => {
-    const res = await app.request("/operator", { redirect: "manual" });
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/setup");
-  });
-
-  it("redirects GET /admin to /setup when database is empty", async () => {
-    const res = await app.request("/admin", { redirect: "manual" });
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/setup");
-  });
 });
