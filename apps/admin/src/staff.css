@@ -1340,8 +1340,8 @@
   margin: 0;
   border: none;
   padding: 0;
-  width: auto;
-  height: auto;
+  width: 100%;
+  height: 100%;
   max-width: none;
   max-height: none;
   z-index: var(--z-overlay, 1040);
@@ -4930,6 +4930,7 @@ output.mail-field-hint {
   width: 100%;
   height: 100%;
   max-width: none;
+  max-height: none;
 }
 
 .overview-modal__backdrop {
@@ -5442,4 +5443,3 @@ output.mail-field-hint {
 /* Settings tab bar's horizontal scroll + edge-fade behavior now lives in the
    shared ScrollFadeTabs component (apps/admin/src/components/ScrollFadeTabs.tsx),
    used instead of the plain <Tabs> in SettingsLayout.tsx. */
-
