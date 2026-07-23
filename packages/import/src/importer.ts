@@ -443,4 +443,4 @@ export async function commitImport(
 }
 
 // Suppress unused import warning for OVERWRITE_FIELDS — it documents intent even if not iterated.
-void (OVERWRITE_FIELDS satisfies readonly string[]);
+(OVERWRITE_FIELDS satisfies readonly string[]);

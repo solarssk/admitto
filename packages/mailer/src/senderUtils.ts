@@ -4,7 +4,7 @@ import type { MailMessage, MailSender } from "./types.js";
 
 /** Quote a display name for RFC5322 From (escapes backslash and double-quote). */
 export function quoteDisplayName(name: string): string {
-  const escaped = name.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  const escaped = name.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
   return `"${escaped}"`;
 }
 
@@ -18,7 +18,7 @@ export function formatFromHeader(sender: Pick<MailSender, "fromAddress" | "fromN
 /** Message replyTo wins over config default. */
 export function resolveReplyTo(configReplyTo: string | undefined, message: MailMessage): string | undefined {
   const msgReplyTo = message.replyTo?.trim();
-  return msgReplyTo ? msgReplyTo : configReplyTo;
+  return msgReplyTo || configReplyTo;
 }
 
 export function toMailSender(config: MailSenderConfig): MailSender {

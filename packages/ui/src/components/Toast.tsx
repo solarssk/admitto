@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type MutableRefObject,
@@ -52,7 +53,7 @@ function clearAllToastTimers(timerRefs: MutableRefObject<Map<string, ReturnType<
 }
 
 /** Provides toast state and renders a fixed notification stack (max 5, auto-dismiss). */
-export function ToastProvider({ children }: { children: ReactNode }) {
+export function ToastProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const timerRefs = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const prevToastIdsRef = useRef<Set<string>>(new Set());
@@ -90,8 +91,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     [dismiss],
   );
 
+  const contextValue = useMemo(() => ({ addToast }), [addToast]);
+
   return (
-    <ToastContext.Provider value={{ addToast }}>
+    <ToastContext.Provider value={contextValue}>
       {children}
       <div
         className="at-toast-stack"

@@ -3,7 +3,7 @@ import { GraphAdapter } from "./adapters/graph.js";
 import { SmtpAdapter } from "./adapters/smtp.js";
 import { PowerAutomateAdapter } from "./adapters/powerAutomate.js";
 import { ExportOnlyAdapter, type ExportSink } from "./adapters/exportOnly.js";
-import type { ExportPayload, FetchFn, MailMessage, MailerAdapter, SendResult } from "./types.js";
+import type { FetchFn, MailMessage, MailerAdapter, SendResult } from "./types.js";
 import { isSendSuccess } from "./types.js";
 
 export * from "./types.js";

@@ -38,7 +38,7 @@ def apply_markers(text: str, version: str, start: str, end: str) -> tuple[str, b
     replacement = f"{start}`{version}`{end}"
     new_text, count = re.subn(pattern, replacement, text, count=1, flags=re.DOTALL)
     if count != 1:
-        raise SystemExit(f"Expected exactly one marker pair to replace")
+        raise SystemExit("Expected exactly one marker pair to replace")
     return new_text, new_text != text
 
 

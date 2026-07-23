@@ -80,20 +80,20 @@ async function main(): Promise<void> {
   await handler();
 }
 
-main()
-  .catch((err) => {
-    if (err instanceof CliError || err instanceof AuthCliError) {
-      console.error(err.message);
-      process.exitCode = err.exitCode;
-      return;
-    }
+try {
+  await main();
+} catch (err) {
+  if (err instanceof CliError || err instanceof AuthCliError) {
+    console.error(err.message);
+    process.exitCode = err.exitCode;
+  } else {
     console.error(err);
     process.exitCode = 1;
-  })
-  .finally(async () => {
-    try {
-      await prisma.$disconnect();
-    } catch {
-      // Preserve exit code from .catch(); disconnect failures must not override it.
-    }
-  });
+  }
+} finally {
+  try {
+    await prisma.$disconnect();
+  } catch {
+    // Preserve exit code from the catch above; disconnect failures must not override it.
+  }
+}

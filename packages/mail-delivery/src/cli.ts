@@ -201,7 +201,9 @@ async function main() {
   process.exit(exitCode);
 }
 
-main().catch((e) => {
+try {
+  await main();
+} catch (e) {
   console.error(e instanceof Error ? e.message : String(e));
   process.exit(1);
-});
+}

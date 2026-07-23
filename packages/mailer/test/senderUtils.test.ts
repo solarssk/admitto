@@ -9,6 +9,9 @@ describe("formatFromHeader", () => {
     expect(formatFromHeader({ fromAddress: "a@example.com", fromName: 'Acme "HQ"' })).toBe(
       '"Acme \\"HQ\\"" <a@example.com>',
     );
+    expect(formatFromHeader({ fromAddress: "a@example.com", fromName: 'Acme \\ "HQ"' })).toBe(
+      '"Acme \\\\ \\"HQ\\"" <a@example.com>',
+    );
   });
 
   it("quoteDisplayName escapes embedded quotes", () => {

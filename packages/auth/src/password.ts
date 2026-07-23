@@ -28,9 +28,7 @@ export async function verifyPassword(plaintext: string, passwordHash: string): P
 let dummyHashPromise: Promise<string> | null = null;
 
 function getDummyHash(): Promise<string> {
-  if (!dummyHashPromise) {
-    dummyHashPromise = hashPassword("__admitto_dummy_timing__");
-  }
+  dummyHashPromise ??= hashPassword("__admitto_dummy_timing__");
   return dummyHashPromise;
 }
 

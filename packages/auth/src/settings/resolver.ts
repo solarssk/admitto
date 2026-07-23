@@ -20,7 +20,7 @@ function parseEnvValue(raw: string, fallback: unknown): unknown {
   return trimmed;
 }
 
-function envOverride(key: string): unknown | undefined {
+function envOverride(key: string): unknown {
   const envName = SETTING_ENV_LOCKS[key];
   if (!envName) return undefined;
   const raw = process.env[envName];

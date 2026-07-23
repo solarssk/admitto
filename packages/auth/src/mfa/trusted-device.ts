@@ -49,7 +49,7 @@ export async function validateTrustedDevice(
     where: { token_hash },
   });
 
-  if (!row || row.user_id !== userId) return false;
+  if (row?.user_id !== userId) return false;
   if (row.revoked_at) return false;
   if (row.expires_at.getTime() <= Date.now()) return false;
 

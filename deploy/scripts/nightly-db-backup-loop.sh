@@ -9,7 +9,8 @@ RETENTION_DAYS="${NIGHTLY_BACKUP_RETENTION_DAYS:-14}"
 SLEEP_SECONDS="${NIGHTLY_BACKUP_INTERVAL_SECONDS:-86400}"
 
 log() {
-  printf '%s\n' "$1"
+  message="$1"
+  printf '%s\n' "$message"
 }
 
 require_env() {

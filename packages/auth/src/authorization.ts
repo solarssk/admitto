@@ -220,7 +220,7 @@ export async function listAdminEvents(
   return prisma.event.findMany({
     where: {
       organization_id: { in: orgIds },
-      ...(archivedWhere ?? {}),
+      ...archivedWhere,
     },
     select: eventSelect,
     orderBy: { date: "asc" },

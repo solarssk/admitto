@@ -13,7 +13,7 @@ export interface StatProps extends HTMLAttributes<HTMLDivElement> {
   trend?: StatTrend | null;
 }
 
-export function Stat({ label, value, sub, icon = null, trend = null, className, ...rest }: StatProps) {
+export function Stat({ label, value, sub, icon = null, trend = null, className, ...rest }: Readonly<StatProps>) {
   return (
     <div className={["at-stat", className].filter(Boolean).join(" ")} {...rest}>
       <div className="at-stat__top">

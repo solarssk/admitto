@@ -86,8 +86,8 @@ function formatPlaceholderValue(
 export function stripEmptyUrlAttributes(html: string): string {
   const attrs = "src|href|action|background";
   return html
-    .replace(new RegExp(`\\s(${attrs})=["']\\s*["']`, "gi"), "")
-    .replace(new RegExp(`\\s(${attrs})=(?:""|'')`, "gi"), "");
+    .replace(new RegExp(String.raw`\s(${attrs})=["']\s*["']`, "gi"), "")
+    .replace(new RegExp(String.raw`\s(${attrs})=(?:""|'')`, "gi"), "");
 }
 
 function formatSubjectPlaceholderValue(

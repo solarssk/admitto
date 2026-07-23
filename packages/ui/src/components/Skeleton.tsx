@@ -17,7 +17,7 @@ export function Skeleton({
   height,
   lines = 1,
   className,
-}: SkeletonProps) {
+}: Readonly<SkeletonProps>) {
   const style: CSSProperties = {};
   if (width) style.width = typeof width === "number" ? `${width}px` : width;
   if (height) style.height = typeof height === "number" ? `${height}px` : height;

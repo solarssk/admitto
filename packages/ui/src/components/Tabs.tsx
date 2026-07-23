@@ -14,7 +14,7 @@ export interface TabsProps {
   onChange?: (id: string) => void;
 }
 
-export function Tabs({ tabs = [], value, defaultValue, onChange }: TabsProps) {
+export function Tabs({ tabs = [], value, defaultValue, onChange }: Readonly<TabsProps>) {
   const [internal, setInternal] = useState(defaultValue ?? tabs[0]?.id);
 
   useEffect(() => {
@@ -37,7 +37,7 @@ export function Tabs({ tabs = [], value, defaultValue, onChange }: TabsProps) {
 
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     if (tabs.length === 0) return;
-    let nextIndex = index;
+    let nextIndex: number;
     if (event.key === "ArrowRight") {
       nextIndex = (index + 1) % tabs.length;
     } else if (event.key === "ArrowLeft") {

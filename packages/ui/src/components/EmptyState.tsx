@@ -9,7 +9,13 @@ export interface EmptyStateProps {
 }
 
 /** Centered empty-list placeholder with optional icon, description, and action slot. */
-export function EmptyState({ icon, title, description, action, className }: EmptyStateProps) {
+export function EmptyState({
+  icon,
+  title,
+  description,
+  action,
+  className,
+}: Readonly<EmptyStateProps>) {
   const cls = ["at-empty-state", className].filter(Boolean).join(" ");
   return (
     <div className={cls} role="status">

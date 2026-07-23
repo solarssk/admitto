@@ -1,5 +1,5 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { ensureAttendeeItemStates, issueBadgeOnCheckIn } from "./item-states.js";
+import { issueBadgeOnCheckIn } from "./item-states.js";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
 import { parseEventOpsConfig, loadEventOpsConfig } from "./ops-config.js";
 import { isAdmittable, ADMITTABLE_STATUS_LIST } from "./admittable.js";

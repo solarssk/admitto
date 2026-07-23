@@ -166,7 +166,7 @@ export async function validateSession(
   rawToken: string,
 ): Promise<ValidatedSession | null> {
   const validated = await lookupSessionByToken(prisma, rawToken);
-  if (!validated || validated.stage !== SESSION_STAGE.FULL) return null;
+  if (validated?.stage !== SESSION_STAGE.FULL) return null;
   if (!(await assertFullSessionMfaPolicy(prisma, validated))) return null;
   return validated;
 }

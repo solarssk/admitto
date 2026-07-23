@@ -34,7 +34,7 @@ export async function fetchOidcDiscovery(issuer: string): Promise<OidcDiscoveryD
     typeof jwks_uri !== "string" ||
     typeof docIssuer !== "string"
   ) {
-    throw new Error("OIDC discovery document missing required fields");
+    throw new TypeError("OIDC discovery document missing required fields");
   }
   const userinfo = doc["userinfo_endpoint"];
   assertSafeOidcFetchUrl(authorization_endpoint);

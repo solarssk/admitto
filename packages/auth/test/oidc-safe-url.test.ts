@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { lookup } from "node:dns/promises";
 import { assertSafeOidcFetchUrl, assertSafeOidcFetchUrlResolved } from "../src/oidc/safe-url.js";
 import { fetchOidcDiscovery } from "../src/oidc/discovery.js";
@@ -14,6 +14,10 @@ beforeEach(() => {
   mockedLookup.mockResolvedValue([{ address: "93.184.216.34", family: 4 }] as Awaited<
     ReturnType<typeof lookup>
   >);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("assertSafeOidcFetchUrl", () => {
@@ -76,6 +80,18 @@ describe("assertSafeOidcFetchUrl", () => {
 describe("fetchOidcDiscovery SSRF guard", () => {
   it("rejects metadata issuer before fetch", async () => {
     await expect(fetchOidcDiscovery("https://169.254.169.254/")).rejects.toThrow(/private or link-local/);
+  });
+
+  it("rejects a discovery document with missing required fields", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ issuer: "http://127.0.0.1:9999/" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchOidcDiscovery("http://127.0.0.1:9999/")).rejects.toBeInstanceOf(TypeError);
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 });
 

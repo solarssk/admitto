@@ -27,8 +27,10 @@ RUN npm prune --omit=dev
 FROM node:24-bookworm-slim AS production
 
 # postgresql-client-16 for pre-migration pg_dump (ADR 0027; server is postgres:16).
+# Global npm is unused at runtime (Prisma/app invoked via node directly).
+# Removes bundled picomatch 4.0.3 flagged by Trivy (CVE-2026-33671).
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends wget openssl ca-certificates curl gnupg \
+  && apt-get install -y --no-install-recommends ca-certificates curl gnupg openssl wget \
   && curl -fsSL --proto '=https' --proto-redir '=https' https://www.postgresql.org/media/keys/ACCC4CF8.asc \
     | gpg --dearmor -o /usr/share/keyrings/postgresql.gpg \
   && echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
@@ -37,11 +39,8 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends postgresql-client-16 \
   && apt-get purge -y curl gnupg \
   && apt-get autoremove -y \
-  && rm -rf /var/lib/apt/lists/*
-
-# Global npm is unused at runtime (Prisma/app invoked via node directly).
-# Removes bundled picomatch 4.0.3 flagged by Trivy (CVE-2026-33671).
-RUN rm -rf /usr/local/lib/node_modules/npm \
+  && rm -rf /var/lib/apt/lists/* \
+  && rm -rf /usr/local/lib/node_modules/npm \
   && rm -f /usr/local/bin/npm /usr/local/bin/npx
 
 WORKDIR /app

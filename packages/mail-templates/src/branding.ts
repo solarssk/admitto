@@ -1,6 +1,6 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import type { BrandingUrls } from "./types.js";
-import { validateBrandingUrl, InvalidHttpUrlError } from "./escape.js";
+import { validateBrandingUrl } from "./escape.js";
 
 function pickUrl(eventValue: string | null | undefined, orgValue: string | null | undefined): string {
   const event = eventValue?.trim() ?? "";
@@ -117,4 +117,4 @@ export async function resolveEventImageAssetVars(
   return { vars, names: new Set(Object.keys(vars)) };
 }
 
-export { InvalidHttpUrlError };
+export { InvalidHttpUrlError } from "./escape.js";

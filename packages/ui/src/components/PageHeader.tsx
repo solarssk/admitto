@@ -7,13 +7,13 @@ export interface PageHeaderProps extends Omit<HTMLAttributes<HTMLDivElement>, "t
   actions?: ReactNode;
 }
 
-export function PageHeader({ title, subtitle, breadcrumb = null, actions, className, ...rest }: PageHeaderProps) {
+export function PageHeader({ title, subtitle, breadcrumb = null, actions, className, ...rest }: Readonly<PageHeaderProps>) {
   return (
     <div className={["at-pageheader", className].filter(Boolean).join(" ")} {...rest}>
       {breadcrumb && breadcrumb.length > 0 && (
         <nav className="at-breadcrumb" aria-label="Breadcrumb">
           {breadcrumb.map((item, i) => (
-            <span key={i} className="at-breadcrumb__item">
+            <span key={`crumb-${i}`} className="at-breadcrumb__item">
               {i > 0 && <span className="at-breadcrumb__sep">/</span>}
               {item}
             </span>

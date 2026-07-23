@@ -109,7 +109,7 @@ export async function resolveOrCreateUserFromExternalIdentity(
 
     if (context?.currentUserId) {
       const user = await tx.user.findUnique({ where: { id: context.currentUserId } });
-      if (!user || !user.is_active) {
+      if (!user?.is_active) {
         throw new ExternalIdentityLinkError("current_user_invalid");
       }
       await tx.externalIdentity.create({

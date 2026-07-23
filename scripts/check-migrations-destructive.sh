@@ -27,7 +27,7 @@ has_destructive_override() {
 
 scan_file() {
   local file="$1"
-  local line content upper
+  local line content
   local -a hits=()
 
   while IFS= read -r line || [ -n "$line" ]; do
@@ -51,10 +51,8 @@ scan_file() {
   if printf '%s' "$content" | grep -qE 'ALTER[[:space:]]+COLUMN[[:space:]]+[^;]+[[:space:]]+SET[[:space:]]+NOT[[:space:]]+NULL'; then
     hits+=("SET NOT NULL")
   fi
-  if printf '%s' "$content" | grep -qE 'DROP[[:space:]]+(TABLE|COLUMN|INDEX|CONSTRAINT|TYPE|SCHEMA|DATABASE|VIEW|SEQUENCE|FUNCTION|TRIGGER|RULE|DOMAIN)'; then
-    if ! printf '%s' "$content" | grep -qE 'IF[[:space:]]+EXISTS'; then
-      hits+=("DROP without IF EXISTS")
-    fi
+  if printf '%s' "$content" | grep -qE 'DROP[[:space:]]+(TABLE|COLUMN|INDEX|CONSTRAINT|TYPE|SCHEMA|DATABASE|VIEW|SEQUENCE|FUNCTION|TRIGGER|RULE|DOMAIN)' && ! printf '%s' "$content" | grep -qE 'IF[[:space:]]+EXISTS'; then
+    hits+=("DROP without IF EXISTS")
   fi
 
   done < "$file"

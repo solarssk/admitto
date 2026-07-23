@@ -113,6 +113,18 @@ describe("resolveOrCreateUserFromExternalIdentity", () => {
     expect(result.user.id).toBe(USER_LINK);
   });
 
+  it("rejects explicit link when the current user no longer exists", async () => {
+    await expect(
+      resolveOrCreateUserFromExternalIdentity(
+        prisma,
+        provider,
+        "missing-current-user-subject",
+        { email: "linked@example.com" },
+        { currentUserId: "oidc-user-missing-resolve" },
+      ),
+    ).rejects.toMatchObject({ name: "ExternalIdentityLinkError", message: "current_user_invalid" });
+  });
+
   it("rejects explicit link when subject belongs to another user", async () => {
     const subject = "taken-subject";
     await resolveOrCreateUserFromExternalIdentity(prisma, provider, subject, {
