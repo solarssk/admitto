@@ -137,10 +137,9 @@ never runs any of this itself and never runs as root (docker:S6471).
 1. `prisma migrate status` — detect pending migrations (text parse; connection errors abort with a clear log)
 2. **If pending migrations** and backup not disabled: pre-migration `pg_dump` to the `migration_backups` volume (`/backups/pre-migration-<UTC>.sql.gz`, `gzip -t` integrity check, `install -m 600`). If `pg_dump` fails → **no migrate**. Routine restarts with no pending migrations skip the dump.
 3. `prisma migrate deploy` — idempotent schema migrations (automatic; operators never run this by hand; drops to the `node` user for this and every step below)
-4. `backfill-public-ref.js` — idempotent agency `public_ref` backfill (safe to re-run; throws if DB/schema incompatible)
-5. Best-effort retention cleanup (120s timeout each, non-fatal on failure): expired/revoked auth sessions and trusted devices (`purge-auth-retention`), then stale email delivery HTML/subject snapshots (`nullify-delivery-snapshots`)
+4. `backfill-public-ref.js` and other idempotent backfills (safe to re-run; throw if DB/schema incompatible)
 
-**`app`** (always runs as `node`, never root) then execs `node apps/web/dist/src/index.js` directly — no migration logic of its own, and no filesystem access to `/backups` at all (not mounted).
+**`app`** (always runs as `node`, never root) then runs its own startup step — best-effort retention cleanup (120s timeout each, non-fatal on failure): expired/revoked auth sessions and trusted devices (`purge-auth-retention`), then stale email delivery HTML/subject snapshots (`nullify-delivery-snapshots`) — before execing `node apps/web/dist/src/index.js`. Retention lives here rather than in `migrate` because `migrate`'s `depends_on: condition: service_completed_successfully` is only evaluated on `docker compose up`; a bare `app` restart (crash loop, `docker compose restart app`, `restart: unless-stopped`) never re-runs `migrate`, so retention needs to run on every `app` start independently to keep its original on-every-boot cadence. No migration logic here, and no filesystem access to `/backups` at all (not mounted).
 
 **Operator upgrade:** pull the new image and `docker compose up -d` — migrations apply automatically with a restore point when needed. No manual migration step.
 
@@ -158,8 +157,8 @@ Per-container stdout, by design (SECURITY-CONTROLS: logs are operational — no 
 
 | Container | What its logs show |
 |-----------|--------------------|
-| `migrate` | Entrypoint boot steps (migration status, backup, retention) — a one-shot container, exits after logging `migrate: startup tasks complete` |
-| `app` | `Admitto web running at …`, then: JSON access log (one line per request — method, redacted path, status, `duration_ms`) when `LOG_HTTP_REQUESTS=1` (compose default), plus sparse JSON events (import, upload, `/readyz` auth failure, SPA client errors) |
+| `migrate` | Entrypoint boot steps (migration status, backup, backfills) — a one-shot container, exits after logging `migrate: startup tasks complete` |
+| `app` | Retention cleanup lines on every start, then `Admitto web running at …`, then: JSON access log (one line per request — method, redacted path, status, `duration_ms`) when `LOG_HTTP_REQUESTS=1` (compose default), plus sparse JSON events (import, upload, `/readyz` auth failure, SPA client errors) |
 | `proxy` | Nginx access/error log (image default) — includes client IPs; rotate/limit via Docker logging options if kept long-term |
 | `retention` | `[retention] …` prefixed lines per nightly run |
 | `db-backup` | `[db-backup] …` prefixed lines per nightly dump |
