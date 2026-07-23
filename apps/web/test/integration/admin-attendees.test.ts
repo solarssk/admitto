@@ -2611,6 +2611,28 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
     });
   }
 
+  it("rejects malformed JSON before selecting or sending attendees", async () => {
+    const res = await app.request(bulkUrl, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{not json",
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid json" });
+  });
+
+  it("rejects an unsupported bulk resend target", async () => {
+    const res = await app.request(bulkUrl, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ target: "everyone" }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "validation_failed" });
+  });
+
   it("queues tickets for unsent attendees without prior delivery", async () => {
     await prisma.emailDelivery.deleteMany({ where: { event_id: EVENT_A } });
 

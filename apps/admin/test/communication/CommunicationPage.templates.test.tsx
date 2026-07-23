@@ -224,6 +224,28 @@ describe("CommunicationPage templates", () => {
     expect(reportApiError).toHaveBeenCalledWith(403);
   });
 
+  it("redirects to login when the initial template load returns 401", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventTemplates.mockRejectedValueOnce(new ApiError(401, "authentication_required"));
+    const assignSpy = vi.fn();
+    const locationDescriptor = Object.getOwnPropertyDescriptor(window, "location");
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { pathname: "/admin/events/evt-comm/communication", assign: assignSpy },
+    });
+    try {
+      renderPage();
+      await waitFor(() =>
+        expect(assignSpy).toHaveBeenCalledWith(
+          "/login?next=%2Fadmin%2Fevents%2Fevt-comm%2Fcommunication",
+        ),
+      );
+      expect(reportApiError).toHaveBeenCalledWith(401);
+    } finally {
+      if (locationDescriptor) Object.defineProperty(window, "location", locationDescriptor);
+    }
+  });
+
   it("marks only required placeholders and lets the operator focus/click/type into Subject and Body", async () => {
     fetchEventTemplates.mockResolvedValue([]);
     fetchEventTemplate.mockResolvedValueOnce({

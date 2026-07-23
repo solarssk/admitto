@@ -922,6 +922,29 @@ describe("AccountPage toasts", () => {
     });
   });
 
+  it("hides the QR fallback URI when a later render succeeds", async () => {
+    mockLoadedAccount();
+    mockEnrollMfaTotp.mockResolvedValueOnce({
+      otpauthUri: "otpauth://totp/Admitto?secret=QRRECOVER",
+      backupCodes: [],
+      backupCodesAlreadyShown: true,
+    });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Set up" }));
+    await screen.findByRole("button", { name: "Simulate QR fail" });
+    fireEvent.click(screen.getByRole("button", { name: "Simulate QR fail" }));
+    expect(await screen.findByText("otpauth://totp/Admitto?secret=QRRECOVER")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Simulate QR ok" }));
+    await waitFor(() => {
+      expect(screen.queryByText("otpauth://totp/Admitto?secret=QRRECOVER")).toBeNull();
+    });
+  });
+
   it("keeps the otpauth URI visible after copy when QR rendering failed", async () => {
     const originalClipboard = navigator.clipboard;
     const writeText = vi.fn().mockResolvedValue(undefined);
