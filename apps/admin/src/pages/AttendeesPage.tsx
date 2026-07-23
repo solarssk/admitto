@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { Button, EmptyState, PageHeader, useToast, type ToastVariant } from "@admitto/ui";
 import {
@@ -208,6 +217,38 @@ function notifyBulkRevokePassResult(
   addToast(`No passes revoked${noteSuffix}.`, "error");
 }
 
+/** Shared three-way "none found / already set / N changed" toast for a bulk field-assignment
+ * result — change ticket type and change attendance status independently duplicated this exact
+ * branching (bot review). `labels` lets each caller keep its own copy (e.g. quoted vs unquoted,
+ * with or without a leading phrase like "attendance status") while sharing the decision logic. */
+function notifyBulkAssignResult(
+  result: { updatedCount: number; alreadySetCount: number },
+  labels: { alreadyHave: string; setTo: string },
+  addToast: (message: string, variant?: ToastVariant) => void,
+) {
+  const { updatedCount, alreadySetCount } = result;
+
+  if (updatedCount === 0 && alreadySetCount === 0) {
+    // None of the selected ids resolved to an attendee in this event — most likely they were
+    // deleted by someone else between opening the picker and clicking Apply (code review: this
+    // used to fall into the "already had it" branch below, which is wrong — nothing was found
+    // at all, let alone already set to the type).
+    addToast("None of the selected attendees could be found — they may have been removed.", "error");
+    return;
+  }
+
+  if (updatedCount === 0) {
+    addToast(`All selected attendees already have ${labels.alreadyHave}.`, "info");
+    return;
+  }
+
+  const alreadyNote = alreadySetCount > 0 ? ` (${alreadySetCount} already had it)` : "";
+  addToast(
+    `${updatedCount} attendee${updatedCount === 1 ? "" : "s"} set to ${labels.setTo}${alreadyNote}`,
+    "success",
+  );
+}
+
 /** The error-surfacing half of {@link RunBulkActionParams} — split out so
  * {@link reportBulkActionError} can take just these, independent of the action's result type T. */
 interface BulkActionErrorReporters {
@@ -382,35 +423,55 @@ function SendTicketsDialog({
   );
 }
 
-interface ChangeTicketTypeDialogProps {
+/** Derived from RSVP_LABELS' own keys (a Record<RsvpStatus, string>) instead of a hand-typed
+ * literal, so a future change to the RsvpStatus union can't silently drift out of sync here -
+ * RSVP_LABELS itself fails to compile until every union member is accounted for. */
+const RSVP_STATUS_OPTIONS = Object.keys(RSVP_LABELS) as RsvpStatus[];
+
+interface CardPickerDialogProps<T> {
   open: boolean;
   busy: boolean;
   selectedCount: number;
-  ticketTypes: TicketTypeDto[];
+  title: string;
+  /** Used in the "Set the {fieldLabel} for N selected attendees." hint line. */
+  fieldLabel: string;
+  error: string | null;
+  options: T[];
+  getKey: (option: T) => string;
+  getAriaLabel: (option: T) => string;
+  renderBadge: (option: T) => ReactNode;
   value: string;
-  error: string | null;
   onValueChange: (key: string) => void;
+  radioGroupName: string;
+  /** Apply also stays disabled with no value picked — only relevant for a dynamic, possibly-
+   * empty catalog (ticket types); a fixed enum (RSVP status) always has one. */
+  requireValue?: boolean;
   onConfirm: () => void;
   onClose: () => void;
 }
 
-/** Pick one of the event's configured ticket types for every selected attendee (#521). The
- * catalog is per-event (batch 04), so this is a dynamic list rather than the mockup's
- * hardcoded VIP/Standard buttons — each option is a card carrying the type's colored badge
- * (the operator picks by the same chip the table shows) with a check on the selected one
- * (PO review). Errors render inline — the dialog has focus, so a toast behind it would go
- * unseen (AGENTS.md toast-vs-inline table). */
-function ChangeTicketTypeDialog({
+/** Pick one card from a badge-styled list for every selected attendee (real radios underneath
+ * for keyboard/AT semantics) — shared by bulk Change ticket type (#521) and Change attendance
+ * status, which independently duplicated this exact dialog (bot review). Errors render inline —
+ * the dialog has focus, so a toast behind it would go unseen (AGENTS.md toast-vs-inline table). */
+function CardPickerDialog<T>({
   open,
   busy,
   selectedCount,
-  ticketTypes,
-  value,
+  title,
+  fieldLabel,
   error,
+  options,
+  getKey,
+  getAriaLabel,
+  renderBadge,
+  value,
   onValueChange,
+  radioGroupName,
+  requireValue,
   onConfirm,
   onClose,
-}: Readonly<ChangeTicketTypeDialogProps>) {
+}: Readonly<CardPickerDialogProps<T>>) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(panelRef, open, onClose);
@@ -422,7 +483,7 @@ function ChangeTicketTypeDialog({
       <div className="add-attendee-modal__backdrop" role="presentation" onClick={onClose} />
       <div className="add-attendee-modal__panel" ref={panelRef}>
         <h2 className="add-attendee-modal__title" id={titleId}>
-          Change ticket type
+          {title}
         </h2>
         {error && (
           <p className="add-attendee-modal__error" role="alert">
@@ -430,122 +491,45 @@ function ChangeTicketTypeDialog({
           </p>
         )}
         <p className="mail-field-hint">
-          Set the ticket type for {selectedCount} selected attendee{selectedCount === 1 ? "" : "s"}.
+          Set the {fieldLabel} for {selectedCount} selected attendee{selectedCount === 1 ? "" : "s"}.
         </p>
         <div className="change-type-options">
-          {ticketTypes.map((type) => (
-            <label
-              key={type.id}
-              className={`change-type-option${value === type.key ? " change-type-option--selected" : ""}`}
-            >
-              {/* Real radio for keyboard/AT semantics — visually the card is the control. */}
-              <input
-                type="radio"
-                name="bulk-ticket-type"
-                className="sr-only"
-                value={type.key}
-                checked={value === type.key}
-                disabled={busy}
-                onChange={() => onValueChange(type.key)}
-                aria-label={type.label}
-              />
-              <TicketTypeBadge ticketType={type.key} catalog={ticketTypes} />
-              {value === type.key && (
-                <i className="ti ti-check change-type-option__check" aria-hidden="true" />
-              )}
-            </label>
-          ))}
+          {options.map((option) => {
+            const key = getKey(option);
+            return (
+              <label
+                key={key}
+                className={`change-type-option${value === key ? " change-type-option--selected" : ""}`}
+              >
+                {/* Real radio for keyboard/AT semantics — visually the card is the control. */}
+                <input
+                  type="radio"
+                  name={radioGroupName}
+                  className="sr-only"
+                  value={key}
+                  checked={value === key}
+                  disabled={busy}
+                  onChange={() => onValueChange(key)}
+                  aria-label={getAriaLabel(option)}
+                />
+                {renderBadge(option)}
+                {value === key && (
+                  <i className="ti ti-check change-type-option__check" aria-hidden="true" />
+                )}
+              </label>
+            );
+          })}
         </div>
         <div className="change-type-actions">
           <Button type="button" variant="secondary" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
-          <Button type="button" variant="primary" disabled={busy || !value} onClick={onConfirm}>
-            {busy ? "Applying…" : "Apply"}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const RSVP_STATUS_OPTIONS: RsvpStatus[] = ["confirmed", "tentative", "declined", "cancelled", "none"];
-
-interface ChangeRsvpStatusDialogProps {
-  open: boolean;
-  busy: boolean;
-  selectedCount: number;
-  value: RsvpStatus;
-  error: string | null;
-  onValueChange: (status: RsvpStatus) => void;
-  onConfirm: () => void;
-  onClose: () => void;
-}
-
-/** Pick one of the fixed 5 attendance (RSVP) statuses for every selected attendee — same
- * card-picker interaction as ChangeTicketTypeDialog right above, over a fixed enum instead of a
- * per-event catalog (no "0 configured" empty state is possible here, so unlike that dialog this
- * one always has a value to pick). */
-function ChangeRsvpStatusDialog({
-  open,
-  busy,
-  selectedCount,
-  value,
-  error,
-  onValueChange,
-  onConfirm,
-  onClose,
-}: Readonly<ChangeRsvpStatusDialogProps>) {
-  const titleId = useId();
-  const panelRef = useRef<HTMLDivElement>(null);
-  useModalFocusTrap(panelRef, open, onClose);
-
-  if (!open) return null;
-
-  return (
-    <div className="add-attendee-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
-      <div className="add-attendee-modal__backdrop" role="presentation" onClick={onClose} />
-      <div className="add-attendee-modal__panel" ref={panelRef}>
-        <h2 className="add-attendee-modal__title" id={titleId}>
-          Change attendance status
-        </h2>
-        {error && (
-          <p className="add-attendee-modal__error" role="alert">
-            {error}
-          </p>
-        )}
-        <p className="mail-field-hint">
-          Set the attendance status for {selectedCount} selected attendee{selectedCount === 1 ? "" : "s"}.
-        </p>
-        <div className="change-type-options">
-          {RSVP_STATUS_OPTIONS.map((status) => (
-            <label
-              key={status}
-              className={`change-type-option${value === status ? " change-type-option--selected" : ""}`}
-            >
-              {/* Real radio for keyboard/AT semantics — visually the card is the control. */}
-              <input
-                type="radio"
-                name="bulk-rsvp-status"
-                className="sr-only"
-                value={status}
-                checked={value === status}
-                disabled={busy}
-                onChange={() => onValueChange(status)}
-                aria-label={RSVP_LABELS[status]}
-              />
-              <RsvpStatusBadge status={status} />
-              {value === status && (
-                <i className="ti ti-check change-type-option__check" aria-hidden="true" />
-              )}
-            </label>
-          ))}
-        </div>
-        <div className="change-type-actions">
-          <Button type="button" variant="secondary" disabled={busy} onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="button" variant="primary" disabled={busy} onClick={onConfirm}>
+          <Button
+            type="button"
+            variant="primary"
+            disabled={busy || (requireValue ? !value : false)}
+            onClick={onConfirm}
+          >
             {busy ? "Applying…" : "Apply"}
           </Button>
         </div>
@@ -1104,22 +1088,8 @@ export function AttendeesPage() {
           ? "That ticket type no longer exists — it may have just been deleted. Close and try again."
           : operatorApiErrorMessage(err, "Change failed."),
       action: (id) => bulkChangeTicketType(id, [...selectedIds], changeTypeValue),
-      onSuccess: ({ updatedCount, alreadySetCount }) => {
-        if (updatedCount === 0 && alreadySetCount === 0) {
-          // None of the selected ids resolved to an attendee in this event — most likely they
-          // were deleted by someone else between opening the picker and clicking Apply (code
-          // review: this used to fall into the "already had it" branch below, which is wrong —
-          // nothing was found at all, let alone already set to the type).
-          addToast("None of the selected attendees could be found — they may have been removed.", "error");
-        } else if (updatedCount === 0) {
-          addToast(`All selected attendees already have ${typeLabel}.`, "info");
-        } else {
-          const alreadyNote = alreadySetCount > 0 ? ` (${alreadySetCount} already had it)` : "";
-          addToast(
-            `${updatedCount} attendee${updatedCount === 1 ? "" : "s"} set to ${typeLabel}${alreadyNote}`,
-            "success",
-          );
-        }
+      onSuccess: (result) => {
+        notifyBulkAssignResult(result, { alreadyHave: typeLabel, setTo: typeLabel }, addToast);
         setChangeTypeOpen(false);
         clearSelection();
         setReloadToken((n) => n + 1);
@@ -1144,19 +1114,13 @@ export function AttendeesPage() {
       apiErrorFallback: "Change failed.",
       genericFallback: "Failed to change attendance status.",
       action: (id) => bulkChangeRsvpStatus(id, [...selectedIds], changeRsvpValue),
-      onSuccess: ({ updatedCount, alreadySetCount }) => {
+      onSuccess: (result) => {
         const label = RSVP_LABELS[changeRsvpValue];
-        if (updatedCount === 0 && alreadySetCount === 0) {
-          addToast("None of the selected attendees could be found — they may have been removed.", "error");
-        } else if (updatedCount === 0) {
-          addToast(`All selected attendees already have attendance status "${label}".`, "info");
-        } else {
-          const alreadyNote = alreadySetCount > 0 ? ` (${alreadySetCount} already had it)` : "";
-          addToast(
-            `${updatedCount} attendee${updatedCount === 1 ? "" : "s"} set to "${label}"${alreadyNote}`,
-            "success",
-          );
-        }
+        notifyBulkAssignResult(
+          result,
+          { alreadyHave: `attendance status "${label}"`, setTo: `"${label}"` },
+          addToast,
+        );
         setChangeRsvpOpen(false);
         clearSelection();
         setReloadToken((n) => n + 1);
@@ -1460,27 +1424,41 @@ export function AttendeesPage() {
         onCreated={handleCreated}
       />
 
-      <ChangeTicketTypeDialog
+      <CardPickerDialog
         open={changeTypeOpen}
         busy={changeTypeBusy}
         selectedCount={selectedIds.size}
-        ticketTypes={ticketTypes}
-        value={changeTypeValue}
+        title="Change ticket type"
+        fieldLabel="ticket type"
         error={changeTypeError}
+        options={ticketTypes}
+        getKey={(t) => t.key}
+        getAriaLabel={(t) => t.label}
+        renderBadge={(t) => <TicketTypeBadge ticketType={t.key} catalog={ticketTypes} />}
+        value={changeTypeValue}
         onValueChange={setChangeTypeValue}
+        radioGroupName="bulk-ticket-type"
+        requireValue
         onConfirm={() => void handleBulkChangeTicketTypeConfirm()}
         onClose={() => {
           if (!changeTypeBusy) setChangeTypeOpen(false);
         }}
       />
 
-      <ChangeRsvpStatusDialog
+      <CardPickerDialog
         open={changeRsvpOpen}
         busy={changeRsvpBusy}
         selectedCount={selectedIds.size}
-        value={changeRsvpValue}
+        title="Change attendance status"
+        fieldLabel="attendance status"
         error={changeRsvpError}
-        onValueChange={setChangeRsvpValue}
+        options={RSVP_STATUS_OPTIONS}
+        getKey={(s) => s}
+        getAriaLabel={(s) => RSVP_LABELS[s]}
+        renderBadge={(s) => <RsvpStatusBadge status={s} />}
+        value={changeRsvpValue}
+        onValueChange={(key) => setChangeRsvpValue(key as RsvpStatus)}
+        radioGroupName="bulk-rsvp-status"
         onConfirm={() => void handleBulkChangeRsvpConfirm()}
         onClose={() => {
           if (!changeRsvpBusy) setChangeRsvpOpen(false);

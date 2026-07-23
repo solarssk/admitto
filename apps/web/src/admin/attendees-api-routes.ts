@@ -1683,14 +1683,21 @@ export async function handleBulkRsvpEventAttendees(
         where: { id: { in: attendeeIds }, event_id: eventId },
         select: { id: true, rsvp_status: true },
       });
-      const changed = owned.filter((a) => a.rsvp_status !== rsvp_status);
-      if (changed.length === 0) {
+      // Reuses computeRsvpChange - the same "is this actually a change, what does the write
+      // payload/log entry look like" logic the single-attendee PATCH path uses - so the two
+      // paths can't silently diverge (e.g. if rsvp_source is later derived per-actor there).
+      const changes: Array<{ id: string; change: NonNullable<ReturnType<typeof computeRsvpChange>> }> = [];
+      for (const a of owned) {
+        const change = computeRsvpChange(a.rsvp_status, rsvp_status);
+        if (change) changes.push({ id: a.id, change });
+      }
+      if (changes.length === 0) {
         return { updatedCount: 0, alreadySetCount: owned.length };
       }
 
       await tx.attendee.updateMany({
-        where: { id: { in: changed.map((a) => a.id) } },
-        data: { rsvp_status, rsvp_updated_at: new Date(), rsvp_source: "admin" },
+        where: { id: { in: changes.map((x) => x.id) } },
+        data: changes[0]!.change.data,
       });
 
       // Same action_type + metadata shape as the single-attendee PATCH's RSVP-change log, so
@@ -1699,13 +1706,13 @@ export async function handleBulkRsvpEventAttendees(
         event_id: eventId,
         action_type: "rsvp_status_changed",
         audit: adminAuditFromContext(c),
-        entries: changed.map((a) => ({
-          attendee_id: a.id,
-          metadata: { from: a.rsvp_status, to: rsvp_status, source: "admin" },
+        entries: changes.map((x) => ({
+          attendee_id: x.id,
+          metadata: { from: x.change.from, to: x.change.to, source: "admin" },
         })),
       });
 
-      return { updatedCount: changed.length, alreadySetCount: owned.length - changed.length };
+      return { updatedCount: changes.length, alreadySetCount: owned.length - changes.length };
     });
 
     return c.json(counts);

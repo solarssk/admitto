@@ -802,10 +802,9 @@ export async function bulkChangeTicketType(
   return parseJson<BulkTicketTypeResponse>(res);
 }
 
-export interface BulkRsvpResponse {
-  updatedCount: number;
-  alreadySetCount: number;
-}
+/** Same shape as BulkTicketTypeResponse - one type for both structurally identical bulk
+ * "assign a value to every selected attendee" endpoints. */
+export type BulkRsvpResponse = BulkTicketTypeResponse;
 
 /** Set the attendance (RSVP) status for every selected attendee at once. Ids outside the event
  * are silently ignored server-side; rows already at the target status are counted separately. */
