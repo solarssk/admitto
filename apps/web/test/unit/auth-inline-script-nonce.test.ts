@@ -71,4 +71,14 @@ describe("auth page inline script nonces (#253)", () => {
       renderMfaEnrollBackupCodesPage({ scriptNonce: NONCE, backupCodes: ["AAAA-BBBB"] }),
     );
   });
+
+  it("preserves the next target in both backup-code forms", () => {
+    const html = renderMfaEnrollBackupCodesPage({
+      scriptNonce: NONCE,
+      backupCodes: ["AAAA-BBBB"],
+      next: "/admin/events/evt-1/overview",
+    });
+
+    expect(html.split('name="next" value="/admin/events/evt-1/overview"').length - 1).toBe(2);
+  });
 });

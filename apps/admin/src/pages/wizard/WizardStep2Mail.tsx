@@ -377,6 +377,12 @@ function MailTestControl({
   testSent: boolean;
   onSend: () => void;
 }>) {
+  const pendingTestIcon = testSending ? (
+    <i className="ti ti-loader-2 setup-wizard__spin" aria-hidden="true" />
+  ) : (
+    <i className="ti ti-send" aria-hidden="true" />
+  );
+  const pendingTestLabel = testSending ? "Sending…" : "Send test email";
   return (
     <div className="setup-wizard__mail-test-cluster">
       <Button
@@ -389,14 +395,12 @@ function MailTestControl({
         icon={
           testSent ? (
             <i className="ti ti-circle-check setup-wizard__mail-test-icon--ok" aria-hidden="true" />
-          ) : testSending ? (
-            <i className="ti ti-loader-2 setup-wizard__spin" aria-hidden="true" />
           ) : (
-            <i className="ti ti-send" aria-hidden="true" />
+            pendingTestIcon
           )
         }
       >
-        {testSent ? "Test sent" : testSending ? "Sending…" : "Send test email"}
+        {testSent ? "Test sent" : pendingTestLabel}
       </Button>
       <span className="setup-wizard__mail-test-hint">
         {testSent ? "Check your inbox." : "Optional — to your login email."}

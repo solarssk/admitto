@@ -478,6 +478,32 @@ export function EventSettingsPage() {
   if (!isSa) deleteEventTooltip = "Superadmin only";
   else if (!event.is_deletable) deleteEventTooltip = "This event has data and cannot be deleted";
 
+  const archiveToggleButton = isArchived ? (
+    <Button
+      variant="secondary"
+      disabled={archiving}
+      icon={<i className="ti ti-archive-off" aria-hidden="true" />}
+      onClick={() => {
+        setArchiveMode("unarchive");
+        setArchiveOpen(true);
+      }}
+    >
+      Unarchive event
+    </Button>
+  ) : (
+    <Button
+      variant="danger"
+      disabled={archiving}
+      icon={<i className="ti ti-archive" aria-hidden="true" />}
+      onClick={() => {
+        setArchiveMode("archive");
+        setArchiveOpen(true);
+      }}
+    >
+      Archive event
+    </Button>
+  );
+
   return (
     <div className={`event-settings-page screen${isArchived ? " event-settings--archived" : ""}`}>
       <PageHeader
@@ -817,31 +843,7 @@ export function EventSettingsPage() {
               </p>
             </div>
             {isSa ? (
-              isArchived ? (
-                <Button
-                  variant="secondary"
-                  disabled={archiving}
-                  icon={<i className="ti ti-archive-off" aria-hidden="true" />}
-                  onClick={() => {
-                    setArchiveMode("unarchive");
-                    setArchiveOpen(true);
-                  }}
-                >
-                  Unarchive event
-                </Button>
-              ) : (
-                <Button
-                  variant="danger"
-                  disabled={archiving}
-                  icon={<i className="ti ti-archive" aria-hidden="true" />}
-                  onClick={() => {
-                    setArchiveMode("archive");
-                    setArchiveOpen(true);
-                  }}
-                >
-                  Archive event
-                </Button>
-              )
+              archiveToggleButton
             ) : (
               <ArchivedGuard event={null} reasonId="archive-event-reason" disabled tooltip="Superadmin only">
                 {(guard) => (

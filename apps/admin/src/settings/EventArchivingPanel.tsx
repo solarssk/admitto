@@ -128,6 +128,10 @@ export function EventArchivingPanel() {
     );
   };
 
+  const restoreMessage = confirmAction
+    ? `Restore "${confirmAction.event.title}" to active events? Edits will be allowed again.`
+    : "";
+
   return (
     <>
       <Card title="Event archiving">
@@ -168,9 +172,7 @@ export function EventArchivingPanel() {
         message={
           confirmAction?.type === "archive"
             ? "This event will be hidden and read-only. Data is preserved. A superadmin can unarchive later."
-            : confirmAction
-              ? `Restore "${confirmAction.event.title}" to active events? Edits will be allowed again.`
-              : ""
+            : restoreMessage
         }
         confirmLabel={confirmAction?.type === "archive" ? "Archive" : "Unarchive"}
         confirmVariant={confirmAction?.type === "archive" ? "danger" : "primary"}

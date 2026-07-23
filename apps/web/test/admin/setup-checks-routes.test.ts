@@ -1,5 +1,18 @@
-import { describe, expect, it } from "vitest";
-import { setupChecksAllOk, type SetupChecksPayload } from "../../src/admin/setup-checks-routes.js";
+import { describe, expect, it, vi } from "vitest";
+
+const { checkMigrationsStatus, checkRedis } = vi.hoisted(() => ({
+  checkMigrationsStatus: vi.fn(),
+  checkRedis: vi.fn(),
+}));
+
+vi.mock("../../src/ops/migrations-check.js", () => ({ checkMigrationsStatus }));
+vi.mock("../../src/ops/readyz.js", () => ({ checkRedis }));
+
+import {
+  collectSetupChecks,
+  setupChecksAllOk,
+  type SetupChecksPayload,
+} from "../../src/admin/setup-checks-routes.js";
 
 const okChecks: SetupChecksPayload["checks"] = {
   database: { ok: true, detail: "PostgreSQL connected · migrations current" },
@@ -33,5 +46,21 @@ describe("setupChecksAllOk", () => {
         database: { ok: false, detail: "PostgreSQL connected · migrations pending" },
       }),
     ).toBe(false);
+  });
+});
+
+describe("collectSetupChecks Redis status", () => {
+  it("reports both in-memory and healthy Redis stores as available", async () => {
+    checkMigrationsStatus.mockResolvedValue("ok");
+    checkRedis
+      .mockResolvedValueOnce({ status: "disabled", latency_ms: null })
+      .mockResolvedValueOnce({ status: "ok", latency_ms: null });
+    const db = { $queryRaw: vi.fn().mockResolvedValue([{ "?column?": 1 }]) };
+
+    const disabled = await collectSetupChecks(db as never, {} as never, "https://admitto.example.com");
+    const healthy = await collectSetupChecks(db as never, {} as never, "https://admitto.example.com");
+
+    expect(disabled.redis).toEqual({ ok: true, detail: "In-memory rate limit store (no Redis)" });
+    expect(healthy.redis).toEqual({ ok: true, detail: "Redis OK (0 ms)" });
   });
 });

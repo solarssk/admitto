@@ -617,22 +617,25 @@ export function ImportPage() {
                           needs to match
                         </td>
                       </tr>
-                      {attributeFields.map((field) => (
-                        <tr key={field.source_field}>
-                          <td>
-                            <code>{field.source_field}</code>
-                          </td>
-                          <td>{field.required ? "Yes" : "No"}</td>
-                          <td>
-                            {field.description || "No description provided"}
-                            {field.type === "select" && field.options?.length
-                              ? ` — select: ${field.options.join(", ")}`
-                              : field.type === "boolean"
-                                ? " — Yes/No or true/false"
-                                : ""}
-                          </td>
-                        </tr>
-                      ))}
+                      {attributeFields.map((field) => {
+                        const booleanHint = field.type === "boolean" ? " — Yes/No or true/false" : "";
+                        const typeHint =
+                          field.type === "select" && field.options?.length
+                            ? ` — select: ${field.options.join(", ")}`
+                            : booleanHint;
+                        return (
+                          <tr key={field.source_field}>
+                            <td>
+                              <code>{field.source_field}</code>
+                            </td>
+                            <td>{field.required ? "Yes" : "No"}</td>
+                            <td>
+                              {field.description || "No description provided"}
+                              {typeHint}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </details>

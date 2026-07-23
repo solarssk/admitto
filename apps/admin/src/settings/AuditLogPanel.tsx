@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button, Card } from "@admitto/ui";
 import { fetchAuditLog } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -135,6 +135,78 @@ export function AuditLogPanel() {
     [filters.actionType, filters.start, filters.end],
   );
 
+  let emptyMessage: string;
+  if (total > 0) {
+    emptyMessage = "No entries on this page.";
+  } else if (hasActiveFilters) {
+    emptyMessage = "No audit log entries match the filters.";
+  } else {
+    emptyMessage = "No audit log entries found.";
+  }
+
+  let listContent: ReactNode;
+  if (loading) {
+    listContent = (
+      <div className="audit-log-skeleton" aria-busy="true" aria-label="Loading audit log">
+        {Array.from({ length: 5 }, (_, i) => (
+          <div key={i} className="audit-log-skeleton__row" />
+        ))}
+      </div>
+    );
+  } else if (error) {
+    listContent = (
+      <p className="audit-log-error">
+        {error}{" "}
+        <button type="button" className="settings-retry-link" onClick={() => void load()}>
+          Retry
+        </button>
+      </p>
+    );
+  } else if (entries.length === 0) {
+    listContent = <p className="audit-log-empty">{emptyMessage}</p>;
+  } else {
+    listContent = (
+      <div className="sessions-table-wrap">
+        <table className="table audit-log-table">
+          <thead>
+            <tr>
+              <th scope="col">Time (UTC)</th>
+              <th scope="col">Action</th>
+              <th scope="col">Actor</th>
+              <th scope="col">IP</th>
+              <th scope="col">Details</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((entry) => (
+              <tr key={entry.id}>
+                <td>{formatTimestamp(entry.created_at)}</td>
+                <td>{actionLabel(entry.action_type)}</td>
+                <td title={actorTitle(entry)}>
+                  {actorDisplay(entry)}
+                  {entry.actor_display_name && entry.actor_email && (
+                    <div className="sessions-subdued">{entry.actor_email}</div>
+                  )}
+                </td>
+                <td>{entry.ip ?? "—"}</td>
+                <td>
+                  {hasMetadata(entry.metadata) ? (
+                    <details className="audit-log-details">
+                      <summary className="audit-log-details__summary">View</summary>
+                      <pre className="audit-log-metadata">{metadataPreview(entry.metadata!)}</pre>
+                    </details>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
   return (
     <Card title="Audit log">
       <div className="audit-log-toolbar">
@@ -187,67 +259,7 @@ export function AuditLogPanel() {
         )}
       </div>
 
-      {loading ? (
-        <div className="audit-log-skeleton" aria-busy="true" aria-label="Loading audit log">
-          {Array.from({ length: 5 }, (_, i) => (
-            <div key={i} className="audit-log-skeleton__row" />
-          ))}
-        </div>
-      ) : error ? (
-        <p className="audit-log-error">
-          {error}{" "}
-          <button type="button" className="settings-retry-link" onClick={() => void load()}>
-            Retry
-          </button>
-        </p>
-      ) : entries.length === 0 ? (
-        <p className="audit-log-empty">
-          {total > 0
-            ? "No entries on this page."
-            : hasActiveFilters
-              ? "No audit log entries match the filters."
-              : "No audit log entries found."}
-        </p>
-      ) : (
-        <div className="sessions-table-wrap">
-          <table className="table audit-log-table">
-            <thead>
-              <tr>
-                <th scope="col">Time (UTC)</th>
-                <th scope="col">Action</th>
-                <th scope="col">Actor</th>
-                <th scope="col">IP</th>
-                <th scope="col">Details</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((entry) => (
-                <tr key={entry.id}>
-                  <td>{formatTimestamp(entry.created_at)}</td>
-                  <td>{actionLabel(entry.action_type)}</td>
-                  <td title={actorTitle(entry)}>
-                    {actorDisplay(entry)}
-                    {entry.actor_display_name && entry.actor_email && (
-                      <div className="sessions-subdued">{entry.actor_email}</div>
-                    )}
-                  </td>
-                  <td>{entry.ip ?? "—"}</td>
-                  <td>
-                    {hasMetadata(entry.metadata) ? (
-                      <details className="audit-log-details">
-                        <summary className="audit-log-details__summary">View</summary>
-                        <pre className="audit-log-metadata">{metadataPreview(entry.metadata!)}</pre>
-                      </details>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {listContent}
 
       {!loading && !error && total > 0 && (
         <div className="audit-log-footer">

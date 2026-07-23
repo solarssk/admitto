@@ -256,6 +256,39 @@ describe("ImportPage upload → preview → commit flow", () => {
     expect(screen.getByText("No description provided")).toBeTruthy();
   });
 
+  it("shows required, select, and boolean custom-field import hints", async () => {
+    fetchEventCustomFields.mockResolvedValue([
+      {
+        id: "select-1",
+        source_field: "meal",
+        label: "Meal",
+        description: "Meal preference",
+        type: "select",
+        required: true,
+        options: ["Vegetarian", "Standard"],
+        created_at: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "boolean-1",
+        source_field: "newsletter",
+        label: "Newsletter",
+        description: "Newsletter consent",
+        type: "boolean",
+        required: false,
+        options: null,
+        created_at: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    const mealRow = screen.getByText("meal").closest("tr");
+    const newsletterRow = screen.getByText("newsletter").closest("tr");
+    expect(mealRow?.textContent).toContain("Yes");
+    expect(mealRow?.textContent).toContain("Meal preference — select: Vegetarian, Standard");
+    expect(newsletterRow?.textContent).toContain("Newsletter consent — Yes/No or true/false");
+  });
+
   it("lists parse warnings on the validation summary", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(

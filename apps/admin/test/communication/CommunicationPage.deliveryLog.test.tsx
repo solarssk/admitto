@@ -10,9 +10,15 @@ const fetchEventOverview = vi.fn();
 const fetchEventTemplate = vi.fn();
 const fetchEventTemplates = vi.fn();
 const fetchEventDeliveries = vi.fn();
+const { connectionState, outletContext } = vi.hoisted(() => ({
+  connectionState: { reportApiError: vi.fn() },
+  outletContext: {
+    event: { id: "evt-1", title: "Demo", archived_at: null },
+  },
+}));
 
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ reportApiError: vi.fn() }),
+  useConnectionState: () => connectionState,
 }));
 
 vi.mock("../../src/api/client.js", () => ({
@@ -46,9 +52,7 @@ vi.mock("react-router-dom", async (importOriginal) => {
   return {
     ...actual,
     useBlocker: () => ({ state: "unblocked", proceed: vi.fn(), reset: vi.fn() }),
-    useOutletContext: () => ({
-      event: { id: "evt-1", title: "Demo", archived_at: null },
-    }),
+    useOutletContext: () => outletContext,
   };
 });
 
@@ -134,5 +138,65 @@ describe("CommunicationPage delivery log", () => {
     expect(table.getByText("Failed")).toBeTruthy();
     expect(table.getByText(formatUtcDateTime(failedRow.failed_at))).toBeTruthy();
     expect(table.getByText("smtp_connect")).toBeTruthy();
+  });
+
+  it("keeps a loading state visible until delivery data resolves", async () => {
+    fetchEventTemplate.mockResolvedValue(templatePayload);
+    fetchEventOverview.mockResolvedValue({
+      email_bounced: 0,
+      email_failed: 0,
+      email_sent: 0,
+      email_queued: 0,
+    });
+    let resolveDeliveries: (value: { items: []; total: number }) => void = () => {};
+    fetchEventDeliveries.mockReturnValue(
+      new Promise((resolve) => {
+        resolveDeliveries = resolve;
+      }),
+    );
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("tab", { name: /Delivery log/i }));
+
+    expect(await screen.findByText("Loading deliveries…")).toBeTruthy();
+
+    resolveDeliveries({ items: [], total: 0 });
+    expect(await screen.findByText("No messages sent yet.")).toBeTruthy();
+  });
+
+  it("shows the delivery-log error state when loading fails", async () => {
+    fetchEventTemplate.mockResolvedValue(templatePayload);
+    fetchEventOverview.mockResolvedValue({
+      email_bounced: 0,
+      email_failed: 0,
+      email_sent: 0,
+      email_queued: 0,
+    });
+    fetchEventDeliveries.mockRejectedValueOnce(new Error("delivery API unavailable"));
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("tab", { name: /Delivery log/i }));
+
+    expect(await screen.findByText("Failed to load deliveries.")).toBeTruthy();
+  });
+
+  it("renders explicit fallbacks for delivery rows without recipient or subject", async () => {
+    fetchEventTemplate.mockResolvedValue(templatePayload);
+    fetchEventOverview.mockResolvedValue({
+      email_bounced: 0,
+      email_failed: 0,
+      email_sent: 1,
+      email_queued: 0,
+    });
+    fetchEventDeliveries.mockResolvedValue({
+      items: [{ ...acceptedRow, recipient_email: null, rendered_subject: null }],
+      total: 1,
+    });
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("tab", { name: /Delivery log/i }));
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getAllByText("—")).toHaveLength(3);
   });
 });

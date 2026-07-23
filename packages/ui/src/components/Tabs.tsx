@@ -24,12 +24,8 @@ export function Tabs({ tabs = [], value, defaultValue, onChange }: TabsProps) {
     }
   }, [tabs, value, internal]);
 
-  const active =
-    value !== undefined
-      ? value
-      : tabs.some((tab) => tab.id === internal)
-        ? internal
-        : (tabs[0]?.id ?? internal);
+  const fallbackActive = tabs.some((tab) => tab.id === internal) ? internal : (tabs[0]?.id ?? internal);
+  const active = value !== undefined ? value : fallbackActive;
 
   const select = useCallback(
     (id: string) => {

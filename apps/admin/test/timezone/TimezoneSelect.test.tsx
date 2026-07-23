@@ -15,6 +15,11 @@ describe("TimezoneSelect", () => {
     expect(screen.getByRole("button").textContent).toContain("UTC");
   });
 
+  it("renders the placeholder when no timezone is selected", () => {
+    render(<TimezoneSelect value="" onChange={() => {}} />);
+    expect(screen.getByText("Select timezone…")).toBeTruthy();
+  });
+
   it("opens a searchable listbox", () => {
     render(<TimezoneSelect value="UTC" onChange={() => {}} />);
     openPicker();

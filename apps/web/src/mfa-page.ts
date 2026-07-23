@@ -161,7 +161,7 @@ export function renderMfaEnrollBackupCodesPage(options: MfaEnrollBackupCodesPage
   const downloadForm =
     backupCodes.length > 0
       ? `<form method="post" action="/mfa/enroll/download-codes" style="margin-top:0.75rem">
-      ${next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : ""}
+      ${nextField}
       ${backupCodes.map((c) => `<input type="hidden" name="code" value="${escapeHtml(c)}">`).join("")}
       <button type="submit" class="auth-btn-secondary">Download backup codes</button>
     </form>`

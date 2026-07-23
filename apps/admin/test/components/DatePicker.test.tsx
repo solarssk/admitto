@@ -20,6 +20,19 @@ describe("DatePicker", () => {
     expect(screen.getByDisplayValue("2 Jul 2026")).toBeTruthy();
   });
 
+  it("shows an optional hint when there is no validation error", () => {
+    render(
+      <DatePicker
+        value=""
+        onChange={() => {}}
+        label="Date"
+        hint="Use the event's local date."
+      />,
+    );
+
+    expect(screen.getByText("Use the event's local date.")).toBeTruthy();
+  });
+
   it("opens a calendar panel and selects a day", () => {
     const onChange = vi.fn();
     vi.spyOn(eventDates, "todayIsoDate").mockReturnValue("2026-07-02");

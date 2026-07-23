@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useOutletContext, useParams } from "react-router-dom";
 import { Button, Card, EmptyState, IconButton, PageHeader, Switch, useToast } from "@admitto/ui";
 import {
@@ -228,6 +228,188 @@ export function RequirementsPage() {
 
   if (!eventId) return <p>Missing event.</p>;
 
+  let itemsTableBody: ReactNode;
+  if (loading) {
+    itemsTableBody = (
+      <tr>
+        <td colSpan={3} className="attendees-empty">
+          Loading…
+        </td>
+      </tr>
+    );
+  } else if (items.length === 0) {
+    itemsTableBody = (
+      <tr>
+        <td colSpan={3} className="attendees-empty">
+          No items yet. Add one to configure what operators issue at check-in.
+        </td>
+      </tr>
+    );
+  } else {
+    itemsTableBody = items.map((item) => (
+      <tr key={item.id}>
+        <td>
+          <div className="requirements-item-cell">
+            <i className={`ti ti-${item.icon ?? DEFAULT_EVENT_ITEM_ICON}`} aria-hidden="true" />
+            <div className="requirements-item-info">
+              <div className="requirements-item-name">{item.label}</div>
+              <div className="requirements-item-id">{item.key}</div>
+            </div>
+          </div>
+        </td>
+        <td className="requirements-item-desc-col">
+          {item.description && (
+            <span className="requirements-item-desc">{item.description}</span>
+          )}
+        </td>
+        <td className="requirements-item-actions">
+          <div className="requirements-item-actions__wrap">
+            <ArchivedGuard
+              event={event}
+              reasonId={`toggle-item-reason-${item.id}`}
+              disabled={togglingIds.has(item.id)}
+            >
+              {(guard) => (
+                <Switch
+                  label={item.enabled ? "On" : "Off"}
+                  checked={item.enabled}
+                  aria-busy={togglingIds.has(item.id)}
+                  onChange={() => void handleToggleEnabled(item)}
+                  aria-label={`${item.enabled ? "Disable" : "Enable"} ${item.label}`}
+                  {...guard}
+                />
+              )}
+            </ArchivedGuard>
+            <ArchivedGuard event={event} reasonId={`edit-item-reason-${item.id}`}>
+              {(guard) => (
+                <IconButton
+                  label="Edit item"
+                  size="sm"
+                  icon={<i className="ti ti-pencil" aria-hidden="true" />}
+                  onClick={() => setSelectedItem(item)}
+                  {...guard}
+                />
+              )}
+            </ArchivedGuard>
+          </div>
+        </td>
+      </tr>
+    ));
+  }
+
+  let behaviourContent: ReactNode = null;
+  if (opsConfig == null && loading) {
+    behaviourContent = <p>Loading…</p>;
+  } else if (opsConfig) {
+    behaviourContent = (
+      <>
+        <div className="requirements-behaviour-row">
+          <div className="requirements-behaviour-row__text">
+            <strong>Issue badge at entry</strong>
+            <p>
+              Auto-issues the badge item when an attendee is admitted. Requires the badge
+              item to exist, be active, and have "Issue on check-in" enabled.
+            </p>
+          </div>
+          <ArchivedGuard
+            event={event}
+            reasonId="badge-at-entry-reason"
+            disabled={opsTogglingIds.has("badge_at_entry") || badgeInactive}
+            tooltip={
+              badgeInactive
+                ? "Can't enable this — the badge item is disabled or has \"Issue on check-in\" turned off."
+                : undefined
+            }
+          >
+            {(guard) => (
+              <Switch
+                checked={opsConfig.badge_at_entry}
+                aria-busy={opsTogglingIds.has("badge_at_entry")}
+                onChange={(e) => void handleOpsToggle("badge_at_entry", e.target.checked)}
+                aria-label="Issue badge at entry"
+                {...guard}
+              />
+            )}
+          </ArchivedGuard>
+        </div>
+        <div className="requirements-behaviour-row">
+          <div className="requirements-behaviour-row__text">
+            <strong>Require confirmation on scan</strong>
+            <p>Scan shows a preview; operator must confirm before check-in is recorded.</p>
+          </div>
+          <ArchivedGuard
+            event={event}
+            reasonId="confirm-on-scan-reason"
+            disabled={opsTogglingIds.has("require_confirm_on_scan")}
+          >
+            {(guard) => (
+              <Switch
+                checked={opsConfig.require_confirm_on_scan}
+                aria-busy={opsTogglingIds.has("require_confirm_on_scan")}
+                onChange={(e) =>
+                  void handleOpsToggle("require_confirm_on_scan", e.target.checked)
+                }
+                aria-label="Require confirmation on scan"
+                {...guard}
+              />
+            )}
+          </ArchivedGuard>
+        </div>
+        <div className="requirements-behaviour-row">
+          <div className="requirements-behaviour-row__text">
+            <strong>Allow manual lookup</strong>
+            <p>
+              When off, operators can only check in via QR scan — name and short-query
+              search are blocked in the check-in screen. Does not affect the admin Attendees
+              page.
+            </p>
+          </div>
+          <ArchivedGuard
+            event={event}
+            reasonId="manual-lookup-reason"
+            disabled={opsTogglingIds.has("allow_manual_lookup")}
+          >
+            {(guard) => (
+              <Switch
+                checked={opsConfig.allow_manual_lookup}
+                aria-busy={opsTogglingIds.has("allow_manual_lookup")}
+                onChange={(e) => void handleOpsToggle("allow_manual_lookup", e.target.checked)}
+                aria-label="Allow manual lookup"
+                {...guard}
+              />
+            )}
+          </ArchivedGuard>
+        </div>
+        <div className="requirements-behaviour-row">
+          <div className="requirements-behaviour-row__text">
+            <strong>Auto-advance after valid check-in</strong>
+            <p>
+              After a valid scan, the check-in screen clears automatically for the next
+              attendee — without tapping Next.
+            </p>
+          </div>
+          <ArchivedGuard
+            event={event}
+            reasonId="auto-advance-reason"
+            disabled={opsTogglingIds.has("auto_advance_on_valid")}
+          >
+            {(guard) => (
+              <Switch
+                checked={opsConfig.auto_advance_on_valid}
+                aria-busy={opsTogglingIds.has("auto_advance_on_valid")}
+                onChange={(e) =>
+                  void handleOpsToggle("auto_advance_on_valid", e.target.checked)
+                }
+                aria-label="Auto-advance on valid scan"
+                {...guard}
+              />
+            )}
+          </ArchivedGuard>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <PageHeader
@@ -278,71 +460,7 @@ export function RequirementsPage() {
                   <th>Active</th>
                 </tr>
               </thead>
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan={3} className="attendees-empty">
-                      Loading…
-                    </td>
-                  </tr>
-                ) : items.length === 0 ? (
-                  <tr>
-                    <td colSpan={3} className="attendees-empty">
-                      No items yet. Add one to configure what operators issue at check-in.
-                    </td>
-                  </tr>
-                ) : (
-                  items.map((item) => (
-                    <tr key={item.id}>
-                      <td>
-                        <div className="requirements-item-cell">
-                          <i className={`ti ti-${item.icon ?? DEFAULT_EVENT_ITEM_ICON}`} aria-hidden="true" />
-                          <div className="requirements-item-info">
-                            <div className="requirements-item-name">{item.label}</div>
-                            <div className="requirements-item-id">{item.key}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="requirements-item-desc-col">
-                        {item.description && (
-                          <span className="requirements-item-desc">{item.description}</span>
-                        )}
-                      </td>
-                      <td className="requirements-item-actions">
-                        <div className="requirements-item-actions__wrap">
-                          <ArchivedGuard
-                            event={event}
-                            reasonId={`toggle-item-reason-${item.id}`}
-                            disabled={togglingIds.has(item.id)}
-                          >
-                            {(guard) => (
-                              <Switch
-                                label={item.enabled ? "On" : "Off"}
-                                checked={item.enabled}
-                                aria-busy={togglingIds.has(item.id)}
-                                onChange={() => void handleToggleEnabled(item)}
-                                aria-label={`${item.enabled ? "Disable" : "Enable"} ${item.label}`}
-                                {...guard}
-                              />
-                            )}
-                          </ArchivedGuard>
-                          <ArchivedGuard event={event} reasonId={`edit-item-reason-${item.id}`}>
-                            {(guard) => (
-                              <IconButton
-                                label="Edit item"
-                                size="sm"
-                                icon={<i className="ti ti-pencil" aria-hidden="true" />}
-                                onClick={() => setSelectedItem(item)}
-                                {...guard}
-                              />
-                            )}
-                          </ArchivedGuard>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
+              <tbody>{itemsTableBody}</tbody>
             </table>
           </div>
         </Card>
@@ -358,115 +476,7 @@ export function RequirementsPage() {
 
       <section className="requirements-section">
         <Card title="Event behaviour" padded={false}>
-          {opsConfig == null && loading ? (
-            <p>Loading…</p>
-          ) : opsConfig ? (
-            <>
-              <div className="requirements-behaviour-row">
-                <div className="requirements-behaviour-row__text">
-                  <strong>Issue badge at entry</strong>
-                  <p>
-                    Auto-issues the badge item when an attendee is admitted. Requires the badge
-                    item to exist, be active, and have "Issue on check-in" enabled.
-                  </p>
-                </div>
-                <ArchivedGuard
-                  event={event}
-                  reasonId="badge-at-entry-reason"
-                  disabled={opsTogglingIds.has("badge_at_entry") || badgeInactive}
-                  tooltip={
-                    badgeInactive
-                      ? "Can't enable this — the badge item is disabled or has \"Issue on check-in\" turned off."
-                      : undefined
-                  }
-                >
-                  {(guard) => (
-                    <Switch
-                      checked={opsConfig.badge_at_entry}
-                      aria-busy={opsTogglingIds.has("badge_at_entry")}
-                      onChange={(e) => void handleOpsToggle("badge_at_entry", e.target.checked)}
-                      aria-label="Issue badge at entry"
-                      {...guard}
-                    />
-                  )}
-                </ArchivedGuard>
-              </div>
-              <div className="requirements-behaviour-row">
-                <div className="requirements-behaviour-row__text">
-                  <strong>Require confirmation on scan</strong>
-                  <p>Scan shows a preview; operator must confirm before check-in is recorded.</p>
-                </div>
-                <ArchivedGuard
-                  event={event}
-                  reasonId="confirm-on-scan-reason"
-                  disabled={opsTogglingIds.has("require_confirm_on_scan")}
-                >
-                  {(guard) => (
-                    <Switch
-                      checked={opsConfig.require_confirm_on_scan}
-                      aria-busy={opsTogglingIds.has("require_confirm_on_scan")}
-                      onChange={(e) =>
-                        void handleOpsToggle("require_confirm_on_scan", e.target.checked)
-                      }
-                      aria-label="Require confirmation on scan"
-                      {...guard}
-                    />
-                  )}
-                </ArchivedGuard>
-              </div>
-              <div className="requirements-behaviour-row">
-                <div className="requirements-behaviour-row__text">
-                  <strong>Allow manual lookup</strong>
-                  <p>
-                    When off, operators can only check in via QR scan — name and short-query
-                    search are blocked in the check-in screen. Does not affect the admin Attendees
-                    page.
-                  </p>
-                </div>
-                <ArchivedGuard
-                  event={event}
-                  reasonId="manual-lookup-reason"
-                  disabled={opsTogglingIds.has("allow_manual_lookup")}
-                >
-                  {(guard) => (
-                    <Switch
-                      checked={opsConfig.allow_manual_lookup}
-                      aria-busy={opsTogglingIds.has("allow_manual_lookup")}
-                      onChange={(e) => void handleOpsToggle("allow_manual_lookup", e.target.checked)}
-                      aria-label="Allow manual lookup"
-                      {...guard}
-                    />
-                  )}
-                </ArchivedGuard>
-              </div>
-              <div className="requirements-behaviour-row">
-                <div className="requirements-behaviour-row__text">
-                  <strong>Auto-advance after valid check-in</strong>
-                  <p>
-                    After a valid scan, the check-in screen clears automatically for the next
-                    attendee — without tapping Next.
-                  </p>
-                </div>
-                <ArchivedGuard
-                  event={event}
-                  reasonId="auto-advance-reason"
-                  disabled={opsTogglingIds.has("auto_advance_on_valid")}
-                >
-                  {(guard) => (
-                    <Switch
-                      checked={opsConfig.auto_advance_on_valid}
-                      aria-busy={opsTogglingIds.has("auto_advance_on_valid")}
-                      onChange={(e) =>
-                        void handleOpsToggle("auto_advance_on_valid", e.target.checked)
-                      }
-                      aria-label="Auto-advance on valid scan"
-                      {...guard}
-                    />
-                  )}
-                </ArchivedGuard>
-              </div>
-            </>
-          ) : null}
+          {behaviourContent}
         </Card>
       </section>
         </>

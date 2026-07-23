@@ -16,19 +16,24 @@ export function InstanceSidebarFoot({ omitPrimary = false }: Readonly<{ omitPrim
   const canAdmin = canAccessAdminPanel(assignments);
   const canCheckIn = canAccessCheckInPanel(assignments);
 
+  const checkInLink = canCheckIn ? (
+    <NavLink to="/operator" className={navClass}>
+      <i className="ti ti-qrcode" aria-hidden="true" />
+      <span>Check-in</span>
+    </NavLink>
+  ) : null;
+  const primaryLink = canAdmin ? (
+    <NavLink to="/admin" className={navClass} end>
+      <i className="ti ti-calendar-event" aria-hidden="true" />
+      <span>All events</span>
+    </NavLink>
+  ) : (
+    checkInLink
+  );
+
   return (
     <>
-      {!omitPrimary && (canAdmin ? (
-        <NavLink to="/admin" className={navClass} end>
-          <i className="ti ti-calendar-event" aria-hidden="true" />
-          <span>All events</span>
-        </NavLink>
-      ) : canCheckIn ? (
-        <NavLink to="/operator" className={navClass}>
-          <i className="ti ti-qrcode" aria-hidden="true" />
-          <span>Check-in</span>
-        </NavLink>
-      ) : null)}
+      {!omitPrimary && primaryLink}
       {isAdmin(assignments) && (
         <>
           <div className="sidebar__section-label">Administration</div>

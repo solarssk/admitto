@@ -250,6 +250,7 @@ export function DatePicker({
 
   const displayError = error ?? parseError;
   const isInvalid = Boolean(displayError);
+  const hintContent = hint ? <span className="at-hint">{hint}</span> : null;
 
   return (
     <div className="at-field date-picker" ref={containerRef}>
@@ -440,9 +441,9 @@ export function DatePicker({
         <span className="at-hint at-hint--error" role="alert" aria-live="polite">
           {displayError}
         </span>
-      ) : hint ? (
-        <span className="at-hint">{hint}</span>
-      ) : null}
+      ) : (
+        hintContent
+      )}
     </div>
   );
 }

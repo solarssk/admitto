@@ -29,4 +29,17 @@ describe("Tabs", () => {
 
     expect(screen.getByRole("tab", { name: "Tab X" }).getAttribute("aria-selected")).toBe("true");
   });
+
+  it("uses the controlled value even when the internal fallback differs", () => {
+    render(<Tabs tabs={INITIAL} defaultValue="a" value="b" />);
+
+    expect(screen.getByRole("tab", { name: "Tab B" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "Tab A" }).getAttribute("aria-selected")).toBe("false");
+  });
+
+  it("handles an empty tab list without selecting a fallback", () => {
+    render(<Tabs tabs={[]} />);
+
+    expect(screen.queryByRole("tab")).toBeNull();
+  });
 });

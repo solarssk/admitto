@@ -11,32 +11,26 @@ import type { EventDto, SessionListDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { formatUtcDateTime } from "../utils/event-dates.js";
 
+const BROWSER_PATTERNS: [RegExp, string][] = [
+  [/Edg\//, "Edge"],
+  [/OPR\//, "Opera"],
+  [/Chrome\//, "Chrome"],
+  [/Firefox\//, "Firefox"],
+  [/Safari\//, "Safari"],
+];
+
+const OS_PATTERNS: [RegExp, string][] = [
+  [/Windows/, "Windows"],
+  [/Mac OS X/, "macOS"],
+  [/Linux/, "Linux"],
+  [/Android/, "Android"],
+  [/iPhone|iPad/, "iOS"],
+];
+
 function parseUserAgent(ua: string | null): string {
   if (!ua) return "Unknown";
-  const browser =
-    /Edg\//.test(ua)
-      ? "Edge"
-      : /OPR\//.test(ua)
-        ? "Opera"
-        : /Chrome\//.test(ua)
-          ? "Chrome"
-          : /Firefox\//.test(ua)
-            ? "Firefox"
-            : /Safari\//.test(ua)
-              ? "Safari"
-              : null;
-  const os =
-    /Windows/.test(ua)
-      ? "Windows"
-      : /Mac OS X/.test(ua)
-        ? "macOS"
-        : /Linux/.test(ua)
-          ? "Linux"
-          : /Android/.test(ua)
-            ? "Android"
-            : /iPhone|iPad/.test(ua)
-              ? "iOS"
-              : null;
+  const browser = BROWSER_PATTERNS.find(([re]) => re.test(ua))?.[1] ?? null;
+  const os = OS_PATTERNS.find(([re]) => re.test(ua))?.[1] ?? null;
   const parts = [browser, os].filter(Boolean);
   return parts.length ? parts.join(" / ") : ua.slice(0, 40);
 }
@@ -46,6 +40,12 @@ function formatDate(iso: string): string {
 }
 
 type FilterValue = "all" | "admin" | "operator";
+
+const FILTER_LABELS: Record<FilterValue, string> = {
+  all: "All",
+  admin: "Admins",
+  operator: "Operators",
+};
 
 /** Settings panel — lists active staff sessions, per-session revoke, and bulk operator-session revoke by event. */
 export function SessionsPanel() {
@@ -124,6 +124,9 @@ export function SessionsPanel() {
   };
 
   const selectedEvent = events.find((e) => e.id === selectedEventId);
+  const confirmDeviceSuffix = confirmTarget?.deviceLabel
+    ? ` (${confirmTarget.deviceLabel})`
+    : "";
 
   return (
     <>
@@ -136,7 +139,7 @@ export function SessionsPanel() {
               className={`sessions-filter__btn${filter === f ? " sessions-filter__btn--active" : ""}`}
               onClick={() => setFilter(f)}
             >
-              {f === "all" ? "All" : f === "admin" ? "Admins" : "Operators"}
+              {FILTER_LABELS[f]}
             </button>
           ))}
         </div>
@@ -262,9 +265,7 @@ export function SessionsPanel() {
         title="Revoke session"
         message={
           confirmTarget
-            ? `Revoke session for ${confirmTarget.userEmail}` +
-              (confirmTarget.deviceLabel ? ` (${confirmTarget.deviceLabel})` : "") +
-              `? Last active ${formatDate(confirmTarget.lastSeenAt)}.`
+            ? `Revoke session for ${confirmTarget.userEmail}${confirmDeviceSuffix}? Last active ${formatDate(confirmTarget.lastSeenAt)}.`
             : ""
         }
         confirmLabel="Revoke"

@@ -177,12 +177,8 @@ function parseRoleScope(body: Record<string, unknown>): { role: Role; scopeType:
   const role = typeof body.role === "string" ? body.role : "";
   const scopeType = typeof body.scope_type === "string" ? body.scope_type : "";
   const scopeIdRaw = body.scope_id;
-  const scopeId =
-    scopeIdRaw == null || scopeIdRaw === ""
-      ? null
-      : typeof scopeIdRaw === "string"
-        ? scopeIdRaw
-        : null;
+  const stringScopeId = typeof scopeIdRaw === "string" ? scopeIdRaw : null;
+  const scopeId = scopeIdRaw == null || scopeIdRaw === "" ? null : stringScopeId;
 
   if (!ROLES.includes(role as Role) || !SCOPE_TYPES.includes(scopeType as ScopeType)) return null;
   if (scopeType !== "instance" && !scopeId) return null;

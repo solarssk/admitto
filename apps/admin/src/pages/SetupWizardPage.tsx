@@ -217,16 +217,14 @@ function SetupWizardContent({ onComplete }: Readonly<SetupWizardPageProps>) {
     (step === 1 && !checksOk) ||
     (step === 4 && !eventCanContinue && !hasExistingEvents);
 
-  const continueLabel =
-    step === 2 || step === 3
-      ? continuing
-        ? "Saving…"
-        : "Save & Continue"
-      : step === 4
-        ? continuing
-          ? "Creating…"
-          : "Continue"
-        : "Continue";
+  let continueLabel: string;
+  if (step === 2 || step === 3) {
+    continueLabel = continuing ? "Saving…" : "Save & Continue";
+  } else if (step === 4) {
+    continueLabel = continuing ? "Creating…" : "Continue";
+  } else {
+    continueLabel = "Continue";
+  }
 
   const showContinueArrow = !continuing && step < TOTAL_STEPS;
 
@@ -253,7 +251,8 @@ function SetupWizardContent({ onComplete }: Readonly<SetupWizardPageProps>) {
               step > stepNum ||
               (completedSteps.has(stepNum) && !isActive) ||
               (isOnReady && stepNum === TOTAL_STEPS);
-            const state = isActive ? "active" : isComplete ? "done" : "pending";
+            const completionState = isComplete ? "done" : "pending";
+            const state = isActive ? "active" : completionState;
             return (
               <Fragment key={name}>
                 <div

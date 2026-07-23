@@ -550,6 +550,10 @@ export function IdentityProviderEditor({
     </Card>
   );
 
+  const editSecretLabel = hasSecret ? "New client secret" : "Client secret";
+  const secretLabel = mode === "edit" ? editSecretLabel : "Client secret";
+  const submitLabel = mode === "create" ? "Create provider" : "Save changes";
+
   const formContent = (
     <form className="identity-editor" onSubmit={handleSubmit} noValidate>
       <Card title="Basics">
@@ -581,7 +585,7 @@ export function IdentityProviderEditor({
             required
           />
           <Input
-            label={mode === "edit" ? (hasSecret ? "New client secret" : "Client secret") : "Client secret"}
+            label={secretLabel}
             type="password"
             value={draft.client_secret}
             invalid={Boolean(errors.client_secret)}
@@ -737,7 +741,7 @@ export function IdentityProviderEditor({
           variant="primary"
           disabled={saving || testing || discovering || (mode === "edit" && loadState !== "ready")}
         >
-          {saving ? "Saving…" : mode === "create" ? "Create provider" : "Save changes"}
+          {saving ? "Saving…" : submitLabel}
         </Button>
       </div>
     </form>

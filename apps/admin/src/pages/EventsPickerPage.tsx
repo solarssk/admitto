@@ -63,12 +63,8 @@ export function EventsPickerPage() {
   const displayedEvents = tab === "archived" ? archivedEvents : activeEvents;
   const allEventsArchived = events.length > 0 && activeEvents.length === 0;
 
-  const gridClass =
-    displayedEvents.length >= 4
-      ? "event-grid event-grid--cols-3"
-      : displayedEvents.length > 0
-        ? "event-grid event-grid--cols-2"
-        : "event-grid";
+  const smallGridClass = displayedEvents.length > 0 ? "event-grid event-grid--cols-2" : "event-grid";
+  const gridClass = displayedEvents.length >= 4 ? "event-grid event-grid--cols-3" : smallGridClass;
 
   useEffect(() => {
     if (!loading && !tabTouched && events.length > 0 && activeEvents.length === 0) {

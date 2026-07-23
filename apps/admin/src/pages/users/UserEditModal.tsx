@@ -216,6 +216,50 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
 
   const displayTitle = user.display_name?.trim() || user.email;
 
+  const adminOrAddRoleControl =
+    newRole === "admin" ? (
+      <select
+        className="users-modal__select"
+        aria-label="Organization scope for admin role"
+        value={newOrgId}
+        disabled={roleBusy || organizations.length === 0}
+        onChange={(e) => setNewOrgId(e.target.value)}
+      >
+        {organizations.length === 0 ? (
+          <option value="">No organizations available</option>
+        ) : (
+          organizations.map((org) => (
+            <option key={org.id} value={org.id}>
+              {org.name}
+            </option>
+          ))
+        )}
+      </select>
+    ) : (
+      <Button type="button" variant="secondary" disabled={!newRole || roleBusy} onClick={() => void handleAddRole()}>
+        Add
+      </Button>
+    );
+  const roleScopeControl =
+    newRole === "operator" ? (
+      <select
+        className="users-modal__select"
+        aria-label="Event scope for operator role"
+        value={newEventId}
+        disabled={roleBusy}
+        onChange={(e) => setNewEventId(e.target.value)}
+      >
+        <option value="">Select event…</option>
+        {events.map((e) => (
+          <option key={e.id} value={e.id}>
+            {e.title}
+          </option>
+        ))}
+      </select>
+    ) : (
+      adminOrAddRoleControl
+    );
+
   return (
     <>
       <div className="users-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
@@ -288,44 +332,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
               <option value="admin">Admin</option>
               <option value="operator">Operator</option>
             </select>
-            {newRole === "operator" ? (
-              <select
-                className="users-modal__select"
-                aria-label="Event scope for operator role"
-                value={newEventId}
-                disabled={roleBusy}
-                onChange={(e) => setNewEventId(e.target.value)}
-              >
-                <option value="">Select event…</option>
-                {events.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.title}
-                  </option>
-                ))}
-              </select>
-            ) : newRole === "admin" ? (
-              <select
-                className="users-modal__select"
-                aria-label="Organization scope for admin role"
-                value={newOrgId}
-                disabled={roleBusy || organizations.length === 0}
-                onChange={(e) => setNewOrgId(e.target.value)}
-              >
-                {organizations.length === 0 ? (
-                  <option value="">No organizations available</option>
-                ) : (
-                  organizations.map((org) => (
-                    <option key={org.id} value={org.id}>
-                      {org.name}
-                    </option>
-                  ))
-                )}
-              </select>
-            ) : (
-              <Button type="button" variant="secondary" disabled={!newRole || roleBusy} onClick={() => void handleAddRole()}>
-                Add
-              </Button>
-            )}
+            {roleScopeControl}
           </div>
           {newRole === "operator" && (
             <Button type="button" variant="secondary" disabled={!newEventId || roleBusy} onClick={() => void handleAddRole()}>

@@ -134,8 +134,9 @@ function buildTzEntry(iana: string, now: Date): TzEntry {
 
   // eslint-disable-next-line security/detect-unsafe-regex -- bounded input; validated pattern
   const m = /GMT([+-])(\d+)(?::(\d+))?/.exec(offsetLabel);
+  const offsetSign = m?.[1] === "+" ? 1 : -1;
   const offsetHours = m
-    ? (m[1] === "+" ? 1 : -1) *
+    ? offsetSign *
       (Number.parseInt(m[2] ?? "0", 10) + Number.parseInt(m[3] ?? "0", 10) / 60)
     : 0;
 
@@ -420,15 +421,12 @@ export function TimezoneSelect({
     <span className="timezone-select__trigger-placeholder">Select timezone…</span>
   );
 
-  const triggerLabel = selectedEntry ? (
-    compact ? (
-      <span className="timezone-select__trigger-compact">{selectedTriggerContent}</span>
-    ) : (
-      selectedTriggerContent
-    )
+  const compactTriggerLabel = compact ? (
+    <span className="timezone-select__trigger-compact">{selectedTriggerContent}</span>
   ) : (
     selectedTriggerContent
   );
+  const triggerLabel = selectedEntry ? compactTriggerLabel : selectedTriggerContent;
 
   return (
     <div

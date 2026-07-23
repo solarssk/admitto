@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { Spinner, ToastProvider } from "@admitto/ui";
 import { AdminGuard, AuthenticatedGuard, OperatorGuard, SuperadminGuard } from "./auth/RoleRouter.js";
@@ -55,6 +55,17 @@ const PLACEHOLDER_ROUTES = [
   { path: "thank-you", title: "Thank you" },
   { path: "reports", title: "Reports" },
 ] as const;
+
+// Route path -> page element for the routes above that have a real implementation.
+// Paths not listed here fall back to PlaceholderPage.
+const EVENT_ROUTE_ELEMENTS: Record<string, ReactNode> = {
+  overview: <EventOverviewPage />,
+  checkin: <AdminCheckInRoute />,
+  attendees: <AttendeesPage />,
+  requirements: <RequirementsPage />,
+  communication: <CommunicationPage />,
+  reports: <ReportsPage />,
+};
 
 /** Event passed through router navigation state (events picker, create-event
  * flow), if it matches the route's eventId. */
@@ -160,7 +171,7 @@ export function EventLayout() {
   return <AdminShell event={event} refreshEvent={refreshEvent} />;
 }
 
-function StaffRoutes() {
+export function StaffRoutes() {
   const { assignments, setupComplete, refresh } = useAuth();
 
   if (isSuperadmin(assignments) && !setupComplete) {
@@ -194,23 +205,7 @@ function StaffRoutes() {
             <Route
               key={r.path}
               path={r.path}
-              element={
-                r.path === "overview" ? (
-                  <EventOverviewPage />
-                ) : r.path === "checkin" ? (
-                  <AdminCheckInRoute />
-                ) : r.path === "attendees" ? (
-                  <AttendeesPage />
-                ) : r.path === "requirements" ? (
-                  <RequirementsPage />
-                ) : r.path === "communication" ? (
-                  <CommunicationPage />
-                ) : r.path === "reports" ? (
-                  <ReportsPage />
-                ) : (
-                  <PlaceholderPage title={r.title} />
-                )
-              }
+              element={EVENT_ROUTE_ELEMENTS[r.path] ?? <PlaceholderPage title={r.title} />}
             />
           ))}
           <Route path="attendees/import" element={<ImportPage />} />

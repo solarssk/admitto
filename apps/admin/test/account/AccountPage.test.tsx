@@ -282,6 +282,23 @@ describe("AccountPage toasts", () => {
     });
   });
 
+  it("omits the revoked-session suffix when changing a password revokes no other sessions", async () => {
+    mockLoadedAccount();
+    mockPatchPassword.mockResolvedValueOnce({ sessions_revoked: 0 });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Current password")).toBeTruthy();
+    });
+
+    fillPasswordForm();
+    fireEvent.click(screen.getByRole("button", { name: "Change password" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Password changed.")).toBeTruthy();
+    });
+  });
+
   it("toasts password change errors", async () => {
     mockLoadedAccount();
     const { ApiError } = await import("../../src/api/client.js");
@@ -491,6 +508,27 @@ describe("AccountPage toasts", () => {
 
     fireEvent.click(screen.getByLabelText("I've saved my backup codes"));
     expect(screen.getByRole("button", { name: "Confirm setup" }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("keeps enrollment usable when no backup-code section needs to be shown", async () => {
+    mockLoadedAccount();
+    mockEnrollMfaTotp.mockResolvedValueOnce({
+      otpauthUri: "otpauth://totp/Admitto?secret=NONE",
+      backupCodes: [],
+      backupCodesAlreadyShown: false,
+    });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Set up" }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Authenticator code")).toBeTruthy();
+    });
+    expect(screen.queryByText("Backup codes — save all 10, shown once")).toBeNull();
+    expect(screen.queryByLabelText("I've saved my backup codes")).toBeNull();
   });
 
   it("downloads backup codes as .txt in the enrollment page format", async () => {
@@ -722,6 +760,53 @@ describe("AccountPage toasts", () => {
       expect(mockDeleteSession).toHaveBeenCalledWith("sess-2");
       expect(screen.queryByRole("dialog")).toBeNull();
     });
+  });
+
+  it("labels sessions from browser and operating-system user agents", async () => {
+    mockLoadedAccount();
+    mockFetchSessions.mockResolvedValue({
+      sessions: [
+        makeAccountSession({
+          id: "edge-windows",
+          deviceLabel: null,
+          userAgent: "Mozilla/5.0 (Windows NT 10.0) Edg/123.0",
+        }),
+        makeAccountSession({
+          id: "chrome-macos",
+          isCurrent: false,
+          deviceLabel: null,
+          userAgent: "Mozilla/5.0 (Mac OS X 10_15_7) Chrome/123.0",
+        }),
+        makeAccountSession({
+          id: "firefox-linux",
+          isCurrent: false,
+          deviceLabel: null,
+          userAgent: "Mozilla/5.0 (X11; Linux x86_64) Firefox/123.0",
+        }),
+        makeAccountSession({
+          id: "safari-ios",
+          isCurrent: false,
+          deviceLabel: null,
+          userAgent: "Mobile iPhone Safari/17.0",
+        }),
+        makeAccountSession({
+          id: "unknown",
+          isCurrent: false,
+          deviceLabel: null,
+          userAgent: "curl/8.7.1",
+        }),
+      ],
+    });
+
+    renderWithToast(<AccountPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Edge / Windows")).toBeTruthy();
+    });
+    expect(screen.getByText("Chrome / macOS")).toBeTruthy();
+    expect(screen.getByText("Firefox / Linux")).toBeTruthy();
+    expect(screen.getByText("Safari / iOS")).toBeTruthy();
+    expect(screen.getByText("curl/8.7.1")).toBeTruthy();
   });
 
   it("shows OIDC-only MFA guidance when local password is unavailable", async () => {

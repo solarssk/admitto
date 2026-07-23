@@ -1,12 +1,16 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { forwardRef, useEffect } from "react";
+import { forwardRef, useEffect, useImperativeHandle } from "react";
 import { SetupWizardPage } from "../../src/pages/SetupWizardPage.js";
 import { renderWithToast } from "../test-utils.js";
 
 const WIZARD_STEP_KEY = "admitto_wizard_step";
 const WIZARD_UNSAVED_KEY = "admitto_wizard_unsaved_refresh";
+const { mailSaveAndContinue, eventCreateAndContinue } = vi.hoisted(() => ({
+  mailSaveAndContinue: vi.fn(),
+  eventCreateAndContinue: vi.fn(),
+}));
 
 vi.mock("../../src/pages/wizard/WizardStep1Checks.js", () => ({
   WizardStep1Checks: () => <div>System checks step</div>,
@@ -15,8 +19,9 @@ vi.mock("../../src/pages/wizard/WizardStep1Checks.js", () => ({
 vi.mock("../../src/pages/wizard/WizardStep2Mail.js", () => ({
   WizardStep2Mail: forwardRef(function MockMail(
     { onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void },
-    _ref: unknown,
+    ref,
   ) {
+    useImperativeHandle(ref, () => ({ saveAndContinue: () => mailSaveAndContinue() }));
     useEffect(() => {
       onDirtyChange?.(true);
     }, [onDirtyChange]);
@@ -31,7 +36,14 @@ vi.mock("../../src/pages/wizard/WizardStep3Branding.js", () => ({
 }));
 
 vi.mock("../../src/pages/wizard/WizardStep4Event.js", () => ({
-  WizardStep4Event: forwardRef(function MockEvent(_props: unknown, _ref: unknown) {
+  WizardStep4Event: forwardRef(function MockEvent(
+    { onCanContinueChange }: { onCanContinueChange?: (canContinue: boolean) => void },
+    ref,
+  ) {
+    useImperativeHandle(ref, () => ({ createAndContinue: () => eventCreateAndContinue() }));
+    useEffect(() => {
+      onCanContinueChange?.(true);
+    }, [onCanContinueChange]);
     return <div>Event step</div>;
   }),
 }));
@@ -99,5 +111,44 @@ describe("SetupWizardPage back navigation", () => {
     await waitFor(() => {
       expect(screen.getByText("Event step")).toBeTruthy();
     });
+  });
+});
+
+describe("SetupWizardPage continue labels", () => {
+  it("shows Saving while the mail step is being persisted", async () => {
+    sessionStorage.setItem(WIZARD_STEP_KEY, "2");
+    let resolveSave: (value: boolean) => void = () => {};
+    mailSaveAndContinue.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSave = resolve;
+      }),
+    );
+
+    renderWizard();
+    fireEvent.click(screen.getByRole("button", { name: "Save & Continue" }));
+
+    expect(await screen.findByRole("button", { name: "Saving…" })).toBeTruthy();
+
+    resolveSave(true);
+    expect(await screen.findByText("Branding step")).toBeTruthy();
+  });
+
+  it("shows Creating while the first event is being created", async () => {
+    sessionStorage.setItem(WIZARD_STEP_KEY, "4");
+    let resolveCreate: (value: boolean) => void = () => {};
+    eventCreateAndContinue.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCreate = resolve;
+      }),
+    );
+
+    renderWizard();
+    await screen.findByText("Event step");
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(await screen.findByRole("button", { name: "Creating…" })).toBeTruthy();
+
+    resolveCreate(true);
+    expect(await screen.findByText("Ready step")).toBeTruthy();
   });
 });

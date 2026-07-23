@@ -27,4 +27,37 @@ describe("extractCustomDataFromRow", () => {
     );
     expect(result).toEqual({ ok: true, custom_data: undefined });
   });
+
+  it("explains the accepted values for an invalid boolean attribute", () => {
+    const result = extractCustomDataFromRow(
+      { newsletter: "sometimes" },
+      [{ label: "Newsletter", source_field: "newsletter", type: "boolean" }],
+      new Set<string>(),
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "Invalid value for Newsletter (expected Yes/No or true/false)",
+    });
+  });
+
+  it("lists allowed options for an invalid select attribute", () => {
+    const result = extractCustomDataFromRow(
+      { meal: "pasta" },
+      [
+        {
+          label: "Meal",
+          source_field: "meal",
+          type: "select",
+          options: ["vegetarian", "standard"],
+        },
+      ],
+      new Set<string>(),
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "Invalid value for Meal (expected one of: vegetarian, standard)",
+    });
+  });
 });

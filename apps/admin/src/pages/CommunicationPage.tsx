@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useBlocker, useOutletContext, useParams } from "react-router-dom";
 import { Badge, Button, Card, Input, PageHeader, Select, StatusBadge, Tabs, Tooltip, useToast } from "@admitto/ui";
 import {
@@ -569,11 +569,9 @@ export function CommunicationPage() {
     }
   }, [activeKey, applyDetailTemplate, applyLegacyTemplate, eventId, reportApiError, addToast]);
 
-  const sendTemplateId = editorSnapshotMissing
-    ? undefined
-    : activeKey === "virtual-ticket"
-      ? templates.find((t) => t.name === "ticket")?.id
-      : activeKey;
+  const activeTemplateSendId =
+    activeKey === "virtual-ticket" ? templates.find((t) => t.name === "ticket")?.id : activeKey;
+  const sendTemplateId = editorSnapshotMissing ? undefined : activeTemplateSendId;
 
   const loadDeliveries = useCallback(async (signal?: AbortSignal) => {
     if (!eventId) return;
@@ -901,6 +899,48 @@ export function CommunicationPage() {
   const effectiveDeliveryPage = Math.min(deliveryPage, deliveryPages);
   const deliveryRangeStart = (effectiveDeliveryPage - 1) * DELIVERY_PAGE_SIZE + 1;
   const deliveryRangeEnd = Math.min(effectiveDeliveryPage * DELIVERY_PAGE_SIZE, deliveryTotal);
+  const unsavedTemplateLabel = isDirty ? "Save *" : "Saved";
+  const saveButtonLabel = saving ? "Saving…" : unsavedTemplateLabel;
+
+  let deliveryLogContent: ReactNode;
+  if (deliveriesLoading) {
+    deliveryLogContent = <div className="communication-empty">Loading deliveries…</div>;
+  } else if (deliveriesError) {
+    deliveryLogContent = <div className="communication-empty">{deliveriesError}</div>;
+  } else if (deliveries.length === 0) {
+    deliveryLogContent = <div className="communication-empty">No messages sent yet.</div>;
+  } else {
+    deliveryLogContent = (
+      <table className="table communication-table">
+        <thead>
+          <tr>
+            <th>Recipient</th>
+            <th>Subject</th>
+            <th>Purpose</th>
+            <th>Status</th>
+            <th>Queued</th>
+            <th>Sent / Failed</th>
+            <th>Error</th>
+          </tr>
+        </thead>
+        <tbody>
+          {deliveries.map((row) => (
+            <tr key={row.id}>
+              <td className="mono">{row.recipient_email ?? "—"}</td>
+              <td>{row.rendered_subject ?? "—"}</td>
+              <td>{row.purpose === "resend" ? "Resend" : "Initial"}</td>
+              <td>
+                <StatusBadge status={row.status} />
+              </td>
+              <td className="mono muted">{formatDateTime(row.queued_at)}</td>
+              <td className="mono muted">{formatDateTime(row.sent_at ?? row.accepted_at ?? row.failed_at)}</td>
+              <td className="muted">{row.error_code ?? "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  }
 
   return (
     <div className="screen">
@@ -1162,7 +1202,7 @@ export function CommunicationPage() {
                 >
                   {(guard) => (
                     <Button variant="primary" onClick={handleSave} {...guard}>
-                      {saving ? "Saving…" : isDirty ? "Save *" : "Saved"}
+                      {saveButtonLabel}
                     </Button>
                   )}
                 </ArchivedGuard>
@@ -1259,44 +1299,7 @@ export function CommunicationPage() {
           </div>
 
           <Card padded={false}>
-            {deliveriesLoading ? (
-              <div className="communication-empty">Loading deliveries…</div>
-            ) : deliveriesError ? (
-              <div className="communication-empty">{deliveriesError}</div>
-            ) : deliveries.length === 0 ? (
-              <div className="communication-empty">No messages sent yet.</div>
-            ) : (
-              <table className="table communication-table">
-                <thead>
-                  <tr>
-                    <th>Recipient</th>
-                    <th>Subject</th>
-                    <th>Purpose</th>
-                    <th>Status</th>
-                    <th>Queued</th>
-                    <th>Sent / Failed</th>
-                    <th>Error</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {deliveries.map((row) => (
-                    <tr key={row.id}>
-                      <td className="mono">{row.recipient_email ?? "—"}</td>
-                      <td>{row.rendered_subject ?? "—"}</td>
-                      <td>{row.purpose === "resend" ? "Resend" : "Initial"}</td>
-                      <td>
-                        <StatusBadge status={row.status} />
-                      </td>
-                      <td className="mono muted">{formatDateTime(row.queued_at)}</td>
-                      <td className="mono muted">
-                        {formatDateTime(row.sent_at ?? row.accepted_at ?? row.failed_at)}
-                      </td>
-                      <td className="muted">{row.error_code ?? "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+            {deliveryLogContent}
             {!deliveriesError && deliveryTotal > 0 && (
               <div className="communication-pager">
                 <span>

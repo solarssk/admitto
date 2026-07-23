@@ -250,12 +250,12 @@ export async function promoteSessionToFull(
 ): Promise<SessionStage | null> {
   const targetStage = await resolvePostMfaStage(prisma, userId);
   // TTL is resolved at promotion time (not cached from login) so SystemSettings changes apply immediately.
+  const nonFullTtlMs =
+    targetStage === SESSION_STAGE.BACKUP_CODES_REQUIRED
+      ? BACKUP_CODES_STEP_TTL_MS
+      : MFA_PENDING_SESSION_TTL_MS;
   const ttlMs =
-    targetStage === SESSION_STAGE.FULL
-      ? await resolveFullTtlMs(prisma, userId)
-      : targetStage === SESSION_STAGE.BACKUP_CODES_REQUIRED
-        ? BACKUP_CODES_STEP_TTL_MS
-        : MFA_PENDING_SESSION_TTL_MS;
+    targetStage === SESSION_STAGE.FULL ? await resolveFullTtlMs(prisma, userId) : nonFullTtlMs;
   const now = new Date();
   const result = await prisma.session.updateMany({
     where: {

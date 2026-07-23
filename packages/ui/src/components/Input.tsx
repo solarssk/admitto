@@ -30,6 +30,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   const hintId = hint && !error ? `${uid}-hint` : undefined;
   const errorId = error ? `${uid}-error` : undefined;
   const describedBy = [errorId, hintId].filter(Boolean).join(" ") || undefined;
+  const hintNode = hint ? (
+    <span id={hintId} className="at-hint">
+      {hint}
+    </span>
+  ) : null;
   const field = (
     <input
       ref={ref}
@@ -61,11 +66,9 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         <span id={errorId} className="at-hint at-hint--error">
           {error}
         </span>
-      ) : hint ? (
-        <span id={hintId} className="at-hint">
-          {hint}
-        </span>
-      ) : null}
+      ) : (
+        hintNode
+      )}
     </div>
   );
 });
