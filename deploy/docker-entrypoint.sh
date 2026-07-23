@@ -15,6 +15,12 @@ ensure_backup_dir_permissions() {
   fi
 }
 
+# A no-op unless run as root — chown needs root, so this only actually fixes anything inside
+# `migrate` (always root) or an explicit `--user root` override. `app` calls this too (its "node"
+# CLI-passthrough branch below) but is non-root by default, so for `app` it's a no-op relying on
+# `migrate` already having chowned this directory once: `docker compose run --rm app node ...`
+# (undocumented `--no-deps` aside) always starts `migrate` first via depends_on on a truly fresh
+# stack, and a durable host-filesystem chown doesn't need repeating on later app-only restarts.
 ensure_emergency_export_dir_permissions() {
   export_dir="${EMERGENCY_EXPORT_DIR:-/app/emergency-exports}"
   if [ "$(id -u)" != "0" ]; then
@@ -189,6 +195,29 @@ if [ "${1:-}" = "node" ]; then
   run_as_node "$@"
 fi
 
+# "serve": the app service (non-root by default) — migration/backup/backfill already ran to
+# completion in the migrate service (compose depends_on: condition: service_completed_successfully).
+# That dependency is only evaluated on `docker compose up`, though — a bare app restart (crash
+# loop, `docker compose restart app`, restart: unless-stopped) never re-runs migrate, so
+# best-effort retention cleanup runs here too on every app start (Codex review on PR #572);
+# neither call needs root, unlike the migration/backup steps above.
+if [ "${1:-}" = "serve" ]; then
+  log "purging expired/revoked auth sessions and trusted devices with 120s timeout"
+  if ! run_as_node_cmd timeout 120 node packages/auth/dist/cli.js purge-auth-retention; then
+    log "warning: auth retention purge failed or timed out; continuing startup"
+  fi
+  log "nullifying stale email delivery snapshots with 120s timeout"
+  if ! run_as_node_cmd timeout 120 node packages/mail-delivery/dist/cli.js nullify-delivery-snapshots; then
+    log "warning: email delivery snapshot retention failed or timed out; continuing startup"
+  fi
+  exec node apps/web/dist/src/index.js
+fi
+
+if [ "${1:-}" != "migrate" ]; then
+  log "usage: docker-entrypoint.sh migrate|serve|node <script> ..."
+  exit 64
+fi
+
 ensure_backup_dir_permissions
 ensure_emergency_export_dir_permissions
 
@@ -230,13 +259,5 @@ log "running event custom-field registry backfill with 120s timeout"
 run_as_node_cmd timeout 120 node packages/db/dist/scripts/backfill-event-custom-fields.js
 log "running ticket-type catalog backfill with 120s timeout"
 run_as_node_cmd timeout 120 node packages/db/dist/scripts/backfill-ticket-types.js
-log "purging expired/revoked auth sessions and trusted devices with 120s timeout"
-if ! run_as_node_cmd timeout 120 node packages/auth/dist/cli.js purge-auth-retention; then
-  log "warning: auth retention purge failed or timed out; continuing startup"
-fi
-log "nullifying stale email delivery snapshots with 120s timeout"
-if ! run_as_node_cmd timeout 120 node packages/mail-delivery/dist/cli.js nullify-delivery-snapshots; then
-  log "warning: email delivery snapshot retention failed or timed out; continuing startup"
-fi
 
-run_as_node node apps/web/dist/src/index.js
+log "migrate: startup tasks complete"
