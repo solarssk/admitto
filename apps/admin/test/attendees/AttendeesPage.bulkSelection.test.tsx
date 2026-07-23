@@ -1466,6 +1466,23 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     expect(document.querySelector(".attendees-bulkbar")).toBeTruthy();
   });
 
+  // Regression: the disabled Apply button's wait message must go through the shared Tooltip
+  // (portal + role="tooltip"), not a native `title` attribute.
+  it("shows the wait message via the shared Tooltip, not a native title attribute, while unarmed", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchTicketTypes.mockResolvedValue(catalog);
+
+    await selectTwoRowsAndOpenMenu();
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change ticket type/ }));
+    const dialog = screen.getByRole("dialog", { name: "Change ticket type" });
+    const applyButton = within(dialog).getByRole("button", { name: "Apply" });
+    expect(applyButton.getAttribute("title")).toBeNull();
+    expect(screen.queryByRole("tooltip")).toBeNull();
+
+    fireEvent.mouseEnter(applyButton.closest(".at-tooltip-trigger")!);
+    expect(screen.getByRole("tooltip").textContent).toBe("Please wait 10s before confirming");
+  });
+
   it("notes attendees that already had the type in the success toast", async () => {
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
     fetchTicketTypes.mockResolvedValue(catalog);

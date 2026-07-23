@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import { Button, Input, Spinner } from "@admitto/ui";
+import { Button, Input, Spinner, Tooltip } from "@admitto/ui";
 import { useModalFocusTrap } from "./useModalFocusTrap.js";
 import "./confirm-dialog.css";
 
@@ -124,20 +124,23 @@ export function ConfirmDialog({
             {cancelLabel}
           </Button>
           <span className="confirm-dialog__confirm-wrap">
-            <Button
-              type="button"
-              variant={confirmVariant}
-              disabled={confirmDisabled}
-              icon={loading ? <Spinner size="sm" label="Working" /> : undefined}
-              title={
+            <Tooltip
+              content={
                 !armed && confirmDelaySeconds !== undefined
                   ? `Please wait ${confirmDelaySeconds}s before confirming`
                   : undefined
               }
-              onClick={onConfirm}
             >
-              {loading ? "Working…" : confirmLabel}
-            </Button>
+              <Button
+                type="button"
+                variant={confirmVariant}
+                disabled={confirmDisabled}
+                icon={loading ? <Spinner size="sm" label="Working" /> : undefined}
+                onClick={onConfirm}
+              >
+                {loading ? "Working…" : confirmLabel}
+              </Button>
+            </Tooltip>
             {!armed && confirmDelaySeconds !== undefined && (
               <span className="confirm-dialog__arm-track" aria-hidden="true">
                 <span

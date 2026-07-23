@@ -10,7 +10,7 @@ import {
   type RefObject,
 } from "react";
 import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom";
-import { Button, EmptyState, PageHeader, useToast, type ToastVariant } from "@admitto/ui";
+import { Button, EmptyState, PageHeader, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
 import {
   ApiError,
   bulkChangeRsvpStatus,
@@ -559,19 +559,22 @@ function CardPickerDialog<T>({
             Cancel
           </Button>
           <span className="confirm-dialog__confirm-wrap">
-            <Button
-              type="button"
-              variant="primary"
-              disabled={busy || !armed || (requireValue ? !value : false)}
-              title={
+            <Tooltip
+              content={
                 !armed && confirmDelaySeconds !== undefined
                   ? `Please wait ${confirmDelaySeconds}s before confirming`
                   : undefined
               }
-              onClick={onConfirm}
             >
-              {busy ? "Applying…" : "Apply"}
-            </Button>
+              <Button
+                type="button"
+                variant="primary"
+                disabled={busy || !armed || (requireValue ? !value : false)}
+                onClick={onConfirm}
+              >
+                {busy ? "Applying…" : "Apply"}
+              </Button>
+            </Tooltip>
             {!armed && confirmDelaySeconds !== undefined && (
               <span className="confirm-dialog__arm-track" aria-hidden="true">
                 <span

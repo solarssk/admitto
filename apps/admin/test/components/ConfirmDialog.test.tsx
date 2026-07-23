@@ -265,6 +265,30 @@ describe("ConfirmDialog", () => {
       expect(onConfirm).toHaveBeenCalledTimes(1);
     });
 
+    // Regression: the wait message must go through the shared Tooltip (portal + role="tooltip"),
+    // not a native `title` attribute — a native tooltip renders inconsistently with the rest of
+    // the app's disabled-control hints.
+    it("shows the wait message via the shared Tooltip, not a native title attribute", () => {
+      vi.useFakeTimers();
+      render(
+        <ConfirmDialog
+          open
+          title="Revoke all check-ins?"
+          message="..."
+          confirmLabel="Revoke all check-ins"
+          confirmDelaySeconds={10}
+          onConfirm={vi.fn()}
+          onCancel={vi.fn()}
+        />,
+      );
+      const confirmButton = screen.getByRole("button", { name: "Revoke all check-ins" });
+      expect(confirmButton.getAttribute("title")).toBeNull();
+      expect(screen.queryByRole("tooltip")).toBeNull();
+
+      fireEvent.mouseEnter(confirmButton.closest(".at-tooltip-trigger")!);
+      expect(screen.getByRole("tooltip").textContent).toBe("Please wait 10s before confirming");
+    });
+
     // Regression: the component stays mounted while closed (`open=false` returns null), so
     // `armed` must be reset before paint on reopen — otherwise the confirm button is briefly
     // enabled and a queued double-click/Enter could bypass the safety pause.
