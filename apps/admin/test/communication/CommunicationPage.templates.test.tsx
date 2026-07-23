@@ -197,6 +197,27 @@ describe("CommunicationPage templates", () => {
     expect(screen.queryByRole("button", { name: "Send email" })).toBeNull();
   });
 
+  it("shows a safe initial-load error when template loading fails outside the API layer", async () => {
+    fetchEventTemplates.mockRejectedValueOnce(new Error("network unavailable"));
+    fetchEventTemplate.mockResolvedValue(legacyTemplate);
+
+    renderPage();
+
+    expect(await screen.findByText("Failed to load template.")).toBeTruthy();
+    expect(reportApiError).not.toHaveBeenCalled();
+  });
+
+  it("reports the API status and gives an event-access error for a forbidden initial load", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventTemplates.mockRejectedValueOnce(new ApiError(403, "not_for_operator"));
+    fetchEventTemplate.mockResolvedValue(legacyTemplate);
+
+    renderPage();
+
+    expect(await screen.findByText("You do not have access to this event.")).toBeTruthy();
+    expect(reportApiError).toHaveBeenCalledWith(403);
+  });
+
   it("marks only required placeholders and lets the operator focus/click/type into Subject and Body", async () => {
     fetchEventTemplates.mockResolvedValue([]);
     fetchEventTemplate.mockResolvedValueOnce({
