@@ -432,7 +432,9 @@ function MoreActionsMenuItem({
       <button
         type="button"
         role="menuitem"
-        className={`more-actions-menu__item${variant ? ` more-actions-menu__item--${variant}` : ""}`}
+        className={["more-actions-menu__item", variant && `more-actions-menu__item--${variant}`]
+          .filter(Boolean)
+          .join(" ")}
         disabled={disabled}
         onClick={onClick}
       >
