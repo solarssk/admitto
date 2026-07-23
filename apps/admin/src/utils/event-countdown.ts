@@ -49,7 +49,6 @@ export function computeLabel(iso: string | null, timezone: string): string {
 
   const eventDay = eventCalendarDay(iso);
   const todayStr = calendarDayInTz(Date.now(), timezone);
-  const tomorrowStr = addCalendarDays(todayStr, 1);
   const yesterdayStr = addCalendarDays(todayStr, -1);
   const daysUntil = daysUntilInTz(iso, timezone);
   const daysSince = calendarDaysBetween(eventDay, todayStr);

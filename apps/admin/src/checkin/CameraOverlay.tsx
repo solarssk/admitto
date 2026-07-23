@@ -81,7 +81,7 @@ export function CameraOverlay({
   onUndo,
   showUndo,
   transportError,
-}: CameraOverlayProps) {
+}: Readonly<CameraOverlayProps>) {
   const [scanSoundMuted, toggleScanSoundMuted] = useScanSoundMuted();
   const [manualMode, setManualMode] = useState(false);
 

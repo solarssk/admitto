@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, EmptyState, Skeleton, useToast } from "@admitto/ui";
-import { ApiError, fetchRoleAssignments, revokeUserRole } from "../../api/client.js";
+import { fetchRoleAssignments, revokeUserRole } from "../../api/client.js";
 import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import type { RoleAssignmentListItemDto } from "../../api/types.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
@@ -22,7 +22,7 @@ type AssignmentRowProps = {
   onRevoke: (row: RoleAssignmentListItemDto) => void;
 };
 
-function AssignmentTableRow({ row, canRevoke, onRevoke }: AssignmentRowProps) {
+function AssignmentTableRow({ row, canRevoke, onRevoke }: Readonly<AssignmentRowProps>) {
   return (
     <tr>
       <td>{scopeLabel(row)}</td>
@@ -52,7 +52,7 @@ function AssignmentTableRow({ row, canRevoke, onRevoke }: AssignmentRowProps) {
   );
 }
 
-function AssignmentCard({ row, canRevoke, onRevoke }: AssignmentRowProps) {
+function AssignmentCard({ row, canRevoke, onRevoke }: Readonly<AssignmentRowProps>) {
   return (
     <article className="users-page__card users-page__card--assignment">
       <div className="users-page__card-head">

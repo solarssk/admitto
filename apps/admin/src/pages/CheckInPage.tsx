@@ -115,7 +115,7 @@ export function CheckInPage({
   eventOrganizationId: eventOrganizationIdProp,
   useCamera = false,
   onUseCameraChange,
-}: CheckInPageProps) {
+}: Readonly<CheckInPageProps>) {
   const { eventId } = useParams();
   const [eventTimezone, setEventTimezone] = useState(eventTimezoneProp ?? "UTC");
   const [eventDate, setEventDate] = useState<string | null>(eventDateProp ?? null);
@@ -690,7 +690,7 @@ export function CheckInPage({
 
       const now = Date.now();
       const last = lastScanRef.current;
-      if (last && last.value === scanned && now - last.at < CHECKIN_DUPLICATE_DEBOUNCE_MS) {
+      if (last?.value === scanned && now - last.at < CHECKIN_DUPLICATE_DEBOUNCE_MS) {
         setBuffer("");
         focusScan();
         return Promise.resolve(false);

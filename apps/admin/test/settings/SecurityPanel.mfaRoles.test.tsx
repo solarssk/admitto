@@ -28,6 +28,38 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+describe("SecurityPanel — session/trust duration inputs", () => {
+  it("clamps a non-numeric operator session lifetime to the 1h floor instead of NaN", async () => {
+    vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
+    renderWithToast(<SecurityPanel />);
+
+    const input = await screen.findByLabelText<HTMLInputElement>("Operator session lifetime (hours)");
+    fireEvent.change(input, { target: { value: "abc" } });
+
+    expect(input.value).toBe("1");
+  });
+
+  it("clamps a non-numeric admin session lifetime to the 1h floor instead of NaN", async () => {
+    vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
+    renderWithToast(<SecurityPanel />);
+
+    const input = await screen.findByLabelText<HTMLInputElement>("Admin session lifetime (hours)");
+    fireEvent.change(input, { target: { value: "abc" } });
+
+    expect(input.value).toBe("1");
+  });
+
+  it("clamps a non-numeric trusted-device duration to the 0-day floor instead of NaN", async () => {
+    vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
+    renderWithToast(<SecurityPanel />);
+
+    const input = await screen.findByLabelText<HTMLInputElement>('"Remember device" duration (days, 0 = off)');
+    fireEvent.change(input, { target: { value: "abc" } });
+
+    expect(input.value).toBe("0");
+  });
+});
+
 describe("SecurityPanel — Require 2FA for roles", () => {
   it("renders three distinct checkboxes with human role labels", async () => {
     vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);

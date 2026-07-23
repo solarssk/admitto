@@ -13,7 +13,7 @@ interface Props {
  * Auto-advances focus on each digit entry; backspace moves to the previous box.
  * Handles paste of a full 6-digit code.
  */
-export function TotpDigitInput({ value, onChange, disabled, id }: Props) {
+export function TotpDigitInput({ value, onChange, disabled, id }: Readonly<Props>) {
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const digits = Array.from({ length: 6 }, (_, i) => value[i] ?? "");
 

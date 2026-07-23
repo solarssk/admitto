@@ -87,7 +87,7 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
     document.body.appendChild(textarea);
     textarea.select();
     const ok = document.execCommand("copy");
-    document.body.removeChild(textarea);
+    textarea.remove();
     return ok;
   } catch {
     return false;
@@ -218,8 +218,10 @@ export function AccountPage() {
     setConfirmPassword("");
     setPasswordCode("");
     setPasswordStepUpOpen(false);
+    const sessionWord = sessions_revoked === 1 ? "session" : "sessions";
+    const revokedNote = sessions_revoked > 0 ? ` ${sessions_revoked} other ${sessionWord} revoked.` : "";
     addToast(
-      `Password changed.${sessions_revoked > 0 ? ` ${sessions_revoked} other session${sessions_revoked === 1 ? "" : "s"} revoked.` : ""}`,
+      `Password changed.${revokedNote}`,
       "success",
     );
     await loadAccount();
@@ -517,7 +519,7 @@ export function AccountPage() {
                           className="account-uri-copy-btn"
                           onClick={() => downloadBackupCodes(enrollData.backupCodes)}
                         >
-                          <i className="ti ti-download" aria-hidden="true" />
+                          <i className="ti ti-download" aria-hidden="true" />{" "}
                           Download
                         </button>
                       </div>
@@ -696,8 +698,9 @@ export function AccountPage() {
         try {
           const { sessions_revoked } = await resetMfa({ password: resetPassword, code: resetCode || undefined });
           setResetFormOpen(false); setResetPassword(""); setResetCode(""); setResetCodeRequired(false); setResetConfirmOpen(false);
+          const endedNote = sessions_revoked > 0 ? ` ${sessions_revoked} other session${sessions_revoked === 1 ? "" : "s"} ended.` : "";
           addToast(
-            `Two-factor authentication reset.${sessions_revoked > 0 ? ` ${sessions_revoked} other session${sessions_revoked === 1 ? "" : "s"} ended.` : ""}`,
+            `Two-factor authentication reset.${endedNote}`,
             "success",
           );
           await loadAccount(); await loadSessions();

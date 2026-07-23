@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, Card, Checkbox, Input, useToast } from "@admitto/ui";
-import { ApiError, fetchSecuritySettings, patchSecuritySettings } from "../api/client.js";
+import { fetchSecuritySettings, patchSecuritySettings } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { PatchSystemSettingsBody, SystemSettingsDto, SettingSource } from "../api/types.js";
 
@@ -15,7 +15,7 @@ function fieldLocked(source: SettingSource): boolean {
   return source === "env";
 }
 
-function EnvBadge({ source }: { source: SettingSource }) {
+function EnvBadge({ source }: Readonly<{ source: SettingSource }>) {
   if (!fieldLocked(source)) return null;
   return (
     <Badge variant="neutral" className="mail-field-env-badge">
@@ -207,7 +207,10 @@ export function SecurityPanel() {
             value={String(draft.sessionTtlH)}
             disabled={fieldLocked(settings.session_ttl_ms.source)}
             onChange={(e) =>
-              setDraft({ ...draft, sessionTtlH: Math.max(1, parseInt(e.target.value, 10) || 1) })
+              setDraft({
+                ...draft,
+                sessionTtlH: Math.max(1, Number.parseInt(e.target.value, 10) || 1),
+              })
             }
           />
           <EnvBadge source={settings.session_ttl_ms.source} />
@@ -225,7 +228,10 @@ export function SecurityPanel() {
             value={String(draft.opTtlH)}
             disabled={fieldLocked(settings.operator_session_ttl_ms.source)}
             onChange={(e) =>
-              setDraft({ ...draft, opTtlH: Math.max(1, parseInt(e.target.value, 10) || 1) })
+              setDraft({
+                ...draft,
+                opTtlH: Math.max(1, Number.parseInt(e.target.value, 10) || 1),
+              })
             }
           />
           <EnvBadge source={settings.operator_session_ttl_ms.source} />
@@ -245,7 +251,7 @@ export function SecurityPanel() {
             onChange={(e) =>
               setDraft({
                 ...draft,
-                trustedDays: Math.max(0, parseInt(e.target.value, 10) || 0),
+                trustedDays: Math.max(0, Number.parseInt(e.target.value, 10) || 0),
               })
             }
           />

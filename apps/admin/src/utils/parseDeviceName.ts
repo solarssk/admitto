@@ -9,18 +9,20 @@ export function parseDeviceName(
     return "iPad · Safari";
   }
   if (/iPad/i.test(ua)) {
-    const match = ua.match(/iPad.*OS ([\d_]+)/);
-    const version = match?.[1]?.replace(/_/g, ".") ?? "";
-    return `iPad${version ? ` (iOS ${version})` : ""} · Safari`;
+    const match = /iPad.*OS ([\d_]+)/.exec(ua);
+    const version = match?.[1]?.replaceAll("_", ".") ?? "";
+    const versionSuffix = version ? ` (iOS ${version})` : "";
+    return `iPad${versionSuffix} · Safari`;
   }
   if (/iPhone/i.test(ua)) {
-    const match = ua.match(/iPhone.*OS ([\d_]+)/);
-    const version = match?.[1]?.replace(/_/g, ".") ?? "";
-    return `iPhone${version ? ` (iOS ${version})` : ""}`;
+    const match = /iPhone.*OS ([\d_]+)/.exec(ua);
+    const version = match?.[1]?.replaceAll("_", ".") ?? "";
+    const versionSuffix = version ? ` (iOS ${version})` : "";
+    return `iPhone${versionSuffix}`;
   }
   if (/Android/i.test(ua)) {
   // eslint-disable-next-line security/detect-unsafe-regex -- bounded input; validated pattern
-    const match = ua.match(/Android ([\d.]+);?\s*([^;)]+)?/);
+    const match = /Android ([\d.]+);?\s*([^;)]+)?/.exec(ua);
     const device = match?.[2]?.trim() ?? "Android";
     return device;
   }

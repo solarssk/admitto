@@ -5,7 +5,7 @@ export interface PlaceholderPageProps {
   subtitle?: string;
 }
 
-export function PlaceholderPage({ title, subtitle }: PlaceholderPageProps) {
+export function PlaceholderPage({ title, subtitle }: Readonly<PlaceholderPageProps>) {
   return (
     <Card>
       <PageHeader title={title} subtitle={subtitle ?? "Not available yet."} />

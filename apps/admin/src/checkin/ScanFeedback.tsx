@@ -28,7 +28,7 @@ type Props = {
 };
 
 /** Compact scan outcome when there is no attendee card (invalid/revoked) or as a top-level status strip. */
-export function ScanFeedback({ result, hidden }: Props) {
+export function ScanFeedback({ result, hidden }: Readonly<Props>) {
   if (hidden) return null;
 
   const message = feedbackCopy(result.status);

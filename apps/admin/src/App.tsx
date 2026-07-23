@@ -1,7 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
-import { Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
-import { Spinner } from "@admitto/ui";
-import { ToastProvider } from "@admitto/ui";
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Spinner, ToastProvider } from "@admitto/ui";
 import { AdminGuard, AuthenticatedGuard, OperatorGuard, SuperadminGuard } from "./auth/RoleRouter.js";
 import { OperatorDeviceGate } from "./auth/OperatorDeviceGate.js";
 import { AuthProvider, useAuth } from "./auth/AuthProvider.js";

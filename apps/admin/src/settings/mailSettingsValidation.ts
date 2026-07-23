@@ -84,7 +84,7 @@ function optionalInt(value: string): number | undefined {
   const t = value.trim();
   if (!t) return undefined;
   const n = Number(t);
-  if (!Number.isInteger(n)) return NaN;
+  if (!Number.isInteger(n)) return Number.NaN;
   return n;
 }
 

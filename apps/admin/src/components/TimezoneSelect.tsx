@@ -133,13 +133,14 @@ function buildTzEntry(iana: string, now: Date): TzEntry {
     offsetParts.find((p) => p.type === "timeZoneName")?.value ?? "GMT+0";
 
   // eslint-disable-next-line security/detect-unsafe-regex -- bounded input; validated pattern
-  const m = offsetLabel.match(/GMT([+-])(\d+)(?::(\d+))?/);
+  const m = /GMT([+-])(\d+)(?::(\d+))?/.exec(offsetLabel);
   const offsetHours = m
-    ? (m[1] === "+" ? 1 : -1) * (parseInt(m[2] ?? "0", 10) + parseInt(m[3] ?? "0", 10) / 60)
+    ? (m[1] === "+" ? 1 : -1) *
+      (Number.parseInt(m[2] ?? "0", 10) + Number.parseInt(m[3] ?? "0", 10) / 60)
     : 0;
 
   const segments = iana.split("/");
-  const city = (segments.at(-1) ?? iana).replace(/_/g, " ");
+  const city = (segments.at(-1) ?? iana).replaceAll("_", " ");
   const aliases = IANA_SEARCH_ALIASES[iana] ?? [];
 
   const searchText = [
@@ -181,7 +182,8 @@ function buildTzIndex(): TzEntry[] {
 let tzIndex: TzEntry[] | null = null;
 
 function getTzIndex(): TzEntry[] {
-  return (tzIndex ??= buildTzIndex());
+  tzIndex ??= buildTzIndex();
+  return tzIndex;
 }
 
 function entriesForIanas(index: TzEntry[], ianas: string[]): TzEntry[] {
@@ -207,11 +209,11 @@ function searchTz(index: TzEntry[], query: string): TzEntry[] {
   }
 
   // eslint-disable-next-line security/detect-unsafe-regex -- bounded input; validated pattern
-  const om = q.match(/^(gmt)?([+-])(\d{1,2})(?:[:.，,](\d{1,2}))?$/);
+  const om = /^(gmt)?([+-])(\d{1,2})(?:[:.，,](\d{1,2}))?$/.exec(q);
   if (om) {
     const sign = om[2] === "+" ? 1 : -1;
-    const h = parseInt(om[3] ?? "0", 10);
-    const rawMin = parseInt(om[4] ?? "0", 10);
+    const h = Number.parseInt(om[3] ?? "0", 10);
+    const rawMin = Number.parseInt(om[4] ?? "0", 10);
     const fractHours = sign * (h + (rawMin > 5 ? rawMin / 60 : rawMin / 10));
     return sortByOffset(index.filter((e) => Math.abs(e.offsetHours - fractHours) < 0.09));
   }
@@ -246,7 +248,7 @@ function ensureSelectedInOptions(
   return sortByOffset([
     {
       iana: value,
-      city: value.replace(/_/g, " "),
+      city: value.replaceAll("_", " "),
       abbr: value,
       offsetLabel: "",
       offsetHours: 0,
@@ -301,7 +303,7 @@ export function TimezoneSelect({
   id,
   required,
   compact = false,
-}: TimezoneSelectProps) {
+}: Readonly<TimezoneSelectProps>) {
   const autoId = useId();
   const controlId = id ?? `tz-${autoId}`;
   const listboxId = `${controlId}-listbox`;
@@ -346,7 +348,7 @@ export function TimezoneSelect({
   useEffect(() => {
     if (!open) return;
     const selectedIdx = options.findIndex((e) => e.iana === value);
-    setHighlightIndex(selectedIdx >= 0 ? selectedIdx : 0);
+    setHighlightIndex(Math.max(selectedIdx, 0));
     const t = window.setTimeout(() => searchRef.current?.focus(), 0);
     return () => window.clearTimeout(t);
   }, [open, value, options]);
@@ -442,7 +444,6 @@ export function TimezoneSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listboxId}
-        aria-required={required || undefined}
         onClick={() => {
           if (disabled) return;
           setOpen((prev) => !prev);

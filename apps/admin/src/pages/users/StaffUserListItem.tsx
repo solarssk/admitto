@@ -41,7 +41,7 @@ type StaffUserListItemProps = {
   onRevokeSessions: (user: UserListItemDto) => void;
 };
 
-function UserRoles({ user }: { user: UserListItemDto }) {
+function UserRoles({ user }: Readonly<{ user: UserListItemDto }>) {
   if (user.roles.length === 0) return <>—</>;
   return (
     <div className="users-page__roles">
@@ -59,17 +59,17 @@ function UserRoles({ user }: { user: UserListItemDto }) {
   );
 }
 
-function UserMfa({ hasMfa }: { hasMfa: boolean }) {
+function UserMfa({ hasMfa }: Readonly<{ hasMfa: boolean }>) {
   return (
     <span className="users-page__mfa">
       {hasMfa ? (
         <>
-          <i className="ti ti-shield-check" style={{ color: "var(--status-ok)" }} aria-hidden="true" />
+          <i className="ti ti-shield-check" style={{ color: "var(--status-ok)" }} aria-hidden="true" />{" "}
           TOTP
         </>
       ) : (
         <>
-          <i className="ti ti-shield-off" style={{ color: "var(--text-disabled)" }} aria-hidden="true" />
+          <i className="ti ti-shield-off" style={{ color: "var(--text-disabled)" }} aria-hidden="true" />{" "}
           None
         </>
       )}
@@ -77,7 +77,7 @@ function UserMfa({ hasMfa }: { hasMfa: boolean }) {
   );
 }
 
-function UserSessionsBadge({ count }: { count: number }) {
+function UserSessionsBadge({ count }: Readonly<{ count: number }>) {
   return (
     <span
       className={`users-page__sessions-badge ${
@@ -89,7 +89,7 @@ function UserSessionsBadge({ count }: { count: number }) {
   );
 }
 
-function UserActions({ user, onEdit, onRevokeSessions }: StaffUserListItemProps) {
+function UserActions({ user, onEdit, onRevokeSessions }: Readonly<StaffUserListItemProps>) {
   const label = user.display_name?.trim() || user.email;
   return (
     <div className="users-page__actions">
@@ -118,7 +118,7 @@ function UserActions({ user, onEdit, onRevokeSessions }: StaffUserListItemProps)
 }
 
 /** Desktop table row for a staff user. */
-export function StaffUserTableRow({ user, onEdit, onRevokeSessions }: StaffUserListItemProps) {
+export function StaffUserTableRow({ user, onEdit, onRevokeSessions }: Readonly<StaffUserListItemProps>) {
   return (
     <tr>
       <td>
@@ -155,7 +155,7 @@ export function StaffUserTableRow({ user, onEdit, onRevokeSessions }: StaffUserL
 }
 
 /** Mobile card for a staff user. */
-export function StaffUserCard({ user, onEdit, onRevokeSessions }: StaffUserListItemProps) {
+export function StaffUserCard({ user, onEdit, onRevokeSessions }: Readonly<StaffUserListItemProps>) {
   return (
     <article className="users-page__card">
       <div className="users-page__card-head">

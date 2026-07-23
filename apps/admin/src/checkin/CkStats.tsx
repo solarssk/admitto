@@ -3,7 +3,7 @@ type CkStatsProps = {
   total: number;
 };
 
-export function CkStats({ admitted, total }: CkStatsProps) {
+export function CkStats({ admitted, total }: Readonly<CkStatsProps>) {
   const pct = total > 0 ? Math.round((admitted / total) * 100) : 0;
 
   return (

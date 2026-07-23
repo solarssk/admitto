@@ -9,7 +9,6 @@ import {
 } from "react";
 import { Button, Input, Select, Switch, useToast } from "@admitto/ui";
 import {
-  ApiError,
   fetchMailSettings,
   saveMailSettings,
   sendMailTransportTest,
@@ -373,11 +372,11 @@ function MailTestControl({
   testSending,
   testSent,
   onSend,
-}: {
+}: Readonly<{
   testSending: boolean;
   testSent: boolean;
   onSend: () => void;
-}) {
+}>) {
   return (
     <div className="setup-wizard__mail-test-cluster">
       <Button
@@ -413,14 +412,14 @@ function SecretInput({
   onReplace,
   onValueChange,
   onCancel,
-}: {
+}: Readonly<{
   label: string;
   field: MailSecretFieldDto;
   edit: SecretEdits[keyof SecretEdits];
   onReplace: () => void;
   onValueChange: (value: string) => void;
   onCancel: () => void;
-}) {
+}>) {
   const inputId = useId();
 
   if (field.locked) {

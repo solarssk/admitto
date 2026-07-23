@@ -92,7 +92,7 @@ export function CheckInCameraResultPanel({
   onCancel,
   onIssueItems,
   className,
-}: CheckInCameraResultPanelProps) {
+}: Readonly<CheckInCameraResultPanelProps>) {
   const meta = statusMeta(scanResult.status);
   const subtitle =
     scanResult.status === "ALREADY_CHECKED_IN"
@@ -100,9 +100,10 @@ export function CheckInCameraResultPanel({
       : meta.subtitle;
 
   const isPreview = scanResult.status === "PREVIEW";
+  const classNameSuffix = className ? ` ${className}` : "";
 
   return (
-    <div className={`ck-overlay__result ck-overlay__result--${meta.tone}${className ? ` ${className}` : ""}`}>
+    <div className={`ck-overlay__result ck-overlay__result--${meta.tone}${classNameSuffix}`}>
       <i className={`ti ${meta.icon} ck-overlay__result-icon`} aria-hidden="true" />
       <h2 className="ck-overlay__result-title">{meta.title}</h2>
       <p className="ck-overlay__result-sub">{subtitle}</p>

@@ -134,6 +134,17 @@ describe("CkRecentScans", () => {
     expect(screen.queryByText("vip")).toBeNull();
   });
 
+  it("falls back to a humanized status label for statuses without a dedicated mapping", () => {
+    render(
+      <CkRecentScans
+        history={[makeEntry("1", "Guest One", "no_match")]}
+        eventTimezone="UTC"
+        limit={8}
+      />,
+    );
+    expect(screen.getByText("no match")).toBeTruthy();
+  });
+
   it("still shows an orphaned/unmatched ticket_type key rather than hiding it (fail-open)", () => {
     render(
       <CkRecentScans

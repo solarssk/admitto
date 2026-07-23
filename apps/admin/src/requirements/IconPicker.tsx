@@ -55,7 +55,7 @@ export interface IconPickerProps {
 }
 
 /** Grid picker for Tabler item icons. */
-export function IconPicker({ value, onChange }: IconPickerProps) {
+export function IconPicker({ value, onChange }: Readonly<IconPickerProps>) {
   return (
     <div className="icon-picker">
       <div className="icon-picker__grid" aria-label="Choose icon">

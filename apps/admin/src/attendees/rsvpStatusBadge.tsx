@@ -17,6 +17,6 @@ const RSVP_VARIANTS: Record<RsvpStatus, "neutral" | "ok" | "error" | "warn"> = {
   cancelled: "error",
 };
 
-export function RsvpStatusBadge({ status }: { status: RsvpStatus }) {
+export function RsvpStatusBadge({ status }: Readonly<{ status: RsvpStatus }>) {
   return <Badge variant={RSVP_VARIANTS[status]}>{RSVP_LABELS[status]}</Badge>;
 }

@@ -81,7 +81,7 @@ export function DatePicker({
   placeholder,
   hint,
   error,
-}: DatePickerProps) {
+}: Readonly<DatePickerProps>) {
   const autoId = useId();
   const controlId = id ?? `dp-${autoId}`;
   const parsed = parseIsoDate(value);
@@ -298,7 +298,7 @@ export function DatePicker({
           value={text}
           onChange={onInputChange}
           onBlur={() => {
-            if (typing) void commitText(text);
+            if (typing) commitText(text);
           }}
           onKeyDown={(event) => {
             if (event.key === "Enter") {

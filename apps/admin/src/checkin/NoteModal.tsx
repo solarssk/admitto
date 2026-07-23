@@ -9,7 +9,7 @@ type NoteModalProps = {
   onSubmit: (body: string) => Promise<void>;
 };
 
-export function NoteModal({ open, onClose, onSubmit }: NoteModalProps) {
+export function NoteModal({ open, onClose, onSubmit }: Readonly<NoteModalProps>) {
   const [value, setValue] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);

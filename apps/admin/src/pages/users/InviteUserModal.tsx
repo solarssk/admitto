@@ -28,7 +28,7 @@ function mapRoleGrantError(err: unknown): string {
   return operatorApiErrorMessage(err, "Failed to assign role.");
 }
 
-export function InviteUserModal({ open, onClose, onCreated }: InviteUserModalProps) {
+export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUserModalProps>) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const [email, setEmail] = useState("");

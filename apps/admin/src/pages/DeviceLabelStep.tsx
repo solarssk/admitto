@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Card, PageHeader } from "@admitto/ui";
-import { ApiError, submitSessionDeviceLabel } from "../api/client.js";
+import { submitSessionDeviceLabel } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { parseDeviceName } from "../utils/parseDeviceName.js";
 
@@ -10,7 +10,7 @@ type DeviceLabelStepProps = {
 };
 
 /** Post-login step: optional device label for operator sessions (prefilled from UA). */
-export function DeviceLabelStep({ onSaved, onSkip }: DeviceLabelStepProps) {
+export function DeviceLabelStep({ onSaved, onSkip }: Readonly<DeviceLabelStepProps>) {
   const detectedLabel = parseDeviceName();
   const [label, setLabel] = useState(() => detectedLabel);
   const [busy, setBusy] = useState(false);
