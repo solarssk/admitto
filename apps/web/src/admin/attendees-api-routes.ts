@@ -1558,6 +1558,58 @@ export async function handleBulkDeleteEventAttendees(c: Context, db: PrismaClien
   return c.json({ deletedCount });
 }
 
+/** One row's computed bulk write, shared by every "assign one field to every selected
+ * attendee" endpoint below: the update payload for that row's value, and the audit-log metadata
+ * to record for it. `null` means the row is already at the target value. */
+type BulkFieldChange = { data: Prisma.AttendeeUncheckedUpdateInput; metadata: Record<string, unknown> };
+
+function computeTicketTypeChange(existingTicketType: string | null, target: string): BulkFieldChange | null {
+  if (existingTicketType === target) return null;
+  return {
+    data: { ticket_type: target },
+    metadata: { fields: ["ticket_type"], field_changes: { ticket_type: { from: existingTicketType, to: target } } },
+  };
+}
+
+/** Diffs already-fetched owned rows against a target, writes only the ones that actually
+ * change, logs one entry per changed row, and reports updated/already-set counts for the bulk
+ * bar's toast — the part of a "plain bulk field write" endpoint that's genuinely identical
+ * regardless of which field is being assigned (bot review: bulk-ticket-type and bulk-rsvp had
+ * independently duplicated this whole tail end). Each caller still does its own findMany (own
+ * select) and any pre-transaction validation/locking (e.g. the ticket-type catalog lock) before
+ * calling this. */
+async function applyBulkAttendeeChanges<Row extends { id: string }>(
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  owned: Row[],
+  computeChange: (row: Row) => BulkFieldChange | null,
+  actionType: string,
+  audit: OpsAuditContext,
+): Promise<{ updatedCount: number; alreadySetCount: number }> {
+  const changes: Array<{ id: string; change: BulkFieldChange }> = [];
+  for (const row of owned) {
+    const change = computeChange(row);
+    if (change) changes.push({ id: row.id, change });
+  }
+  if (changes.length === 0) {
+    return { updatedCount: 0, alreadySetCount: owned.length };
+  }
+
+  await tx.attendee.updateMany({
+    where: { id: { in: changes.map((x) => x.id) } },
+    data: changes[0]!.change.data,
+  });
+
+  await writeActionLogMany(tx, {
+    event_id: eventId,
+    action_type: actionType,
+    audit,
+    entries: changes.map((x) => ({ attendee_id: x.id, metadata: x.change.metadata })),
+  });
+
+  return { updatedCount: changes.length, alreadySetCount: owned.length - changes.length };
+}
+
 const bulkTicketTypeBodySchema = z
   .object({
     attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
@@ -1606,32 +1658,14 @@ export async function handleBulkTicketTypeEventAttendees(
         where: { id: { in: attendeeIds }, event_id: eventId },
         select: { id: true, ticket_type: true },
       });
-      const changed = owned.filter((a) => a.ticket_type !== ticket_type);
-      if (changed.length === 0) {
-        return { updatedCount: 0, alreadySetCount: owned.length };
-      }
-
-      await tx.attendee.updateMany({
-        where: { id: { in: changed.map((a) => a.id) } },
-        data: { ticket_type },
-      });
-
-      // Same action_type + metadata shape as the single-attendee PATCH's profile-edit log, so
-      // the attendee detail timeline renders a bulk change identically to a manual one.
-      await writeActionLogMany(tx, {
-        event_id: eventId,
-        action_type: "attendee_edited",
-        audit: adminAuditFromContext(c),
-        entries: changed.map((a) => ({
-          attendee_id: a.id,
-          metadata: {
-            fields: ["ticket_type"],
-            field_changes: { ticket_type: { from: a.ticket_type, to: ticket_type } },
-          },
-        })),
-      });
-
-      return { updatedCount: changed.length, alreadySetCount: owned.length - changed.length };
+      return applyBulkAttendeeChanges(
+        tx,
+        eventId,
+        owned,
+        (a) => computeTicketTypeChange(a.ticket_type, ticket_type),
+        "attendee_edited",
+        adminAuditFromContext(c),
+      );
     });
 
     return c.json(counts);
@@ -1686,33 +1720,17 @@ export async function handleBulkRsvpEventAttendees(
       // Reuses computeRsvpChange - the same "is this actually a change, what does the write
       // payload/log entry look like" logic the single-attendee PATCH path uses - so the two
       // paths can't silently diverge (e.g. if rsvp_source is later derived per-actor there).
-      const changes: Array<{ id: string; change: NonNullable<ReturnType<typeof computeRsvpChange>> }> = [];
-      for (const a of owned) {
-        const change = computeRsvpChange(a.rsvp_status, rsvp_status);
-        if (change) changes.push({ id: a.id, change });
-      }
-      if (changes.length === 0) {
-        return { updatedCount: 0, alreadySetCount: owned.length };
-      }
-
-      await tx.attendee.updateMany({
-        where: { id: { in: changes.map((x) => x.id) } },
-        data: changes[0]!.change.data,
-      });
-
-      // Same action_type + metadata shape as the single-attendee PATCH's RSVP-change log, so
-      // the attendee detail timeline renders a bulk change identically to a manual one.
-      await writeActionLogMany(tx, {
-        event_id: eventId,
-        action_type: "rsvp_status_changed",
-        audit: adminAuditFromContext(c),
-        entries: changes.map((x) => ({
-          attendee_id: x.id,
-          metadata: { from: x.change.from, to: x.change.to, source: "admin" },
-        })),
-      });
-
-      return { updatedCount: changes.length, alreadySetCount: owned.length - changes.length };
+      return applyBulkAttendeeChanges(
+        tx,
+        eventId,
+        owned,
+        (a) => {
+          const change = computeRsvpChange(a.rsvp_status, rsvp_status);
+          return change && { data: change.data, metadata: { from: change.from, to: change.to, source: "admin" } };
+        },
+        "rsvp_status_changed",
+        adminAuditFromContext(c),
+      );
     });
 
     return c.json(counts);
