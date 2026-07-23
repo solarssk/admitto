@@ -178,4 +178,67 @@ describe("setMailSettings", () => {
     expect(row.user).toBeNull();
     expect(row.from_address).toBeNull();
   });
+
+  it("updates every supported transport and sender field when explicitly supplied", async () => {
+    await setMailSettings(
+      { scopeType: "organization", scopeId: "org-1" },
+      {
+        provider: "smtp",
+        host: "full.smtp.example.com",
+        port: 2525,
+        secure: true,
+        requireTls: false,
+        tlsRejectUnauthorized: false,
+        user: "full-user",
+        heloName: "helo.example.com",
+        pool: false,
+        maxConnections: 2,
+        maxMessages: 20,
+        rateLimitPerMinute: 30,
+        connectionTimeout: 1_000,
+        greetingTimeout: 2_000,
+        socketTimeout: 3_000,
+        mailbox: "mailbox@example.com",
+        tenantId: "tenant-full",
+        clientId: "client-full",
+        saveToSentItems: false,
+        fromAddress: "sender@example.com",
+        fromName: "Admitto",
+        replyTo: "replies@example.com",
+        envelopeFrom: "envelope@example.com",
+        allowedFromDomain: "example.com",
+      },
+      prisma,
+    );
+
+    const row = await prisma.mailSettings.findUniqueOrThrow({
+      where: { scope_type_scope_id: { scope_type: "organization", scope_id: "org-1" } },
+    });
+    expect(row).toMatchObject({
+      provider: "smtp",
+      host: "full.smtp.example.com",
+      port: 2525,
+      secure: true,
+      require_tls: false,
+      tls_reject_unauthorized: false,
+      user: "full-user",
+      helo_name: "helo.example.com",
+      pool: false,
+      max_connections: 2,
+      max_messages: 20,
+      rate_limit_per_minute: 30,
+      connection_timeout: 1_000,
+      greeting_timeout: 2_000,
+      socket_timeout: 3_000,
+      mailbox: "mailbox@example.com",
+      tenant_id: "tenant-full",
+      client_id: "client-full",
+      save_to_sent_items: false,
+      from_address: "sender@example.com",
+      from_name: "Admitto",
+      reply_to: "replies@example.com",
+      envelope_from: "envelope@example.com",
+      allowed_from_domain: "example.com",
+    });
+  });
 });

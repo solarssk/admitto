@@ -156,6 +156,97 @@ describe("commitImport — create", () => {
     });
     expect(att?.custom_data).toEqual({ sock_size: "42", cap_size: "L" });
   });
+
+  it("persists all supported profile fields and generates a public ref for a new agency attendee", async () => {
+    const summary = await commitImport(
+      EVENT_ID,
+      [
+        {
+          rowIndex: 1,
+          first_name: "Agency",
+          last_name: "Profile",
+          email: "agency-profile@example.com",
+          ticket_type: "vip",
+          external_uuid: "agency-profile-uuid",
+          qr_payload: "AGENCY-PROFILE-QR",
+          company: "Example Co",
+          department: "Events",
+          custom_data: { dietary: "vegetarian" },
+        },
+      ],
+      { timezone: "Europe/Warsaw" },
+      prisma,
+    );
+
+    expect(summary).toMatchObject({ toCreate: 1, created: 1, toSkip: 0 });
+    const attendee = await prisma.attendee.findUnique({
+      where: { event_id_email: { event_id: EVENT_ID, email: "agency-profile@example.com" } },
+    });
+    expect(attendee).toMatchObject({
+      name: "Agency Profile",
+      ticket_type: "vip",
+      external_uuid: "agency-profile-uuid",
+      qr_payload: "AGENCY-PROFILE-QR",
+      company: "Example Co",
+      department: "Events",
+      custom_data: { dietary: "vegetarian" },
+      client_timezone: "Europe/Warsaw",
+    });
+    expect(attendee?.public_ref).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  });
+
+  it("skips an overwrite that would make the merged custom data invalid", async () => {
+    await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "invalid-merged-custom-data@example.com",
+        name: "Valid Before Import",
+        custom_data: { dietary: "vegetarian" },
+      },
+    });
+    const summary = await commitImport(
+      EVENT_ID,
+      [
+        {
+          rowIndex: 1,
+          first_name: "Invalid",
+          last_name: "Update",
+          email: "invalid-merged-custom-data@example.com",
+          custom_data: { dietary: "not-an-option" },
+        },
+      ],
+      {
+        overwrite: true,
+        attributeFields: [
+          {
+            label: "Dietary",
+            source_field: "dietary",
+            type: "select",
+            options: ["vegetarian", "vegan"],
+          },
+        ],
+      },
+      prisma,
+    );
+
+    expect(summary).toMatchObject({ toUpdate: 0, updated: 0, toSkip: 1 });
+    expect(summary.skipped[0]?.reason).toBe("Invalid custom attribute data");
+    const attendee = await prisma.attendee.findUnique({
+      where: { event_id_email: { event_id: EVENT_ID, email: "invalid-merged-custom-data@example.com" } },
+    });
+    expect(attendee).toMatchObject({ name: "Valid Before Import", custom_data: { dietary: "vegetarian" } });
+  });
+
+  it("writes directly through an already-owned transaction client", async () => {
+    const summary = await commitImport(
+      EVENT_ID,
+      [{ rowIndex: 1, first_name: "Owned", last_name: "Transaction", email: "owned-transaction@example.com" }],
+      { ownedTransaction: true },
+      prisma,
+    );
+
+    expect(summary).toMatchObject({ toCreate: 1, created: 1, toSkip: 0 });
+  });
 });
 
 describe("commitImport — ticket type catalog validation (batch 04 / #351)", () => {
