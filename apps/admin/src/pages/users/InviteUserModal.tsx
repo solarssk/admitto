@@ -146,7 +146,7 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
   if (!open) return null;
 
   return (
-    <div className="users-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+    <dialog className="users-modal" aria-modal="true" aria-labelledby={titleId} open>
       <div className="users-modal__backdrop" role="presentation" onClick={handleClose} />
       <div ref={panelRef} className="users-modal__panel">
         <h2 className="users-modal__title" id={titleId}>
@@ -277,6 +277,6 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
           </Button>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

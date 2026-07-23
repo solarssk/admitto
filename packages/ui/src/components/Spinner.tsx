@@ -16,8 +16,8 @@ export function Spinner({
 }: Readonly<SpinnerProps>) {
   const cls = ["at-spinner", `at-spinner--${size}`, className].filter(Boolean).join(" ");
   return (
-    <span className={cls} role="status" aria-label={label} {...rest}>
+    <output className={cls} aria-label={label} {...rest}>
       <span className="at-spinner__ring" aria-hidden="true" />
-    </span>
+    </output>
   );
 }

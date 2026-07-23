@@ -103,9 +103,9 @@ export function EventsPickerPage() {
       />
 
       {loading && (
-        <div className="picker-loading" role="status">
+        <output className="picker-loading">
           <Spinner label="Loading events" />
-        </div>
+        </output>
       )}
       {!loading && error && (
         <EmptyState title="Could not load events" description={error} />

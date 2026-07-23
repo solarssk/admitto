@@ -267,7 +267,7 @@ function AddItemModal({
   readonly onClose: () => void;
 }) {
   return (
-    <div className="event-item-modal" role="dialog" aria-modal="true" aria-label="Add item">
+    <dialog className="event-item-modal" open aria-modal="true" aria-label="Add item">
       <button
         type="button"
         className="event-item-modal__backdrop"
@@ -340,7 +340,7 @@ function AddItemModal({
           </Button>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }
 

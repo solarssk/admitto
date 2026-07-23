@@ -381,7 +381,7 @@ function SendTicketsDialog({
   if (!open) return null;
 
   return (
-    <div className="add-attendee-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+    <dialog open className="add-attendee-modal" aria-modal="true" aria-labelledby={titleId}>
       <div className="add-attendee-modal__backdrop" role="presentation" onClick={onClose} />
       <div className="add-attendee-modal__panel" ref={panelRef}>
         <h2 className="add-attendee-modal__title" id={titleId}>
@@ -436,7 +436,7 @@ function SendTicketsDialog({
           </Button>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }
 
@@ -513,7 +513,7 @@ function CardPickerDialog<T>({
   if (!open) return null;
 
   return (
-    <div className="add-attendee-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+    <dialog open className="add-attendee-modal" aria-modal="true" aria-labelledby={titleId}>
       <div className="add-attendee-modal__backdrop" role="presentation" onClick={onClose} />
       <div className="add-attendee-modal__panel" ref={panelRef}>
         <h2 className="add-attendee-modal__title" id={titleId}>
@@ -586,7 +586,7 @@ function CardPickerDialog<T>({
           </span>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }
 

@@ -218,7 +218,7 @@ export function CommunicationSendDialog({
   };
 
   return (
-    <div className="add-attendee-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+    <dialog open className="add-attendee-modal" aria-modal="true" aria-labelledby={titleId}>
       <div
         className="add-attendee-modal__backdrop"
         role="presentation"
@@ -300,9 +300,9 @@ export function CommunicationSendDialog({
               <p className="mail-field-hint">Choose a ticket type to count or send.</p>
             )}
             {recipientCount != null && (
-              <p className="mail-field-hint" role="status">
+              <output className="mail-field-hint">
                 <strong>{recipientCount}</strong> recipient{recipientCount === 1 ? "" : "s"} matched
-              </p>
+              </output>
             )}
             <div className="add-attendee-modal__actions">
               <Button
@@ -330,9 +330,9 @@ export function CommunicationSendDialog({
         {(phase === "polling" || phase === "done") && (
           <>
             {resultMessage && (
-              <p className="mail-field-hint" role="status">
+              <output className="mail-field-hint">
                 {resultMessage}
-              </p>
+              </output>
             )}
             {batchStatus && phase === "polling" && (
               <p className="mail-field-hint">
@@ -348,6 +348,6 @@ export function CommunicationSendDialog({
           </>
         )}
       </div>
-    </div>
+    </dialog>
   );
 }

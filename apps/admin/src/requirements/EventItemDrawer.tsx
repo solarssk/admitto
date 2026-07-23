@@ -142,9 +142,9 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
 
   return (
     <>
-      <div
+      <dialog
+        open
         className="event-item-modal"
-        role="dialog"
         aria-modal="true"
         aria-labelledby="item-modal-title"
       >
@@ -299,7 +299,7 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
             </Tooltip>
           </div>
         </div>
-      </div>
+      </dialog>
       <ConfirmDialog
         open={deleteConfirmOpen}
         title="Delete item"

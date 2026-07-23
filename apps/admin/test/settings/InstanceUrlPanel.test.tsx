@@ -93,6 +93,10 @@ describe("InstanceUrlPanel", () => {
     await waitFor(() => {
       expect(screen.getByText("Managed by environment")).toBeTruthy();
     });
+    const status = screen.getByText("Instance URL is configured via environment.");
+    expect(status.tagName).toBe("OUTPUT");
+    expect(status.classList.contains("mail-field-hint")).toBe(true);
+    expect(status.classList.contains("text-success")).toBe(true);
     expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
   });
 

@@ -262,7 +262,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
 
   return (
     <>
-      <div className="users-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <dialog open className="users-modal" aria-modal="true" aria-labelledby={titleId}>
         <div className="users-modal__backdrop" role="presentation" onClick={handleClose} />
         <div ref={panelRef} className="users-modal__panel">
           <h2 className="users-modal__title" id={titleId}>
@@ -356,7 +356,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
               </Button>
             </div>
           ) : (
-            <div className="users-modal__subsection" role="region" aria-labelledby={resetPasswordTitleId}>
+            <section className="users-modal__subsection" aria-labelledby={resetPasswordTitleId}>
               <h3 className="users-modal__section-title" id={resetPasswordTitleId}>
                 Reset password
               </h3>
@@ -394,7 +394,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
                   {resetPasswordBusy ? "Resetting…" : "Reset password"}
                 </Button>
               </div>
-            </div>
+            </section>
           )}
 
           <div className="users-modal__actions">
@@ -406,7 +406,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
             </Button>
           </div>
         </div>
-      </div>
+      </dialog>
 
       <ConfirmDialog
         open={deactivateConfirm}

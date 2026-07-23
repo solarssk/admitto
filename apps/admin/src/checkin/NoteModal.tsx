@@ -36,7 +36,7 @@ export function NoteModal({ open, onClose, onSubmit }: Readonly<NoteModalProps>)
   };
 
   return (
-    <div className="note-modal" role="dialog" aria-modal="true" aria-label="Add note">
+    <dialog open className="note-modal" aria-modal="true" aria-label="Add note">
       <div className="note-modal__backdrop" role="presentation" onClick={handleClose} />
       <div ref={panelRef} className="note-modal__panel">
         <p id="note-modal-hint" className="note-modal__hint">
@@ -62,6 +62,6 @@ export function NoteModal({ open, onClose, onSubmit }: Readonly<NoteModalProps>)
           </Button>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

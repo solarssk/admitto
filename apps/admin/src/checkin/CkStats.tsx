@@ -21,16 +21,12 @@ export function CkStats({ admitted, total }: Readonly<CkStatsProps>) {
         </div>
         <span className="ck-stats__pct">{pct}%</span>
       </div>
-      <div
+      <progress
         className="ck-progress"
-        role="progressbar"
-        aria-valuenow={pct}
-        aria-valuemin={0}
-        aria-valuemax={100}
+        value={pct}
+        max={100}
         aria-label={`${pct}% of expected guests admitted`}
-      >
-        <div className="ck-progress__fill" style={{ width: `${pct}%` }} />
-      </div>
+      />
     </div>
   );
 }

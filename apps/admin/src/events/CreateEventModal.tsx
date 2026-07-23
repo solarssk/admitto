@@ -87,7 +87,7 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
   if (!open) return null;
 
   return (
-    <div className="create-event-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+    <dialog className="create-event-modal" open aria-modal="true" aria-labelledby={titleId}>
       <div
         className="create-event-modal__backdrop"
         role="presentation"
@@ -194,6 +194,6 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
           </Button>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

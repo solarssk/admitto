@@ -101,7 +101,7 @@ export function DatePicker({
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const calendarRef = useRef<HTMLButtonElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDialogElement>(null);
 
   const weekdayLabels = getWeekdayLabelsShort();
   const monthLabel = formatCalendarMonth(viewYear, viewMonth);
@@ -208,7 +208,7 @@ export function DatePicker({
     setHighlightDay(next.d);
   };
 
-  const onPanelKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+  const onPanelKeyDown = (event: KeyboardEvent<HTMLDialogElement>) => {
     if (event.key === "Escape") {
       event.preventDefault();
       closePanel();
@@ -318,7 +318,7 @@ export function DatePicker({
       </div>
 
       {open && (
-        <div
+        <dialog
           ref={panelRef}
           id={`${controlId}-panel`}
           className={[
@@ -327,7 +327,7 @@ export function DatePicker({
           ]
             .filter(Boolean)
             .join(" ")}
-          role="dialog"
+          open
           aria-label="Choose date"
           aria-modal="true"
           onKeyDown={onPanelKeyDown}
@@ -434,7 +434,7 @@ export function DatePicker({
               Today
             </button>
           </div>
-        </div>
+        </dialog>
       )}
 
       {displayError ? (

@@ -96,37 +96,39 @@ export function ToastProvider({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <ToastContext.Provider value={contextValue}>
       {children}
-      <div
+      <section
         className="at-toast-stack"
-        role="region"
         aria-label="Notifications"
         aria-live="polite"
         aria-atomic="false"
       >
-        {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            className={`at-toast at-toast--${toast.variant}`}
-            data-testid="at-toast"
-            data-variant={toast.variant}
-            role={toast.variant === "error" ? "alert" : "status"}
-          >
-            <i
-              className={`ti ti-${TOAST_ICON[toast.variant]} at-toast__icon`}
-              aria-hidden="true"
-            />
-            <span className="at-toast__message">{toast.message}</span>
-            <button
-              type="button"
-              className="at-toast__dismiss"
-              aria-label="Dismiss"
-              onClick={() => dismiss(toast.id)}
+        {toasts.map((toast) => {
+          const ToastTag = toast.variant === "error" ? "div" : "output";
+          return (
+            <ToastTag
+              key={toast.id}
+              className={`at-toast at-toast--${toast.variant}`}
+              data-testid="at-toast"
+              data-variant={toast.variant}
+              role={toast.variant === "error" ? "alert" : undefined}
             >
-              ×
-            </button>
-          </div>
-        ))}
-      </div>
+              <i
+                className={`ti ti-${TOAST_ICON[toast.variant]} at-toast__icon`}
+                aria-hidden="true"
+              />
+              <span className="at-toast__message">{toast.message}</span>
+              <button
+                type="button"
+                className="at-toast__dismiss"
+                aria-label="Dismiss"
+                onClick={() => dismiss(toast.id)}
+              >
+                ×
+              </button>
+            </ToastTag>
+          );
+        })}
+      </section>
     </ToastContext.Provider>
   );
 }

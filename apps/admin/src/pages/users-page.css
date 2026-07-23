@@ -285,6 +285,17 @@
   align-items: center;
   justify-content: center;
   padding: var(--space-4);
+  /* Resets for the native <dialog> UA stylesheet (border/background/sizing/color) — this
+   * element is rendered via conditional mounting (not showModal()), so it's a plain non-modal
+   * <dialog>; the visible box is `.users-modal__panel`, not this full-viewport wrapper. */
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
 }
 
 .users-modal__backdrop {

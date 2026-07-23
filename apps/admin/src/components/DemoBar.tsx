@@ -6,7 +6,7 @@ export function DemoBar() {
   if (!import.meta.env.DEV) return null;
 
   return (
-    <div className="demo-bar" role="region" aria-label="Developer tools">
+    <section className="demo-bar" aria-label="Developer tools">
       <span className="demo-bar__label">Demo:</span>
       <button
         type="button"
@@ -29,6 +29,6 @@ export function DemoBar() {
       <button type="button" onClick={() => addToast("Ticket resent to jan@example.com", "info")}>
         i Info toast
       </button>
-    </div>
+    </section>
   );
 }

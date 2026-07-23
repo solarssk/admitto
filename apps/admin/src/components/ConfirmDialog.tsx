@@ -89,9 +89,9 @@ export function ConfirmDialog({
     (needsTypedConfirmation && (!confirmationValue || typedValue !== confirmationValue));
 
   return (
-    <div
+    <dialog
+      open
       className="confirm-dialog"
-      role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
       aria-describedby={descriptionId}
@@ -152,6 +152,6 @@ export function ConfirmDialog({
           </span>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

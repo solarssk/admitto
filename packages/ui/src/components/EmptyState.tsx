@@ -18,7 +18,7 @@ export function EmptyState({
 }: Readonly<EmptyStateProps>) {
   const cls = ["at-empty-state", className].filter(Boolean).join(" ");
   return (
-    <div className={cls} role="status">
+    <output className={cls}>
       {icon && (
         <div className="at-empty-state__icon" aria-hidden="true">
           {icon}
@@ -27,6 +27,6 @@ export function EmptyState({
       <p className="at-empty-state__title">{title}</p>
       {description && <p className="at-empty-state__desc">{description}</p>}
       {action && <div className="at-empty-state__action">{action}</div>}
-    </div>
+    </output>
   );
 }
