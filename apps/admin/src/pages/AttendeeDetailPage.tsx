@@ -1154,7 +1154,7 @@ export function AttendeeDetailPage() {
       )}
 
       {editMode && (
-        <div className="attendee-edit-modal" role="dialog" aria-modal="true" aria-labelledby={editTitleId}>
+        <dialog className="attendee-edit-modal" open aria-modal="true" aria-labelledby={editTitleId}>
           <div className="attendee-edit-modal__backdrop" role="presentation" onClick={handleCancelEdit} />
           <form ref={editPanelRef} className="attendee-edit-modal__panel" onSubmit={handleSave}>
             <h2 id={editTitleId} className="attendee-edit-modal__title">
@@ -1291,11 +1291,11 @@ export function AttendeeDetailPage() {
               </ArchivedGuard>
             </div>
           </form>
-        </div>
+        </dialog>
       )}
 
       {resendOpen && (
-        <div className="attendee-resend-modal" role="dialog" aria-modal="true" aria-labelledby={resendTitleId}>
+        <dialog className="attendee-resend-modal" open aria-modal="true" aria-labelledby={resendTitleId}>
           <div className="attendee-resend-modal__backdrop" role="presentation" onClick={() => setResendOpen(false)} />
           <form ref={resendPanelRef} className="attendee-resend-modal__panel" onSubmit={handleResend}>
             <h3 id={resendTitleId} className="attendee-resend-modal__title">Resend ticket</h3>
@@ -1323,7 +1323,7 @@ export function AttendeeDetailPage() {
               <Button type="submit" variant="primary" disabled={resending}>{resending ? "Sending…" : "Send"}</Button>
             </div>
           </form>
-        </div>
+        </dialog>
       )}
 
       <ConfirmDialog

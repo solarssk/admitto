@@ -178,7 +178,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
   if (!open) return null;
 
   return (
-    <div className="add-attendee-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+    <dialog className="add-attendee-modal" open aria-modal="true" aria-labelledby={titleId}>
       <div className="add-attendee-modal__backdrop" role="presentation" onClick={handleClose} />
       <div ref={panelRef} className="add-attendee-modal__panel">
         <h2 className="add-attendee-modal__title" id={titleId}>
@@ -296,6 +296,6 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
           </div>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

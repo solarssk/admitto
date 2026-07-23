@@ -900,6 +900,7 @@
 
 /* Check-in v2 layout */
 .check-in__offline-banner {
+  display: block;
   margin: 0 0 var(--space-3);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
@@ -1137,15 +1138,31 @@
 }
 
 .ck-progress {
+  display: block;
+  width: 100%;
   height: 6px;
-  background: var(--surface-subtle);
+  border: none;
   border-radius: 3px;
   overflow: hidden;
   margin-top: 8px;
+  background: var(--surface-subtle);
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
 }
 
-.ck-progress__fill {
-  height: 100%;
+.ck-progress::-webkit-progress-bar {
+  background: var(--surface-subtle);
+  border-radius: 3px;
+}
+
+.ck-progress::-webkit-progress-value {
+  background: var(--status-ok);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.ck-progress::-moz-progress-bar {
   background: var(--status-ok);
   border-radius: 3px;
   transition: width 0.3s ease;
@@ -1313,10 +1330,20 @@
   font-size: 2rem;
 }
 
-/* Camera overlay — fixed dark palette (#0e1117 / #f8fafc / white alphas) for full-screen QR view; not theme tokens. */
+/* Camera overlay — fixed dark palette (#0e1117 / #f8fafc / white alphas) for full-screen QR view; not theme tokens.
+   Rendered as a native <dialog> (conditionally mounted, plain `open` attribute — never .showModal()), so the
+   UA default box model (border, padding, fit-content sizing, auto margin) is reset here to keep the previous
+   edge-to-edge full-screen div layout unchanged. */
 .ck-overlay {
   position: fixed;
   inset: 0;
+  margin: 0;
+  border: none;
+  padding: 0;
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
   z-index: var(--z-overlay, 1040);
   background: #0e1117;
   color: #f8fafc;
@@ -3023,6 +3050,14 @@
   margin: calc(-1 * var(--space-1)) 0 var(--space-2);
   font-size: var(--fs-sm);
   color: var(--text-muted);
+}
+
+/* .mail-field-hint is also used on <span> (inline, e.g. AttendeesPage.tsx) so the
+   base rule can't force block display. <output> (used for status-role conversions,
+   e.g. CommunicationSendDialog.tsx) defaults to inline like <span>, which would drop
+   the vertical margin above - qualify by tag so only the <output> usage gets it. */
+output.mail-field-hint {
+  display: block;
 }
 
 .mail-transport__desc,
@@ -4885,6 +4920,16 @@
   align-items: center;
   justify-content: center;
   padding: var(--space-4);
+  /* Resets for the native <dialog> UA stylesheet (border/background/sizing/color) — this
+   * element is rendered via conditional mounting (not showModal()), so it's a plain non-modal
+   * <dialog>; the visible box is `.overview-modal__panel`, not this full-viewport wrapper. */
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  width: 100%;
+  height: 100%;
+  max-width: none;
 }
 
 .overview-modal__backdrop {
@@ -5240,11 +5285,21 @@
   color: var(--text-disabled);
 }
 
+/* This is a native <dialog> (see DatePicker.tsx), not a plain <div> — the rules below
+   reset the UA default dialog styling (inset on all sides, auto margin, fit-content
+   sizing, Canvas colors) back to what the plain <div> it replaced would have had. */
 .date-picker__panel {
   position: absolute;
   z-index: 30;
   top: calc(100% + 0.35rem);
   left: 0;
+  right: auto;
+  bottom: auto;
+  margin: 0;
+  max-width: none;
+  max-height: none;
+  height: auto;
+  color: inherit;
   width: min(100%, 18.5rem);
   padding: 0.75rem;
   border: 1px solid var(--border);

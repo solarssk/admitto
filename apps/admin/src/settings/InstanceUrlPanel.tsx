@@ -195,10 +195,10 @@ export function InstanceUrlPanel() {
         </div>
 
         {hasConfiguredUrl && (
-          <p role="status" className="text-success">
+          <output className="text-success">
             Instance URL is configured
             {settings.instance_url.source === "env" ? " via environment" : ""}.
-          </p>
+          </output>
         )}
 
         {showWarning && (

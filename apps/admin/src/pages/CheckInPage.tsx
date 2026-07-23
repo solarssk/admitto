@@ -181,14 +181,14 @@ function CheckInStreamBanners({
   return (
     <>
       {canAct && streamStatus === "auth_error" && (
-        <p className="check-in__offline-banner" role="status">
+        <output className="check-in__offline-banner">
           Live updates unavailable — check access
-        </p>
+        </output>
       )}
       {canAct && streamStatus === "reconnecting" && (
-        <p className="check-in__offline-banner" role="status">
+        <output className="check-in__offline-banner">
           Reconnecting live updates…
-        </p>
+        </output>
       )}
     </>
   );

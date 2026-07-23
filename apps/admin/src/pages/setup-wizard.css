@@ -165,6 +165,7 @@
 }
 
 .setup-wizard__refresh-notice {
+  display: block;
   margin: 0 0 1rem;
   padding: 0.75rem 1rem;
   border-radius: var(--radius-md, 0.5rem);

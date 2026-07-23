@@ -345,10 +345,10 @@ function SetupWizardContent({ onComplete }: Readonly<SetupWizardPageProps>) {
 
         <div className={`setup-wizard__body${step === TOTAL_STEPS ? " setup-wizard__body--done" : ""}`}>
           {unsavedRefreshNotice && (
-            <p className="setup-wizard__refresh-notice" role="status">
+            <output className="setup-wizard__refresh-notice">
               Unsaved form changes were lost after refresh. Settings you already saved (mail, branding)
               are still kept — continue from here.
-            </p>
+            </output>
           )}
 
           {step === 1 && <WizardStep1Checks onChecksOk={setChecksOk} />}

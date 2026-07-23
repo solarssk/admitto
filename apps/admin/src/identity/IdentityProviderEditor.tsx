@@ -621,9 +621,9 @@ export function IdentityProviderEditor({
   const title = editorTitle(mode);
 
   const loadingContent = (
-    <div className="identity-editor__loading" role="status">
+    <output className="identity-editor__loading">
       <Spinner label="Loading provider" />
-    </div>
+    </output>
   );
 
   const errorContent = (

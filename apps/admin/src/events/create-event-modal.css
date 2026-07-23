@@ -6,6 +6,16 @@
   align-items: center;
   justify-content: center;
   padding: var(--space-4);
+  /* Reset native <dialog> UA defaults (fit-content sizing, border, background,
+     auto margin) so the full-viewport overlay layout is unchanged. */
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
 }
 
 .create-event-modal__backdrop {

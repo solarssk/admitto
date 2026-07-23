@@ -218,9 +218,9 @@ export function CfAccessEditor() {
 
   if (loadState === "loading") {
     return (
-      <div className="identity-editor__loading" role="status">
+      <output className="identity-editor__loading">
         <Spinner label="Loading Cloudflare Access" />
-      </div>
+      </output>
     );
   }
 

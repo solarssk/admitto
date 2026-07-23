@@ -89,10 +89,10 @@ describe("Toast / useToast", () => {
     expect(screen.getByTestId("at-toast").getAttribute("role")).toBe("alert");
   });
 
-  it("success variant uses role status", () => {
+  it("success variant uses the native status role via <output>", () => {
     renderWithToast(<ToastHarness label="Show success toast" />);
     fireEvent.click(screen.getByRole("button", { name: "Show success toast" }));
-    expect(screen.getByTestId("at-toast").getAttribute("role")).toBe("status");
+    expect(screen.getByTestId("at-toast").tagName).toBe("OUTPUT");
   });
 
   it("clears auto-dismiss timer for toast evicted by the 5-toast cap", async () => {

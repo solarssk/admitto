@@ -185,7 +185,7 @@ export function CameraOverlay({
   }
 
   return (
-    <div className="ck-overlay" role="dialog" aria-modal="true" aria-label="Camera check-in">
+    <dialog open className="ck-overlay" aria-modal="true" aria-label="Camera check-in">
       <header className="ck-overlay__bar">
         <div className="ck-overlay__brand">
           <BrandMark />
@@ -284,6 +284,6 @@ export function CameraOverlay({
           ticketTypes={ticketTypes}
         />
       )}
-    </div>
+    </dialog>
   );
 }

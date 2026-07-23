@@ -107,13 +107,13 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
         </p>
 
         {!loadingEvents && existingEvents.length > 0 && (
-          <div className="setup-wizard__info" role="status">
+          <output className="setup-wizard__info">
             <i className="ti ti-info-circle" aria-hidden="true" />
             <span>
               You already have {existingEvents.length === 1 ? "an event" : `${existingEvents.length} events`}.
               You can skip this step or create another.
             </span>
-          </div>
+          </output>
         )}
 
         <div className="setup-wizard__field">

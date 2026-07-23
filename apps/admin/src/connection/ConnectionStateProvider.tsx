@@ -127,8 +127,8 @@ export function ConnectionBanner() {
       : "connection-banner--error";
 
   return (
-    <div className={`connection-banner ${modifier}`} role="status" data-state={state}>
+    <output className={`connection-banner ${modifier}`} data-state={state}>
       {messages[state]}
-    </div>
+    </output>
   );
 }

@@ -52,7 +52,7 @@ export function CreateTemplateDialog({
   };
 
   return (
-    <div className="add-attendee-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+    <dialog className="add-attendee-modal" open aria-modal="true" aria-labelledby={titleId}>
       <div className="add-attendee-modal__backdrop" role="presentation" onClick={busy ? undefined : onClose} />
       <div className="add-attendee-modal__panel" ref={panelRef}>
         <h2 className="add-attendee-modal__title" id={titleId}>
@@ -88,6 +88,6 @@ export function CreateTemplateDialog({
           </Button>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

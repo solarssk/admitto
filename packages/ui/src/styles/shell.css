@@ -351,6 +351,7 @@ body {
 }
 
 .connection-banner {
+  display: block;
   padding: 10px 16px;
   font-size: var(--fs-sm);
   font-weight: 600;

@@ -6,6 +6,18 @@
   align-items: center;
   justify-content: center;
   padding: var(--space-4);
+  /* Reset native <dialog> UA styling (border, background, color, and — critically —
+     `width/height: fit-content`, which would otherwise shrink this element instead of
+     stretching it to the viewport via `inset: 0`) so the overlay renders identically to the
+     plain <div> it replaced. */
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
 }
 
 .note-modal__backdrop {
