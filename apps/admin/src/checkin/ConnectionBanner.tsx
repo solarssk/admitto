@@ -1,10 +1,11 @@
-import { Tooltip } from "@admitto/ui";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import type { ConnectionState } from "../connection/types.js";
 
 export type CheckinConnectionVisual = "connected" | "offline" | "degraded" | "session_ended";
 
-function mapConnectionState(state: ConnectionState): CheckinConnectionVisual | null {
+/** Collapses the 5 raw connection states to the 4 the UI distinguishes — reused by the
+ * check-in page banner/live-region and by SystemStatus's topbar connection row. */
+export function mapConnectionState(state: ConnectionState): CheckinConnectionVisual | null {
   switch (state) {
     case "connected":
       return "connected";
@@ -20,7 +21,7 @@ function mapConnectionState(state: ConnectionState): CheckinConnectionVisual | n
   }
 }
 
-const COPY: Record<CheckinConnectionVisual, { icon: string; message: string }> = {
+export const CONNECTION_COPY: Record<CheckinConnectionVisual, { icon: string; message: string }> = {
   connected: {
     icon: "ti-circle-check",
     message: "Connected — all scans confirmed by server",
@@ -39,7 +40,18 @@ const COPY: Record<CheckinConnectionVisual, { icon: string; message: string }> =
   },
 };
 
-const BADGE_VARIANT: Record<CheckinConnectionVisual, "ok" | "warn" | "error"> = {
+/** Short form of `CONNECTION_COPY`'s message, for SystemStatus's topbar row — the full
+ * sentence reads fine as a standalone banner/live-region alert but is too long next to
+ * every other row's one-word status there. Kept next to `CONNECTION_COPY` on purpose: if
+ * you reword one, check whether the other still matches. */
+export const CONNECTION_ROW_DETAIL: Record<CheckinConnectionVisual, string> = {
+  connected: "Connected",
+  offline: "Offline",
+  degraded: "Connection error",
+  session_ended: "Session ended",
+};
+
+export const CONNECTION_SEVERITY: Record<CheckinConnectionVisual, "ok" | "warn" | "error"> = {
   connected: "ok",
   offline: "error",
   degraded: "warn",
@@ -60,34 +72,8 @@ export function CheckinConnectionLiveRegion() {
       aria-atomic="true"
       data-testid="checkin-connection-live"
     >
-      {COPY[visual].message}
+      {CONNECTION_COPY[visual].message}
     </div>
-  );
-}
-
-/**
- * Compact colored-icon indicator of the app-wide connection heartbeat, shown in every
- * state (not just when healthy) so a degraded/offline connection is actually visible
- * instead of the badge just disappearing. Rendered globally in StaffShell's topbar
- * (next to MailerStatusBadge), not scoped to the check-in page — the underlying
- * ConnectionStateProvider is app-wide, not check-in-specific.
- */
-export function ServerConnectionBadge() {
-  const { state } = useConnectionState();
-  const visual = mapConnectionState(state);
-  if (!visual) return null;
-  const { icon, message } = COPY[visual];
-
-  return (
-    <Tooltip content={message} className={`status-circle status-circle--${BADGE_VARIANT[visual]}`}>
-      {/* role="img" (not "status") — a generic <span> with just aria-label isn't reliably
-          exposed to screen readers, but this renders on every page including CheckInPage,
-          which already has its own role="status" aria-live region (CheckinConnectionLiveRegion
-          below) for the same state; role="status" here too would double-announce there. */}
-      <span role="img" aria-label={message}>
-        <i className={`ti ${icon}`} aria-hidden="true" />
-      </span>
-    </Tooltip>
   );
 }
 
@@ -103,8 +89,8 @@ export function CheckinConnectionBanner() {
       data-connection={state}
       aria-hidden="true"
     >
-      <i className={`ti ${COPY[visual].icon}`} aria-hidden="true" />
-      <span>{COPY[visual].message}</span>
+      <i className={`ti ${CONNECTION_COPY[visual].icon}`} aria-hidden="true" />
+      <span>{CONNECTION_COPY[visual].message}</span>
     </div>
   );
 }
