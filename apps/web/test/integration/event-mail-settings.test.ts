@@ -173,6 +173,7 @@ type EventMailSettingsApi = {
   organizationId: string;
   isProduction: boolean;
   hasEventOverride: boolean;
+  failedDeliveries: number;
   fields: Record<
     string,
     { value?: unknown; set?: boolean; masked?: string | null; source: string; locked?: boolean }
@@ -210,6 +211,7 @@ describe("GET /api/admin/events/:eventId/mail-settings", () => {
     expect(body.organizationId).toBe(ORG_A);
     expect(body.hasEventOverride).toBe(false);
     expect(body.fields.host?.value).toBe("smtp.org.example.com");
+    expect(body.failedDeliveries).toBe(0);
   });
 
   it("returns dedicated values with hasEventOverride:true once an event override exists", async () => {
@@ -234,6 +236,64 @@ describe("GET /api/admin/events/:eventId/mail-settings", () => {
     const body = (await res.json()) as EventMailSettingsApi;
     expect(body.hasEventOverride).toBe(true);
     expect(body.fields.host?.value).toBe("smtp.dedicated.example.com");
+  });
+
+  describe("failedDeliveries", () => {
+    const ATTENDEE = "att-event-mail-settings-failed";
+
+    afterEach(async () => {
+      await prisma.emailDelivery.deleteMany({ where: { attendee_id: ATTENDEE } });
+      await prisma.attendee.deleteMany({ where: { id: ATTENDEE } });
+    });
+
+    it("counts only this event's failed+retryable deliveries, not other statuses/events/orgs", async () => {
+      await createOrgSmtp();
+      await prisma.attendee.create({
+        data: { id: ATTENDEE, event_id: EVENT, email: "failed-delivery@example.com", name: "Failed Delivery" },
+      });
+      await prisma.emailDelivery.createMany({
+        data: [
+          // Counts: failed and still retryable.
+          {
+            organization_id: ORG_A,
+            event_id: EVENT,
+            attendee_id: ATTENDEE,
+            purpose: "initial",
+            provider: "smtp",
+            status: "failed",
+            retryable: true,
+          },
+          // Doesn't count: retries already exhausted (retryable flipped to false).
+          {
+            organization_id: ORG_A,
+            event_id: EVENT,
+            attendee_id: ATTENDEE,
+            purpose: "resend",
+            provider: "smtp",
+            status: "failed",
+            retryable: false,
+          },
+          // Doesn't count: delivered fine. Both this and the row above use purpose "resend",
+          // not a second "initial" — EmailDelivery_initial_unique only allows one initial-
+          // purpose row per (attendee_id, event_id), but doesn't restrict resends.
+          {
+            organization_id: ORG_A,
+            event_id: EVENT,
+            attendee_id: ATTENDEE,
+            purpose: "resend",
+            provider: "smtp",
+            status: "sent",
+          },
+        ],
+      });
+
+      const res = await app.request(`/api/admin/events/${EVENT}/mail-settings`, {
+        headers: { Cookie: superCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as EventMailSettingsApi;
+      expect(body.failedDeliveries).toBe(1);
+    });
   });
 
   it("rejects org admin (not superadmin) — transport config is superadmin-only", async () => {

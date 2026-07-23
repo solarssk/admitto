@@ -8,7 +8,16 @@ import { checkRedis } from "../ops/readyz.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import { normalizePersistedInstanceUrl, normalizeRuntimeBaseUrl } from "../instance-base-url.js";
 
-export type SetupCheckResult = { ok: boolean; detail: string; warn?: boolean };
+/** `reason` distinguishes *why* a check is down, currently only set by the database check
+ * — a connection failure and "connected but can't confirm migrations are current" are both
+ * `ok: false`, but they're not the same problem, and the topbar shouldn't call the latter
+ * "not reachable" (see SystemStatus.tsx's PLAIN_DETAIL). */
+export type SetupCheckResult = {
+  ok: boolean;
+  detail: string;
+  warn?: boolean;
+  reason?: "unreachable" | "migrations_pending";
+};
 
 export type SetupChecksPayload = {
   checks: {
@@ -19,20 +28,46 @@ export type SetupChecksPayload = {
   };
 };
 
+/** Shared "this simple probe took too long" cutoff for the database `SELECT 1` and the Redis
+ * ping — both are normally sub-10ms operations, so 500ms is generous enough to avoid false
+ * positives while still catching real degradation (pool exhaustion, network saturation). No
+ * existing latency convention elsewhere in the repo to anchor on; retune this one constant if
+ * it proves too sensitive or not sensitive enough. */
+const SLOW_RESPONSE_THRESHOLD_MS = 500;
+
+/** Extracted so the threshold itself is unit-testable without simulating real delays. */
+export function classifyLatency(
+  elapsedMs: number,
+  thresholdMs: number = SLOW_RESPONSE_THRESHOLD_MS,
+): "ok" | "degraded" {
+  return elapsedMs >= thresholdMs ? "degraded" : "ok";
+}
+
 /** DB reachability plus Prisma schema parity (migrations run at container boot). */
 async function checkDatabaseWithMigrations(db: PrismaClient): Promise<SetupCheckResult> {
+  const started = Date.now();
   try {
     await db.$queryRaw(Prisma.sql`SELECT 1`);
   } catch (err) {
     const detail = err instanceof Error ? err.message : "Cannot connect to PostgreSQL";
-    return { ok: false, detail };
+    return { ok: false, detail, reason: "unreachable" };
   }
+  const elapsedMs = Date.now() - started;
 
   const migrationsStatus = await checkMigrationsStatus(db);
   if (migrationsStatus !== "ok") {
     return {
       ok: false,
       detail: "PostgreSQL connected · migrations pending",
+      reason: "migrations_pending",
+    };
+  }
+
+  if (classifyLatency(elapsedMs) === "degraded") {
+    return {
+      ok: true,
+      warn: true,
+      detail: `PostgreSQL connected · migrations current · slow response (${elapsedMs} ms)`,
     };
   }
 
@@ -138,10 +173,13 @@ export async function collectSetupChecks(
   const database = await checkDatabaseWithMigrations(db);
 
   const redisProbe = await checkRedis(rateLimitStore);
+  const redisLatencyMs = redisProbe.latency_ms ?? 0;
   const redisAvailableResult: SetupCheckResult =
     redisProbe.status === "disabled"
       ? { ok: true, detail: "In-memory rate limit store (no Redis)" }
-      : { ok: true, detail: `Redis OK (${redisProbe.latency_ms ?? 0} ms)` };
+      : classifyLatency(redisLatencyMs) === "degraded"
+        ? { ok: true, warn: true, detail: `Redis OK (${redisLatencyMs} ms) · slow` }
+        : { ok: true, detail: `Redis OK (${redisLatencyMs} ms)` };
   const redis: SetupCheckResult =
     redisProbe.status === "degraded"
       ? { ok: false, detail: "Redis unreachable" }

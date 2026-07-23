@@ -17,11 +17,19 @@ vi.mock("../../src/auth/AuthProvider.js", () => ({
 }));
 
 vi.mock("../../src/layouts/StaffShell.js", () => ({
-  StaffShell: ({ sidebar, children }: { sidebar: React.ReactNode; children: React.ReactNode }) => (
+  StaffShell: ({
+    sidebar,
+    children,
+    eventId,
+  }: {
+    sidebar: React.ReactNode;
+    children: React.ReactNode;
+    eventId?: string;
+  }) => (
     <div>
       <div data-testid="connection-banner-slot">{children}</div>
       <nav data-testid="sidebar">{sidebar}</nav>
-      <main data-testid="main" />
+      <main data-testid="main" data-event-id={eventId ?? ""} />
     </div>
   ),
 }));
@@ -82,6 +90,16 @@ describe("OperatorShell", () => {
     expect(mockFetchCheckInEvents).toHaveBeenCalled();
     expect(screen.queryByTestId("connection-banner")).toBeNull();
     expect(connectionBanner).not.toHaveBeenCalled();
+  });
+
+  it("forwards the route's eventId to StaffShell on a check-in route, and forwards none on the picker", () => {
+    mockFetchCheckInEvents.mockResolvedValueOnce([sampleEvent]);
+    renderShell("/operator/events/evt-1/checkin");
+    expect(screen.getByTestId("main").dataset.eventId).toBe("evt-1");
+
+    cleanup();
+    renderShell("/operator");
+    expect(screen.getByTestId("main").dataset.eventId).toBe("");
   });
 
   it("omits location detail when the event has no location", async () => {

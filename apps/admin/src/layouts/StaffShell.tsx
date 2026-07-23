@@ -9,10 +9,13 @@ export interface StaffShellProps {
   /** Optional horizontal section nav — scrolls with page content. */
   subnav?: ReactNode;
   children: ReactNode;
+  /** The event currently in view, if any — forwarded to SystemStatus so a superadmin's
+   * Email sending row can reflect that event's own resolved mail transport. */
+  eventId?: string;
 }
 
 /** App shell: fixed sidebar + topbar chrome, scrollable main content area. */
-export function StaffShell({ sidebar, subnav, children }: Readonly<StaffShellProps>) {
+export function StaffShell({ sidebar, subnav, children, eventId }: Readonly<StaffShellProps>) {
   const { user, assignments } = useAuth();
   const [navOpen, setNavOpen] = useState(false);
   const [pinned, setPinned] = useState(readSidebarPinned);
@@ -86,7 +89,7 @@ export function StaffShell({ sidebar, subnav, children }: Readonly<StaffShellPro
             <i className="ti ti-menu-2" aria-hidden="true" />
           </button>
           <div className="topbar__right">
-            <SystemStatus assignments={assignments} mailerStatus={user.mailer_status} />
+            <SystemStatus assignments={assignments} mailerStatus={user.mailer_status} eventId={eventId} />
             <UserMenu user={user} assignments={assignments} />
           </div>
         </header>

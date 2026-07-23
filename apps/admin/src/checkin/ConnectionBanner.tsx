@@ -4,7 +4,7 @@ import type { ConnectionState } from "../connection/types.js";
 export type CheckinConnectionVisual = "connected" | "offline" | "degraded" | "session_ended";
 
 /** Collapses the 5 raw connection states to the 4 the UI distinguishes — reused by the
- * check-in page banner/live-region and by SystemStatus's topbar connection row. */
+ * check-in page banner and live-region. */
 export function mapConnectionState(state: ConnectionState): CheckinConnectionVisual | null {
   switch (state) {
     case "connected":
@@ -38,24 +38,6 @@ export const CONNECTION_COPY: Record<CheckinConnectionVisual, { icon: string; me
     icon: "ti-logout",
     message: "Your session has ended. Redirecting to sign in…",
   },
-};
-
-/** Short form of `CONNECTION_COPY`'s message, for SystemStatus's topbar row — the full
- * sentence reads fine as a standalone banner/live-region alert but is too long next to
- * every other row's one-word status there. Kept next to `CONNECTION_COPY` on purpose: if
- * you reword one, check whether the other still matches. */
-export const CONNECTION_ROW_DETAIL: Record<CheckinConnectionVisual, string> = {
-  connected: "Connected",
-  offline: "Offline",
-  degraded: "Connection error",
-  session_ended: "Session ended",
-};
-
-export const CONNECTION_SEVERITY: Record<CheckinConnectionVisual, "ok" | "warn" | "error"> = {
-  connected: "ok",
-  offline: "error",
-  degraded: "warn",
-  session_ended: "error",
 };
 
 /** Screen-reader announcements for all connection states in one stable live region. */

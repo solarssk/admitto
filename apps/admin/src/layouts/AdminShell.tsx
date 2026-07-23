@@ -114,7 +114,7 @@ export function AdminShell({ event, refreshEvent }: AdminShellProps) {
   );
 
   return (
-    <StaffShell sidebar={sidebar}>
+    <StaffShell sidebar={sidebar} eventId={eventId}>
       <Outlet context={{ event, refreshEvent }} />
     </StaffShell>
   );
