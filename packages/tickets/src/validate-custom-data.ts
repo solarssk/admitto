@@ -55,6 +55,21 @@ function assertStoredCustomDataValid(
   assertRequiredFieldsPresent(fields, values);
 }
 
+/** Normalize one raw input entry and assign it into `out`, or throw for invalid input. */
+function assignCustomDataEntry(
+  fieldByKey: Map<string, EventItemContent>,
+  out: Record<string, string>,
+  key: string,
+  value: unknown,
+): void {
+  const field = fieldByKey.get(key);
+  if (!field) throw new Error(`unknown_custom_data_field:${key}`);
+  if (value === null || value === undefined || value === "") return;
+  if (typeof value !== "string") throw new Error("validation_failed");
+  const normalized = normalizeCustomDataFieldValue(field, value);
+  if (normalized) out[key] = normalized;
+}
+
 /** Build validated custom_data for attendee create. */
 export function buildCustomDataFromInput(
   fields: EventItemContent[],
@@ -65,12 +80,7 @@ export function buildCustomDataFromInput(
 
   if (input) {
     for (const [key, value] of Object.entries(input)) {
-      const field = fieldByKey.get(key);
-      if (!field) throw new Error(`unknown_custom_data_field:${key}`);
-      if (value === null || value === undefined || value === "") continue;
-      if (typeof value !== "string") throw new Error("validation_failed");
-      const normalized = normalizeCustomDataFieldValue(field, value);
-      if (normalized) out[key] = normalized;
+      assignCustomDataEntry(fieldByKey, out, key, value);
     }
   }
 

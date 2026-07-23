@@ -10,13 +10,27 @@ import {
   resolveTemplateForEvent,
   resolveTemplateById,
   TemplateNotFoundError,
+  type BrandingUrls,
+  type EventImageAssetPlaceholders,
+  type ResolvedTemplate,
 } from "@admitto/mail-templates";
-import { createMailer, sendBatch, type ExportSink, type MailMessage } from "@admitto/mailer";
+import {
+  createMailer,
+  sendBatch,
+  type ExportSink,
+  type MailerAdapter,
+  type MailMessage,
+} from "@admitto/mailer";
 import { resolveMailConfig } from "@admitto/mailer-config";
 import { issueTicket } from "@admitto/tickets";
 import { resolveBaseUrl } from "./baseUrl.js";
-import { claimInitialDelivery, createResendDelivery } from "./claim.js";
-import { buildAttendeeMailLinks, type AttendeeMailLinks } from "./links.js";
+import { claimInitialDelivery, createResendDelivery, type ClaimInitialInput } from "./claim.js";
+import {
+  buildAttendeeMailLinks,
+  type AttendeeLinkInput,
+  type AttendeeMailLinks,
+  type EventLinkInput,
+} from "./links.js";
 import { mapSendResultToDelivery, type DeliveryStatusUpdate } from "./mapSendResult.js";
 import { splitDisplayName } from "./name.js";
 import { sanitizeDeliveryError } from "./sanitizeError.js";
@@ -92,6 +106,195 @@ function materializePendingMessage(item: PendingSend): MailMessage {
   };
 }
 
+/** Attendee fields needed to process a single ticket-email send. */
+interface AttendeeForSend extends AttendeeLinkInput {
+  name: string;
+  email: string;
+  token_enc: string | null;
+}
+
+/** Event fields needed to process a single ticket-email send. */
+interface EventForSend extends EventLinkInput {
+  id: string;
+  title: string;
+  date: Date;
+  location: string | null;
+  organization_id: string;
+}
+
+type AttendeeSendOutcome =
+  | { kind: "skip"; attendeeId: string; reason: string }
+  | { kind: "pending"; pending: PendingSend };
+
+/**
+ * Process a single attendee: issue the ticket, build links/rendered content, and claim/create
+ * the delivery row. Returns a skip outcome (batch continues without this attendee) or a pending
+ * send to hand to `deliverPendingBatch`.
+ */
+async function processAttendeeForSend(
+  attendee: AttendeeForSend,
+  event: EventForSend,
+  resolvedTemplate: ResolvedTemplate,
+  branding: BrandingUrls,
+  customAssets: EventImageAssetPlaceholders,
+  baseUrl: string,
+  purpose: "initial" | "resend",
+  options: SendTicketEmailsOptions,
+  batchId: string,
+  provider: string,
+  prisma: PrismaClient,
+): Promise<AttendeeSendOutcome> {
+  const issueResult = await issueTicket(attendee.id, prisma, baseUrl);
+
+  if (issueResult.status === "not_issuable") {
+    return { kind: "skip", attendeeId: attendee.id, reason: issueResult.reason };
+  }
+
+  let plaintextToken: string | undefined;
+  try {
+    plaintextToken = await resolvePlaintextToken(attendee, issueResult);
+  } catch (err) {
+    return {
+      kind: "skip",
+      attendeeId: attendee.id,
+      reason: err instanceof Error ? err.message : "token_unavailable",
+    };
+  }
+
+  let links: AttendeeMailLinks;
+  try {
+    links = buildAttendeeMailLinks(attendee, event, baseUrl, plaintextToken);
+  } catch (err) {
+    return {
+      kind: "skip",
+      attendeeId: attendee.id,
+      reason: err instanceof Error ? err.message : "link_build_failed",
+    };
+  }
+
+  const { first_name, last_name } = splitDisplayName(attendee.name);
+
+  const rendered = renderTemplateTrustedForStorage(
+    {
+      subject: resolvedTemplate.subjectTemplate,
+      compiledHtml: resolvedTemplate.compiledHtmlTemplate,
+    },
+    {
+      first_name,
+      last_name,
+      full_name: attendee.name,
+      email: attendee.email,
+      event_name: event.title,
+      event_date: formatEventDate(event.date, "UTC"),
+      event_location: event.location ?? "",
+      logo_url: branding.logo_url,
+      header_image_url: branding.header_image_url,
+      apple_wallet_url: "",
+      google_wallet_url: "",
+      download_page_url: "",
+      ...customAssets.vars,
+    },
+    { baseUrl, customAssetPlaceholders: customAssets.names },
+  );
+
+  const claimInput: ClaimInitialInput = {
+    organizationId: event.organization_id,
+    eventId: event.id,
+    attendeeId: attendee.id,
+    batchId,
+    templateId: resolvedTemplate.templateId,
+    provider,
+    recipientEmail:
+      purpose === "resend" && options.recipientEmail ? options.recipientEmail : attendee.email,
+    renderedSubject: rendered.subject,
+    renderedHtml: rendered.html,
+    timezone: options.timezone,
+  };
+
+  if (purpose === "initial") {
+    const claim = await claimInitialDelivery(claimInput, prisma);
+    if (claim.action === "skip") {
+      return { kind: "skip", attendeeId: attendee.id, reason: claim.reason };
+    }
+    return {
+      kind: "pending",
+      pending: {
+        deliveryId: claim.deliveryId,
+        attendeeId: attendee.id,
+        to: claim.message.to,
+        frozenSubject: claim.message.subject,
+        frozenHtml: claim.message.html,
+        links,
+        idempotencyKey: `${attendee.id}:initial`,
+        incrementAttempts: claim.action === "retry_existing",
+      },
+    };
+  }
+
+  const created = await createResendDelivery(claimInput, prisma);
+  return {
+    kind: "pending",
+    pending: {
+      deliveryId: created.deliveryId,
+      attendeeId: attendee.id,
+      to: created.message.to,
+      frozenSubject: created.message.subject,
+      frozenHtml: created.message.html,
+      links,
+      idempotencyKey: `${attendee.id}:resend:${created.deliveryId}`,
+    },
+  };
+}
+
+/**
+ * Send the batched messages via the mailer and persist per-attendee delivery outcomes.
+ * Returns the number of messages accepted by the provider (0 when the whole batch send throws).
+ */
+async function deliverPendingBatch(
+  mailer: MailerAdapter,
+  pending: PendingSend[],
+  prisma: PrismaClient,
+): Promise<number> {
+  try {
+    const batchResult = await sendBatch(
+      mailer,
+      pending.map((item) => materializePendingMessage(item)),
+    );
+
+    await Promise.all(
+      batchResult.results.map((result, index) => {
+        const item = pending[index];
+        if (!item) return Promise.resolve();
+        const update = mapSendResultToDelivery(result);
+        return prisma.emailDelivery.update({
+          where: { id: item.deliveryId },
+          data: {
+            ...update,
+            provider: result.provider,
+            ...(item.incrementAttempts ? { attempts: { increment: 1 } } : {}),
+          },
+        });
+      }),
+    );
+
+    return batchResult.sent;
+  } catch (err) {
+    const failureUpdate = deliveryUpdateFromBatchError(err);
+    await Promise.all(
+      pending.map((item) =>
+        prisma.emailDelivery.update({
+          where: { id: item.deliveryId },
+          data: {
+            ...failureUpdate,
+            ...(item.incrementAttempts ? { attempts: { increment: 1 } } : {}),
+          },
+        }),
+      ),
+    );
+    return 0;
+  }
+}
+
 /**
  * Issue ticket emails for an event (initial or resend).
  * Skips individual attendees on not_issuable, token/link build errors, or dedup — does not abort the batch.
@@ -143,142 +346,28 @@ export async function sendTicketEmails(
 
   try {
     for (const attendee of attendees) {
-      const issueResult = await issueTicket(attendee.id, prisma, baseUrl);
-
-      if (issueResult.status === "not_issuable") {
-        skipped.push({ attendeeId: attendee.id, reason: issueResult.reason });
-        continue;
-      }
-
-      let plaintextToken: string | undefined;
-      try {
-        plaintextToken = await resolvePlaintextToken(attendee, issueResult);
-      } catch (err) {
-        skipped.push({
-          attendeeId: attendee.id,
-          reason: err instanceof Error ? err.message : "token_unavailable",
-        });
-        continue;
-      }
-
-      let links: AttendeeMailLinks;
-      try {
-        links = buildAttendeeMailLinks(attendee, event, baseUrl, plaintextToken);
-      } catch (err) {
-        skipped.push({
-          attendeeId: attendee.id,
-          reason: err instanceof Error ? err.message : "link_build_failed",
-        });
-        continue;
-      }
-
-      const { first_name, last_name } = splitDisplayName(attendee.name);
-
-      const rendered = renderTemplateTrustedForStorage(
-        {
-          subject: resolvedTemplate.subjectTemplate,
-          compiledHtml: resolvedTemplate.compiledHtmlTemplate,
-        },
-        {
-          first_name,
-          last_name,
-          full_name: attendee.name,
-          email: attendee.email,
-          event_name: event.title,
-          event_date: formatEventDate(event.date, "UTC"),
-          event_location: event.location ?? "",
-          logo_url: branding.logo_url,
-          header_image_url: branding.header_image_url,
-          apple_wallet_url: "",
-          google_wallet_url: "",
-          download_page_url: "",
-          ...customAssets.vars,
-        },
-        { baseUrl, customAssetPlaceholders: customAssets.names },
-      );
-
-      const claimInput = {
-        organizationId: event.organization_id,
-        eventId: event.id,
-        attendeeId: attendee.id,
+      const outcome = await processAttendeeForSend(
+        attendee,
+        event,
+        resolvedTemplate,
+        branding,
+        customAssets,
+        baseUrl,
+        purpose,
+        options,
         batchId,
-        templateId: resolvedTemplate.templateId,
-        provider: mailer.provider,
-        recipientEmail:
-          purpose === "resend" && options.recipientEmail ? options.recipientEmail : attendee.email,
-        renderedSubject: rendered.subject,
-        renderedHtml: rendered.html,
-        timezone: options.timezone,
-      };
-
-      if (purpose === "initial") {
-        const claim = await claimInitialDelivery(claimInput, prisma);
-        if (claim.action === "skip") {
-          skipped.push({ attendeeId: attendee.id, reason: claim.reason });
-          continue;
-        }
-        pending.push({
-          deliveryId: claim.deliveryId,
-          attendeeId: attendee.id,
-          to: claim.message.to,
-          frozenSubject: claim.message.subject,
-          frozenHtml: claim.message.html,
-          links,
-          idempotencyKey: `${attendee.id}:initial`,
-          incrementAttempts: claim.action === "retry_existing",
-        });
+        mailer.provider,
+        prisma,
+      );
+      if (outcome.kind === "skip") {
+        skipped.push({ attendeeId: outcome.attendeeId, reason: outcome.reason });
       } else {
-        const created = await createResendDelivery(claimInput, prisma);
-        pending.push({
-          deliveryId: created.deliveryId,
-          attendeeId: attendee.id,
-          to: created.message.to,
-          frozenSubject: created.message.subject,
-          frozenHtml: created.message.html,
-          links,
-          idempotencyKey: `${attendee.id}:resend:${created.deliveryId}`,
-        });
+        pending.push(outcome.pending);
       }
     }
 
     if (pending.length > 0) {
-      try {
-        const batchResult = await sendBatch(
-          mailer,
-          pending.map((item) => materializePendingMessage(item)),
-        );
-        sentCount = batchResult.sent;
-
-        await Promise.all(
-          batchResult.results.map((result, index) => {
-            const item = pending[index];
-            if (!item) return Promise.resolve();
-            const update = mapSendResultToDelivery(result);
-            return prisma.emailDelivery.update({
-              where: { id: item.deliveryId },
-              data: {
-                ...update,
-                provider: result.provider,
-                ...(item.incrementAttempts ? { attempts: { increment: 1 } } : {}),
-              },
-            });
-          }),
-        );
-      } catch (err) {
-        const failureUpdate = deliveryUpdateFromBatchError(err);
-        await Promise.all(
-          pending.map((item) =>
-            prisma.emailDelivery.update({
-              where: { id: item.deliveryId },
-              data: {
-                ...failureUpdate,
-                ...(item.incrementAttempts ? { attempts: { increment: 1 } } : {}),
-              },
-            }),
-          ),
-        );
-        sentCount = 0;
-      }
+      sentCount = await deliverPendingBatch(mailer, pending, prisma);
     }
   } finally {
     await mailer.close();

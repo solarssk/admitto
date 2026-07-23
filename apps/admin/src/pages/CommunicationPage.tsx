@@ -1,6 +1,29 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type MutableRefObject,
+  type ReactNode,
+  type RefObject,
+  type SetStateAction,
+} from "react";
 import { useBlocker, useOutletContext, useParams } from "react-router-dom";
-import { Badge, Button, Card, Input, PageHeader, Select, StatusBadge, Tabs, Tooltip, useToast } from "@admitto/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  Input,
+  PageHeader,
+  Select,
+  StatusBadge,
+  Tabs,
+  Tooltip,
+  useToast,
+  type ToastVariant,
+} from "@admitto/ui";
 import {
   ApiError,
   createEventTemplate,
@@ -234,6 +257,133 @@ function mailTemplateDeleteErrorMessage(err: ApiError): string {
   return operatorApiErrorMessage(err, "Delete failed.");
 }
 
+/** True once a delete flow's in-flight seq/event guard has gone stale — a newer delete request or
+ * an event switch has superseded the async continuation currently running. Shared by
+ * `executeDeleteTemplate` and its post-delete recovery helpers so they all bail out the same way. */
+function isDeleteStale(
+  seq: number,
+  scopeEventId: string,
+  currentSeq: number,
+  currentEventId: string | undefined,
+): boolean {
+  return seq !== currentSeq || scopeEventId !== currentEventId;
+}
+
+/** Maps a failed initial-template-load error to UI state: reported status code, redirect on 401,
+ * or an operator-facing message. Extracted from the mount effect so that function's own cognitive
+ * complexity stays low. */
+function handleInitialTemplateLoadError(
+  err: unknown,
+  isCancelled: () => boolean,
+  reportApiError: (status: number) => void,
+  setError: (message: string) => void,
+): void {
+  if (isCancelled()) return;
+  if (!(err instanceof ApiError)) {
+    setError("Failed to load template.");
+    return;
+  }
+  reportApiError(err.status);
+  if (err.status === 401) {
+    const next = encodeURIComponent(window.location.pathname);
+    window.location.assign(`/login?next=${next}`);
+    return;
+  }
+  setError(err.status === 403 ? "You do not have access to this event." : "Failed to load template.");
+}
+
+/** Retries loading the "ticket" template detail after a delete (the template that just got deleted
+ * was the active one, and a "ticket" template still exists), applying it once loaded, or falling
+ * back to a blank/missing editor snapshot if both attempts fail. Extracted from
+ * `executeDeleteTemplate` so that function's own cognitive complexity stays low. */
+async function recoverTicketAfterDelete(
+  ticket: MailTemplateListItem,
+  seq: number,
+  scopeEventId: string,
+  deleteTemplateSeqRef: RefObject<number>,
+  currentEventIdRef: RefObject<string | undefined>,
+  applyDetailTemplate: (detail: {
+    name: string;
+    subject_template: string;
+    body_template: string;
+    template_format: TemplateFormat;
+  }) => void,
+  setActiveKey: Dispatch<SetStateAction<string>>,
+  setEditorSnapshotMissing: Dispatch<SetStateAction<boolean>>,
+  setSubject: Dispatch<SetStateAction<string>>,
+  setBody: Dispatch<SetStateAction<string>>,
+  setSavedSubject: Dispatch<SetStateAction<string>>,
+  setSavedBody: Dispatch<SetStateAction<string>>,
+  setValidationErrors: Dispatch<SetStateAction<string[]>>,
+  setPreviewSubject: Dispatch<SetStateAction<string | null>>,
+  setPreviewHtml: Dispatch<SetStateAction<string | null>>,
+  reportApiError: (status: number) => void,
+  addToast: (message: string, variant?: ToastVariant, duration?: number) => void,
+): Promise<void> {
+  let loaded = false;
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 2 && !loaded; attempt++) {
+    if (isDeleteStale(seq, scopeEventId, deleteTemplateSeqRef.current, currentEventIdRef.current)) return;
+    try {
+      const detail = await fetchEventTemplateById(scopeEventId, ticket.id);
+      if (isDeleteStale(seq, scopeEventId, deleteTemplateSeqRef.current, currentEventIdRef.current)) return;
+      applyDetailTemplate(detail);
+      setActiveKey(ticket.id);
+      loaded = true;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  if (loaded) return;
+  if (isDeleteStale(seq, scopeEventId, deleteTemplateSeqRef.current, currentEventIdRef.current)) return;
+  if (lastErr instanceof ApiError) reportApiError(lastErr.status);
+  setActiveKey(ticket.id);
+  setEditorSnapshotMissing(true);
+  setSubject("");
+  setBody("");
+  setSavedSubject("");
+  setSavedBody("");
+  setValidationErrors([]);
+  setPreviewSubject(null);
+  setPreviewHtml(null);
+  addToast("Template deleted. Could not load ticket template — reload the page.", "warning");
+}
+
+/** Refetches the inherited (legacy) ticket template after a delete leaves no explicit "ticket"
+ * template, applying it, or falling back to the last-known cached copy (or an operator-facing
+ * warning) if the refetch fails. Extracted from `executeDeleteTemplate` so that function's own
+ * cognitive complexity stays low. */
+async function recoverLegacyAfterDelete(
+  scopeEventId: string,
+  seq: number,
+  deleteTemplateSeqRef: RefObject<number>,
+  currentEventIdRef: RefObject<string | undefined>,
+  legacyTemplateRef: MutableRefObject<EventTemplateDto | null>,
+  applyLegacyTemplate: (data: EventTemplateDto) => void,
+  setActiveKey: Dispatch<SetStateAction<string>>,
+  addToast: (message: string, variant?: ToastVariant, duration?: number) => void,
+): Promise<void> {
+  try {
+    legacyTemplateRef.current = await fetchEventTemplate(scopeEventId);
+    if (isDeleteStale(seq, scopeEventId, deleteTemplateSeqRef.current, currentEventIdRef.current)) return;
+    applyLegacyTemplate(legacyTemplateRef.current);
+    setActiveKey("virtual-ticket");
+  } catch {
+    if (isDeleteStale(seq, scopeEventId, deleteTemplateSeqRef.current, currentEventIdRef.current)) return;
+    if (legacyTemplateRef.current) {
+      applyLegacyTemplate(legacyTemplateRef.current);
+      setActiveKey("virtual-ticket");
+      addToast(
+        "Template deleted. Inherited ticket could not be refreshed — showing last known copy.",
+        "warning",
+      );
+    } else {
+      setActiveKey("virtual-ticket");
+      addToast("Template deleted. Could not load inherited ticket — reload the page.", "warning");
+    }
+  }
+}
+
 type TemplateSelectionLoad =
   | { kind: "legacy"; data: EventTemplateDto }
   | {
@@ -249,6 +399,521 @@ type TemplateSelectionLoad =
 /** Minimal client-side email shape check (submit is via button, not native form validation). */
 function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+/** The template id to send from the "Send email" header action and `CommunicationSendDialog` —
+ * `undefined` while the editor snapshot couldn't be loaded, the current explicit template's id,
+ * or (for the virtual/inherited ticket) whichever real "ticket" template exists, if any. */
+function resolveSendTemplateId(
+  editorSnapshotMissing: boolean,
+  activeKey: string,
+  templates: MailTemplateListItem[],
+): string | undefined {
+  if (editorSnapshotMissing) return undefined;
+  if (activeKey === "virtual-ticket") return templates.find((t) => t.name === "ticket")?.id;
+  return activeKey;
+}
+
+/** Confirmation message for the delete-template dialog. */
+function deleteConfirmMessage(
+  pendingDelete: { templateId: string; name: string } | null,
+  templates: MailTemplateListItem[],
+): string {
+  if (!pendingDelete) return "Delete this template?";
+  const label = templates.find((t) => t.id === pendingDelete.templateId)?.label ?? pendingDelete.name;
+  return `Delete "${label}"? This cannot be undone.`;
+}
+
+/** Bounced-email warning banner shown above the tabs; renders nothing when there are no bounces. */
+function EmailBounceBanner({ count, onViewLog }: { count: number; onViewLog: () => void }) {
+  if (count <= 0) return null;
+  return (
+    <div className="bounce-banner" role="alert">
+      <i className="ti ti-alert-triangle" aria-hidden="true" />
+      <span>
+        <strong>
+          {count} email{count !== 1 ? "s" : ""} bounced
+        </strong>
+        {" — these addresses will not receive future mail. "}
+        <button type="button" className="bounce-banner__link" onClick={onViewLog}>
+          View delivery log
+        </button>
+      </span>
+    </div>
+  );
+}
+
+/** Banner telling the operator they're viewing the org/global default rather than an
+ * event-specific override; renders nothing once an event-specific template is active. */
+function DefaultTemplateBanner({
+  activeKey,
+  source,
+}: {
+  activeKey: string;
+  source: EventTemplateDto["source"];
+}) {
+  if (activeKey !== "virtual-ticket" || source === "event") return null;
+  return (
+    <div className="communication-default-banner">
+      Using default template — save to customize for this event.
+    </div>
+  );
+}
+
+/** Template picker sidebar: the inherited-ticket entry (only shown when no explicit "ticket"
+ * template exists yet) plus every saved template, each selectable and (except "ticket") deletable. */
+function TemplateSidebar({
+  event,
+  templateActionBusy,
+  templates,
+  activeKey,
+  requestDirtyProtectedAction,
+}: {
+  event: EventDto;
+  templateActionBusy: boolean;
+  templates: MailTemplateListItem[];
+  activeKey: string;
+  requestDirtyProtectedAction: (action: DirtyProtectedAction) => void;
+}) {
+  return (
+    <nav className="communication-templates" aria-label="Email templates">
+      <div className="communication-templates__header">
+        <span>Templates</span>
+        <ArchivedGuard event={event} reasonId="new-template-reason" disabled={templateActionBusy}>
+          {(guard) => (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => requestDirtyProtectedAction({ kind: "create" })}
+              {...guard}
+            >
+              New
+            </Button>
+          )}
+        </ArchivedGuard>
+      </div>
+      <ul className="communication-templates__list">
+        {!templates.some((t) => t.name === "ticket") && (
+          <li
+            className={[
+              "communication-templates__item",
+              activeKey === "virtual-ticket" && "communication-templates__item--active",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
+            <button
+              type="button"
+              disabled={templateActionBusy}
+              onClick={() => requestDirtyProtectedAction({ kind: "select", key: "virtual-ticket" })}
+            >
+              Ticket email (inherited)
+            </button>
+          </li>
+        )}
+        {templates.map((t) => (
+          <li
+            key={t.id}
+            className={[
+              "communication-templates__item",
+              activeKey === t.id && "communication-templates__item--active",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
+            <button
+              type="button"
+              disabled={templateActionBusy}
+              onClick={() => requestDirtyProtectedAction({ kind: "select", key: t.id })}
+            >
+              {t.label}
+            </button>
+            <ArchivedGuard
+              event={event}
+              reasonId={`delete-template-${t.id}-reason`}
+              disabled={t.name === "ticket" || templateActionBusy}
+            >
+              {(guard) => (
+                <button
+                  type="button"
+                  className="communication-templates__delete"
+                  aria-label={`Delete ${t.label}`}
+                  onClick={() =>
+                    requestDirtyProtectedAction({
+                      kind: "delete",
+                      templateId: t.id,
+                      name: t.name,
+                    })
+                  }
+                  {...guard}
+                >
+                  <i className="ti ti-trash" aria-hidden="true" />
+                </button>
+              )}
+            </ArchivedGuard>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+}
+
+/** Placeholder chips, subject/format/body editor fields, validation errors, and the
+ * preview/save actions row for the currently selected template. */
+function TemplateEditorCard({
+  event,
+  activeTemplateName,
+  allowedPlaceholders,
+  imagePlaceholders,
+  requiredPlaceholders,
+  onInsertPlaceholder,
+  subjectRef,
+  subject,
+  setSubject,
+  setActiveField,
+  editorSnapshotMissing,
+  format,
+  setFormat,
+  bodyRef,
+  body,
+  setBody,
+  validationErrors,
+  previewLoading,
+  onPreview,
+  saving,
+  isDirty,
+  saveButtonLabel,
+  onSave,
+}: {
+  event: EventDto;
+  activeTemplateName: string;
+  allowedPlaceholders: string[];
+  imagePlaceholders: string[];
+  requiredPlaceholders: string[];
+  onInsertPlaceholder: (name: string) => void;
+  subjectRef: RefObject<HTMLInputElement | null>;
+  subject: string;
+  setSubject: Dispatch<SetStateAction<string>>;
+  setActiveField: Dispatch<SetStateAction<ActiveField>>;
+  editorSnapshotMissing: boolean;
+  format: TemplateFormat;
+  setFormat: Dispatch<SetStateAction<TemplateFormat>>;
+  bodyRef: RefObject<HTMLTextAreaElement | null>;
+  body: string;
+  setBody: Dispatch<SetStateAction<string>>;
+  validationErrors: string[];
+  previewLoading: boolean;
+  onPreview: () => Promise<void>;
+  saving: boolean;
+  isDirty: boolean;
+  saveButtonLabel: string;
+  onSave: () => void;
+}) {
+  return (
+    <Card
+      title={activeTemplateName === "ticket" ? "Ticket template" : "Template"}
+      actions={<Badge variant="neutral">Outlook-safe</Badge>}
+    >
+      <div className="communication-ph-row">
+        <span className="communication-overline">Insert placeholder</span>
+        <div className="communication-chips">
+          {allowedPlaceholders.map((p) => {
+            const isImage = imagePlaceholders.includes(p);
+            const isRequired = requiredPlaceholders.includes(p);
+            const titleParts = [
+              isRequired && "Required placeholder",
+              isImage && "Inserts a ready-to-use image",
+            ].filter((part): part is string => Boolean(part));
+            return (
+              <button
+                key={p}
+                type="button"
+                className={["communication-chip", isRequired && "communication-chip--required"]
+                  .filter(Boolean)
+                  .join(" ")}
+                onClick={() => onInsertPlaceholder(p)}
+                title={titleParts.length ? titleParts.join(" · ") : undefined}
+              >
+                {isImage && <i className="ti ti-photo" aria-hidden="true" />}
+                {`{{${p}}}`}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <Tooltip
+        content={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
+        className="communication-editor-fieldset-wrapper"
+      >
+        <fieldset className="communication-editor-fieldset" disabled={isEventArchived(event)}>
+          <Input
+            ref={subjectRef}
+            label="Subject"
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+            onFocus={() => setActiveField("subject")}
+            onClick={() => setActiveField("subject")}
+            disabled={editorSnapshotMissing}
+          />
+        </fieldset>
+      </Tooltip>
+
+      <div className="communication-format-row">
+        <Button
+          variant={format === "mjml" ? "primary" : "secondary"}
+          size="sm"
+          onClick={() => setFormat("mjml")}
+        >
+          MJML
+        </Button>
+        <Button
+          variant={format === "html" ? "primary" : "secondary"}
+          size="sm"
+          onClick={() => setFormat("html")}
+        >
+          HTML
+        </Button>
+        <span className="communication-format-hint muted">
+          Changing format does not convert the template body.
+        </span>
+      </div>
+
+      <Tooltip
+        content={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
+        className="communication-editor-fieldset-wrapper"
+      >
+        <fieldset className="communication-editor-fieldset" disabled={isEventArchived(event)}>
+          <div className="communication-body-field">
+            <label htmlFor="communication-body">{format === "mjml" ? "MJML body" : "HTML body"}</label>
+            <textarea
+              id="communication-body"
+              ref={bodyRef}
+              className="communication-textarea"
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              onFocus={() => setActiveField("body")}
+              disabled={editorSnapshotMissing}
+            />
+          </div>
+        </fieldset>
+      </Tooltip>
+
+      {validationErrors.length > 0 && (
+        <div className="communication-errors" role="alert">
+          <ul>
+            {validationErrors.map((msg) => (
+              <li key={msg}>{msg}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="communication-actions">
+        <ArchivedGuard
+          event={event}
+          reasonId="preview-template-reason"
+          disabled={previewLoading || editorSnapshotMissing}
+        >
+          {(guard) => (
+            <Button variant="secondary" onClick={() => void onPreview()} {...guard}>
+              {previewLoading ? "Previewing…" : "Preview"}
+            </Button>
+          )}
+        </ArchivedGuard>
+        <ArchivedGuard
+          event={event}
+          reasonId="save-template-reason"
+          disabled={saving || !isDirty || editorSnapshotMissing}
+        >
+          {(guard) => (
+            <Button variant="primary" onClick={onSave} {...guard}>
+              {saveButtonLabel}
+            </Button>
+          )}
+        </ArchivedGuard>
+      </div>
+    </Card>
+  );
+}
+
+/** Rendered email preview: the compiled HTML in a sandboxed iframe, or a prompt to run Preview. */
+function PreviewCard({
+  previewHtml,
+  previewSubject,
+}: {
+  previewHtml: string | null;
+  previewSubject: string | null;
+}) {
+  return (
+    <Card title="Preview">
+      {previewHtml ? (
+        <>
+          <div className="communication-preview-subject">
+            <strong>Subject</strong>
+            <span>{previewSubject}</span>
+          </div>
+          <iframe
+            className="communication-preview-frame"
+            title="Email preview"
+            sandbox=""
+            srcDoc={previewHtml}
+          />
+        </>
+      ) : (
+        <div className="communication-preview-empty">Click Preview to render the draft.</div>
+      )}
+    </Card>
+  );
+}
+
+/** Test-send card: recipient email input, send button, and the last test-send result. */
+function SendTestCard({
+  event,
+  testEmail,
+  setTestEmail,
+  testSending,
+  editorSnapshotMissing,
+  onTestSend,
+  testStatus,
+}: {
+  event: EventDto;
+  testEmail: string;
+  setTestEmail: Dispatch<SetStateAction<string>>;
+  testSending: boolean;
+  editorSnapshotMissing: boolean;
+  onTestSend: () => Promise<void>;
+  testStatus: { kind: "ok" | "error"; message: string } | null;
+}) {
+  return (
+    <Card title="Send test" className="communication-test-send">
+      <div className="communication-test-row">
+        <Input
+          label="Recipient email"
+          type="email"
+          value={testEmail}
+          onChange={(e) => setTestEmail(e.target.value)}
+          placeholder="you@example.com"
+        />
+        <ArchivedGuard
+          event={event}
+          reasonId="send-test-reason"
+          disabled={testSending || !isValidEmail(testEmail.trim()) || editorSnapshotMissing}
+        >
+          {(guard) => (
+            <Button variant="secondary" onClick={() => void onTestSend()} {...guard}>
+              {testSending ? "Sending…" : "Send test"}
+            </Button>
+          )}
+        </ArchivedGuard>
+      </div>
+      {testStatus && (
+        <p
+          role="status"
+          aria-live="polite"
+          className={[
+            "communication-status",
+            testStatus.kind === "ok" ? "communication-status--ok" : "communication-status--error",
+          ].join(" ")}
+        >
+          {testStatus.message}
+        </p>
+      )}
+    </Card>
+  );
+}
+
+/** Delivery log tab: status/purpose filters, the deliveries table (with its own loading/error/empty
+ * states), and pagination. */
+function DeliveryLogTab({
+  deliveryStatus,
+  setDeliveryStatus,
+  deliveryPurpose,
+  setDeliveryPurpose,
+  setDeliveryPage,
+  deliveryLogContent,
+  deliveriesError,
+  deliveryTotal,
+  deliveryRangeStart,
+  deliveryRangeEnd,
+  effectiveDeliveryPage,
+  deliveryPages,
+}: {
+  deliveryStatus: EventDeliveriesListParams["status"];
+  setDeliveryStatus: Dispatch<SetStateAction<EventDeliveriesListParams["status"]>>;
+  deliveryPurpose: EventDeliveriesListParams["purpose"];
+  setDeliveryPurpose: Dispatch<SetStateAction<EventDeliveriesListParams["purpose"]>>;
+  setDeliveryPage: Dispatch<SetStateAction<number>>;
+  deliveryLogContent: ReactNode;
+  deliveriesError: string | null;
+  deliveryTotal: number;
+  deliveryRangeStart: number;
+  deliveryRangeEnd: number;
+  effectiveDeliveryPage: number;
+  deliveryPages: number;
+}) {
+  return (
+    <>
+      <div className="communication-log-toolbar">
+        <Select
+          label="Status"
+          value={deliveryStatus}
+          onChange={(e) => {
+            setDeliveryStatus(e.target.value as EventDeliveriesListParams["status"]);
+            setDeliveryPage(1);
+          }}
+        >
+          <option value="all">All</option>
+          <option value="queued">Queued</option>
+          <option value="accepted">Accepted</option>
+          <option value="sent">Sent</option>
+          <option value="delivered">Delivered</option>
+          <option value="failed">Failed</option>
+          <option value="bounced">Bounced</option>
+          <option value="rejected">Rejected</option>
+        </Select>
+        <Select
+          label="Purpose"
+          value={deliveryPurpose}
+          onChange={(e) => {
+            setDeliveryPurpose(e.target.value as EventDeliveriesListParams["purpose"]);
+            setDeliveryPage(1);
+          }}
+        >
+          <option value="all">All purposes</option>
+          <option value="initial">Initial send</option>
+          <option value="resend">Resend</option>
+        </Select>
+      </div>
+
+      <Card padded={false}>
+        {deliveryLogContent}
+        {!deliveriesError && deliveryTotal > 0 && (
+          <div className="communication-pager">
+            <span>
+              Showing {deliveryRangeStart}–{deliveryRangeEnd} of {deliveryTotal}
+            </span>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={effectiveDeliveryPage <= 1}
+              onClick={() => setDeliveryPage((p) => Math.max(1, p - 1))}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={effectiveDeliveryPage >= deliveryPages}
+              onClick={() => setDeliveryPage((p) => p + 1)}
+            >
+              Next
+            </Button>
+          </div>
+        )}
+      </Card>
+    </>
+  );
 }
 
 /** Admin screen for event mail template editing, preview, test-send, and delivery log. */
@@ -492,10 +1157,10 @@ export function CommunicationPage() {
     setTemplateActionBusy(true);
     try {
       await deleteEventTemplate(scopeEventId, templateId);
-      if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
+      if (isDeleteStale(seq, scopeEventId, deleteTemplateSeqRef.current, currentEventIdRef.current)) return;
 
       const items = await fetchEventTemplates(scopeEventId);
-      if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
+      if (isDeleteStale(seq, scopeEventId, deleteTemplateSeqRef.current, currentEventIdRef.current)) return;
 
       setTemplates(items);
       setDeleteConfirmOpen(false);
@@ -504,58 +1169,40 @@ export function CommunicationPage() {
       if (!deletedWasActive) return;
 
       const ticket = items.find((t) => t.name === "ticket");
-      if (ticket) {
-        let loaded = false;
-        let lastErr: unknown;
-        for (let attempt = 0; attempt < 2 && !loaded; attempt++) {
-          if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
-          try {
-            const detail = await fetchEventTemplateById(scopeEventId, ticket.id);
-            if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
-            applyDetailTemplate(detail);
-            setActiveKey(ticket.id);
-            loaded = true;
-          } catch (err) {
-            lastErr = err;
-          }
-        }
-        if (!loaded) {
-          if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
-          if (lastErr instanceof ApiError) reportApiError(lastErr.status);
-          setActiveKey(ticket.id);
-          setEditorSnapshotMissing(true);
-          setSubject("");
-          setBody("");
-          setSavedSubject("");
-          setSavedBody("");
-          setValidationErrors([]);
-          setPreviewSubject(null);
-          setPreviewHtml(null);
-          addToast("Template deleted. Could not load ticket template — reload the page.", "warning");
-        }
-      } else {
-        try {
-          legacyTemplateRef.current = await fetchEventTemplate(scopeEventId);
-          if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
-          applyLegacyTemplate(legacyTemplateRef.current);
-          setActiveKey("virtual-ticket");
-        } catch {
-          if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
-          if (legacyTemplateRef.current) {
-            applyLegacyTemplate(legacyTemplateRef.current);
-            setActiveKey("virtual-ticket");
-            addToast(
-              "Template deleted. Inherited ticket could not be refreshed — showing last known copy.",
-              "warning",
-            );
-          } else {
-            setActiveKey("virtual-ticket");
-            addToast("Template deleted. Could not load inherited ticket — reload the page.", "warning");
-          }
-        }
+      if (!ticket) {
+        await recoverLegacyAfterDelete(
+          scopeEventId,
+          seq,
+          deleteTemplateSeqRef,
+          currentEventIdRef,
+          legacyTemplateRef,
+          applyLegacyTemplate,
+          setActiveKey,
+          addToast,
+        );
+        return;
       }
+      await recoverTicketAfterDelete(
+        ticket,
+        seq,
+        scopeEventId,
+        deleteTemplateSeqRef,
+        currentEventIdRef,
+        applyDetailTemplate,
+        setActiveKey,
+        setEditorSnapshotMissing,
+        setSubject,
+        setBody,
+        setSavedSubject,
+        setSavedBody,
+        setValidationErrors,
+        setPreviewSubject,
+        setPreviewHtml,
+        reportApiError,
+        addToast,
+      );
     } catch (err) {
-      if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
+      if (isDeleteStale(seq, scopeEventId, deleteTemplateSeqRef.current, currentEventIdRef.current)) return;
       if (err instanceof ApiError) {
         reportApiError(err.status);
         addToast(mailTemplateDeleteErrorMessage(err), "error");
@@ -569,9 +1216,7 @@ export function CommunicationPage() {
     }
   }, [activeKey, applyDetailTemplate, applyLegacyTemplate, eventId, reportApiError, addToast]);
 
-  const activeTemplateSendId =
-    activeKey === "virtual-ticket" ? templates.find((t) => t.name === "ticket")?.id : activeKey;
-  const sendTemplateId = editorSnapshotMissing ? undefined : activeTemplateSendId;
+  const sendTemplateId = resolveSendTemplateId(editorSnapshotMissing, activeKey, templates);
 
   const loadDeliveries = useCallback(async (signal?: AbortSignal) => {
     if (!eventId) return;
@@ -650,18 +1295,7 @@ export function CommunicationPage() {
         setPreviewSubject(null);
         setPreviewHtml(null);
       } catch (err) {
-        if (cancelled) return;
-        if (err instanceof ApiError) {
-          reportApiError(err.status);
-          if (err.status === 401) {
-            const next = encodeURIComponent(window.location.pathname);
-            window.location.assign(`/login?next=${next}`);
-            return;
-          }
-          setError(err.status === 403 ? "You do not have access to this event." : "Failed to load template.");
-        } else {
-          setError("Failed to load template.");
-        }
+        handleInitialTemplateLoadError(err, () => cancelled, reportApiError, setError);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -960,28 +1594,14 @@ export function CommunicationPage() {
         }
       />
 
-      {emailBounced > 0 && (
-        <div className="bounce-banner" role="alert">
-          <i className="ti ti-alert-triangle" aria-hidden="true" />
-          <span>
-            <strong>
-              {emailBounced} email{emailBounced !== 1 ? "s" : ""} bounced
-            </strong>
-            {" — these addresses will not receive future mail. "}
-            <button
-              type="button"
-              className="bounce-banner__link"
-              onClick={() => {
-                setTab("log");
-                setDeliveryStatus("bounced");
-                setDeliveryPage(1);
-              }}
-            >
-              View delivery log
-            </button>
-          </span>
-        </div>
-      )}
+      <EmailBounceBanner
+        count={emailBounced}
+        onViewLog={() => {
+          setTab("log");
+          setDeliveryStatus("bounced");
+          setDeliveryPage(1);
+        }}
+      />
 
       <Tabs
         value={tab}
@@ -994,337 +1614,71 @@ export function CommunicationPage() {
 
       {tab === "compose" ? (
         <>
-          {activeKey === "virtual-ticket" && source !== "event" && (
-            <div className="communication-default-banner">
-              Using default template — save to customize for this event.
-            </div>
-          )}
+          <DefaultTemplateBanner activeKey={activeKey} source={source} />
 
           <div className="communication-compose">
-            <nav className="communication-templates" aria-label="Email templates">
-              <div className="communication-templates__header">
-                <span>Templates</span>
-                <ArchivedGuard event={event} reasonId="new-template-reason" disabled={templateActionBusy}>
-                  {(guard) => (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => requestDirtyProtectedAction({ kind: "create" })}
-                      {...guard}
-                    >
-                      New
-                    </Button>
-                  )}
-                </ArchivedGuard>
-              </div>
-              <ul className="communication-templates__list">
-                {!templates.some((t) => t.name === "ticket") && (
-                  <li
-                    className={[
-                      "communication-templates__item",
-                      activeKey === "virtual-ticket" && "communication-templates__item--active",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                  >
-                    <button
-                      type="button"
-                      disabled={templateActionBusy}
-                      onClick={() => requestDirtyProtectedAction({ kind: "select", key: "virtual-ticket" })}
-                    >
-                      Ticket email (inherited)
-                    </button>
-                  </li>
-                )}
-                {templates.map((t) => (
-                  <li
-                    key={t.id}
-                    className={[
-                      "communication-templates__item",
-                      activeKey === t.id && "communication-templates__item--active",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                  >
-                    <button
-                      type="button"
-                      disabled={templateActionBusy}
-                      onClick={() => requestDirtyProtectedAction({ kind: "select", key: t.id })}
-                    >
-                      {t.label}
-                    </button>
-                    <ArchivedGuard
-                      event={event}
-                      reasonId={`delete-template-${t.id}-reason`}
-                      disabled={t.name === "ticket" || templateActionBusy}
-                    >
-                      {(guard) => (
-                        <button
-                          type="button"
-                          className="communication-templates__delete"
-                          aria-label={`Delete ${t.label}`}
-                          onClick={() =>
-                            requestDirtyProtectedAction({
-                              kind: "delete",
-                              templateId: t.id,
-                              name: t.name,
-                            })
-                          }
-                          {...guard}
-                        >
-                          <i className="ti ti-trash" aria-hidden="true" />
-                        </button>
-                      )}
-                    </ArchivedGuard>
-                  </li>
-                ))}
-              </ul>
-            </nav>
+            <TemplateSidebar
+              event={event}
+              templateActionBusy={templateActionBusy}
+              templates={templates}
+              activeKey={activeKey}
+              requestDirtyProtectedAction={requestDirtyProtectedAction}
+            />
 
-            <Card
-              title={activeTemplateName === "ticket" ? "Ticket template" : "Template"}
-              actions={<Badge variant="neutral">Outlook-safe</Badge>}
-            >
-              <div className="communication-ph-row">
-                <span className="communication-overline">Insert placeholder</span>
-                <div className="communication-chips">
-                  {allowedPlaceholders.map((p) => {
-                    const isImage = imagePlaceholders.includes(p);
-                    const isRequired = requiredPlaceholders.includes(p);
-                    const titleParts = [
-                      isRequired && "Required placeholder",
-                      isImage && "Inserts a ready-to-use image",
-                    ].filter((part): part is string => Boolean(part));
-                    return (
-                      <button
-                        key={p}
-                        type="button"
-                        className={[
-                          "communication-chip",
-                          isRequired && "communication-chip--required",
-                        ]
-                          .filter(Boolean)
-                          .join(" ")}
-                        onClick={() => insertPlaceholder(p)}
-                        title={titleParts.length ? titleParts.join(" · ") : undefined}
-                      >
-                        {isImage && <i className="ti ti-photo" aria-hidden="true" />}
-                        {`{{${p}}}`}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+            <TemplateEditorCard
+              event={event}
+              activeTemplateName={activeTemplateName}
+              allowedPlaceholders={allowedPlaceholders}
+              imagePlaceholders={imagePlaceholders}
+              requiredPlaceholders={requiredPlaceholders}
+              onInsertPlaceholder={insertPlaceholder}
+              subjectRef={subjectRef}
+              subject={subject}
+              setSubject={setSubject}
+              setActiveField={setActiveField}
+              editorSnapshotMissing={editorSnapshotMissing}
+              format={format}
+              setFormat={setFormat}
+              bodyRef={bodyRef}
+              body={body}
+              setBody={setBody}
+              validationErrors={validationErrors}
+              previewLoading={previewLoading}
+              onPreview={handlePreview}
+              saving={saving}
+              isDirty={isDirty}
+              saveButtonLabel={saveButtonLabel}
+              onSave={handleSave}
+            />
 
-              <Tooltip
-                content={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
-                className="communication-editor-fieldset-wrapper"
-              >
-                <fieldset className="communication-editor-fieldset" disabled={isEventArchived(event)}>
-                  <Input
-                    ref={subjectRef}
-                    label="Subject"
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    onFocus={() => setActiveField("subject")}
-                    onClick={() => setActiveField("subject")}
-                    disabled={editorSnapshotMissing}
-                  />
-                </fieldset>
-              </Tooltip>
-
-              <div className="communication-format-row">
-                <Button
-                  variant={format === "mjml" ? "primary" : "secondary"}
-                  size="sm"
-                  onClick={() => setFormat("mjml")}
-                >
-                  MJML
-                </Button>
-                <Button
-                  variant={format === "html" ? "primary" : "secondary"}
-                  size="sm"
-                  onClick={() => setFormat("html")}
-                >
-                  HTML
-                </Button>
-                <span className="communication-format-hint muted">
-                  Changing format does not convert the template body.
-                </span>
-              </div>
-
-              <Tooltip
-                content={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
-                className="communication-editor-fieldset-wrapper"
-              >
-                <fieldset className="communication-editor-fieldset" disabled={isEventArchived(event)}>
-                  <div className="communication-body-field">
-                    <label htmlFor="communication-body">{format === "mjml" ? "MJML body" : "HTML body"}</label>
-                    <textarea
-                      id="communication-body"
-                      ref={bodyRef}
-                      className="communication-textarea"
-                      value={body}
-                      onChange={(e) => setBody(e.target.value)}
-                      onFocus={() => setActiveField("body")}
-                      disabled={editorSnapshotMissing}
-                    />
-                  </div>
-                </fieldset>
-              </Tooltip>
-
-              {validationErrors.length > 0 && (
-                <div className="communication-errors" role="alert">
-                  <ul>
-                    {validationErrors.map((msg) => (
-                      <li key={msg}>{msg}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              <div className="communication-actions">
-                <ArchivedGuard
-                  event={event}
-                  reasonId="preview-template-reason"
-                  disabled={previewLoading || editorSnapshotMissing}
-                >
-                  {(guard) => (
-                    <Button variant="secondary" onClick={() => void handlePreview()} {...guard}>
-                      {previewLoading ? "Previewing…" : "Preview"}
-                    </Button>
-                  )}
-                </ArchivedGuard>
-                <ArchivedGuard
-                  event={event}
-                  reasonId="save-template-reason"
-                  disabled={saving || !isDirty || editorSnapshotMissing}
-                >
-                  {(guard) => (
-                    <Button variant="primary" onClick={handleSave} {...guard}>
-                      {saveButtonLabel}
-                    </Button>
-                  )}
-                </ArchivedGuard>
-              </div>
-            </Card>
-
-            <Card title="Preview">
-              {previewHtml ? (
-                <>
-                  <div className="communication-preview-subject">
-                    <strong>Subject</strong>
-                    <span>{previewSubject}</span>
-                  </div>
-                  <iframe
-                    className="communication-preview-frame"
-                    title="Email preview"
-                    sandbox=""
-                    srcDoc={previewHtml}
-                  />
-                </>
-              ) : (
-                <div className="communication-preview-empty">Click Preview to render the draft.</div>
-              )}
-            </Card>
+            <PreviewCard previewHtml={previewHtml} previewSubject={previewSubject} />
           </div>
 
-          <Card title="Send test" className="communication-test-send">
-            <div className="communication-test-row">
-              <Input
-                label="Recipient email"
-                type="email"
-                value={testEmail}
-                onChange={(e) => setTestEmail(e.target.value)}
-                placeholder="you@example.com"
-              />
-              <ArchivedGuard
-                event={event}
-                reasonId="send-test-reason"
-                disabled={testSending || !isValidEmail(testEmail.trim()) || editorSnapshotMissing}
-              >
-                {(guard) => (
-                  <Button variant="secondary" onClick={() => void handleTestSend()} {...guard}>
-                    {testSending ? "Sending…" : "Send test"}
-                  </Button>
-                )}
-              </ArchivedGuard>
-            </div>
-            {testStatus && (
-              <p
-                role="status"
-                aria-live="polite"
-                className={[
-                  "communication-status",
-                  testStatus.kind === "ok" ? "communication-status--ok" : "communication-status--error",
-                ].join(" ")}
-              >
-                {testStatus.message}
-              </p>
-            )}
-          </Card>
+          <SendTestCard
+            event={event}
+            testEmail={testEmail}
+            setTestEmail={setTestEmail}
+            testSending={testSending}
+            editorSnapshotMissing={editorSnapshotMissing}
+            onTestSend={handleTestSend}
+            testStatus={testStatus}
+          />
         </>
       ) : (
-        <>
-          <div className="communication-log-toolbar">
-            <Select
-              label="Status"
-              value={deliveryStatus}
-              onChange={(e) => {
-                setDeliveryStatus(e.target.value as EventDeliveriesListParams["status"]);
-                setDeliveryPage(1);
-              }}
-            >
-              <option value="all">All</option>
-              <option value="queued">Queued</option>
-              <option value="accepted">Accepted</option>
-              <option value="sent">Sent</option>
-              <option value="delivered">Delivered</option>
-              <option value="failed">Failed</option>
-              <option value="bounced">Bounced</option>
-              <option value="rejected">Rejected</option>
-            </Select>
-            <Select
-              label="Purpose"
-              value={deliveryPurpose}
-              onChange={(e) => {
-                setDeliveryPurpose(e.target.value as EventDeliveriesListParams["purpose"]);
-                setDeliveryPage(1);
-              }}
-            >
-              <option value="all">All purposes</option>
-              <option value="initial">Initial send</option>
-              <option value="resend">Resend</option>
-            </Select>
-          </div>
-
-          <Card padded={false}>
-            {deliveryLogContent}
-            {!deliveriesError && deliveryTotal > 0 && (
-              <div className="communication-pager">
-                <span>
-                  Showing {deliveryRangeStart}–{deliveryRangeEnd} of {deliveryTotal}
-                </span>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={effectiveDeliveryPage <= 1}
-                  onClick={() => setDeliveryPage((p) => Math.max(1, p - 1))}
-                >
-                  Previous
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={effectiveDeliveryPage >= deliveryPages}
-                  onClick={() => setDeliveryPage((p) => p + 1)}
-                >
-                  Next
-                </Button>
-              </div>
-            )}
-          </Card>
-        </>
+        <DeliveryLogTab
+          deliveryStatus={deliveryStatus}
+          setDeliveryStatus={setDeliveryStatus}
+          deliveryPurpose={deliveryPurpose}
+          setDeliveryPurpose={setDeliveryPurpose}
+          setDeliveryPage={setDeliveryPage}
+          deliveryLogContent={deliveryLogContent}
+          deliveriesError={deliveriesError}
+          deliveryTotal={deliveryTotal}
+          deliveryRangeStart={deliveryRangeStart}
+          deliveryRangeEnd={deliveryRangeEnd}
+          effectiveDeliveryPage={effectiveDeliveryPage}
+          deliveryPages={deliveryPages}
+        />
       )}
       <ConfirmDialog
         open={dirtyConfirmOpen}
@@ -1347,11 +1701,7 @@ export function CommunicationPage() {
       <ConfirmDialog
         open={deleteConfirmOpen}
         title="Delete template?"
-        message={
-          pendingDelete
-            ? `Delete "${templates.find((t) => t.id === pendingDelete.templateId)?.label ?? pendingDelete.name}"? This cannot be undone.`
-            : "Delete this template?"
-        }
+        message={deleteConfirmMessage(pendingDelete, templates)}
         confirmLabel="Delete"
         confirmVariant="danger"
         loading={templateActionBusy}

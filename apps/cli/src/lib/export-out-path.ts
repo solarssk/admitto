@@ -68,6 +68,64 @@ function canonicalExportOutPath(out: string): string {
   return candidate;
 }
 
+/** Reject `--out` when it lands under UPLOAD_DIR, raw or resolved (public /uploads/*). */
+function assertOutNotUnderUploadDir(
+  resolvedOut: string,
+  canonicalOut: string,
+  resolvedUploadDir: string,
+  realUploadDir: string,
+): void {
+  // Raw path: /uploads/* is served without auth; readFile follows symlinks under UPLOAD_DIR.
+  if (isPathInside(resolvedOut, resolvedUploadDir)) {
+    throw new CliError(
+      `--out must not be under UPLOAD_DIR (${resolvedUploadDir}): /uploads is served without auth.`,
+    );
+  }
+  if (isPathInside(canonicalOut, realUploadDir)) {
+    throw new CliError(
+      `--out must not resolve under UPLOAD_DIR (${realUploadDir}): /uploads is served without auth.`,
+    );
+  }
+}
+
+/** Reject EMERGENCY_EXPORT_DIR configs that themselves sit under UPLOAD_DIR. */
+function assertEmergencyDirNotUnderUpload(
+  resolvedEmergencyDir: string,
+  realEmergencyDir: string,
+  resolvedUploadDir: string,
+  realUploadDir: string,
+): void {
+  const emergencyUnderUpload =
+    isPathInside(resolvedEmergencyDir, resolvedUploadDir) ||
+    isPathInside(resolvedEmergencyDir, realUploadDir) ||
+    isPathInside(realEmergencyDir, resolvedUploadDir) ||
+    isPathInside(realEmergencyDir, realUploadDir);
+  if (emergencyUnderUpload) {
+    throw new CliError(
+      `EMERGENCY_EXPORT_DIR must not be under UPLOAD_DIR (${resolvedUploadDir}; realpath ${realUploadDir}): use a non-public path.`,
+    );
+  }
+}
+
+/** Require `--out` (raw and resolved) to fall inside EMERGENCY_EXPORT_DIR. */
+function assertOutUnderEmergencyDir(
+  resolvedOut: string,
+  canonicalOut: string,
+  resolvedEmergencyDir: string,
+  realEmergencyDir: string,
+): void {
+  if (!isPathInside(resolvedOut, resolvedEmergencyDir)) {
+    throw new CliError(
+      `--out must be under EMERGENCY_EXPORT_DIR (${resolvedEmergencyDir}).`,
+    );
+  }
+  if (!isPathInside(canonicalOut, realEmergencyDir)) {
+    throw new CliError(
+      `--out must resolve under EMERGENCY_EXPORT_DIR (${realEmergencyDir}).`,
+    );
+  }
+}
+
 /**
  * Validate `--out` and return the canonical path to write.
  * Restricts to EMERGENCY_EXPORT_DIR and blocks UPLOAD_DIR (public /uploads/*).
@@ -85,17 +143,7 @@ export function assertSafeEmergencyExportOut(
   const realUploadDir = uploadDir ? canonicalDir(uploadDir) : undefined;
 
   if (resolvedUploadDir && realUploadDir) {
-    // Raw path: /uploads/* is served without auth; readFile follows symlinks under UPLOAD_DIR.
-    if (isPathInside(resolvedOut, resolvedUploadDir)) {
-      throw new CliError(
-        `--out must not be under UPLOAD_DIR (${resolvedUploadDir}): /uploads is served without auth.`,
-      );
-    }
-    if (isPathInside(canonicalOut, realUploadDir)) {
-      throw new CliError(
-        `--out must not resolve under UPLOAD_DIR (${realUploadDir}): /uploads is served without auth.`,
-      );
-    }
+    assertOutNotUnderUploadDir(resolvedOut, canonicalOut, resolvedUploadDir, realUploadDir);
   }
 
   const emergencyDir = env.EMERGENCY_EXPORT_DIR?.trim();
@@ -104,28 +152,15 @@ export function assertSafeEmergencyExportOut(
     const realEmergencyDir = canonicalDir(emergencyDir);
 
     if (resolvedUploadDir && realUploadDir) {
-      const emergencyUnderUpload =
-        isPathInside(resolvedEmergencyDir, resolvedUploadDir) ||
-        isPathInside(resolvedEmergencyDir, realUploadDir) ||
-        isPathInside(realEmergencyDir, resolvedUploadDir) ||
-        isPathInside(realEmergencyDir, realUploadDir);
-      if (emergencyUnderUpload) {
-        throw new CliError(
-          `EMERGENCY_EXPORT_DIR must not be under UPLOAD_DIR (${resolvedUploadDir}; realpath ${realUploadDir}): use a non-public path.`,
-        );
-      }
+      assertEmergencyDirNotUnderUpload(
+        resolvedEmergencyDir,
+        realEmergencyDir,
+        resolvedUploadDir,
+        realUploadDir,
+      );
     }
 
-    if (!isPathInside(resolvedOut, resolvedEmergencyDir)) {
-      throw new CliError(
-        `--out must be under EMERGENCY_EXPORT_DIR (${resolvedEmergencyDir}).`,
-      );
-    }
-    if (!isPathInside(canonicalOut, realEmergencyDir)) {
-      throw new CliError(
-        `--out must resolve under EMERGENCY_EXPORT_DIR (${realEmergencyDir}).`,
-      );
-    }
+    assertOutUnderEmergencyDir(resolvedOut, canonicalOut, resolvedEmergencyDir, realEmergencyDir);
   }
 
   return canonicalOut;

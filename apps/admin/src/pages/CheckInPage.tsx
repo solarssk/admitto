@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+  type RefObject,
+} from "react";
 import { useParams } from "react-router-dom";
 import { Button, Card, useToast } from "@admitto/ui";
 import {
@@ -54,7 +62,7 @@ import {
   registerAdmitDedup,
   seedAdmitDedupFromHistory,
 } from "../checkin/admitDedup.js";
-import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
+import { useEventStream, type StreamCheckinEvent, type StreamStatus } from "../hooks/useEventStream.js";
 import { checkinSearchFieldAttrs } from "../checkin/searchFieldAttrs.js";
 import { ScanHistoryList } from "../checkin/ScanHistoryList.js";
 
@@ -106,6 +114,442 @@ export interface CheckInPageProps {
   eventOrganizationId?: string;
   useCamera?: boolean;
   onUseCameraChange?: (open: boolean) => void;
+}
+
+type ActiveCameraSurface = "none" | "inline" | "overlay";
+
+/** Tracks which surface is presenting the camera, not just whether the camera
+ * is on — showInlineCamera/showMobileOverlay partition cameraActive by
+ * isDesktop (cameraActive && isDesktop / cameraActive && !isDesktop), so their
+ * OR is always exactly cameraActive: a viewport resize/rotation crossing the
+ * desktop breakpoint while the camera stays on swaps which surface renders
+ * without cameraActive ever changing, and a boolean derived from either would
+ * miss it (code review). */
+function resolveActiveCameraSurface(
+  showInlineCamera: boolean,
+  showMobileOverlay: boolean,
+): ActiveCameraSurface {
+  if (showInlineCamera) return "inline";
+  if (showMobileOverlay) return "overlay";
+  return "none";
+}
+
+/** Pure derivation of the three scan-result display flags from state that
+ * doesn't change mid-render, extracted so the branching lives outside the
+ * page component's own render body. */
+function computeScanDisplayFlags(
+  deviceLabel: string | null,
+  scanResult: CheckInScanResponse | null,
+  card: AttendeeCardDto | null,
+): { showUndo: boolean; showResultCard: boolean; showCompactFeedback: boolean } {
+  const showUndo = Boolean(
+    deviceLabel &&
+      scanResult?.status === "VALID" &&
+      scanResult.confirmed &&
+      card?.check_in_status === "admitted",
+  );
+
+  const showResultCard = Boolean(
+    card &&
+      scanResult &&
+      (scanResult.status === "PREVIEW" ||
+        scanResult.status === "VALID" ||
+        scanResult.status === "ALREADY_CHECKED_IN" ||
+        scanResult.status === "REVOKED"),
+  );
+
+  const showCompactFeedback = Boolean(scanResult && (!card || scanResult.status === "INVALID"));
+
+  return { showUndo, showResultCard, showCompactFeedback };
+}
+
+// The SSE live-updates feed and the app-wide heartbeat are two independent
+// connections (#458) — when both drop together (the common case, e.g. a
+// backend restart), CheckinConnectionBanner (rendered by the page itself)
+// already covers it, so these only add value when the stream has a problem
+// of its own while the heartbeat is otherwise healthy. `!canAct` used to get
+// its own duplicate "blocked" paragraph here too; canMutateCheckin is driven
+// by the exact same connectionState the banner above already reflects, so it
+// was announcing the same thing twice in different styling.
+function CheckInStreamBanners({
+  canAct,
+  streamStatus,
+}: {
+  canAct: boolean;
+  streamStatus: StreamStatus;
+}) {
+  return (
+    <>
+      {canAct && streamStatus === "auth_error" && (
+        <p className="check-in__offline-banner" role="status">
+          Live updates unavailable — check access
+        </p>
+      )}
+      {canAct && streamStatus === "reconnecting" && (
+        <p className="check-in__offline-banner" role="status">
+          Reconnecting live updates…
+        </p>
+      )}
+    </>
+  );
+}
+
+interface CheckInOperatorActionsBarProps {
+  isDesktop: boolean;
+  cameraActive: boolean;
+  onToggleCamera: () => void;
+  scanSoundMuted: boolean;
+  onToggleScanSound: () => void;
+  actionsRef: RefObject<HTMLDivElement | null>;
+}
+
+function CheckInOperatorActionsBar({
+  isDesktop,
+  cameraActive,
+  onToggleCamera,
+  scanSoundMuted,
+  onToggleScanSound,
+  actionsRef,
+}: CheckInOperatorActionsBarProps) {
+  if (!isDesktop && cameraActive) return null;
+  return (
+    <div className="ck-operator-actions" ref={actionsRef}>
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        icon={<i className={`ti ti-camera${cameraActive ? "-off" : ""}`} aria-hidden="true" />}
+        onClick={onToggleCamera}
+      >
+        {cameraActive ? "Disable camera" : "Use camera"}
+      </Button>
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        aria-pressed={scanSoundMuted}
+        aria-label={scanSoundMuteLabel(scanSoundMuted)}
+        title={scanSoundMuteTitle(scanSoundMuted)}
+        icon={<i className={scanSoundMuteIconClass(scanSoundMuted)} aria-hidden="true" />}
+        onClick={onToggleScanSound}
+      />
+    </div>
+  );
+}
+
+interface CheckInScanBarProps {
+  inputRef: RefObject<HTMLInputElement | null>;
+  buffer: string;
+  busy: boolean;
+  canAct: boolean;
+  suggestions: Awaited<ReturnType<typeof lookupCheckInAttendees>>;
+  showMobileOverlay: boolean;
+  ticketTypes: TicketTypeDto[];
+  onSubmit: (event: FormEvent) => void;
+  onBufferChange: (value: string, eventTimestamp: number) => void;
+  onWedgePaste: () => void;
+  onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
+  onSelectSuggestion: (attendeeId: string) => void;
+}
+
+function CheckInScanBar({
+  inputRef,
+  buffer,
+  busy,
+  canAct,
+  suggestions,
+  showMobileOverlay,
+  ticketTypes,
+  onSubmit,
+  onBufferChange,
+  onWedgePaste,
+  onKeyDown,
+  onSelectSuggestion,
+}: CheckInScanBarProps) {
+  return (
+    <>
+      <div className="ck-scan-wrap">
+        <form className="ck-scan-bar" onSubmit={onSubmit} autoComplete="off">
+          <i className="ti ti-scan ck-scan-bar__icon" aria-hidden="true" />
+          <input
+            ref={inputRef}
+            id="checkin-scan-field"
+            name="checkin-scan"
+            className="ck-scan-bar__input"
+            value={buffer}
+            onChange={(e) => onBufferChange(e.target.value, e.timeStamp)}
+            onPaste={onWedgePaste}
+            onKeyDown={onKeyDown}
+            autoFocus
+            inputMode="none"
+            placeholder="Scan QR · type name or email…"
+            aria-label="QR scan or search"
+            aria-describedby="ck-scan-hint"
+            disabled={!canAct}
+            aria-busy={busy}
+            {...checkinSearchFieldAttrs}
+          />
+          <button
+            type="submit"
+            className="ck-scan-bar__submit"
+            aria-label="Search"
+            disabled={busy || !buffer.trim() || !canAct}
+          >
+            <i className="ti ti-arrow-right" aria-hidden="true" />
+          </button>
+        </form>
+        {suggestions.length > 0 && !showMobileOverlay && (
+          <ul className="ck-suggest" aria-label="Attendee suggestions">
+            {suggestions.map((r) => (
+              <li key={r.id}>
+                <button
+                  type="button"
+                  className="ck-suggest__hit"
+                  disabled={busy}
+                  onClick={() => void onSelectSuggestion(r.id)}
+                >
+                  <span className="ck-suggest__info">
+                    <strong className="ck-suggest__name">{r.name}</strong>
+                    <span className="ck-suggest__meta">
+                      {[r.company, resolveTicketTypeLabel(r.ticket_type, ticketTypes)]
+                        .filter(Boolean)
+                        .join(" · ") || "—"}
+                    </span>
+                  </span>
+                  {r.check_in_status === "admitted" && (
+                    <span className="ck-suggest__in">
+                      <i className="ti ti-circle-check" aria-hidden="true" /> checked in
+                    </span>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <p id="ck-scan-hint" className="ck-hint">
+        Scan a code — it submits itself · type a name, then press Enter · Esc clears the field
+      </p>
+    </>
+  );
+}
+
+interface CheckInScanResultViewProps {
+  transportError: string | null;
+  showMobileOverlay: boolean;
+  showInlineCamera: boolean;
+  showResultCard: boolean;
+  showCompactFeedback: boolean;
+  scanResult: CheckInScanResponse | null;
+  card: AttendeeCardDto | null;
+  ticketTypes: TicketTypeDto[];
+  eventTimezone: string;
+  pending: boolean;
+  busy: boolean;
+  canAct: boolean;
+  buffer: string;
+  admitOrigin: "scan" | "manual";
+  showUndo: boolean;
+  canRevokeCheckIn: boolean;
+  onScan: (raw: string) => void;
+  onCloseInlineCamera: () => void;
+  onResetScan: () => void;
+  onAdmitCurrent: (attendeeId: string, method?: "scan" | "manual") => Promise<void>;
+  onItemAction: (itemKey: string, targetState: string) => Promise<boolean>;
+  onAddNote: (body: string) => Promise<void>;
+  onUndo: () => Promise<void>;
+  onRevokeCheckIn: (attendeeId: string) => Promise<void>;
+  onRevokeItem: (itemKey: string) => Promise<boolean>;
+}
+
+/** The scan-bar's result surface: a compact pass/fail toast-in-place, or the
+ * full attendee card, rendered either inline (desktop camera on) or in the
+ * normal scan-bar flow — see CheckInPageProps' onUseCameraChange caller for
+ * why those are two different layouts sharing this exact same state. */
+function CheckInScanResultView({
+  transportError,
+  showMobileOverlay,
+  showInlineCamera,
+  showResultCard,
+  showCompactFeedback,
+  scanResult,
+  card,
+  ticketTypes,
+  eventTimezone,
+  pending,
+  busy,
+  canAct,
+  buffer,
+  admitOrigin,
+  showUndo,
+  canRevokeCheckIn,
+  onScan,
+  onCloseInlineCamera,
+  onResetScan,
+  onAdmitCurrent,
+  onItemAction,
+  onAddNote,
+  onUndo,
+  onRevokeCheckIn,
+  onRevokeItem,
+}: CheckInScanResultViewProps) {
+  const attendeeCard = showResultCard && card && (
+    <AttendeeCard
+      key={card.id}
+      card={card}
+      ticketTypes={ticketTypes}
+      eventTimezone={eventTimezone}
+      scanStatus={scanResult?.status}
+      confirmed={scanResult?.confirmed}
+      pending={pending}
+      canAct={canAct && !busy}
+      onCheckIn={
+        card.check_in_status === "not_admitted"
+          ? () => void onAdmitCurrent(card.id, admitOrigin)
+          : undefined
+      }
+      onItemAction={onItemAction}
+      onAddNote={onAddNote}
+      onUndo={onUndo}
+      showUndo={showUndo}
+      onCancel={onResetScan}
+      onRevokeCheckIn={canRevokeCheckIn ? () => onRevokeCheckIn(card.id) : undefined}
+      onRevokeItem={canRevokeCheckIn ? onRevokeItem : undefined}
+    />
+  );
+
+  return (
+    <>
+      {/* Suppressed while the mobile overlay is open: the overlay renders its
+          own role="alert" copy of this same message (it's a fixed
+          full-screen layer covering this paragraph), so without this gate a
+          screen reader would announce the identical error twice (review
+          finding). Exactly one of the two is mounted at any time. */}
+      {transportError && !showMobileOverlay && (
+        <p className="checkin-surface__transport-error" role="alert">
+          {transportError}
+        </p>
+      )}
+
+      {showInlineCamera ? (
+        <>
+          {!showResultCard && (
+            <CkInlineCamera
+              wedgeActive={buffer.trim().length > 0}
+              scannerPaused={!!scanResult || pending}
+              overlayScanResult={showCompactFeedback ? scanResult : null}
+              onScan={onScan}
+              onClose={onCloseInlineCamera}
+              onReset={onResetScan}
+            />
+          )}
+          {attendeeCard}
+        </>
+      ) : (
+        <>
+          {showCompactFeedback && scanResult && <ScanFeedback result={scanResult} hidden={false} />}
+          {showResultCard ? attendeeCard : !scanResult && <CkEmptyState />}
+        </>
+      )}
+    </>
+  );
+}
+
+interface CheckInMobileOverlayProps {
+  show: boolean;
+  eventId: string;
+  ticketTypes: TicketTypeDto[];
+  eventTimezone: string;
+  eventDate: string | null;
+  admittedCount: number;
+  history: CheckInHistoryEntry[];
+  buffer: string;
+  onClose: () => void;
+  onScan: (raw: string) => void;
+  allowManualLookup: boolean;
+  onSelectAttendee: (attendeeId: string) => void;
+  onManualEntry: (query: string, isBurst?: boolean) => Promise<boolean>;
+  manualError: string | null;
+  onClearManualError: () => void;
+  scanResult: CheckInScanResponse | null;
+  card: AttendeeCardDto | null;
+  pending: boolean;
+  canAct: boolean;
+  busy: boolean;
+  admitOrigin: "scan" | "manual";
+  onAdmitCurrent: (attendeeId: string, method?: "scan" | "manual") => Promise<void>;
+  onReset: () => void;
+  onItemAction: (itemKey: string, targetState: string) => Promise<boolean>;
+  onUndo: () => Promise<void>;
+  showUndo: boolean;
+  transportError: string | null;
+}
+
+/** Mobile fullscreen camera overlay — a separate presentation surface from
+ * CheckInScanResultView's desktop inline camera (see resolveActiveCameraSurface). */
+function CheckInMobileOverlay({
+  show,
+  eventId,
+  ticketTypes,
+  eventTimezone,
+  eventDate,
+  admittedCount,
+  history,
+  buffer,
+  onClose,
+  onScan,
+  allowManualLookup,
+  onSelectAttendee,
+  onManualEntry,
+  manualError,
+  onClearManualError,
+  scanResult,
+  card,
+  pending,
+  canAct,
+  busy,
+  admitOrigin,
+  onAdmitCurrent,
+  onReset,
+  onItemAction,
+  onUndo,
+  showUndo,
+  transportError,
+}: CheckInMobileOverlayProps) {
+  if (!show) return null;
+  return (
+    <CameraOverlay
+      open
+      ticketTypes={ticketTypes}
+      eventTimezone={eventTimezone}
+      eventDate={eventDate}
+      admittedCount={admittedCount}
+      history={history}
+      wedgeActive={buffer.trim().length > 0}
+      onClose={onClose}
+      onScan={onScan}
+      allowManualLookup={allowManualLookup}
+      onSearch={(query) => lookupCheckInAttendees(eventId, query)}
+      onSelectAttendee={onSelectAttendee}
+      onManualEntry={onManualEntry}
+      manualError={manualError}
+      onClearManualError={onClearManualError}
+      scanResult={scanResult}
+      card={card}
+      pending={pending}
+      canAct={canAct && !busy}
+      onConfirm={
+        card && scanResult?.status === "PREVIEW"
+          ? () => void onAdmitCurrent(card.id, admitOrigin)
+          : undefined
+      }
+      onReset={onReset}
+      onItemAction={onItemAction}
+      onUndo={onUndo}
+      showUndo={showUndo}
+      transportError={transportError}
+    />
+  );
 }
 
 export function CheckInPage({
@@ -513,19 +957,14 @@ export function CheckInPage({
   // person's result appearing in a surface that never scanned them (PO
   // review). Clears unconditionally on entry, exit, AND a swap between the
   // two surfaces — tracked as a 3-state "which surface is showing" value
-  // rather than a boolean, because showInlineCamera/showMobileOverlay
-  // partition cameraActive by isDesktop (cameraActive && isDesktop /
-  // cameraActive && !isDesktop), so their OR is always exactly cameraActive:
-  // a viewport resize/rotation crossing the desktop breakpoint while the
-  // camera stays on swaps which surface renders without cameraActive ever
-  // changing, and a boolean derived from either would miss it (code review).
-  type ActiveCameraSurface = "none" | "inline" | "overlay";
-  let activeCameraSurface: ActiveCameraSurface = "none";
-  if (showInlineCamera) {
-    activeCameraSurface = "inline";
-  } else if (showMobileOverlay) {
-    activeCameraSurface = "overlay";
-  }
+  // (resolveActiveCameraSurface, above) rather than a boolean, because
+  // showInlineCamera/showMobileOverlay partition cameraActive by isDesktop
+  // (cameraActive && isDesktop / cameraActive && !isDesktop), so their OR is
+  // always exactly cameraActive: a viewport resize/rotation crossing the
+  // desktop breakpoint while the camera stays on swaps which surface renders
+  // without cameraActive ever changing, and a boolean derived from either
+  // would miss it (code review).
+  const activeCameraSurface = resolveActiveCameraSurface(showInlineCamera, showMobileOverlay);
   const prevActiveCameraSurfaceRef = useRef(activeCameraSurface);
   useEffect(() => {
     if (prevActiveCameraSurfaceRef.current !== activeCameraSurface) clearDisplayedResult();
@@ -790,6 +1229,50 @@ export function CheckInPage({
     }
   };
 
+  // Shared by every outcome below (disabled/no-match/multiple-match/error):
+  // the mobile overlay's manual-entry field has no toast surface behind it
+  // (see AGENTS.md's check-in camera exception), so it reports inline;
+  // everywhere else routes through the same toast every other mutation in
+  // this file uses.
+  const reportManualIssue = (message: string) => {
+    if (showMobileOverlay) setOverlayManualError(message);
+    else addToast(message, "warning");
+  };
+
+  // Desktop routes every outcome of a search submit through a toast
+  // (no-match/disabled already do) — was inconsistently still an inline
+  // banner for the ApiError case (review finding). Returns the copy only;
+  // reportApiError is still invoked eagerly, matching the original ordering.
+  const resolveLookupErrorMessage = (err: unknown): string => {
+    if (!(err instanceof ApiError)) return "Request failed. Try again.";
+    reportApiError(err.status);
+    return err.status === 401
+      ? "Session expired — sign in again."
+      : operatorApiErrorMessage(err, "Request failed.");
+  };
+
+  const handleLookupResults = async (
+    results: Awaited<ReturnType<typeof lookupCheckInAttendees>>,
+  ): Promise<boolean> => {
+    if (results.length === 1) {
+      // Buffer already cleared at call time by the submitScanOrLookup
+      // wrapper — do not clear it again here, or a newer query the
+      // operator started typing while this lookup was pending would be
+      // wiped out too.
+      await openLookupResultImpl(results[0].id);
+      return true;
+    }
+    if (results.length === 0) {
+      reportManualIssue(LOOKUP_NO_MATCH_MSG);
+    } else if (showMobileOverlay) {
+      setOverlayManualError("Multiple matches — narrow your search.");
+    } else {
+      // Desktop: show the matches as scan-bar suggestions to pick from.
+      setSuggestions(results);
+    }
+    return false;
+  };
+
   // Queued/deferred half: manual-lookup API call only. The "is this actually
   // a long scan token, not a manual query" branch lives in the synchronous
   // wrapper below so a CR-terminated wedge scan is deduped/cleared at the
@@ -799,8 +1282,7 @@ export function CheckInPage({
       if (!eventId || !canAct) return false;
 
       if (!allowManualLookup) {
-        if (showMobileOverlay) setOverlayManualError(LOOKUP_DISABLED_MSG);
-        else addToast(LOOKUP_DISABLED_MSG, "warning");
+        reportManualIssue(LOOKUP_DISABLED_MSG);
         return false;
       }
 
@@ -809,48 +1291,16 @@ export function CheckInPage({
       setOverlayManualError(null);
       try {
         const results = await lookupCheckInAttendees(eventId, trimmed);
-        if (results.length === 1) {
-          // Buffer already cleared at call time by the submitScanOrLookup
-          // wrapper — do not clear it again here, or a newer query the
-          // operator started typing while this lookup was pending would be
-          // wiped out too.
-          await openLookupResultImpl(results[0].id);
-          return true;
-        }
-        if (results.length === 0) {
-          if (showMobileOverlay) setOverlayManualError(LOOKUP_NO_MATCH_MSG);
-          else addToast(LOOKUP_NO_MATCH_MSG, "warning");
-        } else if (showMobileOverlay) {
-          setOverlayManualError("Multiple matches — narrow your search.");
-        } else {
-          // Desktop: show the matches as scan-bar suggestions to pick from.
-          setSuggestions(results);
-        }
-        return false;
+        return await handleLookupResults(results);
       } catch (err) {
         overlayManualErrorFromConnectivityRef.current = !canActRef.current;
-        if (err instanceof ApiError) {
-          reportApiError(err.status);
-          const message =
-            err.status === 401
-              ? "Session expired — sign in again."
-              : operatorApiErrorMessage(err, "Request failed.");
-          // Desktop routes every outcome of a search submit through a toast
-          // (no-match/disabled above already do) — was inconsistently still
-          // an inline banner for this one outcome (review finding).
-          if (showMobileOverlay) setOverlayManualError(message);
-          else addToast(message, "warning");
-        } else if (showMobileOverlay) {
-          setOverlayManualError("Request failed. Try again.");
-        } else {
-          addToast("Request failed. Try again.", "warning");
-        }
+        reportManualIssue(resolveLookupErrorMessage(err));
         return false;
       } finally {
         setBusy(false);
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- openLookupResultImpl is a plain component function (not useCallback); adding it would recreate this callback every render — to be refactored in #280
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- openLookupResultImpl, reportManualIssue, resolveLookupErrorMessage, and handleLookupResults are plain component functions (not useCallback); adding them would recreate this callback every render — to be refactored in #280
     [allowManualLookup, addToast, canAct, eventId, reportApiError, showMobileOverlay],
   );
   submitScanOrLookupImplRef.current = submitScanOrLookupImpl;
@@ -1136,226 +1586,76 @@ export function CheckInPage({
     );
   }
 
-  const showUndo =
-    !!deviceLabel &&
-    scanResult?.status === "VALID" &&
-    scanResult.confirmed &&
-    card?.check_in_status === "admitted";
-
-  const showResultCard =
-    card &&
-    scanResult &&
-    (scanResult.status === "PREVIEW" ||
-      scanResult.status === "VALID" ||
-      scanResult.status === "ALREADY_CHECKED_IN" ||
-      scanResult.status === "REVOKED");
-
-  const showCompactFeedback =
-    scanResult &&
-    (!card || scanResult.status === "INVALID");
+  const { showUndo, showResultCard, showCompactFeedback } = computeScanDisplayFlags(
+    deviceLabel,
+    scanResult,
+    card,
+  );
 
   return (
     <>
       <CheckinConnectionLiveRegion />
       <CheckinConnectionBanner />
 
-      {/* The SSE live-updates feed and the app-wide heartbeat are two
-          independent connections (#458) — when both drop together (the
-          common case, e.g. a backend restart), CheckinConnectionBanner
-          above already covers it, so these only add value when the stream
-          has a problem of its own while the heartbeat is otherwise healthy.
-          `!canAct` used to get its own duplicate "blocked" paragraph here
-          too; canMutateCheckin is driven by the exact same connectionState
-          the banner above already reflects, so it was announcing the same
-          thing twice in different styling. */}
-      {canAct && streamStatus === "auth_error" && (
-        <p className="check-in__offline-banner" role="status">
-          Live updates unavailable — check access
-        </p>
-      )}
-      {canAct && streamStatus === "reconnecting" && (
-        <p className="check-in__offline-banner" role="status">
-          Reconnecting live updates…
-        </p>
-      )}
+      <CheckInStreamBanners canAct={canAct} streamStatus={streamStatus} />
 
-      {isOperatorShell && (isDesktop || !cameraActive) && (
-        <div className="ck-operator-actions" ref={operatorCameraActionsRef}>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            icon={<i className={`ti ti-camera${cameraActive ? "-off" : ""}`} aria-hidden="true" />}
-            onClick={() => setCameraActive(!cameraActive)}
-          >
-            {cameraActive ? "Disable camera" : "Use camera"}
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            aria-pressed={scanSoundMuted}
-            aria-label={scanSoundMuteLabel(scanSoundMuted)}
-            title={scanSoundMuteTitle(scanSoundMuted)}
-            icon={<i className={scanSoundMuteIconClass(scanSoundMuted)} aria-hidden="true" />}
-            onClick={toggleScanSoundMuted}
-          />
-        </div>
+      {isOperatorShell && (
+        <CheckInOperatorActionsBar
+          isDesktop={isDesktop}
+          cameraActive={cameraActive}
+          onToggleCamera={() => setCameraActive(!cameraActive)}
+          scanSoundMuted={scanSoundMuted}
+          onToggleScanSound={toggleScanSoundMuted}
+          actionsRef={operatorCameraActionsRef}
+        />
       )}
 
       <div className="ck-layout">
         <div className="ck-main">
-          <div className="ck-scan-wrap">
-            <form className="ck-scan-bar" onSubmit={onSubmit} autoComplete="off">
-              <i className="ti ti-scan ck-scan-bar__icon" aria-hidden="true" />
-              <input
-                ref={inputRef}
-                id="checkin-scan-field"
-                name="checkin-scan"
-                className="ck-scan-bar__input"
-                value={buffer}
-                onChange={(e) => handleBufferChange(e.target.value, e.timeStamp)}
-                onPaste={() => {
-                  wedgeJustPastedRef.current = true;
-                }}
-                onKeyDown={onKeyDown}
-                autoFocus
-                inputMode="none"
-                placeholder="Scan QR · type name or email…"
-                aria-label="QR scan or search"
-                aria-describedby="ck-scan-hint"
-                disabled={!canAct}
-                aria-busy={busy}
-                {...checkinSearchFieldAttrs}
-              />
-              <button
-                type="submit"
-                className="ck-scan-bar__submit"
-                aria-label="Search"
-                disabled={busy || !buffer.trim() || !canAct}
-              >
-                <i className="ti ti-arrow-right" aria-hidden="true" />
-              </button>
-            </form>
-            {suggestions.length > 0 && !showMobileOverlay && (
-              <ul className="ck-suggest" aria-label="Attendee suggestions">
-                {suggestions.map((r) => (
-                  <li key={r.id}>
-                    <button
-                      type="button"
-                      className="ck-suggest__hit"
-                      disabled={busy}
-                      onClick={() => void openLookupResult(r.id)}
-                    >
-                      <span className="ck-suggest__info">
-                        <strong className="ck-suggest__name">{r.name}</strong>
-                        <span className="ck-suggest__meta">
-                          {[r.company, resolveTicketTypeLabel(r.ticket_type, ticketTypes)]
-                            .filter(Boolean)
-                            .join(" · ") || "—"}
-                        </span>
-                      </span>
-                      {r.check_in_status === "admitted" && (
-                        <span className="ck-suggest__in">
-                          <i className="ti ti-circle-check" aria-hidden="true" /> checked in
-                        </span>
-                      )}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <p id="ck-scan-hint" className="ck-hint">
-            Scan a code — it submits itself · type a name, then press Enter · Esc clears the field
-          </p>
+          <CheckInScanBar
+            inputRef={inputRef}
+            buffer={buffer}
+            busy={busy}
+            canAct={canAct}
+            suggestions={suggestions}
+            showMobileOverlay={showMobileOverlay}
+            ticketTypes={ticketTypes}
+            onSubmit={onSubmit}
+            onBufferChange={handleBufferChange}
+            onWedgePaste={() => {
+              wedgeJustPastedRef.current = true;
+            }}
+            onKeyDown={onKeyDown}
+            onSelectSuggestion={openLookupResult}
+          />
 
-          {/* Suppressed while the mobile overlay is open: the overlay renders
-              its own role="alert" copy of this same message (it's a fixed
-              full-screen layer covering this paragraph), so without this gate a
-              screen reader would announce the identical error twice (review
-              finding). Exactly one of the two is mounted at any time. */}
-          {transportError && !showMobileOverlay && (
-            <p className="checkin-surface__transport-error" role="alert">
-              {transportError}
-            </p>
-          )}
-
-          {showInlineCamera ? (
-            <>
-              {!showResultCard && (
-                <CkInlineCamera
-                  wedgeActive={buffer.trim().length > 0}
-                  scannerPaused={!!scanResult || pending}
-                  overlayScanResult={showCompactFeedback ? scanResult : null}
-                  onScan={(raw) => void runScan(raw)}
-                  onClose={closeInlineCamera}
-                  onReset={resetScan}
-                />
-              )}
-              {showResultCard && card && (
-                <AttendeeCard
-                  key={card.id}
-                  card={card}
-                  ticketTypes={ticketTypes}
-                  eventTimezone={eventTimezone}
-                  scanStatus={scanResult?.status}
-                  confirmed={scanResult?.confirmed}
-                  pending={pending}
-                  canAct={canAct && !busy}
-                  onCheckIn={
-                    card.check_in_status === "not_admitted"
-                      ? () => void admitCurrent(card.id, admitOrigin)
-                      : undefined
-                  }
-                  onItemAction={onItemAction}
-                  onAddNote={onAddNote}
-                  onUndo={onUndo}
-                  showUndo={showUndo}
-                  onCancel={resetScan}
-                  onRevokeCheckIn={
-                    canRevokeCheckIn ? () => onRevokeCheckIn(card.id) : undefined
-                  }
-                  onRevokeItem={canRevokeCheckIn ? onRevokeItem : undefined}
-                />
-              )}
-            </>
-          ) : (
-            <>
-              {showCompactFeedback && scanResult && (
-                <ScanFeedback result={scanResult} hidden={false} />
-              )}
-
-              {showResultCard && card ? (
-                <AttendeeCard
-                  key={card.id}
-                  card={card}
-                  ticketTypes={ticketTypes}
-                  eventTimezone={eventTimezone}
-                  scanStatus={scanResult?.status}
-                  confirmed={scanResult?.confirmed}
-                  pending={pending}
-                  canAct={canAct && !busy}
-                  onCheckIn={
-                    card.check_in_status === "not_admitted"
-                      ? () => void admitCurrent(card.id, admitOrigin)
-                      : undefined
-                  }
-                  onItemAction={onItemAction}
-                  onAddNote={onAddNote}
-                  onUndo={onUndo}
-                  showUndo={showUndo}
-                  onCancel={resetScan}
-                  onRevokeCheckIn={
-                    canRevokeCheckIn ? () => onRevokeCheckIn(card.id) : undefined
-                  }
-                  onRevokeItem={canRevokeCheckIn ? onRevokeItem : undefined}
-                />
-              ) : (
-                !scanResult && <CkEmptyState />
-              )}
-            </>
-          )}
+          <CheckInScanResultView
+            transportError={transportError}
+            showMobileOverlay={showMobileOverlay}
+            showInlineCamera={showInlineCamera}
+            showResultCard={showResultCard}
+            showCompactFeedback={showCompactFeedback}
+            scanResult={scanResult}
+            card={card}
+            ticketTypes={ticketTypes}
+            eventTimezone={eventTimezone}
+            pending={pending}
+            busy={busy}
+            canAct={canAct}
+            buffer={buffer}
+            admitOrigin={admitOrigin}
+            showUndo={showUndo}
+            canRevokeCheckIn={canRevokeCheckIn}
+            onScan={(raw) => void runScan(raw)}
+            onCloseInlineCamera={closeInlineCamera}
+            onResetScan={resetScan}
+            onAdmitCurrent={admitCurrent}
+            onItemAction={onItemAction}
+            onAddNote={onAddNote}
+            onUndo={onUndo}
+            onRevokeCheckIn={onRevokeCheckIn}
+            onRevokeItem={onRevokeItem}
+          />
         </div>
 
         <aside className="ck-side">
@@ -1373,39 +1673,35 @@ export function CheckInPage({
         </aside>
       </div>
 
-      {showMobileOverlay && (
-        <CameraOverlay
-          open
-          ticketTypes={ticketTypes}
-          eventTimezone={eventTimezone}
-          eventDate={eventDate}
-          admittedCount={admittedCount}
-          history={history}
-          wedgeActive={buffer.trim().length > 0}
-          onClose={() => setCameraActive(false)}
-          onScan={(raw) => void runScan(raw)}
-          allowManualLookup={allowManualLookup}
-          onSearch={(query) => lookupCheckInAttendees(eventId, query)}
-          onSelectAttendee={openLookupResult}
-          onManualEntry={submitOrLookup}
-          manualError={overlayManualError}
-          onClearManualError={() => setOverlayManualError(null)}
-          scanResult={scanResult}
-          card={card}
-          pending={pending}
-          canAct={canAct && !busy}
-          onConfirm={
-            card && scanResult?.status === "PREVIEW"
-              ? () => void admitCurrent(card.id, admitOrigin)
-              : undefined
-          }
-          onReset={resetScan}
-          onItemAction={onItemAction}
-          onUndo={onUndo}
-          showUndo={showUndo}
-          transportError={transportError}
-        />
-      )}
+      <CheckInMobileOverlay
+        show={showMobileOverlay}
+        eventId={eventId}
+        ticketTypes={ticketTypes}
+        eventTimezone={eventTimezone}
+        eventDate={eventDate}
+        admittedCount={admittedCount}
+        history={history}
+        buffer={buffer}
+        onClose={() => setCameraActive(false)}
+        onScan={(raw) => void runScan(raw)}
+        allowManualLookup={allowManualLookup}
+        onSelectAttendee={openLookupResult}
+        onManualEntry={submitOrLookup}
+        manualError={overlayManualError}
+        onClearManualError={() => setOverlayManualError(null)}
+        scanResult={scanResult}
+        card={card}
+        pending={pending}
+        canAct={canAct}
+        busy={busy}
+        admitOrigin={admitOrigin}
+        onAdmitCurrent={admitCurrent}
+        onReset={resetScan}
+        onItemAction={onItemAction}
+        onUndo={onUndo}
+        showUndo={showUndo}
+        transportError={transportError}
+      />
     </>
   );
 }

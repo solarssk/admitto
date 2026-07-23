@@ -2,7 +2,11 @@ import type { Context } from "hono";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { EMAIL_DELIVERY_SUCCESS_STATUSES } from "@admitto/db";
-import { sendTicketEmails, type MailDeliveryDeps } from "@admitto/mail-delivery";
+import {
+  sendTicketEmails,
+  type MailDeliveryDeps,
+  type SendTicketEmailsResult,
+} from "@admitto/mail-delivery";
 import { resolveTemplateById, TemplateNotFoundError } from "@admitto/mail-templates";
 import { mailNotConfiguredResponse } from "./mail-settings-shared.js";
 import {
@@ -213,6 +217,123 @@ async function assertTemplateForEvent(
   }
 }
 
+async function assertTicketTypeFilterValid(
+  c: Context,
+  db: PrismaClient,
+  eventId: string,
+  filter: BulkSendFilter,
+): Promise<Response | null> {
+  if (filter.type !== "ticket_type") return null;
+
+  try {
+    assertTicketTypeInCatalog(await loadEventTicketTypes(db, eventId), filter.value);
+    return null;
+  } catch (err) {
+    if (err instanceof UnknownTicketTypeError) {
+      return c.json({ error: "unknown_ticket_type" }, 400);
+    }
+    throw err;
+  }
+}
+
+/**
+ * attendee_ids shares the no_delivery branch's purpose logic (not its noDeliveryScope,
+ * which attendee_ids doesn't use) - without this, every checkbox-selection send was
+ * recorded as "resend" regardless of template, routing through createResendDelivery's
+ * unconditional insert instead of claimInitialDelivery's atomic (attendee, event) dedup.
+ * A ticket-template send to attendees who'd never received one still queued fine (no
+ * existing row to collide with), but re-selecting an overlapping group, or later running
+ * "Everyone undelivered" (whose own no_delivery exclusion only matches purpose:"initial"
+ * rows - see noDeliveryDeliveryWhere above), would double-send instead of being skipped.
+ */
+async function resolveNoDeliveryScopeAndPurpose(
+  db: PrismaClient,
+  filter: BulkSendFilter,
+  templateId: string | undefined,
+): Promise<{
+  purpose: "initial" | "resend";
+  noDeliveryScope: BulkSendNoDeliveryScope | undefined;
+}> {
+  if (filter.type !== "no_delivery" && filter.type !== "attendee_ids") {
+    return { purpose: "resend", noDeliveryScope: undefined };
+  }
+
+  if (!templateId) {
+    // No templateId -> built-in default template, which is always the "ticket" slot.
+    return {
+      purpose: "initial",
+      noDeliveryScope: filter.type === "no_delivery" ? { mode: "initial_ticket" } : undefined,
+    };
+  }
+
+  const templateName = await getBulkSendTemplateName(db, templateId);
+  const isTicket = templateName === "ticket";
+  const noDeliveryScope: BulkSendNoDeliveryScope | undefined =
+    filter.type === "no_delivery"
+      ? isTicket
+        ? { mode: "initial_ticket" }
+        : { mode: "template", templateId }
+      : undefined;
+
+  return { purpose: isTicket ? "initial" : "resend", noDeliveryScope };
+}
+
+async function respondEmptyBulkSend(
+  db: PrismaClient,
+  c: Context,
+  eventId: string,
+  templateId: string | undefined,
+  filterType: string,
+): Promise<Response> {
+  await auditBulkSend(db, c, eventId, {
+    templateId,
+    filterType,
+    queued: 0,
+    skipped: 0,
+    failed: 0,
+  });
+  return c.json({
+    batchId: null,
+    queued: 0,
+    skipped: 0,
+    failed: 0,
+  } satisfies BulkSendQueuedDto);
+}
+
+async function sendBulkEmailsOrError(
+  c: Context,
+  db: PrismaClient,
+  eventId: string,
+  ids: string[],
+  templateId: string | undefined,
+  purpose: "initial" | "resend",
+  baseUrl: string,
+  mailDeps: MailDeliveryDeps,
+): Promise<Response | SendTicketEmailsResult> {
+  try {
+    return await sendTicketEmails(
+      eventId,
+      {
+        attendeeIds: ids,
+        templateId,
+        purpose,
+        baseUrl,
+        timezone: resolveClientTimezone(c) ?? undefined,
+      },
+      db,
+      process.env,
+      mailDeps,
+    );
+  } catch (err) {
+    if (err instanceof TemplateNotFoundError) {
+      return c.json({ error: "template_not_found" }, 404);
+    }
+    const mailErr = mailNotConfiguredResponse(c, err);
+    if (mailErr) return mailErr;
+    throw err;
+  }
+}
+
 /** POST /api/admin/events/:eventId/send */
 export async function handleBulkSend(
   c: Context,
@@ -239,46 +360,14 @@ export async function handleBulkSend(
     : null;
   if (templateError) return templateError;
 
-  if (body.filter.type === "ticket_type") {
-    try {
-      assertTicketTypeInCatalog(await loadEventTicketTypes(db, eventId), body.filter.value);
-    } catch (err) {
-      if (err instanceof UnknownTicketTypeError) {
-        return c.json({ error: "unknown_ticket_type" }, 400);
-      }
-      throw err;
-    }
-  }
+  const ticketTypeError = await assertTicketTypeFilterValid(c, db, eventId, body.filter);
+  if (ticketTypeError) return ticketTypeError;
 
-  let noDeliveryScope: BulkSendNoDeliveryScope | undefined;
-  let purpose: "initial" | "resend" = "resend";
-
-  // attendee_ids shares the no_delivery branch's purpose logic (not its noDeliveryScope,
-  // which attendee_ids doesn't use) - without this, every checkbox-selection send was
-  // recorded as "resend" regardless of template, routing through createResendDelivery's
-  // unconditional insert instead of claimInitialDelivery's atomic (attendee, event) dedup.
-  // A ticket-template send to attendees who'd never received one still queued fine (no
-  // existing row to collide with), but re-selecting an overlapping group, or later running
-  // "Everyone undelivered" (whose own no_delivery exclusion only matches purpose:"initial"
-  // rows - see noDeliveryDeliveryWhere above), would double-send instead of being skipped.
-  if (body.filter.type === "no_delivery" || body.filter.type === "attendee_ids") {
-    if (body.templateId) {
-      const templateName = await getBulkSendTemplateName(db, body.templateId);
-      const isTicket = templateName === "ticket";
-      purpose = isTicket ? "initial" : "resend";
-      if (body.filter.type === "no_delivery") {
-        noDeliveryScope = isTicket
-          ? { mode: "initial_ticket" }
-          : { mode: "template", templateId: body.templateId };
-      }
-    } else {
-      // No templateId -> built-in default template, which is always the "ticket" slot.
-      purpose = "initial";
-      if (body.filter.type === "no_delivery") {
-        noDeliveryScope = { mode: "initial_ticket" };
-      }
-    }
-  }
+  const { purpose, noDeliveryScope } = await resolveNoDeliveryScopeAndPurpose(
+    db,
+    body.filter,
+    body.templateId,
+  );
 
   const { ids, overLimit } = await resolveBulkSendAttendeeIds(
     db,
@@ -295,47 +384,24 @@ export async function handleBulkSend(
   }
 
   if (ids.length === 0) {
-    await auditBulkSend(db, c, eventId, {
-      templateId: body.templateId,
-      filterType: body.filter.type,
-      queued: 0,
-      skipped: 0,
-      failed: 0,
-    });
-    return c.json({
-      batchId: null,
-      queued: 0,
-      skipped: 0,
-      failed: 0,
-    } satisfies BulkSendQueuedDto);
+    return respondEmptyBulkSend(db, c, eventId, body.templateId, body.filter.type);
   }
 
   const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
   if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
 
-  let sendResult;
-  try {
-    sendResult = await sendTicketEmails(
-      eventId,
-      {
-        attendeeIds: ids,
-        templateId: body.templateId,
-        purpose,
-        baseUrl: baseUrlOrRes,
-        timezone: resolveClientTimezone(c) ?? undefined,
-      },
-      db,
-      process.env,
-      mailDeps,
-    );
-  } catch (err) {
-    if (err instanceof TemplateNotFoundError) {
-      return c.json({ error: "template_not_found" }, 404);
-    }
-    const mailErr = mailNotConfiguredResponse(c, err);
-    if (mailErr) return mailErr;
-    throw err;
-  }
+  const sendResultOrRes = await sendBulkEmailsOrError(
+    c,
+    db,
+    eventId,
+    ids,
+    body.templateId,
+    purpose,
+    baseUrlOrRes,
+    mailDeps,
+  );
+  if (sendResultOrRes instanceof Response) return sendResultOrRes;
+  const sendResult = sendResultOrRes;
 
   const skipped = sendResult.skipped.length;
   const queued = sendResult.sent;

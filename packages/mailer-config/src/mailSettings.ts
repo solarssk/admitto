@@ -123,6 +123,13 @@ export async function setMailSettings(
   const supplied = <T>(key: keyof MailSettingsInput, value: T | null): Record<string, T | null> =>
     key in input ? { [key]: value } : {};
 
+  /** Like `supplied`, but for fields whose DB column name differs from the input key. */
+  const mapped = <T>(
+    inputKey: keyof MailSettingsInput,
+    dbCol: string,
+    value: T | null,
+  ): Record<string, T | null> => (inputKey in input ? { [dbCol]: value } : {});
+
   const secretCol = (
     inputKey: keyof MailSettingsInput,
     dbCol: string,
@@ -137,27 +144,27 @@ export async function setMailSettings(
     ...supplied("port", input.port ?? null),
     ...supplied("secure", input.secure ?? null),
     ...supplied("user", str(input.user)),
-    ...(("requireTls" in input) ? { require_tls: input.requireTls ?? null } : {}),
-    ...(("tlsRejectUnauthorized" in input) ? { tls_reject_unauthorized: input.tlsRejectUnauthorized ?? null } : {}),
-    ...(("heloName" in input) ? { helo_name: str(input.heloName) } : {}),
+    ...mapped("requireTls", "require_tls", input.requireTls ?? null),
+    ...mapped("tlsRejectUnauthorized", "tls_reject_unauthorized", input.tlsRejectUnauthorized ?? null),
+    ...mapped("heloName", "helo_name", str(input.heloName)),
     ...supplied("pool", input.pool ?? null),
-    ...(("maxConnections" in input) ? { max_connections: input.maxConnections ?? null } : {}),
-    ...(("maxMessages" in input) ? { max_messages: input.maxMessages ?? null } : {}),
-    ...(("rateLimitPerMinute" in input) ? { rate_limit_per_minute: input.rateLimitPerMinute ?? null } : {}),
-    ...(("connectionTimeout" in input) ? { connection_timeout: input.connectionTimeout ?? null } : {}),
-    ...(("greetingTimeout" in input) ? { greeting_timeout: input.greetingTimeout ?? null } : {}),
-    ...(("socketTimeout" in input) ? { socket_timeout: input.socketTimeout ?? null } : {}),
+    ...mapped("maxConnections", "max_connections", input.maxConnections ?? null),
+    ...mapped("maxMessages", "max_messages", input.maxMessages ?? null),
+    ...mapped("rateLimitPerMinute", "rate_limit_per_minute", input.rateLimitPerMinute ?? null),
+    ...mapped("connectionTimeout", "connection_timeout", input.connectionTimeout ?? null),
+    ...mapped("greetingTimeout", "greeting_timeout", input.greetingTimeout ?? null),
+    ...mapped("socketTimeout", "socket_timeout", input.socketTimeout ?? null),
     // graph non-secret
     ...supplied("mailbox", str(input.mailbox)),
-    ...(("tenantId" in input) ? { tenant_id: str(input.tenantId) } : {}),
-    ...(("clientId" in input) ? { client_id: str(input.clientId) } : {}),
-    ...(("saveToSentItems" in input) ? { save_to_sent_items: input.saveToSentItems ?? null } : {}),
+    ...mapped("tenantId", "tenant_id", str(input.tenantId)),
+    ...mapped("clientId", "client_id", str(input.clientId)),
+    ...mapped("saveToSentItems", "save_to_sent_items", input.saveToSentItems ?? null),
     // shared sender
-    ...(("fromAddress" in input) ? { from_address: str(input.fromAddress) } : {}),
-    ...(("fromName" in input) ? { from_name: str(input.fromName) } : {}),
-    ...(("replyTo" in input) ? { reply_to: str(input.replyTo) } : {}),
-    ...(("envelopeFrom" in input) ? { envelope_from: str(input.envelopeFrom) } : {}),
-    ...(("allowedFromDomain" in input) ? { allowed_from_domain: str(input.allowedFromDomain) } : {}),
+    ...mapped("fromAddress", "from_address", str(input.fromAddress)),
+    ...mapped("fromName", "from_name", str(input.fromName)),
+    ...mapped("replyTo", "reply_to", str(input.replyTo)),
+    ...mapped("envelopeFrom", "envelope_from", str(input.envelopeFrom)),
+    ...mapped("allowedFromDomain", "allowed_from_domain", str(input.allowedFromDomain)),
     // encrypted secrets — only updated when explicitly supplied
     ...secretCol("smtpPassword", "smtp_password_enc", input.smtpPassword),
     ...secretCol("graphClientSecret", "graph_client_secret_enc", input.graphClientSecret),

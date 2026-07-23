@@ -1,5 +1,5 @@
 import type { Context, Next } from "hono";
-import type { PrismaClient } from "@prisma/client";
+import type { IdentityProvider, PrismaClient } from "@prisma/client";
 import { getCookie } from "hono/cookie";
 import {
   SESSION_COOKIE_NAME,
@@ -16,6 +16,8 @@ import {
   applyOidcGroupRoleMappings,
   logCfAccessAuth,
   logAccessDenied,
+  type CfAccessConfig,
+  type ExternalIdentityClaims,
 } from "@admitto/auth";
 import { resolveStaffEntryPath } from "../setup-routes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
@@ -42,6 +44,93 @@ function rejectInvalidJwt(c: Context, reason: string): Response {
   return c.text("Forbidden", 403);
 }
 
+/** Resolve (or JIT-create) the local user for a validated CF Access identity. */
+async function resolveCfAccessIdentity(
+  c: Context,
+  prisma: PrismaClient,
+  provider: IdentityProvider,
+  subject: string,
+  claims: ExternalIdentityClaims,
+  path: string,
+): Promise<{ userId: string } | { response: Response }> {
+  try {
+    const resolved = await resolveOrCreateUserFromExternalIdentity(
+      prisma,
+      provider,
+      subject,
+      claims,
+    );
+    return { userId: resolved.user.id };
+  } catch (err) {
+    const reason =
+      err instanceof ExternalIdentityLinkError ? err.message : "identity_resolution_failed";
+    logCfAccessAuth({
+      outcome: "failure",
+      reason,
+      email: claims.email,
+      subject,
+      path,
+    });
+    return { response: rejectInvalidJwt(c, reason) };
+  }
+}
+
+/** CF Access JWT branch of the collision-point middleware (ADR 0017). */
+async function handleCfAccessToken(
+  c: Context,
+  prisma: PrismaClient,
+  config: CfAccessConfig,
+  token: string,
+  path: string,
+  next: Next,
+): Promise<Response | void> {
+  try {
+    const payload = await validateAccessJwt(token, config);
+    const provider = await findCloudflareAccessProvider(prisma);
+    if (!provider || !provider.enabled) {
+      return rejectInvalidJwt(c, "provider_not_configured");
+    }
+    const subject = payload.sub;
+    if (typeof subject !== "string" || !subject) {
+      return rejectInvalidJwt(c, "missing_sub");
+    }
+
+    const claims = extractClaims(payload, provider);
+    const resolution = await resolveCfAccessIdentity(c, prisma, provider, subject, claims, path);
+    if ("response" in resolution) {
+      return resolution.response;
+    }
+    const { userId } = resolution;
+
+    // Reconcile grants against current mapping rules (revocation when rules or groups change).
+    await applyOidcGroupRoleMappings(prisma, provider.id, userId, claims.groups ?? []);
+
+    if (!(await canManageInstance(prisma, userId))) {
+      logCfAccessAuth({
+        outcome: "failure",
+        reason: "no_admin_role",
+        email: claims.email,
+        subject,
+        path,
+      });
+      return c.text(CF_ACCESS_FORBIDDEN_MESSAGE, 403);
+    }
+
+    logCfAccessAuth({
+      outcome: "success",
+      email: claims.email,
+      subject,
+      path,
+    });
+    c.set("auth", { userId, authSource: "cloudflare-access" });
+    await next();
+    return;
+  } catch (err) {
+    const reason = err instanceof CfAccessJwtError ? err.code : "invalid_jwt";
+    return rejectInvalidJwt(c, reason);
+  }
+}
+
 /** Collision-point middleware: CF JWT trójstan + session break-glass (ADR 0017). */
 export function createAdminAccessMiddleware(prisma: PrismaClient) {
   return async (c: Context, next: Next): Promise<Response | void> => {
@@ -57,67 +146,7 @@ export function createAdminAccessMiddleware(prisma: PrismaClient) {
     );
 
     if (token) {
-      try {
-        const payload = await validateAccessJwt(token, config);
-        const provider = await findCloudflareAccessProvider(prisma);
-        if (!provider || !provider.enabled) {
-          return rejectInvalidJwt(c, "provider_not_configured");
-        }
-        const subject = payload.sub;
-        if (typeof subject !== "string" || !subject) {
-          return rejectInvalidJwt(c, "missing_sub");
-        }
-
-        const claims = extractClaims(payload, provider);
-        let userId: string;
-        try {
-          const resolved = await resolveOrCreateUserFromExternalIdentity(
-            prisma,
-            provider,
-            subject,
-            claims,
-          );
-          userId = resolved.user.id;
-        } catch (err) {
-          const reason =
-            err instanceof ExternalIdentityLinkError ? err.message : "identity_resolution_failed";
-          logCfAccessAuth({
-            outcome: "failure",
-            reason,
-            email: claims.email,
-            subject,
-            path,
-          });
-          return rejectInvalidJwt(c, reason);
-        }
-
-        // Reconcile grants against current mapping rules (revocation when rules or groups change).
-        await applyOidcGroupRoleMappings(prisma, provider.id, userId, claims.groups ?? []);
-
-        if (!(await canManageInstance(prisma, userId))) {
-          logCfAccessAuth({
-            outcome: "failure",
-            reason: "no_admin_role",
-            email: claims.email,
-            subject,
-            path,
-          });
-          return c.text(CF_ACCESS_FORBIDDEN_MESSAGE, 403);
-        }
-
-        logCfAccessAuth({
-          outcome: "success",
-          email: claims.email,
-          subject,
-          path,
-        });
-        c.set("auth", { userId, authSource: "cloudflare-access" });
-        await next();
-        return;
-      } catch (err) {
-        const reason = err instanceof CfAccessJwtError ? err.code : "invalid_jwt";
-        return rejectInvalidJwt(c, reason);
-      }
+      return handleCfAccessToken(c, prisma, config, token, path, next);
     }
 
     return sessionSuperadminGate(c, prisma, next);

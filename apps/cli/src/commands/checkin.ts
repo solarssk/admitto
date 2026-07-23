@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import type { AdmitResult } from "@admitto/tickets";
 import { admitAttendee, lookupAttendees, resolveTicket } from "@admitto/tickets";
 import { CliError, arg, hasFlag, parseFormat } from "../lib/args.js";
 import { formatJson, formatTable, printError } from "../lib/output.js";
@@ -42,6 +43,45 @@ export async function runCheckinLookup(db: PrismaClient): Promise<void> {
   console.log(formatTable(mapped));
 }
 
+/** Resolves `--scan` to an attendee id for this event, or throws a CliError. */
+async function resolveAttendeeIdFromScan(scan: string, db: PrismaClient, eventId: string): Promise<string> {
+  const resolved = await resolveTicket(scan, db, { eventId });
+  if (!resolved) {
+    throw new CliError("Scan did not resolve to an attendee for this event.");
+  }
+  if (resolved.event.id !== eventId) {
+    throw new CliError("Resolved attendee belongs to a different event.");
+  }
+  return resolved.attendee.id;
+}
+
+/** Prints the admit result as JSON and sets a non-zero exit code for non-success statuses. */
+function printAdmitResultJson(result: AdmitResult, attendeeId: string, eventId: string): void {
+  console.log(
+    formatJson({
+      status: result.status,
+      confirmed: result.confirmed,
+      attendeeId,
+      eventId,
+    }),
+  );
+  if (result.status !== "VALID" && result.status !== "ALREADY_CHECKED_IN") {
+    process.exitCode = 1;
+  }
+}
+
+/** Prints the admit result as human-readable text and sets a non-zero exit code on failure. */
+function printAdmitResultText(result: AdmitResult, attendeeId: string): void {
+  if (result.status === "VALID") {
+    console.log(`Admitted ${attendeeId} (${result.status}).`);
+  } else if (result.status === "ALREADY_CHECKED_IN") {
+    console.log(`Already checked in: ${attendeeId}.`);
+  } else {
+    printError(`Check-in result: ${result.status}`);
+    process.exitCode = 1;
+  }
+}
+
 export async function runCheckinAdmit(db: PrismaClient): Promise<void> {
   const eventId = arg("event");
   const attendeeIdArg = arg("attendee-id");
@@ -61,18 +101,7 @@ export async function runCheckinAdmit(db: PrismaClient): Promise<void> {
 
   const format = parseFormat();
   const audit = await resolveOperatorContext(db);
-  let attendeeId = attendeeIdArg;
-
-  if (scan) {
-    const resolved = await resolveTicket(scan, db, { eventId });
-    if (!resolved) {
-      throw new CliError("Scan did not resolve to an attendee for this event.");
-    }
-    if (resolved.event.id !== eventId) {
-      throw new CliError("Resolved attendee belongs to a different event.");
-    }
-    attendeeId = resolved.attendee.id;
-  }
+  const attendeeId = scan ? await resolveAttendeeIdFromScan(scan, db, eventId) : attendeeIdArg;
 
   const result = await admitAttendee(
     {
@@ -85,26 +114,10 @@ export async function runCheckinAdmit(db: PrismaClient): Promise<void> {
     db,
   );
 
-  const payload = {
-    status: result.status,
-    confirmed: result.confirmed,
-    attendeeId,
-    eventId,
-  };
   if (format === "json") {
-    console.log(formatJson(payload));
-    if (result.status !== "VALID" && result.status !== "ALREADY_CHECKED_IN") {
-      process.exitCode = 1;
-    }
+    printAdmitResultJson(result, attendeeId!, eventId);
     return;
   }
 
-  if (result.status === "VALID") {
-    console.log(`Admitted ${attendeeId} (${result.status}).`);
-  } else if (result.status === "ALREADY_CHECKED_IN") {
-    console.log(`Already checked in: ${attendeeId}.`);
-  } else {
-    printError(`Check-in result: ${result.status}`);
-    process.exitCode = 1;
-  }
+  printAdmitResultText(result, attendeeId!);
 }

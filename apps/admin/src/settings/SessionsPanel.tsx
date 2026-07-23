@@ -11,7 +11,7 @@ import type { EventDto, SessionListDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { formatUtcDateTime } from "../utils/event-dates.js";
 
-const BROWSER_PATTERNS: [RegExp, string][] = [
+const BROWSER_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
   [/Edg\//, "Edge"],
   [/OPR\//, "Opera"],
   [/Chrome\//, "Chrome"],
@@ -19,7 +19,7 @@ const BROWSER_PATTERNS: [RegExp, string][] = [
   [/Safari\//, "Safari"],
 ];
 
-const OS_PATTERNS: [RegExp, string][] = [
+const OS_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
   [/Windows/, "Windows"],
   [/Mac OS X/, "macOS"],
   [/Linux/, "Linux"],
@@ -27,10 +27,17 @@ const OS_PATTERNS: [RegExp, string][] = [
   [/iPhone|iPad/, "iOS"],
 ];
 
+function matchFirstPattern(ua: string, patterns: ReadonlyArray<readonly [RegExp, string]>): string | null {
+  for (const [pattern, label] of patterns) {
+    if (pattern.test(ua)) return label;
+  }
+  return null;
+}
+
 function parseUserAgent(ua: string | null): string {
   if (!ua) return "Unknown";
-  const browser = BROWSER_PATTERNS.find(([re]) => re.test(ua))?.[1] ?? null;
-  const os = OS_PATTERNS.find(([re]) => re.test(ua))?.[1] ?? null;
+  const browser = matchFirstPattern(ua, BROWSER_PATTERNS);
+  const os = matchFirstPattern(ua, OS_PATTERNS);
   const parts = [browser, os].filter(Boolean);
   return parts.length ? parts.join(" / ") : ua.slice(0, 40);
 }

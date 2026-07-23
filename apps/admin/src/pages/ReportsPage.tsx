@@ -270,6 +270,31 @@ function AdmissionLog({
   );
 }
 
+/** Handles a `fetchEventReports` failure for `ReportsPage.loadData`: aborts are ignored, API
+ * errors are reported to the connection state and mapped to operator-facing copy (redirecting to
+ * login on 401), and anything else falls back to a generic message. Extracted purely to keep
+ * `loadData`'s cognitive complexity within the allowed threshold - behavior is unchanged. */
+function handleLoadDataError(
+  err: unknown,
+  reportApiError: (status: number) => void,
+  setData: (data: EventReportsResponse | null) => void,
+  setError: (message: string | null) => void,
+): void {
+  if (err instanceof DOMException && err.name === "AbortError") return;
+  setData(null);
+  if (!(err instanceof ApiError)) {
+    setError("Failed to load report.");
+    return;
+  }
+  reportApiError(err.status);
+  if (err.status === 401) {
+    const next = encodeURIComponent(window.location.pathname);
+    window.location.assign(`/login?next=${next}`);
+    return;
+  }
+  setError(err.status === 403 ? "You do not have access to this event." : operatorApiErrorMessage(err, "Request failed."));
+}
+
 export function ReportsPage() {
   const { eventId } = useParams();
   const { addToast } = useToast();
@@ -317,19 +342,7 @@ export function ReportsPage() {
       if (ac.signal.aborted) return;
       setData(report);
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
-      setData(null);
-      if (err instanceof ApiError) {
-        reportApiError(err.status);
-        if (err.status === 401) {
-          const next = encodeURIComponent(window.location.pathname);
-          window.location.assign(`/login?next=${next}`);
-          return;
-        }
-        setError(err.status === 403 ? "You do not have access to this event." : operatorApiErrorMessage(err, "Request failed."));
-      } else {
-        setError("Failed to load report.");
-      }
+      handleLoadDataError(err, reportApiError, setData, setError);
     } finally {
       if (!ac.signal.aborted) setLoading(false);
     }

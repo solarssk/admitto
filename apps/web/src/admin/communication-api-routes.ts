@@ -853,6 +853,81 @@ export async function handlePutEventTemplateById(
   return handleGetEventTemplateById(c, db);
 }
 
+/** Create the event's template row inside a transaction, serialized against the image-assets
+ * delete handler (see lock comment) and re-checking the per-event template cap under lock. */
+async function createEventTemplateRow(
+  db: PrismaClient,
+  eventId: string,
+  baseName: string,
+  subject: string,
+  templateBody: string,
+  format: TemplateFormat,
+  label: string,
+) {
+  return db.$transaction(async (tx) => {
+    // Serializes against event-image-assets-routes.ts's delete handler, which takes the
+    // same lock before its asset_in_use recheck - without it, a delete could commit between
+    // that handler's check and this create (Postgres default isolation is READ COMMITTED).
+    await acquireEventImageAssetsLock(tx, eventId);
+
+    const eventCount = await tx.mailTemplate.count({
+      where: { scope_type: "event", scope_id: eventId },
+    });
+    if (eventCount >= MAX_TEMPLATES_PER_EVENT) {
+      throw new TemplateLimitReachedError();
+    }
+
+    const name = await uniqueTemplateName(tx, eventId, baseName, {
+      reserveSemanticNames: true,
+    });
+
+    return createMailTemplate(
+      { scopeType: "event", scopeId: eventId, name },
+      { subject, body: templateBody, format, label },
+      tx,
+    );
+  });
+}
+
+/** Maps an error thrown while creating an event template to an HTTP response, or tells the
+ * caller to retry the create loop (`"retry"`), or returns `undefined` to signal "rethrow" for
+ * unrecognized errors. Preserves the exact precedence of the original inline handling. */
+function createTemplateErrorResponse(
+  c: Context,
+  err: unknown,
+  attempt: number,
+): Response | "retry" | undefined {
+  if (err instanceof TemplateLimitReachedError) {
+    return c.json({ error: "template_limit_reached", limit: MAX_TEMPLATES_PER_EVENT }, 422);
+  }
+  if (isPrismaUniqueViolation(err)) {
+    if (attempt < CREATE_TEMPLATE_MAX_ATTEMPTS - 1) return "retry";
+    return c.json({ error: "template_name_conflict" }, 409);
+  }
+  if (err instanceof MjmlCompileError) {
+    return mjmlCompileErrorResponse(c, err);
+  }
+  if (err instanceof UnknownPlaceholdersError) {
+    return templateValidationResponse(
+      c,
+      err.unknown.map((u) => `Unknown placeholder: ${u}`),
+    );
+  }
+  if (err instanceof PlaceholderInHtmlCommentError) {
+    return templateValidationResponse(
+      c,
+      err.placeholders.map((p) => `Placeholder in HTML comment: ${p}`),
+    );
+  }
+  if (err instanceof UnquotedAttributePlaceholderError) {
+    return templateValidationResponse(
+      c,
+      err.attributes.map((a) => `Unquoted attribute placeholder: ${a}`),
+    );
+  }
+  return undefined;
+}
+
 /** POST /api/admin/events/:eventId/templates */
 export async function handleCreateEventTemplate(c: Context, db: PrismaClient): Promise<Response> {
   const eventId = requireEventId(c);
@@ -889,29 +964,15 @@ export async function handleCreateEventTemplate(c: Context, db: PrismaClient): P
 
   for (let attempt = 0; attempt < CREATE_TEMPLATE_MAX_ATTEMPTS; attempt++) {
     try {
-      const created = await db.$transaction(async (tx) => {
-        // Serializes against event-image-assets-routes.ts's delete handler, which takes the
-        // same lock before its asset_in_use recheck - without it, a delete could commit between
-        // that handler's check and this create (Postgres default isolation is READ COMMITTED).
-        await acquireEventImageAssetsLock(tx, eventId);
-
-        const eventCount = await tx.mailTemplate.count({
-          where: { scope_type: "event", scope_id: eventId },
-        });
-        if (eventCount >= MAX_TEMPLATES_PER_EVENT) {
-          throw new TemplateLimitReachedError();
-        }
-
-        const name = await uniqueTemplateName(tx, eventId, baseName, {
-          reserveSemanticNames: true,
-        });
-
-        return createMailTemplate(
-          { scopeType: "event", scopeId: eventId, name },
-          { subject, body: templateBody, format, label: body.label },
-          tx,
-        );
-      });
+      const created = await createEventTemplateRow(
+        db,
+        eventId,
+        baseName,
+        subject,
+        templateBody,
+        format,
+        body.label,
+      );
 
       return c.json(
         {
@@ -927,36 +988,9 @@ export async function handleCreateEventTemplate(c: Context, db: PrismaClient): P
         201,
       );
     } catch (err) {
-      if (err instanceof TemplateLimitReachedError) {
-        return c.json({ error: "template_limit_reached", limit: MAX_TEMPLATES_PER_EVENT }, 422);
-      }
-      if (isPrismaUniqueViolation(err) && attempt < CREATE_TEMPLATE_MAX_ATTEMPTS - 1) {
-        continue;
-      }
-      if (err instanceof MjmlCompileError) {
-        return mjmlCompileErrorResponse(c, err);
-      }
-      if (err instanceof UnknownPlaceholdersError) {
-        return templateValidationResponse(
-          c,
-          err.unknown.map((u) => `Unknown placeholder: ${u}`),
-        );
-      }
-      if (err instanceof PlaceholderInHtmlCommentError) {
-        return templateValidationResponse(
-          c,
-          err.placeholders.map((p) => `Placeholder in HTML comment: ${p}`),
-        );
-      }
-      if (err instanceof UnquotedAttributePlaceholderError) {
-        return templateValidationResponse(
-          c,
-          err.attributes.map((a) => `Unquoted attribute placeholder: ${a}`),
-        );
-      }
-      if (isPrismaUniqueViolation(err)) {
-        return c.json({ error: "template_name_conflict" }, 409);
-      }
+      const mapped = createTemplateErrorResponse(c, err, attempt);
+      if (mapped === "retry") continue;
+      if (mapped !== undefined) return mapped;
       throw err;
     }
   }

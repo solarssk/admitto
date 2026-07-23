@@ -290,10 +290,12 @@ describe("RequirementsPage — Add item and Edit item", () => {
     fetchEventItems.mockResolvedValue([]);
     fetchOpsConfig.mockResolvedValue(makeOpsConfig());
 
-    const { container } = renderPage();
+    renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Add item" }));
     fireEvent.change(screen.getByLabelText("Item name"), { target: { value: "Lanyard" } });
-    fireEvent.click(container.querySelector(".event-item-modal__backdrop")!);
+    const backdrop = screen.getByRole("button", { name: "Close add item dialog" });
+    expect(backdrop).toHaveProperty("type", "button");
+    fireEvent.click(backdrop);
     expect(screen.queryByLabelText("Item name")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Add item" }));
