@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Badge, Button, Card, Checkbox, Input, PasswordStrengthMeter, Select, Spinner, useToast } from "@admitto/ui";
 import {
   ApiError,
@@ -28,10 +28,26 @@ const stepUpCodeFieldAttrs = {
   "data-form-type": "other",
 } as const;
 
+function detectBrowser(ua: string): string | null {
+  if (/Edg\//.test(ua)) return "Edge";
+  if (/Chrome\//.test(ua)) return "Chrome";
+  if (/Firefox\//.test(ua)) return "Firefox";
+  if (/Safari\//.test(ua)) return "Safari";
+  return null;
+}
+
+function detectOs(ua: string): string | null {
+  if (/Windows/.test(ua)) return "Windows";
+  if (/Mac OS X/.test(ua)) return "macOS";
+  if (/Linux/.test(ua)) return "Linux";
+  if (/iPhone|iPad/.test(ua)) return "iOS";
+  return null;
+}
+
 function parseUserAgent(ua: string | null): string {
   if (!ua) return "Unknown";
-  const browser = /Edg\//.test(ua) ? "Edge" : /Chrome\//.test(ua) ? "Chrome" : /Firefox\//.test(ua) ? "Firefox" : /Safari\//.test(ua) ? "Safari" : null;
-  const os = /Windows/.test(ua) ? "Windows" : /Mac OS X/.test(ua) ? "macOS" : /Linux/.test(ua) ? "Linux" : /iPhone|iPad/.test(ua) ? "iOS" : null;
+  const browser = detectBrowser(ua);
+  const os = detectOs(ua);
   const parts = [browser, os].filter(Boolean);
   return parts.length ? parts.join(" / ") : ua.slice(0, 40);
 }
@@ -218,14 +234,48 @@ export function AccountPage() {
     setConfirmPassword("");
     setPasswordCode("");
     setPasswordStepUpOpen(false);
-    const sessionWord = sessions_revoked === 1 ? "session" : "sessions";
-    const revokedNote = sessions_revoked > 0 ? ` ${sessions_revoked} other ${sessionWord} revoked.` : "";
-    addToast(
-      `Password changed.${revokedNote}`,
-      "success",
-    );
+    const sessionsRevokedPlural = sessions_revoked === 1 ? "" : "s";
+    const sessionsRevokedSuffix =
+      sessions_revoked > 0 ? ` ${sessions_revoked} other session${sessionsRevokedPlural} revoked.` : "";
+    addToast(`Password changed.${sessionsRevokedSuffix}`, "success");
     await loadAccount();
     await loadSessions();
+  }
+
+  function renderBackupCodesSection(): ReactNode {
+    if (!enrollData) return null;
+    if (enrollData.backupCodes.length > 0) {
+      return (
+        <div className="account-auth-backup">
+          <div className="account-auth-backup__head">
+            <strong>Backup codes — save all 10, shown once</strong>
+            <button
+              type="button"
+              className="account-uri-copy-btn"
+              onClick={() => downloadBackupCodes(enrollData.backupCodes)}
+            >
+              <i className="ti ti-download" aria-hidden="true" />
+              Download
+            </button>
+          </div>
+          <ul>{enrollData.backupCodes.map((code) => <li key={code}><code>{code}</code></li>)}</ul>
+          <div className="account-checkbox-row">
+            <Checkbox
+              id="account-backup-codes-saved"
+              label="I've saved my backup codes"
+              checked={backupCodesSaved}
+              onChange={(e) => setBackupCodesSaved(e.target.checked)}
+            />
+          </div>
+        </div>
+      );
+    }
+    if (enrollData.backupCodesAlreadyShown) {
+      return (
+        <p className="mail-field-hint">Backup codes were shown at first setup. Use your saved codes if you need to recover access.</p>
+      );
+    }
+    return null;
   }
 
   return (
@@ -510,32 +560,7 @@ export function AccountPage() {
                 {/* Right column: hint, backup codes, digit input */}
                 <div className="account-2fa-enroll__info">
                   <p className="mail-field-hint">Scan the QR code with your authenticator app.</p>
-                  {enrollData.backupCodes.length > 0 ? (
-                    <div className="account-auth-backup">
-                      <div className="account-auth-backup__head">
-                        <strong>Backup codes — save all 10, shown once</strong>
-                        <button
-                          type="button"
-                          className="account-uri-copy-btn"
-                          onClick={() => downloadBackupCodes(enrollData.backupCodes)}
-                        >
-                          <i className="ti ti-download" aria-hidden="true" />{" "}
-                          Download
-                        </button>
-                      </div>
-                      <ul>{enrollData.backupCodes.map((code) => <li key={code}><code>{code}</code></li>)}</ul>
-                      <div className="account-checkbox-row">
-                        <Checkbox
-                          id="account-backup-codes-saved"
-                          label="I've saved my backup codes"
-                          checked={backupCodesSaved}
-                          onChange={(e) => setBackupCodesSaved(e.target.checked)}
-                        />
-                      </div>
-                    </div>
-                  ) : enrollData.backupCodesAlreadyShown ? (
-                    <p className="mail-field-hint">Backup codes were shown at first setup. Use your saved codes if you need to recover access.</p>
-                  ) : null}
+                  {renderBackupCodesSection()}
                   <div className="account-totp-confirm-row__inputs">
                     <label className="mail-field-label" htmlFor="account-totp-code">Authenticator code</label>
                     <TotpDigitInput
@@ -698,11 +723,10 @@ export function AccountPage() {
         try {
           const { sessions_revoked } = await resetMfa({ password: resetPassword, code: resetCode || undefined });
           setResetFormOpen(false); setResetPassword(""); setResetCode(""); setResetCodeRequired(false); setResetConfirmOpen(false);
-          const endedNote = sessions_revoked > 0 ? ` ${sessions_revoked} other session${sessions_revoked === 1 ? "" : "s"} ended.` : "";
-          addToast(
-            `Two-factor authentication reset.${endedNote}`,
-            "success",
-          );
+          const mfaSessionsRevokedPlural = sessions_revoked === 1 ? "" : "s";
+          const mfaSessionsRevokedSuffix =
+            sessions_revoked > 0 ? ` ${sessions_revoked} other session${mfaSessionsRevokedPlural} ended.` : "";
+          addToast(`Two-factor authentication reset.${mfaSessionsRevokedSuffix}`, "success");
           await loadAccount(); await loadSessions();
         }
         catch (err) {

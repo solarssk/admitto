@@ -111,8 +111,8 @@ export function BrandingPanel() {
   const formDisabled = saving;
   const colorValue = primaryForColorInput(draft.primary);
   const displayHex = draft.primary ?? "";
-  const previewLabel =
-    displayHex && isValidHex(displayHex) ? displayHex : displayHex ? "invalid" : "default";
+  const invalidHexLabel = displayHex ? "invalid" : "default";
+  const previewLabel = displayHex && isValidHex(displayHex) ? displayHex : invalidHexLabel;
 
   return (
     <Card

@@ -463,12 +463,16 @@ export async function handleApiUpdateCfAccess(c: Context, db: PrismaClient): Pro
   const teamDomain = isSettingEnvLocked(SETTING_CF_ACCESS_TEAM_DOMAIN)
     ? current.teamDomain
     : (body.teamDomain?.trim() ?? current.teamDomain);
-  const audience = isSettingEnvLocked(SETTING_CF_ACCESS_AUD)
-    ? current.audience
-    : (body.audience !== undefined ? toStringArray(body.audience) : current.audience);
+  const audienceOverride =
+    body.audience !== undefined ? toStringArray(body.audience) : current.audience;
+  const audience = isSettingEnvLocked(SETTING_CF_ACCESS_AUD) ? current.audience : audienceOverride;
+  const protectedPrefixesOverride =
+    body.protectedPrefixes !== undefined
+      ? toStringArray(body.protectedPrefixes)
+      : current.protectedPrefixes;
   const protectedPrefixes = isSettingEnvLocked(SETTING_CF_ACCESS_PROTECTED_PREFIXES)
     ? current.protectedPrefixes
-    : (body.protectedPrefixes !== undefined ? toStringArray(body.protectedPrefixes) : current.protectedPrefixes);
+    : protectedPrefixesOverride;
 
   let resolved;
   try {
@@ -504,8 +508,8 @@ export async function handleApiUpdateCfAccess(c: Context, db: PrismaClient): Pro
 
   clearCfAccessRuntimeConfigCache();
 
-  const settingsAction =
-    wasEnabled === resolved.enabled ? "update" : resolved.enabled ? "enable" : "disable";
+  const enabledChangeAction = resolved.enabled ? "enable" : "disable";
+  const settingsAction = wasEnabled === resolved.enabled ? "update" : enabledChangeAction;
   logAuthSettingsChanged({
     actorUserId: actorUserId(c),
     resource: "cf_access",

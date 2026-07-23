@@ -125,12 +125,14 @@ export async function collectSetupChecks(
   const database = await checkDatabaseWithMigrations(db);
 
   const redisProbe = await checkRedis(rateLimitStore);
+  const redisAvailableResult: SetupCheckResult =
+    redisProbe.status === "disabled"
+      ? { ok: true, detail: "In-memory rate limit store (no Redis)" }
+      : { ok: true, detail: `Redis OK (${redisProbe.latency_ms ?? 0} ms)` };
   const redis: SetupCheckResult =
     redisProbe.status === "degraded"
       ? { ok: false, detail: "Redis unreachable" }
-      : redisProbe.status === "disabled"
-        ? { ok: true, detail: "In-memory rate limit store (no Redis)" }
-        : { ok: true, detail: `Redis OK (${redisProbe.latency_ms ?? 0} ms)` };
+      : redisAvailableResult;
 
   return {
     database,

@@ -115,12 +115,11 @@ export function extractCustomDataFromRow(
         try {
           normalizeCustomDataFieldValue(field as EventItemContent, value);
         } catch {
+          const booleanHint = field.type === "boolean" ? " (expected Yes/No or true/false)" : "";
           const hint =
             field.type === "select" && field.options?.length
               ? ` (expected one of: ${field.options.join(", ")})`
-              : field.type === "boolean"
-                ? " (expected Yes/No or true/false)"
-                : "";
+              : booleanHint;
           return { ok: false, reason: `Invalid value for ${field.label}${hint}` };
         }
       }
