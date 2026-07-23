@@ -226,7 +226,7 @@ describe("IdentityProviderEditor — edit", () => {
 
     await screen.findByText("Couldn't load this provider.");
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    await screen.findByDisplayValue("Google");
+    expect(await screen.findByDisplayValue("Google")).toBeTruthy();
   });
 });
 
@@ -354,7 +354,7 @@ describe("IdentityProviderEditor — coverage", () => {
     fireEvent.change(screen.getByLabelText("Client secret"), { target: { value: "secret-abc" } });
     fireEvent.click(screen.getByRole("button", { name: "Create provider" }));
 
-    await screen.findByText(/issuer already exists/i);
+    expect(await screen.findByText(/issuer already exists/i)).toBeTruthy();
   });
 
   it("navigates back to the list from the not-found state", async () => {
@@ -364,7 +364,7 @@ describe("IdentityProviderEditor — coverage", () => {
 
     await screen.findByText("This provider no longer exists.");
     fireEvent.click(screen.getByRole("button", { name: "Back to providers" }));
-    await screen.findByText("providers-list");
+    expect(await screen.findByText("providers-list")).toBeTruthy();
   });
 
   it("edits endpoint, claim, label, and enabled fields and saves them", async () => {

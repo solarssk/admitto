@@ -153,7 +153,7 @@ describe("CfAccessEditor (slice 4)", () => {
     renderEditorAt();
     await screen.findByRole("button", { name: "Test connection" });
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
-    await screen.findByText("JWKS unreachable");
+    expect(await screen.findByText("JWKS unreachable")).toBeTruthy();
   });
 
   it("Test connection stays enabled when the team domain field is env-locked", async () => {
@@ -304,7 +304,7 @@ describe("CfAccessEditor (slice 4)", () => {
     renderEditorAt();
     await screen.findByDisplayValue("https://t");
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-    await screen.findByText("Invalid configuration");
+    expect(await screen.findByText("Invalid configuration")).toBeTruthy();
   });
 
   it("shows an error toast when Test fails generically (non-401)", async () => {
@@ -314,7 +314,7 @@ describe("CfAccessEditor (slice 4)", () => {
     renderEditorAt();
     await screen.findByRole("button", { name: "Test connection" });
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
-    await screen.findByText("Connection test failed.");
+    expect(await screen.findByText("Connection test failed.")).toBeTruthy();
   });
 
   it("maps invalid_team_domain to actionable team URL guidance", async () => {
@@ -345,7 +345,7 @@ describe("CfAccessEditor (slice 4)", () => {
     renderEditorAt();
     await screen.findByDisplayValue("https://t");
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-    await screen.findByText("Failed to save settings.");
+    expect(await screen.findByText("Failed to save settings.")).toBeTruthy();
   });
 
   it("shows the default test toast when Test throws a non-ApiError", async () => {
@@ -354,7 +354,7 @@ describe("CfAccessEditor (slice 4)", () => {
     renderEditorAt();
     await screen.findByRole("button", { name: "Test connection" });
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
-    await screen.findByText("Connection test failed.");
+    expect(await screen.findByText("Connection test failed.")).toBeTruthy();
   });
 
   it("renders the env-locked info block when enabled is locked", async () => {

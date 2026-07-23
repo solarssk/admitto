@@ -195,7 +195,7 @@ describe("IdentityProviderEditor — discover & test (slice 3b)", () => {
     await screen.findByRole("button", { name: "Test connection" });
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
 
-    await screen.findByText("JWKS unreachable");
+    expect(await screen.findByText("JWKS unreachable")).toBeTruthy();
   });
 
   it("Test connection on create sends the draft issuer", async () => {
@@ -344,7 +344,7 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
       target: { value: "https://accounts.google.com" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Discover" }));
-    await screen.findByText("No OIDC metadata found.");
+    expect(await screen.findByText("No OIDC metadata found.")).toBeTruthy();
   });
 
   it("redirects to login when Discover returns 401", async () => {
@@ -376,7 +376,7 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
     renderEditorAt("/admin/settings/identity/providers/p1");
     await screen.findByRole("button", { name: "Discover" });
     fireEvent.click(screen.getByRole("button", { name: "Discover" }));
-    await screen.findByText("Discovery failed.");
+    expect(await screen.findByText("Discovery failed.")).toBeTruthy();
   });
 
   it("maps discovery_failed machine code to actionable issuer guidance", async () => {
@@ -419,7 +419,7 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
     renderEditorAt("/admin/settings/identity/providers/p1");
     await screen.findByRole("button", { name: "Test connection" });
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
-    await screen.findByText("Connection test failed.");
+    expect(await screen.findByText("Connection test failed.")).toBeTruthy();
   });
 
   it("maps invalid_issuer machine code to HTTPS guidance on test", async () => {

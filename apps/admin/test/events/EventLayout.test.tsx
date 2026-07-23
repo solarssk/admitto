@@ -109,7 +109,7 @@ describe("EventLayout (#274)", () => {
 
     renderLayout({ pathname: "/admin/events/evt-unknown/overview" });
 
-    await screen.findByText("picker");
+    expect(await screen.findByText("picker")).toBeTruthy();
   });
 
   it("still resolves archived events through the fallback fetch", async () => {
@@ -119,7 +119,7 @@ describe("EventLayout (#274)", () => {
 
     renderLayout({ pathname: "/admin/events/evt-old/overview" });
 
-    await screen.findByText("shell:Past Conference");
+    expect(await screen.findByText("shell:Past Conference")).toBeTruthy();
   });
 
   it("clears the one-shot navigation state after first use, so a later back/forward revisit re-validates via the fallback fetch (Codex review)", async () => {
