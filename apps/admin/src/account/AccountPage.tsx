@@ -253,7 +253,7 @@ export function AccountPage() {
               className="account-uri-copy-btn"
               onClick={() => downloadBackupCodes(enrollment.backupCodes)}
             >
-              <i className="ti ti-download" aria-hidden="true" />
+              <i className="ti ti-download" aria-hidden="true" />{" "}
               Download
             </button>
           </div>
