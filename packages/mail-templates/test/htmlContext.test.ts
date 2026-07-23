@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getHtmlAttributeContext } from "../src/htmlContext.js";
+import { getHtmlAttributeContext, isInsideQuotedAttribute } from "../src/htmlContext.js";
 
 const PH = "{{first_name}}";
 
@@ -72,6 +72,30 @@ describe("getHtmlAttributeContext", () => {
     const result = ctxAt('<img alt="{{first_name}}" width="100" />');
     expect(result.inTag).toBe(true);
     expect(result.inQuotedAttribute).toBe(true);
+  });
+
+  it("treats a value as quoted when whitespace separates the equals sign and quote", () => {
+    const result = ctxAt('<td title =  "{{first_name}}">Hi</td>');
+    expect(result.inTag).toBe(true);
+    expect(result.inQuotedAttribute).toBe(true);
+  });
+
+  it("does not treat a placeholder after a closing tag as tag markup", () => {
+    const result = ctxAt("<p>Hi</p>{{first_name}}");
+    expect(result).toEqual({
+      inTag: false,
+      inQuotedAttribute: false,
+      unquotedAttributeName: null,
+      inBareTagMarkup: false,
+    });
+  });
+
+  it("exposes the quoted-attribute convenience check", () => {
+    const quoted = '<td title="{{first_name}}">Hi</td>';
+    const plain = "<p>Hello {{first_name}}</p>";
+
+    expect(isInsideQuotedAttribute(quoted, quoted.indexOf(PH))).toBe(true);
+    expect(isInsideQuotedAttribute(plain, plain.indexOf(PH))).toBe(false);
   });
 
   it("ignores placeholders inside HTML comments", () => {

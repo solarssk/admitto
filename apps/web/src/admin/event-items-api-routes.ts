@@ -345,6 +345,202 @@ export async function handleCreateEventItem(c: Context, db: PrismaClient): Promi
   }
 }
 
+/** Row shape returned by the `eventItem` select used across the patch helpers below. */
+type EventItemRow = {
+  id: string;
+  key: string;
+  label: string;
+  description: string | null;
+  type: string;
+  enabled: boolean;
+  icon: string | null;
+  config: unknown;
+};
+
+type PatchEventItemOutcome =
+  | { ok: true; row: EventItemRow }
+  | { ok: false; reason: "unknown_content_field"; field: string }
+  | { ok: false; reason: "in_use" };
+
+/** Diffs a validated PATCH body against the existing row, returning only the fields that
+ * actually changed (Prisma update payload + names for the audit log). */
+function buildEventItemPatch(
+  patchInput: z.infer<typeof patchEventItemSchema>,
+  existing: { label: string; description: string | null; enabled: boolean; icon: string | null },
+): { fields: string[]; data: Prisma.EventItemUpdateInput } {
+  const fields: string[] = [];
+  const data: Prisma.EventItemUpdateInput = {};
+
+  if (patchInput.label !== undefined && patchInput.label !== existing.label) {
+    data.label = patchInput.label;
+    fields.push("label");
+  }
+  if (patchInput.description !== undefined && patchInput.description !== existing.description) {
+    data.description = patchInput.description;
+    fields.push("description");
+  }
+  if (patchInput.enabled !== undefined && patchInput.enabled !== existing.enabled) {
+    data.enabled = patchInput.enabled;
+    fields.push("enabled");
+  }
+  if (patchInput.config !== undefined) {
+    data.config = patchInput.config as Prisma.InputJsonValue;
+    fields.push("config");
+  }
+  if (patchInput.icon !== undefined && patchInput.icon !== existing.icon) {
+    data.icon = patchInput.icon;
+    fields.push("icon");
+  }
+
+  return { fields, data };
+}
+
+/** Decides whether this PATCH needs the "in_use" disable-check and/or a Serializable
+ * transaction to keep the "badge_at_entry" ops-config toggle honest.
+ *
+ * "badge" backs the "Issue badge at entry" ops-config toggle — it can stop being usable
+ * either by being disabled, or by "Issue on check-in" being turned off while it stays active.
+ * `disabling` alone (regardless of before-state) always re-syncs too, as a backstop for events
+ * whose ops_config already drifted before this check existed. */
+function computePatchTransactionFlags(
+  patchInput: z.infer<typeof patchEventItemSchema>,
+  existing: { key: string; enabled: boolean; config: unknown },
+): { disabling: boolean; needsBadgeSync: boolean; needsSerializable: boolean } {
+  const disabling = patchInput.enabled === false && existing.enabled;
+
+  const badgeUsableBefore = isBadgeItemUsable(
+    existing.enabled,
+    existing.config as EventItemConfig | null,
+  );
+  const badgeUsableAfter = isBadgeItemUsable(
+    patchInput.enabled ?? existing.enabled,
+    (patchInput.config ?? existing.config) as EventItemConfig | null,
+  );
+  const needsBadgeSync =
+    existing.key === "badge" && (disabling || (badgeUsableBefore && !badgeUsableAfter));
+  const needsSerializable = disabling || needsBadgeSync;
+
+  return { disabling, needsBadgeSync, needsSerializable };
+}
+
+/** Rejects config.content_fields entries that don't exist in the event's EventCustomField
+ * registry inside the caller's transaction; returns the first unknown field slug, or null when
+ * all references resolve (or there are none to check). Mirrors validateConfigContentFields's
+ * checks but reports back to the caller instead of throwing, since the PATCH transaction needs
+ * to return a typed { ok: false } outcome rather than unwind via an exception. */
+async function validatePatchContentFields(
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  config: EventItemConfig | undefined,
+): Promise<string | null> {
+  if (!config?.content_fields?.length) return null;
+  await acquireEventCustomFieldsLock(tx, eventId);
+  const registryFields = await loadEventCustomDataFields(tx, eventId);
+  const allowed = new Set(registryFields.map((f) => f.source_field));
+  return config.content_fields.find((f) => !allowed.has(f)) ?? null;
+}
+
+/** Turns off the event's "badge_at_entry" ops-config toggle when the badge item just became
+ * unusable (disabled, or "Issue on check-in" turned off) — keeps the toggle in sync instead of
+ * leaving it silently on. No-op when the toggle is already off. */
+async function syncBadgeAtEntryOff(
+  tx: Prisma.TransactionClient,
+  c: Context,
+  eventId: string,
+  disabling: boolean,
+): Promise<void> {
+  const event = await tx.event.findUnique({
+    where: { id: eventId },
+    select: { ops_config: true },
+  });
+  const currentOps = parseEventOpsConfig(event?.ops_config);
+  if (!currentOps.badge_at_entry) return;
+
+  await tx.event.update({
+    where: { id: eventId },
+    data: {
+      ops_config: {
+        ...currentOps,
+        badge_at_entry: false,
+      } as Prisma.InputJsonValue,
+    },
+  });
+  await writeBulkActionLog(tx, {
+    event_id: eventId,
+    action_type: "ops_config_updated",
+    audit: adminAuditFromContext(c),
+    metadata: {
+      fields: ["badge_at_entry"],
+      reason: disabling ? "badge_item_disabled" : "badge_item_issue_on_checkin_disabled",
+    },
+  });
+}
+
+/** Body of the PATCH transaction: validates content_fields, blocks disabling an in-use item,
+ * applies the update, re-syncs "badge_at_entry" when needed, and writes the audit log. */
+type ApplyEventItemPatchOptions = {
+  c: Context;
+  eventId: string;
+  itemId: string;
+  config: EventItemConfig | undefined;
+  data: Prisma.EventItemUpdateInput;
+  fields: string[];
+  disabling: boolean;
+  needsBadgeSync: boolean;
+};
+
+async function applyEventItemPatch(
+  tx: Prisma.TransactionClient,
+  {
+    c,
+    eventId,
+    itemId,
+    config,
+    data,
+    fields,
+    disabling,
+    needsBadgeSync,
+  }: ApplyEventItemPatchOptions,
+): Promise<PatchEventItemOutcome> {
+  const unknownField = await validatePatchContentFields(tx, eventId, config);
+  if (unknownField) {
+    return { ok: false, reason: "unknown_content_field", field: unknownField };
+  }
+
+  if (disabling) {
+    const inUse = await countActivelyIssuedStates(tx, itemId);
+    if (inUse > 0) return { ok: false, reason: "in_use" };
+  }
+
+  const row = await tx.eventItem.update({
+    where: { id: itemId },
+    data,
+    select: {
+      id: true,
+      key: true,
+      label: true,
+      description: true,
+      type: true,
+      enabled: true,
+      icon: true,
+      config: true,
+    },
+  });
+
+  if (needsBadgeSync) {
+    await syncBadgeAtEntryOff(tx, c, eventId, disabling);
+  }
+
+  await writeBulkActionLog(tx, {
+    event_id: eventId,
+    action_type: "event_item_updated",
+    audit: adminAuditFromContext(c),
+    metadata: { item_key: row.key, fields },
+  });
+
+  return { ok: true, row };
+}
+
 /** PATCH /api/admin/events/:eventId/items/:itemId */
 export async function handlePatchEventItem(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
@@ -372,129 +568,30 @@ export async function handlePatchEventItem(c: Context, db: PrismaClient): Promis
     return c.json({ error: "validation_failed" }, 400);
   }
 
-  const fields: string[] = [];
-  const data: Prisma.EventItemUpdateInput = {};
-
-  if (parsed.data.label !== undefined && parsed.data.label !== existing.label) {
-    data.label = parsed.data.label;
-    fields.push("label");
-  }
-  if (
-    parsed.data.description !== undefined &&
-    parsed.data.description !== existing.description
-  ) {
-    data.description = parsed.data.description;
-    fields.push("description");
-  }
-  if (parsed.data.enabled !== undefined && parsed.data.enabled !== existing.enabled) {
-    data.enabled = parsed.data.enabled;
-    fields.push("enabled");
-  }
-  if (parsed.data.config !== undefined) {
-    data.config = parsed.data.config as Prisma.InputJsonValue;
-    fields.push("config");
-  }
-  if (parsed.data.icon !== undefined && parsed.data.icon !== existing.icon) {
-    data.icon = parsed.data.icon;
-    fields.push("icon");
-  }
+  const { fields, data } = buildEventItemPatch(parsed.data, existing);
 
   if (fields.length === 0) {
     return c.json(serializeEventItem(existing));
   }
 
-  const disabling = parsed.data.enabled === false && existing.enabled;
-
-  // "badge" backs the "Issue badge at entry" ops-config toggle — it can stop
-  // being usable either by being disabled, or by "Issue on check-in" being
-  // turned off while it stays active. `disabling` alone (regardless of
-  // before-state) always re-syncs too, as a backstop for events whose
-  // ops_config already drifted before this check existed.
-  const badgeUsableBefore = isBadgeItemUsable(
-    existing.enabled,
-    existing.config as EventItemConfig | null,
+  const { disabling, needsBadgeSync, needsSerializable } = computePatchTransactionFlags(
+    parsed.data,
+    existing,
   );
-  const badgeUsableAfter = isBadgeItemUsable(
-    parsed.data.enabled ?? existing.enabled,
-    (parsed.data.config ?? existing.config) as EventItemConfig | null,
-  );
-  const needsBadgeSync =
-    existing.key === "badge" && (disabling || (badgeUsableBefore && !badgeUsableAfter));
-  const needsSerializable = disabling || needsBadgeSync;
 
   const result = await runSerializableTransaction(
     db,
-    async (tx) => {
-      if (parsed.data.config?.content_fields?.length) {
-        await acquireEventCustomFieldsLock(tx, eventId);
-        const registryFields = await loadEventCustomDataFields(tx, eventId);
-        const allowed = new Set(registryFields.map((f) => f.source_field));
-        const unknownField = parsed.data.config.content_fields.find((f) => !allowed.has(f));
-        if (unknownField) {
-          return { ok: false as const, reason: "unknown_content_field" as const, field: unknownField };
-        }
-      }
-
-      if (disabling) {
-        const inUse = await countActivelyIssuedStates(tx, itemId);
-        if (inUse > 0) return { ok: false as const, reason: "in_use" as const };
-      }
-
-      const row = await tx.eventItem.update({
-        where: { id: itemId },
+    (tx) =>
+      applyEventItemPatch(tx, {
+        c,
+        eventId,
+        itemId,
+        config: parsed.data.config,
         data,
-        select: {
-          id: true,
-          key: true,
-          label: true,
-          description: true,
-          type: true,
-          enabled: true,
-          icon: true,
-          config: true,
-        },
-      });
-
-      // The badge item just became unusable (disabled, or "Issue on
-      // check-in" turned off) — keep the ops-config toggle in sync instead
-      // of leaving it silently on.
-      if (needsBadgeSync) {
-        const event = await tx.event.findUnique({
-          where: { id: eventId },
-          select: { ops_config: true },
-        });
-        const currentOps = parseEventOpsConfig(event?.ops_config);
-        if (currentOps.badge_at_entry) {
-          await tx.event.update({
-            where: { id: eventId },
-            data: {
-              ops_config: {
-                ...currentOps,
-                badge_at_entry: false,
-              } as Prisma.InputJsonValue,
-            },
-          });
-          await writeBulkActionLog(tx, {
-            event_id: eventId,
-            action_type: "ops_config_updated",
-            audit: adminAuditFromContext(c),
-            metadata: {
-              fields: ["badge_at_entry"],
-              reason: disabling ? "badge_item_disabled" : "badge_item_issue_on_checkin_disabled",
-            },
-          });
-        }
-      }
-
-      await writeBulkActionLog(tx, {
-        event_id: eventId,
-        action_type: "event_item_updated",
-        audit: adminAuditFromContext(c),
-        metadata: { item_key: row.key, fields },
-      });
-
-      return { ok: true as const, row };
-    },
+        fields,
+        disabling,
+        needsBadgeSync,
+      }),
     needsSerializable
       ? { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
       : undefined,

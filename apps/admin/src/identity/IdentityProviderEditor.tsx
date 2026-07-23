@@ -160,6 +160,95 @@ function setField<K extends keyof ProviderDraft>(
   return next;
 }
 
+/** Resolve the effective provider id: explicit prop wins; edit mode falls back
+ * to the route param so the routed element can stay prop-less. */
+function resolveProviderId(
+  explicitId: string | undefined,
+  mode: EditorMode,
+  routeParamId: string | undefined,
+): string | undefined {
+  return explicitId ?? (mode === "edit" ? routeParamId : undefined);
+}
+
+function initialLoadState(mode: EditorMode): LoadState {
+  return mode === "edit" ? "loading" : "ready";
+}
+
+function computeDirty(
+  draft: ProviderDraft,
+  baseline: ProviderDraft,
+  mappings: MappingRow[],
+  baselineMappings: MappingRow[],
+): boolean {
+  return isDraftDirty(draft, baseline) || !mappingsEqual(mappings, baselineMappings);
+}
+
+function editorTitle(mode: EditorMode): string {
+  return mode === "create" ? "Add identity provider" : "Edit identity provider";
+}
+
+function editorSubtitle(mode: EditorMode): string {
+  return mode === "create"
+    ? "Register an OpenID Connect identity provider for single sign-on."
+    : "Update this OpenID Connect identity provider.";
+}
+
+function clientSecretFieldLabel(mode: EditorMode, hasSecret: boolean): string {
+  if (mode !== "edit") return "Client secret";
+  return hasSecret ? "New client secret" : "Client secret";
+}
+
+function clientSecretFieldHint(mode: EditorMode, hasSecret: boolean): string | undefined {
+  return mode === "edit" && hasSecret ? "Leave blank to keep the stored secret." : undefined;
+}
+
+function discoverButtonLabel(discovering: boolean): string {
+  return discovering ? "Discovering…" : "Discover";
+}
+
+function testButtonLabel(testing: boolean): string {
+  return testing ? "Testing…" : "Test connection";
+}
+
+function submitButtonLabel(saving: boolean, mode: EditorMode): string {
+  if (saving) return "Saving…";
+  return mode === "create" ? "Create provider" : "Save changes";
+}
+
+function loginButtonPreviewLabel(label: string): string {
+  return label.trim() || "Continue with SSO";
+}
+
+/** True while any async editor action (discover/test/save) is in flight. */
+function isActionBusy(saving: boolean, testing: boolean, discovering: boolean): boolean {
+  return saving || testing || discovering;
+}
+
+/** True once the form is usable: create mode is always ready; edit mode needs
+ * the provider to have finished loading. */
+function isFormLocked(mode: EditorMode, loadState: LoadState): boolean {
+  return mode === "edit" && loadState !== "ready";
+}
+
+/** Shared disabled-state for the Test/Save actions (busy, or edit mode still loading). */
+function actionsDisabled(
+  saving: boolean,
+  testing: boolean,
+  discovering: boolean,
+  mode: EditorMode,
+  loadState: LoadState,
+): boolean {
+  return isActionBusy(saving, testing, discovering) || isFormLocked(mode, loadState);
+}
+
+type EditorView = "loading" | "error" | "not_found" | "form";
+
+/** Which top-level content the page shows for the current mode/load state. */
+function resolveEditorView(mode: EditorMode, loadState: LoadState): EditorView {
+  if (mode === "create" || loadState === "ready") return "form";
+  return loadState;
+}
+
 /**
  * OIDC identity provider editor (#266). Basics, Endpoints, Claims, and the SSO
  * login button label shipped in slice 3a; slice 3b adds the group→role mapping
@@ -174,13 +263,13 @@ export function IdentityProviderEditor({
   const navigate = useNavigate();
   const { addToast } = useToast();
   const routeParams = useParams();
-  const resolvedProviderId = providerId ?? (mode === "edit" ? routeParams.providerId : undefined);
+  const resolvedProviderId = resolveProviderId(providerId, mode, routeParams.providerId);
   const [draft, setDraft] = useState<ProviderDraft>(() => emptyProviderDraft());
   const [baseline, setBaseline] = useState<ProviderDraft>(() => emptyProviderDraft());
   const [mappings, setMappings] = useState<MappingRow[]>([]);
   const [baselineMappings, setBaselineMappings] = useState<MappingRow[]>([]);
   const [mappingErrors, setMappingErrors] = useState<MappingRowError[]>([]);
-  const [loadState, setLoadState] = useState<LoadState>(mode === "edit" ? "loading" : "ready");
+  const [loadState, setLoadState] = useState<LoadState>(initialLoadState(mode));
   const [errors, setErrors] = useState<FieldErrors>({});
   const [saving, setSaving] = useState(false);
   const [hasSecret, setHasSecret] = useState(false);
@@ -277,7 +366,7 @@ export function IdentityProviderEditor({
 
   const retryLoad = useCallback(() => setLoadTick((n) => n + 1), []);
 
-  const dirty = isDraftDirty(draft, baseline) || !mappingsEqual(mappings, baselineMappings);
+  const dirty = computeDirty(draft, baseline, mappings, baselineMappings);
 
   const handleMappingsChange = useCallback((rows: MappingRow[]) => {
     setMappings(rows);
@@ -379,15 +468,12 @@ export function IdentityProviderEditor({
     [draft, mode, mappings, resolvedProviderId, addToast, navigate],
   );
 
-  // Discover autofills endpoints from the issuer's .well-known config.
-  const handleDiscover = useCallback(async () => {
-    const issuer = draft.issuer.trim();
-    if (!issuer) {
-      addToast("Issuer URL is required for discovery.", "error");
-      return;
-    }
-
-    if (mode === "create") {
+  // Discover autofills endpoints from the issuer's .well-known config. Split
+  // into create/edit variants (each independently below the complexity limit)
+  // since the two modes hit different endpoints and guard against staleness
+  // differently; `handleDiscover` just validates the issuer and dispatches.
+  const handleDiscoverCreate = useCallback(
+    async (issuer: string) => {
       const nonce = ++createDiscoverNonceRef.current;
       const issuerAtRequest = issuer;
       setDiscovering(true);
@@ -419,9 +505,11 @@ export function IdentityProviderEditor({
       } finally {
         setDiscovering(false);
       }
-      return;
-    }
+    },
+    [addToast],
+  );
 
+  const handleDiscoverEdit = useCallback(async () => {
     if (!resolvedProviderId) return;
     const targetId = resolvedProviderId;
     setDiscovering(true);
@@ -478,7 +566,20 @@ export function IdentityProviderEditor({
     } finally {
       if (targetId === providerIdRef.current) setDiscovering(false);
     }
-  }, [draft.issuer, mode, resolvedProviderId, addToast]);
+  }, [resolvedProviderId, addToast]);
+
+  const handleDiscover = useCallback(async () => {
+    const issuer = draft.issuer.trim();
+    if (!issuer) {
+      addToast("Issuer URL is required for discovery.", "error");
+      return;
+    }
+    if (mode === "create") {
+      await handleDiscoverCreate(issuer);
+      return;
+    }
+    await handleDiscoverEdit();
+  }, [draft.issuer, mode, handleDiscoverCreate, handleDiscoverEdit, addToast]);
 
   // Test probes the draft endpoints (create + edit) without requiring a prior save.
   const handleTest = useCallback(async () => {
@@ -517,7 +618,7 @@ export function IdentityProviderEditor({
     }
   }, [draft, mode, resolvedProviderId, addToast]);
 
-  const title = mode === "create" ? "Add identity provider" : "Edit identity provider";
+  const title = editorTitle(mode);
 
   const loadingContent = (
     <div className="identity-editor__loading" role="status">
@@ -550,10 +651,6 @@ export function IdentityProviderEditor({
     </Card>
   );
 
-  const editSecretLabel = hasSecret ? "New client secret" : "Client secret";
-  const secretLabel = mode === "edit" ? editSecretLabel : "Client secret";
-  const submitLabel = mode === "create" ? "Create provider" : "Save changes";
-
   const formContent = (
     <form className="identity-editor" onSubmit={handleSubmit} noValidate>
       <Card title="Basics">
@@ -585,16 +682,12 @@ export function IdentityProviderEditor({
             required
           />
           <Input
-            label={secretLabel}
+            label={clientSecretFieldLabel(mode, hasSecret)}
             type="password"
             value={draft.client_secret}
             invalid={Boolean(errors.client_secret)}
             error={errors.client_secret}
-            hint={
-              mode === "edit" && hasSecret
-                ? "Leave blank to keep the stored secret."
-                : undefined
-            }
+            hint={clientSecretFieldHint(mode, hasSecret)}
             onChange={(e) => setDraft((d) => setField(d, "client_secret", e.target.value))}
             autoComplete="new-password"
             required={mode === "create"}
@@ -619,9 +712,9 @@ export function IdentityProviderEditor({
               variant="secondary"
               size="sm"
               onClick={handleDiscover}
-              disabled={discovering || testing || saving}
+              disabled={isActionBusy(saving, testing, discovering)}
             >
-              {discovering ? "Discovering…" : "Discover"}
+              {discoverButtonLabel(discovering)}
             </Button>
           </div>
         }
@@ -719,48 +812,45 @@ export function IdentityProviderEditor({
         <div className="identity-sso-preview" aria-label="SSO login button preview">
           <span className="identity-sso-preview__label">Preview</span>
           <span className="identity-sso-preview__button">
-            {draft.login_button_label.trim() || "Continue with SSO"}
+            {loginButtonPreviewLabel(draft.login_button_label)}
           </span>
         </div>
       </Card>
 
       <div className="identity-editor__actions">
-        <Button type="button" variant="ghost" onClick={handleCancel} disabled={saving || testing || discovering}>
+        <Button type="button" variant="ghost" onClick={handleCancel} disabled={isActionBusy(saving, testing, discovering)}>
           Cancel
         </Button>
         <Button
           type="button"
           variant="secondary"
           onClick={handleTest}
-          disabled={discovering || testing || saving || (mode === "edit" && loadState !== "ready")}
+          disabled={actionsDisabled(saving, testing, discovering, mode, loadState)}
         >
-          {testing ? "Testing…" : "Test connection"}
+          {testButtonLabel(testing)}
         </Button>
         <Button
           type="submit"
           variant="primary"
-          disabled={saving || testing || discovering || (mode === "edit" && loadState !== "ready")}
+          disabled={actionsDisabled(saving, testing, discovering, mode, loadState)}
         >
-          {saving ? "Saving…" : submitLabel}
+          {submitButtonLabel(saving, mode)}
         </Button>
       </div>
     </form>
   );
 
+  const view = resolveEditorView(mode, loadState);
   return (
     <div className="identity-editor__page">
-      {mode === "edit" && loadState === "loading" && loadingContent}
-      {mode === "edit" && loadState === "error" && errorContent}
-      {mode === "edit" && loadState === "not_found" && notFoundContent}
-      {((mode === "edit" && loadState === "ready") || mode === "create") && (
+      {view === "loading" && loadingContent}
+      {view === "error" && errorContent}
+      {view === "not_found" && notFoundContent}
+      {view === "form" && (
         <>
           <div className="identity-editor__header">
             <h2 className="identity-editor__title">{title}</h2>
-            <p className="identity-editor__subtitle">
-              {mode === "create"
-                ? "Register an OpenID Connect identity provider for single sign-on."
-                : "Update this OpenID Connect identity provider."}
-            </p>
+            <p className="identity-editor__subtitle">{editorSubtitle(mode)}</p>
           </div>
           {formContent}
         </>

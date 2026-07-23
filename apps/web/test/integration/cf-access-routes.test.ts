@@ -9,6 +9,7 @@ import {
   SETTING_CF_ACCESS_ENABLED,
   SETTING_CF_ACCESS_TEAM_DOMAIN,
   SETTING_CF_ACCESS_AUD,
+  clearCfAccessRuntimeConfigCache,
   clearCfAccessJwksCacheForTests,
 } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
@@ -168,6 +169,62 @@ describe("CF Access admin collision point", () => {
     expect(res.status).toBe(200);
   });
 
+  it("returns a JSON login boundary for an uncredentialed protected API request", async () => {
+    const res = await app.request("/api/admin/identity/providers");
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: "authentication_required" });
+  });
+
+  it("allows a break-glass session to use protected APIs", async () => {
+    const res = await app.request("/api/admin/identity/providers", {
+      headers: { Cookie: superCookie },
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects a non-superadmin break-glass session with JSON", async () => {
+    const { rawToken, session } = await createSession(prisma, {
+      userId: NO_ROLE_ID,
+      stage: SESSION_STAGE.FULL,
+    });
+    try {
+      const res = await app.request("/api/admin/identity/providers", {
+        headers: { Cookie: `admitto_session=${rawToken}` },
+      });
+
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "forbidden" });
+    } finally {
+      await prisma.session.delete({ where: { id: session.id } });
+    }
+  });
+
+  it("falls back to a break-glass session when Cloudflare Access is disabled", async () => {
+    await prisma.systemSettings.update({
+      where: { key: SETTING_CF_ACCESS_ENABLED },
+      data: { value_json: "false" },
+    });
+    clearCfAccessRuntimeConfigCache();
+    try {
+      const res = await app.request("/api/admin/identity/providers", {
+        headers: {
+          Cookie: superCookie,
+          [CF_ACCESS_HEADER]: "not.a.jwt",
+        },
+      });
+
+      expect(res.status).toBe(200);
+    } finally {
+      await prisma.systemSettings.update({
+        where: { key: SETTING_CF_ACCESS_ENABLED },
+        data: { value_json: "true" },
+      });
+      clearCfAccessRuntimeConfigCache();
+    }
+  });
+
   it("valid CF JWT + superadmin renders SPA shell without login redirect", async () => {
     const token = await signCfAccessJwt(mock, { sub: "cf-super-sub", email: SUPER_EMAIL });
     const res = await app.request("/admin", {
@@ -176,6 +233,15 @@ describe("CF Access admin collision point", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("staff-spa-fixture");
+  });
+
+  it("allows a Cloudflare Access superadmin to use the superadmin-only identity API", async () => {
+    const token = await signCfAccessJwt(mock, { sub: "cf-super-sub", email: SUPER_EMAIL });
+    const res = await app.request("/api/admin/identity/providers", {
+      headers: { [CF_ACCESS_HEADER]: token },
+    });
+
+    expect(res.status).toBe(200);
   });
 
   it("CF JWT without session bootstraps admin SPA and /api/admin/* APIs", async () => {
@@ -224,6 +290,18 @@ describe("CF Access admin collision point", () => {
     expect(res.status).toBe(403);
   });
 
+  it("rejects an invalid CF JWT at the superadmin-only API even with a break-glass session", async () => {
+    const res = await app.request("/api/admin/identity/providers", {
+      headers: {
+        Cookie: superCookie,
+        [CF_ACCESS_HEADER]: "not.a.jwt",
+      },
+    });
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "cf_access_jwt_invalid" });
+  });
+
   it("rejects CF JWT when email matches existing user without ExternalIdentity (no auto-link)", async () => {
     const orphanId = "cf-orphan-admin";
     const orphanEmail = "cf-orphan-admin@example.com";
@@ -242,13 +320,51 @@ describe("CF Access admin collision point", () => {
       });
 
       const token = await signCfAccessJwt(mock, { sub: "cf-orphan-sub", email: orphanEmail });
-      const res = await app.request("/admin", {
+      const staffPage = await app.request("/admin", {
+        headers: { [CF_ACCESS_HEADER]: token },
+      });
+      expect(staffPage.status).toBe(403);
+
+      const res = await app.request("/api/admin/identity/providers", {
         headers: { [CF_ACCESS_HEADER]: token },
       });
       expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "cf_access_jwt_invalid" });
     } finally {
       await prisma.roleAssignment.deleteMany({ where: { user_id: orphanId } });
       await prisma.user.deleteMany({ where: { id: orphanId } });
+    }
+  });
+
+  it("rejects a validated token with an empty subject", async () => {
+    const token = await signCfAccessJwt(mock, { sub: "", email: SUPER_EMAIL });
+    const res = await app.request("/api/admin/identity/providers", {
+      headers: { [CF_ACCESS_HEADER]: token },
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "cf_access_jwt_invalid" });
+  });
+
+  it("rejects CF JWTs while the Cloudflare Access provider is disabled", async () => {
+    const provider = await prisma.identityProvider.findFirstOrThrow({
+      where: { provider_type: "cloudflare_access" },
+    });
+    await prisma.identityProvider.update({ where: { id: provider.id }, data: { enabled: false } });
+
+    try {
+      const token = await signCfAccessJwt(mock, { sub: "cf-super-sub", email: SUPER_EMAIL });
+      const staffPage = await app.request("/admin", {
+        headers: { [CF_ACCESS_HEADER]: token },
+      });
+      expect(staffPage.status).toBe(403);
+
+      const res = await app.request("/api/admin/identity/providers", {
+        headers: { [CF_ACCESS_HEADER]: token },
+      });
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "cf_access_jwt_invalid" });
+    } finally {
+      await prisma.identityProvider.update({ where: { id: provider.id }, data: { enabled: true } });
     }
   });
 

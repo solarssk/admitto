@@ -1,6 +1,13 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { useBlocker, useNavigate, useOutletContext, useParams, useSearchParams } from "react-router-dom";
-import { Badge, Button, Card, EmptyState, Input, PageHeader, useToast } from "@admitto/ui";
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import {
+  useBlocker,
+  useNavigate,
+  useOutletContext,
+  useParams,
+  useSearchParams,
+  type NavigateFunction,
+} from "react-router-dom";
+import { Badge, Button, Card, EmptyState, Input, PageHeader, useToast, type ToastVariant } from "@admitto/ui";
 import {
   ApiError,
   archiveEvent,
@@ -113,6 +120,377 @@ function buildSettingsPatch(form: SettingsForm, original: SettingsForm): Setting
   return patch;
 }
 
+type AddToast = (message: string, variant?: ToastVariant, duration?: number) => void;
+
+function eventOverviewPath(eventId: string | undefined): string {
+  return eventId ? `/admin/events/${eventId}/overview` : "/admin";
+}
+
+function computeSaveButtonLabel(saving: boolean, logoUploading: boolean): string {
+  if (saving) return "Saving…";
+  if (logoUploading) return "Uploading…";
+  return "Save changes";
+}
+
+/** Tooltip shared by the Danger Zone's superadmin-gated actions: superadmin restriction wins
+ * over the action-specific reason. Extracted out of EventSettingsPage (SonarCloud S3776). */
+function computeSuperadminTooltip(
+  isSa: boolean,
+  restrictedWhenTrue: boolean,
+  restrictedMessage: string,
+): string | undefined {
+  if (!isSa) return "Superadmin only";
+  if (restrictedWhenTrue) return restrictedMessage;
+  return undefined;
+}
+
+function addVisitedTab(
+  visited: ReadonlySet<EventSettingsTab>,
+  tab: EventSettingsTab,
+): ReadonlySet<EventSettingsTab> {
+  return visited.has(tab) ? visited : new Set(visited).add(tab);
+}
+
+function appendUnsavedWarning(message: string, pageDirty: boolean): string {
+  return pageDirty ? message + UNSAVED_CHANGES_WARNING : message;
+}
+
+function describeRevokeCheckins(admittedCount: number): string {
+  return admittedCount > 0
+    ? `Reverses check-in for all ${admittedCount} currently checked-in attendee${pluralSuffix(admittedCount)}. They can check in again afterwards.`
+    : "No attendees are currently checked in.";
+}
+
+function describeRevokeItems(issuedItemsCount: number): string {
+  return issuedItemsCount > 0
+    ? `Resets all ${issuedItemsCount} issued item${pluralSuffix(issuedItemsCount)} back to pending, for every attendee. They can be handed out again afterwards.`
+    : "No items have been issued yet.";
+}
+
+function describeDeleteEvent(isDeletable: boolean): string {
+  return isDeletable
+    ? "Permanently deletes this event and everything in it. This can't be undone. Saved in the history log."
+    : "Only events with no attendees, custom items, custom ticket types, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted.";
+}
+
+interface ArchiveDialogCopy {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  confirmVariant: "primary" | "danger";
+}
+
+function getArchiveDialogCopy(archiveMode: "archive" | "unarchive"): ArchiveDialogCopy {
+  if (archiveMode === "archive") {
+    return {
+      title: "Archive this event?",
+      message:
+        "This event will become fully read-only, including check-in. Attendee data is kept. Only a superadmin can undo this.",
+      confirmLabel: "Archive event",
+      confirmVariant: "danger",
+    };
+  }
+  return {
+    title: "Unarchive this event?",
+    message: "This event will become active again and editable in admin.",
+    confirmLabel: "Unarchive event",
+    confirmVariant: "primary",
+  };
+}
+
+interface LoadEventSettingsDeps {
+  eventId: string;
+  setLoading: (value: boolean) => void;
+  setNotFound: (value: boolean) => void;
+  setEvent: (event: EventSettingsDto) => void;
+  setForm: (form: SettingsForm) => void;
+  setOriginal: (form: SettingsForm) => void;
+  addToast: AddToast;
+}
+
+/** Extracted out of the `load` callback (SonarCloud S3776). */
+async function loadEventSettings(deps: LoadEventSettingsDeps): Promise<void> {
+  const { eventId, setLoading, setNotFound, setEvent, setForm, setOriginal, addToast } = deps;
+  setLoading(true);
+  setNotFound(false);
+  try {
+    const data = await fetchEventSettings(eventId);
+    setEvent(data);
+    const f = toForm(data);
+    setForm(f);
+    setOriginal(f);
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 403 || err.status === 404)) {
+      setNotFound(true);
+    } else {
+      addToast(operatorApiErrorMessage(err, "Failed to load event settings"), "error");
+    }
+  } finally {
+    setLoading(false);
+  }
+}
+
+interface LoadTicketTypesDeps {
+  eventId: string;
+  loadedRef: RefObject<boolean>;
+  abortRef: RefObject<AbortController | null>;
+  setTicketTypesLoading: (value: boolean) => void;
+  setTicketTypes: (types: TicketTypeDto[]) => void;
+  setTicketTypesError: (error: string | null) => void;
+}
+
+/** Extracted out of the `loadTicketTypes` callback (SonarCloud S3776). */
+async function loadTicketTypesForEvent(deps: LoadTicketTypesDeps): Promise<void> {
+  const { eventId, loadedRef, abortRef, setTicketTypesLoading, setTicketTypes, setTicketTypesError } = deps;
+  abortRef.current?.abort();
+  const ac = new AbortController();
+  abortRef.current = ac;
+  if (!loadedRef.current) setTicketTypesLoading(true);
+  try {
+    const types = await fetchTicketTypes(eventId, ac.signal);
+    if (ac.signal.aborted) return;
+    setTicketTypes(types);
+    setTicketTypesError(null);
+    loadedRef.current = true;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") return;
+    loadedRef.current = false;
+    setTicketTypes([]);
+    setTicketTypesError(operatorApiErrorMessage(err, "Failed to load ticket types."));
+  } finally {
+    if (!ac.signal.aborted) setTicketTypesLoading(false);
+  }
+}
+
+interface SaveEventSettingsDeps {
+  eventId: string;
+  form: SettingsForm;
+  original: SettingsForm;
+  setSaving: (value: boolean) => void;
+  setEvent: (event: EventSettingsDto) => void;
+  setForm: (form: SettingsForm) => void;
+  setOriginal: (form: SettingsForm) => void;
+  addToast: AddToast;
+  refreshLayoutEvent?: () => Promise<void>;
+}
+
+/** Extracted out of handleSave (SonarCloud S3776). */
+async function saveEventSettings(deps: SaveEventSettingsDeps): Promise<void> {
+  const { eventId, form, original, setSaving, setEvent, setForm, setOriginal, addToast, refreshLayoutEvent } =
+    deps;
+  setSaving(true);
+  try {
+    const patch = buildSettingsPatch(form, original);
+    if (Object.keys(patch).length === 0) return;
+
+    const { event: updated } = await patchEvent(eventId, patch);
+    setEvent(updated);
+    const f = toForm(updated);
+    setForm(f);
+    setOriginal(f);
+    addToast("Event settings saved", "success");
+    await refreshLayoutEvent?.();
+  } catch (err) {
+    if (err instanceof Error && err.message === "invalid_capacity") {
+      addToast("Capacity must be a positive whole number", "error");
+    } else if (err instanceof ApiError && hasApiErrorCode(err, "event_archived")) {
+      addToast("Cannot edit archived event", "error");
+    } else {
+      addToast(operatorApiErrorMessage(err, "Failed to save settings"), "error");
+    }
+  } finally {
+    setSaving(false);
+  }
+}
+
+interface ArchiveToggleDeps {
+  eventId: string;
+  archiveMode: "archive" | "unarchive";
+  setArchiving: (value: boolean) => void;
+  setArchiveOpen: (value: boolean) => void;
+  setMailCardResetKey: (updater: (n: number) => number) => void;
+  addToast: AddToast;
+  load: () => Promise<void>;
+  refreshLayoutEvent?: () => Promise<void>;
+}
+
+/** Extracted out of handleArchiveConfirm (SonarCloud S3776). */
+async function confirmArchiveToggle(deps: ArchiveToggleDeps): Promise<void> {
+  const {
+    eventId,
+    archiveMode,
+    setArchiving,
+    setArchiveOpen,
+    setMailCardResetKey,
+    addToast,
+    load,
+    refreshLayoutEvent,
+  } = deps;
+  setArchiving(true);
+  try {
+    if (archiveMode === "archive") {
+      await archiveEvent(eventId);
+      addToast("Event archived", "success");
+    } else {
+      await unarchiveEvent(eventId);
+      addToast("Event unarchived", "success");
+    }
+    setArchiveOpen(false);
+    setMailCardResetKey((n) => n + 1);
+    await load();
+    await refreshLayoutEvent?.();
+  } catch (err) {
+    addToast(operatorApiErrorMessage(err, "Action failed"), "error");
+  } finally {
+    setArchiving(false);
+  }
+}
+
+interface DeleteEventDeps {
+  eventId: string;
+  setDeleting: (value: boolean) => void;
+  setDeleteError: (value: string | null) => void;
+  addToast: AddToast;
+  navigate: NavigateFunction;
+}
+
+/** Extracted out of handleDeleteConfirm (SonarCloud S3776). */
+async function confirmDeleteEvent(deps: DeleteEventDeps): Promise<void> {
+  const { eventId, setDeleting, setDeleteError, addToast, navigate } = deps;
+  setDeleting(true);
+  setDeleteError(null);
+  try {
+    await deleteEvent(eventId);
+    addToast("Event permanently deleted", "success");
+    navigate("/admin");
+  } catch (err) {
+    setDeleteError(operatorApiErrorMessage(err, "Delete failed"));
+  } finally {
+    setDeleting(false);
+  }
+}
+
+interface ExportPiiDeps {
+  eventId: string;
+  setExporting: (value: boolean) => void;
+  addToast: AddToast;
+}
+
+/** Extracted out of handleExportPii (SonarCloud S3776). */
+async function downloadEventPiiExport(deps: ExportPiiDeps): Promise<void> {
+  const { eventId, setExporting, addToast } = deps;
+  setExporting(true);
+  try {
+    const res = await exportEventPii(eventId);
+    const blob = await res.blob();
+    const disposition = res.headers.get("Content-Disposition") ?? "";
+    const match = /filename="([^"]+)"/.exec(disposition);
+    const filename = match?.[1] ?? "pii-export.csv";
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    const truncated = res.headers.get("X-Export-Truncated") === "true";
+    const total = res.headers.get("X-Export-Total-Rows");
+    addToast(
+      truncated
+        ? `PII export downloaded (first 10,000 of ${total ?? "many"} attendees)`
+        : "PII export downloaded",
+      truncated ? "warning" : "success",
+    );
+  } catch (err) {
+    addToast(operatorApiErrorMessage(err, "Export failed"), "error");
+  } finally {
+    setExporting(false);
+  }
+}
+
+interface RevokeCheckinsDeps {
+  eventId: string;
+  setRevokingCheckins: (value: boolean) => void;
+  setRevokeCheckinsOpen: (value: boolean) => void;
+  setMailCardResetKey: (updater: (n: number) => number) => void;
+  addToast: AddToast;
+  load: () => Promise<void>;
+  refreshLayoutEvent?: () => Promise<void>;
+}
+
+/** Extracted out of handleRevokeCheckinsConfirm (SonarCloud S3776). */
+async function confirmRevokeCheckins(deps: RevokeCheckinsDeps): Promise<void> {
+  const {
+    eventId,
+    setRevokingCheckins,
+    setRevokeCheckinsOpen,
+    setMailCardResetKey,
+    addToast,
+    load,
+    refreshLayoutEvent,
+  } = deps;
+  setRevokingCheckins(true);
+  try {
+    const { revokedCount } = await revokeAllCheckIns(eventId);
+    addToast(
+      revokedCount > 0
+        ? `Revoked check-in for ${revokedCount} attendee${pluralSuffix(revokedCount)}`
+        : "No check-ins to revoke",
+      "success",
+    );
+    setRevokeCheckinsOpen(false);
+    setMailCardResetKey((n) => n + 1);
+    await load();
+    await refreshLayoutEvent?.();
+  } catch (err) {
+    addToast(operatorApiErrorMessage(err, "Failed to revoke check-ins"), "error");
+  } finally {
+    setRevokingCheckins(false);
+  }
+}
+
+interface RevokeItemsDeps {
+  eventId: string;
+  setRevokingItems: (value: boolean) => void;
+  setRevokeItemsOpen: (value: boolean) => void;
+  setMailCardResetKey: (updater: (n: number) => number) => void;
+  addToast: AddToast;
+  load: () => Promise<void>;
+  refreshLayoutEvent?: () => Promise<void>;
+}
+
+/** Extracted out of handleRevokeItemsConfirm (SonarCloud S3776). */
+async function confirmRevokeItems(deps: RevokeItemsDeps): Promise<void> {
+  const {
+    eventId,
+    setRevokingItems,
+    setRevokeItemsOpen,
+    setMailCardResetKey,
+    addToast,
+    load,
+    refreshLayoutEvent,
+  } = deps;
+  setRevokingItems(true);
+  try {
+    const { revokedCount } = await revokeAllItemsIssued(eventId);
+    addToast(
+      revokedCount > 0
+        ? `Reset ${revokedCount} issued item${pluralSuffix(revokedCount)} back to pending`
+        : "No items to revoke",
+      "success",
+    );
+    setRevokeItemsOpen(false);
+    setMailCardResetKey((n) => n + 1);
+    await load();
+    await refreshLayoutEvent?.();
+  } catch (err) {
+    addToast(operatorApiErrorMessage(err, "Failed to revoke items"), "error");
+  } finally {
+    setRevokingItems(false);
+  }
+}
+
 interface EventSettingsTabPanelProps {
   readonly tab: EventSettingsTab;
   readonly activeTab: EventSettingsTab;
@@ -186,7 +564,7 @@ export function EventSettingsPage() {
     const target = inPageTabFromSearch(searchParams, isSa);
     if (target !== tab) {
       setTab(target);
-      setVisitedTabs((prev) => (prev.has(target) ? prev : new Set(prev).add(target)));
+      setVisitedTabs((prev) => addVisitedTab(prev, target));
     }
   }, [searchParams, tab, isSa]);
 
@@ -205,9 +583,7 @@ export function EventSettingsPage() {
   // running a page action that reloads state (archive, revoke) would otherwise silently
   // discard unsaved mail transport edits and pending secret replacements (CodeRabbit review).
   const pageDirty = dirty || mailDirty;
-  let saveButtonLabel = "Save changes";
-  if (saving) saveButtonLabel = "Saving…";
-  else if (logoUploading) saveButtonLabel = "Uploading…";
+  const saveButtonLabel = computeSaveButtonLabel(saving, logoUploading);
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       pageDirty && currentLocation.pathname !== nextLocation.pathname,
@@ -216,23 +592,7 @@ export function EventSettingsPage() {
 
   const load = useCallback(async () => {
     if (!eventId) return;
-    setLoading(true);
-    setNotFound(false);
-    try {
-      const data = await fetchEventSettings(eventId);
-      setEvent(data);
-      const f = toForm(data);
-      setForm(f);
-      setOriginal(f);
-    } catch (err) {
-      if (err instanceof ApiError && (err.status === 403 || err.status === 404)) {
-        setNotFound(true);
-      } else {
-        addToast(operatorApiErrorMessage(err, "Failed to load event settings"), "error");
-      }
-    } finally {
-      setLoading(false);
-    }
+    await loadEventSettings({ eventId, setLoading, setNotFound, setEvent, setForm, setOriginal, addToast });
   }, [eventId, addToast]);
 
   useEffect(() => {
@@ -258,24 +618,14 @@ export function EventSettingsPage() {
 
   const loadTicketTypes = useCallback(async () => {
     if (!eventId) return;
-    ticketTypesAbortRef.current?.abort();
-    const ac = new AbortController();
-    ticketTypesAbortRef.current = ac;
-    if (!ticketTypesLoadedRef.current) setTicketTypesLoading(true);
-    try {
-      const types = await fetchTicketTypes(eventId, ac.signal);
-      if (ac.signal.aborted) return;
-      setTicketTypes(types);
-      setTicketTypesError(null);
-      ticketTypesLoadedRef.current = true;
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
-      ticketTypesLoadedRef.current = false;
-      setTicketTypes([]);
-      setTicketTypesError(operatorApiErrorMessage(err, "Failed to load ticket types."));
-    } finally {
-      if (!ac.signal.aborted) setTicketTypesLoading(false);
-    }
+    await loadTicketTypesForEvent({
+      eventId,
+      loadedRef: ticketTypesLoadedRef,
+      abortRef: ticketTypesAbortRef,
+      setTicketTypesLoading,
+      setTicketTypes,
+      setTicketTypesError,
+    });
   }, [eventId]);
 
   useEffect(() => {
@@ -292,149 +642,71 @@ export function EventSettingsPage() {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [pageDirty]);
 
-  const goBack = () => {
-    if (eventId) navigate(`/admin/events/${eventId}/overview`);
-    else navigate("/admin");
-  };
+  const goBack = () => navigate(eventOverviewPath(eventId));
 
   async function handleSave() {
     if (!eventId || !form || !original || !dirty) return;
-    setSaving(true);
-    try {
-      const patch = buildSettingsPatch(form, original);
-      if (Object.keys(patch).length === 0) return;
-
-      const { event: updated } = await patchEvent(eventId, patch);
-      setEvent(updated);
-      const f = toForm(updated);
-      setForm(f);
-      setOriginal(f);
-      addToast("Event settings saved", "success");
-      await refreshLayoutEvent?.();
-    } catch (err) {
-      if (err instanceof Error && err.message === "invalid_capacity") {
-        addToast("Capacity must be a positive whole number", "error");
-      } else if (err instanceof ApiError && hasApiErrorCode(err, "event_archived")) {
-        addToast("Cannot edit archived event", "error");
-      } else {
-        addToast(operatorApiErrorMessage(err, "Failed to save settings"), "error");
-      }
-    } finally {
-      setSaving(false);
-    }
+    await saveEventSettings({
+      eventId,
+      form,
+      original,
+      setSaving,
+      setEvent,
+      setForm,
+      setOriginal,
+      addToast,
+      refreshLayoutEvent,
+    });
   }
 
   async function handleArchiveConfirm() {
     if (!eventId) return;
-    setArchiving(true);
-    try {
-      if (archiveMode === "archive") {
-        await archiveEvent(eventId);
-        addToast("Event archived", "success");
-      } else {
-        await unarchiveEvent(eventId);
-        addToast("Event unarchived", "success");
-      }
-      setArchiveOpen(false);
-      setMailCardResetKey((n) => n + 1);
-      await load();
-      await refreshLayoutEvent?.();
-    } catch (err) {
-      addToast(operatorApiErrorMessage(err, "Action failed"), "error");
-    } finally {
-      setArchiving(false);
-    }
+    await confirmArchiveToggle({
+      eventId,
+      archiveMode,
+      setArchiving,
+      setArchiveOpen,
+      setMailCardResetKey,
+      addToast,
+      load,
+      refreshLayoutEvent,
+    });
   }
 
   async function handleDeleteConfirm() {
     if (!eventId) return;
-    setDeleting(true);
-    setDeleteError(null);
-    try {
-      await deleteEvent(eventId);
-      addToast("Event permanently deleted", "success");
-      navigate("/admin");
-    } catch (err) {
-      setDeleteError(operatorApiErrorMessage(err, "Delete failed"));
-    } finally {
-      setDeleting(false);
-    }
+    await confirmDeleteEvent({ eventId, setDeleting, setDeleteError, addToast, navigate });
   }
 
   async function handleExportPii() {
     if (!eventId || !isSa) return;
-    setExporting(true);
-    try {
-      const res = await exportEventPii(eventId);
-      const blob = await res.blob();
-      const disposition = res.headers.get("Content-Disposition") ?? "";
-      const match = /filename="([^"]+)"/.exec(disposition);
-      const filename = match?.[1] ?? "pii-export.csv";
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      const truncated = res.headers.get("X-Export-Truncated") === "true";
-      const total = res.headers.get("X-Export-Total-Rows");
-      addToast(
-        truncated
-          ? `PII export downloaded (first 10,000 of ${total ?? "many"} attendees)`
-          : "PII export downloaded",
-        truncated ? "warning" : "success",
-      );
-    } catch (err) {
-      addToast(operatorApiErrorMessage(err, "Export failed"), "error");
-    } finally {
-      setExporting(false);
-    }
+    await downloadEventPiiExport({ eventId, setExporting, addToast });
   }
 
   async function handleRevokeCheckinsConfirm() {
     if (!eventId) return;
-    setRevokingCheckins(true);
-    try {
-      const { revokedCount } = await revokeAllCheckIns(eventId);
-      addToast(
-        revokedCount > 0
-          ? `Revoked check-in for ${revokedCount} attendee${pluralSuffix(revokedCount)}`
-          : "No check-ins to revoke",
-        "success",
-      );
-      setRevokeCheckinsOpen(false);
-      setMailCardResetKey((n) => n + 1);
-      await load();
-      await refreshLayoutEvent?.();
-    } catch (err) {
-      addToast(operatorApiErrorMessage(err, "Failed to revoke check-ins"), "error");
-    } finally {
-      setRevokingCheckins(false);
-    }
+    await confirmRevokeCheckins({
+      eventId,
+      setRevokingCheckins,
+      setRevokeCheckinsOpen,
+      setMailCardResetKey,
+      addToast,
+      load,
+      refreshLayoutEvent,
+    });
   }
 
   async function handleRevokeItemsConfirm() {
     if (!eventId) return;
-    setRevokingItems(true);
-    try {
-      const { revokedCount } = await revokeAllItemsIssued(eventId);
-      addToast(
-        revokedCount > 0
-          ? `Reset ${revokedCount} issued item${pluralSuffix(revokedCount)} back to pending`
-          : "No items to revoke",
-        "success",
-      );
-      setRevokeItemsOpen(false);
-      setMailCardResetKey((n) => n + 1);
-      await load();
-      await refreshLayoutEvent?.();
-    } catch (err) {
-      addToast(operatorApiErrorMessage(err, "Failed to revoke items"), "error");
-    } finally {
-      setRevokingItems(false);
-    }
+    await confirmRevokeItems({
+      eventId,
+      setRevokingItems,
+      setRevokeItemsOpen,
+      setMailCardResetKey,
+      addToast,
+      load,
+      refreshLayoutEvent,
+    });
   }
 
   if (!eventId) return <p>Missing event.</p>;
@@ -466,17 +738,22 @@ export function EventSettingsPage() {
 
   if (!event || !form) return null;
 
-  let revokeCheckinsTooltip: string | undefined;
-  if (!isSa) revokeCheckinsTooltip = "Superadmin only";
-  else if (event.admitted_count === 0) revokeCheckinsTooltip = "No check-ins to revoke";
-
-  let revokeItemsTooltip: string | undefined;
-  if (!isSa) revokeItemsTooltip = "Superadmin only";
-  else if (event.issued_items_count === 0) revokeItemsTooltip = "No items to revoke";
-
-  let deleteEventTooltip: string | undefined;
-  if (!isSa) deleteEventTooltip = "Superadmin only";
-  else if (!event.is_deletable) deleteEventTooltip = "This event has data and cannot be deleted";
+  const revokeCheckinsTooltip = computeSuperadminTooltip(
+    isSa,
+    event.admitted_count === 0,
+    "No check-ins to revoke",
+  );
+  const revokeItemsTooltip = computeSuperadminTooltip(
+    isSa,
+    event.issued_items_count === 0,
+    "No items to revoke",
+  );
+  const deleteEventTooltip = computeSuperadminTooltip(
+    isSa,
+    !event.is_deletable,
+    "This event has data and cannot be deleted",
+  );
+  const archiveDialogCopy = getArchiveDialogCopy(archiveMode);
 
   const archiveToggleButton = isArchived ? (
     <Button
@@ -760,11 +1037,7 @@ export function EventSettingsPage() {
           <div className="danger-zone__item">
             <div className="danger-zone__info">
               <div className="danger-zone__title">Revoke all check-ins</div>
-              <p className="danger-zone__desc">
-                {event.admitted_count > 0
-                  ? `Reverses check-in for all ${event.admitted_count} currently checked-in attendee${pluralSuffix(event.admitted_count)}. They can check in again afterwards.`
-                  : "No attendees are currently checked in."}
-              </p>
+              <p className="danger-zone__desc">{describeRevokeCheckins(event.admitted_count)}</p>
             </div>
             <ArchivedGuard
               event={event}
@@ -788,11 +1061,7 @@ export function EventSettingsPage() {
           <div className="danger-zone__item">
             <div className="danger-zone__info">
               <div className="danger-zone__title">Revoke all items issued</div>
-              <p className="danger-zone__desc">
-                {event.issued_items_count > 0
-                  ? `Resets all ${event.issued_items_count} issued item${pluralSuffix(event.issued_items_count)} back to pending, for every attendee. They can be handed out again afterwards.`
-                  : "No items have been issued yet."}
-              </p>
+              <p className="danger-zone__desc">{describeRevokeItems(event.issued_items_count)}</p>
             </div>
             <ArchivedGuard
               event={event}
@@ -862,11 +1131,7 @@ export function EventSettingsPage() {
           <div className="danger-zone__item">
             <div className="danger-zone__info">
               <div className="danger-zone__title">Delete event</div>
-              <p className="danger-zone__desc">
-                {event.is_deletable
-                  ? "Permanently deletes this event and everything in it. This can't be undone. Saved in the history log."
-                  : "Only events with no attendees, custom items, custom ticket types, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted."}
-              </p>
+              <p className="danger-zone__desc">{describeDeleteEvent(event.is_deletable)}</p>
             </div>
             <ArchivedGuard
               event={null}
@@ -901,10 +1166,10 @@ export function EventSettingsPage() {
       <ConfirmDialog
         open={revokeCheckinsOpen}
         title="Revoke all check-ins?"
-        message={
-          `This will revoke check-in for ${event.admitted_count} attendee${pluralSuffix(event.admitted_count)}. They can check in again afterwards.` +
-          (pageDirty ? UNSAVED_CHANGES_WARNING : "")
-        }
+        message={appendUnsavedWarning(
+          `This will revoke check-in for ${event.admitted_count} attendee${pluralSuffix(event.admitted_count)}. They can check in again afterwards.`,
+          pageDirty,
+        )}
         confirmLabel="Revoke all check-ins"
         confirmVariant="danger"
         confirmDelaySeconds={BULK_REVOKE_CONFIRM_DELAY_SECONDS}
@@ -915,10 +1180,10 @@ export function EventSettingsPage() {
       <ConfirmDialog
         open={revokeItemsOpen}
         title="Revoke all items issued?"
-        message={
-          `This will reset ${event.issued_items_count} issued item${pluralSuffix(event.issued_items_count)} back to pending. They can be handed out again afterwards.` +
-          (pageDirty ? UNSAVED_CHANGES_WARNING : "")
-        }
+        message={appendUnsavedWarning(
+          `This will reset ${event.issued_items_count} issued item${pluralSuffix(event.issued_items_count)} back to pending. They can be handed out again afterwards.`,
+          pageDirty,
+        )}
         confirmLabel="Revoke all items issued"
         confirmVariant="danger"
         confirmDelaySeconds={BULK_REVOKE_CONFIRM_DELAY_SECONDS}
@@ -928,15 +1193,10 @@ export function EventSettingsPage() {
       />
       <ConfirmDialog
         open={archiveOpen}
-        title={archiveMode === "archive" ? "Archive this event?" : "Unarchive this event?"}
-        message={
-          (archiveMode === "archive"
-            ? "This event will become fully read-only, including check-in. Attendee data is kept. Only a superadmin can undo this."
-            : "This event will become active again and editable in admin.") +
-          (pageDirty ? UNSAVED_CHANGES_WARNING : "")
-        }
-        confirmLabel={archiveMode === "archive" ? "Archive event" : "Unarchive event"}
-        confirmVariant={archiveMode === "archive" ? "danger" : "primary"}
+        title={archiveDialogCopy.title}
+        message={appendUnsavedWarning(archiveDialogCopy.message, pageDirty)}
+        confirmLabel={archiveDialogCopy.confirmLabel}
+        confirmVariant={archiveDialogCopy.confirmVariant}
         loading={archiving}
         onConfirm={() => void handleArchiveConfirm()}
         onCancel={() => setArchiveOpen(false)}

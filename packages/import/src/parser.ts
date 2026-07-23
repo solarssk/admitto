@@ -6,7 +6,13 @@ import {
   extractCustomDataFromRow,
 } from "./custom-data-import.js";
 import { resolveImportTicketType } from "./ticket-type-import.js";
-import type { AttendeeRow, InvalidRow, ParseAttendeesOptions, ParseResult } from "./types.js";
+import type {
+  AttendeeRow,
+  ImportTicketType,
+  InvalidRow,
+  ParseAttendeesOptions,
+  ParseResult,
+} from "./types.js";
 
 const CANONICAL_COLUMNS = RESERVED_CUSTOM_DATA_SOURCE_FIELDS;
 
@@ -28,6 +34,182 @@ function buildRow(
   return record;
 }
 
+/** Normalize the header line, warn on duplicate/unknown columns and a missing `email` column. */
+function parseHeaderLine(
+  headerLine: string,
+  attributeHeaderKeys: Set<string>,
+  warnings: string[],
+): string[] {
+  const rawHeaders = splitCsvLine(headerLine).map(normalizeHeader);
+
+  const dupHeaders = [...new Set(rawHeaders.filter((h, i) => rawHeaders.indexOf(h) !== i))];
+  if (dupHeaders.length > 0) {
+    warnings.push(`Duplicate column(s) detected (first value used): ${dupHeaders.join(", ")}`);
+  }
+
+  for (const h of rawHeaders) {
+    if ((CANONICAL_COLUMNS as readonly string[]).includes(h)) continue;
+    if (attributeHeaderKeys.has(h)) continue;
+    warnings.push(`Unknown column ignored: "${h}"`);
+  }
+
+  if (!rawHeaders.includes("email")) {
+    warnings.push("CSV has no 'email' column — all rows will be invalid");
+  }
+
+  return rawHeaders;
+}
+
+type IdentityResolution =
+  | { ok: true; firstName: string; lastName: string }
+  | { ok: false; reason: string };
+
+/** Resolve first/last name (separate columns or a single `name` column) and validate the email. */
+function resolveIdentity(
+  rawFirstName: string,
+  rawLastName: string,
+  rawName: string,
+  email: string,
+  rowIdx: number,
+  warnings: string[],
+): IdentityResolution {
+  let firstName: string;
+  let lastName: string;
+
+  if (rawFirstName || rawLastName) {
+    firstName = rawFirstName;
+    lastName = rawLastName;
+    if (!firstName || !lastName) {
+      return {
+        ok: false,
+        reason: "Both first_name and last_name are required when using separate name columns",
+      };
+    }
+  } else if (rawName) {
+    const spaceIdx = rawName.indexOf(" ");
+    if (spaceIdx === -1) {
+      warnings.push(`Row ${rowIdx}: single-word name "${rawName}" — last_name stored as empty string`);
+      firstName = rawName;
+      lastName = "";
+    } else {
+      firstName = rawName.slice(0, spaceIdx);
+      lastName = rawName.slice(spaceIdx + 1).trim();
+    }
+  } else {
+    return { ok: false, reason: "Missing name: provide first_name + last_name or a name column" };
+  }
+
+  if (!email) {
+    return { ok: false, reason: "Missing email" };
+  }
+  if (!emailSchema.safeParse(email).success) {
+    return { ok: false, reason: `Invalid email: "${email}"` };
+  }
+
+  return { ok: true, firstName, lastName };
+}
+
+/** Cross-row duplicate/collision check for email, external_uuid and qr_payload. */
+function findDuplicateIdentifierConflict(
+  email: string,
+  externalUUID: string | undefined,
+  qrPayload: string | undefined,
+  seenEmails: Set<string>,
+  seenUUIDs: Set<string>,
+  seenQrPayloads: Set<string>,
+  seenAgencyIdentifiers: Set<string>,
+): string | undefined {
+  if (seenEmails.has(email)) {
+    return `Duplicate email in file: "${email}"`;
+  }
+  if (externalUUID && seenUUIDs.has(externalUUID)) {
+    return `Duplicate external_uuid in file: "${externalUUID}"`;
+  }
+  if (qrPayload && seenQrPayloads.has(qrPayload)) {
+    return `Duplicate qr_payload in file: "${qrPayload}"`;
+  }
+  if (externalUUID && seenAgencyIdentifiers.has(externalUUID) && !seenUUIDs.has(externalUUID)) {
+    return `Agency identifier collides across columns: "${externalUUID}"`;
+  }
+  if (qrPayload && seenAgencyIdentifiers.has(qrPayload) && !seenQrPayloads.has(qrPayload)) {
+    return `Agency identifier collides across columns: "${qrPayload}"`;
+  }
+  return undefined;
+}
+
+/** Catalog membership (batch 04 / #351) — only enforced when the caller opted in by passing
+ * ticketTypes; undefined means "not validating" (today's free-text behavior), preserved for
+ * callers that don't yet pass a catalog. A matched value is normalized to the canonical key
+ * so a human-typed "VIP"/"vip"/"Vip" all converge on the one entry everywhere downstream. */
+function resolveRowTicketType(
+  rawTicketType: string | undefined,
+  ticketTypes: ImportTicketType[] | undefined,
+): { value: string | undefined; reason?: string } {
+  if (rawTicketType === undefined || ticketTypes === undefined) {
+    return { value: rawTicketType };
+  }
+  const found = resolveImportTicketType(rawTicketType, ticketTypes);
+  if (!found) {
+    return { value: rawTicketType, reason: `Unknown ticket type: "${rawTicketType}"` };
+  }
+  return { value: found.key };
+}
+
+function markIdentifiersSeen(
+  email: string,
+  externalUUID: string | undefined,
+  qrPayload: string | undefined,
+  seenEmails: Set<string>,
+  seenUUIDs: Set<string>,
+  seenQrPayloads: Set<string>,
+  seenAgencyIdentifiers: Set<string>,
+): void {
+  seenEmails.add(email);
+  if (externalUUID) seenUUIDs.add(externalUUID);
+  if (qrPayload) seenQrPayloads.add(qrPayload);
+  if (externalUUID) seenAgencyIdentifiers.add(externalUUID);
+  if (qrPayload) seenAgencyIdentifiers.add(qrPayload);
+}
+
+interface ValidatedRowInput {
+  rowIdx: number;
+  firstName: string;
+  lastName: string;
+  email: string;
+  ticketType: string | undefined;
+  externalUUID: string | undefined;
+  qrPayload: string | undefined;
+  company: string | undefined;
+  department: string | undefined;
+  customData: Record<string, string> | undefined;
+}
+
+function buildValidatedRow({
+  rowIdx,
+  firstName,
+  lastName,
+  email,
+  ticketType,
+  externalUUID,
+  qrPayload,
+  company,
+  department,
+  customData,
+}: ValidatedRowInput): AttendeeRow {
+  return {
+    rowIndex: rowIdx,
+    first_name: firstName,
+    last_name: lastName,
+    email,
+    ...(ticketType !== undefined && { ticket_type: ticketType }),
+    ...(externalUUID !== undefined && { external_uuid: externalUUID }),
+    ...(qrPayload !== undefined && { qr_payload: qrPayload }),
+    ...(company !== undefined && { company }),
+    ...(department !== undefined && { department }),
+    ...(customData !== undefined && { custom_data: customData }),
+  };
+}
+
 export function parseAttendees(csvString: string, options: ParseAttendeesOptions = {}): ParseResult {
   const attributeFields = options.attributeFields ?? [];
   const ticketTypes = options.ticketTypes;
@@ -45,23 +227,7 @@ export function parseAttendees(csvString: string, options: ParseAttendeesOptions
     return { validRows, invalidRows, warnings };
   }
 
-  const headerLine = lines[0]!;
-  const rawHeaders = splitCsvLine(headerLine).map(normalizeHeader);
-
-  const dupHeaders = [...new Set(rawHeaders.filter((h, i) => rawHeaders.indexOf(h) !== i))];
-  if (dupHeaders.length > 0) {
-    warnings.push(`Duplicate column(s) detected (first value used): ${dupHeaders.join(", ")}`);
-  }
-
-  for (const h of rawHeaders) {
-    if ((CANONICAL_COLUMNS as readonly string[]).includes(h)) continue;
-    if (attributeHeaderKeys.has(h)) continue;
-    warnings.push(`Unknown column ignored: "${h}"`);
-  }
-
-  if (!rawHeaders.includes("email")) {
-    warnings.push("CSV has no 'email' column — all rows will be invalid");
-  }
+  const rawHeaders = parseHeaderLine(lines[0]!, attributeHeaderKeys, warnings);
 
   const seenEmails = new Set<string>();
   const seenUUIDs = new Set<string>();
@@ -84,66 +250,24 @@ export function parseAttendees(csvString: string, options: ParseAttendeesOptions
     const rawLastName = (raw["last_name"] ?? "").trim();
     const rawName = (raw["name"] ?? "").trim();
 
-    let firstName: string;
-    let lastName: string;
+    const identity = resolveIdentity(rawFirstName, rawLastName, rawName, email, rowIdx, warnings);
+    if (!identity.ok) {
+      invalidRows.push({ rowIndex: rowIdx, raw, reason: identity.reason });
+      continue;
+    }
+    const { firstName, lastName } = identity;
 
-    if (rawFirstName || rawLastName) {
-      firstName = rawFirstName;
-      lastName = rawLastName;
-      if (!firstName || !lastName) {
-        invalidRows.push({ rowIndex: rowIdx, raw, reason: "Both first_name and last_name are required when using separate name columns" });
-        continue;
-      }
-    } else if (rawName) {
-      const spaceIdx = rawName.indexOf(" ");
-      if (spaceIdx === -1) {
-        warnings.push(`Row ${rowIdx}: single-word name "${rawName}" — last_name stored as empty string`);
-        firstName = rawName;
-        lastName = "";
-      } else {
-        firstName = rawName.slice(0, spaceIdx);
-        lastName = rawName.slice(spaceIdx + 1).trim();
-      }
-    } else {
-      invalidRows.push({ rowIndex: rowIdx, raw, reason: "Missing name: provide first_name + last_name or a name column" });
-      continue;
-    }
-
-    if (!email) {
-      invalidRows.push({ rowIndex: rowIdx, raw, reason: "Missing email" });
-      continue;
-    }
-    if (!emailSchema.safeParse(email).success) {
-      invalidRows.push({ rowIndex: rowIdx, raw, reason: `Invalid email: "${email}"` });
-      continue;
-    }
-
-    if (seenEmails.has(email)) {
-      invalidRows.push({ rowIndex: rowIdx, raw, reason: `Duplicate email in file: "${email}"` });
-      continue;
-    }
-    if (externalUUID && seenUUIDs.has(externalUUID)) {
-      invalidRows.push({ rowIndex: rowIdx, raw, reason: `Duplicate external_uuid in file: "${externalUUID}"` });
-      continue;
-    }
-    if (qrPayload && seenQrPayloads.has(qrPayload)) {
-      invalidRows.push({ rowIndex: rowIdx, raw, reason: `Duplicate qr_payload in file: "${qrPayload}"` });
-      continue;
-    }
-    if (externalUUID && seenAgencyIdentifiers.has(externalUUID) && !seenUUIDs.has(externalUUID)) {
-      invalidRows.push({
-        rowIndex: rowIdx,
-        raw,
-        reason: `Agency identifier collides across columns: "${externalUUID}"`,
-      });
-      continue;
-    }
-    if (qrPayload && seenAgencyIdentifiers.has(qrPayload) && !seenQrPayloads.has(qrPayload)) {
-      invalidRows.push({
-        rowIndex: rowIdx,
-        raw,
-        reason: `Agency identifier collides across columns: "${qrPayload}"`,
-      });
+    const duplicateReason = findDuplicateIdentifierConflict(
+      email,
+      externalUUID,
+      qrPayload,
+      seenEmails,
+      seenUUIDs,
+      seenQrPayloads,
+      seenAgencyIdentifiers,
+    );
+    if (duplicateReason) {
+      invalidRows.push({ rowIndex: rowIdx, raw, reason: duplicateReason });
       continue;
     }
 
@@ -153,42 +277,28 @@ export function parseAttendees(csvString: string, options: ParseAttendeesOptions
       continue;
     }
 
-    // Catalog membership (batch 04 / #351) — only enforced when the caller opted in by passing
-    // ticketTypes; undefined means "not validating" (today's free-text behavior), preserved for
-    // callers that don't yet pass a catalog. A matched value is normalized to the canonical key
-    // so a human-typed "VIP"/"vip"/"Vip" all converge on the one entry everywhere downstream.
-    let ticketType = rawTicketType;
-    if (rawTicketType !== undefined && ticketTypes !== undefined) {
-      const found = resolveImportTicketType(rawTicketType, ticketTypes);
-      if (!found) {
-        invalidRows.push({
-          rowIndex: rowIdx,
-          raw,
-          reason: `Unknown ticket type: "${rawTicketType}"`,
-        });
-        continue;
-      }
-      ticketType = found.key;
+    const ticketResult = resolveRowTicketType(rawTicketType, ticketTypes);
+    if (ticketResult.reason) {
+      invalidRows.push({ rowIndex: rowIdx, raw, reason: ticketResult.reason });
+      continue;
     }
 
-    seenEmails.add(email);
-    if (externalUUID) seenUUIDs.add(externalUUID);
-    if (qrPayload) seenQrPayloads.add(qrPayload);
-    if (externalUUID) seenAgencyIdentifiers.add(externalUUID);
-    if (qrPayload) seenAgencyIdentifiers.add(qrPayload);
+    markIdentifiersSeen(email, externalUUID, qrPayload, seenEmails, seenUUIDs, seenQrPayloads, seenAgencyIdentifiers);
 
-    validRows.push({
-      rowIndex: rowIdx,
-      first_name: firstName,
-      last_name: lastName,
-      email,
-      ...(ticketType !== undefined && { ticket_type: ticketType }),
-      ...(externalUUID !== undefined && { external_uuid: externalUUID }),
-      ...(qrPayload !== undefined && { qr_payload: qrPayload }),
-      ...(company !== undefined && { company }),
-      ...(department !== undefined && { department }),
-      ...(customResult.custom_data !== undefined && { custom_data: customResult.custom_data }),
-    });
+    validRows.push(
+      buildValidatedRow({
+        rowIdx,
+        firstName,
+        lastName,
+        email,
+        ticketType: ticketResult.value,
+        externalUUID,
+        qrPayload,
+        company,
+        department,
+        customData: customResult.custom_data,
+      }),
+    );
   }
 
   if (validRows.length === 0 && invalidRows.length === 0) {

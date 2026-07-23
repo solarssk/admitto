@@ -547,6 +547,33 @@ async function loadAttendeeInEvent(
   return row;
 }
 
+type ManagedEventAttendee = {
+  attendee: NonNullable<Awaited<ReturnType<typeof loadAttendeeInEvent>>>;
+  attendeeId: string;
+  eventId: string;
+};
+
+/** Resolve, authorize, and load an attendee scoped to the requested event. */
+async function requireManagedEventAttendee(
+  c: Context,
+  db: PrismaClient,
+): Promise<ManagedEventAttendee | Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+  const attendeeIdOrRes = requireAttendeeId(c);
+  if (attendeeIdOrRes instanceof Response) return attendeeIdOrRes;
+  const attendeeId = attendeeIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const attendee = await loadAttendeeInEvent(db, eventId, attendeeId);
+  if (!attendee) return c.json({ error: "forbidden" }, 403);
+
+  return { attendee, attendeeId, eventId };
+}
+
 /** Parse and clamp list query params (`page`, `pageSize`, `q`, `status`, `ticket_type`, `mail_status`, `sortBy`, `sortDir`). */
 function parseListQuery(c: Context): {
   page: number;
@@ -1020,6 +1047,51 @@ type PatchInput = z.infer<typeof patchAttendeeFieldsSchema>;
  * is not meant to capture; an edit to any of those still shows only the field name (#364). */
 const LOGGED_VALUE_FIELDS = new Set(["email", "company", "department", "ticket_type"]);
 
+/** Diff a mirrored company/department field against custom_data and the legacy column, for
+ * `computePatchChanges` below — pushes to `fields`/`valueChanges` (via `logValue`) and touches
+ * custom_data only when the value actually changed. */
+function applyMirroredScalarPatchField(
+  field: "company" | "department",
+  current: string | null,
+  next: string | null | undefined,
+  data: Prisma.AttendeeUncheckedUpdateInput,
+  touchCustomData: () => Record<string, unknown>,
+  fields: string[],
+  logValue: (field: string, from: string | null, to: string | null) => void,
+): void {
+  if (next === undefined || next === current) return;
+  if (field === "company") data.company = next;
+  else data.department = next;
+  const raw = touchCustomData();
+  if (next === null || next === "") delete raw[field];
+  else raw[field] = next;
+  fields.push(field);
+  logValue(field, current, next);
+}
+
+/** Diff each `custom_data_fields` entry in a PATCH against current custom_data, for
+ * `computePatchChanges` below — mutates `fields` and lazily touches custom_data only for entries
+ * that actually changed. */
+function applyCustomDataFieldPatches(
+  existingCustomData: unknown,
+  patchFields: Record<string, string | null>,
+  touchCustomData: () => Record<string, unknown>,
+  fields: string[],
+): void {
+  for (const [sourceField, next] of Object.entries(patchFields)) {
+    const current = customDataValue(existingCustomData, sourceField);
+    const normalizedNext = next === null || next === "" ? null : next;
+    if (normalizedNext === current) continue;
+    const raw = touchCustomData();
+    if (normalizedNext === null) {
+      delete raw[sourceField];
+    } else {
+      raw[sourceField] = normalizedNext;
+    }
+    fields.push(sourceField);
+  }
+}
+
 /** Compute Prisma update payload, changed field names, and before/after values (for
  * LOGGED_VALUE_FIELDS only) from a PATCH body. */
 function computePatchChanges(
@@ -1064,41 +1136,31 @@ function computePatchChanges(
     fields.push("email");
     logValue("email", existing.email, patch.email);
   }
-  if (patch.company !== undefined && patch.company !== resolved.company) {
-    data.company = patch.company;
-    const raw = touchCustomData();
-    if (patch.company === null || patch.company === "") delete raw.company;
-    else raw.company = patch.company;
-    fields.push("company");
-    logValue("company", resolved.company, patch.company);
-  }
-  if (patch.department !== undefined && patch.department !== resolved.department) {
-    data.department = patch.department;
-    const raw = touchCustomData();
-    if (patch.department === null || patch.department === "") delete raw.department;
-    else raw.department = patch.department;
-    fields.push("department");
-    logValue("department", resolved.department, patch.department);
-  }
+  applyMirroredScalarPatchField(
+    "company",
+    resolved.company,
+    patch.company,
+    data,
+    touchCustomData,
+    fields,
+    logValue,
+  );
+  applyMirroredScalarPatchField(
+    "department",
+    resolved.department,
+    patch.department,
+    data,
+    touchCustomData,
+    fields,
+    logValue,
+  );
   if (patch.ticket_type !== undefined && patch.ticket_type !== existing.ticket_type) {
     data.ticket_type = patch.ticket_type;
     fields.push("ticket_type");
     logValue("ticket_type", existing.ticket_type, patch.ticket_type);
   }
   if (patch.custom_data_fields) {
-    for (const [sourceField, next] of Object.entries(patch.custom_data_fields)) {
-      const current = customDataValue(existing.custom_data, sourceField);
-      const normalizedNext = next === null || next === "" ? null : next;
-      if (normalizedNext !== current) {
-        const raw = touchCustomData();
-        if (normalizedNext === null) {
-          delete raw[sourceField];
-        } else {
-          raw[sourceField] = normalizedNext;
-        }
-        fields.push(sourceField);
-      }
-    }
+    applyCustomDataFieldPatches(existing.custom_data, patch.custom_data_fields, touchCustomData, fields);
   }
 
   if (customData) {
@@ -1157,20 +1219,306 @@ async function validateTicketTypeCatalog(
   }
 }
 
+/** Parses and validates the required `expected_updated_at` CAS token — extracted guard clause
+ * from `handlePatchEventAttendee`. */
+function parseExpectedUpdatedAt(raw: string | undefined): Date | { error: string } {
+  if (!raw) return { error: "validation_failed" };
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return { error: "validation_failed" };
+  return parsed;
+}
+
+type PatchAttendeeStatusChange = "registered" | "revoked" | undefined;
+
+function computeStatusChange(
+  existingStatus: string,
+  patchStatus: PatchAttendeeStatusChange,
+): PatchAttendeeStatusChange {
+  if (patchStatus === undefined || patchStatus === existingStatus) return undefined;
+  return patchStatus;
+}
+
+/** Validates `profilePatch.custom_data_fields` against the event's configured fields and
+ * normalizes an explicit "" ticket_type to null (clears the type instead of silently bypassing
+ * catalog validation, CodeRabbit review) — extracted guard clause from
+ * `handlePatchEventAttendee`. Mutates `profilePatch` in place; returns an error payload for the
+ * caller to respond with, or null. The actual catalog-membership check (batch 04 / #351) happens
+ * inside the PATCH transaction, under the same advisory lock ticket-type DELETE uses (TOCTOU
+ * fix, code review) - see the comment there. */
+async function validateAndNormalizeProfilePatch(
+  existing: { custom_data: unknown },
+  profilePatch: Omit<PatchInput, "rsvp_status" | "status">,
+  loadAllowedFieldsOnce: () => Promise<EventItemContent[]>,
+): Promise<{ error: string } | null> {
+  if (profilePatch.custom_data_fields) {
+    try {
+      profilePatch.custom_data_fields = validateCustomDataPatch(
+        await loadAllowedFieldsOnce(),
+        existing.custom_data,
+        profilePatch.custom_data_fields,
+      );
+    } catch (err) {
+      return { error: customDataErrorCode(err) };
+    }
+  }
+
+  if (profilePatch.ticket_type === "") {
+    profilePatch.ticket_type = null;
+  }
+
+  return null;
+}
+
+/** When profile fields or RSVP status changed, re-validates the resulting custom_data against
+ * the event's required-field configuration — extracted guard clause from
+ * `handlePatchEventAttendee`. No-ops when neither changed, or when the event has no configured
+ * fields at all. */
+async function assertPatchCustomDataRequirements(
+  existing: { custom_data: unknown },
+  profileChanges: ReturnType<typeof computePatchChanges>,
+  rsvpChange: ReturnType<typeof computeRsvpChange>,
+  loadAllowedFieldsOnce: () => Promise<EventItemContent[]>,
+): Promise<{ error: string } | null> {
+  if (!profileChanges && !rsvpChange) return null;
+
+  let fields: EventItemContent[];
+  try {
+    fields = await loadAllowedFieldsOnce();
+  } catch (err) {
+    return { error: customDataErrorCode(err) };
+  }
+  if (fields.length === 0) return null;
+
+  try {
+    const nextCustomData =
+      profileChanges?.data.custom_data !== undefined
+        ? profileChanges.data.custom_data
+        : existing.custom_data;
+    assertCustomDataMeetsRequirements(fields, nextCustomData);
+    return null;
+  } catch (err) {
+    return { error: customDataErrorCode(err) };
+  }
+}
+
+/** Merges the resolved profile/RSVP/status changes into a single Prisma update payload. */
+function buildPatchUpdateData(
+  profileChanges: ReturnType<typeof computePatchChanges>,
+  rsvpChange: ReturnType<typeof computeRsvpChange>,
+  statusChange: PatchAttendeeStatusChange,
+): Prisma.AttendeeUpdateInput {
+  return {
+    ...(profileChanges?.data ?? {}),
+    ...(rsvpChange?.data ?? {}),
+    ...(statusChange !== undefined ? { status: statusChange } : {}),
+  };
+}
+
+/** Catalog membership check (batch 04 / #351), re-validated here (not on the bare `db` before
+ * the transaction opened) and locked against a concurrent ticket-type DELETE (TOCTOU fix, code
+ * review) - same rationale as handleCreateEventAttendee. Only taken when ticket_type is actually
+ * changing to a new, non-empty value: computePatchChanges already excludes it from `fields` when
+ * the patch leaves it untouched or resubmits the same value, and clearing it to null can't
+ * orphan a reference, so neither case needs the lock. Throws the 400 Response for the
+ * transaction's catch to surface. */
+async function guardPatchTicketTypeChange(
+  c: Context,
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  profileChanges: ReturnType<typeof computePatchChanges>,
+  nextTicketType: string | null | undefined,
+): Promise<void> {
+  if (!profileChanges?.fields.includes("ticket_type") || !nextTicketType) return;
+  await acquireEventTicketTypesLock(tx, eventId);
+  const ticketTypeError = await validateTicketTypeCatalog(tx, eventId, nextTicketType);
+  if (ticketTypeError) throw c.json(ticketTypeError, 400);
+}
+
+/** Re-checks event capacity when a PATCH restores a previously non-admittable attendee to an
+ * admittable status (capacity_reactivation), under the same advisory lock the create/check-in
+ * paths use — returns the forced-admit detail for the audit log, or undefined when nothing
+ * needed forcing (or no restore happened at all). Throws the capacity Response for the
+ * transaction's catch to surface. */
+async function guardPatchCapacityRestore(
+  c: Context,
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  existingStatus: string,
+  statusChange: PatchAttendeeStatusChange,
+): Promise<{ forced: true; capacity: number; current: number } | undefined> {
+  if (!isCapacityReactivation(existingStatus, statusChange)) return undefined;
+  await acquireEventCapacityLock(tx, eventId);
+  const capacityResult = await assertEventCapacityForIncoming(c, tx, eventId, 1);
+  if (capacityResult instanceof Response) throw capacityResult;
+  if (capacityResult && "forced" in capacityResult) return capacityResult;
+  return undefined;
+}
+
+/** Any transition to a non-admittable status must not leave a stale admission behind —
+ * restoring the pass later would otherwise resurrect a "checked in" state from before the
+ * revoke without a new scan ever happening (PO review). isAdmittable() rather than a literal
+ * "revoked" check so this still holds if the status enum this route accepts ever widens to
+ * include "cancelled" (already a first-class AttendeeStatus, just not settable here yet).
+ * `existingAdmittedAt` was read before the transaction started, so a concurrent request
+ * (operator undo, another admin's revoke-check-in) may have already cleared it —
+ * revokeCheckInMutation throws in that case; that's fine, there's nothing left to revoke, but it
+ * must not abort the status change itself (bugbot). Uses the mutation-only helper (not
+ * revokeCheckInTx) since this side-effect path builds its own response DTO and would otherwise
+ * pay for an unused AttendeeCardDto build (event items, item states, notes, authors). Mutates
+ * `result.row` in place so the caller's response DTO reflects the fresh admitted_at/updated_at. */
+async function clearAdmissionOnNonAdmittableTransition(
+  c: Context,
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  attendeeId: string,
+  statusChange: PatchAttendeeStatusChange,
+  existingAdmittedAt: Date | null,
+  result: { row: { admitted_at: Date | null; updated_at: Date } },
+): Promise<void> {
+  if (statusChange === undefined || isAdmittable(statusChange) || !existingAdmittedAt) return;
+  try {
+    await revokeCheckInMutation({ eventId, attendeeId, audit: adminAuditFromContext(c) }, tx);
+    // result.row was read before the clear above, and the mutation's own attendee update bumps
+    // updated_at again (Attendee.updated_at is @updatedAt) — re-read both so the response DTO's
+    // expected_updated_at stays valid for the client's next edit.
+    const fresh = await tx.attendee.findUniqueOrThrow({
+      where: { id: attendeeId },
+      select: { admitted_at: true, updated_at: true },
+    });
+    result.row.admitted_at = fresh.admitted_at;
+    result.row.updated_at = fresh.updated_at;
+  } catch (err) {
+    if (!(err instanceof UndoNotAllowedError)) throw err;
+  }
+}
+
+/** Core PATCH transaction body: re-validates ticket_type/capacity under their advisory locks,
+ * applies the CAS update, clears a stale admission on a non-admittable transition, and writes
+ * one action-log entry per kind of change that actually happened. Extracted out of
+ * `handlePatchEventAttendee` (as a plain named function, not an inline callback) so its own
+ * Cognitive Complexity stays within limits. */
+async function runPatchAttendeeTransaction(
+  tx: Prisma.TransactionClient,
+  ctx: {
+    c: Context;
+    eventId: string;
+    attendeeId: string;
+    existing: { status: string; admitted_at: Date | null };
+    profileChanges: ReturnType<typeof computePatchChanges>;
+    profilePatchTicketType: string | null | undefined;
+    rsvpChange: ReturnType<typeof computeRsvpChange>;
+    statusChange: PatchAttendeeStatusChange;
+    expectedUpdatedAt: Date;
+    updateData: Prisma.AttendeeUpdateInput;
+  },
+): Promise<Prisma.AttendeeGetPayload<{ select: typeof ATTENDEE_DETAIL_SELECT }>> {
+  const {
+    c,
+    eventId,
+    attendeeId,
+    existing,
+    profileChanges,
+    profilePatchTicketType,
+    rsvpChange,
+    statusChange,
+    expectedUpdatedAt,
+    updateData,
+  } = ctx;
+
+  await guardPatchTicketTypeChange(c, tx, eventId, profileChanges, profilePatchTicketType);
+
+  const restoreCapacityForced = await guardPatchCapacityRestore(
+    c,
+    tx,
+    eventId,
+    existing.status,
+    statusChange,
+  );
+
+  const result = await optimisticAttendeeUpdate(tx, {
+    id: attendeeId,
+    expectedUpdatedAt,
+    data: updateData,
+    select: ATTENDEE_DETAIL_SELECT,
+  });
+
+  if (isStaleWrite(result)) throw new StaleWriteError();
+
+  await clearAdmissionOnNonAdmittableTransition(
+    c,
+    tx,
+    eventId,
+    attendeeId,
+    statusChange,
+    existing.admitted_at,
+    result,
+  );
+
+  if (rsvpChange) {
+    await writeActionLog(tx, {
+      event_id: eventId,
+      attendee_id: attendeeId,
+      action_type: "rsvp_status_changed",
+      audit: adminAuditFromContext(c),
+      metadata: {
+        from: rsvpChange.from,
+        to: rsvpChange.to,
+        source: "admin",
+      },
+    });
+  }
+
+  if (profileChanges) {
+    await writeActionLog(tx, {
+      event_id: eventId,
+      attendee_id: attendeeId,
+      action_type: "attendee_edited",
+      audit: adminAuditFromContext(c),
+      metadata: { fields: profileChanges.fields, field_changes: profileChanges.valueChanges },
+    });
+  }
+
+  if (statusChange !== undefined) {
+    await writeActionLog(tx, {
+      event_id: eventId,
+      attendee_id: attendeeId,
+      action_type: statusChange === "revoked" ? "pass_revoked" : "pass_restored",
+      audit: adminAuditFromContext(c),
+      metadata: {
+        previous_status: existing.status,
+        ...(restoreCapacityForced
+          ? {
+              forced: true,
+              capacity: restoreCapacityForced.capacity,
+              current: restoreCapacityForced.current,
+            }
+          : {}),
+      },
+    });
+  }
+
+  return result.row;
+}
+
+/** Maps a thrown error from the PATCH transaction to its HTTP response — extracted from
+ * `handlePatchEventAttendee`'s catch block. */
+function patchAttendeeErrorResponse(c: Context, err: unknown): Response {
+  if (err instanceof Response) return err;
+  if (err instanceof StaleWriteError) {
+    return c.json({ error: "stale_write" }, 409);
+  }
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+    return c.json({ error: "email_conflict" }, 409);
+  }
+  console.error("handlePatchEventAttendee failed:", err);
+  return c.json({ error: "server error" }, 500);
+}
+
 /** PATCH /api/admin/events/:eventId/attendees/:id */
 export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Promise<Response> {
-  const eventIdOrRes = requireEventId(c);
-  if (eventIdOrRes instanceof Response) return eventIdOrRes;
-  const eventId = eventIdOrRes;
-  const attendeeIdOrRes = requireAttendeeId(c);
-  if (attendeeIdOrRes instanceof Response) return attendeeIdOrRes;
-  const attendeeId = attendeeIdOrRes;
-
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
-
-  const existing = await loadAttendeeInEvent(db, eventId, attendeeId);
-  if (!existing) return c.json({ error: "forbidden" }, 403);
+  const attendeeContextOrRes = await requireManagedEventAttendee(c, db);
+  if (attendeeContextOrRes instanceof Response) return attendeeContextOrRes;
+  const { attendee: existing, attendeeId, eventId } = attendeeContextOrRes;
 
   let body: unknown;
   try {
@@ -1197,197 +1545,52 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
     return allowedFields;
   }
 
-  if (profilePatch.custom_data_fields) {
-    try {
-      profilePatch.custom_data_fields = validateCustomDataPatch(
-        await loadAllowedFieldsOnce(),
-        existing.custom_data,
-        profilePatch.custom_data_fields,
-      );
-    } catch (err) {
-      return c.json({ error: customDataErrorCode(err) }, 400);
-    }
-  }
-
-  // "" is normalized to null first so it clears the type instead of silently bypassing
-  // validation and persisting an empty string (CodeRabbit review). The actual catalog-membership
-  // check (batch 04 / #351) now happens inside the transaction below, under the same advisory
-  // lock ticket-type DELETE uses (TOCTOU fix, code review) - see the comment there.
-  if (profilePatch.ticket_type === "") {
-    profilePatch.ticket_type = null;
-  }
+  const profilePatchError = await validateAndNormalizeProfilePatch(existing, profilePatch, loadAllowedFieldsOnce);
+  if (profilePatchError) return c.json(profilePatchError, 400);
 
   const profileChanges = computePatchChanges(existing, profilePatch);
   const rsvpChange = computeRsvpChange(existing.rsvp_status, patchRsvp);
-  const statusChange =
-    patchStatus !== undefined && patchStatus !== existing.status ? patchStatus : undefined;
+  const statusChange = computeStatusChange(existing.status, patchStatus);
 
   if (!profileChanges && !rsvpChange && !statusChange) {
     const dto = await buildAttendeeDetailDto(db, eventId, existing);
     return c.json(dto);
   }
 
-  if (profileChanges || rsvpChange) {
-    let fields: EventItemContent[];
-    try {
-      fields = await loadAllowedFieldsOnce();
-    } catch (err) {
-      return c.json({ error: customDataErrorCode(err) }, 400);
-    }
-    if (fields.length > 0) {
-      try {
-        const nextCustomData =
-          profileChanges?.data.custom_data !== undefined
-            ? profileChanges.data.custom_data
-            : existing.custom_data;
-        assertCustomDataMeetsRequirements(fields, nextCustomData);
-      } catch (err) {
-        return c.json({ error: customDataErrorCode(err) }, 400);
-      }
-    }
-  }
+  const requirementsError = await assertPatchCustomDataRequirements(
+    existing,
+    profileChanges,
+    rsvpChange,
+    loadAllowedFieldsOnce,
+  );
+  if (requirementsError) return c.json(requirementsError, 400);
 
-  if (!expectedUpdatedAtRaw) {
-    return c.json({ error: "validation_failed" }, 400);
-  }
+  const expectedUpdatedAtResult = parseExpectedUpdatedAt(expectedUpdatedAtRaw);
+  if (!(expectedUpdatedAtResult instanceof Date)) return c.json(expectedUpdatedAtResult, 400);
+  const expectedUpdatedAt = expectedUpdatedAtResult;
 
-  const expectedUpdatedAt = new Date(expectedUpdatedAtRaw);
-  if (Number.isNaN(expectedUpdatedAt.getTime())) {
-    return c.json({ error: "validation_failed" }, 400);
-  }
-
-  const updateData: Prisma.AttendeeUpdateInput = {
-    ...(profileChanges?.data ?? {}),
-    ...(rsvpChange?.data ?? {}),
-    ...(statusChange !== undefined ? { status: statusChange } : {}),
-  };
+  const updateData = buildPatchUpdateData(profileChanges, rsvpChange, statusChange);
 
   try {
-    const updated = await db.$transaction(async (tx) => {
-      // Catalog membership check (batch 04 / #351), re-validated here (not on the bare `db`
-      // before the transaction opened) and locked against a concurrent ticket-type DELETE
-      // (TOCTOU fix, code review) - same rationale as handleCreateEventAttendee. Only taken when
-      // ticket_type is actually changing to a new, non-empty value: computePatchChanges already
-      // excludes it from `fields` when the patch leaves it untouched or resubmits the same
-      // value, and clearing it to null can't orphan a reference, so neither case needs the lock.
-      if (profileChanges?.fields.includes("ticket_type") && profilePatch.ticket_type) {
-        await acquireEventTicketTypesLock(tx, eventId);
-        const ticketTypeError = await validateTicketTypeCatalog(tx, eventId, profilePatch.ticket_type);
-        if (ticketTypeError) throw c.json(ticketTypeError, 400);
-      }
-
-      const isRestore = isCapacityReactivation(existing.status, statusChange);
-      let restoreCapacityForced: { forced: true; capacity: number; current: number } | undefined;
-
-      if (isRestore) {
-        await acquireEventCapacityLock(tx, eventId);
-        const capacityResult = await assertEventCapacityForIncoming(c, tx, eventId, 1);
-        if (capacityResult instanceof Response) throw capacityResult;
-        if (capacityResult && "forced" in capacityResult) {
-          restoreCapacityForced = capacityResult;
-        }
-      }
-
-      const result = await optimisticAttendeeUpdate(tx, {
-        id: attendeeId,
+    const updated = await db.$transaction((tx) =>
+      runPatchAttendeeTransaction(tx, {
+        c,
+        eventId,
+        attendeeId,
+        existing,
+        profileChanges,
+        profilePatchTicketType: profilePatch.ticket_type,
+        rsvpChange,
+        statusChange,
         expectedUpdatedAt,
-        data: updateData,
-        select: ATTENDEE_DETAIL_SELECT,
-      });
-
-      if (isStaleWrite(result)) throw new StaleWriteError();
-
-      // Any transition to a non-admittable status must not leave a stale
-      // admission behind — restoring the pass later would otherwise
-      // resurrect a "checked in" state from before the revoke without a new
-      // scan ever happening (PO review). isAdmittable() rather than a literal
-      // "revoked" check so this still holds if the status enum this route
-      // accepts ever widens to include "cancelled" (already a first-class
-      // AttendeeStatus, just not settable here yet).
-      // existing.admitted_at was read before this transaction started, so a
-      // concurrent request (operator undo, another admin's revoke-check-in)
-      // may have already cleared it — revokeCheckInMutation throws in that
-      // case; that's fine, there's nothing left to revoke, but it must not
-      // abort the status change itself (bugbot). Uses the mutation-only
-      // helper (not revokeCheckInTx) since this side-effect path builds its
-      // own response DTO below and would otherwise pay for an unused
-      // AttendeeCardDto build (event items, item states, notes, authors).
-      if (statusChange !== undefined && !isAdmittable(statusChange) && existing.admitted_at) {
-        try {
-          await revokeCheckInMutation({ eventId, attendeeId, audit: adminAuditFromContext(c) }, tx);
-          // result.row was read before the clear above, and the mutation's
-          // own attendee update bumps updated_at again (Attendee.updated_at
-          // is @updatedAt) — re-read both so the response DTO's
-          // expected_updated_at stays valid for the client's next edit.
-          const fresh = await tx.attendee.findUniqueOrThrow({
-            where: { id: attendeeId },
-            select: { admitted_at: true, updated_at: true },
-          });
-          result.row.admitted_at = fresh.admitted_at;
-          result.row.updated_at = fresh.updated_at;
-        } catch (err) {
-          if (!(err instanceof UndoNotAllowedError)) throw err;
-        }
-      }
-
-      if (rsvpChange) {
-        await writeActionLog(tx, {
-          event_id: eventId,
-          attendee_id: attendeeId,
-          action_type: "rsvp_status_changed",
-          audit: adminAuditFromContext(c),
-          metadata: {
-            from: rsvpChange.from,
-            to: rsvpChange.to,
-            source: "admin",
-          },
-        });
-      }
-
-      if (profileChanges) {
-        await writeActionLog(tx, {
-          event_id: eventId,
-          attendee_id: attendeeId,
-          action_type: "attendee_edited",
-          audit: adminAuditFromContext(c),
-          metadata: { fields: profileChanges.fields, field_changes: profileChanges.valueChanges },
-        });
-      }
-
-      if (statusChange !== undefined) {
-        await writeActionLog(tx, {
-          event_id: eventId,
-          attendee_id: attendeeId,
-          action_type: statusChange === "revoked" ? "pass_revoked" : "pass_restored",
-          audit: adminAuditFromContext(c),
-          metadata: {
-            previous_status: existing.status,
-            ...(restoreCapacityForced
-              ? {
-                  forced: true,
-                  capacity: restoreCapacityForced.capacity,
-                  current: restoreCapacityForced.current,
-                }
-              : {}),
-          },
-        });
-      }
-
-      return result.row;
-    });
+        updateData,
+      }),
+    );
 
     const dto = await buildAttendeeDetailDto(db, eventId, updated);
     return c.json(dto);
   } catch (err) {
-    if (err instanceof Response) return err;
-    if (err instanceof StaleWriteError) {
-      return c.json({ error: "stale_write" }, 409);
-    }
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-      return c.json({ error: "email_conflict" }, 409);
-    }
-    console.error("handlePatchEventAttendee failed:", err);
-    return c.json({ error: "server error" }, 500);
+    return patchAttendeeErrorResponse(c, err);
   }
 }
 
@@ -2253,18 +2456,9 @@ export async function handleResendEventAttendeeTicket(
   mailDeps: MailDeliveryDeps = {},
   injectedBaseUrl?: string,
 ): Promise<Response> {
-  const eventIdOrRes = requireEventId(c);
-  if (eventIdOrRes instanceof Response) return eventIdOrRes;
-  const eventId = eventIdOrRes;
-  const attendeeIdOrRes = requireAttendeeId(c);
-  if (attendeeIdOrRes instanceof Response) return attendeeIdOrRes;
-  const attendeeId = attendeeIdOrRes;
-
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
-
-  const existing = await loadAttendeeInEvent(db, eventId, attendeeId);
-  if (!existing) return c.json({ error: "forbidden" }, 403);
+  const attendeeContextOrRes = await requireManagedEventAttendee(c, db);
+  if (attendeeContextOrRes instanceof Response) return attendeeContextOrRes;
+  const { attendee: existing, attendeeId, eventId } = attendeeContextOrRes;
 
   let body: unknown;
   const parsedBody = await parseOptionalJsonBody(c);

@@ -1627,6 +1627,19 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     return row.updated_at.toISOString();
   }
 
+  it("returns 403 without updating a cross-event attendee", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_B1}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Must Not Update" }),
+    });
+
+    expect(res.status).toBe(403);
+    expect(await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_B1 } })).toMatchObject({
+      name: "Carol Cross",
+    });
+  });
+
   it("updates attendee and writes audit without leaking the new name value (PII-safe)", async () => {
     const expectedUpdatedAt = await currentUpdatedAt(ATT_A2);
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
@@ -1905,6 +1918,39 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     });
   });
 
+  it("removes an optional custom attribute when the operator clears it", async () => {
+    await prisma.eventCustomField.update({
+      where: { event_id_source_field: { event_id: EVENT_A, source_field: "shirt_size" } },
+      data: { required: false },
+    });
+    await prisma.eventCustomField.upsert({
+      where: { event_id_source_field: { event_id: EVENT_A, source_field: "accessibility_note" } },
+      create: {
+        event_id: EVENT_A,
+        source_field: "accessibility_note",
+        label: "Accessibility note",
+      },
+      update: { required: false },
+    });
+    await prisma.attendee.update({
+      where: { id: ATT_A2 },
+      data: { custom_data: { accessibility_note: "Step-free access", agency_ref: "REF-001" } },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        custom_data_fields: { accessibility_note: null },
+        expected_updated_at: await currentUpdatedAt(ATT_A2),
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const row = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_A2 } });
+    expect(row.custom_data).toEqual({ agency_ref: "REF-001" });
+  });
+
   it("rejects profile-only PATCH when required custom_data is missing", async () => {
     await prisma.eventCustomField.update({
       where: { event_id_source_field: { event_id: EVENT_A, source_field: "shirt_size" } },
@@ -2170,6 +2216,16 @@ describe("POST /api/admin/events/:eventId/attendees/:id/resend", () => {
       headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({}),
     });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 403 for a cross-event attendee", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_B1}/resend`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+
     expect(res.status).toBe(403);
   });
 
@@ -2554,6 +2610,28 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
       body: JSON.stringify({ target }),
     });
   }
+
+  it("rejects malformed JSON before selecting or sending attendees", async () => {
+    const res = await app.request(bulkUrl, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{not json",
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid json" });
+  });
+
+  it("rejects an unsupported bulk resend target", async () => {
+    const res = await app.request(bulkUrl, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ target: "everyone" }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "validation_failed" });
+  });
 
   it("queues tickets for unsent attendees without prior delivery", async () => {
     await prisma.emailDelivery.deleteMany({ where: { event_id: EVENT_A } });

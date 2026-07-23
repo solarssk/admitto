@@ -95,8 +95,15 @@ export async function signCfAccessJwt(
     .setProtectedHeader({ alg: "RS256", kid: "cf-test-key" })
     .setIssuer(input.iss ?? mock.teamDomain)
     .setAudience(input.aud ?? mock.audience)
-    .setSubject(input.sub ?? "cf-subject-123")
     .setExpirationTime(input.exp ?? "2h");
+
+  // An explicitly empty subject must remain empty so callers can create a structurally valid
+  // token whose claims are rejected by the application's identity boundary.
+  if (input.sub === undefined) {
+    builder.setSubject("cf-subject-123");
+  } else {
+    builder.setSubject(input.sub);
+  }
 
   if (input.nbf) {
     builder.setNotBefore(input.nbf);

@@ -313,6 +313,26 @@ describe("PATCH /api/admin/users/:id anti-lockout", () => {
   });
 });
 
+describe("PATCH /api/admin/users/:id profile", () => {
+  it("normalizes a blank display name and records a profile-only update", async () => {
+    const res = await app.request(`/api/admin/users/${targetId}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ display_name: "   " }),
+    });
+
+    expect(res.status).toBe(200);
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: targetId } });
+    expect(user.display_name).toBeNull();
+    expect(
+      await prisma.adminAuditLog.findFirst({
+        where: { organization_id: ORG_USERS, action_type: "user_profile_updated" },
+        orderBy: { created_at: "desc" },
+      }),
+    ).toMatchObject({ metadata: { userId: targetId } });
+  });
+});
+
 describe("DELETE /api/admin/users/:id/roles/:assignmentId anti-lockout", () => {
   it("returns 409 last_superadmin for final superadmin assignment", async () => {
     const globalSuperadmins = await prisma.roleAssignment.count({

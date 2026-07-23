@@ -324,6 +324,53 @@ export const RATE_POLICIES = {
 
 export type RatePolicyName = keyof typeof RATE_POLICIES;
 
+/** Result of evaluating one {@link RateLimitCheck} against the store. */
+type CheckOutcome =
+  | { kind: "skip" }
+  | { kind: "pass" }
+  | { kind: "fail-open" }
+  | { kind: "blocked"; response: Response };
+
+/**
+ * Evaluate a single check: honor `when`, hit the store, and classify the result.
+ * Extracted from {@link rateLimit} to keep the middleware loop's cognitive complexity low.
+ */
+async function runCheck(
+  store: RateLimitStore,
+  check: RateLimitCheck,
+  c: Context,
+  options: RateLimitContext | undefined,
+  policyName: RatePolicyName,
+  failOpenOnStoreError: boolean | undefined,
+): Promise<CheckOutcome> {
+  if (check.when && !check.when(c)) return { kind: "skip" };
+
+  const key = check.keyOf(c, options);
+  let allowed = true;
+  try {
+    ({ allowed } = await store.hit(key, check.windowMs, check.max));
+  } catch (err) {
+    if (failOpenOnStoreError) {
+      console.error(`${policyName} rate-limit store hit failed:`, err);
+      return { kind: "fail-open" };
+    }
+    throw err;
+  }
+
+  if (!allowed) {
+    if (check.logOnExceeded) {
+      logRateLimitExceeded({
+        scope: check.logOnExceeded.scope,
+        ip: resolveClientIp(c),
+        keyHint: check.logOnExceeded.keyHint,
+      });
+    }
+    return { kind: "blocked", response: check.onExceeded ? check.onExceeded(c) : jsonTooManyRequests(c) };
+  }
+
+  return { kind: "pass" };
+}
+
 /**
  * Build Hono middleware from a named policy in {@link RATE_POLICIES}.
  * All checks in the policy must pass (AND). Redis keys come from each check's keyOf.
@@ -341,31 +388,20 @@ export function rateLimit(
     }
 
     for (const check of policy.checks) {
-      if (check.when && !check.when(c)) continue;
-
-      const key = check.keyOf(c, options);
-      let allowed = true;
-      try {
-        ({ allowed } = await store.hit(key, check.windowMs, check.max));
-      } catch (err) {
-        if (policy.failOpenOnStoreError) {
-          console.error(`${policyName} rate-limit store hit failed:`, err);
-          await next();
-          return;
-        }
-        throw err;
+      const outcome = await runCheck(
+        store,
+        check,
+        c,
+        options,
+        policyName,
+        policy.failOpenOnStoreError,
+      );
+      if (outcome.kind === "skip") continue;
+      if (outcome.kind === "fail-open") {
+        await next();
+        return;
       }
-
-      if (!allowed) {
-        if (check.logOnExceeded) {
-          logRateLimitExceeded({
-            scope: check.logOnExceeded.scope,
-            ip: resolveClientIp(c),
-            keyHint: check.logOnExceeded.keyHint,
-          });
-        }
-        return check.onExceeded ? check.onExceeded(c) : jsonTooManyRequests(c);
-      }
+      if (outcome.kind === "blocked") return outcome.response;
     }
 
     await next();

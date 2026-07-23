@@ -13,6 +13,11 @@ const orgAdminAssignments: RoleAssignment[] = [
   { role: "admin", scope_type: "organization", scope_id: "org-1" },
 ];
 let mockAssignments: RoleAssignment[] = superadminAssignments;
+let mockBlocker: {
+  state: "unblocked" | "blocked";
+  proceed: () => void;
+  reset: () => void;
+} = { state: "unblocked", proceed: vi.fn(), reset: vi.fn() };
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({
   useAuth: () => ({ assignments: mockAssignments }),
@@ -26,7 +31,7 @@ vi.mock("react-router-dom", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router-dom")>();
   return {
     ...actual,
-    useBlocker: () => ({ state: "unblocked", proceed: vi.fn(), reset: vi.fn() }),
+    useBlocker: () => mockBlocker,
   };
 });
 
@@ -146,16 +151,21 @@ function inheritedMailSettingsResponse(): EventMailSettingsResponse {
 }
 
 beforeEach(() => {
+  // The ticket-type staleness tests queue one-off mock implementations. Resetting them before
+  // every test prevents an unconsumed async response in a failed test from affecting the next one.
+  vi.resetAllMocks();
   // The Branding tab also mounts EventImageAssetLibrary, which fetches its own list on mount.
   // Default to an empty library so tests that don't care about it never hit a real network
   // call (jsdom's `fetch` is real, not auto-mocked) or leak an unresolved promise into the
   // next test.
   vi.mocked(fetchEventImageAssets).mockResolvedValue([]);
+  vi.mocked(fetchTicketTypes).mockResolvedValue([]);
+  vi.mocked(fetchEventMailSettings).mockResolvedValue(inheritedMailSettingsResponse());
+  mockBlocker = { state: "unblocked", proceed: vi.fn(), reset: vi.fn() };
 });
 
 afterEach(() => {
   cleanup();
-  vi.clearAllMocks();
   vi.useRealTimers();
   mockAssignments = superadminAssignments;
 });
@@ -165,6 +175,7 @@ function renderSettings(entry = "/admin/events/evt-1/settings") {
     <MemoryRouter initialEntries={[entry]}>
       <Routes>
         <Route path="/admin" element={<div>events picker</div>} />
+        <Route path="/admin/events/:eventId/overview" element={<div>event overview</div>} />
         <Route path="/admin/events/:eventId/settings" element={<EventSettingsPage />} />
       </Routes>
     </MemoryRouter>,
@@ -190,6 +201,40 @@ describe("EventSettingsPage subtitle", () => {
     expect(screen.getByText(SUBTITLE)).toBeTruthy();
     expect(SUBTITLE).not.toContain(activeEvent.title);
     expect(screen.queryByText(activeEvent.title, { selector: "p" })).toBeNull();
+  });
+});
+
+describe("EventSettingsPage unavailable event", () => {
+  it("shows the safe unavailable state for a missing event and returns to its overview", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    vi.mocked(fetchEventSettings).mockRejectedValueOnce(new ApiError(404, "event_not_found"));
+
+    renderSettings();
+
+    expect(await screen.findByText("Event not found")).toBeTruthy();
+    expect(
+      screen.getByText("The event could not be found or you do not have access."),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(await screen.findByText("event overview")).toBeTruthy();
+  });
+});
+
+describe("EventSettingsPage navigation guard", () => {
+  it("delegates both confirmation choices to the router blocker", async () => {
+    const proceed = vi.fn();
+    const reset = vi.fn();
+    mockBlocker = { state: "blocked" as const, proceed, reset };
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings();
+
+    const dialog = await screen.findByRole("dialog", { name: "Discard unsaved changes?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Keep editing" }));
+    expect(reset).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Discard" }));
+    expect(proceed).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -932,6 +977,19 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
     });
   });
 
+  it("closes archive confirmation without changing the event", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings();
+    await openDangerZone();
+    fireEvent.click(await screen.findByRole("button", { name: "Archive event" }));
+
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(archiveEvent).not.toHaveBeenCalled();
+  });
+
   it("shows a 'No check-ins to revoke' toast when the server resolves a zero count", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, admitted_count: 1 });
     vi.mocked(revokeAllCheckIns).mockResolvedValueOnce({ revokedCount: 0 });
@@ -1000,6 +1058,9 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to revoke items/);
     });
     expect(screen.getByRole("dialog")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("always shows Revoke all Wallet passes as a disabled roadmap placeholder with no dialog", async () => {
@@ -1104,6 +1165,12 @@ describe("EventSettingsPage — ticket types cross-event staleness", () => {
     await waitFor(() => {
       expect(screen.getByDisplayValue("VIP")).toBeTruthy();
     });
+    // TicketTypeRow synchronizes its local draft from the fetched type in a passive effect.
+    // Let that effect settle before changing + blurring the controlled input, otherwise a busy
+    // CI worker can commit the old label between those two events.
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     // A background refresh only ever follows a successful color/label edit (TicketTypesCard's
     // onChanged) — queue it as the next fetchTicketTypes resolution before triggering that edit.
@@ -1111,6 +1178,9 @@ describe("EventSettingsPage — ticket types cross-event staleness", () => {
 
     const input = screen.getByDisplayValue("VIP") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "VIP Gold" } });
+    await waitFor(() => {
+      expect(input.value).toBe("VIP Gold");
+    });
     fireEvent.blur(input);
 
     await waitFor(() => {

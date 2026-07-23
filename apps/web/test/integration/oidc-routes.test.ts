@@ -1,8 +1,8 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword, SESSION_COOKIE_NAME, OIDC_FLOW_COOKIE_NAME, createSession, SESSION_STAGE } from "@admitto/auth";
 import { createApp } from "../../src/app.js";
-import { createRateLimitStore } from "../../src/rate-limit/index.js";
+import { createRateLimitStore, type InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 import { startMockOidcIdp, stopMockOidcIdp, type MockOidcIdp } from "../helpers/mock-oidc-idp.js";
 import { encryptClientSecret } from "@admitto/auth";
 
@@ -12,6 +12,7 @@ const BASE = "http://localhost";
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
 let mockIdp: MockOidcIdp;
+let rateLimitStore: InMemoryRateLimitStore;
 
 beforeAll(async () => {
   prisma = new PrismaClient();
@@ -37,15 +38,18 @@ beforeAll(async () => {
     },
   });
 
+  rateLimitStore = createRateLimitStore() as InMemoryRateLimitStore;
   app = createApp({
     prisma,
     baseUrl: BASE,
     skipCheckinBootValidation: true,
-    rateLimitStore: createRateLimitStore(),
+    rateLimitStore,
     allowCheckinBearer: false,
     checkinToken: "test-checkin-token-for-vitest-32chars!",
   });
 });
+
+beforeEach(() => rateLimitStore.reset());
 
 afterAll(async () => {
   await prisma.oidcAuthState.deleteMany({ where: { provider_id: PROVIDER_ID } });
@@ -202,16 +206,53 @@ describe("oidc routes", () => {
     expect(res.headers.get("location")).toBe(`/account/oidc/${PROVIDER_ID}/link`);
   });
 
-  it("callback with invalid state redirects to login error", async () => {
+  it("callback requires both an authorization code and a state", async () => {
+    const res = await app.request(`/api/auth/oidc/${PROVIDER_ID}/callback?code=x`, {
+      redirect: "manual",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/login?error=oidc_failed");
+  });
+
+  it("callback rejects a mismatched OIDC flow cookie", async () => {
     const res = await app.request(
       `/api/auth/oidc/${PROVIDER_ID}/callback?code=x&state=invalid-state`,
-      { redirect: "manual" },
+      {
+        redirect: "manual",
+        headers: { Cookie: `${OIDC_FLOW_COOKIE_NAME}=another-state` },
+      },
     );
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/login?error=oidc_failed");
   });
 
-  it("callback rejects link flow when session cookie missing at callback", async () => {
+  it("callback rejects a state that was not created or was replayed", async () => {
+    const state = "unconsumed-state";
+    const res = await app.request(
+      `/api/auth/oidc/${PROVIDER_ID}/callback?code=x&state=${encodeURIComponent(state)}`,
+      {
+        redirect: "manual",
+        headers: { Cookie: `${OIDC_FLOW_COOKIE_NAME}=${state}` },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/login?error=oidc_failed");
+  });
+
+  it("callback rejects a missing or disabled provider after the flow cookie is validated", async () => {
+    const state = "missing-provider-state";
+    const res = await app.request(
+      `/api/auth/oidc/not-configured/callback?code=x&state=${encodeURIComponent(state)}`,
+      {
+        redirect: "manual",
+        headers: { Cookie: `${OIDC_FLOW_COOKIE_NAME}=${state}` },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/login?error=oidc_failed");
+  });
+
+  it("callback rejects link flow when the step-up time is missing", async () => {
     const linkUser = await prisma.user.create({
       data: {
         email: "oidc-link-user@example.com",
@@ -286,6 +327,118 @@ describe("oidc routes", () => {
     await prisma.oidcAuthState.deleteMany({ where: { state } });
     await prisma.session.deleteMany({ where: { user_id: linkUser.id } });
     await prisma.user.delete({ where: { id: linkUser.id } });
+  });
+
+  it("callback rejects link flow when no current session accompanies a fresh step-up", async () => {
+    const linkUser = await prisma.user.create({
+      data: {
+        email: "oidc-link-no-session@example.com",
+        password_hash: await hashPassword("pw"),
+      },
+    });
+    const state = "link-flow-no-session-state";
+    await prisma.oidcAuthState.create({
+      data: {
+        provider_id: PROVIDER_ID,
+        state,
+        nonce: "nonce",
+        code_verifier: "verifier",
+        link_user_id: linkUser.id,
+        link_step_up_at: new Date(),
+        expires_at: new Date(Date.now() + 10 * 60 * 1000),
+      },
+    });
+
+    const res = await app.request(
+      `/api/auth/oidc/${PROVIDER_ID}/callback?code=fake&state=${encodeURIComponent(state)}`,
+      {
+        redirect: "manual",
+        headers: { Cookie: `${OIDC_FLOW_COOKIE_NAME}=${state}` },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/login?error=oidc_failed");
+
+    await prisma.oidcAuthState.deleteMany({ where: { state } });
+    await prisma.user.delete({ where: { id: linkUser.id } });
+  });
+
+  it("callback rejects link flow when the current full session belongs to a different user", async () => {
+    const [linkUser, otherUser] = await Promise.all([
+      prisma.user.create({
+        data: { email: "oidc-link-mismatch@example.com", password_hash: await hashPassword("pw") },
+      }),
+      prisma.user.create({
+        data: { email: "oidc-link-other-user@example.com", password_hash: await hashPassword("pw") },
+      }),
+    ]);
+    const state = "link-flow-session-mismatch-state";
+    await prisma.oidcAuthState.create({
+      data: {
+        provider_id: PROVIDER_ID,
+        state,
+        nonce: "nonce",
+        code_verifier: "verifier",
+        link_user_id: linkUser.id,
+        link_step_up_at: new Date(),
+        expires_at: new Date(Date.now() + 10 * 60 * 1000),
+      },
+    });
+    const session = await createSession(prisma, { userId: otherUser.id, stage: SESSION_STAGE.FULL });
+
+    const res = await app.request(
+      `/api/auth/oidc/${PROVIDER_ID}/callback?code=fake&state=${encodeURIComponent(state)}`,
+      {
+        redirect: "manual",
+        headers: {
+          Cookie: `${OIDC_FLOW_COOKIE_NAME}=${state}; ${SESSION_COOKIE_NAME}=${session.rawToken}`,
+        },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/login?error=oidc_failed");
+
+    await prisma.oidcAuthState.deleteMany({ where: { state } });
+    await prisma.session.deleteMany({ where: { user_id: otherUser.id } });
+    await prisma.user.deleteMany({ where: { id: { in: [linkUser.id, otherUser.id] } } });
+  });
+
+  it("fails closed when the authorization code exchange is rejected", async () => {
+    const start = await app.request(`/api/auth/oidc/${PROVIDER_ID}/start`, { redirect: "manual" });
+    const authorizeUrl = new URL(start.headers.get("location")!);
+    const state = authorizeUrl.searchParams.get("state")!;
+
+    const res = await app.request(
+      `/api/auth/oidc/${PROVIDER_ID}/callback?code=unissued-code&state=${encodeURIComponent(state)}`,
+      {
+        redirect: "manual",
+        headers: { Cookie: `${OIDC_FLOW_COOKIE_NAME}=${state}` },
+      },
+    );
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/login?error=oidc_failed");
+  });
+
+  it("fails closed instead of auto-linking a pre-existing local account", async () => {
+    const existing = await prisma.user.create({
+      data: {
+        email: "oidc-flow@example.com",
+        password_hash: await hashPassword("local-only-password"),
+      },
+    });
+
+    try {
+      const res = await runOidcCallback();
+      expect(res.status).toBe(302);
+      expect(res.headers.get("location")).toBe("/login?error=oidc_failed");
+      expect(
+        await prisma.externalIdentity.count({ where: { provider_id: PROVIDER_ID, user_id: existing.id } }),
+      ).toBe(0);
+    } finally {
+      await prisma.session.deleteMany({ where: { user_id: existing.id } });
+      await prisma.user.delete({ where: { id: existing.id } });
+    }
   });
 
   it("happy path creates full session", async () => {

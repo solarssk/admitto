@@ -1,5 +1,6 @@
 import type { Context } from "hono";
-import type { PrismaClient } from "@prisma/client";
+import type { IdentityProvider, PrismaClient } from "@prisma/client";
+import type { JWTPayload } from "jose";
 import {
   SESSION_STAGE,
   AUTH_METHOD,
@@ -16,6 +17,8 @@ import {
   OIDC_LINK_STEP_UP_MAX_AGE_MS,
   revokeSession,
   logOidcLoginSuccess,
+  type ConsumedOidcAuthState,
+  type ExternalIdentityClaims,
 } from "@admitto/auth";
 import { getCookie } from "hono/cookie";
 import { SESSION_COOKIE_NAME } from "@admitto/auth";
@@ -58,64 +61,50 @@ export async function handleOidcStart(c: Context, db: PrismaClient, baseUrl: str
   return beginOidcAuthorizationRedirect(c, db, baseUrl, providerId, { redirectNext: next });
 }
 
-/** GET /api/auth/oidc/:providerId/callback */
-export async function handleOidcCallback(c: Context, db: PrismaClient, baseUrl: string): Promise<Response> {
-  const providerId = c.req.param("providerId") ?? "";
-  const code = c.req.query("code");
-  const state = c.req.query("state");
+/**
+ * Validate the account-link flow's step-up requirements. Returns true when the callback
+ * is a plain login (no `link_user_id`) or when all link step-up checks pass.
+ */
+async function validateOidcLinkFlowStepUp(
+  c: Context,
+  db: PrismaClient,
+  consumed: ConsumedOidcAuthState,
+): Promise<boolean> {
+  if (!consumed.link_user_id) return true;
 
-  if (!code || !state) {
-    logOidcError("callback", "missing code or state");
-    return oidcFailedRedirect(c);
+  if (!consumed.link_step_up_at) {
+    logOidcError("callback", "link flow missing step-up");
+    return false;
+  }
+  if (Date.now() - consumed.link_step_up_at.getTime() > OIDC_LINK_STEP_UP_MAX_AGE_MS) {
+    logOidcError("callback", "link step-up expired");
+    return false;
   }
 
-  if (!oidcFlowCookieMatches(c, state)) {
-    logOidcError("callback", "oidc flow cookie mismatch");
-    return oidcFailedRedirect(c);
+  const sessionToken = getCookie(c, SESSION_COOKIE_NAME);
+  if (!sessionToken) {
+    logOidcError("callback", "link flow missing session");
+    return false;
   }
-
-  const provider = await findOidcProviderById(db, providerId);
-  if (!provider || !provider.enabled) {
-    logOidcError("callback", "provider missing or disabled");
-    return oidcFailedRedirect(c);
+  const partial = await validatePartialSession(db, sessionToken);
+  if (
+    !partial ||
+    partial.stage !== SESSION_STAGE.FULL ||
+    partial.userId !== consumed.link_user_id
+  ) {
+    logOidcError("callback", "link flow session mismatch");
+    return false;
   }
+  return true;
+}
 
-  const consumed = await consumeOidcAuthState(db, state);
-  if (!consumed || consumed.provider_id !== provider.id) {
-    logOidcError("callback", "invalid or replayed state");
-    return oidcFailedRedirect(c);
-  }
-
-  if (consumed.link_user_id) {
-    if (!consumed.link_step_up_at) {
-      logOidcError("callback", "link flow missing step-up");
-      return oidcFailedRedirect(c);
-    }
-    if (Date.now() - consumed.link_step_up_at.getTime() > OIDC_LINK_STEP_UP_MAX_AGE_MS) {
-      logOidcError("callback", "link step-up expired");
-      return oidcFailedRedirect(c);
-    }
-
-    const sessionToken = getCookie(c, SESSION_COOKIE_NAME);
-    if (!sessionToken) {
-      logOidcError("callback", "link flow missing session");
-      return oidcFailedRedirect(c);
-    }
-    const partial = await validatePartialSession(db, sessionToken);
-    if (
-      !partial ||
-      partial.stage !== SESSION_STAGE.FULL ||
-      partial.userId !== consumed.link_user_id
-    ) {
-      logOidcError("callback", "link flow session mismatch");
-      return oidcFailedRedirect(c);
-    }
-  }
-
-  clearOidcFlowCookie(c);
-
-  const redirectUri = buildOidcRedirectUri(baseUrl, provider.id);
-  let payload;
+/** Exchange the authorization code and validate the ID token; logs and returns null on failure. */
+async function exchangeOidcCallbackToken(
+  provider: IdentityProvider,
+  code: string,
+  consumed: ConsumedOidcAuthState,
+  redirectUri: string,
+): Promise<JWTPayload | null> {
   try {
     const result = await exchangeAndValidateIdToken(
       provider,
@@ -124,21 +113,21 @@ export async function handleOidcCallback(c: Context, db: PrismaClient, baseUrl: 
       redirectUri,
       consumed.nonce,
     );
-    payload = result.payload;
+    return result.payload;
   } catch (err) {
     logOidcError("token validation", err);
-    return oidcFailedRedirect(c);
+    return null;
   }
+}
 
-  const subject = payload.sub;
-  if (typeof subject !== "string" || !subject) {
-    logOidcError("callback", "missing sub claim");
-    return oidcFailedRedirect(c);
-  }
-
-  const claims = extractClaims(payload, provider);
-
-  let userId: string;
+/** Resolve or create the local user for the external identity; logs and returns null on failure. */
+async function resolveOidcCallbackUserId(
+  db: PrismaClient,
+  provider: IdentityProvider,
+  subject: string,
+  claims: ExternalIdentityClaims,
+  consumed: ConsumedOidcAuthState,
+): Promise<string | null> {
   try {
     const resolved = await resolveOrCreateUserFromExternalIdentity(
       db,
@@ -147,23 +136,26 @@ export async function handleOidcCallback(c: Context, db: PrismaClient, baseUrl: 
       claims,
       consumed.link_user_id ? { currentUserId: consumed.link_user_id } : undefined,
     );
-    userId = resolved.user.id;
+    return resolved.user.id;
   } catch (err) {
     if (err instanceof ExternalIdentityLinkError) {
       logOidcError("identity link", err.message);
     } else {
       logOidcError("identity link", err);
     }
-    return oidcFailedRedirect(c);
+    return null;
   }
+}
 
-  try {
-    await applyOidcGroupRoleMappings(db, provider.id, userId, claims.groups ?? []);
-  } catch (err) {
-    logOidcError("group mapping", err);
-    return oidcFailedRedirect(c);
-  }
-
+/** Create the session, resolve the post-login destination, and redirect; fails safe on any error. */
+async function finalizeOidcLogin(
+  c: Context,
+  db: PrismaClient,
+  provider: IdentityProvider,
+  userId: string,
+  subject: string,
+  consumed: ConsumedOidcAuthState,
+): Promise<Response> {
   try {
     const { session, rawToken } = await createSession(db, {
       userId,
@@ -194,4 +186,67 @@ export async function handleOidcCallback(c: Context, db: PrismaClient, baseUrl: 
     logOidcError("session create", err);
     return oidcFailedRedirect(c);
   }
+}
+
+/** GET /api/auth/oidc/:providerId/callback */
+export async function handleOidcCallback(c: Context, db: PrismaClient, baseUrl: string): Promise<Response> {
+  const providerId = c.req.param("providerId") ?? "";
+  const code = c.req.query("code");
+  const state = c.req.query("state");
+
+  if (!code || !state) {
+    logOidcError("callback", "missing code or state");
+    return oidcFailedRedirect(c);
+  }
+
+  if (!oidcFlowCookieMatches(c, state)) {
+    logOidcError("callback", "oidc flow cookie mismatch");
+    return oidcFailedRedirect(c);
+  }
+
+  const provider = await findOidcProviderById(db, providerId);
+  if (!provider || !provider.enabled) {
+    logOidcError("callback", "provider missing or disabled");
+    return oidcFailedRedirect(c);
+  }
+
+  const consumed = await consumeOidcAuthState(db, state);
+  if (!consumed || consumed.provider_id !== provider.id) {
+    logOidcError("callback", "invalid or replayed state");
+    return oidcFailedRedirect(c);
+  }
+
+  if (!(await validateOidcLinkFlowStepUp(c, db, consumed))) {
+    return oidcFailedRedirect(c);
+  }
+
+  clearOidcFlowCookie(c);
+
+  const redirectUri = buildOidcRedirectUri(baseUrl, provider.id);
+  const payload = await exchangeOidcCallbackToken(provider, code, consumed, redirectUri);
+  if (!payload) {
+    return oidcFailedRedirect(c);
+  }
+
+  const subject = payload.sub;
+  if (typeof subject !== "string" || !subject) {
+    logOidcError("callback", "missing sub claim");
+    return oidcFailedRedirect(c);
+  }
+
+  const claims = extractClaims(payload, provider);
+
+  const userId = await resolveOidcCallbackUserId(db, provider, subject, claims, consumed);
+  if (!userId) {
+    return oidcFailedRedirect(c);
+  }
+
+  try {
+    await applyOidcGroupRoleMappings(db, provider.id, userId, claims.groups ?? []);
+  } catch (err) {
+    logOidcError("group mapping", err);
+    return oidcFailedRedirect(c);
+  }
+
+  return finalizeOidcLogin(c, db, provider, userId, subject, consumed);
 }

@@ -88,69 +88,89 @@ function optionalInt(value: string): number | undefined {
   return n;
 }
 
-export function validateMailDraft(draft: MailDraft): { valid: boolean; errors: string[] } {
+function validateEmailFields(draft: MailDraft): string[] {
+  if (!draft.provider) return [];
+
   const errors: string[] = [];
-
-  if (draft.provider) {
-    const reply = draft.replyTo.trim();
-    if (reply && !EMAIL_RE.test(reply)) {
-      errors.push("Reply-to must be a valid email.");
-    }
-    const envelope = draft.envelopeFrom.trim();
-    if (envelope && !EMAIL_RE.test(envelope)) {
-      errors.push("Envelope from must be a valid email.");
-    }
-    const from = draft.fromAddress.trim();
-    if (from && !EMAIL_RE.test(from)) {
-      errors.push("From address must be a valid email.");
-    }
+  const reply = draft.replyTo.trim();
+  if (reply && !EMAIL_RE.test(reply)) {
+    errors.push("Reply-to must be a valid email.");
   }
+  const envelope = draft.envelopeFrom.trim();
+  if (envelope && !EMAIL_RE.test(envelope)) {
+    errors.push("Envelope from must be a valid email.");
+  }
+  const from = draft.fromAddress.trim();
+  if (from && !EMAIL_RE.test(from)) {
+    errors.push("From address must be a valid email.");
+  }
+  return errors;
+}
 
-  if (
+function validateFromAddressRequired(draft: MailDraft): string[] {
+  const requiresFrom =
     draft.provider === "smtp" ||
     draft.provider === "powerautomate" ||
-    draft.provider === "export_only"
-  ) {
-    const from = draft.fromAddress.trim();
-    if (!from) {
-      errors.push("From address must be a valid email.");
-    }
-  }
+    draft.provider === "export_only";
+  if (!requiresFrom) return [];
 
-  if (draft.provider === "smtp") {
-    if (!draft.host.trim()) errors.push("SMTP host is required.");
-    const port = optionalInt(draft.port);
-    if (port === undefined || Number.isNaN(port) || port < 1 || port > 65535) {
-      errors.push("SMTP port must be between 1 and 65535.");
-    }
-  }
+  return draft.fromAddress.trim() ? [] : ["From address must be a valid email."];
+}
 
-  if (draft.provider === "graph") {
-    if (!draft.tenantId.trim()) errors.push("Tenant ID is required.");
-    if (!draft.clientId.trim()) errors.push("Client ID is required.");
-    const mailbox = draft.mailbox.trim();
-    const from = draft.fromAddress.trim();
-    if (!mailbox && !from) {
-      errors.push("Mailbox or from address is required.");
-    }
-    if (mailbox && !EMAIL_RE.test(mailbox)) {
-      errors.push("Mailbox must be a valid email.");
-    }
-  }
+function validateSmtpFields(draft: MailDraft): string[] {
+  if (draft.provider !== "smtp") return [];
 
+  const errors: string[] = [];
+  if (!draft.host.trim()) errors.push("SMTP host is required.");
+  const port = optionalInt(draft.port);
+  if (port === undefined || Number.isNaN(port) || port < 1 || port > 65535) {
+    errors.push("SMTP port must be between 1 and 65535.");
+  }
+  return errors;
+}
+
+function validateGraphFields(draft: MailDraft): string[] {
+  if (draft.provider !== "graph") return [];
+
+  const errors: string[] = [];
+  if (!draft.tenantId.trim()) errors.push("Tenant ID is required.");
+  if (!draft.clientId.trim()) errors.push("Client ID is required.");
+  const mailbox = draft.mailbox.trim();
+  const from = draft.fromAddress.trim();
+  if (!mailbox && !from) {
+    errors.push("Mailbox or from address is required.");
+  }
+  if (mailbox && !EMAIL_RE.test(mailbox)) {
+    errors.push("Mailbox must be a valid email.");
+  }
+  return errors;
+}
+
+function validateAllowedDomain(draft: MailDraft): string[] {
   const allowedDomain = draft.allowedFromDomain.trim().toLowerCase().replace(/^@/, "");
-  if (allowedDomain && draft.provider) {
-    let effectiveFrom = draft.fromAddress.trim();
-    if (draft.provider === "graph" && !effectiveFrom) {
-      effectiveFrom = draft.mailbox.trim();
-    }
-    if (effectiveFrom) {
-      const domain = effectiveFrom.split("@")[1]?.toLowerCase();
-      if (!domain || domain !== allowedDomain) {
-        errors.push(`From address must use the allowed domain (${allowedDomain}).`);
-      }
-    }
+  if (!allowedDomain || !draft.provider) return [];
+
+  let effectiveFrom = draft.fromAddress.trim();
+  if (draft.provider === "graph" && !effectiveFrom) {
+    effectiveFrom = draft.mailbox.trim();
   }
+  if (!effectiveFrom) return [];
+
+  const domain = effectiveFrom.split("@")[1]?.toLowerCase();
+  if (!domain || domain !== allowedDomain) {
+    return [`From address must use the allowed domain (${allowedDomain}).`];
+  }
+  return [];
+}
+
+export function validateMailDraft(draft: MailDraft): { valid: boolean; errors: string[] } {
+  const errors: string[] = [
+    ...validateEmailFields(draft),
+    ...validateFromAddressRequired(draft),
+    ...validateSmtpFields(draft),
+    ...validateGraphFields(draft),
+    ...validateAllowedDomain(draft),
+  ];
 
   return { valid: errors.length === 0, errors };
 }
@@ -211,14 +231,9 @@ export function isMailSettingsDirty(
   return Object.values(secrets).some((edit) => edit.mode !== "idle");
 }
 
-export function buildSaveMailSettingsBody(
-  draft: MailDraft,
-  secrets: SecretEdits,
-  lockedKeys: ReadonlySet<keyof MailSettingsFieldsDto> = new Set(),
-): SaveMailSettingsBody {
-  const body: SaveMailSettingsBody = {};
-  const unlocked = (key: keyof MailSettingsFieldsDto) => !lockedKeys.has(key);
+type UnlockedCheck = (key: keyof MailSettingsFieldsDto) => boolean;
 
+function applyBaseFields(body: SaveMailSettingsBody, draft: MailDraft, unlocked: UnlockedCheck): void {
   if (unlocked("provider")) {
     body.provider = draft.provider || "";
   }
@@ -229,35 +244,43 @@ export function buildSaveMailSettingsBody(
   if (unlocked("allowedFromDomain")) {
     setClearableString(body, "allowedFromDomain", draft.allowedFromDomain);
   }
+}
 
-  if (draft.provider === "smtp") {
-    if (unlocked("host")) body.host = draft.host.trim();
-    if (unlocked("port")) setClearableInt(body, "port", draft.port);
-    if (unlocked("secure")) body.secure = draft.secure;
-    if (unlocked("requireTls")) body.requireTls = draft.requireTls;
-    if (unlocked("tlsRejectUnauthorized")) body.tlsRejectUnauthorized = draft.tlsRejectUnauthorized;
-    if (unlocked("user")) setClearableString(body, "user", draft.user);
-    if (unlocked("heloName")) setClearableString(body, "heloName", draft.heloName);
-    if (unlocked("pool")) body.pool = draft.pool;
-    if (unlocked("maxConnections")) setClearableInt(body, "maxConnections", draft.maxConnections);
-    if (unlocked("maxMessages")) setClearableInt(body, "maxMessages", draft.maxMessages);
-    if (unlocked("rateLimitPerMinute")) {
-      setClearableInt(body, "rateLimitPerMinute", draft.rateLimitPerMinute);
-    }
-    if (unlocked("connectionTimeout")) {
-      setClearableInt(body, "connectionTimeout", draft.connectionTimeout);
-    }
-    if (unlocked("greetingTimeout")) setClearableInt(body, "greetingTimeout", draft.greetingTimeout);
-    if (unlocked("socketTimeout")) setClearableInt(body, "socketTimeout", draft.socketTimeout);
+/** Only call when draft.provider === "smtp". */
+function applySmtpFields(body: SaveMailSettingsBody, draft: MailDraft, unlocked: UnlockedCheck): void {
+  if (unlocked("host")) body.host = draft.host.trim();
+  if (unlocked("port")) setClearableInt(body, "port", draft.port);
+  if (unlocked("secure")) body.secure = draft.secure;
+  if (unlocked("requireTls")) body.requireTls = draft.requireTls;
+  if (unlocked("tlsRejectUnauthorized")) body.tlsRejectUnauthorized = draft.tlsRejectUnauthorized;
+  if (unlocked("user")) setClearableString(body, "user", draft.user);
+  if (unlocked("heloName")) setClearableString(body, "heloName", draft.heloName);
+  if (unlocked("pool")) body.pool = draft.pool;
+  if (unlocked("maxConnections")) setClearableInt(body, "maxConnections", draft.maxConnections);
+  if (unlocked("maxMessages")) setClearableInt(body, "maxMessages", draft.maxMessages);
+  if (unlocked("rateLimitPerMinute")) {
+    setClearableInt(body, "rateLimitPerMinute", draft.rateLimitPerMinute);
   }
-
-  if (draft.provider === "graph") {
-    if (unlocked("mailbox")) setClearableString(body, "mailbox", draft.mailbox);
-    if (unlocked("tenantId")) body.tenantId = draft.tenantId.trim();
-    if (unlocked("clientId")) body.clientId = draft.clientId.trim();
-    if (unlocked("saveToSentItems")) body.saveToSentItems = draft.saveToSentItems;
+  if (unlocked("connectionTimeout")) {
+    setClearableInt(body, "connectionTimeout", draft.connectionTimeout);
   }
+  if (unlocked("greetingTimeout")) setClearableInt(body, "greetingTimeout", draft.greetingTimeout);
+  if (unlocked("socketTimeout")) setClearableInt(body, "socketTimeout", draft.socketTimeout);
+}
 
+/** Only call when draft.provider === "graph". */
+function applyGraphFields(body: SaveMailSettingsBody, draft: MailDraft, unlocked: UnlockedCheck): void {
+  if (unlocked("mailbox")) setClearableString(body, "mailbox", draft.mailbox);
+  if (unlocked("tenantId")) body.tenantId = draft.tenantId.trim();
+  if (unlocked("clientId")) body.clientId = draft.clientId.trim();
+  if (unlocked("saveToSentItems")) body.saveToSentItems = draft.saveToSentItems;
+}
+
+function applySecretFields(
+  body: SaveMailSettingsBody,
+  secrets: SecretEdits,
+  unlocked: UnlockedCheck,
+): void {
   for (const key of [
     "smtpPassword",
     "graphClientSecret",
@@ -272,6 +295,20 @@ export function buildSaveMailSettingsBody(
       body[key] = "";
     }
   }
+}
+
+export function buildSaveMailSettingsBody(
+  draft: MailDraft,
+  secrets: SecretEdits,
+  lockedKeys: ReadonlySet<keyof MailSettingsFieldsDto> = new Set(),
+): SaveMailSettingsBody {
+  const body: SaveMailSettingsBody = {};
+  const unlocked: UnlockedCheck = (key) => !lockedKeys.has(key);
+
+  applyBaseFields(body, draft, unlocked);
+  if (draft.provider === "smtp") applySmtpFields(body, draft, unlocked);
+  if (draft.provider === "graph") applyGraphFields(body, draft, unlocked);
+  applySecretFields(body, secrets, unlocked);
 
   return body;
 }

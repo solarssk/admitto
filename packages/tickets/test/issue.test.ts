@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -163,6 +163,24 @@ describe("issueTicket — Mode B (agency)", () => {
     expect(att?.token_enc).toBeNull();
   });
 
+  it("uses external_uuid as the agency payload when qr_payload is absent", async () => {
+    const attendee = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "external-uuid-only@example.com",
+        name: "External UUID Only",
+        external_uuid: "AGENCY-UUID-ONLY",
+      },
+    });
+
+    await expect(issueTicket(attendee.id, prisma, BASE_URL)).resolves.toEqual({
+      status: "agency",
+      mode: "agency",
+      attendeeId: attendee.id,
+      qrPayload: "AGENCY-UUID-ONLY",
+    });
+  });
+
   it("does not issue a cancelled agency attendee", async () => {
     const att = await prisma.attendee.create({
       data: {
@@ -192,12 +210,216 @@ describe("issueTicket — not issuable statuses", () => {
     const att = await prisma.attendee.findUnique({ where: { id: attendeeCancelledId } });
     expect(att?.token_hash).toBeNull();
   });
+
+  it("does not issue a revoked attendee", async () => {
+    const attendee = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "revoked-issue@example.com",
+        name: "Revoked Issue",
+        status: "revoked",
+      },
+    });
+
+    await expect(issueTicket(attendee.id, prisma, BASE_URL)).resolves.toMatchObject({
+      status: "not_issuable",
+      reason: "revoked",
+    });
+  });
 });
 
 describe("issueTicket — not found", () => {
   it("throws for unknown attendee id", async () => {
     await expect(issueTicket("nonexistent-id", prisma, BASE_URL)).rejects.toThrow(
       "Attendee not found",
+    );
+  });
+});
+
+function casRacePrisma(afterRace: Record<string, unknown> | null): PrismaClient {
+  const initial = {
+    id: "cas-race-attendee",
+    status: "confirmed",
+    qr_payload: null,
+    external_uuid: null,
+    token_hash: null,
+  };
+  return {
+    attendee: {
+      findUnique: vi.fn().mockResolvedValueOnce(initial).mockResolvedValueOnce(afterRace),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
+  } as unknown as PrismaClient;
+}
+
+describe("issueTicket — compare-and-set race recovery", () => {
+  it("returns an agency ticket when another writer assigned its agency identifier", async () => {
+    const result = await issueTicket(
+      "cas-race-attendee",
+      casRacePrisma({
+        status: "confirmed",
+        qr_payload: null,
+        external_uuid: "agency-after-race",
+        token_hash: null,
+      }),
+      BASE_URL,
+    );
+
+    expect(result).toEqual({
+      status: "agency",
+      mode: "agency",
+      attendeeId: "cas-race-attendee",
+      qrPayload: "agency-after-race",
+    });
+  });
+
+  it("returns not_issuable when another writer revokes the attendee", async () => {
+    const result = await issueTicket(
+      "cas-race-attendee",
+      casRacePrisma({ status: "revoked", qr_payload: null, external_uuid: null, token_hash: null }),
+      BASE_URL,
+    );
+
+    expect(result).toEqual({
+      status: "not_issuable",
+      mode: "internal",
+      attendeeId: "cas-race-attendee",
+      reason: "revoked",
+    });
+  });
+
+  it("returns already_issued when another writer wins the race", async () => {
+    const result = await issueTicket(
+      "cas-race-attendee",
+      casRacePrisma({
+        status: "confirmed",
+        qr_payload: null,
+        external_uuid: null,
+        token_hash: "already-issued-after-race",
+      }),
+      BASE_URL,
+    );
+
+    expect(result).toEqual({
+      status: "already_issued",
+      mode: "internal",
+      attendeeId: "cas-race-attendee",
+    });
+  });
+
+  it("fails explicitly when the attendee disappears after a failed update", async () => {
+    await expect(issueTicket("cas-race-attendee", casRacePrisma(null), BASE_URL)).rejects.toThrow(
+      "Attendee not found: cas-race-attendee",
+    );
+  });
+
+  it("fails explicitly when a failed update has no explainable concurrent change", async () => {
+    await expect(
+      issueTicket(
+        "cas-race-attendee",
+        casRacePrisma({
+          status: "confirmed",
+          qr_payload: null,
+          external_uuid: null,
+          token_hash: null,
+        }),
+        BASE_URL,
+      ),
+    ).rejects.toThrow("Ticket issuance failed for attendee cas-race-attendee");
+  });
+});
+
+describe("issueTicketsForEvent — compare-and-set race recovery", () => {
+  it("recovers an agency result inside the batch transaction", async () => {
+    const pending = {
+      id: "batch-cas-race-attendee",
+      status: "confirmed",
+      qr_payload: null,
+      external_uuid: null,
+      token_hash: null,
+    };
+    const tx = {
+      attendee: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        findUnique: vi.fn().mockResolvedValue({
+          status: "confirmed",
+          qr_payload: "agency-qr-after-race",
+          external_uuid: null,
+          token_hash: null,
+        }),
+      },
+    };
+    const racePrisma = {
+      event: { findUnique: vi.fn().mockResolvedValue({ id: "batch-cas-race-event" }) },
+      attendee: { findMany: vi.fn().mockResolvedValue([pending]) },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<void>) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(issueTicketsForEvent("batch-cas-race-event", racePrisma, BASE_URL)).resolves.toMatchObject({
+      issued: 0,
+      agency: 1,
+      results: [
+        {
+          status: "agency",
+          attendeeId: "batch-cas-race-attendee",
+          qrPayload: "agency-qr-after-race",
+        },
+      ],
+    });
+  });
+
+  it("fails explicitly when a pending attendee disappears in the batch transaction", async () => {
+    const pending = {
+      id: "batch-cas-race-missing",
+      status: "confirmed",
+      qr_payload: null,
+      external_uuid: null,
+      token_hash: null,
+    };
+    const tx = {
+      attendee: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        findUnique: vi.fn().mockResolvedValue(null),
+      },
+    };
+    const racePrisma = {
+      event: { findUnique: vi.fn().mockResolvedValue({ id: "batch-cas-race-event" }) },
+      attendee: { findMany: vi.fn().mockResolvedValue([pending]) },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<void>) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(issueTicketsForEvent("batch-cas-race-event", racePrisma, BASE_URL)).rejects.toThrow(
+      "Attendee not found: batch-cas-race-missing",
+    );
+  });
+
+  it("fails explicitly when a batch compare-and-set has no explainable concurrent change", async () => {
+    const pending = {
+      id: "batch-cas-race-unexplained",
+      status: "confirmed",
+      qr_payload: null,
+      external_uuid: null,
+      token_hash: null,
+    };
+    const tx = {
+      attendee: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        findUnique: vi.fn().mockResolvedValue({
+          status: "confirmed",
+          qr_payload: null,
+          external_uuid: null,
+          token_hash: null,
+        }),
+      },
+    };
+    const racePrisma = {
+      event: { findUnique: vi.fn().mockResolvedValue({ id: "batch-cas-race-event" }) },
+      attendee: { findMany: vi.fn().mockResolvedValue([pending]) },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<void>) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(issueTicketsForEvent("batch-cas-race-event", racePrisma, BASE_URL)).rejects.toThrow(
+      "Ticket issuance failed for attendee batch-cas-race-unexplained",
     );
   });
 });

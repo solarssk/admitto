@@ -11,6 +11,10 @@ describe("mapHttpStatus", () => {
     expect(mapHttpStatus(403)).toEqual({ status: "rejected", retryable: false });
     expect(mapHttpStatus(401)).toEqual({ status: "rejected", retryable: false });
   });
+
+  it("keeps unexpected non-error HTTP statuses terminal and non-retryable", () => {
+    expect(mapHttpStatus(302)).toEqual({ status: "failed", retryable: false });
+  });
 });
 
 describe("mapSmtpError", () => {
@@ -46,6 +50,13 @@ describe("mapSmtpError", () => {
     expect(mapSmtpError(err)).toEqual({ status: "failed", retryable: true });
   });
 
+  it("falls back to the error message when a structured response has no SMTP code", () => {
+    const err = new Error("451 temporary mailbox failure") as Error & { response: string };
+    err.response = "upstream temporarily unavailable";
+
+    expect(mapSmtpError(err)).toEqual({ status: "failed", retryable: true });
+  });
+
   it("maps unlisted transient 4xx (e.g. 454) to failed+retryable", () => {
     expect(mapSmtpError(new Error("454 TLS not available"))).toEqual({
       status: "failed",
@@ -64,6 +75,13 @@ describe("mapSmtpError", () => {
     expect(mapSmtpError(new Error("connect ECONNREFUSED"))).toEqual({
       status: "failed",
       retryable: true,
+    });
+  });
+
+  it("keeps unclassified transport errors terminal and non-retryable", () => {
+    expect(mapSmtpError(new Error("unexpected transport response"))).toEqual({
+      status: "failed",
+      retryable: false,
     });
   });
 });

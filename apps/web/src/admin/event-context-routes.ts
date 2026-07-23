@@ -16,6 +16,21 @@ async function requireEventOrgId(db: PrismaClient, eventId: string): Promise<str
   return ev?.organization_id ?? null;
 }
 
+/**
+ * Runs a Prisma mutation, translating a "record to update/delete not found" error (P2025)
+ * into a 404 JSON response. Any other error is rethrown unchanged.
+ */
+async function runPrismaOrNotFound<T>(c: Context, fn: () => Promise<T>): Promise<T | Response> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") {
+      return c.json({ error: "not_found" }, 404);
+    }
+    throw e;
+  }
+}
+
 // ── Pinned note ────────────────────────────────────────────────────────────
 
 /** PATCH /api/admin/events/:eventId/note */
@@ -128,7 +143,7 @@ export async function handleUpdateContact(c: Context, db: PrismaClient): Promise
   const audit = adminAuditFromContext(c);
   const orgId = await requireEventOrgId(db, eventId);
 
-  try {
+  return runPrismaOrNotFound(c, async () => {
     const contact = await db.eventContact.update({
       where: { id: contactId },
       data: {
@@ -150,12 +165,7 @@ export async function handleUpdateContact(c: Context, db: PrismaClient): Promise
       metadata: { eventId, contactId, name: contact.name },
     });
     return c.json(contact);
-  } catch (e) {
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") {
-      return c.json({ error: "not_found" }, 404);
-    }
-    throw e;
-  }
+  });
 }
 
 /** DELETE /api/admin/events/:eventId/contacts/:contactId */
@@ -255,6 +265,31 @@ export async function handleCreateResource(c: Context, db: PrismaClient): Promis
   return c.json(resource, 201);
 }
 
+type ResourceUpdateBody = {
+  title?: string;
+  type?: "link" | "file";
+  url?: string;
+  description?: string | null;
+  sort_order?: number;
+};
+
+/** Validates the mutable fields of a resource update; returns an error Response, or null if valid. */
+function validateResourceUpdateBody(c: Context, body: ResourceUpdateBody): Response | null {
+  if (body.type && body.type !== "link" && body.type !== "file") {
+    return c.json({ error: "invalid_type" }, 400);
+  }
+  if (body.title !== undefined && !body.title?.trim()) return c.json({ error: "title_required" }, 400);
+  if (body.url === undefined) return null;
+  if (!body.url?.trim()) return c.json({ error: "url_required" }, 400);
+  try {
+    validateHttpUrl("url", body.url.trim());
+    return null;
+  } catch (e) {
+    if (e instanceof InvalidHttpUrlError) return c.json({ error: "invalid_url" }, 400);
+    throw e;
+  }
+}
+
 /** PUT /api/admin/events/:eventId/resources/:resourceId */
 export async function handleUpdateResource(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdParam = requireEventId(c);
@@ -270,30 +305,15 @@ export async function handleUpdateResource(c: Context, db: PrismaClient): Promis
   const existing = await db.eventResource.findFirst({ where: { id: resourceId, event_id: eventId } });
   if (!existing) return c.json({ error: "not_found" }, 404);
 
-  const body = await c.req.json<{
-    title?: string;
-    type?: "link" | "file";
-    url?: string;
-    description?: string | null;
-    sort_order?: number;
-  }>();
+  const body = await c.req.json<ResourceUpdateBody>();
 
-  if (body.type && body.type !== "link" && body.type !== "file") {
-    return c.json({ error: "invalid_type" }, 400);
-  }
-  if (body.title !== undefined && !body.title?.trim()) return c.json({ error: "title_required" }, 400);
-  if (body.url !== undefined) {
-    if (!body.url?.trim()) return c.json({ error: "url_required" }, 400);
-    try { validateHttpUrl("url", body.url.trim()); } catch (e) {
-      if (e instanceof InvalidHttpUrlError) return c.json({ error: "invalid_url" }, 400);
-      throw e;
-    }
-  }
+  const validationError = validateResourceUpdateBody(c, body);
+  if (validationError) return validationError;
 
   const audit = adminAuditFromContext(c);
   const orgId = await requireEventOrgId(db, eventId);
 
-  try {
+  return runPrismaOrNotFound(c, async () => {
     const resource = await db.eventResource.update({
       where: { id: resourceId },
       data: {
@@ -314,12 +334,7 @@ export async function handleUpdateResource(c: Context, db: PrismaClient): Promis
       metadata: { eventId, resourceId, title: resource.title },
     });
     return c.json(resource);
-  } catch (e) {
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") {
-      return c.json({ error: "not_found" }, 404);
-    }
-    throw e;
-  }
+  });
 }
 
 /** DELETE /api/admin/events/:eventId/resources/:resourceId */

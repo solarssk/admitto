@@ -497,6 +497,92 @@ function AttendeeActivityTab({
 }
 
 /** Event attendee detail: profile edit, pass revoke/restore, resend, and activity log. */
+/** Diffs the edit form against the loaded attendee to build the PATCH body — top-level fields
+ * plus any changed custom-data attributes — extracted out of handleSave (SonarCloud S3776). */
+function buildAttendeePatch(
+  form: AttendeeFormState,
+  detail: AttendeeDetailDto,
+  attributeFields: CustomDataFieldDef[],
+): UpdateAttendeePatch {
+  const patch: UpdateAttendeePatch = {};
+  if (form.name !== detail.name) patch.name = form.name;
+  if (form.email !== detail.email) patch.email = form.email;
+  if (form.company !== (detail.company ?? "")) patch.company = form.company || null;
+  if (form.department !== (detail.department ?? "")) patch.department = form.department || null;
+  if (form.ticket_type !== (detail.ticket_type ?? "")) patch.ticket_type = form.ticket_type || null;
+  if (form.rsvp_status !== detail.rsvp_status) patch.rsvp_status = form.rsvp_status;
+
+  const customDataPatch: Record<string, string | null> = {};
+  for (const field of attributeFields) {
+    const key = field.source_field;
+    const next = form.customFields[key] ?? "";
+    const current = readCustomDataField(detail.custom_data, key) ?? "";
+    if (next !== current) customDataPatch[key] = next || null;
+  }
+  if (Object.keys(customDataPatch).length > 0) patch.custom_data_fields = customDataPatch;
+
+  return patch;
+}
+
+type SaveErrorOutcome =
+  | { kind: "email_conflict" }
+  | { kind: "stale_write" }
+  | { kind: "message"; message: string };
+
+/** Classifies a failed profile save into the UI action it should trigger — extracted out of
+ * handleSave (SonarCloud S3776). */
+function classifySaveError(err: unknown): SaveErrorOutcome {
+  if (err instanceof ApiError && err.status === 409) {
+    if (hasApiErrorCode(err, "email_conflict")) return { kind: "email_conflict" };
+    if (hasApiErrorCode(err, "stale_write")) return { kind: "stale_write" };
+    return { kind: "message", message: "Could not save changes." };
+  }
+  if (
+    err instanceof ApiError &&
+    err.status === 400 &&
+    (hasApiErrorCode(err, "unknown_custom_data_field") ||
+      hasApiErrorCode(err, "required_custom_data_field_missing") ||
+      hasApiErrorCode(err, "validation_failed"))
+  ) {
+    return {
+      kind: "message",
+      message: hasApiErrorCode(err, "unknown_custom_data_field")
+        ? "Event configuration changed — reload this page to edit attributes."
+        : "Could not save attribute fields — check required values and options.",
+    };
+  }
+  return { kind: "message", message: operatorApiErrorMessage(err, "Failed to save changes.") };
+}
+
+type PassStatusErrorOutcome =
+  | { kind: "capacity"; eventFull: EventFullMeta }
+  | { kind: "stale_write" }
+  | { kind: "message"; message: string };
+
+/** Next form value after a pass-status change lands — merges onto any in-progress edit, or falls
+ * back to a fresh form when there's none to merge onto — extracted out of handlePassStatusChange
+ * (SonarCloud S3776: keeps this nested branch out of its cognitive-complexity count). */
+function nextFormAfterPassStatusChange(
+  currentForm: AttendeeFormState | null,
+  previousDetail: AttendeeDetailDto,
+  updated: AttendeeDetailDto,
+  attributeFields: CustomDataFieldDef[],
+): AttendeeFormState {
+  if (!currentForm) return toAttendeeForm(updated, attributeFields);
+  return mergeFormAfterReload(currentForm, previousDetail, updated, attributeFields);
+}
+
+/** Classifies a failed pass status change into the UI action it should trigger — extracted out
+ * of handlePassStatusChange (SonarCloud S3776). */
+function classifyPassStatusError(err: unknown): PassStatusErrorOutcome {
+  if (err instanceof ApiError && err.status === 409) {
+    if (err.code === "event_full" && err.eventFull) return { kind: "capacity", eventFull: err.eventFull };
+    if (err.code === "stale_write") return { kind: "stale_write" };
+    return { kind: "message", message: "Could not update pass status." };
+  }
+  return { kind: "message", message: operatorApiErrorMessage(err, "Could not update pass status.") };
+}
+
 export function AttendeeDetailPage() {
   const { eventId, attendeeId } = useParams();
   const { event } = useOutletContext<{ event: EventDto }>();
@@ -695,22 +781,7 @@ export function AttendeeDetailPage() {
     e.preventDefault();
     if (!eventId || !attendeeId || !detail || !form) return;
 
-    const patch: UpdateAttendeePatch = {};
-    if (form.name !== detail.name) patch.name = form.name;
-    if (form.email !== detail.email) patch.email = form.email;
-    if (form.company !== (detail.company ?? "")) patch.company = form.company || null;
-    if (form.department !== (detail.department ?? "")) patch.department = form.department || null;
-    if (form.ticket_type !== (detail.ticket_type ?? "")) patch.ticket_type = form.ticket_type || null;
-    if (form.rsvp_status !== detail.rsvp_status) patch.rsvp_status = form.rsvp_status;
-
-    const customDataPatch: Record<string, string | null> = {};
-    for (const field of attributeFields) {
-      const key = field.source_field;
-      const next = form.customFields[key] ?? "";
-      const current = readCustomDataField(detail.custom_data, key) ?? "";
-      if (next !== current) customDataPatch[key] = next || null;
-    }
-    if (Object.keys(customDataPatch).length > 0) patch.custom_data_fields = customDataPatch;
+    const patch = buildAttendeePatch(form, detail, attributeFields);
     if (Object.keys(patch).length === 0) {
       setEditMode(false);
       setError(null);
@@ -740,29 +811,17 @@ export function AttendeeDetailPage() {
       addToast("Profile saved", "success");
     } catch (err) {
       if (!isStillSelected(target)) return;
-      if (err instanceof ApiError && err.status === 409) {
-        if (hasApiErrorCode(err, "email_conflict")) setEmailConflict(true);
-        else if (hasApiErrorCode(err, "stale_write")) {
-          // Inline modal warning + Reload button only, no toast - same error, actionable
-          // retry control already visible in the still-open modal (bot review, matches the
-          // ConfirmDialog convention of not duplicating an actionable inline error as a toast).
-          setStaleWrite(true);
-          void handleReload();
-        } else setError("Could not save changes.");
-      } else if (
-        err instanceof ApiError &&
-        err.status === 400 &&
-        (hasApiErrorCode(err, "unknown_custom_data_field") ||
-          hasApiErrorCode(err, "required_custom_data_field_missing") ||
-          hasApiErrorCode(err, "validation_failed"))
-      ) {
-        setError(
-          hasApiErrorCode(err, "unknown_custom_data_field")
-            ? "Event configuration changed — reload this page to edit attributes."
-            : "Could not save attribute fields — check required values and options.",
-        );
+      const outcome = classifySaveError(err);
+      if (outcome.kind === "email_conflict") {
+        setEmailConflict(true);
+      } else if (outcome.kind === "stale_write") {
+        // Inline modal warning + Reload button only, no toast - same error, actionable
+        // retry control already visible in the still-open modal (bot review, matches the
+        // ConfirmDialog convention of not duplicating an actionable inline error as a toast).
+        setStaleWrite(true);
+        void handleReload();
       } else {
-        setError(operatorApiErrorMessage(err, "Failed to save changes."));
+        setError(outcome.message);
       }
     } finally {
       if (isStillSelected(target)) setSaving(false);
@@ -823,31 +882,27 @@ export function AttendeeDetailPage() {
       );
       if (!isStillSelected(target)) return;
       setDetail(updated);
-      setForm((currentForm) => {
-        if (!currentForm) return toAttendeeForm(updated, attributeFields);
-        return mergeFormAfterReload(currentForm, previousDetail, updated, attributeFields);
-      });
+      setForm((currentForm) =>
+        nextFormAfterPassStatusChange(currentForm, previousDetail, updated, attributeFields),
+      );
       setActiveRevoke(null);
       setRestoreCapacityBlocked(null);
       setRestoreForceCapacity(false);
       addToast(nextStatus === "revoked" ? "Pass revoked" : "Pass restored", "success");
     } catch (err) {
       if (!isStillSelected(target)) return;
-      if (err instanceof ApiError && err.status === 409) {
-        if (err.code === "event_full" && err.eventFull) {
-          setRestoreCapacityBlocked(err.eventFull);
-          const { current, capacity } = err.eventFull;
-          setRevokeError(
-            `Event is at capacity (${current}/${capacity}). Free a slot or increase capacity before restoring this pass.`,
-          );
-        } else if (err.code === "stale_write") {
-          addToast("Someone else updated this attendee — page will reload", "warning");
-          void handleReload();
-        } else {
-          setRevokeError("Could not update pass status.");
-        }
+      const outcome = classifyPassStatusError(err);
+      if (outcome.kind === "capacity") {
+        setRestoreCapacityBlocked(outcome.eventFull);
+        const { current, capacity } = outcome.eventFull;
+        setRevokeError(
+          `Event is at capacity (${current}/${capacity}). Free a slot or increase capacity before restoring this pass.`,
+        );
+      } else if (outcome.kind === "stale_write") {
+        addToast("Someone else updated this attendee — page will reload", "warning");
+        void handleReload();
       } else {
-        setRevokeError(operatorApiErrorMessage(err, "Could not update pass status."));
+        setRevokeError(outcome.message);
       }
     } finally {
       if (isStillSelected(target)) setRevokeBusy(false);

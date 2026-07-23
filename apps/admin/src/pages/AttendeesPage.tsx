@@ -650,6 +650,91 @@ function ExportMenu({ exportingFormat, onExport }: Readonly<ExportMenuProps>) {
   );
 }
 
+interface LoadListErrorContext {
+  setItems: (items: AttendeeRowDto[]) => void;
+  setTotal: (total: number) => void;
+  setLoadError: (message: string | null) => void;
+  reportApiError: (status: number) => void;
+}
+
+/** The catch-block error handling for loadList's fetch — split out to keep that function's
+ * cognitive complexity under SonarCloud's threshold (bot review), matching the same extraction
+ * pattern as reportBulkActionError/runBulkAction above. */
+function reportLoadListError(err: unknown, ctx: LoadListErrorContext): void {
+  if (err instanceof DOMException && err.name === "AbortError") return;
+  const { setItems, setTotal, setLoadError, reportApiError } = ctx;
+  setItems([]);
+  setTotal(0);
+  if (!(err instanceof ApiError)) {
+    setLoadError("Failed to load attendees.");
+    return;
+  }
+  reportApiError(err.status);
+  if (err.status === 401) {
+    const next = encodeURIComponent(window.location.pathname);
+    window.location.assign(`/login?next=${next}`);
+    return;
+  }
+  setLoadError(err.status === 403 ? "You do not have access to this event." : "Failed to load attendees.");
+}
+
+interface PassStatusErrorContext {
+  reportApiError: (status: number) => void;
+  addToast: (message: string, variant?: ToastVariant) => void;
+  revokeOpen: boolean;
+  setRevokeOpen: (open: boolean) => void;
+  setRevokeTarget: (target: AttendeeRowDto | null) => void;
+  setRevokeError: (message: string | null) => void;
+  setReloadToken: (updater: (n: number) => number) => void;
+}
+
+/** The 409-conflict half of {@link reportPassStatusChangeError} — split out further so neither
+ * function's own cognitive complexity creeps back over the threshold. */
+function reportPassStatusConflict(err: ApiError, ctx: PassStatusErrorContext): void {
+  const { addToast, revokeOpen, setRevokeOpen, setRevokeTarget, setRevokeError, setReloadToken } = ctx;
+  if (err.code === "event_full") {
+    addToast("Event is at capacity — pass cannot be restored.", "error");
+    return;
+  }
+  if (err.code === "stale_write") {
+    addToast("Someone else updated this attendee — reloading list", "warning");
+    setRevokeOpen(false);
+    setRevokeTarget(null);
+    setRevokeError(null);
+    setReloadToken((n) => n + 1);
+    return;
+  }
+  if (revokeOpen) {
+    setRevokeError("Could not update pass status.");
+  } else {
+    addToast("Could not update pass status.", "error");
+  }
+}
+
+/** The catch-block error handling for handlePassStatusChange — split out to keep that function's
+ * cognitive complexity under SonarCloud's threshold (bot review), matching the same extraction
+ * pattern as reportBulkActionError/runBulkAction above. */
+function reportPassStatusChangeError(err: unknown, ctx: PassStatusErrorContext): void {
+  const { revokeOpen, setRevokeError, addToast, reportApiError } = ctx;
+  if (err instanceof ApiError) {
+    reportApiError(err.status);
+    if (err.status === 401) {
+      const next = encodeURIComponent(window.location.pathname);
+      window.location.assign(`/login?next=${next}`);
+      return;
+    }
+    if (err.status === 409) {
+      reportPassStatusConflict(err, ctx);
+      return;
+    }
+  }
+  if (revokeOpen) {
+    setRevokeError(operatorApiErrorMessage(err, "Could not update pass status."));
+  } else {
+    addToast(operatorApiErrorMessage(err, "Could not update pass status."), "error");
+  }
+}
+
 export function AttendeesPage() {
   const { eventId } = useParams();
   const { event } = useOutletContext<{ event: EventDto }>();
@@ -813,22 +898,7 @@ export function AttendeesPage() {
       setTotal(data.total);
       setLoadError(null);
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
-      setItems([]);
-      setTotal(0);
-      if (err instanceof ApiError) {
-        reportApiError(err.status);
-        if (err.status === 401) {
-          const next = encodeURIComponent(window.location.pathname);
-          window.location.assign(`/login?next=${next}`);
-          return;
-        }
-        setLoadError(
-          err.status === 403 ? "You do not have access to this event." : "Failed to load attendees.",
-        );
-      } else {
-        setLoadError("Failed to load attendees.");
-      }
+      reportLoadListError(err, { setItems, setTotal, setLoadError, reportApiError });
     } finally {
       if (!ac.signal.aborted) {
         setLoading(false);
@@ -926,35 +996,15 @@ export function AttendeesPage() {
         setRevokeTarget(null);
         addToast(nextStatus === "revoked" ? "Pass revoked" : "Pass restored", "success");
       } catch (err) {
-        if (err instanceof ApiError) {
-          reportApiError(err.status);
-          if (err.status === 401) {
-            const next = encodeURIComponent(window.location.pathname);
-            window.location.assign(`/login?next=${next}`);
-            return;
-          }
-          if (err.status === 409) {
-            if (err.code === "event_full") {
-              addToast("Event is at capacity — pass cannot be restored.", "error");
-            } else if (err.code === "stale_write") {
-              addToast("Someone else updated this attendee — reloading list", "warning");
-              setRevokeOpen(false);
-              setRevokeTarget(null);
-              setRevokeError(null);
-              setReloadToken((n) => n + 1);
-            } else if (revokeOpen) {
-              setRevokeError("Could not update pass status.");
-            } else {
-              addToast("Could not update pass status.", "error");
-            }
-            return;
-          }
-        }
-        if (revokeOpen) {
-          setRevokeError(operatorApiErrorMessage(err, "Could not update pass status."));
-        } else {
-          addToast(operatorApiErrorMessage(err, "Could not update pass status."), "error");
-        }
+        reportPassStatusChangeError(err, {
+          reportApiError,
+          addToast,
+          revokeOpen,
+          setRevokeOpen,
+          setRevokeTarget,
+          setRevokeError,
+          setReloadToken,
+        });
       } finally {
         if (passActionBusyRef.current.delete(row.id)) {
           setPassActionBusyVersion((version) => version + 1);

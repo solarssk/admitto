@@ -56,6 +56,44 @@ function checkEncryption(env: NodeJS.ProcessEnv = process.env): SetupCheckResult
   }
 }
 
+/** True in development/test environments, where instance URL configuration is more lenient. */
+function isDevOrTestEnv(env: NodeJS.ProcessEnv): boolean {
+  return env.NODE_ENV === "development" || env.NODE_ENV === "test";
+}
+
+/** Normalize an explicitly provided base URL (injected app URL or BASE_URL env). */
+function checkExplicitBaseUrl(
+  rawUrl: string,
+  env: NodeJS.ProcessEnv,
+  invalidDetail: string,
+): SetupCheckResult {
+  try {
+    const normalized = normalizeRuntimeBaseUrl(rawUrl, env);
+    return { ok: true, detail: normalized };
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : invalidDetail;
+    return { ok: false, detail };
+  }
+}
+
+/** Validate an instance URL persisted in Settings (only sufficient outside production). */
+function checkPersistedInstanceUrl(dbUrl: string, env: NodeJS.ProcessEnv): SetupCheckResult {
+  try {
+    const normalized = normalizePersistedInstanceUrl(dbUrl);
+    if (!isDevOrTestEnv(env)) {
+      return {
+        ok: false,
+        detail:
+          "BASE_URL env is required for server boot in production; Settings instance URL alone is not sufficient",
+      };
+    }
+    return { ok: true, detail: normalized };
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : "Invalid instance URL in settings";
+    return { ok: false, detail };
+  }
+}
+
 /** Validate instance URL: injected app URL → env BASE_URL → DB settings. */
 async function checkInstanceUrl(
   db: PrismaClient,
@@ -64,45 +102,20 @@ async function checkInstanceUrl(
 ): Promise<SetupCheckResult> {
   const injected = injectedBaseUrl?.trim();
   if (injected) {
-    try {
-      const normalized = normalizeRuntimeBaseUrl(injected, env);
-      return { ok: true, detail: normalized };
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : "Invalid instance URL";
-      return { ok: false, detail };
-    }
+    return checkExplicitBaseUrl(injected, env, "Invalid instance URL");
   }
 
   const envRaw = env.BASE_URL?.trim();
   if (envRaw) {
-    try {
-      const normalized = normalizeRuntimeBaseUrl(envRaw, env);
-      return { ok: true, detail: normalized };
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : "Invalid BASE_URL";
-      return { ok: false, detail };
-    }
+    return checkExplicitBaseUrl(envRaw, env, "Invalid BASE_URL");
   }
 
   const dbUrl = await getInstanceUrl(db);
   if (dbUrl) {
-    try {
-      const normalized = normalizePersistedInstanceUrl(dbUrl);
-      if (env.NODE_ENV !== "development" && env.NODE_ENV !== "test") {
-        return {
-          ok: false,
-          detail:
-            "BASE_URL env is required for server boot in production; Settings instance URL alone is not sufficient",
-        };
-      }
-      return { ok: true, detail: normalized };
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : "Invalid instance URL in settings";
-      return { ok: false, detail };
-    }
+    return checkPersistedInstanceUrl(dbUrl, env);
   }
 
-  if (env.NODE_ENV === "development" || env.NODE_ENV === "test") {
+  if (isDevOrTestEnv(env)) {
     return {
       ok: true,
       warn: true,

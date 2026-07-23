@@ -31,20 +31,27 @@ function isSmtpReplyCode(value: number): boolean {
   return Number.isInteger(value) && value >= 400 && value < 600;
 }
 
+/** Extract an SMTP reply code from nodemailer's structured error fields, if present. */
+function extractStructuredSmtpCode(smtpErr: NodemailerSmtpError): number | undefined {
+  if (typeof smtpErr.responseCode === "number" && isSmtpReplyCode(smtpErr.responseCode)) {
+    return smtpErr.responseCode;
+  }
+  if (typeof smtpErr.response !== "string") {
+    return undefined;
+  }
+  const responseMatch = /^(\d{3})/.exec(smtpErr.response.trim());
+  if (!responseMatch) {
+    return undefined;
+  }
+  const parsed = Number(responseMatch[1]);
+  return isSmtpReplyCode(parsed) ? parsed : undefined;
+}
+
 /** Prefer nodemailer's structured SMTP fields before regexing Error.message. */
 function extractSmtpCode(err: unknown): number | undefined {
   if (err && typeof err === "object") {
-    const smtpErr = err as NodemailerSmtpError;
-    if (typeof smtpErr.responseCode === "number" && isSmtpReplyCode(smtpErr.responseCode)) {
-      return smtpErr.responseCode;
-    }
-    if (typeof smtpErr.response === "string") {
-      const responseMatch = /^(\d{3})/.exec(smtpErr.response.trim());
-      if (responseMatch) {
-        const parsed = Number(responseMatch[1]);
-        if (isSmtpReplyCode(parsed)) return parsed;
-      }
-    }
+    const structured = extractStructuredSmtpCode(err as NodemailerSmtpError);
+    if (structured !== undefined) return structured;
   }
 
   const msg = err instanceof Error ? err.message : String(err);

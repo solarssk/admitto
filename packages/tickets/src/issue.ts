@@ -5,6 +5,76 @@ import { hashToken } from "./hash.js";
 import { buildTicketUrl } from "./url.js";
 import type { IssuedTicketResult, IssueEventSummary } from "./types.js";
 
+/** Minimal shape shared by the classification helpers below — matches the Prisma Attendee fields they read. */
+type IssuableAttendeeFields = {
+  status: string;
+  qr_payload: string | null;
+  external_uuid: string | null;
+  token_hash: string | null;
+};
+
+function isNotIssuableStatus(status: string): boolean {
+  return status === "cancelled" || status === "revoked";
+}
+
+function notIssuableReason(status: string): "cancelled" | "revoked" {
+  return status === "cancelled" ? "cancelled" : "revoked";
+}
+
+function hasAgencyIdentifier(attendee: IssuableAttendeeFields): boolean {
+  return attendee.qr_payload !== null || attendee.external_uuid !== null;
+}
+
+function agencyQrPayload(attendee: IssuableAttendeeFields): string {
+  return attendee.qr_payload ?? attendee.external_uuid!;
+}
+
+/**
+ * Classify an attendee before minting a token: not-issuable status, agency (Mode B), or
+ * already-issued (Mode A) — in that precedence order. Returns null when none apply, meaning a
+ * fresh internal token should be minted.
+ *
+ * Order matches the pre-mint checks in issueTicket / issueTicketsForEvent's upfront pass.
+ */
+function classifyAttendeeUpfront(
+  attendee: IssuableAttendeeFields,
+  attendeeId: string,
+): IssuedTicketResult | null {
+  if (isNotIssuableStatus(attendee.status)) {
+    return { status: "not_issuable", mode: "internal", attendeeId, reason: notIssuableReason(attendee.status) };
+  }
+  if (hasAgencyIdentifier(attendee)) {
+    return { status: "agency", mode: "agency", attendeeId, qrPayload: agencyQrPayload(attendee) };
+  }
+  if (attendee.token_hash !== null) {
+    return { status: "already_issued", mode: "internal", attendeeId };
+  }
+  return null;
+}
+
+/**
+ * Classify an attendee after a failed compare-and-set mint: agency (Mode B), not-issuable status,
+ * or already-issued (Mode A) — in that precedence order. Returns null when none apply, meaning the
+ * CAS failure is unexplained and the caller should throw.
+ *
+ * Order matches the post-CAS-failure checks in issueTicket / issueTicketsForEvent's transaction retry.
+ */
+function classifyAttendeeAfterCasFailure(
+  attendee: IssuableAttendeeFields,
+  attendeeId: string,
+): IssuedTicketResult | null {
+  if (hasAgencyIdentifier(attendee)) {
+    return { status: "agency", mode: "agency", attendeeId, qrPayload: agencyQrPayload(attendee) };
+  }
+  if (isNotIssuableStatus(attendee.status)) {
+    return { status: "not_issuable", mode: "internal", attendeeId, reason: notIssuableReason(attendee.status) };
+  }
+  if (attendee.token_hash !== null) {
+    return { status: "already_issued", mode: "internal", attendeeId };
+  }
+  return null;
+}
+
 /**
  * Issue a ticket for a single attendee.
  *
@@ -25,21 +95,8 @@ export async function issueTicket(
   const attendee = await prisma.attendee.findUnique({ where: { id: attendeeId } });
   if (!attendee) throw new Error(`Attendee not found: ${attendeeId}`);
 
-  if (attendee.status === "cancelled" || attendee.status === "revoked") {
-    const reason = attendee.status === "cancelled" ? "cancelled" : "revoked";
-    return { status: "not_issuable", mode: "internal", attendeeId, reason };
-  }
-
-  // Mode B — use agency identifier verbatim, never mint an internal token.
-  if (attendee.qr_payload !== null || attendee.external_uuid !== null) {
-    const qrPayload = attendee.qr_payload ?? attendee.external_uuid!;
-    return { status: "agency", mode: "agency", attendeeId, qrPayload };
-  }
-
-  // Mode A — already issued; do NOT rotate.
-  if (attendee.token_hash !== null) {
-    return { status: "already_issued", mode: "internal", attendeeId };
-  }
+  const upfront = classifyAttendeeUpfront(attendee, attendeeId);
+  if (upfront) return upfront;
 
   // Mode A — first issuance. Atomic compare-and-set: only the first concurrent caller wins.
   // token_enc is written in the same update as token_hash — both succeed or neither does.
@@ -59,17 +116,8 @@ export async function issueTicket(
   if (updated.count === 0) {
     const current = await prisma.attendee.findUnique({ where: { id: attendeeId } });
     if (!current) throw new Error(`Attendee not found: ${attendeeId}`);
-    if (current.qr_payload !== null || current.external_uuid !== null) {
-      const qrPayload = current.qr_payload ?? current.external_uuid!;
-      return { status: "agency", mode: "agency", attendeeId, qrPayload };
-    }
-    if (current.status === "cancelled" || current.status === "revoked") {
-      const reason = current.status === "cancelled" ? "cancelled" : "revoked";
-      return { status: "not_issuable", mode: "internal", attendeeId, reason };
-    }
-    if (current.token_hash !== null) {
-      return { status: "already_issued", mode: "internal", attendeeId };
-    }
+    const retryResult = classifyAttendeeAfterCasFailure(current, attendeeId);
+    if (retryResult) return retryResult;
     throw new Error(`Ticket issuance failed for attendee ${attendeeId}`);
   }
   const ticketUrl = buildTicketUrl(baseUrl, token);
@@ -95,94 +143,72 @@ export async function issueTicketsForEvent(
   const pendingInternal: Array<{ index: number; attendeeId: string }> = [];
 
   for (const [index, attendee] of attendees.entries()) {
-    if (attendee.status === "cancelled" || attendee.status === "revoked") {
-      const reason = attendee.status === "cancelled" ? "cancelled" : "revoked";
-      results[index] = { status: "not_issuable", mode: "internal", attendeeId: attendee.id, reason };
+    const classified = classifyAttendeeUpfront(attendee, attendee.id);
+    if (classified) {
+      results[index] = classified;
       continue;
     }
-
-    if (attendee.qr_payload !== null || attendee.external_uuid !== null) {
-      const qrPayload = attendee.qr_payload ?? attendee.external_uuid!;
-      results[index] = { status: "agency", mode: "agency", attendeeId: attendee.id, qrPayload };
-      continue;
-    }
-
-    if (attendee.token_hash !== null) {
-      results[index] = { status: "already_issued", mode: "internal", attendeeId: attendee.id };
-      continue;
-    }
-
     pendingInternal.push({ index, attendeeId: attendee.id });
   }
 
   if (pendingInternal.length > 0) {
     await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       for (const pending of pendingInternal) {
-        const token = generateToken();
-        const tokenHash = hashToken(token);
-        const tokenEnc = encryptToString(token);
-        const updated = await tx.attendee.updateMany({
-          where: {
-            id: pending.attendeeId,
-            token_hash: null,
-            qr_payload: null,
-            external_uuid: null,
-            status: { notIn: ["cancelled", "revoked"] },
-          },
-          data: { token_hash: tokenHash, token_enc: tokenEnc },
-        });
-
-        if (updated.count === 1) {
-          results[pending.index] = {
-            status: "issued",
-            mode: "internal",
-            attendeeId: pending.attendeeId,
-            token,
-            tokenHash,
-            ticketUrl: buildTicketUrl(baseUrl, token),
-          };
-          continue;
-        }
-
-        const current = await tx.attendee.findUnique({ where: { id: pending.attendeeId } });
-        if (!current) throw new Error(`Attendee not found: ${pending.attendeeId}`);
-
-        if (current.qr_payload !== null || current.external_uuid !== null) {
-          const qrPayload = current.qr_payload ?? current.external_uuid!;
-          results[pending.index] = {
-            status: "agency",
-            mode: "agency",
-            attendeeId: pending.attendeeId,
-            qrPayload,
-          };
-          continue;
-        }
-
-        if (current.status === "cancelled" || current.status === "revoked") {
-          const reason = current.status === "cancelled" ? "cancelled" : "revoked";
-          results[pending.index] = {
-            status: "not_issuable",
-            mode: "internal",
-            attendeeId: pending.attendeeId,
-            reason,
-          };
-          continue;
-        }
-
-        if (current.token_hash !== null) {
-          results[pending.index] = {
-            status: "already_issued",
-            mode: "internal",
-            attendeeId: pending.attendeeId,
-          };
-          continue;
-        }
-
-        throw new Error(`Ticket issuance failed for attendee ${pending.attendeeId}`);
+        results[pending.index] = await issuePendingTicketInTransaction(tx, pending, baseUrl);
       }
     });
   }
 
+  return { results, ...summarizeIssuedResults(results) };
+}
+
+/**
+ * Mint a token for one pending attendee inside the batch transaction (or resolve why it can't be
+ * minted, if a concurrent write won the compare-and-set first). Extracted from
+ * issueTicketsForEvent's transaction loop to keep that loop's cognitive complexity in check.
+ */
+async function issuePendingTicketInTransaction(
+  tx: Prisma.TransactionClient,
+  pending: { index: number; attendeeId: string },
+  baseUrl: string,
+): Promise<IssuedTicketResult> {
+  const token = generateToken();
+  const tokenHash = hashToken(token);
+  const tokenEnc = encryptToString(token);
+  const updated = await tx.attendee.updateMany({
+    where: {
+      id: pending.attendeeId,
+      token_hash: null,
+      qr_payload: null,
+      external_uuid: null,
+      status: { notIn: ["cancelled", "revoked"] },
+    },
+    data: { token_hash: tokenHash, token_enc: tokenEnc },
+  });
+
+  if (updated.count === 1) {
+    return {
+      status: "issued",
+      mode: "internal",
+      attendeeId: pending.attendeeId,
+      token,
+      tokenHash,
+      ticketUrl: buildTicketUrl(baseUrl, token),
+    };
+  }
+
+  const current = await tx.attendee.findUnique({ where: { id: pending.attendeeId } });
+  if (!current) throw new Error(`Attendee not found: ${pending.attendeeId}`);
+
+  const retryResult = classifyAttendeeAfterCasFailure(current, pending.attendeeId);
+  if (retryResult) return retryResult;
+
+  throw new Error(`Ticket issuance failed for attendee ${pending.attendeeId}`);
+}
+
+function summarizeIssuedResults(
+  results: IssuedTicketResult[],
+): { issued: number; alreadyIssued: number; agency: number; notIssuable: number } {
   let issued = 0;
   let alreadyIssued = 0;
   let agency = 0;
@@ -195,5 +221,5 @@ export async function issueTicketsForEvent(
     else notIssuable++;
   }
 
-  return { results, issued, alreadyIssued, agency, notIssuable };
+  return { issued, alreadyIssued, agency, notIssuable };
 }

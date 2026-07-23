@@ -181,5 +181,7 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
     await waitFor(() => {
       expect(within(dialog).getByText("Could not revoke check-in.")).toBeTruthy();
     });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

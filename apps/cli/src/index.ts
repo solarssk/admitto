@@ -19,6 +19,36 @@ function wantsHelp(argv: string[]): boolean {
   return argv.includes("--help") || argv.includes("-h");
 }
 
+/**
+ * Resolves the async handler for a given namespace/command pair, or
+ * `undefined` when the combination is not recognized. `sessions purge`
+ * additionally requires the `--all` flag, so it is checked separately
+ * before falling back to the plain namespace:command lookup table.
+ */
+function resolveCommandHandler(
+  namespace: string | undefined,
+  command: string | undefined,
+  argv: string[],
+): (() => Promise<void>) | undefined {
+  if (namespace === "sessions" && command === "purge" && hasFlag("all", argv)) {
+    return () => runSessionsPurgeAll(prisma);
+  }
+
+  const handlers: Record<string, () => Promise<void>> = {
+    "checkin:lookup": () => runCheckinLookup(prisma),
+    "checkin:admit": () => runCheckinAdmit(prisma),
+    "attendees:export": () => runAttendeesExport(prisma),
+    "mail:retry-failed": () => runMailRetryFailed(prisma),
+    "auth:bootstrap-superadmin": () => runAuthBootstrapSuperadmin(prisma),
+    "auth:reset-mfa": () => runAuthResetMfa(prisma),
+    "auth:generate-emergency-recovery": () => runAuthGenerateEmergencyRecovery(prisma),
+    "sessions:revoke": () => runSessionsRevokeUser(prisma),
+    "retention:run": () => runRetention(prisma),
+  };
+
+  return handlers[`${namespace}:${command}`];
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
 
@@ -41,30 +71,13 @@ async function main(): Promise<void> {
   const namespace = argv[0];
   const command = argv[1];
 
-  if (namespace === "checkin" && command === "lookup") {
-    await runCheckinLookup(prisma);
-  } else if (namespace === "checkin" && command === "admit") {
-    await runCheckinAdmit(prisma);
-  } else if (namespace === "attendees" && command === "export") {
-    await runAttendeesExport(prisma);
-  } else if (namespace === "mail" && command === "retry-failed") {
-    await runMailRetryFailed(prisma);
-  } else if (namespace === "auth" && command === "bootstrap-superadmin") {
-    await runAuthBootstrapSuperadmin(prisma);
-  } else if (namespace === "auth" && command === "reset-mfa") {
-    await runAuthResetMfa(prisma);
-  } else if (namespace === "auth" && command === "generate-emergency-recovery") {
-    await runAuthGenerateEmergencyRecovery(prisma);
-  } else if (namespace === "sessions" && command === "revoke") {
-    await runSessionsRevokeUser(prisma);
-  } else if (namespace === "sessions" && command === "purge" && hasFlag("all", argv)) {
-    await runSessionsPurgeAll(prisma);
-  } else if (namespace === "retention" && command === "run") {
-    await runRetention(prisma);
-  } else {
+  const handler = resolveCommandHandler(namespace, command, argv);
+  if (!handler) {
     printUsage();
     throw new CliError("Invalid usage");
   }
+
+  await handler();
 }
 
 main()

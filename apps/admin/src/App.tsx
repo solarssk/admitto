@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState, type ComponentType } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { Spinner, ToastProvider } from "@admitto/ui";
 import { AdminGuard, AuthenticatedGuard, OperatorGuard, SuperadminGuard } from "./auth/RoleRouter.js";
@@ -56,15 +56,16 @@ const PLACEHOLDER_ROUTES = [
   { path: "reports", title: "Reports" },
 ] as const;
 
-// Route path -> page element for the routes above that have a real implementation.
-// Paths not listed here fall back to PlaceholderPage.
-const EVENT_ROUTE_ELEMENTS: Record<string, ReactNode> = {
-  overview: <EventOverviewPage />,
-  checkin: <AdminCheckInRoute />,
-  attendees: <AttendeesPage />,
-  requirements: <RequirementsPage />,
-  communication: <CommunicationPage />,
-  reports: <ReportsPage />,
+/** Maps a subset of PLACEHOLDER_ROUTES paths to their real page component.
+ * Paths absent here (approval, wallet, fulfilment, thank-you) fall back to
+ * PlaceholderPage in the route map below. */
+const EVENT_ROUTE_COMPONENTS: Partial<Record<(typeof PLACEHOLDER_ROUTES)[number]["path"], ComponentType>> = {
+  overview: EventOverviewPage,
+  checkin: AdminCheckInRoute,
+  attendees: AttendeesPage,
+  requirements: RequirementsPage,
+  communication: CommunicationPage,
+  reports: ReportsPage,
 };
 
 /** Event passed through router navigation state (events picker, create-event
@@ -201,13 +202,16 @@ export function StaffRoutes() {
         </Route>
         <Route path="events/:eventId" element={<EventLayout />}>
           <Route index element={<Navigate to="overview" replace />} />
-          {PLACEHOLDER_ROUTES.map((r) => (
-            <Route
-              key={r.path}
-              path={r.path}
-              element={EVENT_ROUTE_ELEMENTS[r.path] ?? <PlaceholderPage title={r.title} />}
-            />
-          ))}
+          {PLACEHOLDER_ROUTES.map((r) => {
+            const Component = EVENT_ROUTE_COMPONENTS[r.path];
+            return (
+              <Route
+                key={r.path}
+                path={r.path}
+                element={Component ? <Component /> : <PlaceholderPage title={r.title} />}
+              />
+            );
+          })}
           <Route path="attendees/import" element={<ImportPage />} />
           <Route path="attendees/:attendeeId" element={<AttendeeDetailPage />} />
           <Route path="settings" element={<EventSettingsPage />} />

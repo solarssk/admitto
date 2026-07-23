@@ -166,6 +166,37 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     ).toBeTruthy();
   });
 
+  it("shows a generic inline error for an unmapped 409 profile-save conflict", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockLoad(baseDetail());
+    updateAttendee.mockRejectedValueOnce(new ApiError(409, "unexpected_conflict", "unexpected_conflict"));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna B." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByText("Could not save changes.")).toBeTruthy();
+  });
+
+  it.each([
+    ["unknown_custom_data_field", "Event configuration changed — reload this page to edit attributes."],
+    ["required_custom_data_field_missing", "Could not save attribute fields — check required values and options."],
+  ])("explains the %s custom-data validation response inline", async (code, message) => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockLoad(baseDetail());
+    updateAttendee.mockRejectedValueOnce(new ApiError(400, code, code));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Dietary"), { target: { value: "vegetarian" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByText(message)).toBeTruthy();
+  });
+
   it("opens the Resend ticket panel", async () => {
     mockLoad(baseDetail());
     renderPage();

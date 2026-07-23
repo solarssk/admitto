@@ -28,6 +28,13 @@ describe("parseAttendees — basic valid rows", () => {
     expect(result.invalidRows).toHaveLength(0);
   });
 
+  it("warns and preserves a single-word name with an empty last name", () => {
+    const result = parseAttendees(`name,email\nCher,cher@example.com`);
+
+    expect(result.validRows[0]).toMatchObject({ first_name: "Cher", last_name: "" });
+    expect(result.warnings).toContain('Row 1: single-word name "Cher" — last_name stored as empty string');
+  });
+
   it("normalises email to lower-case", () => {
     const result = parseAttendees(`${VALID_HEADER}\nJan,K,JAN@Example.COM`);
     expect(result.validRows[0]?.email).toBe("jan@example.com");
@@ -209,6 +216,14 @@ describe("parseAttendees — duplicate detection", () => {
     expect(result.validRows).toHaveLength(1);
     expect(result.invalidRows).toHaveLength(1);
     expect(result.invalidRows[0]?.reason).toMatch(/collides across columns/i);
+  });
+
+  it("flags cross-column collisions when a prior QR payload is reused as an external UUID", () => {
+    const csv = `first_name,last_name,email,external_uuid,qr_payload\nJan,K,jan@example.com,,AGENCY-X\nAna,K,ana@example.com,AGENCY-X,`;
+    const result = parseAttendees(csv);
+
+    expect(result.validRows).toHaveLength(1);
+    expect(result.invalidRows[0]?.reason).toBe('Agency identifier collides across columns: "AGENCY-X"');
   });
 
   it("does not flag duplicate external_uuid when both are empty", () => {

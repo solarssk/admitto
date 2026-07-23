@@ -200,6 +200,22 @@ describe("EventSettingsPage operator errors", () => {
     });
   });
 
+  it("rejects an invalid capacity locally instead of sending a malformed settings patch", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(eventSettings);
+    renderSettings();
+    await screen.findByLabelText("Capacity");
+
+    fireEvent.change(screen.getByLabelText("Capacity"), { target: { value: "0" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(
+        /Capacity must be a positive whole number/,
+      );
+    });
+    expect(patchEvent).not.toHaveBeenCalled();
+  });
+
   it("toasts event_archived on save", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(eventSettings);
     vi.mocked(patchEvent).mockRejectedValueOnce(new ApiError(400, "event_archived", "event_archived"));
@@ -249,6 +265,48 @@ describe("EventSettingsPage operator errors", () => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Export failed/);
     });
   });
+
+  it("downloads a truncated PII export using the server-provided filename", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(eventSettings);
+    vi.mocked(exportEventPii).mockResolvedValueOnce({
+      blob: async () => new Blob(["name,email\nJane,jane@example.com\n"], { type: "text/csv" }),
+      headers: new Headers({
+        "Content-Disposition": 'attachment; filename="pii-export-summit.csv"',
+        "X-Export-Truncated": "true",
+        "X-Export-Total-Rows": "12000",
+      }),
+    } as Response);
+    const createObjectURL = vi.fn(() => "blob:mock-pii-export");
+    const revokeObjectURL = vi.fn();
+    const originalCreate = URL.createObjectURL;
+    const originalRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = createObjectURL;
+    URL.revokeObjectURL = revokeObjectURL;
+    const anchorClicks: string[] = [];
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        anchorClicks.push(this.download);
+      });
+    try {
+      renderSettings();
+      fireEvent.click(await screen.findByRole("tab", { name: "Danger zone" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Export personal data" }));
+
+      await waitFor(() => {
+        expect(createObjectURL).toHaveBeenCalledOnce();
+        expect(anchorClicks).toEqual(["pii-export-summit.csv"]);
+        expect(revokeObjectURL).toHaveBeenCalledWith("blob:mock-pii-export");
+        expect(screen.getByTestId("at-toast").textContent).toMatch(
+          /PII export downloaded \(first 10,000 of 12000 attendees\)/,
+        );
+      });
+    } finally {
+      clickSpy.mockRestore();
+      URL.createObjectURL = originalCreate;
+      URL.revokeObjectURL = originalRevoke;
+    }
+  });
 });
 
 describe("UsersPage operator errors", () => {
@@ -287,6 +345,22 @@ describe("RequirementsPage operator errors", () => {
     vi.mocked(fetchEventItems).mockResolvedValue([sampleItem]);
     vi.mocked(fetchEventCustomFields).mockResolvedValue([]);
     vi.mocked(fetchOpsConfig).mockResolvedValue(opsConfig);
+  });
+
+  it("explains a forbidden requirements load without exposing the API error", async () => {
+    vi.mocked(fetchEventItems).mockRejectedValueOnce(new ApiError(403, "internal_permission_detail"));
+    renderRequirements();
+
+    expect(await screen.findByText("You do not have access to this event.")).toBeTruthy();
+    expect(screen.queryByText("internal_permission_detail")).toBeNull();
+  });
+
+  it("uses the generic safe copy when requirements loading fails outside the API layer", async () => {
+    vi.mocked(fetchEventItems).mockRejectedValueOnce(new Error("network transport detail"));
+    renderRequirements();
+
+    expect(await screen.findByText("Failed to load requirements.")).toBeTruthy();
+    expect(screen.queryByText("network transport detail")).toBeNull();
   });
 
   it("toasts item_in_use on toggle conflict", async () => {
@@ -461,6 +535,21 @@ describe("RequirementsPage operator errors", () => {
 });
 
 describe("ReportsPage operator errors", () => {
+  it("shows a generic report-load failure without exposing internal errors", async () => {
+    vi.mocked(fetchEventReports).mockRejectedValueOnce(new Error("internal transport detail"));
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Failed to load report.")).toBeTruthy();
+    });
+    expect(screen.queryByText("internal transport detail")).toBeNull();
+  });
+
   it("shows forbidden without leaking internals", async () => {
     vi.mocked(fetchEventReports).mockRejectedValueOnce(new ApiError(403, "secret_internal"));
     renderWithToast(
@@ -564,6 +653,40 @@ describe("ReportsPage hourly chart", () => {
 });
 
 describe("ReportsPage admission log", () => {
+  it("paginates the admission log in both directions", async () => {
+    const admissionLog = Array.from({ length: 51 }, (_, index) => ({
+      attendee_id: `att-${index + 1}`,
+      name: `Guest ${index + 1}`,
+      email: `guest-${index + 1}@example.com`,
+      ticket_type: null,
+      admitted_at: "2026-06-01T10:00:00.000Z",
+      device_id: null,
+    }));
+    vi.mocked(fetchEventReports).mockResolvedValue({
+      ...emptyReport,
+      summary: { ...emptyReport.summary, total_attendees: 51, admitted: 51, admission_rate_pct: 100 },
+      admission_log: admissionLog,
+      admission_log_total: admissionLog.length,
+    });
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Guest 1")).toBeTruthy();
+    expect(screen.getByText("Page 1 of 2")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText("Guest 51")).toBeTruthy();
+    expect(screen.queryByText("Guest 1")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+    expect(await screen.findByText("Guest 1")).toBeTruthy();
+    expect(screen.queryByText("Guest 51")).toBeNull();
+  });
+
   it("labels an untyped admission as (none), matching the breakdown/filter instead of the Attendees table's dash", async () => {
     // mockResolvedValue (not ...Once): the mocked useConnectionState() below returns a fresh
     // object every render, so ReportsPage's load effect can legitimately fire more than once -

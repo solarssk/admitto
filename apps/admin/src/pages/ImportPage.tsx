@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type DragEvent,
+  type KeyboardEvent,
+  type RefObject,
+} from "react";
 import { Link, useOutletContext, useParams } from "react-router-dom";
 import { Button, Card, PageHeader, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
@@ -309,6 +317,318 @@ function handleImportApiError(
   addToast(message, "error", duration);
 }
 
+interface UploadFileControlProps {
+  event: EventDto;
+  file: File | null;
+  preview: ImportPreviewResponse | null;
+  loading: boolean;
+  step: Step;
+  dragOver: boolean;
+  fileInputRef: RefObject<HTMLInputElement | null>;
+  onDragOverChange: (over: boolean) => void;
+  onSelectFile: (file: File | null) => void;
+  onOpenFilePicker: () => void;
+  onDropzoneKeyDown: (e: KeyboardEvent<HTMLButtonElement>) => void;
+  onDrop: (e: DragEvent<HTMLButtonElement>) => void;
+}
+
+/** File-chip vs. drop-zone swap for step 1's fieldset, plus the always-present hidden native
+ * input the dropzone proxies clicks to. Split out of ImportPage's own return (Sonar S3776: the
+ * file ? … : … swap, its nested "valid rows vs file size" ternary, and the inline onDragOver
+ * guard were all adding up inside ImportPage's own complexity count). */
+function UploadFileControl({
+  event,
+  file,
+  preview,
+  loading,
+  step,
+  dragOver,
+  fileInputRef,
+  onDragOverChange,
+  onSelectFile,
+  onOpenFilePicker,
+  onDropzoneKeyDown,
+  onDrop,
+}: Readonly<UploadFileControlProps>) {
+  const archived = isEventArchived(event);
+  return (
+    <>
+      {file ? (
+        <div className="import-file-chip">
+          <i className="ti ti-file-text" aria-hidden="true" />
+          <div className="import-file-chip__info">
+            <strong>{file.name}</strong>
+            <span className="import-file-chip__meta">
+              {preview
+                ? `${preview.parse.validCount} valid ${pluralize(preview.parse.validCount, "row")}`
+                : formatFileSize(file.size)}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="import-file-chip__remove"
+            aria-label="Remove file"
+            disabled={loading}
+            onClick={() => onSelectFile(null)}
+          >
+            <i className="ti ti-x" aria-hidden="true" />
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className={["import-dropzone", dragOver && "import-dropzone--over"]
+            .filter(Boolean)
+            .join(" ")}
+          tabIndex={archived ? -1 : 0}
+          aria-label="Upload a CSV or XLSX file"
+          onClick={onOpenFilePicker}
+          onKeyDown={onDropzoneKeyDown}
+          onDragOver={(e) => {
+            e.preventDefault();
+            if (!loading && !archived) onDragOverChange(true);
+          }}
+          onDragLeave={() => onDragOverChange(false)}
+          onDrop={onDrop}
+        >
+          <i className="ti ti-cloud-upload" aria-hidden="true" />
+          <b>Drop CSV/XLSX here</b>
+          <span>or click to browse · max 5 MB · max 50 000 rows</span>
+        </button>
+      )}
+      {/* Visually hidden but still labelled — the dropzone proxies clicks to it, and
+       * it stays the real form control (tests and assistive tech target it). */}
+      <div className="import-field sr-only">
+        <label className="import-label" htmlFor="import-file">
+          File (.csv or .xlsx)
+        </label>
+        <input
+          id="import-file"
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,.xlsx"
+          disabled={loading || step === "preview"}
+          // Out of the tab order — the visible dropzone button right before it is
+          // the real keyboard activation path; without this, Tab from the dropzone
+          // landed on this invisible native control next, with no visible focus
+          // target (Codex review).
+          tabIndex={-1}
+          onChange={(e: ChangeEvent<HTMLInputElement>) => onSelectFile(e.target.files?.[0] ?? null)}
+        />
+      </div>
+    </>
+  );
+}
+
+/** Describes the type-specific note appended to a custom field's description in the "Required
+ * CSV columns" table (select options, or the boolean Yes/No hint) - a plain lookup instead of a
+ * nested ternary (Sonar S3776: kept this branching out of ImportPage's own complexity count). */
+function attributeFieldNote(field: CustomDataFieldDef): string {
+  if (field.type === "select" && field.options?.length) {
+    return ` — select: ${field.options.join(", ")}`;
+  }
+  if (field.type === "boolean") {
+    return " — Yes/No or true/false";
+  }
+  return "";
+}
+
+/** One row of the "Required CSV columns" table for a custom attribute field - extracted
+ * alongside attributeFieldNote so neither its ternary nor the nested one it replaces count
+ * against ImportPage's own complexity. */
+function renderAttributeFieldRow(field: CustomDataFieldDef) {
+  return (
+    <tr key={field.source_field}>
+      <td>
+        <code>{field.source_field}</code>
+      </td>
+      <td>{field.required ? "Yes" : "No"}</td>
+      <td>
+        {field.description || "No description provided"}
+        {attributeFieldNote(field)}
+      </td>
+    </tr>
+  );
+}
+
+interface CapacityBlockedBannerProps {
+  capacityBlocked: EventFullMeta;
+  event: EventDto;
+  superadmin: boolean;
+  canCreateAny: boolean;
+  loading: boolean;
+  forceCapacity: boolean;
+  onForceCapacityChange: (checked: boolean) => void;
+}
+
+/** Capacity-block banner shown when a commit was rejected as event_full - only a superadmin
+ * seeing rows still to create gets the override checkbox. Split out of the Validation summary
+ * card (Sonar S3776: this banner's nested guards were adding up inside ImportPage's own
+ * complexity count). */
+function CapacityBlockedBanner({
+  capacityBlocked,
+  event,
+  superadmin,
+  canCreateAny,
+  loading,
+  forceCapacity,
+  onForceCapacityChange,
+}: Readonly<CapacityBlockedBannerProps>) {
+  return (
+    <div className="import-warn import-capacity-banner" role="alert">
+      <p>
+        Event is at capacity ({capacityBlocked.current}/{capacityBlocked.capacity}).
+        {capacityBlocked.incoming != null && (
+          <>
+            {" "}
+            Import would add {capacityBlocked.incoming} new attendee
+            {capacityBlocked.incoming === 1 ? "" : "s"}.
+          </>
+        )}
+      </p>
+      {superadmin && canCreateAny && (
+        <ArchivedGuard event={event} reasonId="force-capacity-reason" disabled={loading}>
+          {(guard) => (
+            <label className="import-checkbox">
+              <input
+                type="checkbox"
+                checked={forceCapacity}
+                onChange={(e) => onForceCapacityChange(e.target.checked)}
+                {...guard}
+              />
+              <span>Override capacity limit (superadmin)</span>
+            </label>
+          )}
+        </ArchivedGuard>
+      )}
+    </div>
+  );
+}
+
+interface ValidationSummaryCardProps {
+  preview: ImportPreviewResponse;
+  loading: boolean;
+  dryRun: boolean;
+  canCommit: boolean;
+  event: EventDto;
+  superadmin: boolean;
+  capacityBlocked: EventFullMeta | null;
+  forceCapacity: boolean;
+  importCount: number;
+  onRevalidate: () => void;
+  onCommit: () => void;
+  onForceCapacityChange: (checked: boolean) => void;
+}
+
+/** "Validation summary" card for the preview step - counts, warnings, invalid/skipped row
+ * tables, and the capacity-blocked banner. Split out of ImportPage's own return (Sonar S3776:
+ * this card's several sibling `&&` sections were adding up inside ImportPage's own complexity
+ * count). */
+function ValidationSummaryCard({
+  preview,
+  loading,
+  dryRun,
+  canCommit,
+  event,
+  superadmin,
+  capacityBlocked,
+  forceCapacity,
+  importCount,
+  onRevalidate,
+  onCommit,
+  onForceCapacityChange,
+}: Readonly<ValidationSummaryCardProps>) {
+  return (
+    <Card
+      title="Validation summary"
+      className="import-card"
+      footer={
+        <div className="import-actions">
+          <Button variant="secondary" disabled={loading} onClick={onRevalidate}>
+            {loading ? "Validating…" : "Re-validate"}
+          </Button>
+          <ArchivedGuard
+            event={event}
+            reasonId="import-commit-reason"
+            disabled={!canCommit || dryRun}
+            tooltip={dryRun ? "Turn off Dry run in Options to enable committing." : undefined}
+          >
+            {(guard) => (
+              <Button variant="primary" onClick={onCommit} {...guard}>
+                {loading
+                  ? "Importing…"
+                  : `Commit import (${importCount} ${pluralize(importCount, "attendee")})`}
+              </Button>
+            )}
+          </ArchivedGuard>
+        </div>
+      }
+    >
+      <div className="import-stats">
+        <div className="import-stat import-stat--ok">
+          <span className="import-stat__value">{preview.summary.toCreate}</span>
+          <span className="import-stat__label">To create</span>
+        </div>
+        <div className="import-stat import-stat--warn">
+          <span className="import-stat__value">{preview.summary.toUpdate}</span>
+          <span className="import-stat__label">To update</span>
+        </div>
+        <div className="import-stat import-stat--muted">
+          <span className="import-stat__value">{preview.summary.toSkip}</span>
+          <span className="import-stat__label">To skip</span>
+        </div>
+      </div>
+
+      {preview.parse.validCount === 0 && (
+        <p className="import-warn">
+          No valid rows to import. Fix the file or choose a different file before committing.
+        </p>
+      )}
+
+      {preview.parse.warnings.length > 0 && (
+        <div className="import-warnings">
+          <h3 className="import-subtitle">Warnings</h3>
+          <ul>
+            {preview.parse.warnings.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {preview.parse.invalidRows.length > 0 && (
+        <div className="import-invalid">
+          <h3 className="import-subtitle">
+            {rowDetailHeading("Invalid rows", preview.parse.invalidRows.length, preview.parse.invalidCount)}
+          </h3>
+          <InvalidRowsTable rows={preview.parse.invalidRows} />
+        </div>
+      )}
+
+      {preview.summary.skipped.length > 0 && (
+        <div className="import-invalid">
+          <h3 className="import-subtitle">
+            {rowDetailHeading("Skipped rows", preview.summary.skipped.length, preview.summary.toSkip)}
+          </h3>
+          <SkippedRowsTable rows={preview.summary.skipped} />
+        </div>
+      )}
+
+      {capacityBlocked && (
+        <CapacityBlockedBanner
+          capacityBlocked={capacityBlocked}
+          event={event}
+          superadmin={superadmin}
+          canCreateAny={preview.summary.toCreate > 0}
+          loading={loading}
+          forceCapacity={forceCapacity}
+          onForceCapacityChange={onForceCapacityChange}
+        />
+      )}
+    </Card>
+  );
+}
+
 /** Admin flow: upload CSV/XLSX → preview counts → commit import. */
 export function ImportPage() {
   const { eventId } = useParams();
@@ -506,69 +826,20 @@ export function ImportPage() {
                   className="import-upload-fieldset-wrapper"
                 >
                   <fieldset className="import-upload-fieldset" disabled={isEventArchived(event)}>
-                    {file ? (
-                      <div className="import-file-chip">
-                        <i className="ti ti-file-text" aria-hidden="true" />
-                        <div className="import-file-chip__info">
-                          <strong>{file.name}</strong>
-                          <span className="import-file-chip__meta">
-                            {preview
-                              ? `${preview.parse.validCount} valid ${pluralize(preview.parse.validCount, "row")}`
-                              : formatFileSize(file.size)}
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          className="import-file-chip__remove"
-                          aria-label="Remove file"
-                          disabled={loading}
-                          onClick={() => selectFile(null)}
-                        >
-                          <i className="ti ti-x" aria-hidden="true" />
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        className={["import-dropzone", dragOver && "import-dropzone--over"]
-                          .filter(Boolean)
-                          .join(" ")}
-                        tabIndex={isEventArchived(event) ? -1 : 0}
-                        aria-label="Upload a CSV or XLSX file"
-                        onClick={openFilePicker}
-                        onKeyDown={onDropzoneKeyDown}
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          if (!loading && !isEventArchived(event)) setDragOver(true);
-                        }}
-                        onDragLeave={() => setDragOver(false)}
-                        onDrop={onDrop}
-                      >
-                        <i className="ti ti-cloud-upload" aria-hidden="true" />
-                        <b>Drop CSV/XLSX here</b>
-                        <span>or click to browse · max 5 MB · max 50 000 rows</span>
-                      </button>
-                    )}
-                    {/* Visually hidden but still labelled — the dropzone proxies clicks to it, and
-                     * it stays the real form control (tests and assistive tech target it). */}
-                    <div className="import-field sr-only">
-                      <label className="import-label" htmlFor="import-file">
-                        File (.csv or .xlsx)
-                      </label>
-                      <input
-                        id="import-file"
-                        ref={fileInputRef}
-                        type="file"
-                        accept=".csv,.xlsx"
-                        disabled={loading || step === "preview"}
-                        // Out of the tab order — the visible dropzone button right before it is
-                        // the real keyboard activation path; without this, Tab from the dropzone
-                        // landed on this invisible native control next, with no visible focus
-                        // target (Codex review).
-                        tabIndex={-1}
-                        onChange={(e) => selectFile(e.target.files?.[0] ?? null)}
-                      />
-                    </div>
+                    <UploadFileControl
+                      event={event}
+                      file={file}
+                      preview={preview}
+                      loading={loading}
+                      step={step}
+                      dragOver={dragOver}
+                      fileInputRef={fileInputRef}
+                      onDragOverChange={setDragOver}
+                      onSelectFile={selectFile}
+                      onOpenFilePicker={openFilePicker}
+                      onDropzoneKeyDown={onDropzoneKeyDown}
+                      onDrop={onDrop}
+                    />
                   </fieldset>
                 </Tooltip>
 
@@ -617,25 +888,7 @@ export function ImportPage() {
                           needs to match
                         </td>
                       </tr>
-                      {attributeFields.map((field) => {
-                        const booleanHint = field.type === "boolean" ? " — Yes/No or true/false" : "";
-                        const typeHint =
-                          field.type === "select" && field.options?.length
-                            ? ` — select: ${field.options.join(", ")}`
-                            : booleanHint;
-                        return (
-                          <tr key={field.source_field}>
-                            <td>
-                              <code>{field.source_field}</code>
-                            </td>
-                            <td>{field.required ? "Yes" : "No"}</td>
-                            <td>
-                              {field.description || "No description provided"}
-                              {typeHint}
-                            </td>
-                          </tr>
-                        );
-                      })}
+                      {attributeFields.map(renderAttributeFieldRow)}
                     </tbody>
                   </table>
                 </details>
@@ -725,113 +978,20 @@ export function ImportPage() {
             </Card>
 
             {step === "preview" && preview && (
-              <Card
-                title="Validation summary"
-                className="import-card"
-                footer={
-                  <div className="import-actions">
-                    <Button variant="secondary" disabled={loading} onClick={() => void onPreview()}>
-                      {loading ? "Validating…" : "Re-validate"}
-                    </Button>
-                    <ArchivedGuard
-                      event={event}
-                      reasonId="import-commit-reason"
-                      disabled={!canCommit || dryRun}
-                      tooltip={
-                        dryRun ? "Turn off Dry run in Options to enable committing." : undefined
-                      }
-                    >
-                      {(guard) => (
-                        <Button
-                          variant="primary"
-                          onClick={() => void onCommit({ force: forceCapacity && superadmin })}
-                          {...guard}
-                        >
-                          {loading
-                            ? "Importing…"
-                            : `Commit import (${importCount} ${pluralize(importCount, "attendee")})`}
-                        </Button>
-                      )}
-                    </ArchivedGuard>
-                  </div>
-                }
-              >
-                <div className="import-stats">
-                  <div className="import-stat import-stat--ok">
-                    <span className="import-stat__value">{preview.summary.toCreate}</span>
-                    <span className="import-stat__label">To create</span>
-                  </div>
-                  <div className="import-stat import-stat--warn">
-                    <span className="import-stat__value">{preview.summary.toUpdate}</span>
-                    <span className="import-stat__label">To update</span>
-                  </div>
-                  <div className="import-stat import-stat--muted">
-                    <span className="import-stat__value">{preview.summary.toSkip}</span>
-                    <span className="import-stat__label">To skip</span>
-                  </div>
-                </div>
-
-                {preview.parse.validCount === 0 && (
-                  <p className="import-warn">
-                    No valid rows to import. Fix the file or choose a different file before committing.
-                  </p>
-                )}
-
-                {preview.parse.warnings.length > 0 && (
-                  <div className="import-warnings">
-                    <h3 className="import-subtitle">Warnings</h3>
-                    <ul>
-                      {preview.parse.warnings.map((w) => (
-                        <li key={w}>{w}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {preview.parse.invalidRows.length > 0 && (
-                  <div className="import-invalid">
-                    <h3 className="import-subtitle">
-                      {rowDetailHeading("Invalid rows", preview.parse.invalidRows.length, preview.parse.invalidCount)}
-                    </h3>
-                    <InvalidRowsTable rows={preview.parse.invalidRows} />
-                  </div>
-                )}
-
-                {preview.summary.skipped.length > 0 && (
-                  <div className="import-invalid">
-                    <h3 className="import-subtitle">
-                      {rowDetailHeading("Skipped rows", preview.summary.skipped.length, preview.summary.toSkip)}
-                    </h3>
-                    <SkippedRowsTable rows={preview.summary.skipped} />
-                  </div>
-                )}
-
-                {capacityBlocked && (
-                  <div className="import-warn import-capacity-banner" role="alert">
-                    <p>
-                      Event is at capacity ({capacityBlocked.current}/{capacityBlocked.capacity}).
-                      {capacityBlocked.incoming != null && (
-                        <> Import would add {capacityBlocked.incoming} new attendee{capacityBlocked.incoming === 1 ? "" : "s"}.</>
-                      )}
-                    </p>
-                    {superadmin && preview.summary.toCreate > 0 && (
-                      <ArchivedGuard event={event} reasonId="force-capacity-reason" disabled={loading}>
-                        {(guard) => (
-                          <label className="import-checkbox">
-                            <input
-                              type="checkbox"
-                              checked={forceCapacity}
-                              onChange={(e) => setForceCapacity(e.target.checked)}
-                              {...guard}
-                            />
-                            <span>Override capacity limit (superadmin)</span>
-                          </label>
-                        )}
-                      </ArchivedGuard>
-                    )}
-                  </div>
-                )}
-              </Card>
+              <ValidationSummaryCard
+                preview={preview}
+                loading={loading}
+                dryRun={dryRun}
+                canCommit={canCommit}
+                event={event}
+                superadmin={superadmin}
+                capacityBlocked={capacityBlocked}
+                forceCapacity={forceCapacity}
+                importCount={importCount}
+                onRevalidate={() => void onPreview()}
+                onCommit={() => void onCommit({ force: forceCapacity && superadmin })}
+                onForceCapacityChange={setForceCapacity}
+              />
             )}
 
             <ImportHistoryCard

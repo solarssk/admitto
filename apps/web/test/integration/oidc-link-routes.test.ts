@@ -3,6 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import {
   createSession,
   hashPassword,
+  OIDC_FLOW_COOKIE_NAME,
   SESSION_COOKIE_NAME,
   SESSION_STAGE,
 } from "@admitto/auth";
@@ -47,7 +48,9 @@ beforeAll(async () => {
       id: PROVIDER_ID,
       provider_type: "oidc",
       issuer: mockIdp.issuer,
-      client_id: "test-oidc-link-client",
+      // mock-oidc-idp signs tokens for this audience; keeping the provider in sync lets the
+      // callback test exercise the full link flow instead of failing token validation first.
+      client_id: "test-oidc-client",
       client_secret_enc: encryptClientSecret("mock-secret"),
       authorization_endpoint: mockIdp.authorizeEndpoint,
       token_endpoint: mockIdp.tokenEndpoint,
@@ -199,5 +202,45 @@ describe("oidc link step-up", () => {
     });
     expect(res.status).toBe(429);
     expect(await res.text()).toBe("Too many requests");
+  });
+
+  it("accepts a fresh full session through the callback and links its OIDC identity", async () => {
+    const { cookie } = await fullSession();
+    const start = await app.request(`/account/oidc/${PROVIDER_ID}/link`, {
+      method: "POST",
+      redirect: "manual",
+      headers: {
+        Cookie: cookie,
+        "Content-Type": "application/x-www-form-urlencoded",
+        ...sameOrigin,
+      },
+      body: new URLSearchParams({ password: LINK_PASSWORD }).toString(),
+    });
+    expect(start.status).toBe(302);
+
+    const authorizeUrl = new URL(start.headers.get("location")!);
+    const state = authorizeUrl.searchParams.get("state")!;
+    const callbackFromIdp = await fetch(authorizeUrl.toString(), { redirect: "manual" });
+    const callbackLocation = new URL(callbackFromIdp.headers.get("location")!);
+    const code = callbackLocation.searchParams.get("code")!;
+
+    try {
+      const callback = await app.request(
+        `/api/auth/oidc/${PROVIDER_ID}/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`,
+        {
+          redirect: "manual",
+          headers: { Cookie: `${OIDC_FLOW_COOKIE_NAME}=${state}; ${cookie}` },
+        },
+      );
+      expect(callback.status).toBe(302);
+      const identity = await prisma.externalIdentity.findUnique({
+        where: { provider_id_subject: { provider_id: PROVIDER_ID, subject: "mock-subject-oidc" } },
+      });
+      expect(identity?.user_id).toBe(linkUserId);
+    } finally {
+      await prisma.externalIdentity.deleteMany({
+        where: { provider_id: PROVIDER_ID, user_id: linkUserId },
+      });
+    }
   });
 });

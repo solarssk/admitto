@@ -1,13 +1,17 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE, setSetting, SETTING_INSTANCE_URL } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { setMailSettings } from "@admitto/mailer-config";
 import {
   DEFAULT_BODY_MJML,
   DEFAULT_SUBJECT_TEMPLATE,
+  MjmlCompileError,
+  PlaceholderInHtmlCommentError,
+  UnknownPlaceholdersError,
+  UnquotedAttributePlaceholderError,
 } from "@admitto/mail-templates";
 import type { ExportPayload } from "@admitto/mailer";
 import { createApp } from "../../src/app.js";
@@ -567,5 +571,145 @@ describe("GET /api/admin/events/:eventId/deliveries", () => {
       headers: { Cookie: opCookie },
     });
     expect(res.status).toBe(403);
+  });
+});
+
+describe("POST /api/admin/events/:eventId/templates", () => {
+  async function clearEventTemplates(): Promise<void> {
+    await prisma.mailTemplate.deleteMany({
+      where: { scope_type: "event", scope_id: EVENT_A },
+    });
+  }
+
+  it("creates a separately named event template", async () => {
+    await clearEventTemplates();
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/templates`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ label: "Reminder", ...validTemplate }),
+      });
+
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { name: string; label: string; compiled_html_template: string };
+      expect(body.name).toBe("reminder");
+      expect(body.label).toBe("Reminder");
+      expect(body.compiled_html_template).toContain("html");
+    } finally {
+      await clearEventTemplates();
+    }
+  });
+
+  it("enforces the template cap inside concurrent create transactions", async () => {
+    await clearEventTemplates();
+    try {
+      for (let i = 1; i <= 9; i++) {
+        const res = await app.request(`/api/admin/events/${EVENT_A}/templates`, {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ label: `Reminder ${i}`, ...validTemplate }),
+        });
+        expect(res.status).toBe(201);
+      }
+
+      const create = (label: string) =>
+        app.request(`/api/admin/events/${EVENT_A}/templates`, {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ label, ...validTemplate }),
+        });
+      const [first, second] = await Promise.all([create("Concurrent one"), create("Concurrent two")]);
+
+      expect([first.status, second.status].sort()).toEqual([201, 422]);
+      const limitResponse = first.status === 422 ? first : second;
+      expect(await limitResponse.json()).toMatchObject({ error: "template_limit_reached", limit: 10 });
+      expect(
+        await prisma.mailTemplate.count({ where: { scope_type: "event", scope_id: EVENT_A } }),
+      ).toBe(10);
+    } finally {
+      await clearEventTemplates();
+    }
+  });
+
+  it("retries unique conflicts before returning a client-safe conflict response", async () => {
+    await clearEventTemplates();
+    const transaction = vi.spyOn(prisma, "$transaction").mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("duplicate template", {
+        code: "P2002",
+        clientVersion: "test",
+      }),
+    );
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/templates`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ label: "Conflict", ...validTemplate }),
+      });
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: "template_name_conflict" });
+      expect(transaction).toHaveBeenCalledTimes(5);
+    } finally {
+      transaction.mockRestore();
+      await clearEventTemplates();
+    }
+  });
+
+  it.each([
+    [
+      "MJML compilation errors",
+      () => new MjmlCompileError([{ message: "Invalid MJML" }]),
+      { error: "template_validation_failed", errors: ["Invalid MJML"] },
+    ],
+    [
+      "unknown placeholders",
+      () => new UnknownPlaceholdersError(["not_a_placeholder"]),
+      { error: "template_validation_failed", errors: ["Unknown placeholder: not_a_placeholder"] },
+    ],
+    [
+      "placeholders inside HTML comments",
+      () => new PlaceholderInHtmlCommentError(["event_name"]),
+      { error: "template_validation_failed", errors: ["Placeholder in HTML comment: event_name"] },
+    ],
+    [
+      "unquoted placeholder attributes",
+      () => new UnquotedAttributePlaceholderError(["href"]),
+      { error: "template_validation_failed", errors: ["Unquoted attribute placeholder: href"] },
+    ],
+  ])("maps %s thrown inside the create transaction", async (_label, createError, expected) => {
+    await clearEventTemplates();
+    const transaction = vi.spyOn(prisma, "$transaction").mockRejectedValue(createError());
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/templates`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ label: "Mapped failure", ...validTemplate }),
+      });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual(expected);
+    } finally {
+      transaction.mockRestore();
+      await clearEventTemplates();
+    }
+  });
+
+  it("does not disguise an unexpected transaction failure as a validation response", async () => {
+    await clearEventTemplates();
+    const transaction = vi.spyOn(prisma, "$transaction").mockRejectedValue(new Error("database unavailable"));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/templates`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ label: "Unexpected failure", ...validTemplate }),
+      });
+      expect(res.status).toBe(500);
+    } finally {
+      consoleError.mockRestore();
+      transaction.mockRestore();
+      await clearEventTemplates();
+    }
   });
 });

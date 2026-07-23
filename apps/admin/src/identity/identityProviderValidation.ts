@@ -41,52 +41,52 @@ function trimmed(value: string): string {
   return value.trim();
 }
 
-/** Validate the slice-3a fields. Returns a map of field → message (empty when valid). */
-export function validateProviderDraft(draft: ProviderDraft, mode: EditorMode): FieldErrors {
-  const errors: FieldErrors = {};
+function validateDisplayNameField(value: string): string | undefined {
+  const v = trimmed(value);
+  if (v.length < 1) return "Display name is required.";
+  if (v.length > MAX_NAME) return `Keep it under ${MAX_NAME} characters.`;
+  return undefined;
+}
 
-  if (trimmed(draft.display_name).length < 1) {
-    errors.display_name = "Display name is required.";
-  } else if (trimmed(draft.display_name).length > MAX_NAME) {
-    errors.display_name = `Keep it under ${MAX_NAME} characters.`;
-  }
+// Issuer URL shape. The server schema (identity-api-routes.ts) only enforces
+// non-empty/max-length, so this client check is UX-level, not OIDC-spec
+// enforcement: accept http(s):// deliberately (localhost dev providers), and
+// leave strict https-only / RFC 8414 conformance to the server/auth layer.
+function validateIssuerField(value: string): string | undefined {
+  const v = trimmed(value);
+  if (v.length < 1) return "Issuer URL is required.";
+  if (v.length > MAX_ISSUER) return `Keep it under ${MAX_ISSUER} characters.`;
+  if (!/^https?:\/\//i.test(v)) return "Issuer must be a URL starting with http(s)://";
+  return undefined;
+}
 
-  if (trimmed(draft.issuer).length < 1) {
-    errors.issuer = "Issuer URL is required.";
-  } else if (trimmed(draft.issuer).length > MAX_ISSUER) {
-    errors.issuer = `Keep it under ${MAX_ISSUER} characters.`;
-  // Issuer URL shape. The server schema (identity-api-routes.ts) only enforces
-  // non-empty/max-length, so this client check is UX-level, not OIDC-spec
-  // enforcement: accept http(s):// deliberately (localhost dev providers), and
-  // leave strict https-only / RFC 8414 conformance to the server/auth layer.
-  } else if (!/^https?:\/\//i.test(trimmed(draft.issuer))) {
-    errors.issuer = "Issuer must be a URL starting with http(s)://";
-  }
+function validateClientIdField(value: string): string | undefined {
+  const v = trimmed(value);
+  if (v.length < 1) return "Client ID is required.";
+  if (v.length > MAX_CLIENT_ID) return `Keep it under ${MAX_CLIENT_ID} characters.`;
+  return undefined;
+}
 
-  if (trimmed(draft.client_id).length < 1) {
-    errors.client_id = "Client ID is required.";
-  } else if (trimmed(draft.client_id).length > MAX_CLIENT_ID) {
-    errors.client_id = `Keep it under ${MAX_CLIENT_ID} characters.`;
-  }
-
-  // client_secret: required on create. On edit, blank means "keep the stored
-  // secret" (even after the field was touched and cleared), so only enforce a
-  // length cap when the operator actually typed a new value.
-  const secretValue = draft.client_secret;
+// client_secret: required on create. On edit, blank means "keep the stored
+// secret" (even after the field was touched and cleared), so only enforce a
+// length cap when the operator actually typed a new value.
+function validateClientSecretField(secretValue: string, mode: EditorMode): string | undefined {
   if (mode === "create") {
-    if (secretValue.trim().length < 1) {
-      errors.client_secret = "Client secret is required.";
-    } else if (secretValue.length > MAX_SECRET) {
-      errors.client_secret = `Keep it under ${MAX_SECRET} characters.`;
-    }
-  } else if (secretValue.trim().length > 0 && secretValue.length > MAX_SECRET) {
-    errors.client_secret = `Keep it under ${MAX_SECRET} characters.`;
+    if (secretValue.trim().length < 1) return "Client secret is required.";
+    if (secretValue.length > MAX_SECRET) return `Keep it under ${MAX_SECRET} characters.`;
+    return undefined;
   }
+  if (secretValue.trim().length > 0 && secretValue.length > MAX_SECRET) {
+    return `Keep it under ${MAX_SECRET} characters.`;
+  }
+  return undefined;
+}
 
-  // OIDC endpoint fields: max length + a UX-level http(s):// shape check, the
-  // same lightweight guard used for `issuer` above. The server/auth layer is the
-  // source of truth for OIDC conformance (assertSafeOidcFetchUrl); this just
-  // catches garbage typing before the operator has to wait for a handshake.
+// OIDC endpoint fields: max length + a UX-level http(s):// shape check, the
+// same lightweight guard used for `issuer` above. The server/auth layer is the
+// source of truth for OIDC conformance (assertSafeOidcFetchUrl); this just
+// catches garbage typing before the operator has to wait for a handshake.
+function applyEndpointFieldErrors(draft: ProviderDraft, errors: FieldErrors): void {
   for (const field of [
     "authorization_endpoint",
     "token_endpoint",
@@ -101,8 +101,10 @@ export function validateProviderDraft(draft: ProviderDraft, mode: EditorMode): F
       errors[field] = "Endpoint must be a URL starting with http(s)://";
     }
   }
+}
 
-  // Claim field names are not URLs — length only.
+// Claim field names are not URLs — length only.
+function applyClaimFieldErrors(draft: ProviderDraft, errors: FieldErrors): void {
   for (const [field, max] of [
     ["claim_email", MAX_CLAIM],
     ["claim_name", MAX_CLAIM],
@@ -113,10 +115,36 @@ export function validateProviderDraft(draft: ProviderDraft, mode: EditorMode): F
       errors[field] = `Keep it under ${max} characters.`;
     }
   }
+}
 
-  if (draft.login_button_label && draft.login_button_label.trim().length > MAX_LABEL) {
-    errors.login_button_label = `Keep it under ${MAX_LABEL} characters.`;
+function validateLoginButtonLabelField(value: string): string | undefined {
+  if (value && value.trim().length > MAX_LABEL) {
+    return `Keep it under ${MAX_LABEL} characters.`;
   }
+  return undefined;
+}
+
+/** Validate the slice-3a fields. Returns a map of field → message (empty when valid). */
+export function validateProviderDraft(draft: ProviderDraft, mode: EditorMode): FieldErrors {
+  const errors: FieldErrors = {};
+
+  const displayNameError = validateDisplayNameField(draft.display_name);
+  if (displayNameError) errors.display_name = displayNameError;
+
+  const issuerError = validateIssuerField(draft.issuer);
+  if (issuerError) errors.issuer = issuerError;
+
+  const clientIdError = validateClientIdField(draft.client_id);
+  if (clientIdError) errors.client_id = clientIdError;
+
+  const clientSecretError = validateClientSecretField(draft.client_secret, mode);
+  if (clientSecretError) errors.client_secret = clientSecretError;
+
+  applyEndpointFieldErrors(draft, errors);
+  applyClaimFieldErrors(draft, errors);
+
+  const loginButtonLabelError = validateLoginButtonLabelField(draft.login_button_label);
+  if (loginButtonLabelError) errors.login_button_label = loginButtonLabelError;
 
   return errors;
 }

@@ -1,8 +1,13 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { Button } from "@admitto/ui";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { BrandMark } from "../layouts/BrandMark.js";
-import { WizardProvider, useWizard, WIZARD_CONTEXT_STORAGE_KEY } from "./wizard/WizardContext.js";
+import {
+  WizardProvider,
+  useWizard,
+  WIZARD_CONTEXT_STORAGE_KEY,
+  type WizardSummary,
+} from "./wizard/WizardContext.js";
 import { WizardStep1Checks } from "./wizard/WizardStep1Checks.js";
 import { WizardStep2Mail, type WizardStep2MailHandle } from "./wizard/WizardStep2Mail.js";
 import { WizardStep3Branding, type WizardStep3BrandingHandle } from "./wizard/WizardStep3Branding.js";
@@ -76,6 +81,110 @@ const STEP_LABELS: Record<(typeof STEP_NAMES)[number], string> = {
   Ready: "Ready",
 };
 
+/**
+ * Applies the saved wizard step (marking prior steps complete) and consumes the
+ * unsaved-refresh flag from a previous session. Returns whether the notice should show.
+ */
+function initializeWizardFromSession(markStepComplete: (step: number) => void): boolean {
+  const saved = readSavedWizardStep();
+  for (let i = 1; i < saved; i++) markStepComplete(i);
+  const hadUnsavedRefresh = readUnsavedRefreshFlag();
+  if (hadUnsavedRefresh) clearUnsavedRefreshFlag();
+  return hadUnsavedRefresh;
+}
+
+function createMarkUnsavedRefreshHandler(dirty: boolean): () => void {
+  return () => {
+    if (dirty) markUnsavedRefreshFlag();
+  };
+}
+
+function createBeforeUnloadHandler(dirty: boolean): (e: BeforeUnloadEvent) => void {
+  return (e) => {
+    if (dirty) {
+      e.preventDefault();
+    }
+  };
+}
+
+function backNeedsConfirm(step: number, dirty: boolean): boolean {
+  return dirty && step >= 2 && step <= 4;
+}
+
+type SkipHandlers = {
+  setMailSkipped: (skipped: boolean) => void;
+  setBrandingSkipped: (skipped: boolean) => void;
+  setSummary: (patch: Partial<WizardSummary>) => void;
+  goNext: (fromStep: number) => void;
+};
+
+function runStepSkip(step: number, hasExistingEvents: boolean, handlers: SkipHandlers): void {
+  switch (step) {
+    case 2:
+      handlers.setMailSkipped(true);
+      handlers.setSummary({ mailLabel: "Skipped" });
+      handlers.goNext(2);
+      break;
+    case 3:
+      handlers.setBrandingSkipped(true);
+      handlers.setSummary({ brandingLabel: "Skipped" });
+      handlers.goNext(3);
+      break;
+    case 4:
+      if (hasExistingEvents) handlers.goNext(4);
+      break;
+    default:
+      break;
+  }
+}
+
+/** Runs the save/create action for the current step and reports whether it succeeded. */
+async function runContinueStep(
+  step: number,
+  checksOk: boolean,
+  mailRef: RefObject<WizardStep2MailHandle | null>,
+  brandingRef: RefObject<WizardStep3BrandingHandle | null>,
+  eventRef: RefObject<WizardStep4EventHandle | null>,
+): Promise<boolean> {
+  switch (step) {
+    case 1:
+      return checksOk;
+    case 2:
+      return Boolean(await mailRef.current?.saveAndContinue());
+    case 3:
+      return Boolean(await brandingRef.current?.saveAndContinue());
+    case 4:
+      return Boolean(await eventRef.current?.createAndContinue());
+    default:
+      return false;
+  }
+}
+
+function getContinueLabel(step: number, continuing: boolean): string {
+  if (step === 2 || step === 3) return continuing ? "Saving…" : "Save & Continue";
+  if (step === 4) return continuing ? "Creating…" : "Continue";
+  return "Continue";
+}
+
+type StepDotState = { isActive: boolean; isComplete: boolean; state: "active" | "done" | "pending" };
+
+/** Computes the active/complete/pending state for one step dot in the progress nav. */
+function getStepDotState(
+  step: number,
+  stepNum: number,
+  completedSteps: Set<number>,
+): StepDotState {
+  const isOnReady = step === TOTAL_STEPS;
+  const isActive = step === stepNum && !isOnReady;
+  const isComplete =
+    step > stepNum ||
+    (completedSteps.has(stepNum) && !isActive) ||
+    (isOnReady && stepNum === TOTAL_STEPS);
+  const completionState: StepDotState["state"] = isComplete ? "done" : "pending";
+  const state: StepDotState["state"] = isActive ? "active" : completionState;
+  return { isActive, isComplete, state };
+}
+
 type SetupWizardPageProps = {
   onComplete: () => Promise<void>;
 };
@@ -112,11 +221,8 @@ function SetupWizardContent({ onComplete }: Readonly<SetupWizardPageProps>) {
   const readyRef = useRef<WizardStep5ReadyHandle>(null);
 
   useEffect(() => {
-    const saved = readSavedWizardStep();
-    for (let i = 1; i < saved; i++) markStepComplete(i);
-    if (readUnsavedRefreshFlag()) {
+    if (initializeWizardFromSession(markStepComplete)) {
       setUnsavedRefreshNotice(true);
-      clearUnsavedRefreshFlag();
     }
   }, [markStepComplete]);
 
@@ -125,14 +231,8 @@ function SetupWizardContent({ onComplete }: Readonly<SetupWizardPageProps>) {
   }, [step]);
 
   useEffect(() => {
-    const markUnsavedRefresh = () => {
-      if (dirty) markUnsavedRefreshFlag();
-    };
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (dirty) {
-        e.preventDefault();
-      }
-    };
+    const markUnsavedRefresh = createMarkUnsavedRefreshHandler(dirty);
+    const handleBeforeUnload = createBeforeUnloadHandler(dirty);
     window.addEventListener("beforeunload", handleBeforeUnload);
     window.addEventListener("pagehide", markUnsavedRefresh);
     return () => {
@@ -161,7 +261,7 @@ function SetupWizardContent({ onComplete }: Readonly<SetupWizardPageProps>) {
 
   const handleBack = () => {
     if (step <= 1) return;
-    if (dirty && step >= 2 && step <= 4) {
+    if (backNeedsConfirm(step, dirty)) {
       setBackConfirmOpen(true);
       return;
     }
@@ -169,42 +269,15 @@ function SetupWizardContent({ onComplete }: Readonly<SetupWizardPageProps>) {
   };
 
   const handleSkip = () => {
-    if (step === 2) {
-      setMailSkipped(true);
-      setSummary({ mailLabel: "Skipped" });
-      goNext(2);
-    } else if (step === 3) {
-      setBrandingSkipped(true);
-      setSummary({ brandingLabel: "Skipped" });
-      goNext(3);
-    } else if (step === 4 && hasExistingEvents) {
-      goNext(4);
-    }
+    runStepSkip(step, hasExistingEvents, { setMailSkipped, setBrandingSkipped, setSummary, goNext });
   };
 
   const handleContinue = async () => {
     if (continuing) return;
     setContinuing(true);
     try {
-      if (step === 1) {
-        if (!checksOk) return;
-        goNext(1);
-        return;
-      }
-      if (step === 2) {
-        const ok = await mailRef.current?.saveAndContinue();
-        if (ok) goNext(2);
-        return;
-      }
-      if (step === 3) {
-        const ok = await brandingRef.current?.saveAndContinue();
-        if (ok) goNext(3);
-        return;
-      }
-      if (step === 4) {
-        const ok = await eventRef.current?.createAndContinue();
-        if (ok) goNext(4);
-      }
+      const ok = await runContinueStep(step, checksOk, mailRef, brandingRef, eventRef);
+      if (ok) goNext(step);
     } finally {
       setContinuing(false);
     }
@@ -217,14 +290,7 @@ function SetupWizardContent({ onComplete }: Readonly<SetupWizardPageProps>) {
     (step === 1 && !checksOk) ||
     (step === 4 && !eventCanContinue && !hasExistingEvents);
 
-  let continueLabel: string;
-  if (step === 2 || step === 3) {
-    continueLabel = continuing ? "Saving…" : "Save & Continue";
-  } else if (step === 4) {
-    continueLabel = continuing ? "Creating…" : "Continue";
-  } else {
-    continueLabel = "Continue";
-  }
+  const continueLabel = getContinueLabel(step, continuing);
 
   const showContinueArrow = !continuing && step < TOTAL_STEPS;
 
@@ -245,14 +311,7 @@ function SetupWizardContent({ onComplete }: Readonly<SetupWizardPageProps>) {
         <nav className="setup-wizard__steps" aria-label="Setup progress">
           {STEP_NAMES.map((name, index) => {
             const stepNum = index + 1;
-            const isOnReady = step === TOTAL_STEPS;
-            const isActive = step === stepNum && !isOnReady;
-            const isComplete =
-              step > stepNum ||
-              (completedSteps.has(stepNum) && !isActive) ||
-              (isOnReady && stepNum === TOTAL_STEPS);
-            const completionState = isComplete ? "done" : "pending";
-            const state = isActive ? "active" : completionState;
+            const { isActive, isComplete, state } = getStepDotState(step, stepNum, completedSteps);
             return (
               <Fragment key={name}>
                 <div

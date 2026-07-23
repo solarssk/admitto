@@ -13,7 +13,7 @@ import {
   revokeUserAuthState,
 } from "@admitto/auth";
 import { hasScope, ROLES, SCOPE_TYPES, type Role, type ScopeType } from "@admitto/db";
-import { writeAdminAuditLog } from "@admitto/tickets";
+import { writeAdminAuditLog, type OpsAuditContext } from "@admitto/tickets";
 import { adminAuditFromContext, positiveIntQuery } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import {
@@ -316,6 +316,67 @@ export async function handlePostUser(c: Context, db: PrismaClient): Promise<Resp
   return c.json({ user: await serializeUser(db, user) }, 201);
 }
 
+/** Builds the Prisma update payload for PATCH /users/:id from the request body. */
+function buildPatchUserData(
+  body: Record<string, unknown> | null,
+  id: string,
+  actorId: string,
+): { data: Prisma.UserUpdateInput } | { conflict: true } {
+  const data: Prisma.UserUpdateInput = {};
+  if (typeof body?.display_name === "string") {
+    data.display_name = body.display_name.trim() || null;
+  }
+  if (typeof body?.is_active === "boolean") {
+    if (body.is_active === false && id === actorId) {
+      return { conflict: true };
+    }
+    data.is_active = body.is_active;
+  }
+  return { data };
+}
+
+/** Picks the audit action type for a user PATCH based on the active-flag transition. */
+function patchUserActionType(
+  data: Prisma.UserUpdateInput,
+  before: { is_active: boolean },
+): string {
+  if (typeof data.is_active !== "boolean" || data.is_active === before.is_active) {
+    return "user_profile_updated";
+  }
+  return data.is_active ? "user_reactivated" : "user_deactivated";
+}
+
+/** Applies the user update inside the PATCH transaction; returns prior `is_active`, or null if gone. */
+async function applyUserPatch(
+  tx: Prisma.TransactionClient,
+  id: string,
+  data: Prisma.UserUpdateInput,
+  actionType: string,
+  orgId: string,
+  audit: OpsAuditContext,
+  actorId: string,
+): Promise<boolean | null> {
+  const current = await tx.user.findUnique({ where: { id }, select: { is_active: true } });
+  if (!current) return null;
+
+  if (data.is_active === false && current.is_active) {
+    await assertLastSuperadminDeactivationAllowed(tx, id);
+  }
+
+  await tx.user.update({ where: { id }, data });
+
+  await writeAdminAuditLog(tx, {
+    organizationId: orgId,
+    actorUserId: audit.operator ?? actorId,
+    sessionId: audit.sessionId,
+    ip: audit.ip,
+    actionType,
+    metadata: { userId: id },
+  });
+
+  return current.is_active;
+}
+
 /** PATCH /api/admin/users/:id — update profile / active flag (superadmin only). */
 export async function handlePatchUser(c: Context, db: PrismaClient): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
@@ -327,16 +388,9 @@ export async function handlePatchUser(c: Context, db: PrismaClient): Promise<Res
   const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
   const actorId = c.get("auth").userId;
 
-  const data: Prisma.UserUpdateInput = {};
-  if (typeof body?.display_name === "string") {
-    data.display_name = body.display_name.trim() || null;
-  }
-  if (typeof body?.is_active === "boolean") {
-    if (body.is_active === false && id === actorId) {
-      return c.json({ code: "cannot_deactivate_self" }, 409);
-    }
-    data.is_active = body.is_active;
-  }
+  const parsed = buildPatchUserData(body, id, actorId);
+  if ("conflict" in parsed) return c.json({ code: "cannot_deactivate_self" }, 409);
+  const { data } = parsed;
 
   if (Object.keys(data).length === 0) return c.json({ error: "invalid_request" }, 400);
 
@@ -345,34 +399,11 @@ export async function handlePatchUser(c: Context, db: PrismaClient): Promise<Res
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
-  let actionType = "user_profile_updated";
-  if (typeof data.is_active === "boolean" && data.is_active !== before.is_active) {
-    actionType = data.is_active ? "user_reactivated" : "user_deactivated";
-  }
+  const actionType = patchUserActionType(data, before);
 
   try {
     const outcome = await db.$transaction(
-      async (tx) => {
-        const current = await tx.user.findUnique({ where: { id }, select: { is_active: true } });
-        if (!current) return null;
-
-        if (data.is_active === false && current.is_active) {
-          await assertLastSuperadminDeactivationAllowed(tx, id);
-        }
-
-        await tx.user.update({ where: { id }, data });
-
-        await writeAdminAuditLog(tx, {
-          organizationId: orgId,
-          actorUserId: audit.operator ?? actorId,
-          sessionId: audit.sessionId,
-          ip: audit.ip,
-          actionType,
-          metadata: { userId: id },
-        });
-
-        return current.is_active;
-      },
+      (tx) => applyUserPatch(tx, id, data, actionType, orgId, audit, actorId),
       data.is_active === false
         ? { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
         : undefined,

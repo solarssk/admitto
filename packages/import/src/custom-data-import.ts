@@ -83,6 +83,60 @@ export function importCustomDataSkipReason(
   return "Invalid custom attribute data";
 }
 
+/** Human-readable hint appended to the "invalid value" reason, based on the field's type. */
+function invalidValueHint(field: ImportAttributeField): string {
+  if (field.type === "select" && field.options?.length) {
+    return ` (expected one of: ${field.options.join(", ")})`;
+  }
+  if (field.type === "boolean") {
+    return " (expected Yes/No or true/false)";
+  }
+  return "";
+}
+
+/** Find the first attribute field whose CSV cell fails normalization (used to build the
+ * user-facing reason once we already know some field in the row is invalid). */
+function findInvalidCustomDataField(
+  raw: Record<string, string>,
+  fields: ImportAttributeField[],
+  duplicateLabels: Set<string>,
+): ImportAttributeField | undefined {
+  for (const field of fields) {
+    const value = readAttributeCell(raw, field, duplicateLabels);
+    if (!value) continue;
+    try {
+      normalizeCustomDataFieldValue(field as EventItemContent, value);
+    } catch {
+      return field;
+    }
+  }
+  return undefined;
+}
+
+/** Translate a thrown error from {@link buildPartialCustomDataFromInput} into a user-facing
+ * failure reason, preserving the original error-message-based branching. */
+function customDataExtractionFailure(
+  err: unknown,
+  raw: Record<string, string>,
+  fields: ImportAttributeField[],
+  duplicateLabels: Set<string>,
+): { ok: false; reason: string } {
+  const message = err instanceof Error ? err.message : "";
+  if (message.startsWith("unknown_custom_data_field:")) {
+    return { ok: false, reason: "Invalid custom attribute data" };
+  }
+  if (message === "invalid_custom_data_value") {
+    const invalidField = findInvalidCustomDataField(raw, fields, duplicateLabels);
+    if (invalidField) {
+      return {
+        ok: false,
+        reason: `Invalid value for ${invalidField.label}${invalidValueHint(invalidField)}`,
+      };
+    }
+  }
+  return { ok: false, reason: "Invalid custom attribute data" };
+}
+
 export function extractCustomDataFromRow(
   raw: Record<string, string>,
   attributeFields: ImportAttributeField[],
@@ -104,26 +158,6 @@ export function extractCustomDataFromRow(
     );
     return { ok: true, custom_data };
   } catch (err) {
-    const message = err instanceof Error ? err.message : "";
-    if (message.startsWith("unknown_custom_data_field:")) {
-      return { ok: false, reason: "Invalid custom attribute data" };
-    }
-    if (message === "invalid_custom_data_value") {
-      for (const field of fields) {
-        const value = readAttributeCell(raw, field, duplicateLabels);
-        if (!value) continue;
-        try {
-          normalizeCustomDataFieldValue(field as EventItemContent, value);
-        } catch {
-          const booleanHint = field.type === "boolean" ? " (expected Yes/No or true/false)" : "";
-          const hint =
-            field.type === "select" && field.options?.length
-              ? ` (expected one of: ${field.options.join(", ")})`
-              : booleanHint;
-          return { ok: false, reason: `Invalid value for ${field.label}${hint}` };
-        }
-      }
-    }
-    return { ok: false, reason: "Invalid custom attribute data" };
+    return customDataExtractionFailure(err, raw, fields, duplicateLabels);
   }
 }
