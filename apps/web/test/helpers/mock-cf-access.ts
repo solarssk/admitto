@@ -95,7 +95,7 @@ export async function signCfAccessJwt(
     .setProtectedHeader({ alg: "RS256", kid: "cf-test-key" })
     .setIssuer(input.iss ?? mock.teamDomain)
     .setAudience(input.aud ?? mock.audience)
-    .setSubject(input.sub ?? "cf-subject-123")
+    .setSubject(input.sub === undefined ? "cf-subject-123" : input.sub)
     .setExpirationTime(input.exp ?? "2h");
 
   if (input.nbf) {

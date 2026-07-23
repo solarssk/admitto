@@ -347,6 +347,22 @@ describe("RequirementsPage operator errors", () => {
     vi.mocked(fetchOpsConfig).mockResolvedValue(opsConfig);
   });
 
+  it("explains a forbidden requirements load without exposing the API error", async () => {
+    vi.mocked(fetchEventItems).mockRejectedValueOnce(new ApiError(403, "internal_permission_detail"));
+    renderRequirements();
+
+    expect(await screen.findByText("You do not have access to this event.")).toBeTruthy();
+    expect(screen.queryByText("internal_permission_detail")).toBeNull();
+  });
+
+  it("uses the generic safe copy when requirements loading fails outside the API layer", async () => {
+    vi.mocked(fetchEventItems).mockRejectedValueOnce(new Error("network transport detail"));
+    renderRequirements();
+
+    expect(await screen.findByText("Failed to load requirements.")).toBeTruthy();
+    expect(screen.queryByText("network transport detail")).toBeNull();
+  });
+
   it("toasts item_in_use on toggle conflict", async () => {
     vi.mocked(updateEventItem).mockRejectedValueOnce(new ApiError(409, "item_in_use", "item_in_use"));
     renderRequirements();

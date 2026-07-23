@@ -1918,6 +1918,39 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     });
   });
 
+  it("removes an optional custom attribute when the operator clears it", async () => {
+    await prisma.eventCustomField.update({
+      where: { event_id_source_field: { event_id: EVENT_A, source_field: "shirt_size" } },
+      data: { required: false },
+    });
+    await prisma.eventCustomField.upsert({
+      where: { event_id_source_field: { event_id: EVENT_A, source_field: "accessibility_note" } },
+      create: {
+        event_id: EVENT_A,
+        source_field: "accessibility_note",
+        label: "Accessibility note",
+      },
+      update: { required: false },
+    });
+    await prisma.attendee.update({
+      where: { id: ATT_A2 },
+      data: { custom_data: { accessibility_note: "Step-free access", agency_ref: "REF-001" } },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        custom_data_fields: { accessibility_note: null },
+        expected_updated_at: await currentUpdatedAt(ATT_A2),
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const row = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_A2 } });
+    expect(row.custom_data).toEqual({ agency_ref: "REF-001" });
+  });
+
   it("rejects profile-only PATCH when required custom_data is missing", async () => {
     await prisma.eventCustomField.update({
       where: { event_id_source_field: { event_id: EVENT_A, source_field: "shirt_size" } },

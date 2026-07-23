@@ -235,6 +235,15 @@ describe("CF Access admin collision point", () => {
     expect(html).toContain("staff-spa-fixture");
   });
 
+  it("allows a Cloudflare Access superadmin to use the superadmin-only identity API", async () => {
+    const token = await signCfAccessJwt(mock, { sub: "cf-super-sub", email: SUPER_EMAIL });
+    const res = await app.request("/api/admin/identity/providers", {
+      headers: { [CF_ACCESS_HEADER]: token },
+    });
+
+    expect(res.status).toBe(200);
+  });
+
   it("CF JWT without session bootstraps admin SPA and /api/admin/* APIs", async () => {
     const token = await signCfAccessJwt(mock, { sub: "cf-super-sub", email: SUPER_EMAIL });
     const headers = { [CF_ACCESS_HEADER]: token };
@@ -281,6 +290,18 @@ describe("CF Access admin collision point", () => {
     expect(res.status).toBe(403);
   });
 
+  it("rejects an invalid CF JWT at the superadmin-only API even with a break-glass session", async () => {
+    const res = await app.request("/api/admin/identity/providers", {
+      headers: {
+        Cookie: superCookie,
+        [CF_ACCESS_HEADER]: "not.a.jwt",
+      },
+    });
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "cf_access_jwt_invalid" });
+  });
+
   it("rejects CF JWT when email matches existing user without ExternalIdentity (no auto-link)", async () => {
     const orphanId = "cf-orphan-admin";
     const orphanEmail = "cf-orphan-admin@example.com";
@@ -299,10 +320,16 @@ describe("CF Access admin collision point", () => {
       });
 
       const token = await signCfAccessJwt(mock, { sub: "cf-orphan-sub", email: orphanEmail });
-      const res = await app.request("/admin", {
+      const staffPage = await app.request("/admin", {
+        headers: { [CF_ACCESS_HEADER]: token },
+      });
+      expect(staffPage.status).toBe(403);
+
+      const res = await app.request("/api/admin/identity/providers", {
         headers: { [CF_ACCESS_HEADER]: token },
       });
       expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "cf_access_jwt_invalid" });
     } finally {
       await prisma.roleAssignment.deleteMany({ where: { user_id: orphanId } });
       await prisma.user.deleteMany({ where: { id: orphanId } });
@@ -326,6 +353,11 @@ describe("CF Access admin collision point", () => {
 
     try {
       const token = await signCfAccessJwt(mock, { sub: "cf-super-sub", email: SUPER_EMAIL });
+      const staffPage = await app.request("/admin", {
+        headers: { [CF_ACCESS_HEADER]: token },
+      });
+      expect(staffPage.status).toBe(403);
+
       const res = await app.request("/api/admin/identity/providers", {
         headers: { [CF_ACCESS_HEADER]: token },
       });

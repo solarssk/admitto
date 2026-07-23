@@ -175,6 +175,7 @@ function renderSettings(entry = "/admin/events/evt-1/settings") {
     <MemoryRouter initialEntries={[entry]}>
       <Routes>
         <Route path="/admin" element={<div>events picker</div>} />
+        <Route path="/admin/events/:eventId/overview" element={<div>event overview</div>} />
         <Route path="/admin/events/:eventId/settings" element={<EventSettingsPage />} />
       </Routes>
     </MemoryRouter>,
@@ -200,6 +201,23 @@ describe("EventSettingsPage subtitle", () => {
     expect(screen.getByText(SUBTITLE)).toBeTruthy();
     expect(SUBTITLE).not.toContain(activeEvent.title);
     expect(screen.queryByText(activeEvent.title, { selector: "p" })).toBeNull();
+  });
+});
+
+describe("EventSettingsPage unavailable event", () => {
+  it("shows the safe unavailable state for a missing event and returns to its overview", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    vi.mocked(fetchEventSettings).mockRejectedValueOnce(new ApiError(404, "event_not_found"));
+
+    renderSettings();
+
+    expect(await screen.findByText("Event not found")).toBeTruthy();
+    expect(
+      screen.getByText("The event could not be found or you do not have access."),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(await screen.findByText("event overview")).toBeTruthy();
   });
 });
 
