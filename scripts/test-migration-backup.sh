@@ -38,8 +38,8 @@ prepare_env() {
 }
 
 on_fail() {
-  echo "--- docker compose logs app ---" >&2
-  $COMPOSE logs app >&2 || true
+  echo "--- docker compose logs migrate app ---" >&2
+  $COMPOSE logs migrate app >&2 || true
 }
 
 cleanup() {
@@ -57,24 +57,33 @@ if ! $COMPOSE up -d --build --wait; then
   exit 1
 fi
 
-backup_count="$($COMPOSE exec -T app sh -c 'ls -1 /backups/pre-migration-*.sql.gz 2>/dev/null | wc -l' | tr -d ' ')"
+backup_count="$($COMPOSE run --rm --no-deps --entrypoint sh migrate -c 'ls -1 /backups/pre-migration-*.sql.gz 2>/dev/null | wc -l' | tr -d ' ')"
 if [ "${backup_count:-0}" -lt 1 ]; then
   echo "expected at least one pre-migration backup on first start" >&2
-  $COMPOSE logs app
+  on_fail
   exit 1
 fi
 
-$COMPOSE exec -T app sh -c 'gzip -t /backups/pre-migration-*.sql.gz'
+$COMPOSE run --rm --no-deps --entrypoint sh migrate -c 'gzip -t /backups/pre-migration-*.sql.gz'
 echo "Scenario A OK (backups=$backup_count)"
 
-echo "== Scenario B: restart with no pending migrations → no new backup =="
+echo "== Scenario B: re-run with no pending migrations → no new backup =="
 before="$backup_count"
-$COMPOSE restart app
-sleep 15
-$COMPOSE ps app | grep -q healthy || $COMPOSE ps app | grep -q running
-after="$($COMPOSE exec -T app sh -c 'ls -1 /backups/pre-migration-*.sql.gz 2>/dev/null | wc -l' | tr -d ' ')"
+$COMPOSE run --rm --no-deps migrate
+after="$($COMPOSE run --rm --no-deps --entrypoint sh migrate -c 'ls -1 /backups/pre-migration-*.sql.gz 2>/dev/null | wc -l' | tr -d ' ')"
 if [ "$after" != "$before" ]; then
-  echo "expected backup count unchanged after restart (before=$before after=$after)" >&2
+  echo "expected backup count unchanged after re-running migrate (before=$before after=$after)" >&2
+  exit 1
+fi
+$COMPOSE restart app
+sleep 5
+$COMPOSE ps app | grep -q healthy || $COMPOSE ps app | grep -q running
+# A bare restart never re-runs migrate (depends_on: condition: service_completed_successfully is
+# only evaluated on `docker compose up`), so retention cleanup must show up in app's own logs on
+# every restart to actually happen at all (regression class caught by Codex review on PR #572).
+if ! $COMPOSE logs app --since 15s 2>&1 | grep -q "purging expired/revoked auth sessions"; then
+  echo "expected retention cleanup log line after a bare app restart" >&2
+  $COMPOSE logs app --since 15s
   exit 1
 fi
 echo "Scenario B OK"
@@ -86,12 +95,12 @@ prepare_env
 
 $COMPOSE up -d db redis --wait
 
-# Fresh DB: run app once with fake pg_dump on PATH (pending migrations, backup required).
+# Fresh DB: run migrate once with fake pg_dump on PATH (pending migrations, backup required).
 if $COMPOSE run --rm \
   -e PATH="/opt/fake-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
   -v "$ROOT/scripts/fixtures/fake-pg-dump:/opt/fake-bin:ro" \
-  --no-deps app; then
-  echo "expected app container to fail when pg_dump fails" >&2
+  --no-deps migrate; then
+  echo "expected migrate container to fail when pg_dump fails" >&2
   exit 1
 fi
 
@@ -103,7 +112,7 @@ if [ "${applied:-0}" != "0" ]; then
 fi
 echo "Scenario C OK"
 
-echo "== Scenario D: backfill timeout → app exits =="
+echo "== Scenario D: backfill timeout → migrate exits =="
 cleanup
 trap - EXIT
 prepare_env
@@ -113,8 +122,8 @@ $COMPOSE up -d db redis --wait
 if $COMPOSE run --rm \
   -e PATH="/opt/fake-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
   -v "$ROOT/scripts/fixtures/fake-timeout:/opt/fake-bin:ro" \
-  --no-deps app; then
-  echo "expected app container to fail when backfill times out" >&2
+  --no-deps migrate; then
+  echo "expected migrate container to fail when backfill times out" >&2
   exit 1
 fi
 

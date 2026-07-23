@@ -89,7 +89,10 @@ COPY deploy/docker-entrypoint.sh ./deploy/docker-entrypoint.sh
 RUN chmod +x ./deploy/docker-entrypoint.sh \
   && chown -R node:node /app
 
-# Entrypoint starts as root (backup volume permissions), drops to node for the web server.
+# Non-root by default. The one compose service that genuinely needs root — writing pre-migration
+# backups into the root-only migration_backups volume — overrides this with `user: root` (see
+# deploy/docker-compose.yml's `migrate` service); the long-running web server never runs as root.
+USER node
 
 ENV NODE_ENV=production
 EXPOSE 3000
