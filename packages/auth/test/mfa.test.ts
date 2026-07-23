@@ -553,6 +553,10 @@ describe("backup recovery codes", () => {
 });
 
 describe("trusted device", () => {
+  it("rejects a token that does not match a stored trusted device", async () => {
+    expect(await validateTrustedDevice(prisma, USER_ADMIN, "missing-trusted-device-token")).toBe(false);
+  });
+
   it("skips MFA when valid trusted device token present", async () => {
     await resetUserMfa(prisma, USER_ADMIN);
     const secret = generateTotpSecret();
