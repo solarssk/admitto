@@ -13,7 +13,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { useClickOutside } from "./useClickOutside.js";
+import { useClickOutside, type OutsideInteraction } from "./useClickOutside.js";
 
 interface TzEntry {
   iana: string;
@@ -334,10 +334,13 @@ export function TimezoneSelect({
 
   const selectedEntry = value ? findTzEntry(index, value) : undefined;
 
-  const closePanel = () => {
+  // `reason === "focus"` means the user already tabbed focus elsewhere on purpose — pulling
+  // it back to this trigger would trap keyboard navigation, so only restore focus for every
+  // other close path (Escape, picking a timezone, an outside pointerdown).
+  const closePanel = (reason?: OutsideInteraction) => {
     setOpen(false);
     setQuery("");
-    window.setTimeout(() => triggerRef.current?.focus(), 0);
+    if (reason !== "focus") window.setTimeout(() => triggerRef.current?.focus(), 0);
   };
 
   useEffect(() => {

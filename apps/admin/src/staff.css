@@ -189,69 +189,322 @@
   font-size: var(--fs-h3);
 }
 
-.topbar__signout {
-  display: inline-flex;
+/* ── Topbar: SystemStatus + UserMenu dropdowns ──────────────────────
+   Shared `.user-menu` wrapper (trigger + positioned panel) covers both
+   dropdowns; `.sys-status__*` layers status-specific styling on top,
+   matching the panel/item precedent in attendees.css's export menu. */
+.user-menu {
+  position: relative;
+}
+
+.user-menu__trigger,
+.sys-status__trigger {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--border);
-  background: var(--surface-card);
-  border-radius: var(--radius);
-  padding: 0;
+  gap: 7px;
+  border: 0;
+  background: none;
   cursor: pointer;
+  padding: 6px 8px;
+  border-radius: var(--radius-pill);
+  color: var(--text-secondary);
   font-family: var(--font-sans);
-  font-size: 1rem;
-  color: var(--text-secondary);
 }
 
-.topbar__signout:hover {
-  background: var(--surface-subtle);
-}
-
-/* Role badge */
-.role-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 20px;
-  border-radius: 4px;
-  font-size: 0.6875rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-
-.role-badge--sa {
-  background: var(--primary);
-  color: #fff;
-}
-
-.role-badge--ad {
-  background: var(--primary-tint, #dbeafe);
-  color: var(--primary);
-}
-
-.role-badge--op {
-  background: var(--surface-subtle, #f1f5f9);
-  color: var(--text-secondary);
-}
-
-.topbar__user-name {
-  font-size: 0.875rem;
+.user-menu__trigger {
+  padding: 6px 8px 6px 6px;
   color: var(--text-primary);
 }
 
-.topbar__user-link {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2, 0.5rem);
-  text-decoration: none;
-  color: inherit;
+.user-menu__trigger:hover,
+.user-menu__trigger[aria-expanded="true"],
+.sys-status__trigger:hover,
+.sys-status__trigger[aria-expanded="true"] {
+  background: var(--surface-hover);
+  color: var(--text-primary);
 }
 
-.topbar__user-link:hover .topbar__user-name {
-  color: var(--primary);
+.user-menu__name {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .user-menu__name {
+    display: block;
+  }
+}
+
+.user-menu__chevron {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.user-menu__panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: var(--z-dropdown);
+  min-width: 216px;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sys-status__panel {
+  min-width: 300px;
+}
+
+.user-menu__divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+.user-menu__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 10px;
+}
+
+.user-menu__head-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  min-width: 0;
+}
+
+.user-menu__head-text strong {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
+}
+
+.user-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-sans);
+  cursor: pointer;
+}
+
+.user-menu__item:hover {
+  background: var(--surface-hover);
+}
+
+.user-menu__item--danger {
+  color: var(--status-error);
+}
+
+.user-menu__item-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle, var(--at-gray-100));
+  color: var(--text-secondary);
+  font-size: 1rem;
+}
+
+.user-menu__item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.user-menu__item-text strong {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.user-menu__item-text span {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+/* User avatar + role-tier corner badge — a generic person glyph, not initials, so every
+   account gets the same base look and only the corner badge encodes the role/tier. */
+.user-avatar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--at-gray-200);
+  color: var(--text-secondary);
+  flex: none;
+}
+
+.user-avatar--md {
+  width: 36px;
+  height: 36px;
+}
+
+.user-avatar i.ti-user {
+  font-size: 16px;
+}
+
+.user-avatar--md i.ti-user {
+  font-size: 20px;
+}
+
+.user-avatar__badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--surface-card);
+  background: var(--text-muted);
+  color: #fff;
+}
+
+.user-avatar__badge i {
+  font-size: 9px;
+}
+
+.user-avatar--md .user-avatar__badge {
+  width: 19px;
+  height: 19px;
+}
+
+.user-avatar--md .user-avatar__badge i {
+  font-size: 11px;
+}
+
+.user-avatar__badge--superadmin {
+  background: var(--status-error);
+}
+
+.user-avatar__badge--admin {
+  background: var(--status-info);
+}
+
+.user-avatar__badge--operator {
+  background: var(--text-muted);
+}
+
+/* System status dot + rows */
+.sys-status__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.sys-status__dot--ok {
+  background: var(--status-ok);
+}
+
+.sys-status__dot--warn {
+  background: var(--status-warn);
+}
+
+.sys-status__dot--err {
+  background: var(--status-error);
+}
+
+.sys-status__label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Below 1200px there's no room for the full sentence, but a bare dot floating next to
+   the round user avatar looks lopsided (PO review) — a short word keeps the two topbar
+   triggers visually balanced. */
+.sys-status__label--full {
+  display: none;
+}
+
+@media (min-width: 1200px) {
+  .sys-status__label--short {
+    display: none;
+  }
+
+  .sys-status__label--full {
+    display: block;
+  }
+}
+
+.sys-status__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: var(--radius-md);
+}
+
+.sys-status__row .user-menu__item-text {
+  flex: 1;
+}
+
+.sys-status__row--degraded {
+  background: var(--status-warn-tint);
+}
+
+.sys-status__row--down {
+  background: var(--status-error-tint);
+}
+
+.sys-status__row--degraded .user-menu__item-text span {
+  font-weight: 600;
+  color: var(--status-warn-fg);
+}
+
+.sys-status__row--down .user-menu__item-text span {
+  font-weight: 600;
+  color: var(--status-error);
+}
+
+.sys-status__check {
+  color: var(--status-ok);
+  font-size: 16px;
+  flex: none;
+}
+
+.sys-status__check--degraded {
+  color: var(--status-warn-fg);
+}
+
+.sys-status__check--down {
+  color: var(--status-error);
+}
+
+.sys-status__check--pending {
+  display: inline-block;
+  color: var(--text-muted);
+  /* Reuses @admitto/ui's shared `at-spin` keyframe (packages/ui/src/styles/components/
+     spinner.css) instead of a new one-off — always loaded globally via the shell. */
+  animation: at-spin 0.9s linear infinite;
 }
 
 .operator-shell__user-link {

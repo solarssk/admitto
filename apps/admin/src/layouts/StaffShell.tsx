@@ -1,8 +1,7 @@
 import { useCallback, useState, type ReactNode } from "react";
 import { useAuth } from "../auth/AuthProvider.js";
-import { MailerStatusBadge } from "../components/MailerStatusBadge.js";
-import { RoleBadge } from "../components/RoleBadge.js";
-import { ServerConnectionBadge } from "../checkin/ConnectionBanner.js";
+import { SystemStatus } from "../components/SystemStatus.js";
+import { UserMenu } from "../components/UserMenu.js";
 import { readSidebarPinned, writeSidebarPinned } from "./sidebarPinPref.js";
 
 export interface StaffShellProps {
@@ -15,7 +14,6 @@ export interface StaffShellProps {
 /** App shell: fixed sidebar + topbar chrome, scrollable main content area. */
 export function StaffShell({ sidebar, subnav, children }: StaffShellProps) {
   const { user, assignments } = useAuth();
-  const displayName = user.display_name || user.email.split("@")[0] || "Staff";
   const [navOpen, setNavOpen] = useState(false);
   const [pinned, setPinned] = useState(readSidebarPinned);
   const [hovered, setHovered] = useState(false);
@@ -88,24 +86,8 @@ export function StaffShell({ sidebar, subnav, children }: StaffShellProps) {
             <i className="ti ti-menu-2" aria-hidden="true" />
           </button>
           <div className="topbar__right">
-            <ServerConnectionBadge />
-            <MailerStatusBadge status={user.mailer_status} />
-            <div className="topbar__user">
-              <div className="topbar__user-link">
-                <RoleBadge assignments={assignments} />
-                <span className="topbar__user-name">{displayName}</span>
-              </div>
-            </div>
-            <form method="post" action="/logout">
-              <button
-                type="submit"
-                className="topbar__signout"
-                aria-label="Sign out"
-                title="Sign out"
-              >
-                <i className="ti ti-logout" aria-hidden="true" />
-              </button>
-            </form>
+            <SystemStatus assignments={assignments} mailerStatus={user.mailer_status} />
+            <UserMenu user={user} assignments={assignments} />
           </div>
         </header>
         <div className="main-scroll">
