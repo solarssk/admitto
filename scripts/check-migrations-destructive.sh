@@ -30,7 +30,7 @@ scan_file() {
   local line content
   local -a hits=()
 
-  while IFS= read -r line || [ -n "$line" ]; do
+  while IFS= read -r line || [[ -n "$line" ]]; do
   content="$(printf '%s' "$line" | tr '[:lower:]' '[:upper:]')"
 
   if printf '%s' "$content" | grep -qE 'DROP[[:space:]]+TABLE'; then
@@ -57,16 +57,16 @@ scan_file() {
 
   done < "$file"
 
-  if [ "${#hits[@]}" -eq 0 ]; then
+  if [[ "${#hits[@]}" -eq 0 ]]; then
     return 0
   fi
 
-  if has_destructive_override "$file" && [ "${MIGRATION_DESTRUCTIVE_LABEL_APPROVED:-}" = "1" ]; then
+  if has_destructive_override "$file" && [[ "${MIGRATION_DESTRUCTIVE_LABEL_APPROVED:-}" = "1" ]]; then
     echo "note: destructive operations in $file allowed via destructive-approved marker + PR label" >&2
     return 0
   fi
 
-  if has_destructive_override "$file" && [ "${MIGRATION_DESTRUCTIVE_LABEL_APPROVED:-}" != "1" ]; then
+  if has_destructive_override "$file" && [[ "${MIGRATION_DESTRUCTIVE_LABEL_APPROVED:-}" != "1" ]]; then
     echo "error: $file has -- destructive-approved marker but PR label migration-destructive-approved is missing" >&2
   fi
 
@@ -86,19 +86,19 @@ main() {
   local file count=0
 
   while IFS= read -r file; do
-    [ -z "$file" ] && continue
+    [[ -z "$file" ]] && continue
     count=$((count + 1))
     if ! scan_file "$file"; then
       failed=1
     fi
   done < <(list_new_migration_files)
 
-  if [ "$count" -eq 0 ]; then
+  if [[ "$count" -eq 0 ]]; then
     echo "migration-safety: no new migration files vs $BASE_REF"
     exit 0
   fi
 
-  if [ "$failed" -ne 0 ]; then
+  if [[ "$failed" -ne 0 ]]; then
     echo "migration-safety: FAILED — destructive migration(s) blocked (ADR 0027)" >&2
     exit 1
   fi

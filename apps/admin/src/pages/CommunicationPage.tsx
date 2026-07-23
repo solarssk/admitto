@@ -430,7 +430,7 @@ type TemplateSelectionLoad =
 
 /** Minimal client-side email shape check (submit is via button, not native form validation). */
 function isValidEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  return /^[^\s@]+@[^\s@.]+\.[^\s@]+$/.test(value);
 }
 
 /** The template id to send from the "Send email" header action and `CommunicationSendDialog` —

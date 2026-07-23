@@ -5,7 +5,7 @@ export function sanitizeDeliveryError(message: string | undefined): string | und
   // base64url ticket tokens (~43 chars)
   s = s.replace(/[A-Za-z0-9_-]{40,60}/g, "[redacted]");
   // emails
-  s = s.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, "[redacted]");
+  s = s.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+\.[a-zA-Z]{2,}/g, "[redacted]");
   // URLs (e.g. Power Automate webhook in provider errors)
   s = s.replace(/https?:\/\/\S+/gi, "[redacted]");
   return s.slice(0, 2000);
@@ -24,7 +24,9 @@ export function clientSafeDeliveryError(message: string | undefined): string {
     return "send failed";
   }
   if (
-    /https?:\/\/|[a-z0-9.-]+:\d{2,5}\b|\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/i.test(sanitized)
+    /https?:\/\//i.test(sanitized) ||
+    /[a-z0-9.-]+:\d{2,5}\b/i.test(sanitized) ||
+    /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/i.test(sanitized)
   ) {
     return "send failed";
   }

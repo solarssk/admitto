@@ -123,7 +123,7 @@ export function localeDateInputPattern(): string {
     .join("")
     .replace(/\s+/g, "");
   // Drop trailing locale punctuation (e.g. ko-KR `yyyy.mm.dd.`).
-  return pattern.replace(/[./\s-]+$/u, "");
+  return pattern.replace(/[./\s-]+$/u, ""); // NOSONAR — single anchored character class, one quantifier, no nesting/overlap
 }
 
 /** User-facing validation hint aligned with `localeDateInputPattern()`. */

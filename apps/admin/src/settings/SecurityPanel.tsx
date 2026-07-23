@@ -95,8 +95,8 @@ export function SecurityPanel() {
       }
     }
     if (!fieldLocked(settings.mfa_required_roles.source)) {
-      const sorted = [...draft.mfaRoles].sort().join(",");
-      const current = [...settings.mfa_required_roles.value].sort().join(",");
+      const sorted = [...draft.mfaRoles].sort((a, b) => a.localeCompare(b)).join(",");
+      const current = [...settings.mfa_required_roles.value].sort((a, b) => a.localeCompare(b)).join(",");
       if (sorted !== current) {
         body.mfa_required_roles = draft.mfaRoles;
         hasChanges = true;
