@@ -333,6 +333,15 @@ Test a restore on a non-production database before the first large event.
 `prisma migrate deploy` is forward-only — the database always rolls **forward**.
 App rollback is a separate operation and covers the vast majority of incidents.
 
+**Both cases below assume the target `ADMITTO_IMAGE` tag understands the current `migrate`/`serve`
+entrypoint split** (`migrate` and `app` share `ADMITTO_IMAGE`, and `app` waits on `migrate`
+exiting 0 — see "Container startup" above). A release from **before** that split only knows how
+to run its old single-path startup and never exits when invoked as `migrate`, so
+`docker compose up -d app` against a tag that old blocks forever waiting on a `migrate` container
+that will never complete. Rolling back that far means also checking out that release's own
+`deploy/` directory (`git checkout <old-tag> -- deploy/`) instead of reusing the current one, so
+the compose file and the image's entrypoint contract actually match.
+
 ### Case A — bad app code, schema is fine (the common case)
 
 Additive migrations keep the new schema backward-compatible with the previous app image.
