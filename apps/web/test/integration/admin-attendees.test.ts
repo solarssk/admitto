@@ -1627,6 +1627,19 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     return row.updated_at.toISOString();
   }
 
+  it("returns 403 without updating a cross-event attendee", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_B1}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Must Not Update" }),
+    });
+
+    expect(res.status).toBe(403);
+    expect(await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_B1 } })).toMatchObject({
+      name: "Carol Cross",
+    });
+  });
+
   it("updates attendee and writes audit without leaking the new name value (PII-safe)", async () => {
     const expectedUpdatedAt = await currentUpdatedAt(ATT_A2);
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
@@ -2170,6 +2183,16 @@ describe("POST /api/admin/events/:eventId/attendees/:id/resend", () => {
       headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({}),
     });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 403 for a cross-event attendee", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_B1}/resend`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+
     expect(res.status).toBe(403);
   });
 

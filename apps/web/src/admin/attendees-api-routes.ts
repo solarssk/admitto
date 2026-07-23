@@ -547,6 +547,33 @@ async function loadAttendeeInEvent(
   return row;
 }
 
+type ManagedEventAttendee = {
+  attendee: NonNullable<Awaited<ReturnType<typeof loadAttendeeInEvent>>>;
+  attendeeId: string;
+  eventId: string;
+};
+
+/** Resolve, authorize, and load an attendee scoped to the requested event. */
+async function requireManagedEventAttendee(
+  c: Context,
+  db: PrismaClient,
+): Promise<ManagedEventAttendee | Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+  const attendeeIdOrRes = requireAttendeeId(c);
+  if (attendeeIdOrRes instanceof Response) return attendeeIdOrRes;
+  const attendeeId = attendeeIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const attendee = await loadAttendeeInEvent(db, eventId, attendeeId);
+  if (!attendee) return c.json({ error: "forbidden" }, 403);
+
+  return { attendee, attendeeId, eventId };
+}
+
 /** Parse and clamp list query params (`page`, `pageSize`, `q`, `status`, `ticket_type`, `mail_status`, `sortBy`, `sortDir`). */
 function parseListQuery(c: Context): {
   page: number;
@@ -1489,18 +1516,9 @@ function patchAttendeeErrorResponse(c: Context, err: unknown): Response {
 
 /** PATCH /api/admin/events/:eventId/attendees/:id */
 export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Promise<Response> {
-  const eventIdOrRes = requireEventId(c);
-  if (eventIdOrRes instanceof Response) return eventIdOrRes;
-  const eventId = eventIdOrRes;
-  const attendeeIdOrRes = requireAttendeeId(c);
-  if (attendeeIdOrRes instanceof Response) return attendeeIdOrRes;
-  const attendeeId = attendeeIdOrRes;
-
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
-
-  const existing = await loadAttendeeInEvent(db, eventId, attendeeId);
-  if (!existing) return c.json({ error: "forbidden" }, 403);
+  const attendeeContextOrRes = await requireManagedEventAttendee(c, db);
+  if (attendeeContextOrRes instanceof Response) return attendeeContextOrRes;
+  const { attendee: existing, attendeeId, eventId } = attendeeContextOrRes;
 
   let body: unknown;
   try {
@@ -2438,18 +2456,9 @@ export async function handleResendEventAttendeeTicket(
   mailDeps: MailDeliveryDeps = {},
   injectedBaseUrl?: string,
 ): Promise<Response> {
-  const eventIdOrRes = requireEventId(c);
-  if (eventIdOrRes instanceof Response) return eventIdOrRes;
-  const eventId = eventIdOrRes;
-  const attendeeIdOrRes = requireAttendeeId(c);
-  if (attendeeIdOrRes instanceof Response) return attendeeIdOrRes;
-  const attendeeId = attendeeIdOrRes;
-
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
-
-  const existing = await loadAttendeeInEvent(db, eventId, attendeeId);
-  if (!existing) return c.json({ error: "forbidden" }, 403);
+  const attendeeContextOrRes = await requireManagedEventAttendee(c, db);
+  if (attendeeContextOrRes instanceof Response) return attendeeContextOrRes;
+  const { attendee: existing, attendeeId, eventId } = attendeeContextOrRes;
 
   let body: unknown;
   const parsedBody = await parseOptionalJsonBody(c);
