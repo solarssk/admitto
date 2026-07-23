@@ -4,7 +4,7 @@ import type { BrandingTheme } from "@admitto/auth";
 import { buildTicketPageStyles } from "./ticket-inline-styles.js";
 
 function esc(s: string): string {
-  return s.replaceAll(/&/g, "&amp;").replaceAll(/</g, "&lt;").replaceAll(/>/g, "&gt;").replaceAll(/"/g, "&quot;").replaceAll(/'/g, "&#39;");
+  return s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }
 
 function formatDate(d: Date): string {

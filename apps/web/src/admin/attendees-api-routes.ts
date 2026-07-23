@@ -73,6 +73,7 @@ import {
 } from "./admin-helpers.js";
 import { mailNotConfiguredResponse } from "./mail-settings-shared.js";
 import { assertEventCapacityForIncoming, acquireEventCapacityLock, isCapacityReactivation } from "./event-capacity.js";
+import { attachmentContentDisposition } from "./content-disposition.js";
 import { randomUUID } from "node:crypto";
 import { decryptFromString } from "@admitto/crypto";
 import { optimisticAttendeeUpdate, StaleWriteError, isStaleWrite } from "./optimistic-update.js";
@@ -195,12 +196,6 @@ const PDF_PRINTABLE_WIDTH = 762;
 
 if (EXPORT_BASE_PDF_WIDTHS.length !== EXPORT_BASE_COLUMNS.length) {
   throw new Error("EXPORT_BASE_PDF_WIDTHS must match EXPORT_BASE_COLUMNS length");
-}
-
-/** RFC 6266 attachment header with `"` escaped in the filename. */
-function exportContentDisposition(filename: string): string {
-  const safeFilename = filename.replaceAll(/\\/g, String.raw`\\`).replaceAll(/"/g, '\\"');
-  return `attachment; filename="${safeFilename}"`;
 }
 
 /** Build XLSX bytes for sanitized export rows (dynamic exceljs import, ESM-safe). */
@@ -885,7 +880,7 @@ async function buildExportFileResponse(
     return new Response(csv, {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": exportContentDisposition(filename),
+        "Content-Disposition": attachmentContentDisposition(filename),
         "Cache-Control": "no-store",
         "Pragma": "no-cache",
       },
@@ -903,7 +898,7 @@ async function buildExportFileResponse(
     return new Response(bytes, {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": exportContentDisposition(filename),
+        "Content-Disposition": attachmentContentDisposition(filename),
         "Cache-Control": "no-store",
         "Pragma": "no-cache",
       },
@@ -916,7 +911,7 @@ async function buildExportFileResponse(
     headers: {
       "Content-Type":
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": exportContentDisposition(filename),
+      "Content-Disposition": attachmentContentDisposition(filename),
       "Cache-Control": "no-store",
       "Pragma": "no-cache",
     },

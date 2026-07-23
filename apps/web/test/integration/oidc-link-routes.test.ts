@@ -107,6 +107,27 @@ async function fullSession(): Promise<{ cookie: string; sessionId: string }> {
 }
 
 describe("oidc link step-up", () => {
+  it("redirects GET and POST link requests when the provider is missing", async () => {
+    const cookie = await fullSessionCookie();
+    const getRes = await app.request("/account/oidc/not-configured/link", {
+      redirect: "manual",
+      headers: { Cookie: cookie },
+    });
+    expect(getRes.headers.get("location")).toBe("/login?error=oidc_failed");
+
+    const postRes = await app.request("/account/oidc/not-configured/link", {
+      method: "POST",
+      redirect: "manual",
+      headers: {
+        Cookie: cookie,
+        "Content-Type": "application/x-www-form-urlencoded",
+        ...sameOrigin,
+      },
+      body: new URLSearchParams({ password: LINK_PASSWORD }).toString(),
+    });
+    expect(postRes.headers.get("location")).toBe("/login?error=oidc_failed");
+  });
+
   it("start?link=1 redirects to step-up page", async () => {
     const cookie = await fullSessionCookie();
     const res = await app.request(`/api/auth/oidc/${PROVIDER_ID}/start?link=1`, {

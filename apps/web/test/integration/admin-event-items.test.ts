@@ -375,6 +375,16 @@ describe("POST /api/admin/events/:eventId/items", () => {
 });
 
 describe("PATCH /api/admin/events/:eventId/items/:itemId", () => {
+  it("rejects a missing event item", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/missing-item`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ label: "No item" }),
+    });
+
+    expect(res.status).toBe(403);
+  });
+
   it("rejects malformed JSON body", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${ITEM_SOCKS}`, {
       method: "PATCH",
