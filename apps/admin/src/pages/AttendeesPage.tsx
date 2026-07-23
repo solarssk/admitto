@@ -226,15 +226,21 @@ function notifyBulkRevokePassResult(
 /** Shared three-way "none found / already set / N changed" toast for a bulk field-assignment
  * result — change ticket type and change attendance status independently duplicated this exact
  * branching (bot review). `labels` lets each caller keep its own copy (e.g. quoted vs unquoted,
- * with or without a leading phrase like "attendance status") while sharing the decision logic. */
+ * with or without a leading phrase like "attendance status") while sharing the decision logic.
+ * `conflictCount` (rows a concurrent edit raced between the server's read and its per-row CAS
+ * write, added alongside that fix) is surfaced as a trailing note rather than silently dropped —
+ * it was passed through here unused until this pass, which also fixed the "none found" guard to
+ * require conflictCount === 0 too: a fully-conflicted selection was genuinely found, just raced,
+ * so it shouldn't read as "may have been removed". */
 function notifyBulkAssignResult(
-  result: { updatedCount: number; alreadySetCount: number },
+  result: { updatedCount: number; alreadySetCount: number; conflictCount: number },
   labels: { alreadyHave: string; setTo: string },
   addToast: (message: string, variant?: ToastVariant) => void,
 ) {
-  const { updatedCount, alreadySetCount } = result;
+  const { updatedCount, alreadySetCount, conflictCount = 0 } = result;
+  const conflictNote = conflictCount > 0 ? ` (${conflictCount} skipped — changed by someone else just now)` : "";
 
-  if (updatedCount === 0 && alreadySetCount === 0) {
+  if (updatedCount === 0 && alreadySetCount === 0 && conflictCount === 0) {
     // None of the selected ids resolved to an attendee in this event — most likely they were
     // deleted by someone else between opening the picker and clicking Apply (code review: this
     // used to fall into the "already had it" branch below, which is wrong — nothing was found
@@ -243,14 +249,19 @@ function notifyBulkAssignResult(
     return;
   }
 
+  if (updatedCount === 0 && alreadySetCount === 0) {
+    addToast(`No attendees were updated${conflictNote}.`, "warning");
+    return;
+  }
+
   if (updatedCount === 0) {
-    addToast(`All selected attendees already have ${labels.alreadyHave}.`, "info");
+    addToast(`All selected attendees already have ${labels.alreadyHave}${conflictNote}.`, "info");
     return;
   }
 
   const alreadyNote = alreadySetCount > 0 ? ` (${alreadySetCount} already had it)` : "";
   addToast(
-    `${updatedCount} attendee${updatedCount === 1 ? "" : "s"} set to ${labels.setTo}${alreadyNote}`,
+    `${updatedCount} attendee${updatedCount === 1 ? "" : "s"} set to ${labels.setTo}${alreadyNote}${conflictNote}`,
     "success",
   );
 }

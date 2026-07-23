@@ -1480,6 +1480,23 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     });
   });
 
+  it("notes attendees skipped by a concurrent edit alongside the success toast (bot review: CAS race fix)", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchTicketTypes.mockResolvedValue(catalog);
+    bulkChangeTicketType.mockResolvedValue({ updatedCount: 1, alreadySetCount: 0, conflictCount: 1 });
+
+    await selectTwoRowsAndOpenMenu();
+    const dialog = clickMenuItemAndArmDialog(/Change ticket type/, "Change ticket type");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        "1 attendee set to VIP (1 skipped — changed by someone else just now)",
+        "success",
+      );
+    });
+  });
+
   it("toasts info when every selected attendee already has the type", async () => {
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
     fetchTicketTypes.mockResolvedValue(catalog);
@@ -1714,6 +1731,55 @@ describe("AttendeesPage bulk change attendance status", () => {
       );
     });
     expect(addToast).not.toHaveBeenCalledWith(expect.stringContaining("already have"), expect.anything());
+  });
+
+  it("notes attendees skipped by a concurrent edit alongside the success toast (bot review: CAS race fix)", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkChangeRsvpStatus.mockResolvedValue({ updatedCount: 1, alreadySetCount: 0, conflictCount: 1 });
+
+    await selectTwoRowsAndOpenMenu();
+    const dialog = clickMenuItemAndArmDialog(/Change attendance status/, "Change attendance status");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        '1 attendee set to "Confirmed" (1 skipped — changed by someone else just now)',
+        "success",
+      );
+    });
+  });
+
+  it("includes the conflict note alongside the already-set info toast", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkChangeRsvpStatus.mockResolvedValue({ updatedCount: 0, alreadySetCount: 1, conflictCount: 1 });
+
+    await selectTwoRowsAndOpenMenu();
+    const dialog = clickMenuItemAndArmDialog(/Change attendance status/, "Change attendance status");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        'All selected attendees already have attendance status "Confirmed" (1 skipped — changed by someone else just now).',
+        "info",
+      );
+    });
+  });
+
+  it("toasts a warning (not the 'none found' error) when every selected attendee lost the race to a concurrent edit", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkChangeRsvpStatus.mockResolvedValue({ updatedCount: 0, alreadySetCount: 0, conflictCount: 2 });
+
+    await selectTwoRowsAndOpenMenu();
+    const dialog = clickMenuItemAndArmDialog(/Change attendance status/, "Change attendance status");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        "No attendees were updated (2 skipped — changed by someone else just now).",
+        "warning",
+      );
+    });
+    expect(addToast).not.toHaveBeenCalledWith(expect.stringContaining("may have been removed"), expect.anything());
   });
 
   it("redirects to /login on a 401", async () => {
