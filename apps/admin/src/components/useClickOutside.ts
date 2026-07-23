@@ -1,7 +1,19 @@
 import { useEffect, useRef, type RefObject } from "react";
 
+/** Why `onOutside` fired — callers that restore focus to their own trigger on close (most
+ * of them do) must skip that specifically for `"focus"`: the user already moved focus
+ * somewhere else on purpose (e.g. Tab to the next control), and forcing it back would trap
+ * keyboard navigation. `"pointer"` (or calling the callback directly, e.g. after selecting
+ * a value, or Escape) is unaffected — focus wasn't already going anywhere in particular, so
+ * returning it to the trigger is the right default there. */
+export type OutsideInteraction = "pointer" | "focus";
+
 /**
- * Calls onOutside on any pointerdown outside the given container while open.
+ * Calls onOutside on any pointerdown outside the given container while open, or when
+ * focus itself moves outside it (e.g. Tab from this trigger straight to another
+ * dropdown's trigger, with no pointerdown in between — two independent dropdowns on the
+ * same page would otherwise both stay open at once, since neither ever "clicks away"
+ * from the other for a keyboard-only user).
  * Was three independent copies of this same pattern (DatePicker,
  * TimezoneSelect, the Revoke menu on Attendee Detail) before being
  * extracted here.
@@ -9,7 +21,7 @@ import { useEffect, useRef, type RefObject } from "react";
 export function useClickOutside(
   containerRef: RefObject<HTMLElement | null>,
   open: boolean,
-  onOutside: () => void,
+  onOutside: (reason: OutsideInteraction) => void,
 ): void {
   const onOutsideRef = useRef(onOutside);
   useEffect(() => {
@@ -18,12 +30,16 @@ export function useClickOutside(
 
   useEffect(() => {
     if (!open) return;
-    const onPointerDown = (event: PointerEvent) => {
+    const onOutsideInteraction = (event: PointerEvent | FocusEvent) => {
       if (!containerRef.current?.contains(event.target as Node)) {
-        onOutsideRef.current();
+        onOutsideRef.current(event.type === "focusin" ? "focus" : "pointer");
       }
     };
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
+    document.addEventListener("pointerdown", onOutsideInteraction);
+    document.addEventListener("focusin", onOutsideInteraction);
+    return () => {
+      document.removeEventListener("pointerdown", onOutsideInteraction);
+      document.removeEventListener("focusin", onOutsideInteraction);
+    };
   }, [open, containerRef]);
 }

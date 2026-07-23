@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { FOCUSABLE_SELECTOR } from "./focusable.js";
-import { useClickOutside } from "./useClickOutside.js";
+import { useClickOutside, type OutsideInteraction } from "./useClickOutside.js";
 
 /** Open/close state, click-outside, Escape-to-close, and first-`menuitem` focus for a small
  * trigger-button + `role="menu"` popover — was duplicated between the Attendee Detail page's
@@ -14,9 +14,13 @@ export function useDropdownMenu<
   const triggerRef = useRef<TTrigger>(null);
   const panelRef = useRef<TPanel>(null);
 
-  const close = () => {
+  // `reason === "focus"` means the user already moved focus elsewhere on purpose (e.g. Tab
+  // to the next control) — forcing it back to this trigger would trap keyboard navigation,
+  // so only restore focus for every other close path (Escape, selecting an item, an
+  // outside pointerdown, or a direct programmatic close() call).
+  const close = (reason?: OutsideInteraction) => {
     setOpen(false);
-    triggerRef.current?.focus();
+    if (reason !== "focus") triggerRef.current?.focus();
   };
 
   useClickOutside(rootRef, open, close);
