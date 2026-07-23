@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Card } from "@admitto/ui";
-import { ApiError, fetchAuditLog } from "../api/client.js";
+import { fetchAuditLog } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AuditLogEntryDto } from "../api/types.js";
 import { formatUtcDateTime, utcDayEndIso, utcDayStartIso } from "../utils/event-dates.js";

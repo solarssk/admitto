@@ -690,7 +690,8 @@ function attendeesListQuery(eventId: string, params: AttendeesListParams = {}): 
   if (params.sortBy && params.sortBy !== "name") q.set("sortBy", params.sortBy);
   if (params.sortDir && params.sortDir !== "asc") q.set("sortDir", params.sortDir);
   const qs = q.toString();
-  return `/api/admin/events/${encodeURIComponent(eventId)}/attendees${qs ? `?${qs}` : ""}`;
+  const queryPart = qs ? `?${qs}` : "";
+  return `/api/admin/events/${encodeURIComponent(eventId)}/attendees${queryPart}`;
 }
 
 export async function fetchEventAttendees(
@@ -1169,7 +1170,8 @@ function deliveriesListQuery(eventId: string, params: EventDeliveriesListParams 
   if (params.status && params.status !== "all") q.set("status", params.status);
   if (params.purpose && params.purpose !== "all") q.set("purpose", params.purpose);
   const qs = q.toString();
-  return `/api/admin/events/${encodeURIComponent(eventId)}/deliveries${qs ? `?${qs}` : ""}`;
+  const queryPart = qs ? `?${qs}` : "";
+  return `/api/admin/events/${encodeURIComponent(eventId)}/deliveries${queryPart}`;
 }
 
 /** Fetch paginated email delivery rows for an event (no rendered HTML). */
@@ -1433,7 +1435,8 @@ function usersListQuery(
   if (params.role && params.role !== "all") q.set("role", params.role);
   if (params.status && params.status !== "all") q.set("status", params.status);
   const qs = q.toString();
-  return `/api/admin/users${qs ? `?${qs}` : ""}`;
+  const queryPart = qs ? `?${qs}` : "";
+  return `/api/admin/users${queryPart}`;
 }
 
 export async function fetchAdminOrganizations(signal?: AbortSignal): Promise<
@@ -1531,7 +1534,8 @@ export async function fetchRoleAssignments(
   if (params.page != null) q.set("page", String(params.page));
   if (params.pageSize != null) q.set("pageSize", String(params.pageSize));
   const qs = q.toString();
-  const res = await fetch(`/api/admin/role-assignments${qs ? `?${qs}` : ""}`, {
+  const queryPart = qs ? `?${qs}` : "";
+  const res = await fetch(`/api/admin/role-assignments${queryPart}`, {
     credentials: "same-origin",
     signal,
   });
@@ -1582,7 +1586,8 @@ export async function fetchAuditLog(
   if (params.start) q.set("start", params.start);
   if (params.end) q.set("end", params.end);
   const qs = q.toString();
-  const res = await fetch(`/api/admin/audit-log${qs ? `?${qs}` : ""}`, {
+  const queryPart = qs ? `?${qs}` : "";
+  const res = await fetch(`/api/admin/audit-log${queryPart}`, {
     credentials: "same-origin",
     signal,
   });

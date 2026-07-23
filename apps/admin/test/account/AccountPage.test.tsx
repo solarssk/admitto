@@ -631,6 +631,34 @@ describe("AccountPage toasts", () => {
     });
   });
 
+  it("pluralizes the revoked-session count in the MFA reset toast", async () => {
+    mockFetchAccount
+      .mockResolvedValueOnce(totpEnrolledAccount)
+      .mockResolvedValueOnce(baseAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockResetMfa.mockResolvedValueOnce({ sessions_revoked: 2 });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Reset" })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    fireEvent.change(screen.getByLabelText("Current password", { selector: "#account-reset-password" }), {
+      target: { value: "current-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reset 2FA" }));
+
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reset 2FA" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(
+        /Two-factor authentication reset\. 2 other sessions ended\./,
+      );
+    });
+  });
+
   it("cancels pending MFA enrollment and calls cancel API", async () => {
     mockLoadedAccount();
     mockEnrollMfaTotp.mockResolvedValueOnce({

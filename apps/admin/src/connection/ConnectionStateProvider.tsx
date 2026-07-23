@@ -21,7 +21,7 @@ function loginRedirect(reason: string): void {
   window.location.assign(`/login?reason=${reason}&next=${next}`);
 }
 
-export function ConnectionStateProvider({ children }: { children: ReactNode }) {
+export function ConnectionStateProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [state, setState] = useState<ConnectionState>("reconnecting");
   const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
   const mounted = useRef(true);

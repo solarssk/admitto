@@ -80,7 +80,7 @@ type SetupWizardPageProps = {
   onComplete: () => Promise<void>;
 };
 
-export function SetupWizardPage({ onComplete }: SetupWizardPageProps) {
+export function SetupWizardPage({ onComplete }: Readonly<SetupWizardPageProps>) {
   return (
     <WizardProvider>
       <SetupWizardContent onComplete={onComplete} />
@@ -88,7 +88,7 @@ export function SetupWizardPage({ onComplete }: SetupWizardPageProps) {
   );
 }
 
-function SetupWizardContent({ onComplete }: SetupWizardPageProps) {
+function SetupWizardContent({ onComplete }: Readonly<SetupWizardPageProps>) {
   const {
     completedSteps,
     markStepComplete,
@@ -131,7 +131,6 @@ function SetupWizardContent({ onComplete }: SetupWizardPageProps) {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (dirty) {
         e.preventDefault();
-        e.returnValue = "";
       }
     };
     window.addEventListener("beforeunload", handleBeforeUnload);

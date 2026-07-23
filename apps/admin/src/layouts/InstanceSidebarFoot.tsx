@@ -11,7 +11,7 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
   `nav-item${isActive ? " nav-item--active" : ""}`;
 
 /** Sidebar footer shared by all instance-level shells (/admin, /admin/users, /admin/settings, /account). */
-export function InstanceSidebarFoot({ omitPrimary = false }: { omitPrimary?: boolean }) {
+export function InstanceSidebarFoot({ omitPrimary = false }: Readonly<{ omitPrimary?: boolean }>) {
   const { assignments } = useAuth();
   const canAdmin = canAccessAdminPanel(assignments);
   const canCheckIn = canAccessCheckInPanel(assignments);

@@ -253,7 +253,7 @@ function SetupChecklistCard({
     >
       {notOk.length === 0 ? (
         <p className="overview-muted overview-all-clear">
-          <i className="ti ti-circle-check" aria-hidden="true" />
+          <i className="ti ti-circle-check" aria-hidden="true" />{" "}
           All checks look good
         </p>
       ) : (

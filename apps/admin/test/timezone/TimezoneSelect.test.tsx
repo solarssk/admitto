@@ -48,6 +48,19 @@ describe("TimezoneSelect", () => {
     });
   });
 
+  it("matches a GMT-offset query like '+9'", async () => {
+    render(<TimezoneSelect value="UTC" onChange={() => {}} />);
+    openPicker();
+    fireEvent.change(screen.getByLabelText("Search timezones"), {
+      target: { value: "+9" },
+    });
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole("option").some((o) => o.textContent?.includes("Tokyo")),
+      ).toBe(true);
+    });
+  });
+
   it("calls onChange when a new timezone is selected", async () => {
     const onChange = vi.fn();
     render(<TimezoneSelect value="UTC" onChange={onChange} />);

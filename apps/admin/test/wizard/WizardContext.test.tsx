@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   sanitizePersistedSummary,
@@ -9,7 +9,7 @@ import {
 } from "../../src/pages/wizard/WizardContext.js";
 
 function WizardProbe() {
-  const { summary, mailSkipped, selectedEventId } = useWizard();
+  const { summary, mailSkipped, selectedEventId, setSummary } = useWizard();
   return (
     <div>
       <span data-testid="mail">{summary.mailLabel}</span>
@@ -17,6 +17,7 @@ function WizardProbe() {
       <span data-testid="event">{summary.eventTitle ?? ""}</span>
       <span data-testid="mail-skipped">{String(mailSkipped)}</span>
       <span data-testid="event-id">{selectedEventId ?? ""}</span>
+      <button onClick={() => setSummary({ mailLabel: "Configured (SMTP)" })}>patch</button>
     </div>
   );
 }
@@ -79,6 +80,19 @@ describe("WizardProvider session restore", () => {
     expect(screen.getByTestId("branding").textContent).toBe("Acme");
     expect(screen.getByTestId("mail-skipped").textContent).toBe("true");
     expect(screen.getByTestId("event-id").textContent).toBe("evt-abc");
+  });
+
+  it("setSummary patches only the given fields, leaving the rest of summary untouched", () => {
+    render(
+      <WizardProvider>
+        <WizardProbe />
+      </WizardProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "patch" }));
+
+    expect(screen.getByTestId("mail").textContent).toBe("Configured (SMTP)");
+    expect(screen.getByTestId("branding").textContent).toBe("Skipped");
   });
 
   it("ignores corrupt sessionStorage JSON", () => {

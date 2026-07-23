@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, Card, useToast } from "@admitto/ui";
 import {
-  ApiError,
   fetchAdminEvents,
   fetchSessions,
   revokeAllOperatorSessions,

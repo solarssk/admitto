@@ -39,7 +39,7 @@ export function useModalFocusTrap(
       const focusables = queryFocusables();
       if (focusables.length === 0) return;
       const first = focusables[0];
-      const last = focusables[focusables.length - 1];
+      const last = focusables.at(-1);
 
       if (event.shiftKey) {
         if (document.activeElement === first) {

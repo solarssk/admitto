@@ -150,6 +150,26 @@ describe("CommunicationSendDialog", () => {
     });
   });
 
+  it("shows an error and stops polling when the status check fails", async () => {
+    sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 2, skipped: 0, failed: 0 });
+    fetchBulkSendStatus.mockRejectedValue(new Error("network down"));
+
+    render(
+      <CommunicationSendDialog
+        open
+        eventId="evt-1"
+        templateId="tpl-1"
+        onClose={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toBe("Failed to load send status.");
+    });
+  });
+
   it("aborts polling when the dialog closes", async () => {
     let pollSignal: AbortSignal | undefined;
     sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 2, skipped: 0, failed: 0 });

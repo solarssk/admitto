@@ -16,7 +16,11 @@ interface IdentityMappingRepeaterProps {
 /** Group → role mapping repeater (#266 slice 3b). Replace-all semantics: the
  *  editor always sends the full list on save (the slice-1 PUT contract requires
  *  `mappings` on every request). Empty list = no SSO group grants. */
-export function IdentityMappingRepeater({ rows, errors, onChange }: IdentityMappingRepeaterProps) {
+export function IdentityMappingRepeater({
+  rows,
+  errors,
+  onChange,
+}: Readonly<IdentityMappingRepeaterProps>) {
   const updateRow = (index: number, patch: Partial<MappingRow>) => {
     onChange(rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   };

@@ -21,7 +21,7 @@ export function CkInlineCamera({
   onScan,
   onClose,
   onReset,
-}: CkInlineCameraProps) {
+}: Readonly<CkInlineCameraProps>) {
   const closeRef = useRef<HTMLButtonElement>(null);
 
   const dismiss = useCallback(() => {

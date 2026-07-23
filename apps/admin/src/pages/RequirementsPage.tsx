@@ -474,7 +474,7 @@ export function RequirementsPage() {
 
       {addOpen && (
         <div className="event-item-modal" role="dialog" aria-modal="true" aria-label="Add item">
-          <div className="event-item-modal__backdrop" onClick={closeAddModal} />
+          <div className="event-item-modal__backdrop" role="presentation" onClick={closeAddModal} />
           <div ref={addPanelRef} className="event-item-modal__panel">
             <div className="event-item-modal__header">
               <div>

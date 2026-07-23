@@ -1677,7 +1677,11 @@
    treatment as the manual-entry input just below (PO review: these were
    underlined .link-btn text links, wanted normal buttons instead). */
 .ck-overlay__manual .at-btn--secondary {
-  background: rgba(255, 255, 255, 0.08);
+  /* Solid #21242a, not rgba(255,255,255,0.08) — same rendered color (8% white
+     over .ck-overlay's #0e1117), but literal so the contrast checker can
+     verify it against the white text (Sonar css:S7924 false positive, same
+     fix as the :hover rule below). */
+  background: #21242a;
   border-color: rgba(255, 255, 255, 0.2);
   color: #fff;
 }

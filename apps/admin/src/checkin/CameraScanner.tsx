@@ -9,7 +9,7 @@ type CameraScannerProps = {
 /** Ignore repeated ZXing decodes of the same QR while it stays in frame. */
 const CAMERA_SCAN_COOLDOWN_MS = 2500;
 
-export function CameraScanner({ enabled, wedgeActive, onScan }: CameraScannerProps) {
+export function CameraScanner({ enabled, wedgeActive, onScan }: Readonly<CameraScannerProps>) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
   const onScanRef = useRef(onScan);

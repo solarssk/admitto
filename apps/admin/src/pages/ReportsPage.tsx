@@ -40,13 +40,13 @@ function visibleHourRange(byHour: EventReportsResponse["by_hour"]): EventReports
   if (nonZero.length === 0) return byHour;
 
   const firstIdx = byHour.indexOf(nonZero[0]!);
-  const lastIdx = byHour.indexOf(nonZero[nonZero.length - 1]!);
+  const lastIdx = byHour.indexOf(nonZero.at(-1)!);
   const start = Math.max(0, firstIdx - 1);
   const end = Math.min(byHour.length - 1, lastIdx + 1);
   return byHour.slice(start, end + 1);
 }
 
-function HourlyChart({ byHour }: { byHour: EventReportsResponse["by_hour"] }) {
+function HourlyChart({ byHour }: Readonly<{ byHour: EventReportsResponse["by_hour"] }>) {
   const visible = visibleHourRange(byHour);
   const max = Math.max(...visible.map((row) => row.count), 1);
 
@@ -102,7 +102,7 @@ function encodeTypeFilterValue(key: string | null): string {
   return key === null ? NONE_TYPE_KEY : `type:${key}`;
 }
 
-function ByTicketType({ rows }: { rows: EventReportsResponse["by_ticket_type"] }) {
+function ByTicketType({ rows }: Readonly<{ rows: EventReportsResponse["by_ticket_type"] }>) {
   if (rows.length === 0) {
     return <p className="reports-muted">No attendees registered yet.</p>;
   }
@@ -432,7 +432,7 @@ export function ReportsPage() {
         />
       )}
 
-      {!loading && !error && data && data.summary.admitted === 0 && (
+      {!loading && !error && data?.summary.admitted === 0 && (
         <EmptyState
           icon={<i className="ti ti-chart-bar-off" aria-hidden="true" />}
           title="No check-ins yet"

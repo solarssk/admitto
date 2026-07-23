@@ -42,11 +42,11 @@ function ProviderRowItem({
   provider,
   onToggle,
   disabled,
-}: {
+}: Readonly<{
   provider: ProviderRow;
   onToggle: (provider: ProviderRow) => void;
   disabled: boolean;
-}) {
+}>) {
   const labelId = `idp-enabled-${provider.id}`;
   return (
     <div className="settings-row identity-provider-row">

@@ -8,6 +8,10 @@ describe("parseDeviceName", () => {
     expect(parseDeviceName(ua)).toBe("iPad (iOS 17.4) · Safari");
   });
 
+  it("detects iPad without an OS version in the UA", () => {
+    expect(parseDeviceName("Mozilla/5.0 (iPad)")).toBe("iPad · Safari");
+  });
+
   it("detects Android device model", () => {
     const ua =
       "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36";
@@ -18,6 +22,10 @@ describe("parseDeviceName", () => {
     const ua =
       "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
     expect(parseDeviceName(ua)).toBe("iPhone (iOS 17.4)");
+  });
+
+  it("detects iPhone without an OS version in the UA", () => {
+    expect(parseDeviceName("Mozilla/5.0 (iPhone)")).toBe("iPhone");
   });
 
   it("returns Mac for Macintosh UA", () => {

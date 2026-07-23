@@ -245,6 +245,8 @@ function CheckInCell({
   );
 }
 
+type AttendeeStatusFilter = "all" | "admitted" | "not_admitted";
+
 export interface AttendeesTableProps {
   items: AttendeeRowDto[];
   total: number;
@@ -254,7 +256,7 @@ export interface AttendeesTableProps {
   hasLoadedOnce: boolean;
   isUnfilteredEmpty: boolean;
   searchInput: string;
-  statusFilter: "all" | "admitted" | "not_admitted";
+  statusFilter: AttendeeStatusFilter;
   ticketTypeFilter: string;
   rsvpStatusFilter: "" | RsvpStatus;
   mailStatusFilter: "" | AttendeeMailStatusFilter;
@@ -1351,7 +1353,7 @@ export function AttendeesTable({
   onBulkDelete,
   eventTimezone,
   event,
-}: AttendeesTableProps) {
+}: Readonly<AttendeesTableProps>) {
   const isDesktop = useIsDesktop();
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;

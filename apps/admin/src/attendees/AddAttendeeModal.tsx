@@ -25,7 +25,7 @@ function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAttendeeModalProps) {
+export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly<AddAttendeeModalProps>) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const [email, setEmail] = useState("");

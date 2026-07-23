@@ -10,7 +10,7 @@ import {
 } from "@admitto/ui";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
-import { ApiError, fetchAdminUsers, revokeUserSessions } from "../api/client.js";
+import { fetchAdminUsers, revokeUserSessions } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { UserListItemDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";

@@ -19,7 +19,7 @@ function defaultBrowserTimezone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
 
-export function CreateEventModal({ open, onClose, onCreated }: CreateEventModalProps) {
+export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEventModalProps>) {
   const titleId = useId();
   const timezoneId = useId();
   const panelRef = useRef<HTMLDivElement>(null);

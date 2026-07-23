@@ -124,6 +124,13 @@ function buildSaveBody(
   return body;
 }
 
+/** Session expired mid-fetch: hand off to login with a return path (matches the
+ * pattern used across the admin SPA, e.g. IdentityProvidersPanel/ReportsPage). */
+function redirectToLogin(): void {
+  const next = encodeURIComponent(window.location.pathname);
+  window.location.assign(`/login?next=${next}`);
+}
+
 function oidcTestBodyFromDraft(draft: ProviderDraft): ProviderTestDraftBody {
   const body: ProviderTestDraftBody = { issuer: draft.issuer.trim() };
   const authorization = draft.authorization_endpoint.trim();
@@ -160,7 +167,10 @@ function setField<K extends keyof ProviderDraft>(
  * POSTs a new provider; edit mode loads by id and PUTs the full form (mappings
  * use replace-all semantics — the slice-1 PUT contract requires `mappings`).
  */
-export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEditorProps) {
+export function IdentityProviderEditor({
+  mode,
+  providerId,
+}: Readonly<IdentityProviderEditorProps>) {
   const navigate = useNavigate();
   const { addToast } = useToast();
   const routeParams = useParams();
@@ -216,13 +226,6 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
     setDiscovering(false);
     setTesting(false);
   }, [resolvedProviderId]);
-
-  /** Session expired mid-fetch: hand off to login with a return path (matches the
-   * pattern used across the admin SPA, e.g. IdentityProvidersPanel/ReportsPage). */
-  function redirectToLogin(): void {
-    const next = encodeURIComponent(window.location.pathname);
-    window.location.assign(`/login?next=${next}`);
-  }
 
   const load = useCallback(
     async (signal: AbortSignal) => {
@@ -324,7 +327,6 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
     if (!dirty) return;
     const handler = (event: BeforeUnloadEvent) => {
       event.preventDefault();
-      event.returnValue = "";
     };
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);

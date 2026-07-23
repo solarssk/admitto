@@ -20,7 +20,14 @@ interface SettingsTabPanelProps {
 }
 
 /** Mount on first visit; stay mounted so drafts and filter state survive tab switches. */
-function SettingsTabPanel({ tab, activeTab, visited, label, className, children }: SettingsTabPanelProps) {
+function SettingsTabPanel({
+  tab,
+  activeTab,
+  visited,
+  label,
+  className,
+  children,
+}: Readonly<SettingsTabPanelProps>) {
   if (!visited.has(tab)) return null;
   return (
     <div role="tabpanel" aria-label={label} hidden={activeTab !== tab} className={className}>

@@ -25,7 +25,7 @@ export function ScanHistoryList({
   compact = false,
   ticketTypes = [],
   onSelectAttendee,
-}: ScanHistoryListProps) {
+}: Readonly<ScanHistoryListProps>) {
   return (
     <>
       <CkStats admitted={admittedCount} total={totalCount} />
