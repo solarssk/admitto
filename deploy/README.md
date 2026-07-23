@@ -293,7 +293,7 @@ Failed runs log `FAILED` but do not stop the loop — check logs after deploy.
 
 ## PostgreSQL backups (ADR 0012, ADR 0027)
 
-**Automatic (upgrades):** when pending migrations exist, the app entrypoint writes
+**Automatic (upgrades):** when pending migrations exist, the `migrate` service writes
 `pre-migration-<UTC>.sql.gz` to the `migration_backups` volume before `migrate deploy`. Copy these
 offsite when possible (ADR 0023).
 

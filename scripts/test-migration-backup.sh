@@ -78,6 +78,14 @@ fi
 $COMPOSE restart app
 sleep 5
 $COMPOSE ps app | grep -q healthy || $COMPOSE ps app | grep -q running
+# A bare restart never re-runs migrate (depends_on: condition: service_completed_successfully is
+# only evaluated on `docker compose up`), so retention cleanup must show up in app's own logs on
+# every restart to actually happen at all (regression class caught by Codex review on PR #572).
+if ! $COMPOSE logs app --since 15s 2>&1 | grep -q "purging expired/revoked auth sessions"; then
+  echo "expected retention cleanup log line after a bare app restart" >&2
+  $COMPOSE logs app --since 15s
+  exit 1
+fi
 echo "Scenario B OK"
 
 echo "== Scenario C: pg_dump failure → no migrations applied =="

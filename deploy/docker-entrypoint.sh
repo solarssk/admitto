@@ -15,6 +15,12 @@ ensure_backup_dir_permissions() {
   fi
 }
 
+# A no-op unless run as root — chown needs root, so this only actually fixes anything inside
+# `migrate` (always root) or an explicit `--user root` override. `app` calls this too (its "node"
+# CLI-passthrough branch below) but is non-root by default, so for `app` it's a no-op relying on
+# `migrate` already having chowned this directory once: `docker compose run --rm app node ...`
+# (undocumented `--no-deps` aside) always starts `migrate` first via depends_on on a truly fresh
+# stack, and a durable host-filesystem chown doesn't need repeating on later app-only restarts.
 ensure_emergency_export_dir_permissions() {
   export_dir="${EMERGENCY_EXPORT_DIR:-/app/emergency-exports}"
   if [ "$(id -u)" != "0" ]; then

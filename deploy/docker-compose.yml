@@ -1,8 +1,10 @@
 services:
-  # One-shot: migration status check, pre-migration backup, `migrate deploy`, backfills, and
-  # startup retention — all the steps that need root (to write into the root-only
-  # migration_backups volume) or should complete before the web server accepts traffic. The `app`
-  # service below only starts once this exits 0 (docker:S6471 — app itself never runs as root).
+  # One-shot: migration status check, pre-migration backup, `migrate deploy`, and backfills —
+  # steps that need root (to write into the root-only migration_backups volume) or must complete
+  # before the web server accepts traffic. The `app` service below only starts once this exits 0
+  # (docker:S6471 — app itself never runs as root). Retention cleanup is NOT here — it runs inside
+  # `app` on every start instead, since this service's completion is only checked by compose on
+  # `docker compose up`, not on a bare `app` restart; see docker-entrypoint.sh's `serve` branch.
   migrate:
     image: ${ADMITTO_IMAGE:-ghcr.io/solarssk/admitto:local}
     build:
@@ -10,6 +12,11 @@ services:
       dockerfile: Dockerfile
     user: root
     command: ["migrate"]
+    # Disables the image's inherited HEALTHCHECK (a port-3000 HTTP probe meant for `app`'s server) —
+    # this container never listens on anything, so that probe can only ever report false-unhealthy
+    # while a slow pg_dump/backfill is still legitimately running.
+    healthcheck:
+      disable: true
     env_file: .env
     environment:
       NODE_ENV: production
