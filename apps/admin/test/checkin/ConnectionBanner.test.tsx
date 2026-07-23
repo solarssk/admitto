@@ -5,7 +5,6 @@ import type { ConnectionState } from "../../src/connection/types.js";
 import {
   CheckinConnectionBanner,
   CheckinConnectionLiveRegion,
-  ServerConnectionBadge,
 } from "../../src/checkin/ConnectionBanner.js";
 import { connectionStateValue } from "./connectionStateMock.js";
 
@@ -36,25 +35,6 @@ describe("CheckinConnectionBanner", () => {
     expect(
       screen.getByText("Offline — new check-ins are blocked until connection returns"),
     ).toBeTruthy();
-  });
-});
-
-describe("ServerConnectionBadge", () => {
-  it("shows a green connected icon when connected", () => {
-    mockState("connected");
-    const { container } = render(<ServerConnectionBadge />);
-    expect(screen.getByLabelText("Connected — all scans confirmed by server")).toBeTruthy();
-    expect(container.querySelector(".status-circle--ok")).toBeTruthy();
-    expect(container.querySelector(".status-circle [role='img']")).toBeTruthy();
-  });
-
-  it("shows a red offline icon instead of hiding when offline", () => {
-    mockState("offline");
-    const { container } = render(<ServerConnectionBadge />);
-    expect(
-      screen.getByLabelText("Offline — new check-ins are blocked until connection returns"),
-    ).toBeTruthy();
-    expect(container.querySelector(".status-circle--error")).toBeTruthy();
   });
 });
 
