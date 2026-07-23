@@ -35,7 +35,13 @@ vi.mock("../../src/api/client.js", () => ({
       this.code = code;
     }
   },
-  TemplateValidationError: class TemplateValidationError extends Error {},
+  TemplateValidationError: class TemplateValidationError extends Error {
+    errors: string[];
+    constructor(errors: string[] = []) {
+      super("Template validation failed");
+      this.errors = errors;
+    }
+  },
   fetchEventTemplates: (...args: unknown[]) => fetchEventTemplates(...args),
   fetchEventTemplate: (...args: unknown[]) => fetchEventTemplate(...args),
   fetchEventTemplateById: (...args: unknown[]) => fetchEventTemplateById(...args),
@@ -559,6 +565,39 @@ describe("CommunicationPage templates", () => {
     });
   });
 
+  it("switches formats and renders a successful compiled preview", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    previewEventTemplateById.mockResolvedValue({
+      subject: "Preview subject",
+      html: "<p>Rendered preview</p>",
+    });
+
+    renderPage();
+    await screen.findByRole("button", { name: "Preview" });
+
+    fireEvent.click(screen.getByRole("button", { name: "MJML" }));
+    expect(screen.getByLabelText("MJML body")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "HTML" }));
+    expect(screen.getByLabelText("HTML body")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(await screen.findByText("Preview subject")).toBeTruthy();
+    expect(screen.getByTitle("Email preview").getAttribute("srcdoc")).toBe("<p>Rendered preview</p>");
+  });
+
+  it("renders inline validation errors returned by preview", async () => {
+    const { TemplateValidationError } = await import("../../src/api/client.js");
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    previewEventTemplateById.mockRejectedValueOnce(
+      new TemplateValidationError(["Subject must include {{ticket_url}}"]),
+    );
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Preview" }));
+
+    expect(await screen.findByText("Subject must include {{ticket_url}}")).toBeTruthy();
+  });
+
   it("toasts operator-safe template switch failure", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
@@ -605,6 +644,24 @@ describe("CommunicationPage templates", () => {
     await waitFor(() => {
       expect(screen.getByRole("status").textContent).toMatch(/valid email address/);
     });
+  });
+
+  it("renders both successful and rejected test-send outcomes", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    testSendEventTemplateById
+      .mockResolvedValueOnce({ status: "sent" })
+      .mockResolvedValueOnce({ status: "failed", error: "Mailbox unavailable" });
+
+    renderPage();
+    const email = await screen.findByLabelText("Recipient email");
+    fireEvent.change(email, { target: { value: "ops@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send test" }));
+    expect(await screen.findByText("Test email sent.")).toBeTruthy();
+    expect(screen.getByRole("status").className).toContain("communication-status--ok");
+
+    fireEvent.click(screen.getByRole("button", { name: "Send test" }));
+    expect(await screen.findByText("Mailbox unavailable")).toBeTruthy();
+    expect(screen.getByRole("status").className).toContain("communication-status--error");
   });
 
   it("reports no recipients when batchId is null", async () => {

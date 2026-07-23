@@ -9,6 +9,7 @@ import {
   SETTING_CF_ACCESS_ENABLED,
   SETTING_CF_ACCESS_TEAM_DOMAIN,
   SETTING_CF_ACCESS_AUD,
+  clearCfAccessRuntimeConfigCache,
   clearCfAccessJwksCacheForTests,
 } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
@@ -166,6 +167,62 @@ describe("CF Access admin collision point", () => {
       },
     });
     expect(res.status).toBe(200);
+  });
+
+  it("returns a JSON login boundary for an uncredentialed protected API request", async () => {
+    const res = await app.request("/api/admin/identity/providers");
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: "authentication_required" });
+  });
+
+  it("allows a break-glass session to use protected APIs", async () => {
+    const res = await app.request("/api/admin/identity/providers", {
+      headers: { Cookie: superCookie },
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects a non-superadmin break-glass session with JSON", async () => {
+    const { rawToken, session } = await createSession(prisma, {
+      userId: NO_ROLE_ID,
+      stage: SESSION_STAGE.FULL,
+    });
+    try {
+      const res = await app.request("/api/admin/identity/providers", {
+        headers: { Cookie: `admitto_session=${rawToken}` },
+      });
+
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "forbidden" });
+    } finally {
+      await prisma.session.delete({ where: { id: session.id } });
+    }
+  });
+
+  it("falls back to a break-glass session when Cloudflare Access is disabled", async () => {
+    await prisma.systemSettings.update({
+      where: { key: SETTING_CF_ACCESS_ENABLED },
+      data: { value_json: "false" },
+    });
+    clearCfAccessRuntimeConfigCache();
+    try {
+      const res = await app.request("/api/admin/identity/providers", {
+        headers: {
+          Cookie: superCookie,
+          [CF_ACCESS_HEADER]: "not.a.jwt",
+        },
+      });
+
+      expect(res.status).toBe(200);
+    } finally {
+      await prisma.systemSettings.update({
+        where: { key: SETTING_CF_ACCESS_ENABLED },
+        data: { value_json: "true" },
+      });
+      clearCfAccessRuntimeConfigCache();
+    }
   });
 
   it("valid CF JWT + superadmin renders SPA shell without login redirect", async () => {

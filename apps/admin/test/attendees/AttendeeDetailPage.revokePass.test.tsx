@@ -155,6 +155,8 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
 
     expect(await within(dialog).findByText("Could not update pass status.")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("reloads the page after a stale-write pass conflict", async () => {

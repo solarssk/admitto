@@ -762,6 +762,43 @@ describe("AccountPage toasts", () => {
     });
   });
 
+  it("shows a recoverable session-load error and retries the request", async () => {
+    mockFetchAccount.mockResolvedValue(baseAccount);
+    mockFetchSessions
+      .mockRejectedValueOnce(new Error("internal session transport detail"))
+      .mockResolvedValueOnce({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    expect(await screen.findByText("Failed to load sessions.")).toBeTruthy();
+    expect(screen.queryByText("internal session transport detail")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => {
+      expect(mockFetchSessions).toHaveBeenCalledTimes(2);
+      expect(screen.getByText("No active sessions.")).toBeTruthy();
+    });
+  });
+
+  it("cancels individual and bulk session revocation dialogs without making changes", async () => {
+    const { currentSession, otherSession } = makeCurrentAndOtherSessions();
+    mockFetchAccount.mockResolvedValue(baseAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [currentSession, otherSession] });
+
+    renderWithToast(<AccountPage />);
+    await screen.findByRole("button", { name: "Revoke all other sessions" });
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Revoke" })[1]!);
+    let dialog = await screen.findByRole("dialog", { name: "Revoke session" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Revoke all other sessions" }));
+    dialog = await screen.findByRole("dialog", { name: "Revoke all other sessions" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(mockDeleteSession).not.toHaveBeenCalled();
+  });
+
   it("labels sessions from browser and operating-system user agents", async () => {
     mockLoadedAccount();
     mockFetchSessions.mockResolvedValue({

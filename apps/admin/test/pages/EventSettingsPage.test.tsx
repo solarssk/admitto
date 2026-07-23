@@ -13,6 +13,11 @@ const orgAdminAssignments: RoleAssignment[] = [
   { role: "admin", scope_type: "organization", scope_id: "org-1" },
 ];
 let mockAssignments: RoleAssignment[] = superadminAssignments;
+let mockBlocker: {
+  state: "unblocked" | "blocked";
+  proceed: () => void;
+  reset: () => void;
+} = { state: "unblocked", proceed: vi.fn(), reset: vi.fn() };
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({
   useAuth: () => ({ assignments: mockAssignments }),
@@ -26,7 +31,7 @@ vi.mock("react-router-dom", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router-dom")>();
   return {
     ...actual,
-    useBlocker: () => ({ state: "unblocked", proceed: vi.fn(), reset: vi.fn() }),
+    useBlocker: () => mockBlocker,
   };
 });
 
@@ -156,6 +161,7 @@ beforeEach(() => {
   vi.mocked(fetchEventImageAssets).mockResolvedValue([]);
   vi.mocked(fetchTicketTypes).mockResolvedValue([]);
   vi.mocked(fetchEventMailSettings).mockResolvedValue(inheritedMailSettingsResponse());
+  mockBlocker = { state: "unblocked", proceed: vi.fn(), reset: vi.fn() };
 });
 
 afterEach(() => {
@@ -194,6 +200,23 @@ describe("EventSettingsPage subtitle", () => {
     expect(screen.getByText(SUBTITLE)).toBeTruthy();
     expect(SUBTITLE).not.toContain(activeEvent.title);
     expect(screen.queryByText(activeEvent.title, { selector: "p" })).toBeNull();
+  });
+});
+
+describe("EventSettingsPage navigation guard", () => {
+  it("delegates both confirmation choices to the router blocker", async () => {
+    const proceed = vi.fn();
+    const reset = vi.fn();
+    mockBlocker = { state: "blocked" as const, proceed, reset };
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings();
+
+    const dialog = await screen.findByRole("dialog", { name: "Discard unsaved changes?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Keep editing" }));
+    expect(reset).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Discard" }));
+    expect(proceed).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -936,6 +959,19 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
     });
   });
 
+  it("closes archive confirmation without changing the event", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings();
+    await openDangerZone();
+    fireEvent.click(await screen.findByRole("button", { name: "Archive event" }));
+
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(archiveEvent).not.toHaveBeenCalled();
+  });
+
   it("shows a 'No check-ins to revoke' toast when the server resolves a zero count", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, admitted_count: 1 });
     vi.mocked(revokeAllCheckIns).mockResolvedValueOnce({ revokedCount: 0 });
@@ -1004,6 +1040,9 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to revoke items/);
     });
     expect(screen.getByRole("dialog")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("always shows Revoke all Wallet passes as a disabled roadmap placeholder with no dialog", async () => {

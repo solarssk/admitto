@@ -199,4 +199,57 @@ describe("CommunicationPage delivery log", () => {
     const table = await screen.findByRole("table");
     expect(within(table).getAllByText("—")).toHaveLength(3);
   });
+
+  it("filters the log and resets its page when a filter changes", async () => {
+    fetchEventTemplate.mockResolvedValue(templatePayload);
+    fetchEventOverview.mockResolvedValue({
+      email_bounced: 0,
+      email_failed: 0,
+      email_sent: 60,
+      email_queued: 0,
+    });
+    fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 60 });
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("tab", { name: /Delivery log/i }));
+    await screen.findByText(/Showing 1.*25 of 60/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => {
+      expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
+        "evt-1",
+        expect.objectContaining({ page: 2, status: "all", purpose: "all" }),
+        expect.any(AbortSignal),
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+    await waitFor(() => {
+      expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
+        "evt-1",
+        expect.objectContaining({ page: 1, status: "all", purpose: "all" }),
+        expect.any(AbortSignal),
+      );
+    });
+
+    fireEvent.change(screen.getByLabelText("Status"), { target: { value: "failed" } });
+    await waitFor(() => {
+      expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
+        "evt-1",
+        expect.objectContaining({ page: 1, status: "failed", purpose: "all" }),
+        expect.any(AbortSignal),
+      );
+    });
+
+    fireEvent.change(screen.getByLabelText("Purpose"), { target: { value: "resend" } });
+    await waitFor(() => {
+      expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
+        "evt-1",
+        expect.objectContaining({ page: 1, status: "failed", purpose: "resend" }),
+        expect.any(AbortSignal),
+      );
+    });
+
+    expect(screen.getByRole("button", { name: "Previous" })).toHaveProperty("disabled", true);
+  });
 });

@@ -519,6 +519,21 @@ describe("RequirementsPage operator errors", () => {
 });
 
 describe("ReportsPage operator errors", () => {
+  it("shows a generic report-load failure without exposing internal errors", async () => {
+    vi.mocked(fetchEventReports).mockRejectedValueOnce(new Error("internal transport detail"));
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Failed to load report.")).toBeTruthy();
+    });
+    expect(screen.queryByText("internal transport detail")).toBeNull();
+  });
+
   it("shows forbidden without leaking internals", async () => {
     vi.mocked(fetchEventReports).mockRejectedValueOnce(new ApiError(403, "secret_internal"));
     renderWithToast(
@@ -622,6 +637,40 @@ describe("ReportsPage hourly chart", () => {
 });
 
 describe("ReportsPage admission log", () => {
+  it("paginates the admission log in both directions", async () => {
+    const admissionLog = Array.from({ length: 51 }, (_, index) => ({
+      attendee_id: `att-${index + 1}`,
+      name: `Guest ${index + 1}`,
+      email: `guest-${index + 1}@example.com`,
+      ticket_type: null,
+      admitted_at: "2026-06-01T10:00:00.000Z",
+      device_id: null,
+    }));
+    vi.mocked(fetchEventReports).mockResolvedValue({
+      ...emptyReport,
+      summary: { ...emptyReport.summary, total_attendees: 51, admitted: 51, admission_rate_pct: 100 },
+      admission_log: admissionLog,
+      admission_log_total: admissionLog.length,
+    });
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Guest 1")).toBeTruthy();
+    expect(screen.getByText("Page 1 of 2")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText("Guest 51")).toBeTruthy();
+    expect(screen.queryByText("Guest 1")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+    expect(await screen.findByText("Guest 1")).toBeTruthy();
+    expect(screen.queryByText("Guest 51")).toBeNull();
+  });
+
   it("labels an untyped admission as (none), matching the breakdown/filter instead of the Attendees table's dash", async () => {
     // mockResolvedValue (not ...Once): the mocked useConnectionState() below returns a fresh
     // object every render, so ReportsPage's load effect can legitimately fire more than once -
