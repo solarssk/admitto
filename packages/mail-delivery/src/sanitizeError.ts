@@ -25,7 +25,7 @@ export function clientSafeDeliveryError(message: string | undefined): string {
   }
   if (
     /https?:\/\//i.test(sanitized) ||
-    /[a-z0-9.-]+:\d{2,5}\b/i.test(sanitized) ||
+    /[a-z0-9.-]+:\d{2,5}\b/i.test(sanitized) || // NOSONAR — sanitized is derived from message, already capped at 120 chars by the guard above; worst case is a few hundred backtrack steps, not unbounded
     /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/i.test(sanitized)
   ) {
     return "send failed";

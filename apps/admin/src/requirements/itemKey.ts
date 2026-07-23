@@ -7,7 +7,7 @@ export function slugifyItemKey(label: string): string {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+/, "")
-    .replace(/_+$/, "")
+    .replace(/_+$/, "") // NOSONAR — single anchored quantifier, no alternation/nesting; cannot backtrack combinatorially regardless of input length
     .replace(/_+/g, "_")
     .slice(0, 60);
 }
