@@ -478,16 +478,29 @@ async function syncBadgeAtEntryOff(
 
 /** Body of the PATCH transaction: validates content_fields, blocks disabling an in-use item,
  * applies the update, re-syncs "badge_at_entry" when needed, and writes the audit log. */
+type ApplyEventItemPatchOptions = {
+  c: Context;
+  eventId: string;
+  itemId: string;
+  config: EventItemConfig | undefined;
+  data: Prisma.EventItemUpdateInput;
+  fields: string[];
+  disabling: boolean;
+  needsBadgeSync: boolean;
+};
+
 async function applyEventItemPatch(
   tx: Prisma.TransactionClient,
-  c: Context,
-  eventId: string,
-  itemId: string,
-  config: EventItemConfig | undefined,
-  data: Prisma.EventItemUpdateInput,
-  fields: string[],
-  disabling: boolean,
-  needsBadgeSync: boolean,
+  {
+    c,
+    eventId,
+    itemId,
+    config,
+    data,
+    fields,
+    disabling,
+    needsBadgeSync,
+  }: ApplyEventItemPatchOptions,
 ): Promise<PatchEventItemOutcome> {
   const unknownField = await validatePatchContentFields(tx, eventId, config);
   if (unknownField) {
@@ -569,17 +582,16 @@ export async function handlePatchEventItem(c: Context, db: PrismaClient): Promis
   const result = await runSerializableTransaction(
     db,
     (tx) =>
-      applyEventItemPatch(
-        tx,
+      applyEventItemPatch(tx, {
         c,
         eventId,
         itemId,
-        parsed.data.config,
+        config: parsed.data.config,
         data,
         fields,
         disabling,
         needsBadgeSync,
-      ),
+      }),
     needsSerializable
       ? { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
       : undefined,

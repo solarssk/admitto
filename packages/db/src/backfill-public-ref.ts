@@ -82,7 +82,7 @@ export async function backfillAgencyPublicRefs(
       }
     }
 
-    cursor = rows[rows.length - 1]!.id;
+    cursor = rows.at(-1)!.id;
     if (rows.length < BACKFILL_BATCH_SIZE) break;
   }
 

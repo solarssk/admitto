@@ -226,6 +226,21 @@ export function AccountPage() {
     confirmPassword.length > 0 &&
     !passwordMismatch;
 
+  function handleCopyEnrollmentUri(): void {
+    if (!enrollData) return;
+
+    copyTextToClipboard(enrollData.otpauthUri).then((copied) => {
+      if (!copied) {
+        setShowUriManual(true);
+        return;
+      }
+
+      if (!qrRenderFailed) setShowUriManual(false);
+      setUriCopied(true);
+      setTimeout(() => setUriCopied(false), 2000);
+    });
+  }
+
   /** Shared by the form's own submit and the step-up dialog's confirm — `code` is only passed once the server has asked for one. */
   async function submitPasswordChange(code?: string): Promise<void> {
     const { sessions_revoked } = await patchAccountPassword({
@@ -471,17 +486,7 @@ export function AccountPage() {
           <button
             type="button"
             className="account-uri-copy-btn"
-            onClick={() => {
-              void copyTextToClipboard(enrollData.otpauthUri).then((ok) => {
-                if (ok) {
-                  if (!qrRenderFailed) setShowUriManual(false);
-                  setUriCopied(true);
-                  setTimeout(() => setUriCopied(false), 2000);
-                } else {
-                  setShowUriManual(true);
-                }
-              });
-            }}
+            onClick={handleCopyEnrollmentUri}
           >
             <i className={`ti ti-${uriCopied ? "check" : "copy"}`} aria-hidden="true" />
             {uriCopied ? "Copied!" : "Copy URI"}
@@ -509,7 +514,7 @@ export function AccountPage() {
   }
 
   function renderMfaResetFields() {
-    if (!account || !account.has_local_password || !totpEnrolled || !resetFormOpen) return null;
+    if (!account?.has_local_password || !totpEnrolled || !resetFormOpen) return null;
     return (
       <>
         <p className="account-info-block">Resetting 2FA removes your authenticator and backup codes, and ends your other active sessions. Your current session stays signed in.</p>

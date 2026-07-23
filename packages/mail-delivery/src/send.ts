@@ -126,24 +126,38 @@ type AttendeeSendOutcome =
   | { kind: "skip"; attendeeId: string; reason: string }
   | { kind: "pending"; pending: PendingSend };
 
+interface ProcessAttendeeForSendInput {
+  attendee: AttendeeForSend;
+  event: EventForSend;
+  resolvedTemplate: ResolvedTemplate;
+  branding: BrandingUrls;
+  customAssets: EventImageAssetPlaceholders;
+  baseUrl: string;
+  purpose: "initial" | "resend";
+  options: SendTicketEmailsOptions;
+  batchId: string;
+  provider: string;
+  prisma: PrismaClient;
+}
+
 /**
  * Process a single attendee: issue the ticket, build links/rendered content, and claim/create
  * the delivery row. Returns a skip outcome (batch continues without this attendee) or a pending
  * send to hand to `deliverPendingBatch`.
  */
-async function processAttendeeForSend(
-  attendee: AttendeeForSend,
-  event: EventForSend,
-  resolvedTemplate: ResolvedTemplate,
-  branding: BrandingUrls,
-  customAssets: EventImageAssetPlaceholders,
-  baseUrl: string,
-  purpose: "initial" | "resend",
-  options: SendTicketEmailsOptions,
-  batchId: string,
-  provider: string,
-  prisma: PrismaClient,
-): Promise<AttendeeSendOutcome> {
+async function processAttendeeForSend({
+  attendee,
+  event,
+  resolvedTemplate,
+  branding,
+  customAssets,
+  baseUrl,
+  purpose,
+  options,
+  batchId,
+  provider,
+  prisma,
+}: ProcessAttendeeForSendInput): Promise<AttendeeSendOutcome> {
   const issueResult = await issueTicket(attendee.id, prisma, baseUrl);
 
   if (issueResult.status === "not_issuable") {
@@ -346,7 +360,7 @@ export async function sendTicketEmails(
 
   try {
     for (const attendee of attendees) {
-      const outcome = await processAttendeeForSend(
+      const outcome = await processAttendeeForSend({
         attendee,
         event,
         resolvedTemplate,
@@ -356,9 +370,9 @@ export async function sendTicketEmails(
         purpose,
         options,
         batchId,
-        mailer.provider,
+        provider: mailer.provider,
         prisma,
-      );
+      });
       if (outcome.kind === "skip") {
         skipped.push({ attendeeId: outcome.attendeeId, reason: outcome.reason });
       } else {

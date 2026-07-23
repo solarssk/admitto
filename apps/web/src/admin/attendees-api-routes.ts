@@ -1201,10 +1201,12 @@ function parseExpectedUpdatedAt(raw: string | undefined): Date | { error: string
   return parsed;
 }
 
+type PatchAttendeeStatusChange = "registered" | "revoked" | undefined;
+
 function computeStatusChange(
   existingStatus: string,
-  patchStatus: "registered" | "revoked" | undefined,
-): "registered" | "revoked" | undefined {
+  patchStatus: PatchAttendeeStatusChange,
+): PatchAttendeeStatusChange {
   if (patchStatus === undefined || patchStatus === existingStatus) return undefined;
   return patchStatus;
 }
@@ -1276,7 +1278,7 @@ async function assertPatchCustomDataRequirements(
 function buildPatchUpdateData(
   profileChanges: ReturnType<typeof computePatchChanges>,
   rsvpChange: ReturnType<typeof computeRsvpChange>,
-  statusChange: "registered" | "revoked" | undefined,
+  statusChange: PatchAttendeeStatusChange,
 ): Prisma.AttendeeUpdateInput {
   return {
     ...(profileChanges?.data ?? {}),
@@ -1315,7 +1317,7 @@ async function guardPatchCapacityRestore(
   tx: Prisma.TransactionClient,
   eventId: string,
   existingStatus: string,
-  statusChange: "registered" | "revoked" | undefined,
+  statusChange: PatchAttendeeStatusChange,
 ): Promise<{ forced: true; capacity: number; current: number } | undefined> {
   if (!isCapacityReactivation(existingStatus, statusChange)) return undefined;
   await acquireEventCapacityLock(tx, eventId);
@@ -1342,7 +1344,7 @@ async function clearAdmissionOnNonAdmittableTransition(
   tx: Prisma.TransactionClient,
   eventId: string,
   attendeeId: string,
-  statusChange: "registered" | "revoked" | undefined,
+  statusChange: PatchAttendeeStatusChange,
   existingAdmittedAt: Date | null,
   result: { row: { admitted_at: Date | null; updated_at: Date } },
 ): Promise<void> {
@@ -1378,7 +1380,7 @@ async function runPatchAttendeeTransaction(
     profileChanges: ReturnType<typeof computePatchChanges>;
     profilePatchTicketType: string | null | undefined;
     rsvpChange: ReturnType<typeof computeRsvpChange>;
-    statusChange: "registered" | "revoked" | undefined;
+    statusChange: PatchAttendeeStatusChange;
     expectedUpdatedAt: Date;
     updateData: Prisma.AttendeeUpdateInput;
   },

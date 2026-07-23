@@ -241,6 +241,43 @@ type DirtyProtectedAction =
   | { kind: "create" }
   | { kind: "delete"; templateId: string; name: string };
 
+type TemplateDetailSnapshot = {
+  name: string;
+  subject_template: string;
+  body_template: string;
+  template_format: TemplateFormat;
+};
+
+type DeleteRecoveryContext = {
+  seq: number;
+  scopeEventId: string;
+  deleteTemplateSeqRef: RefObject<number>;
+  currentEventIdRef: RefObject<string | undefined>;
+};
+
+type TicketDeleteRecoveryOptions = DeleteRecoveryContext & {
+  ticket: MailTemplateListItem;
+  applyDetailTemplate: (detail: TemplateDetailSnapshot) => void;
+  setActiveKey: Dispatch<SetStateAction<string>>;
+  setEditorSnapshotMissing: Dispatch<SetStateAction<boolean>>;
+  setSubject: Dispatch<SetStateAction<string>>;
+  setBody: Dispatch<SetStateAction<string>>;
+  setSavedSubject: Dispatch<SetStateAction<string>>;
+  setSavedBody: Dispatch<SetStateAction<string>>;
+  setValidationErrors: Dispatch<SetStateAction<string[]>>;
+  setPreviewSubject: Dispatch<SetStateAction<string | null>>;
+  setPreviewHtml: Dispatch<SetStateAction<string | null>>;
+  reportApiError: (status: number) => void;
+  addToast: (message: string, variant?: ToastVariant, duration?: number) => void;
+};
+
+type LegacyDeleteRecoveryOptions = DeleteRecoveryContext & {
+  legacyTemplateRef: MutableRefObject<EventTemplateDto | null>;
+  applyLegacyTemplate: (data: EventTemplateDto) => void;
+  setActiveKey: Dispatch<SetStateAction<string>>;
+  addToast: (message: string, variant?: ToastVariant, duration?: number) => void;
+};
+
 /** Sort template list items by label for the sidebar. */
 function sortTemplates(items: MailTemplateListItem[]): MailTemplateListItem[] {
   return [...items].sort((a, b) => a.label.localeCompare(b.label));
@@ -296,30 +333,25 @@ function handleInitialTemplateLoadError(
  * was the active one, and a "ticket" template still exists), applying it once loaded, or falling
  * back to a blank/missing editor snapshot if both attempts fail. Extracted from
  * `executeDeleteTemplate` so that function's own cognitive complexity stays low. */
-async function recoverTicketAfterDelete(
-  ticket: MailTemplateListItem,
-  seq: number,
-  scopeEventId: string,
-  deleteTemplateSeqRef: RefObject<number>,
-  currentEventIdRef: RefObject<string | undefined>,
-  applyDetailTemplate: (detail: {
-    name: string;
-    subject_template: string;
-    body_template: string;
-    template_format: TemplateFormat;
-  }) => void,
-  setActiveKey: Dispatch<SetStateAction<string>>,
-  setEditorSnapshotMissing: Dispatch<SetStateAction<boolean>>,
-  setSubject: Dispatch<SetStateAction<string>>,
-  setBody: Dispatch<SetStateAction<string>>,
-  setSavedSubject: Dispatch<SetStateAction<string>>,
-  setSavedBody: Dispatch<SetStateAction<string>>,
-  setValidationErrors: Dispatch<SetStateAction<string[]>>,
-  setPreviewSubject: Dispatch<SetStateAction<string | null>>,
-  setPreviewHtml: Dispatch<SetStateAction<string | null>>,
-  reportApiError: (status: number) => void,
-  addToast: (message: string, variant?: ToastVariant, duration?: number) => void,
-): Promise<void> {
+async function recoverTicketAfterDelete({
+  ticket,
+  seq,
+  scopeEventId,
+  deleteTemplateSeqRef,
+  currentEventIdRef,
+  applyDetailTemplate,
+  setActiveKey,
+  setEditorSnapshotMissing,
+  setSubject,
+  setBody,
+  setSavedSubject,
+  setSavedBody,
+  setValidationErrors,
+  setPreviewSubject,
+  setPreviewHtml,
+  reportApiError,
+  addToast,
+}: Readonly<TicketDeleteRecoveryOptions>): Promise<void> {
   let loaded = false;
   let lastErr: unknown;
   for (let attempt = 0; attempt < 2 && !loaded; attempt++) {
@@ -353,16 +385,16 @@ async function recoverTicketAfterDelete(
  * template, applying it, or falling back to the last-known cached copy (or an operator-facing
  * warning) if the refetch fails. Extracted from `executeDeleteTemplate` so that function's own
  * cognitive complexity stays low. */
-async function recoverLegacyAfterDelete(
-  scopeEventId: string,
-  seq: number,
-  deleteTemplateSeqRef: RefObject<number>,
-  currentEventIdRef: RefObject<string | undefined>,
-  legacyTemplateRef: MutableRefObject<EventTemplateDto | null>,
-  applyLegacyTemplate: (data: EventTemplateDto) => void,
-  setActiveKey: Dispatch<SetStateAction<string>>,
-  addToast: (message: string, variant?: ToastVariant, duration?: number) => void,
-): Promise<void> {
+async function recoverLegacyAfterDelete({
+  scopeEventId,
+  seq,
+  deleteTemplateSeqRef,
+  currentEventIdRef,
+  legacyTemplateRef,
+  applyLegacyTemplate,
+  setActiveKey,
+  addToast,
+}: Readonly<LegacyDeleteRecoveryOptions>): Promise<void> {
   try {
     legacyTemplateRef.current = await fetchEventTemplate(scopeEventId);
     if (isDeleteStale(seq, scopeEventId, deleteTemplateSeqRef.current, currentEventIdRef.current)) return;
@@ -425,7 +457,7 @@ function deleteConfirmMessage(
 }
 
 /** Bounced-email warning banner shown above the tabs; renders nothing when there are no bounces. */
-function EmailBounceBanner({ count, onViewLog }: { count: number; onViewLog: () => void }) {
+function EmailBounceBanner({ count, onViewLog }: Readonly<{ count: number; onViewLog: () => void }>) {
   if (count <= 0) return null;
   return (
     <div className="bounce-banner" role="alert">
@@ -448,10 +480,10 @@ function EmailBounceBanner({ count, onViewLog }: { count: number; onViewLog: () 
 function DefaultTemplateBanner({
   activeKey,
   source,
-}: {
+}: Readonly<{
   activeKey: string;
   source: EventTemplateDto["source"];
-}) {
+}>) {
   if (activeKey !== "virtual-ticket" || source === "event") return null;
   return (
     <div className="communication-default-banner">
@@ -468,13 +500,13 @@ function TemplateSidebar({
   templates,
   activeKey,
   requestDirtyProtectedAction,
-}: {
+}: Readonly<{
   event: EventDto;
   templateActionBusy: boolean;
   templates: MailTemplateListItem[];
   activeKey: string;
   requestDirtyProtectedAction: (action: DirtyProtectedAction) => void;
-}) {
+}>) {
   return (
     <nav className="communication-templates" aria-label="Email templates">
       <div className="communication-templates__header">
@@ -584,7 +616,7 @@ function TemplateEditorCard({
   isDirty,
   saveButtonLabel,
   onSave,
-}: {
+}: Readonly<{
   event: EventDto;
   activeTemplateName: string;
   allowedPlaceholders: string[];
@@ -608,7 +640,7 @@ function TemplateEditorCard({
   isDirty: boolean;
   saveButtonLabel: string;
   onSave: () => void;
-}) {
+}>) {
   return (
     <Card
       title={activeTemplateName === "ticket" ? "Ticket template" : "Template"}
@@ -741,10 +773,10 @@ function TemplateEditorCard({
 function PreviewCard({
   previewHtml,
   previewSubject,
-}: {
+}: Readonly<{
   previewHtml: string | null;
   previewSubject: string | null;
-}) {
+}>) {
   return (
     <Card title="Preview">
       {previewHtml ? (
@@ -776,7 +808,7 @@ function SendTestCard({
   editorSnapshotMissing,
   onTestSend,
   testStatus,
-}: {
+}: Readonly<{
   event: EventDto;
   testEmail: string;
   setTestEmail: Dispatch<SetStateAction<string>>;
@@ -784,7 +816,7 @@ function SendTestCard({
   editorSnapshotMissing: boolean;
   onTestSend: () => Promise<void>;
   testStatus: { kind: "ok" | "error"; message: string } | null;
-}) {
+}>) {
   return (
     <Card title="Send test" className="communication-test-send">
       <div className="communication-test-row">
@@ -838,7 +870,7 @@ function DeliveryLogTab({
   deliveryRangeEnd,
   effectiveDeliveryPage,
   deliveryPages,
-}: {
+}: Readonly<{
   deliveryStatus: EventDeliveriesListParams["status"];
   setDeliveryStatus: Dispatch<SetStateAction<EventDeliveriesListParams["status"]>>;
   deliveryPurpose: EventDeliveriesListParams["purpose"];
@@ -851,7 +883,7 @@ function DeliveryLogTab({
   deliveryRangeEnd: number;
   effectiveDeliveryPage: number;
   deliveryPages: number;
-}) {
+}>) {
   return (
     <>
       <div className="communication-log-toolbar">
@@ -1170,7 +1202,7 @@ export function CommunicationPage() {
 
       const ticket = items.find((t) => t.name === "ticket");
       if (!ticket) {
-        await recoverLegacyAfterDelete(
+        await recoverLegacyAfterDelete({
           scopeEventId,
           seq,
           deleteTemplateSeqRef,
@@ -1179,10 +1211,10 @@ export function CommunicationPage() {
           applyLegacyTemplate,
           setActiveKey,
           addToast,
-        );
+        });
         return;
       }
-      await recoverTicketAfterDelete(
+      await recoverTicketAfterDelete({
         ticket,
         seq,
         scopeEventId,
@@ -1200,7 +1232,7 @@ export function CommunicationPage() {
         setPreviewHtml,
         reportApiError,
         addToast,
-      );
+      });
     } catch (err) {
       if (isDeleteStale(seq, scopeEventId, deleteTemplateSeqRef.current, currentEventIdRef.current)) return;
       if (err instanceof ApiError) {

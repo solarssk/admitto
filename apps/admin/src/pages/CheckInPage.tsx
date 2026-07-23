@@ -174,10 +174,10 @@ function computeScanDisplayFlags(
 function CheckInStreamBanners({
   canAct,
   streamStatus,
-}: {
+}: Readonly<{
   canAct: boolean;
   streamStatus: StreamStatus;
-}) {
+}>) {
   return (
     <>
       {canAct && streamStatus === "auth_error" && (
@@ -210,7 +210,7 @@ function CheckInOperatorActionsBar({
   scanSoundMuted,
   onToggleScanSound,
   actionsRef,
-}: CheckInOperatorActionsBarProps) {
+}: Readonly<CheckInOperatorActionsBarProps>) {
   if (!isDesktop && cameraActive) return null;
   return (
     <div className="ck-operator-actions" ref={actionsRef}>
@@ -265,7 +265,7 @@ function CheckInScanBar({
   onWedgePaste,
   onKeyDown,
   onSelectSuggestion,
-}: CheckInScanBarProps) {
+}: Readonly<CheckInScanBarProps>) {
   return (
     <>
       <div className="ck-scan-wrap">
@@ -306,7 +306,7 @@ function CheckInScanBar({
                   type="button"
                   className="ck-suggest__hit"
                   disabled={busy}
-                  onClick={() => void onSelectSuggestion(r.id)}
+                  onClick={() => onSelectSuggestion(r.id)}
                 >
                   <span className="ck-suggest__info">
                     <strong className="ck-suggest__name">{r.name}</strong>
@@ -362,6 +362,76 @@ interface CheckInScanResultViewProps {
   onRevokeItem: (itemKey: string) => Promise<boolean>;
 }
 
+type CheckInAttendeeCardProps = Pick<
+  CheckInScanResultViewProps,
+  | "showResultCard"
+  | "scanResult"
+  | "card"
+  | "ticketTypes"
+  | "eventTimezone"
+  | "pending"
+  | "busy"
+  | "canAct"
+  | "admitOrigin"
+  | "showUndo"
+  | "canRevokeCheckIn"
+  | "onResetScan"
+  | "onAdmitCurrent"
+  | "onItemAction"
+  | "onAddNote"
+  | "onUndo"
+  | "onRevokeCheckIn"
+  | "onRevokeItem"
+>;
+
+function CheckInAttendeeCard({
+  showResultCard,
+  scanResult,
+  card,
+  ticketTypes,
+  eventTimezone,
+  pending,
+  busy,
+  canAct,
+  admitOrigin,
+  showUndo,
+  canRevokeCheckIn,
+  onResetScan,
+  onAdmitCurrent,
+  onItemAction,
+  onAddNote,
+  onUndo,
+  onRevokeCheckIn,
+  onRevokeItem,
+}: Readonly<CheckInAttendeeCardProps>) {
+  if (!showResultCard || !card) return null;
+
+  return (
+    <AttendeeCard
+      key={card.id}
+      card={card}
+      ticketTypes={ticketTypes}
+      eventTimezone={eventTimezone}
+      scanStatus={scanResult?.status}
+      confirmed={scanResult?.confirmed}
+      pending={pending}
+      canAct={canAct && !busy}
+      onCheckIn={
+        card.check_in_status === "not_admitted"
+          ? () => void onAdmitCurrent(card.id, admitOrigin)
+          : undefined
+      }
+      onItemAction={onItemAction}
+      onAddNote={onAddNote}
+      onUndo={onUndo}
+      showUndo={showUndo}
+      onCancel={onResetScan}
+      onRevokeCheckIn={canRevokeCheckIn ? () => onRevokeCheckIn(card.id) : undefined}
+      onRevokeItem={canRevokeCheckIn ? onRevokeItem : undefined}
+    />
+  );
+}
+
 /** The scan-bar's result surface: a compact pass/fail toast-in-place, or the
  * full attendee card, rendered either inline (desktop camera on) or in the
  * normal scan-bar flow — see CheckInPageProps' onUseCameraChange caller for
@@ -392,29 +462,27 @@ function CheckInScanResultView({
   onUndo,
   onRevokeCheckIn,
   onRevokeItem,
-}: CheckInScanResultViewProps) {
-  const attendeeCard = showResultCard && card && (
-    <AttendeeCard
-      key={card.id}
+}: Readonly<CheckInScanResultViewProps>) {
+  const attendeeCard = (
+    <CheckInAttendeeCard
+      showResultCard={showResultCard}
+      scanResult={scanResult}
       card={card}
       ticketTypes={ticketTypes}
       eventTimezone={eventTimezone}
-      scanStatus={scanResult?.status}
-      confirmed={scanResult?.confirmed}
       pending={pending}
-      canAct={canAct && !busy}
-      onCheckIn={
-        card.check_in_status === "not_admitted"
-          ? () => void onAdmitCurrent(card.id, admitOrigin)
-          : undefined
-      }
+      busy={busy}
+      canAct={canAct}
+      admitOrigin={admitOrigin}
+      showUndo={showUndo}
+      canRevokeCheckIn={canRevokeCheckIn}
+      onResetScan={onResetScan}
+      onAdmitCurrent={onAdmitCurrent}
       onItemAction={onItemAction}
       onAddNote={onAddNote}
       onUndo={onUndo}
-      showUndo={showUndo}
-      onCancel={onResetScan}
-      onRevokeCheckIn={canRevokeCheckIn ? () => onRevokeCheckIn(card.id) : undefined}
-      onRevokeItem={canRevokeCheckIn ? onRevokeItem : undefined}
+      onRevokeCheckIn={onRevokeCheckIn}
+      onRevokeItem={onRevokeItem}
     />
   );
 
@@ -515,7 +583,7 @@ function CheckInMobileOverlay({
   onUndo,
   showUndo,
   transportError,
-}: CheckInMobileOverlayProps) {
+}: Readonly<CheckInMobileOverlayProps>) {
   if (!show) return null;
   return (
     <CameraOverlay

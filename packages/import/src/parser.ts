@@ -171,18 +171,31 @@ function markIdentifiersSeen(
   if (qrPayload) seenAgencyIdentifiers.add(qrPayload);
 }
 
-function buildValidatedRow(
-  rowIdx: number,
-  firstName: string,
-  lastName: string,
-  email: string,
-  ticketType: string | undefined,
-  externalUUID: string | undefined,
-  qrPayload: string | undefined,
-  company: string | undefined,
-  department: string | undefined,
-  customData: Record<string, string> | undefined,
-): AttendeeRow {
+interface ValidatedRowInput {
+  rowIdx: number;
+  firstName: string;
+  lastName: string;
+  email: string;
+  ticketType: string | undefined;
+  externalUUID: string | undefined;
+  qrPayload: string | undefined;
+  company: string | undefined;
+  department: string | undefined;
+  customData: Record<string, string> | undefined;
+}
+
+function buildValidatedRow({
+  rowIdx,
+  firstName,
+  lastName,
+  email,
+  ticketType,
+  externalUUID,
+  qrPayload,
+  company,
+  department,
+  customData,
+}: ValidatedRowInput): AttendeeRow {
   return {
     rowIndex: rowIdx,
     first_name: firstName,
@@ -273,18 +286,18 @@ export function parseAttendees(csvString: string, options: ParseAttendeesOptions
     markIdentifiersSeen(email, externalUUID, qrPayload, seenEmails, seenUUIDs, seenQrPayloads, seenAgencyIdentifiers);
 
     validRows.push(
-      buildValidatedRow(
+      buildValidatedRow({
         rowIdx,
         firstName,
         lastName,
         email,
-        ticketResult.value,
+        ticketType: ticketResult.value,
         externalUUID,
         qrPayload,
         company,
         department,
-        customResult.custom_data,
-      ),
+        customData: customResult.custom_data,
+      }),
     );
   }
 

@@ -268,12 +268,12 @@ async function resolveNoDeliveryScopeAndPurpose(
 
   const templateName = await getBulkSendTemplateName(db, templateId);
   const isTicket = templateName === "ticket";
-  const noDeliveryScope: BulkSendNoDeliveryScope | undefined =
-    filter.type === "no_delivery"
-      ? isTicket
-        ? { mode: "initial_ticket" }
-        : { mode: "template", templateId }
-      : undefined;
+  let noDeliveryScope: BulkSendNoDeliveryScope | undefined;
+  if (filter.type === "no_delivery") {
+    noDeliveryScope = isTicket
+      ? { mode: "initial_ticket" }
+      : { mode: "template", templateId };
+  }
 
   return { purpose: isTicket ? "initial" : "resend", noDeliveryScope };
 }
@@ -300,16 +300,27 @@ async function respondEmptyBulkSend(
   } satisfies BulkSendQueuedDto);
 }
 
-async function sendBulkEmailsOrError(
-  c: Context,
-  db: PrismaClient,
-  eventId: string,
-  ids: string[],
-  templateId: string | undefined,
-  purpose: "initial" | "resend",
-  baseUrl: string,
-  mailDeps: MailDeliveryDeps,
-): Promise<Response | SendTicketEmailsResult> {
+type SendBulkEmailsOptions = {
+  c: Context;
+  db: PrismaClient;
+  eventId: string;
+  ids: string[];
+  templateId: string | undefined;
+  purpose: "initial" | "resend";
+  baseUrl: string;
+  mailDeps: MailDeliveryDeps;
+};
+
+async function sendBulkEmailsOrError({
+  c,
+  db,
+  eventId,
+  ids,
+  templateId,
+  purpose,
+  baseUrl,
+  mailDeps,
+}: SendBulkEmailsOptions): Promise<Response | SendTicketEmailsResult> {
   try {
     return await sendTicketEmails(
       eventId,
@@ -390,16 +401,16 @@ export async function handleBulkSend(
   const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
   if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
 
-  const sendResultOrRes = await sendBulkEmailsOrError(
+  const sendResultOrRes = await sendBulkEmailsOrError({
     c,
     db,
     eventId,
     ids,
-    body.templateId,
+    templateId: body.templateId,
     purpose,
-    baseUrlOrRes,
+    baseUrl: baseUrlOrRes,
     mailDeps,
-  );
+  });
   if (sendResultOrRes instanceof Response) return sendResultOrRes;
   const sendResult = sendResultOrRes;
 
