@@ -94,6 +94,42 @@ afterEach(() => {
 });
 
 describe("mobile manual-entry overlay — closes only once the real outcome is known (bot review, round 7)", () => {
+  it("keeps a multiple-match message inside the mobile overlay", async () => {
+    mockPageBootstrap();
+    lookupCheckInAttendees.mockResolvedValueOnce([
+      {
+        id: "att-1",
+        name: "Anna Alpha",
+        ticket_type: "vip",
+        company: null,
+        department: null,
+        check_in_status: "not_admitted",
+      },
+      {
+        id: "att-2",
+        name: "Anna Beta",
+        ticket_type: "vip",
+        company: null,
+        department: null,
+        check_in_status: "not_admitted",
+      },
+    ]);
+
+    renderPage();
+    await screen.findByRole("button", { name: /manual search/i });
+    fireEvent.click(screen.getByRole("button", { name: /manual search/i }));
+    const input = await screen.findByLabelText("Search by name or email");
+    fireEvent.change(input, { target: { value: "Anna" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() =>
+      expect(document.querySelector("#ck-overlay-manual-error")?.textContent).toBe(
+        "Multiple matches — narrow your search.",
+      ),
+    );
+    expect(screen.getByLabelText("Search by name or email")).toBeTruthy();
+  });
+
   it("keeps the manual-search screen open while a long entry's scan attempt is still in flight", async () => {
     // Regression: submitOrLookup (wired as CameraOverlay's onManualEntry)
     // used to fire the scan (`void runScan(...)`) and resolve `true`

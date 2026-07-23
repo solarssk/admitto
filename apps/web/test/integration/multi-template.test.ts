@@ -563,6 +563,42 @@ describe("multi-template API", () => {
     }
   });
 
+  it("POST /send with an attendee_ids custom-template send records purpose 'resend'", async () => {
+    const reminder = await postNamedTemplate(app, "Reminder");
+    await prisma.attendee.create({
+      data: {
+        id: "att-multi-checkbox-custom",
+        event_id: EVENT_A,
+        email: "checkbox-custom@example.com",
+        name: "Custom reminder recipient",
+      },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/send`, {
+        method: "POST",
+        headers: {
+          Cookie: adminCookie,
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify({
+          templateId: reminder.id,
+          filter: { type: "attendee_ids", ids: ["att-multi-checkbox-custom"] },
+        }),
+      });
+      expect(res.status).toBe(200);
+      expect((await res.json()) as { queued: number }).toMatchObject({ queued: 1 });
+
+      const delivery = await prisma.emailDelivery.findFirstOrThrow({
+        where: { event_id: EVENT_A, attendee_id: "att-multi-checkbox-custom" },
+      });
+      expect(delivery).toMatchObject({ template_id: reminder.id, purpose: "resend" });
+    } finally {
+      rateLimitStore.reset();
+    }
+  });
+
   it("POST /send with filter no_delivery and an explicit non-ticket templateId scopes to that template, not the built-in default", async () => {
     const reminder = await postNamedTemplate(app, "Reminder");
     await prisma.attendee.create({
@@ -593,6 +629,44 @@ describe("multi-template API", () => {
     // no_delivery + explicit templateId path resolved { mode: "template", templateId } rather
     // than silently falling back to the built-in ticket template's own no-delivery scope.
     expect(body.recipientCount).toBe(1);
+  });
+
+  it("POST /send logs an empty Everyone undelivered request without starting a delivery batch", async () => {
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/send`, {
+        method: "POST",
+        headers: {
+          Cookie: adminCookie,
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify({ filter: { type: "no_delivery" } }),
+      });
+      expect(res.status).toBe(200);
+      expect(
+        (await res.json()) as {
+          batchId: string | null;
+          queued: number;
+          skipped: number;
+          failed: number;
+        },
+      ).toEqual({ batchId: null, queued: 0, skipped: 0, failed: 0 });
+      expect(exported).toHaveLength(0);
+
+      const audit = await prisma.attendeeActionLog.findFirstOrThrow({
+        where: { event_id: EVENT_A, action_type: "mail_bulk_resend" },
+        orderBy: { created_at: "desc" },
+      });
+      expect(audit.metadata).toEqual({
+        template_id: null,
+        filter: "no_delivery",
+        queued: 0,
+        skipped: 0,
+        failed: 0,
+      });
+    } finally {
+      rateLimitStore.reset();
+    }
   });
 
   it("POST /send returns 422 mail_not_configured instead of a raw 500 when no mail transport is set up", async () => {
