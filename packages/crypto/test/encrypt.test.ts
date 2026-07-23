@@ -44,6 +44,14 @@ describe("encrypt / decrypt — round-trip", () => {
 });
 
 describe("encrypt / decrypt — tamper detection", () => {
+  it("rejects malformed payload field types before any crypto operation", () => {
+    const payload = encrypt("secret");
+    expect(() => decrypt({ ...payload, ciphertext: undefined } as unknown as typeof payload)).toThrow(
+      TypeError,
+    );
+    expect(() => decrypt({ ...payload, iv: 42 } as unknown as typeof payload)).toThrow(TypeError);
+  });
+
   it("throws on modified authTag", () => {
     const payload = encrypt("secret");
     const tampered = { ...payload, authTag: Buffer.alloc(16, 0xff).toString("base64") };

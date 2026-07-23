@@ -12,6 +12,12 @@ describe("formatTable", () => {
     expect(out).toContain("Anna");
   });
 
+  it("preserves numeric and boolean cells", () => {
+    const out = formatTable([{ sent: 12, retryable: false }]);
+    expect(out).toContain("12");
+    expect(out).toContain("false");
+  });
+
   it("handles empty list", () => {
     expect(formatTable([])).toBe("(no rows)");
   });

@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
-import { buildSanitizedExportRows, exportAttendeesCsv } from "../src/attendees-export.js";
+import {
+  buildExportCsv,
+  buildSanitizedExportRows,
+  EXPORT_BASE_COLUMNS,
+  exportAttendeesCsv,
+} from "../src/attendees-export.js";
 import type { ExportAttendeeSqlRow } from "../src/attendees-list-filters.js";
 import type { TicketTypeInfo } from "../src/ticket-types.js";
 
@@ -46,6 +51,29 @@ describe("buildSanitizedExportRows — ticket type catalog resolution (batch 04 
   it("falls back to the raw key when no catalog is passed at all (default param stays backward compatible)", () => {
     const [row] = buildSanitizedExportRows([makeRow({ ticket_type: "vip" })], [], "UTC");
     expect(row!.ticket_type).toBe("vip");
+  });
+});
+
+describe("buildExportCsv", () => {
+  it("doubles embedded quotes in RFC 4180 cells", () => {
+    const csv = buildExportCsv(
+      [
+        {
+          check_off: "",
+          name: 'Ada "Ace"',
+          email: "ada@example.com",
+          company: "",
+          department: "",
+          ticket_type: "",
+          check_in_status: "not_admitted",
+          admitted_at: "",
+          attribute_values: [],
+        },
+      ],
+      [...EXPORT_BASE_COLUMNS],
+    );
+
+    expect(csv).toContain('"Ada ""Ace"""');
   });
 });
 

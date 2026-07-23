@@ -69,7 +69,7 @@ export class PowerAutomateAdapter implements MailerAdapter {
   ) {}
 
   async close(): Promise<void> {
-    return;
+    return Promise.resolve();
   }
 
   async send(message: MailMessage): Promise<SendResult> {

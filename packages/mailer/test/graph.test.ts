@@ -174,6 +174,23 @@ describe("GraphAdapter", () => {
     expect(res.error).toContain("invalid_client");
   });
 
+  it("uses a safe HTTP fallback when token-error fields are not strings", async () => {
+    const fetchFn = vi.fn(async () => ({
+      ok: false,
+      status: 401,
+      text: async () => JSON.stringify({ error: { code: "invalid_client" }, error_description: ["bad secret"] }),
+      headers: { get: () => null },
+    }));
+    const adapter = new GraphAdapter(config, fetchFn as unknown as typeof fetch);
+
+    const res = await adapter.send({ to: "a@example.com", subject: "x", html: "<p>x</p>" });
+
+    expect(res.status).toBe("rejected");
+    expect(res.retryable).toBe(false);
+    expect(res.error).toContain("Graph token error: HTTP 401");
+    expect(res.error).not.toContain("[object Object]");
+  });
+
   it("returns failed+retryable when token fetch throws (network)", async () => {
     const fetchFn = vi.fn(async (url: string) => {
       if (url.includes("/oauth2/v2.0/token")) throw new Error("ENOTFOUND");
