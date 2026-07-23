@@ -140,7 +140,7 @@ function buildTzEntry(iana: string, now: Date): TzEntry {
     : 0;
 
   const segments = iana.split("/");
-  const city = (segments.at(-1) ?? iana).replaceAll(/_/g, " ");
+  const city = (segments.at(-1) ?? iana).replaceAll("_", " ");
   const aliases = IANA_SEARCH_ALIASES[iana] ?? [];
 
   const searchText = [
@@ -248,7 +248,7 @@ function ensureSelectedInOptions(
   return sortByOffset([
     {
       iana: value,
-      city: value.replaceAll(/_/g, " "),
+      city: value.replaceAll("_", " "),
       abbr: value,
       offsetLabel: "",
       offsetHours: 0,

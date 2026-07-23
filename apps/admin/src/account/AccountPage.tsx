@@ -218,7 +218,8 @@ export function AccountPage() {
     setConfirmPassword("");
     setPasswordCode("");
     setPasswordStepUpOpen(false);
-    const revokedNote = sessions_revoked > 0 ? ` ${sessions_revoked} other session${sessions_revoked === 1 ? "" : "s"} revoked.` : "";
+    const sessionWord = sessions_revoked === 1 ? "session" : "sessions";
+    const revokedNote = sessions_revoked > 0 ? ` ${sessions_revoked} other ${sessionWord} revoked.` : "";
     addToast(
       `Password changed.${revokedNote}`,
       "success",

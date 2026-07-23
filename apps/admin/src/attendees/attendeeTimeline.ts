@@ -198,7 +198,7 @@ export function getTimelineLabel(entry: AttendeeActionLogEntryDto): string {
     case "scan_preview":
       return "Scan preview";
     default:
-      return entry.action_type.replaceAll(/_/g, " ");
+      return entry.action_type.replaceAll("_", " ");
   }
 }
 
