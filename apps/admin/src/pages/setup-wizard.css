@@ -291,14 +291,10 @@
 
 .setup-wizard__check-spin {
   display: inline-block;
-  animation: setup-wizard-check-spin 0.9s linear infinite;
+  /* Reuses @admitto/ui's shared `at-spin` keyframe (packages/ui/src/styles/components/
+     spinner.css) instead of a one-off — always loaded globally via the shell. */
+  animation: at-spin 0.9s linear infinite;
   color: var(--text-muted, var(--text-secondary));
-}
-
-@keyframes setup-wizard-check-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 .setup-wizard__check-item-main {
@@ -731,13 +727,9 @@
 }
 
 .setup-wizard__spin {
-  animation: setup-wizard-spin 0.7s linear infinite;
-}
-
-@keyframes setup-wizard-spin {
-  to {
-    transform: rotate(360deg);
-  }
+  /* Reuses @admitto/ui's shared `at-spin` keyframe (packages/ui/src/styles/components/
+     spinner.css) instead of a one-off — always loaded globally via the shell. */
+  animation: at-spin 0.7s linear infinite;
 }
 
 @media (max-width: 640px) {

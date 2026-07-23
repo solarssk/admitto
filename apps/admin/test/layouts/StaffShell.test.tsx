@@ -10,16 +10,12 @@ vi.mock("../../src/auth/AuthProvider.js", () => ({
   }),
 }));
 
-vi.mock("../../src/components/MailerStatusBadge.js", () => ({
-  MailerStatusBadge: () => <span data-testid="mailer-badge" />,
+vi.mock("../../src/components/SystemStatus.js", () => ({
+  SystemStatus: () => <span data-testid="system-status" />,
 }));
 
-vi.mock("../../src/components/RoleBadge.js", () => ({
-  RoleBadge: () => <span data-testid="role-badge" />,
-}));
-
-vi.mock("../../src/checkin/ConnectionBanner.js", () => ({
-  ServerConnectionBadge: () => <span data-testid="connection-badge" />,
+vi.mock("../../src/components/UserMenu.js", () => ({
+  UserMenu: () => <span data-testid="user-menu" />,
 }));
 
 const SIDEBAR_PIN_KEY = "admitto_sidebar_pinned";
@@ -50,12 +46,13 @@ afterEach(() => {
 });
 
 describe("StaffShell", () => {
-  it("renders sidebar, subnav, content and the user name", () => {
+  it("renders sidebar, subnav, content and the topbar", () => {
     renderShell();
     expect(screen.getByText("nav items")).toBeTruthy();
     expect(screen.getByText("section nav")).toBeTruthy();
     expect(screen.getByText("page content")).toBeTruthy();
-    expect(screen.getByText("Ola Operator")).toBeTruthy();
+    expect(screen.getByTestId("system-status")).toBeTruthy();
+    expect(screen.getByTestId("user-menu")).toBeTruthy();
   });
 
   it("defaults to a pinned sidebar when no preference is stored", () => {
