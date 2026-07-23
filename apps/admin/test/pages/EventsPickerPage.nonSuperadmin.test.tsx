@@ -66,4 +66,30 @@ describe("EventsPickerPage — non-superadmin, everything archived", () => {
       screen.getByText("All events are archived. Contact your administrator if you need help."),
     ).toBeTruthy();
   });
+
+  it("uses the three-column grid when at least four events are active", async () => {
+    vi.mocked(fetchAdminEvents).mockResolvedValue(
+      Array.from({ length: 4 }, (_, index) => ({
+        id: `evt-${index + 1}`,
+        title: `Event ${index + 1}`,
+        slug: `event-${index + 1}`,
+        date: "2026-01-01",
+        timezone: "Europe/Warsaw",
+        location: null,
+        capacity: 100,
+        archived_at: null,
+      })),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin" element={<EventsPickerPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("Event 4");
+    expect(document.querySelector(".event-grid")?.className).toContain("event-grid--cols-3");
+  });
 });

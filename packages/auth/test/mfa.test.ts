@@ -5,7 +5,12 @@ import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../src/password.js";
 import { login, completeMfa } from "../src/login.js";
-import { LOGIN_NEXT, SESSION_STAGE } from "../src/constants.js";
+import {
+  BACKUP_CODES_STEP_TTL_MS,
+  LOGIN_NEXT,
+  MFA_PENDING_SESSION_TTL_MS,
+  SESSION_STAGE,
+} from "../src/constants.js";
 import {
   startTotpEnrollment,
   getOrStartTotpEnrollment,
@@ -44,7 +49,7 @@ import {
   revokeAllTrustedDevicesForUser,
 } from "../src/mfa/trusted-device.js";
 import { userRequiresMfa, userHasConfirmedTotp } from "../src/mfa/policy.js";
-import { validateSession, validatePartialSession, promoteSessionToFull } from "../src/session.js";
+import { createSession, validateSession, validatePartialSession, promoteSessionToFull } from "../src/session.js";
 import { getSessionTtlAdminMs, getMfaRequiredRoles } from "../src/settings/resolver.js";
 import { SETTING_SESSION_TTL } from "../src/settings/keys.js";
 import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
@@ -422,6 +427,57 @@ describe("promoteSessionToFull", () => {
     });
 
     expect(await promoteSessionToFull(prisma, loginResult.sessionId, loginResult.userId)).toBeNull();
+  });
+
+  it("uses the constrained TTL for backup-code and password-change follow-up stages", async () => {
+    const backupUserId = "user-promote-backup-codes";
+    const passwordUserId = "user-promote-change-password";
+    const password_hash = await hashPassword(PASSWORD);
+    await prisma.user.createMany({
+      data: [
+        { id: backupUserId, email: "promote-backup@example.com", password_hash },
+        {
+          id: passwordUserId,
+          email: "promote-password@example.com",
+          password_hash,
+          must_change_password: true,
+        },
+      ],
+    });
+
+    try {
+      const enrollment = await startTotpEnrollment(prisma, backupUserId);
+      const backupSecret = parseTotpSecretFromOtpauthUri(enrollment!.otpauthUri);
+      expect(await confirmTotpEnrollment(prisma, backupUserId, generateTotpCode(backupSecret!))).toBe(true);
+
+      const backupSession = await createSession(prisma, {
+        userId: backupUserId,
+        stage: SESSION_STAGE.MFA_PENDING,
+      });
+      const passwordSession = await createSession(prisma, {
+        userId: passwordUserId,
+        stage: SESSION_STAGE.MFA_PENDING,
+      });
+
+      expect(await promoteSessionToFull(prisma, backupSession.session.id, backupUserId)).toBe(
+        SESSION_STAGE.BACKUP_CODES_REQUIRED,
+      );
+      expect(await promoteSessionToFull(prisma, passwordSession.session.id, passwordUserId)).toBe(
+        SESSION_STAGE.CHANGE_PASSWORD_REQUIRED,
+      );
+
+      const [promotedBackup, promotedPassword] = await prisma.session.findMany({
+        where: { id: { in: [backupSession.session.id, passwordSession.session.id] } },
+      });
+      const backup = promotedBackup!.id === backupSession.session.id ? promotedBackup! : promotedPassword!;
+      const password = promotedPassword!.id === passwordSession.session.id ? promotedPassword! : promotedBackup!;
+      expect(backup.expires_at.getTime() - backup.last_seen_at.getTime()).toBe(BACKUP_CODES_STEP_TTL_MS);
+      expect(password.expires_at.getTime() - password.last_seen_at.getTime()).toBe(MFA_PENDING_SESSION_TTL_MS);
+    } finally {
+      await prisma.session.deleteMany({ where: { user_id: { in: [backupUserId, passwordUserId] } } });
+      await prisma.userMfaMethod.deleteMany({ where: { user_id: backupUserId } });
+      await prisma.user.deleteMany({ where: { id: { in: [backupUserId, passwordUserId] } } });
+    }
   });
 });
 

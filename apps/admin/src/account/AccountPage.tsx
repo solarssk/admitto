@@ -242,9 +242,8 @@ export function AccountPage() {
     await loadSessions();
   }
 
-  function renderBackupCodesSection(): ReactNode {
-    if (!enrollData) return null;
-    if (enrollData.backupCodes.length > 0) {
+  function renderBackupCodesSection(enrollment: MfaEnrollResponse): ReactNode {
+    if (enrollment.backupCodes.length > 0) {
       return (
         <div className="account-auth-backup">
           <div className="account-auth-backup__head">
@@ -252,13 +251,13 @@ export function AccountPage() {
             <button
               type="button"
               className="account-uri-copy-btn"
-              onClick={() => downloadBackupCodes(enrollData.backupCodes)}
+              onClick={() => downloadBackupCodes(enrollment.backupCodes)}
             >
               <i className="ti ti-download" aria-hidden="true" />
               Download
             </button>
           </div>
-          <ul>{enrollData.backupCodes.map((code) => <li key={code}><code>{code}</code></li>)}</ul>
+          <ul>{enrollment.backupCodes.map((code) => <li key={code}><code>{code}</code></li>)}</ul>
           <div className="account-checkbox-row">
             <Checkbox
               id="account-backup-codes-saved"
@@ -270,7 +269,7 @@ export function AccountPage() {
         </div>
       );
     }
-    if (enrollData.backupCodesAlreadyShown) {
+    if (enrollment.backupCodesAlreadyShown) {
       return (
         <p className="mail-field-hint">Backup codes were shown at first setup. Use your saved codes if you need to recover access.</p>
       );
@@ -560,7 +559,7 @@ export function AccountPage() {
                 {/* Right column: hint, backup codes, digit input */}
                 <div className="account-2fa-enroll__info">
                   <p className="mail-field-hint">Scan the QR code with your authenticator app.</p>
-                  {renderBackupCodesSection()}
+                  {renderBackupCodesSection(enrollData)}
                   <div className="account-totp-confirm-row__inputs">
                     <label className="mail-field-label" htmlFor="account-totp-code">Authenticator code</label>
                     <TotpDigitInput

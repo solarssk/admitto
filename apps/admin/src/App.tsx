@@ -171,7 +171,7 @@ export function EventLayout() {
   return <AdminShell event={event} refreshEvent={refreshEvent} />;
 }
 
-function StaffRoutes() {
+export function StaffRoutes() {
   const { assignments, setupComplete, refresh } = useAuth();
 
   if (isSuperadmin(assignments) && !setupComplete) {

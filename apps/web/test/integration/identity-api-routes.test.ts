@@ -572,6 +572,75 @@ describe("cloudflare access API", () => {
     const body = await jsonAs<{ error: string }>(res);
     expect(body.error).toBe("validation_failed");
   });
+
+  it("saves CF Access changes, preserves omitted fields, and honors an env-locked audience", async () => {
+    try {
+      const enabled = await json("/api/admin/identity/cf-access", {
+        method: "PUT",
+        body: JSON.stringify({
+          enabled: true,
+          teamDomain: "https://team.cloudflareaccess.com",
+          audience: ["aud-test"],
+          protectedPrefixes: ["/admin"],
+        }),
+      });
+      expect(enabled.status).toBe(200);
+      expect(await jsonAs<CfAccessResponse>(enabled)).toMatchObject({
+        enabled: true,
+        teamDomain: "https://team.cloudflareaccess.com",
+        audience: ["aud-test"],
+        protectedPrefixes: ["/admin"],
+      });
+
+      const disabled = await json("/api/admin/identity/cf-access", {
+        method: "PUT",
+        body: JSON.stringify({ enabled: false }),
+      });
+      expect(disabled.status).toBe(200);
+      expect(await jsonAs<CfAccessResponse>(disabled)).toMatchObject({
+        enabled: false,
+        teamDomain: "https://team.cloudflareaccess.com",
+        audience: ["aud-test"],
+        protectedPrefixes: ["/admin"],
+      });
+
+      vi.stubEnv("CF_ACCESS_AUD", JSON.stringify(["audience-from-env"]));
+      try {
+        const locked = await json("/api/admin/identity/cf-access", {
+          method: "PUT",
+          body: JSON.stringify({ audience: ["ignored-by-env-lock"] }),
+        });
+        expect(locked.status).toBe(200);
+        expect(await jsonAs<CfAccessResponse>(locked)).toMatchObject({
+          enabled: false,
+          audience: ["audience-from-env"],
+          locks: { audience: true },
+        });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+
+      const reset = await json("/api/admin/identity/cf-access", {
+        method: "PUT",
+        body: JSON.stringify({
+          enabled: false,
+          teamDomain: "",
+          audience: [],
+          protectedPrefixes: [],
+        }),
+      });
+      expect(reset.status).toBe(200);
+      expect(await jsonAs<CfAccessResponse>(reset)).toMatchObject({
+        enabled: false,
+        teamDomain: "",
+        audience: [],
+        protectedPrefixes: ["/admin", "/api/admin"],
+      });
+    } finally {
+      vi.unstubAllEnvs();
+      await prisma.systemSettings.deleteMany({ where: { key: { startsWith: "cf_access_" } } });
+    }
+  });
 });
 
 describe("identity providers API — stable error codes", () => {
