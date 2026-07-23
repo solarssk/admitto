@@ -1599,9 +1599,6 @@ async function applyBulkAttendeeChanges<Row extends { id: string }>(
   write: {
     /** Quoted column identifier the per-row CAS re-validates, e.g. `Prisma.raw('"ticket_type"')`. */
     column: Prisma.Sql;
-    /** True when the column is nullable — an unset value needs `IS NOT DISTINCT FROM`, not `=`,
-     * to correlate (a plain `=` never matches NULL = NULL). */
-    nullable: boolean;
     setClause: Prisma.Sql;
   },
 ): Promise<{ updatedCount: number; alreadySetCount: number; conflictCount: number }> {
@@ -1615,12 +1612,15 @@ async function applyBulkAttendeeChanges<Row extends { id: string }>(
   }
 
   const values = Prisma.join(changes.map((x) => Prisma.sql`(${x.id}::text, ${x.oldValue}::text)`));
-  const comparison = write.nullable ? Prisma.sql`IS NOT DISTINCT FROM` : Prisma.sql`=`;
+  // IS NOT DISTINCT FROM (not =) — a null-safe equality that correlates a NULL oldValue
+  // correctly (a plain `=` never matches NULL = NULL) and behaves identically to `=` for a
+  // non-nullable column, so there's no separate flag to get wrong per caller (bot review: a
+  // caller could otherwise pass the wrong nullability for its own column and silently miscount).
   const updated = await tx.$queryRaw<{ id: string }[]>`
     UPDATE "Attendee" AS t
     SET ${write.setClause}
     FROM (VALUES ${values}) AS v(id, old_value)
-    WHERE t.id = v.id AND t.event_id = ${eventId} AND t.${write.column} ${comparison} v.old_value
+    WHERE t.id = v.id AND t.event_id = ${eventId} AND t.${write.column} IS NOT DISTINCT FROM v.old_value
     RETURNING t.id
   `;
   const updatedIds = new Set(updated.map((r) => r.id));
@@ -1704,7 +1704,6 @@ export async function handleBulkTicketTypeEventAttendees(
         adminAuditFromContext(c),
         {
           column: Prisma.raw('"ticket_type"'),
-          nullable: true,
           setClause: Prisma.sql`ticket_type = ${ticket_type}, updated_at = NOW()`,
         },
       );
@@ -1778,7 +1777,6 @@ export async function handleBulkRsvpEventAttendees(
         adminAuditFromContext(c),
         {
           column: Prisma.raw('"rsvp_status"'),
-          nullable: false,
           setClause: Prisma.sql`rsvp_status = ${rsvp_status}, rsvp_updated_at = NOW(), rsvp_source = 'admin', updated_at = NOW()`,
         },
       );
