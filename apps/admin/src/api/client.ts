@@ -786,6 +786,10 @@ export async function bulkDeleteAttendees(
 export interface BulkTicketTypeResponse {
   updatedCount: number;
   alreadySetCount: number;
+  /** Rows skipped because a concurrent write changed them between the server's read and its
+   * per-row CAS write (e.g. another admin's single-attendee edit) - left untouched rather than
+   * silently overwritten. */
+  conflictCount: number;
 }
 
 /** Assign one catalog ticket type to every selected attendee. Ids outside the event are
@@ -800,6 +804,24 @@ export async function bulkChangeTicketType(
     jsonPostInit({ attendeeIds, ticket_type: ticketType }),
   );
   return parseJson<BulkTicketTypeResponse>(res);
+}
+
+/** Same shape as BulkTicketTypeResponse - one type for both structurally identical bulk
+ * "assign a value to every selected attendee" endpoints. */
+export type BulkRsvpResponse = BulkTicketTypeResponse;
+
+/** Set the attendance (RSVP) status for every selected attendee at once. Ids outside the event
+ * are silently ignored server-side; rows already at the target status are counted separately. */
+export async function bulkChangeRsvpStatus(
+  eventId: string,
+  attendeeIds: string[],
+  rsvpStatus: RsvpStatus,
+): Promise<BulkRsvpResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-rsvp`,
+    jsonPostInit({ attendeeIds, rsvp_status: rsvpStatus }),
+  );
+  return parseJson<BulkRsvpResponse>(res);
 }
 
 /** Manually check in a selection of attendees at once (no QR scan), from the Attendees list's
