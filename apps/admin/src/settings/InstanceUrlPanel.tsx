@@ -195,7 +195,7 @@ export function InstanceUrlPanel() {
         </div>
 
         {hasConfiguredUrl && (
-          <output className="text-success">
+          <output className="mail-field-hint text-success">
             Instance URL is configured
             {settings.instance_url.source === "env" ? " via environment" : ""}.
           </output>
