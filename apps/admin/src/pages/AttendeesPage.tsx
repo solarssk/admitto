@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -60,6 +61,11 @@ const BULK_DELETE_CONFIRM_DELAY_SECONDS = 10;
 /** Same "don't act on reflex" pause as BULK_DELETE_CONFIRM_DELAY_SECONDS above, for the bulk
  * Revoke check-in/items/pass dialogs — was missing on all three (PO review). */
 const BULK_REVOKE_CONFIRM_DELAY_SECONDS = 10;
+/** Same "don't act on reflex" pause as the constants above, for the CardPickerDialog Apply
+ * button (bulk change ticket type / change attendance status) — a misclick on a large batch
+ * would otherwise overwrite everyone's ticket type or RSVP status in one shot with no
+ * confirmation at all (code review on #569). */
+const BULK_CARD_PICKER_CONFIRM_DELAY_SECONDS = 10;
 
 function mergeAttendeeRow(prev: AttendeeRowDto, updated: AttendeeDetailDto): AttendeeRowDto {
   return {
@@ -446,6 +452,11 @@ interface CardPickerDialogProps<T> {
   /** Apply also stays disabled with no value picked — only relevant for a dynamic, possibly-
    * empty catalog (ticket types); a fixed enum (RSVP status) always has one. */
   requireValue?: boolean;
+  /** Same "don't act on reflex" pause as ConfirmDialog's own confirmDelaySeconds (identical
+   * armed/countdown-bar mechanics, ported here since this dialog shape predates it) — ties the
+   * Apply button, not picking a card, to the cooldown, matching every other bulk action in this
+   * file (code review on #569). */
+  confirmDelaySeconds?: number;
   onConfirm: () => void;
   onClose: () => void;
 }
@@ -469,12 +480,24 @@ function CardPickerDialog<T>({
   onValueChange,
   radioGroupName,
   requireValue,
+  confirmDelaySeconds,
   onConfirm,
   onClose,
 }: Readonly<CardPickerDialogProps<T>>) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const [armed, setArmed] = useState(confirmDelaySeconds === undefined);
   useModalFocusTrap(panelRef, open, onClose);
+
+  // Layout effect, not a plain effect — matches ConfirmDialog's own reasoning: the dialog stays
+  // mounted while closed, so `armed` could still read true from the previous open, and resetting
+  // before paint means a reopen never shows an enabled Apply button for a frame.
+  useLayoutEffect(() => {
+    if (!open || confirmDelaySeconds === undefined) return;
+    setArmed(false);
+    const timer = window.setTimeout(() => setArmed(true), confirmDelaySeconds * 1000);
+    return () => window.clearTimeout(timer);
+  }, [open, confirmDelaySeconds]);
 
   if (!open) return null;
 
@@ -524,14 +547,29 @@ function CardPickerDialog<T>({
           <Button type="button" variant="secondary" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            type="button"
-            variant="primary"
-            disabled={busy || (requireValue ? !value : false)}
-            onClick={onConfirm}
-          >
-            {busy ? "Applying…" : "Apply"}
-          </Button>
+          <span className="confirm-dialog__confirm-wrap">
+            <Button
+              type="button"
+              variant="primary"
+              disabled={busy || !armed || (requireValue ? !value : false)}
+              title={
+                !armed && confirmDelaySeconds !== undefined
+                  ? `Please wait ${confirmDelaySeconds}s before confirming`
+                  : undefined
+              }
+              onClick={onConfirm}
+            >
+              {busy ? "Applying…" : "Apply"}
+            </Button>
+            {!armed && confirmDelaySeconds !== undefined && (
+              <span className="confirm-dialog__arm-track" aria-hidden="true">
+                <span
+                  className="confirm-dialog__arm-bar"
+                  style={{ animationDuration: `${confirmDelaySeconds}s` }}
+                />
+              </span>
+            )}
+          </span>
         </div>
       </div>
     </div>
@@ -1439,6 +1477,7 @@ export function AttendeesPage() {
         onValueChange={setChangeTypeValue}
         radioGroupName="bulk-ticket-type"
         requireValue
+        confirmDelaySeconds={BULK_CARD_PICKER_CONFIRM_DELAY_SECONDS}
         onConfirm={() => void handleBulkChangeTicketTypeConfirm()}
         onClose={() => {
           if (!changeTypeBusy) setChangeTypeOpen(false);
@@ -1459,6 +1498,7 @@ export function AttendeesPage() {
         value={changeRsvpValue}
         onValueChange={(key) => setChangeRsvpValue(key as RsvpStatus)}
         radioGroupName="bulk-rsvp-status"
+        confirmDelaySeconds={BULK_CARD_PICKER_CONFIRM_DELAY_SECONDS}
         onConfirm={() => void handleBulkChangeRsvpConfirm()}
         onClose={() => {
           if (!changeRsvpBusy) setChangeRsvpOpen(false);

@@ -144,8 +144,9 @@ function openMenuItemAndArmDialog(menuItemName: RegExp, dialogName?: string) {
 }
 
 /** Same "arm before confirming" cooldown as openAndArmDeleteDialog above, generalized for the
- * bulk Revoke check-in/items/pass dialogs (all three also carry confirmDelaySeconds) - for tests
- * where the "More actions" menu is already open (e.g. via a per-describe-block helper). */
+ * bulk Revoke check-in/items/pass dialogs and the CardPickerDialog-based Change ticket
+ * type/attendance status dialogs (all five also carry confirmDelaySeconds) - for tests where the
+ * "More actions" menu is already open (e.g. via a per-describe-block helper). */
 function clickMenuItemAndArmDialog(menuItemName: RegExp, dialogName?: string) {
   vi.useFakeTimers();
   fireEvent.click(bulkBar().getByRole("menuitem", { name: menuItemName }));
@@ -1437,9 +1438,7 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     await selectTwoRowsAndOpenMenu();
     const item = bulkBar().getByRole("menuitem", { name: /Change ticket type/ });
     expect(item.textContent).toContain("Choose from 2 configured types");
-    fireEvent.click(item);
-
-    const dialog = screen.getByRole("dialog", { name: "Change ticket type" });
+    const dialog = clickMenuItemAndArmDialog(/Change ticket type/, "Change ticket type");
     expect(within(dialog).getByRole("radio", { name: "VIP" })).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("radio", { name: "Standard" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
@@ -1473,8 +1472,7 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     bulkChangeTicketType.mockResolvedValue({ updatedCount: 1, alreadySetCount: 1 });
 
     await selectTwoRowsAndOpenMenu();
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change ticket type/ }));
-    const dialog = screen.getByRole("dialog", { name: "Change ticket type" });
+    const dialog = clickMenuItemAndArmDialog(/Change ticket type/, "Change ticket type");
     fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
 
     await waitFor(() => {
@@ -1488,8 +1486,7 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     bulkChangeTicketType.mockResolvedValue({ updatedCount: 0, alreadySetCount: 2 });
 
     await selectTwoRowsAndOpenMenu();
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change ticket type/ }));
-    const dialog = screen.getByRole("dialog", { name: "Change ticket type" });
+    const dialog = clickMenuItemAndArmDialog(/Change ticket type/, "Change ticket type");
     fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
 
     await waitFor(() => {
@@ -1505,8 +1502,7 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     bulkChangeTicketType.mockResolvedValue({ updatedCount: 0, alreadySetCount: 0 });
 
     await selectTwoRowsAndOpenMenu();
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change ticket type/ }));
-    const dialog = screen.getByRole("dialog", { name: "Change ticket type" });
+    const dialog = clickMenuItemAndArmDialog(/Change ticket type/, "Change ticket type");
     fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
 
     await waitFor(() => {
@@ -1525,8 +1521,7 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     bulkChangeTicketType.mockRejectedValueOnce(new ApiError(400, "unknown_ticket_type"));
 
     await selectTwoRowsAndOpenMenu();
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change ticket type/ }));
-    const dialog = screen.getByRole("dialog", { name: "Change ticket type" });
+    const dialog = clickMenuItemAndArmDialog(/Change ticket type/, "Change ticket type");
     fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
 
     await waitFor(() => {
@@ -1546,8 +1541,7 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     vi.stubGlobal("location", { ...window.location, assign, pathname: "/admin/events/evt-1/attendees" });
 
     await selectTwoRowsAndOpenMenu();
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change ticket type/ }));
-    const dialog = screen.getByRole("dialog", { name: "Change ticket type" });
+    const dialog = clickMenuItemAndArmDialog(/Change ticket type/, "Change ticket type");
     fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
 
     await waitFor(() => {
@@ -1562,8 +1556,7 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     bulkChangeTicketType.mockRejectedValueOnce(new TypeError("Failed to fetch"));
 
     await selectTwoRowsAndOpenMenu();
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change ticket type/ }));
-    const dialog = screen.getByRole("dialog", { name: "Change ticket type" });
+    const dialog = clickMenuItemAndArmDialog(/Change ticket type/, "Change ticket type");
     fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
 
     await waitFor(() => {
@@ -1650,9 +1643,7 @@ describe("AttendeesPage bulk change attendance status", () => {
     await selectTwoRowsAndOpenMenu();
     const item = bulkBar().getByRole("menuitem", { name: /Change attendance status/ });
     expect(item.textContent).toContain("Set for 2 attendees");
-    fireEvent.click(item);
-
-    const dialog = screen.getByRole("dialog", { name: "Change attendance status" });
+    const dialog = clickMenuItemAndArmDialog(/Change attendance status/, "Change attendance status");
     expect(within(dialog).getByRole("radio", { name: "Confirmed" })).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("radio", { name: "Declined" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
@@ -1684,8 +1675,7 @@ describe("AttendeesPage bulk change attendance status", () => {
     bulkChangeRsvpStatus.mockResolvedValue({ updatedCount: 1, alreadySetCount: 1 });
 
     await selectTwoRowsAndOpenMenu();
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change attendance status/ }));
-    const dialog = screen.getByRole("dialog", { name: "Change attendance status" });
+    const dialog = clickMenuItemAndArmDialog(/Change attendance status/, "Change attendance status");
     fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
 
     await waitFor(() => {
@@ -1698,8 +1688,7 @@ describe("AttendeesPage bulk change attendance status", () => {
     bulkChangeRsvpStatus.mockResolvedValue({ updatedCount: 0, alreadySetCount: 2 });
 
     await selectTwoRowsAndOpenMenu();
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change attendance status/ }));
-    const dialog = screen.getByRole("dialog", { name: "Change attendance status" });
+    const dialog = clickMenuItemAndArmDialog(/Change attendance status/, "Change attendance status");
     fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
 
     await waitFor(() => {
@@ -1715,8 +1704,7 @@ describe("AttendeesPage bulk change attendance status", () => {
     bulkChangeRsvpStatus.mockResolvedValue({ updatedCount: 0, alreadySetCount: 0 });
 
     await selectTwoRowsAndOpenMenu();
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change attendance status/ }));
-    const dialog = screen.getByRole("dialog", { name: "Change attendance status" });
+    const dialog = clickMenuItemAndArmDialog(/Change attendance status/, "Change attendance status");
     fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
 
     await waitFor(() => {
@@ -1735,8 +1723,7 @@ describe("AttendeesPage bulk change attendance status", () => {
     vi.stubGlobal("location", { ...window.location, assign, pathname: "/admin/events/evt-1/attendees" });
 
     await selectTwoRowsAndOpenMenu();
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change attendance status/ }));
-    const dialog = screen.getByRole("dialog", { name: "Change attendance status" });
+    const dialog = clickMenuItemAndArmDialog(/Change attendance status/, "Change attendance status");
     fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
 
     await waitFor(() => {
@@ -1750,8 +1737,7 @@ describe("AttendeesPage bulk change attendance status", () => {
     bulkChangeRsvpStatus.mockRejectedValueOnce(new TypeError("Failed to fetch"));
 
     await selectTwoRowsAndOpenMenu();
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change attendance status/ }));
-    const dialog = screen.getByRole("dialog", { name: "Change attendance status" });
+    const dialog = clickMenuItemAndArmDialog(/Change attendance status/, "Change attendance status");
     fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
 
     await waitFor(() => {
