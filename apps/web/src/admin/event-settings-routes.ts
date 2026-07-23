@@ -11,6 +11,7 @@ import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "
 import { sanitizeCsvCell } from "./csv-sanitize.js";
 import { timezoneField } from "./timezone.js";
 import { countEventActivitySignals, isEventDeletable } from "./event-deletion.js";
+import { attachmentContentDisposition } from "./content-disposition.js";
 
 const dateOnlyField = z
   .string()
@@ -342,12 +343,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
 }
 
 function quoteCsvCell(value: string): string {
-  return `"${value.replace(/"/g, '""')}"`;
-}
-
-function exportContentDisposition(filename: string): string {
-  const safeFilename = filename.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  return `attachment; filename="${safeFilename}"`;
+  return `"${value.replaceAll('"', '""')}"`;
 }
 
 const PII_EXPORT_MAX_ROWS = 10_000;
@@ -431,7 +427,7 @@ export async function handleExportEventPii(c: Context, db: PrismaClient): Promis
 
   const csvBody = [header, ...rows].join("\r\n");
   const bom = "\uFEFF";
-  const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const dateStamp = new Date().toISOString().slice(0, 10).replaceAll("-", "");
   const filename = `pii-export-${event.slug}-${dateStamp}.csv`;
 
   await writeAdminAuditLog(db, {
@@ -447,7 +443,7 @@ export async function handleExportEventPii(c: Context, db: PrismaClient): Promis
     status: 200,
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": exportContentDisposition(filename),
+      "Content-Disposition": attachmentContentDisposition(filename),
       "Cache-Control": "no-store",
       "Pragma": "no-cache",
       "X-Content-Type-Options": "nosniff",

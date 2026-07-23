@@ -122,6 +122,25 @@ describe("Mode B public routes — public_ref", () => {
     expect(res.status).toBe(404);
   });
 
+  it("does not serve an internal attendee through Mode B ticket or QR routes", async () => {
+    const publicRef = generateToken();
+    const attendee = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "internal-public-ref@example.com",
+        name: "Internal public ref",
+        public_ref: publicRef,
+      },
+    });
+
+    try {
+      expect((await app.request(`/t/${EVENT_SLUG}/a/${publicRef}`)).status).toBe(404);
+      expect((await app.request(`/q/${EVENT_SLUG}/a/${publicRef}.png`)).status).toBe(404);
+    } finally {
+      await prisma.attendee.delete({ where: { id: attendee.id } });
+    }
+  });
+
   it("renders the event's configured logo and widens the CSP img-src to match (#419)", async () => {
     const logoUrl = "https://cdn.example.com/summer-gala-logo.png";
     await prisma.event.update({ where: { id: EVENT_ID }, data: { logo_url: logoUrl } });

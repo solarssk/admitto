@@ -197,11 +197,11 @@ function sanitizePreviewWarning(warning: string): string {
     return warning.replace(/single-word name "[^"]*"/, "single-word name");
   }
   // "Unknown column ignored: "john@example.com"" → strip quoted value
-  if (/^Unknown column ignored: "/.test(warning)) {
+  if (warning.startsWith('Unknown column ignored: "')) {
     return "Unknown column ignored";
   }
   // "Duplicate column(s) detected (first value used): col1, col2" → strip column list
-  if (/^Duplicate column\(s\) detected/.test(warning)) {
+  if (warning.startsWith("Duplicate column(s) detected")) {
     return "Duplicate column(s) detected";
   }
   return warning;
@@ -240,7 +240,7 @@ function groupInvalidByType(invalidRows: { reason: string }[]): Record<string, n
       .toLowerCase()
       .replace(/[^a-z_ ]/g, "")
       .trim()
-      .replace(/ /g, "_")
+      .replaceAll(" ", "_")
       .slice(0, 40);
     counts[key] = (counts[key] ?? 0) + 1;
   }

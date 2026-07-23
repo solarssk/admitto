@@ -4,7 +4,7 @@ import {
   validateCfAccessBootConfigFromResolved,
   ensureCloudflareAccessProvider,
 } from "@admitto/auth";
-import { parseEnvFlag, resolveTrustProxy } from "./env-flags.js";
+import { parseEnvFlag } from "./env-flags.js";
 
 export { resolveTrustProxy } from "./env-flags.js";
 

@@ -11,7 +11,6 @@ import {
   type DeliveryDto,
   type MailDeliveryDeps,
 } from "@admitto/mail-delivery";
-import { EMAIL_DELIVERY_SUCCESS_STATUSES } from "@admitto/db";
 import type { AttendeeStatus } from "@admitto/db/status";
 import { formatEventDate, resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import {
@@ -74,6 +73,7 @@ import {
 } from "./admin-helpers.js";
 import { mailNotConfiguredResponse } from "./mail-settings-shared.js";
 import { assertEventCapacityForIncoming, acquireEventCapacityLock, isCapacityReactivation } from "./event-capacity.js";
+import { attachmentContentDisposition } from "./content-disposition.js";
 import { randomUUID } from "node:crypto";
 import { decryptFromString } from "@admitto/crypto";
 import { optimisticAttendeeUpdate, StaleWriteError, isStaleWrite } from "./optimistic-update.js";
@@ -138,7 +138,7 @@ const resendBodySchema = z
   .strict();
 
 /** Empty or whitespace-only POST body parses as `{}`; malformed JSON returns 400. */
-async function parseOptionalJsonBody(c: Context): Promise<unknown | Response> {
+async function parseOptionalJsonBody(c: Context): Promise<unknown> {
   try {
     const text = await c.req.text();
     if (!text.trim()) return {};
@@ -196,12 +196,6 @@ const PDF_PRINTABLE_WIDTH = 762;
 
 if (EXPORT_BASE_PDF_WIDTHS.length !== EXPORT_BASE_COLUMNS.length) {
   throw new Error("EXPORT_BASE_PDF_WIDTHS must match EXPORT_BASE_COLUMNS length");
-}
-
-/** RFC 6266 attachment header with `"` escaped in the filename. */
-function exportContentDisposition(filename: string): string {
-  const safeFilename = filename.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  return `attachment; filename="${safeFilename}"`;
 }
 
 /** Build XLSX bytes for sanitized export rows (dynamic exceljs import, ESM-safe). */
@@ -543,7 +537,7 @@ async function loadAttendeeInEvent(
     where: { id: attendeeId },
     select: { ...ATTENDEE_DETAIL_SELECT, event_id: true },
   });
-  if (!row || row.event_id !== eventId) return null;
+  if (row?.event_id !== eventId) return null;
   return row;
 }
 
@@ -589,12 +583,12 @@ function parseListQuery(c: Context): {
   const page = positiveIntQuery(c.req.query("page"), 1);
   const pageSize = positiveIntQuery(c.req.query("pageSize"), 25, 100);
   const qRaw = c.req.query("q")?.trim();
-  const q = qRaw ? qRaw : undefined;
+  const q = qRaw || undefined;
   const statusRaw = c.req.query("status") ?? "all";
   const status =
     statusRaw === "admitted" || statusRaw === "not_admitted" ? statusRaw : "all";
   const ticketTypeRaw = c.req.query("ticket_type")?.trim();
-  const ticket_type = ticketTypeRaw ? ticketTypeRaw : undefined;
+  const ticket_type = ticketTypeRaw || undefined;
   const rsvpRaw = c.req.query("rsvp_status")?.trim();
   const rsvp_status = RSVP_STATUSES.includes(rsvpRaw as RsvpStatus)
     ? (rsvpRaw as RsvpStatus)
@@ -886,7 +880,7 @@ async function buildExportFileResponse(
     return new Response(csv, {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": exportContentDisposition(filename),
+        "Content-Disposition": attachmentContentDisposition(filename),
         "Cache-Control": "no-store",
         "Pragma": "no-cache",
       },
@@ -904,7 +898,7 @@ async function buildExportFileResponse(
     return new Response(bytes, {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": exportContentDisposition(filename),
+        "Content-Disposition": attachmentContentDisposition(filename),
         "Cache-Control": "no-store",
         "Pragma": "no-cache",
       },
@@ -917,7 +911,7 @@ async function buildExportFileResponse(
     headers: {
       "Content-Type":
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": exportContentDisposition(filename),
+      "Content-Disposition": attachmentContentDisposition(filename),
       "Cache-Control": "no-store",
       "Pragma": "no-cache",
     },
@@ -1123,7 +1117,7 @@ function computePatchChanges(
   let customData: Record<string, unknown> | null = null;
 
   const touchCustomData = (): Record<string, unknown> => {
-    if (!customData) customData = cloneCustomData(existing.custom_data);
+    customData ??= cloneCustomData(existing.custom_data);
     return customData;
   };
 
@@ -2471,7 +2465,6 @@ export async function handleResendEventAttendeeTicket(
   }
 
   const to = parsed.data.to;
-  const targetEmail = to ?? existing.email;
   const alternate = Boolean(to && to !== existing.email);
 
   // SECURITY NOTE (ADR 0021): `to` is validated as email format only — no domain allowlist.

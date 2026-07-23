@@ -26,7 +26,7 @@ export async function beginOidcAuthorizationRedirect(
   options: BeginOidcFlowOptions = {},
 ): Promise<Response> {
   const provider = await findOidcProviderById(db, providerId);
-  if (!provider || !provider.enabled) {
+  if (!provider?.enabled) {
     return c.redirect("/login?error=oidc_failed", 302);
   }
 

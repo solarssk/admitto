@@ -70,7 +70,7 @@ export function submittedCodesMatchStashedEnrollmentBackup(
   submitted: string[],
 ): boolean {
   const stashed = getStashedEnrollmentBackupCodes(sessionId);
-  if (!stashed || stashed.length !== submitted.length) return false;
+  if (stashed?.length !== submitted.length) return false;
   const expected = normalizeCodeSet(stashed);
   const actual = normalizeCodeSet(submitted);
   return expected.length === actual.length && expected.every((code, i) => code === actual[i]);

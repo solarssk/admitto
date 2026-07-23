@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
+import { Hono } from "hono";
 import { hashPassword, SESSION_COOKIE_NAME, OIDC_FLOW_COOKIE_NAME, createSession, SESSION_STAGE } from "@admitto/auth";
 import { createApp } from "../../src/app.js";
+import { beginOidcAuthorizationRedirect } from "../../src/auth/oidc-flow.js";
 import { createRateLimitStore, type InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 import { startMockOidcIdp, stopMockOidcIdp, type MockOidcIdp } from "../helpers/mock-oidc-idp.js";
 import { encryptClientSecret } from "@admitto/auth";
@@ -135,6 +137,16 @@ async function withOidcLinkedUser(
 }
 
 describe("oidc routes", () => {
+  it("rejects a missing provider before either OIDC redirect entry point", async () => {
+    const start = await app.request("/api/auth/oidc/not-configured/start", { redirect: "manual" });
+    expect(start.headers.get("location")).toBe("/login?error=oidc_failed");
+
+    const directFlow = new Hono();
+    directFlow.get("/", (c) => beginOidcAuthorizationRedirect(c, prisma, BASE, "not-configured"));
+    const flow = await directFlow.request("/", { redirect: "manual" });
+    expect(flow.headers.get("location")).toBe("/login?error=oidc_failed");
+  });
+
   it("start redirects to authorize with state", async () => {
     const res = await app.request(`/api/auth/oidc/${PROVIDER_ID}/start`, { redirect: "manual" });
     expect(res.status).toBe(302);

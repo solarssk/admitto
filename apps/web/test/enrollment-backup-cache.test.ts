@@ -4,6 +4,7 @@ import {
   clearEnrollmentBackupCacheForTests,
   getStashedEnrollmentBackupCodes,
   stashEnrollmentBackupCodes,
+  submittedCodesMatchStashedEnrollmentBackup,
 } from "../src/auth/enrollment-backup-cache.js";
 
 describe("enrollment-backup-cache", () => {
@@ -36,5 +37,15 @@ describe("enrollment-backup-cache", () => {
 
     vi.advanceTimersByTime(MFA_PENDING_SESSION_TTL_MS);
     expect(getStashedEnrollmentBackupCodes("sess-1")).toBeUndefined();
+  });
+
+  it("matches only the current stashed enrollment backup-code set", () => {
+    expect(submittedCodesMatchStashedEnrollmentBackup("missing-session", [])).toBe(false);
+
+    stashEnrollmentBackupCodes("sess-1", ["AAAA-BBBB-CCCC-DDDD"]);
+    expect(submittedCodesMatchStashedEnrollmentBackup("sess-1", ["AAAA-BBBB-CCCC-DDDD"])).toBe(
+      true,
+    );
+    expect(submittedCodesMatchStashedEnrollmentBackup("sess-1", [])).toBe(false);
   });
 });

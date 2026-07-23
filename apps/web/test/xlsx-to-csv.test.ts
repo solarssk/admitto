@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ImportZipBombError, xlsxBufferToCsv } from "../src/admin/xlsx-to-csv.js";
+import { buildXlsxBuffer, ImportZipBombError, xlsxBufferToCsv } from "../src/admin/xlsx-to-csv.js";
 
 function writeUint32LE(bytes: Uint8Array, offset: number, value: number): void {
   bytes[offset] = value & 0xff;
@@ -33,5 +33,17 @@ describe("xlsxBufferToCsv zip guards", () => {
   it("rejects archives with an oversized declared uncompressed entry", async () => {
     const buf = buildZipBombBuffer(25 * 1024 * 1024);
     await expect(xlsxBufferToCsv(buf)).rejects.toBeInstanceOf(ImportZipBombError);
+  });
+
+  it("quotes embedded double quotes and leaves ordinary cells unquoted", async () => {
+    const buf = await buildXlsxBuffer([
+      ["name", "note"],
+      ["Ada", 'said "hello"'],
+      ["Grace", "plain text"],
+    ]);
+
+    await expect(xlsxBufferToCsv(buf)).resolves.toBe(
+      'name,note\nAda,"said ""hello"""\nGrace,plain text',
+    );
   });
 });

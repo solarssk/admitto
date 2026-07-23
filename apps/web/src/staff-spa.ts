@@ -1,8 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Context } from "hono";
-import type { MiddlewareHandler } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",

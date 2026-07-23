@@ -4,6 +4,7 @@ import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import { loadEventTicketTypes, writeBulkActionLog, type TicketTypeInfo } from "@admitto/tickets";
 import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
 import { sanitizeCsvCell } from "./csv-sanitize.js";
+import { attachmentContentDisposition } from "./content-disposition.js";
 
 const HOUR_LABELS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, "0")}:00`);
 const CSV_EXPORT_MAX = 10_000;
@@ -303,20 +304,15 @@ function formatAdmittedAtExport(date: Date, timeZone: string): string {
 }
 
 function quoteCsvCell(value: string): string {
-  return `"${value.replace(/"/g, '""')}"`;
-}
-
-function exportContentDisposition(filename: string): string {
-  const safeFilename = filename.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  return `attachment; filename="${safeFilename}"`;
+  return `"${value.replaceAll('"', '""')}"`;
 }
 
 function escapeHtml(value: string): string {
   return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }
 
 /** Append bulk audit row after a successful reports export (CSV or printable HTML). */
@@ -404,7 +400,7 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
 
   const timeZone = resolvePreviewEventTimeZone(event.timezone);
 
-  const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const dateStamp = new Date().toISOString().slice(0, 10).replaceAll("-", "");
 
   if (formatRaw === "csv") {
     const [totalAdmitted, rows, catalog] = await Promise.all([
@@ -474,7 +470,7 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
       status: 200,
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": exportContentDisposition(filename),
+        "Content-Disposition": attachmentContentDisposition(filename),
         "Cache-Control": "no-store",
         "Pragma": "no-cache",
         "X-Content-Type-Options": "nosniff",

@@ -8,7 +8,7 @@ import { prisma as defaultPrisma } from "@admitto/db";
 import type { AttendeeStatus } from "@admitto/db";
 import { recordTicketViewed } from "@admitto/mail-delivery";
 import type { MailDeliveryDeps } from "@admitto/mail-delivery";
-import { getBrandingTheme, SESSION_STAGE } from "@admitto/auth";
+import { getBrandingTheme, SESSION_STAGE, sweepExpiredOidcAuthStates } from "@admitto/auth";
 import {
   resolveTicket,
   generateQrPng,
@@ -29,7 +29,6 @@ import {
   resolveCheckinToken,
   resolveAllowCheckinBearer,
   validateCheckinBootConfig,
-  validateCfAccessBootConfig,
   resolveOpsHealthTokenOption,
   validateOpsHealthBootConfig,
   validateRedisBootConfig,
@@ -255,7 +254,6 @@ import {
 import { handlePostClientError } from "./admin/client-error-routes.js";
 import { createStaffSpaHandlers } from "./staff-spa.js";
 import { serveTablerIcons } from "./vendor-assets.js";
-import { sweepExpiredOidcAuthStates } from "@admitto/auth";
 import {
   handleApiListProviders,
   handleApiGetProvider,
@@ -277,7 +275,7 @@ import { handleReadyz } from "./ops/readyz.js";
 
 /** Parse check-in history `limit` query param: default 10, clamped to 1–100. */
 function parseCheckinHistoryLimit(raw: string | undefined): number {
-  const limitParam = parseInt(raw ?? "10", 10);
+  const limitParam = Number.parseInt(raw ?? "10", 10);
   const parsed = Number.isFinite(limitParam) ? limitParam : 10;
   return Math.max(1, Math.min(parsed, 100));
 }
@@ -311,15 +309,25 @@ async function handleHealthz(c: Context, db: PrismaClient) {
   }
 }
 
+function htmlWithSecurityHeaders(
+  c: Context,
+  html: string,
+  status: 200 | 404 | 410 | 500,
+  theme?: Awaited<ReturnType<typeof getBrandingTheme>> | null,
+  logoUrl?: string | null,
+) {
+  for (const [name, value] of Object.entries(getTicketPageSecurityHeaders(theme, logoUrl))) {
+    c.header(name, value);
+  }
+  return c.html(html, status);
+}
+
 /** Build the Admitto Hono app (public tickets, auth, check-in API, operator HTML). */
 export function createApp(options: CreateAppOptions = {}) {
   const db = options.prisma ?? defaultPrisma;
   const mailInjectedBaseUrl = options.baseUrl;
   const baseUrl = options.baseUrl ?? resolveBaseUrl();
-  const allowCheckinBearer =
-    options.allowCheckinBearer !== undefined
-      ? options.allowCheckinBearer
-      : resolveAllowCheckinBearer();
+  const allowCheckinBearer = options.allowCheckinBearer ?? resolveAllowCheckinBearer();
   const checkinToken =
     options.checkinToken !== undefined ? options.checkinToken : resolveCheckinToken();
 
@@ -424,19 +432,6 @@ export function createApp(options: CreateAppOptions = {}) {
   void sweepExpiredOidcAuthStates(db).catch((err) => {
     console.error("OidcAuthState sweep failed:", err);
   });
-
-  function htmlWithSecurityHeaders(
-    c: Context,
-    html: string,
-    status: 200 | 404 | 410 | 500,
-    theme?: Awaited<ReturnType<typeof getBrandingTheme>> | null,
-    logoUrl?: string | null,
-  ) {
-    for (const [name, value] of Object.entries(getTicketPageSecurityHeaders(theme, logoUrl))) {
-      c.header(name, value);
-    }
-    return c.html(html, status);
-  }
 
   // ticket_type stores the catalog key (e.g. "press_pass"), not the human label ("Press Pass") -
   // resolve it for attendee-facing display; fail open to the raw key on any lookup error, same as
@@ -1156,7 +1151,7 @@ export function createApp(options: CreateAppOptions = {}) {
       console.error("findAttendeeForEventRoute error:", err);
       return htmlWithSecurityHeaders(c, renderServerError(), 500);
     }
-    if (!resolved || resolved.mode !== "agency") {
+    if (resolved?.mode !== "agency") {
       return htmlWithSecurityHeaders(c, renderNotFound(), 404);
     }
     return renderTicketPage(c, resolved);
@@ -1203,7 +1198,7 @@ export function createApp(options: CreateAppOptions = {}) {
       console.error("findAttendeeForEventRoute error:", err);
       return c.body(null, 500);
     }
-    if (!resolved || resolved.mode !== "agency") {
+    if (resolved?.mode !== "agency") {
       return c.body(null, 404);
     }
     const agencyPayload = resolved.attendee.qr_payload ?? resolved.attendee.external_uuid;

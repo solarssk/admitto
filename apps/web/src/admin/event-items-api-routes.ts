@@ -186,7 +186,7 @@ async function loadEventItemInEvent(db: PrismaClient, eventId: string, itemId: s
       config: true,
     },
   });
-  if (!row || row.event_id !== eventId) return null;
+  if (row?.event_id !== eventId) return null;
   return row;
 }
 

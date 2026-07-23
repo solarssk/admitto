@@ -17,11 +17,11 @@ import {
   OIDC_LINK_STEP_UP_MAX_AGE_MS,
   revokeSession,
   logOidcLoginSuccess,
+  SESSION_COOKIE_NAME,
   type ConsumedOidcAuthState,
   type ExternalIdentityClaims,
 } from "@admitto/auth";
 import { getCookie } from "hono/cookie";
-import { SESSION_COOKIE_NAME } from "@admitto/auth";
 import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
 import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
 import { setSessionCookie } from "./routes.js";
@@ -53,7 +53,7 @@ export async function handleOidcStart(c: Context, db: PrismaClient, baseUrl: str
   }
 
   const provider = await findOidcProviderById(db, providerId);
-  if (!provider || !provider.enabled) {
+  if (!provider?.enabled) {
     return oidcFailedRedirect(c);
   }
 

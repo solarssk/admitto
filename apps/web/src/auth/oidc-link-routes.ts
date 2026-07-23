@@ -61,7 +61,7 @@ export async function handleGetOidcLink(c: Context, db: PrismaClient): Promise<R
   const next = resolveOptionalSafeRedirectPath(c.req.query("next"));
 
   const provider = await findOidcProviderById(db, providerId);
-  if (!provider || !provider.enabled) {
+  if (!provider?.enabled) {
     return c.redirect("/login?error=oidc_failed", 302);
   }
 
@@ -90,7 +90,7 @@ export async function handlePostOidcLink(
   const next = resolveOptionalSafeRedirectPath(form["next"] ?? c.req.query("next"));
 
   const provider = await findOidcProviderById(db, providerId);
-  if (!provider || !provider.enabled) {
+  if (!provider?.enabled) {
     return c.redirect("/login?error=oidc_failed", 302);
   }
 

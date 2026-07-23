@@ -10,11 +10,11 @@ import { getAuthPageInlineScriptHeaders } from "./auth-page-security.js";
 
 function esc(s: string): string {
   return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 /**
@@ -78,7 +78,8 @@ function renderSsoBlock(ssoProviders: LoginSsoProvider[], next?: string): string
   if (ssoProviders.length === 0) return "";
   const buttons = ssoProviders
     .map((p) => {
-      const startUrl = `/api/auth/oidc/${encodeURIComponent(p.id)}/start${next ? `?next=${encodeURIComponent(next)}` : ""}`;
+      const nextQuery = next ? `?next=${encodeURIComponent(next)}` : "";
+      const startUrl = `/api/auth/oidc/${encodeURIComponent(p.id)}/start${nextQuery}`;
       return `<a href="${esc(startUrl)}" class="auth-btn-secondary auth-btn-sso">${SSO_ICON_SVG}${esc(p.button_label)}</a>`;
     })
     .join("");
@@ -137,10 +138,12 @@ export interface OperatorEventRow {
 
 /** Render the signed-in operator landing page (event list + sign out). */
 export function renderOperatorLanding(email: string, events: OperatorEventRow[]): string {
+  const renderEventRow = (e: OperatorEventRow): string =>
+    `<li>${esc(e.title)} <span style="color:#666">(${esc(e.slug)})</span></li>`;
   const eventList =
     events.length === 0
       ? "<p>No events assigned yet. Contact an administrator.</p>"
-      : `<ul>${events.map((e) => `<li>${esc(e.title)} <span style="color:#666">(${esc(e.slug)})</span></li>`).join("")}</ul>`;
+      : `<ul>${events.map(renderEventRow).join("")}</ul>`;
 
   return `<!DOCTYPE html>
 <html lang="en">

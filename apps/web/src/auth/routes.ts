@@ -10,7 +10,6 @@ import {
   LOGIN_NEXT,
   login,
   logout,
-  validateSession,
   validatePartialSession,
   completeMfa,
   getOrStartTotpEnrollment,
