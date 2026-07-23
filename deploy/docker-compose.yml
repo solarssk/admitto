@@ -1,9 +1,39 @@
 services:
+  # One-shot: migration status check, pre-migration backup, `migrate deploy`, backfills, and
+  # startup retention — all the steps that need root (to write into the root-only
+  # migration_backups volume) or should complete before the web server accepts traffic. The `app`
+  # service below only starts once this exits 0 (docker:S6471 — app itself never runs as root).
+  migrate:
+    image: ${ADMITTO_IMAGE:-ghcr.io/solarssk/admitto:local}
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    user: root
+    command: ["migrate"]
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379
+      MIGRATION_BACKUP_DIR: /backups
+      EMERGENCY_EXPORT_DIR: /app/emergency-exports
+    volumes:
+      - migration_backups:/backups
+      - ./emergency-exports:/app/emergency-exports
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+
   app:
     image: ${ADMITTO_IMAGE:-ghcr.io/solarssk/admitto:local}
     build:
       context: ..
       dockerfile: Dockerfile
+    command: ["serve"]
     env_file: .env
     environment:
       NODE_ENV: production
@@ -11,17 +41,17 @@ services:
       TRUST_PROXY: "true"
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379
-      MIGRATION_BACKUP_DIR: /backups
       EMERGENCY_EXPORT_DIR: /app/emergency-exports
       UPLOAD_DIR: /app/uploads
       # JSON access log on app stdout (method, redacted path, status, duration —
       # no IPs, tokens, or query strings). Set LOG_HTTP_REQUESTS=0 in .env to disable.
       LOG_HTTP_REQUESTS: ${LOG_HTTP_REQUESTS:-1}
     volumes:
-      - migration_backups:/backups
       - ./emergency-exports:/app/emergency-exports
       - ./uploads:/app/uploads
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:

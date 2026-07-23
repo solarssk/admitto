@@ -126,14 +126,21 @@ docker compose up -d
 
 ## Container startup (entrypoint)
 
-On every `app` start, `deploy/docker-entrypoint.sh` runs **fail-fast** (any step fails → container exits, no web server):
+Migration/backup and serving are two separate one-shot-then-long-running compose services, both
+running `deploy/docker-entrypoint.sh` (same image, different `command:`). `app` only starts once
+`migrate` exits 0 (`depends_on: condition: service_completed_successfully`), so the web server
+never runs any of this itself and never runs as root (docker:S6471).
+
+**`migrate`** (`user: root` — the only service that is; needed to write into the root-only
+`migration_backups` volume) runs **fail-fast** (any step fails → exits nonzero, `app` never starts):
 
 1. `prisma migrate status` — detect pending migrations (text parse; connection errors abort with a clear log)
 2. **If pending migrations** and backup not disabled: pre-migration `pg_dump` to the `migration_backups` volume (`/backups/pre-migration-<UTC>.sql.gz`, `gzip -t` integrity check, `install -m 600`). If `pg_dump` fails → **no migrate**. Routine restarts with no pending migrations skip the dump.
-3. `prisma migrate deploy` — idempotent schema migrations (automatic; operators never run this by hand)
+3. `prisma migrate deploy` — idempotent schema migrations (automatic; operators never run this by hand; drops to the `node` user for this and every step below)
 4. `backfill-public-ref.js` — idempotent agency `public_ref` backfill (safe to re-run; throws if DB/schema incompatible)
 5. Best-effort retention cleanup (120s timeout each, non-fatal on failure): expired/revoked auth sessions and trusted devices (`purge-auth-retention`), then stale email delivery HTML/subject snapshots (`nullify-delivery-snapshots`)
-6. `node apps/web/dist/src/index.js` — HTTP server (drops from root to `node` user when needed)
+
+**`app`** (always runs as `node`, never root) then execs `node apps/web/dist/src/index.js` directly — no migration logic of its own, and no filesystem access to `/backups` at all (not mounted).
 
 **Operator upgrade:** pull the new image and `docker compose up -d` — migrations apply automatically with a restore point when needed. No manual migration step.
 
@@ -151,7 +158,8 @@ Per-container stdout, by design (SECURITY-CONTROLS: logs are operational — no 
 
 | Container | What its logs show |
 |-----------|--------------------|
-| `app` | Entrypoint boot steps (migration status, backup, retention), `Admitto web running at …`, then: JSON access log (one line per request — method, redacted path, status, `duration_ms`) when `LOG_HTTP_REQUESTS=1` (compose default), plus sparse JSON events (import, upload, `/readyz` auth failure, SPA client errors) |
+| `migrate` | Entrypoint boot steps (migration status, backup, retention) — a one-shot container, exits after logging `migrate: startup tasks complete` |
+| `app` | `Admitto web running at …`, then: JSON access log (one line per request — method, redacted path, status, `duration_ms`) when `LOG_HTTP_REQUESTS=1` (compose default), plus sparse JSON events (import, upload, `/readyz` auth failure, SPA client errors) |
 | `proxy` | Nginx access/error log (image default) — includes client IPs; rotate/limit via Docker logging options if kept long-term |
 | `retention` | `[retention] …` prefixed lines per nightly run |
 | `db-backup` | `[db-backup] …` prefixed lines per nightly dump |
@@ -192,7 +200,7 @@ docker compose run --rm app node apps/cli/dist/index.js checkin lookup --event <
 docker compose run --rm app node apps/cli/dist/index.js checkin admit --event <eventId> --attendee-id <attendeeId>
 
 # Paper backup list (CSV) — use EMERGENCY_EXPORT_DIR (node-writable bind mount), NOT /app/uploads or /backups
-# (/uploads/* is served without auth; /backups is root-only and fails under docker compose run)
+# (/uploads/* is served without auth; /backups isn't even mounted on app — see migrate service)
 docker compose run --rm app node apps/cli/dist/index.js attendees export --event <eventId> --out /app/emergency-exports/emergency-attendees-<eventId>.csv --operator-email super@example.com
 # File lands on the host at deploy/emergency-exports/ (bind mount, not web-accessible). CLI writes mode 0600.
 
@@ -352,8 +360,10 @@ Entrypoint backups are plain `pg_dump` SQL (`--no-owner`, no `--clean`). Replayi
 ```bash
 docker compose stop app
 
-# Pick the dump written immediately before the failed upgrade (migration_backups volume)
-docker compose run --rm --no-deps --entrypoint sh app -c \
+# Pick the dump written immediately before the failed upgrade (migration_backups volume).
+# Use the migrate service, not app — app no longer mounts /backups at all (docker:S6471: the
+# running web server has zero filesystem access to backup dumps, even read-only).
+docker compose run --rm --no-deps --entrypoint sh migrate -c \
   'ls -lt /backups/pre-migration-*.sql.gz'
 
 # Empty target DB (credentials from the db container env — same pattern as manual backups above)
@@ -363,7 +373,7 @@ docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d postgres -v ON_ERRO
   -c "CREATE DATABASE \"$POSTGRES_DB\" OWNER \"$POSTGRES_USER\""'
 
 # Replay into the empty database (override entrypoint for restore — production image has no npm/npx)
-docker compose run --rm --no-deps --entrypoint sh app -c \
+docker compose run --rm --no-deps --entrypoint sh migrate -c \
   'gunzip -c /backups/pre-migration-<UTC-timestamp>.sql.gz | psql "$DATABASE_URL"'
 
 # in deploy/.env: set ADMITTO_IMAGE to the previous tag, e.g. ghcr.io/solarssk/admitto:0.4.1

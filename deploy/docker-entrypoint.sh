@@ -189,6 +189,18 @@ if [ "${1:-}" = "node" ]; then
   run_as_node "$@"
 fi
 
+# "serve": the app service (non-root by default) — migration/backup/backfill already ran to
+# completion in the migrate service (compose depends_on: condition: service_completed_successfully),
+# so this just execs the server directly, never touching /backups or running as root.
+if [ "${1:-}" = "serve" ]; then
+  exec node apps/web/dist/src/index.js
+fi
+
+if [ "${1:-}" != "migrate" ]; then
+  log "usage: docker-entrypoint.sh migrate|serve|node <script> ..."
+  exit 64
+fi
+
 ensure_backup_dir_permissions
 ensure_emergency_export_dir_permissions
 
@@ -239,4 +251,4 @@ if ! run_as_node_cmd timeout 120 node packages/mail-delivery/dist/cli.js nullify
   log "warning: email delivery snapshot retention failed or timed out; continuing startup"
 fi
 
-run_as_node node apps/web/dist/src/index.js
+log "migrate: startup tasks complete"
