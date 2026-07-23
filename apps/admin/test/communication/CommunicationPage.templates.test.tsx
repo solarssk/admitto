@@ -701,6 +701,49 @@ describe("CommunicationPage templates", () => {
     });
   });
 
+  it("loads the remaining ticket template after deleting the active non-ticket template", async () => {
+    deleteEventTemplate.mockResolvedValue(undefined);
+    fetchEventTemplates
+      .mockResolvedValueOnce([ticketRow, reminderRow])
+      .mockResolvedValueOnce([ticketRow]);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
+    expect(await screen.findByDisplayValue("Reminder subject")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Reminder" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(deleteEventTemplate).toHaveBeenCalledWith("evt-comm", "tpl-rem");
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+      expect(fetchEventTemplateById).toHaveBeenLastCalledWith("evt-comm", "tpl-ticket");
+    });
+  });
+
+  it("refetches the inherited ticket after deleting the last explicit template", async () => {
+    deleteEventTemplate.mockResolvedValue(undefined);
+    fetchEventTemplates.mockResolvedValueOnce([reminderRow]).mockResolvedValueOnce([]);
+
+    renderPage();
+
+    expect(await screen.findByRole("button", { name: "Ticket email (inherited)" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
+    expect(await screen.findByDisplayValue("Reminder subject")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Delete Reminder" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(fetchEventTemplate).toHaveBeenCalledTimes(2);
+      expect(screen.getByText("Ticket email (inherited)")).toBeTruthy();
+      expect(screen.getByDisplayValue("Hello")).toBeTruthy();
+    });
+  });
+
   it("does not activate ticket without loading its draft after delete refresh fails", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     let ticketLoadsAfterMount = 0;

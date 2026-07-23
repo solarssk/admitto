@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
@@ -781,5 +781,188 @@ describe("GET /api/admin/events/:eventId/export-pii", () => {
     });
     expect(limited.status).toBe(429);
     expect(await limited.json()).toEqual({ error: "too many requests" });
+  });
+});
+
+describe("event context routes", () => {
+  it("sets and clears the pinned note with an audit trail", async () => {
+    const setNote = await app.request(`/api/admin/events/${EVENT_SET}/note`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ note: "  Call venue on Friday  " }),
+    });
+    expect(setNote.status).toBe(200);
+    expect(await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } })).toMatchObject({
+      pinned_note: "Call venue on Friday",
+    });
+
+    const clearNote = await app.request(`/api/admin/events/${EVENT_SET}/note`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ note: "  " }),
+    });
+    expect(clearNote.status).toBe(200);
+    expect(await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } })).toMatchObject({
+      pinned_note: null,
+    });
+
+    const actions = await prisma.adminAuditLog.findMany({
+      where: {
+        organization_id: ORG_SET,
+        action_type: { in: ["event_pinned_note_set", "event_pinned_note_cleared"] },
+      },
+    });
+    expect(actions.map((action) => action.action_type)).toEqual(
+      expect.arrayContaining(["event_pinned_note_set", "event_pinned_note_cleared"]),
+    );
+  });
+
+  it("creates and updates a contact, returning validation errors without mutation", async () => {
+    let contactId: string | undefined;
+
+    try {
+      const created = await app.request(`/api/admin/events/${EVENT_SET}/contacts`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "  Venue manager  ",
+          role: "  Logistics  ",
+          email: "manager@example.com",
+          sort_order: 2,
+        }),
+      });
+      expect(created.status).toBe(201);
+      const contact = (await created.json()) as { id: string; name: string; role: string | null };
+      contactId = contact.id;
+      expect(contact).toMatchObject({ name: "Venue manager", role: "Logistics" });
+
+      const updated = await app.request(`/api/admin/events/${EVENT_SET}/contacts/${contact.id}`, {
+        method: "PUT",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "  After-hours manager  ", phone: "  +48 123 456 789  " }),
+      });
+      expect(updated.status).toBe(200);
+      expect(await updated.json()).toMatchObject({
+        id: contact.id,
+        name: "After-hours manager",
+        phone: "+48 123 456 789",
+      });
+
+      const invalid = await app.request(`/api/admin/events/${EVENT_SET}/contacts/${contact.id}`, {
+        method: "PUT",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "   " }),
+      });
+      expect(invalid.status).toBe(400);
+      expect(await invalid.json()).toEqual({ error: "name_required" });
+
+      expect(await prisma.eventContact.findUniqueOrThrow({ where: { id: contact.id } })).toMatchObject({
+        id: contact.id,
+        name: "After-hours manager",
+        role: "Logistics",
+        phone: "+48 123 456 789",
+        email: "manager@example.com",
+        sort_order: 2,
+      });
+    } finally {
+      if (contactId) await prisma.eventContact.deleteMany({ where: { id: contactId } });
+    }
+  });
+
+  it("converts a contact update race into not_found", async () => {
+    const contact = await prisma.eventContact.create({
+      data: { event_id: EVENT_SET, name: "Race contact" },
+    });
+    const update = vi.spyOn(prisma.eventContact, "update").mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("record disappeared", {
+        code: "P2025",
+        clientVersion: "test",
+      }),
+    );
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_SET}/contacts/${contact.id}`, {
+        method: "PUT",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Updated after race" }),
+      });
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: "not_found" });
+    } finally {
+      update.mockRestore();
+      await prisma.eventContact.deleteMany({ where: { id: contact.id } });
+    }
+  });
+
+  it("creates and updates a resource while validating mutable fields", async () => {
+    let resourceId: string | undefined;
+
+    try {
+      const created = await app.request(`/api/admin/events/${EVENT_SET}/resources`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "  Venue plan  ",
+          url: "https://example.com/plan.pdf",
+          type: "file",
+          description: "  Internal plan  ",
+        }),
+      });
+      expect(created.status).toBe(201);
+      const resource = (await created.json()) as { id: string; title: string; type: string };
+      resourceId = resource.id;
+      expect(resource).toMatchObject({ title: "Venue plan", type: "file" });
+
+      const updated = await app.request(`/api/admin/events/${EVENT_SET}/resources/${resource.id}`, {
+        method: "PUT",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "  Updated venue plan  ",
+          url: "https://example.com/updated-plan.pdf",
+          description: "  ",
+        }),
+      });
+      expect(updated.status).toBe(200);
+      expect(await updated.json()).toMatchObject({
+        id: resource.id,
+        title: "Updated venue plan",
+        url: "https://example.com/updated-plan.pdf",
+        description: null,
+      });
+
+      const invalidType = await app.request(`/api/admin/events/${EVENT_SET}/resources/${resource.id}`, {
+        method: "PUT",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "folder" }),
+      });
+      expect(invalidType.status).toBe(400);
+      expect(await invalidType.json()).toEqual({ error: "invalid_type" });
+
+      expect(await prisma.eventResource.findUniqueOrThrow({ where: { id: resource.id } })).toMatchObject({
+        id: resource.id,
+        title: "Updated venue plan",
+        type: "file",
+        url: "https://example.com/updated-plan.pdf",
+        description: null,
+      });
+
+      const invalidUrl = await app.request(`/api/admin/events/${EVENT_SET}/resources/${resource.id}`, {
+        method: "PUT",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ url: "  " }),
+      });
+      expect(invalidUrl.status).toBe(400);
+      expect(await invalidUrl.json()).toEqual({ error: "url_required" });
+
+      expect(await prisma.eventResource.findUniqueOrThrow({ where: { id: resource.id } })).toMatchObject({
+        id: resource.id,
+        title: "Updated venue plan",
+        type: "file",
+        url: "https://example.com/updated-plan.pdf",
+        description: null,
+      });
+    } finally {
+      if (resourceId) await prisma.eventResource.deleteMany({ where: { id: resourceId } });
+    }
   });
 });

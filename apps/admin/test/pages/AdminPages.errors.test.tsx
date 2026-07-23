@@ -200,6 +200,22 @@ describe("EventSettingsPage operator errors", () => {
     });
   });
 
+  it("rejects an invalid capacity locally instead of sending a malformed settings patch", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(eventSettings);
+    renderSettings();
+    await screen.findByLabelText("Capacity");
+
+    fireEvent.change(screen.getByLabelText("Capacity"), { target: { value: "0" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(
+        /Capacity must be a positive whole number/,
+      );
+    });
+    expect(patchEvent).not.toHaveBeenCalled();
+  });
+
   it("toasts event_archived on save", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(eventSettings);
     vi.mocked(patchEvent).mockRejectedValueOnce(new ApiError(400, "event_archived", "event_archived"));
@@ -248,6 +264,48 @@ describe("EventSettingsPage operator errors", () => {
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Export failed/);
     });
+  });
+
+  it("downloads a truncated PII export using the server-provided filename", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(eventSettings);
+    vi.mocked(exportEventPii).mockResolvedValueOnce({
+      blob: async () => new Blob(["name,email\nJane,jane@example.com\n"], { type: "text/csv" }),
+      headers: new Headers({
+        "Content-Disposition": 'attachment; filename="pii-export-summit.csv"',
+        "X-Export-Truncated": "true",
+        "X-Export-Total-Rows": "12000",
+      }),
+    } as Response);
+    const createObjectURL = vi.fn(() => "blob:mock-pii-export");
+    const revokeObjectURL = vi.fn();
+    const originalCreate = URL.createObjectURL;
+    const originalRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = createObjectURL;
+    URL.revokeObjectURL = revokeObjectURL;
+    const anchorClicks: string[] = [];
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        anchorClicks.push(this.download);
+      });
+    try {
+      renderSettings();
+      fireEvent.click(await screen.findByRole("tab", { name: "Danger zone" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Export personal data" }));
+
+      await waitFor(() => {
+        expect(createObjectURL).toHaveBeenCalledOnce();
+        expect(anchorClicks).toEqual(["pii-export-summit.csv"]);
+        expect(revokeObjectURL).toHaveBeenCalledWith("blob:mock-pii-export");
+        expect(screen.getByTestId("at-toast").textContent).toMatch(
+          /PII export downloaded \(first 10,000 of 12000 attendees\)/,
+        );
+      });
+    } finally {
+      clickSpy.mockRestore();
+      URL.createObjectURL = originalCreate;
+      URL.revokeObjectURL = originalRevoke;
+    }
   });
 });
 

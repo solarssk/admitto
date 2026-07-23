@@ -216,4 +216,59 @@ describe("GraphAdapter", () => {
     expect(res.retryable).toBe(true);
     expect(res.error).toContain("HTTP 429");
   });
+
+  it("returns failed+retryable when the sendMail request throws after token acquisition", async () => {
+    const fetchFn = vi.fn(async (url: string) => {
+      if (url.includes("/oauth2/v2.0/token")) return tokenResponse();
+      throw new Error("ECONNRESET while sending");
+    });
+    const adapter = new GraphAdapter(config, fetchFn as unknown as typeof fetch);
+
+    const res = await adapter.send({ to: "a@example.com", subject: "x", html: "<p>x</p>" });
+
+    expect(res).toMatchObject({
+      status: "failed",
+      retryable: true,
+      error: "ECONNRESET while sending",
+    });
+  });
+
+  it("returns a terminal failure when a successful token response omits access_token", async () => {
+    const fetchFn = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: async () => "{}",
+      headers: { get: () => null },
+    }));
+    const adapter = new GraphAdapter(config, fetchFn as unknown as typeof fetch);
+
+    const res = await adapter.send({ to: "a@example.com", subject: "x", html: "<p>x</p>" });
+
+    expect(res).toMatchObject({
+      status: "failed",
+      error: "Graph token error: missing access_token in response",
+    });
+    expect(res.retryable).toBeUndefined();
+  });
+
+  it("maps a non-JSON Graph error body without losing its HTTP semantics", async () => {
+    const fetchFn = vi.fn(async (url: string) => {
+      if (url.includes("/oauth2/v2.0/token")) return tokenResponse();
+      return {
+        ok: false,
+        status: 400,
+        text: async () => "Malformed Graph request",
+        headers: { get: () => null },
+      };
+    });
+    const adapter = new GraphAdapter(config, fetchFn as unknown as typeof fetch);
+
+    const res = await adapter.send({ to: "a@example.com", subject: "x", html: "<p>x</p>" });
+
+    expect(res).toMatchObject({
+      status: "rejected",
+      retryable: false,
+      error: "Graph sendMail: HTTP 400 — Malformed Graph request",
+    });
+  });
 });

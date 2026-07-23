@@ -288,6 +288,44 @@ describe("oidc routes", () => {
     await prisma.user.delete({ where: { id: linkUser.id } });
   });
 
+  it("fails closed when the authorization code exchange is rejected", async () => {
+    const start = await app.request(`/api/auth/oidc/${PROVIDER_ID}/start`, { redirect: "manual" });
+    const authorizeUrl = new URL(start.headers.get("location")!);
+    const state = authorizeUrl.searchParams.get("state")!;
+
+    const res = await app.request(
+      `/api/auth/oidc/${PROVIDER_ID}/callback?code=unissued-code&state=${encodeURIComponent(state)}`,
+      {
+        redirect: "manual",
+        headers: { Cookie: `${OIDC_FLOW_COOKIE_NAME}=${state}` },
+      },
+    );
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/login?error=oidc_failed");
+  });
+
+  it("fails closed instead of auto-linking a pre-existing local account", async () => {
+    const existing = await prisma.user.create({
+      data: {
+        email: "oidc-flow@example.com",
+        password_hash: await hashPassword("local-only-password"),
+      },
+    });
+
+    try {
+      const res = await runOidcCallback();
+      expect(res.status).toBe(302);
+      expect(res.headers.get("location")).toBe("/login?error=oidc_failed");
+      expect(
+        await prisma.externalIdentity.count({ where: { provider_id: PROVIDER_ID, user_id: existing.id } }),
+      ).toBe(0);
+    } finally {
+      await prisma.session.deleteMany({ where: { user_id: existing.id } });
+      await prisma.user.delete({ where: { id: existing.id } });
+    }
+  });
+
   it("happy path creates full session", async () => {
     const start = await app.request(`/api/auth/oidc/${PROVIDER_ID}/start`, { redirect: "manual" });
     const authorizeUrl = new URL(start.headers.get("location")!);

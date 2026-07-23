@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -80,5 +80,24 @@ describe("backfillAgencyPublicRefs", () => {
       where: { event_id: EVENT_ID, public_ref: { not: null } },
     });
     expect(after.map((a) => a.public_ref).sort()).toEqual(before.map((a) => a.public_ref).sort());
+  });
+
+  it("retries a generated public_ref after a unique-constraint collision", async () => {
+    const updateMany = vi
+      .fn()
+      .mockRejectedValueOnce({ code: "P2002" })
+      .mockResolvedValueOnce({ count: 1 });
+    const prismaWithCollision = {
+      attendee: {
+        findMany: vi.fn().mockResolvedValue([{ id: "agency-collision" }]),
+        updateMany,
+      },
+    } as unknown as PrismaClient;
+
+    await expect(backfillAgencyPublicRefs(prismaWithCollision)).resolves.toEqual({ updated: 1 });
+    expect(updateMany).toHaveBeenCalledTimes(2);
+    expect(updateMany.mock.calls[0]?.[0]).toMatchObject({
+      where: { id: "agency-collision", public_ref: null },
+    });
   });
 });

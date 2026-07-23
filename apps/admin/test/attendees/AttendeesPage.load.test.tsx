@@ -101,6 +101,41 @@ describe("AttendeesPage load errors", () => {
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
   });
 
+  it("shows a safe generic error when the attendee request is not an API response", async () => {
+    fetchEventAttendees.mockRejectedValueOnce(new TypeError("network unavailable"));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Could not load attendees")).toBeTruthy();
+      expect(screen.getByText("Failed to load attendees.")).toBeTruthy();
+    });
+    expect(reportApiError).not.toHaveBeenCalled();
+  });
+
+  it("redirects to login instead of displaying an inline error after a 401 list response", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    const assignSpy = vi.fn();
+    const locationDescriptor = Object.getOwnPropertyDescriptor(window, "location");
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { pathname: "/admin/events/evt-1/attendees", assign: assignSpy },
+    });
+    try {
+      fetchEventAttendees.mockRejectedValueOnce(new ApiError(401, "unauthorized"));
+
+      renderPage();
+
+      await waitFor(() => {
+        expect(assignSpy).toHaveBeenCalledWith("/login?next=%2Fadmin%2Fevents%2Fevt-1%2Fattendees");
+        expect(reportApiError).toHaveBeenCalledWith(401);
+      });
+      expect(screen.queryByText("Could not load attendees")).toBeNull();
+    } finally {
+      if (locationDescriptor) Object.defineProperty(window, "location", locationDescriptor);
+    }
+  });
+
   it("shows a small inline retryable error next to the Type filter when only the ticket-type catalog fails, without blocking the attendee list (CodeRabbit review)", async () => {
     const { fetchTicketTypes } = await import("../../src/api/client.js");
     fetchEventAttendees.mockResolvedValue({

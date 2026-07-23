@@ -370,6 +370,73 @@ describe("AttendeesPage revoke/restore", () => {
     });
   });
 
+  it("keeps an unknown 409 revoke conflict in the confirmation dialog", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    updateAttendee.mockRejectedValue(new ApiError(409, "unexpected_conflict", "unexpected_conflict"));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(tableActions().getByRole("button", { name: "Revoke pass" })).toBeTruthy();
+    });
+    fireEvent.click(tableActions().getByRole("button", { name: "Revoke pass" }));
+    const dialog = screen.getByRole("dialog", { name: "Revoke pass?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
+
+    await waitFor(() => {
+      expect(reportApiError).toHaveBeenCalledWith(409);
+      expect(within(dialog).getByText("Could not update pass status.")).toBeTruthy();
+    });
+    expect(addToast).not.toHaveBeenCalledWith("Could not update pass status.", "error");
+  });
+
+  it("toasts an unknown 409 restore conflict because no confirmation dialog is open", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    const revokedRow = { ...sampleRow, status: "revoked" as const };
+    setListItems([revokedRow]);
+    updateAttendee.mockRejectedValue(new ApiError(409, "unexpected_conflict", "unexpected_conflict"));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Restore pass" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Restore pass" }));
+
+    await waitFor(() => {
+      expect(reportApiError).toHaveBeenCalledWith(409);
+      expect(addToast).toHaveBeenCalledWith("Could not update pass status.", "error");
+    });
+  });
+
+  it("redirects to login when restoring a pass returns 401", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    const revokedRow = { ...sampleRow, status: "revoked" as const };
+    setListItems([revokedRow]);
+    updateAttendee.mockRejectedValue(new ApiError(401, "unauthorized"));
+    const assignSpy = vi.fn();
+    const locationDescriptor = Object.getOwnPropertyDescriptor(window, "location");
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { pathname: "/admin/events/evt-1/attendees", assign: assignSpy },
+    });
+    try {
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Restore pass" })).toBeTruthy();
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Restore pass" }));
+
+      await waitFor(() => {
+        expect(assignSpy).toHaveBeenCalledWith("/login?next=%2Fadmin%2Fevents%2Fevt-1%2Fattendees");
+        expect(reportApiError).toHaveBeenCalledWith(401);
+      });
+    } finally {
+      if (locationDescriptor) Object.defineProperty(window, "location", locationDescriptor);
+    }
+  });
+
   it("disables the in-flight row action until the PATCH settles", async () => {
     const revokedRow = { ...sampleRow, status: "revoked" as const };
     setListItems([revokedRow]);

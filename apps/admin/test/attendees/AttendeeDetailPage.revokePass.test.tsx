@@ -141,6 +141,42 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("keeps an unmapped 409 pass error in the revoke confirmation dialog", async () => {
+    mockLoad(baseDetail());
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    const { ApiError } = await import("../../src/api/client.js");
+    updateAttendee.mockRejectedValue(new ApiError(409, "unexpected_conflict", "unexpected_conflict"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Pass" }));
+    const dialog = screen.getByRole("dialog", { name: "Revoke pass?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
+
+    expect(await within(dialog).findByText("Could not update pass status.")).toBeTruthy();
+  });
+
+  it("reloads the page after a stale-write pass conflict", async () => {
+    mockLoad(baseDetail());
+    mockLoad(baseDetail({ updated_at: "2026-01-02T00:00:00.000Z" }));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    const { ApiError } = await import("../../src/api/client.js");
+    updateAttendee.mockRejectedValue(new ApiError(409, "stale_write", "stale_write"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Pass" }));
+    const dialog = screen.getByRole("dialog", { name: "Revoke pass?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Someone else updated this attendee/);
+      expect(loadAttendeeDetailData).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it("lets a superadmin override the capacity block and retries with force: true", async () => {
     mockAssignments = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
     mockLoad(baseDetail({ status: "revoked" }));

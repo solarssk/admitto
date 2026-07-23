@@ -252,6 +252,33 @@ describe("CF Access admin collision point", () => {
     }
   });
 
+  it("rejects a validated token with an empty subject", async () => {
+    const token = await signCfAccessJwt(mock, { sub: "", email: SUPER_EMAIL });
+    const res = await app.request("/api/admin/identity/providers", {
+      headers: { [CF_ACCESS_HEADER]: token },
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "cf_access_jwt_invalid" });
+  });
+
+  it("rejects CF JWTs while the Cloudflare Access provider is disabled", async () => {
+    const provider = await prisma.identityProvider.findFirstOrThrow({
+      where: { provider_type: "cloudflare_access" },
+    });
+    await prisma.identityProvider.update({ where: { id: provider.id }, data: { enabled: false } });
+
+    try {
+      const token = await signCfAccessJwt(mock, { sub: "cf-super-sub", email: SUPER_EMAIL });
+      const res = await app.request("/api/admin/identity/providers", {
+        headers: { [CF_ACCESS_HEADER]: token },
+      });
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "cf_access_jwt_invalid" });
+    } finally {
+      await prisma.identityProvider.update({ where: { id: provider.id }, data: { enabled: true } });
+    }
+  });
+
   it("public /login does not require CF JWT", async () => {
     const res = await app.request("/login");
     expect(res.status).toBe(200);

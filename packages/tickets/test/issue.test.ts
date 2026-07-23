@@ -163,6 +163,24 @@ describe("issueTicket — Mode B (agency)", () => {
     expect(att?.token_enc).toBeNull();
   });
 
+  it("uses external_uuid as the agency payload when qr_payload is absent", async () => {
+    const attendee = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "external-uuid-only@example.com",
+        name: "External UUID Only",
+        external_uuid: "AGENCY-UUID-ONLY",
+      },
+    });
+
+    await expect(issueTicket(attendee.id, prisma, BASE_URL)).resolves.toEqual({
+      status: "agency",
+      mode: "agency",
+      attendeeId: attendee.id,
+      qrPayload: "AGENCY-UUID-ONLY",
+    });
+  });
+
   it("does not issue a cancelled agency attendee", async () => {
     const att = await prisma.attendee.create({
       data: {
@@ -191,6 +209,22 @@ describe("issueTicket — not issuable statuses", () => {
 
     const att = await prisma.attendee.findUnique({ where: { id: attendeeCancelledId } });
     expect(att?.token_hash).toBeNull();
+  });
+
+  it("does not issue a revoked attendee", async () => {
+    const attendee = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "revoked-issue@example.com",
+        name: "Revoked Issue",
+        status: "revoked",
+      },
+    });
+
+    await expect(issueTicket(attendee.id, prisma, BASE_URL)).resolves.toMatchObject({
+      status: "not_issuable",
+      reason: "revoked",
+    });
   });
 });
 
