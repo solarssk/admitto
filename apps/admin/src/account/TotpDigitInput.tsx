@@ -15,12 +15,6 @@ interface Props {
  */
 export function TotpDigitInput({ value, onChange, disabled, id }: Readonly<Props>) {
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
-  // Stable per-box identity for React's key — generated once, independent of
-  // the map callback's own index, since the 6 boxes are fixed slots whose
-  // *content* changes on every keystroke (SonarCloud S6479).
-  const boxKeysRef = useRef<string[]>(
-    Array.from({ length: 6 }, () => Math.random().toString(36).slice(2)),
-  );
   const digits = Array.from({ length: 6 }, (_, i) => value[i] ?? "");
 
   function handleChange(i: number, raw: string) {
@@ -66,7 +60,7 @@ export function TotpDigitInput({ value, onChange, disabled, id }: Readonly<Props
     <div className="account-otp-digits">
       {digits.map((d, i) => (
         <input
-          key={boxKeysRef.current[i]}
+          key={i}
           ref={(el) => {
             inputRefs.current[i] = el;
           }}
