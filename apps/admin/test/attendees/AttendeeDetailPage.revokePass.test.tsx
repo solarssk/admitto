@@ -159,6 +159,22 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("keeps a generic server error in the revoke confirmation dialog", async () => {
+    mockLoad(baseDetail());
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    const { ApiError } = await import("../../src/api/client.js");
+    updateAttendee.mockRejectedValue(new ApiError(500, "server_error", "server_error"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Pass" }));
+    const dialog = screen.getByRole("dialog", { name: "Revoke pass?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
+
+    expect(await within(dialog).findByText("Could not update pass status.")).toBeTruthy();
+  });
+
   it("reloads the page after a stale-write pass conflict", async () => {
     mockLoad(baseDetail());
     mockLoad(baseDetail({ updated_at: "2026-01-02T00:00:00.000Z" }));

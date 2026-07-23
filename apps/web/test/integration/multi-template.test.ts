@@ -920,6 +920,15 @@ describe("multi-template API", () => {
     expect(body).toEqual({ batchId, total: 4, queued: 1, sent: 1, failed: 2 });
   });
 
+  it("GET /send/status returns not_found for a batch outside the event", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/send/status/missing-batch`, {
+      headers: { Cookie: adminCookie, ...sameOrigin },
+    });
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "not_found" });
+  });
+
   it("POST /templates/:id/test-send sends using the selected template", async () => {
     await putTicketTemplate(app);
     const TEST_SUBJECT = "BY-ID-CUSTOM-SUBJECT-7f3a";
