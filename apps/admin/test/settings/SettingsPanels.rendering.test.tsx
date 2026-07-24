@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuditLogEntryDto, AuditLogResponse, SessionListDto } from "../../src/api/types.js";
 import { ApiError, fetchAdminEvents, fetchAuditLog, fetchSessions } from "../../src/api/client.js";
@@ -62,6 +62,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
 });
 
 describe("AuditLogPanel rendering", () => {
@@ -73,9 +74,16 @@ describe("AuditLogPanel rendering", () => {
       }),
     );
 
+    // useDelayedLoading only shows the skeleton once the fetch has stayed pending past its
+    // 200ms grace window (avoids flashing it for a near-instant response) — fake timers must
+    // be installed before render so the hook's setTimeout is one of ours.
+    vi.useFakeTimers();
     renderWithToast(<AuditLogPanel />);
-
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
     expect(screen.getByLabelText("Loading audit log")).toBeTruthy();
+    vi.useRealTimers();
 
     resolveAuditLog(emptyAuditLog());
     expect(await screen.findByText("No audit log entries found.")).toBeTruthy();
@@ -152,6 +160,130 @@ describe("AuditLogPanel rendering", () => {
     const table = await screen.findByRole("table");
     expect(within(table).getAllByText("—")).toHaveLength(2);
     expect(within(table).queryByText("View")).toBeNull();
+  });
+
+  it("closes the Details popover via its backdrop", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [makeAuditEntry()],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderWithToast(<AuditLogPanel />);
+
+    const table = await screen.findByRole("table");
+    const trigger = within(table).getByText("View");
+    fireEvent.click(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+
+    fireEvent.click(screen.getByLabelText("Close details"));
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("falls back to the actor's email, then to a deleted-user label, when the display name is missing", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [
+        makeAuditEntry({ id: "audit-email-only", actor_display_name: null }),
+        makeAuditEntry({
+          id: "audit-deleted",
+          actor_display_name: null,
+          actor_email: null,
+          actor_user_id: "user-ghost",
+        }),
+      ],
+      total: 2,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderWithToast(<AuditLogPanel />);
+
+    const table = await screen.findByRole("table");
+    const rows = within(table).getAllByRole("row").slice(1);
+    expect(within(rows[0]!).getByText("alice@example.com")).toBeTruthy();
+    const deletedCell = within(rows[1]!).getByText("Deleted user").closest("td");
+    expect(deletedCell?.getAttribute("title")).toBe("user-ghost");
+  });
+
+  it("shows the viewer's local timezone label after switching the Time column to Local", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [makeAuditEntry()],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByRole("table");
+    expect(screen.getByText("Time (UTC)")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Local" }));
+    const tzLabel = Intl.DateTimeFormat().resolvedOptions().timeZone.split("/").pop()?.replaceAll("_", " ");
+    expect(await screen.findByText(`Time (${tzLabel})`)).toBeTruthy();
+  });
+
+  it("applies the From/To date filters and resets to page 1", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [makeAuditEntry()],
+      total: 50,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByRole("table");
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText("Page 2 of 2 (50 total)")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-01-01" } });
+    expect(await screen.findByText("Page 1 of 2 (50 total)")).toBeTruthy();
+    expect(vi.mocked(fetchAuditLog).mock.calls.at(-1)![0]).toMatchObject({ page: 1, start: "2026-01-01T00:00:00.000Z" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByText("Page 2 of 2 (50 total)");
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-01-31" } });
+    expect(await screen.findByText("Page 1 of 2 (50 total)")).toBeTruthy();
+    expect(vi.mocked(fetchAuditLog).mock.calls.at(-1)![0]).toMatchObject({ page: 1, end: "2026-01-31T23:59:59.999Z" });
+  });
+
+  it("clears the action filter and reloads unfiltered", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByText("No audit log entries found.");
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Action" }), {
+      target: { value: "event_created" },
+    });
+    expect(await screen.findByText("No audit log entries match the filters.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(await screen.findByText("No audit log entries found.")).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Action" })).property("value", "");
+  });
+
+  it("pages forward and back through results", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [makeAuditEntry()],
+      total: 50,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderWithToast(<AuditLogPanel />);
+    expect(await screen.findByText("Page 1 of 2 (50 total)")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Previous" })).property("disabled", true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText("Page 2 of 2 (50 total)")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Next" })).property("disabled", true);
+    expect(vi.mocked(fetchAuditLog).mock.calls.at(-1)![0]).toMatchObject({ page: 2 });
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+    expect(await screen.findByText("Page 1 of 2 (50 total)")).toBeTruthy();
+    expect(vi.mocked(fetchAuditLog).mock.calls.at(-1)![0]).toMatchObject({ page: 1 });
   });
 });
 
