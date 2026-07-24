@@ -673,7 +673,7 @@ export function IdentityProviderEditor({
             className="identity-protocol-tile identity-protocol-tile--disabled"
             title="SAML support is coming soon"
           >
-            <i className="ti ti-certificate" aria-hidden="true" /> SAML
+            <i className="ti ti-certificate" aria-hidden="true" /> SAML{" "}
             <span className="identity-protocol-tile__badge">Soon</span>
           </span>
         </div>
