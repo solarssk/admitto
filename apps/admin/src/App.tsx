@@ -26,8 +26,6 @@ import type { EventDto } from "./api/types.js";
 // Suspense fallback.
 const SettingsTabContent = lazy(() => import("./pages/SettingsPage.js").then((m) => ({ default: m.SettingsTabContent })));
 const IdentityProvidersPanel = lazy(() => import("./identity/IdentityProvidersPanel.js").then((m) => ({ default: m.IdentityProvidersPanel })));
-const IdentityProviderEditor = lazy(() => import("./identity/IdentityProviderEditor.js").then((m) => ({ default: m.IdentityProviderEditor })));
-const CfAccessEditor = lazy(() => import("./identity/CfAccessEditor.js").then((m) => ({ default: m.CfAccessEditor })));
 const UsersPage = lazy(() => import("./pages/UsersPage.js").then((m) => ({ default: m.UsersPage })));
 const AccountLayout = lazy(() => import("./account/AccountLayout.js").then((m) => ({ default: m.AccountLayout })));
 const CheckInEntryPage = lazy(() => import("./pages/CheckInEntryPage.js").then((m) => ({ default: m.CheckInEntryPage })));
@@ -193,9 +191,9 @@ export function StaffRoutes() {
               <Route path="identity">
                 <Route index element={<Navigate to="providers" replace />} />
                 <Route path="providers" element={<IdentityProvidersPanel />} />
-                <Route path="providers/new" element={<IdentityProviderEditor mode="create" />} />
-                <Route path="providers/:providerId" element={<IdentityProviderEditor mode="edit" />} />
-                <Route path="cloudflare" element={<CfAccessEditor />} />
+                <Route path="providers/new" element={<IdentityProvidersPanel />} />
+                <Route path="providers/:providerId" element={<IdentityProvidersPanel />} />
+                <Route path="cloudflare" element={<IdentityProvidersPanel />} />
               </Route>
             </Route>
           </Route>

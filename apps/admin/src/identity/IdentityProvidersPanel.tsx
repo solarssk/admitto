@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { Badge, Button, Card, EmptyState, Skeleton, Switch, useToast } from "@admitto/ui";
 import {
   ApiError,
@@ -10,7 +10,25 @@ import {
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { CfAccessSummaryDto, IdentityProviderListItem } from "../api/types.js";
 import { useInFlightIds } from "../hooks/useInFlightIds.js";
-import { IDENTITY_CLOUDFLARE_ROUTE } from "./routes.js";
+import { CfAccessEditor } from "./CfAccessEditor.js";
+import { IdentityProviderEditor } from "./IdentityProviderEditor.js";
+import { IDENTITY_CLOUDFLARE_ROUTE, IDENTITY_PROVIDERS_ROUTE } from "./routes.js";
+
+type Modal =
+  | { kind: "none" }
+  | { kind: "create" }
+  | { kind: "edit"; providerId: string }
+  | { kind: "cloudflare" };
+
+/** Derive which modal (if any) sits on top of the list from the matched route —
+ * `providers/new`, `providers/:providerId`, and `cloudflare` all render this same
+ * panel so the list never unmounts while a modal is open on top of it. */
+function resolveModal(pathname: string, providerId: string | undefined): Modal {
+  if (pathname === `${IDENTITY_PROVIDERS_ROUTE}/new`) return { kind: "create" };
+  if (providerId) return { kind: "edit", providerId };
+  if (pathname === IDENTITY_CLOUDFLARE_ROUTE) return { kind: "cloudflare" };
+  return { kind: "none" };
+}
 
 type LoadState = "loading" | "ready" | "error";
 /** Row shape is 1:1 with the API list DTO. */
@@ -79,6 +97,9 @@ function ProviderRowItem({
  */
 export function IdentityProvidersPanel() {
   const { addToast } = useToast();
+  const location = useLocation();
+  const params = useParams<{ providerId?: string }>();
+  const modal = resolveModal(location.pathname, params.providerId);
   const [providers, setProviders] = useState<ProviderRow[]>([]);
   const [cf, setCf] = useState<CfAccessSummaryDto | null>(null);
   const [providersState, setProvidersState] = useState<LoadState>("loading");
@@ -139,6 +160,20 @@ export function IdentityProvidersPanel() {
 
   const retryProviders = useCallback(() => setProvidersRetry((n) => n + 1), []);
   const retryCf = useCallback(() => setCfRetry((n) => n + 1), []);
+
+  // The list no longer unmounts when a modal route is visited (unlike a full page
+  // navigation), so refresh both lists ourselves once a modal closes back to the
+  // bare providers route — covers create/edit/CF saves without threading an
+  // onSaved callback through both editors.
+  const modalWasOpenRef = useRef(modal.kind !== "none");
+  useEffect(() => {
+    const isOpen = modal.kind !== "none";
+    if (modalWasOpenRef.current && !isOpen) {
+      retryProviders();
+      retryCf();
+    }
+    modalWasOpenRef.current = isOpen;
+  }, [modal.kind, retryProviders, retryCf]);
 
   const handleToggle = useCallback(
     async (provider: ProviderRow) => {
@@ -253,6 +288,10 @@ export function IdentityProvidersPanel() {
           </div>
         )}
       </Card>
+
+      {modal.kind === "create" && <IdentityProviderEditor mode="create" />}
+      {modal.kind === "edit" && <IdentityProviderEditor mode="edit" providerId={modal.providerId} />}
+      {modal.kind === "cloudflare" && <CfAccessEditor />}
     </div>
   );
 }

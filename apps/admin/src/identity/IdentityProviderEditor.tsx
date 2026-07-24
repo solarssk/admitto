@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useBlocker, useLocation, useNavigate, useParams } from "react-router-dom";
 import type { BlockerFunction } from "react-router";
 import { Button, Card, Input, Spinner, Switch, useToast } from "@admitto/ui";
@@ -13,6 +13,7 @@ import {
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { ProviderDetailDto, ProviderRequestBody, ProviderTestDraftBody } from "../api/types.js";
+import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { IdentityMappingRepeater } from "./IdentityMappingRepeater.js";
 import {
   emptyProviderDraft,
@@ -426,6 +427,10 @@ export function IdentityProviderEditor({
     skipBlockRef.current = true;
     navigate(IDENTITY_PROVIDERS_ROUTE);
   }, [dirty, navigate]);
+
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  useModalFocusTrap(panelRef, true, handleCancel);
 
   const handleSubmit = useCallback(
     async (event: React.FormEvent) => {
@@ -842,19 +847,22 @@ export function IdentityProviderEditor({
 
   const view = resolveEditorView(mode, loadState);
   return (
-    <div className="identity-editor__page">
-      {view === "loading" && loadingContent}
-      {view === "error" && errorContent}
-      {view === "not_found" && notFoundContent}
-      {view === "form" && (
-        <>
-          <div className="identity-editor__header">
-            <h2 className="identity-editor__title">{title}</h2>
-            <p className="identity-editor__subtitle">{editorSubtitle(mode)}</p>
-          </div>
-          {formContent}
-        </>
-      )}
-    </div>
+    <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
+      <div className="identity-modal__backdrop" role="presentation" onClick={handleCancel} />
+      <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
+        {view === "loading" && loadingContent}
+        {view === "error" && errorContent}
+        {view === "not_found" && notFoundContent}
+        {view === "form" && (
+          <>
+            <div className="identity-editor__header">
+              <h2 className="identity-editor__title" id={titleId}>{title}</h2>
+              <p className="identity-editor__subtitle">{editorSubtitle(mode)}</p>
+            </div>
+            {formContent}
+          </>
+        )}
+      </div>
+    </dialog>
   );
 }

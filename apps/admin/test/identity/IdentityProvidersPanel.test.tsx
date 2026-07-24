@@ -2,8 +2,9 @@
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, createMemoryRouter, RouterProvider } from "react-router-dom";
 import { IdentityProvidersPanel } from "../../src/identity/IdentityProvidersPanel.js";
+import { IDENTITY_PROVIDERS_ROUTE } from "../../src/identity/routes.js";
 import { renderWithToast } from "../test-utils.js";
 
 function renderPanel() {
@@ -14,6 +15,23 @@ function renderPanel() {
   );
 }
 
+/** Renders the panel at a specific identity sub-path via a data router, needed
+ * for the modal routes since IdentityProviderEditor/CfAccessEditor's dirty
+ * guard uses `useBlocker` (requires a DataRouterContext, unlike plain
+ * MemoryRouter — same reasoning as IdentityProviderEditor.test.tsx). */
+function renderPanelAt(path: string) {
+  const router = createMemoryRouter(
+    [
+      { path: `${IDENTITY_PROVIDERS_ROUTE}`, element: <IdentityProvidersPanel /> },
+      { path: `${IDENTITY_PROVIDERS_ROUTE}/new`, element: <IdentityProvidersPanel /> },
+      { path: `${IDENTITY_PROVIDERS_ROUTE}/:providerId`, element: <IdentityProvidersPanel /> },
+      { path: "/admin/settings/identity/cloudflare", element: <IdentityProvidersPanel /> },
+    ],
+    { initialEntries: [path] },
+  );
+  return { ...renderWithToast(<RouterProvider router={router} />), router };
+}
+
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
   return {
@@ -21,6 +39,14 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchIdentityProviders: vi.fn(),
     fetchCfAccessSummary: vi.fn(),
     toggleIdentityProvider: vi.fn(),
+    fetchIdentityProvider: vi.fn(),
+    createIdentityProvider: vi.fn(),
+    updateIdentityProvider: vi.fn(),
+    discoverIdentityProvider: vi.fn(),
+    discoverIdentityProviderPreview: vi.fn(),
+    testIdentityProviderDraft: vi.fn(),
+    updateCfAccess: vi.fn(),
+    testCfAccess: vi.fn(),
   };
 });
 
@@ -28,11 +54,21 @@ import {
   fetchIdentityProviders,
   fetchCfAccessSummary,
   toggleIdentityProvider,
+  fetchIdentityProvider,
 } from "../../src/api/client.js";
 
 const mockProviders = vi.mocked(fetchIdentityProviders);
 const mockCf = vi.mocked(fetchCfAccessSummary);
 const mockToggle = vi.mocked(toggleIdentityProvider);
+const mockFetchOne = vi.mocked(fetchIdentityProvider);
+
+const emptyCf = () => ({
+  enabled: false,
+  teamDomain: "",
+  audience: [] as string[],
+  protectedPrefixes: [] as string[],
+  locks: { enabled: false, teamDomain: false, audience: false, protectedPrefixes: false },
+});
 
 afterEach(() => {
   cleanup();
@@ -285,5 +321,77 @@ describe("IdentityProvidersPanel", () => {
     await waitFor(() => {
       expect(screen.getByText("No team domain configured.")).toBeTruthy();
     });
+  });
+
+  it("opens the create-provider modal over the list at providers/new", async () => {
+    mockProviders.mockResolvedValue({
+      providers: [
+        { id: "p1", display_name: "Google", issuer: "https://accounts.google.com", enabled: true },
+      ],
+    });
+    mockCf.mockResolvedValue(emptyCf());
+
+    renderPanelAt(`${IDENTITY_PROVIDERS_ROUTE}/new`);
+
+    // The list is still visible underneath...
+    await waitFor(() => expect(screen.getByText("Google")).toBeTruthy());
+    // ...and the create modal is open on top of it.
+    expect(await screen.findByText("Add identity provider")).toBeTruthy();
+  });
+
+  it("opens the edit-provider modal for the routed provider id", async () => {
+    mockProviders.mockResolvedValue({
+      providers: [
+        { id: "p1", display_name: "Google", issuer: "https://accounts.google.com", enabled: true },
+      ],
+    });
+    mockCf.mockResolvedValue(emptyCf());
+    mockFetchOne.mockResolvedValueOnce({
+      id: "p1",
+      display_name: "Google",
+      issuer: "https://accounts.google.com",
+      client_id: "client-1",
+      has_client_secret: true,
+      authorization_endpoint: "",
+      token_endpoint: "",
+      jwks_uri: "",
+      userinfo_endpoint: null,
+      claim_email: "",
+      claim_name: "",
+      claim_groups: "",
+      enabled: true,
+      login_button_label: null,
+      mappings: [],
+    });
+
+    renderPanelAt(`${IDENTITY_PROVIDERS_ROUTE}/p1`);
+
+    expect(await screen.findByText("Edit identity provider")).toBeTruthy();
+    expect(mockFetchOne).toHaveBeenCalledWith("p1", expect.anything());
+  });
+
+  it("opens the Cloudflare Access modal at the cloudflare route", async () => {
+    mockProviders.mockResolvedValue({ providers: [] });
+    mockCf.mockResolvedValue(emptyCf());
+
+    renderPanelAt("/admin/settings/identity/cloudflare");
+
+    expect(await screen.findByRole("heading", { name: "Cloudflare Access" })).toBeTruthy();
+  });
+
+  it("refetches providers and CF summary after the create modal closes", async () => {
+    mockProviders.mockResolvedValue({ providers: [] });
+    mockCf.mockResolvedValue(emptyCf());
+
+    const { router } = renderPanelAt(`${IDENTITY_PROVIDERS_ROUTE}/new`);
+    await screen.findByText("Add identity provider");
+    await waitFor(() => expect(mockProviders).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mockCf).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe(IDENTITY_PROVIDERS_ROUTE));
+    await waitFor(() => expect(mockProviders).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mockCf).toHaveBeenCalledTimes(2));
   });
 });

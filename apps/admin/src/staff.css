@@ -2737,10 +2737,48 @@
 }
 
 /* Identity provider editor (#266 slice 3) */
-.identity-editor__page {
+/* Identity provider / Cloudflare Access editors render as modals over the
+ * Identity list (not full pages) — same reset + centering pattern as
+ * .users-modal in users-page.css, with a wider panel for the longer provider
+ * form (Basics/Endpoints/Claims/Mappings/Login button). */
+.identity-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  width: 100%;
+}
+
+.identity-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.identity-modal__panel {
+  position: relative;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  width: min(520px, 100%);
+  max-height: min(90vh, 720px);
+  overflow: auto;
+  box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+}
+
+.identity-modal__panel--wide {
+  width: min(720px, 100%);
 }
 
 .identity-editor__header {

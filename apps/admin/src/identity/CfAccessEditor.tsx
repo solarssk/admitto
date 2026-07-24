@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useBlocker, useLocation, useNavigate } from "react-router-dom";
 import type { BlockerFunction } from "react-router";
 import { Badge, Button, Card, Input, Spinner, Switch, useToast } from "@admitto/ui";
 import { ApiError, fetchCfAccessSummary, testCfAccess, updateCfAccess } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { CfAccessSummaryDto } from "../api/types.js";
+import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import {
   buildCfUpdateBody,
   cfDraftFromSummary,
@@ -130,6 +131,10 @@ export function CfAccessEditor() {
     navigate(IDENTITY_PROVIDERS_ROUTE);
   }, [dirty, navigate]);
 
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  useModalFocusTrap(panelRef, true, handleCancel);
+
   const handleSubmit = useCallback(
     async (event: React.FormEvent) => {
       event.preventDefault();
@@ -216,16 +221,15 @@ export function CfAccessEditor() {
     </div>
   );
 
+  let content: ReactNode;
   if (loadState === "loading") {
-    return (
+    content = (
       <output className="identity-editor__loading">
         <Spinner label="Loading Cloudflare Access" />
       </output>
     );
-  }
-
-  if (loadState === "error") {
-    return (
+  } else if (loadState === "error") {
+    content = (
       <Card title="Cloudflare Access">
         <div className="identity-editor__error">
           <p>Couldn't load the Cloudflare Access configuration.</p>
@@ -235,107 +239,116 @@ export function CfAccessEditor() {
         </div>
       </Card>
     );
+  } else {
+    content = (
+      <>
+        <div className="identity-editor__header">
+          <h2 className="identity-editor__title" id={titleId}>Cloudflare Access</h2>
+          <p className="identity-editor__subtitle">
+            Require a Cloudflare Zero Trust Access JWT for protected admin paths. Configure your
+            team URL, application audience tag, and protected prefixes.
+          </p>
+          <div className="cf-editor__status">
+            {draft.enabled ? (
+              <Badge variant="ok" dot>Active</Badge>
+            ) : (
+              <Badge variant="neutral" dot>Inactive</Badge>
+            )}
+            {locks.enabled && <Badge variant="warn">Managed by environment</Badge>}
+          </div>
+        </div>
+
+        <form className="identity-editor cf-editor" onSubmit={handleSubmit} noValidate>
+          {fallthroughInfo}
+          {enabledWarning}
+          {envLockedInfo}
+
+          <Card title="Configuration">
+            <div className="identity-editor__grid">
+              <div className="identity-editor__switch cf-editor__enabled">
+                <Switch
+                  id="cf-access-enabled"
+                  label="Enable Cloudflare Access for protected admin paths"
+                  checked={draft.enabled}
+                  disabled={locks.enabled}
+                  onChange={(e) => setDraft((d) => ({ ...d, enabled: e.target.checked }))}
+                />
+                {locks.enabled && <Badge variant="neutral">Locked by env</Badge>}
+              </div>
+
+              <Input
+                label="Cloudflare team URL"
+                type="url"
+                value={draft.teamDomain}
+                invalid={Boolean(errors.teamDomain)}
+                error={errors.teamDomain}
+                disabled={locks.teamDomain}
+                hint="Zero Trust → Settings → Custom Pages. Paste the team URL (issuer), not the application hostname. https://<team>.cloudflareaccess.com or a schemeless <team>.cloudflareaccess.com host."
+                placeholder="https://yourteam.cloudflareaccess.com"
+                onChange={(e) => setDraft((d) => ({ ...d, teamDomain: e.target.value }))}
+              />
+              {locks.teamDomain && <Badge variant="neutral">Locked by env</Badge>}
+
+              <Input
+                label="Application token (AUD)"
+                value={draft.audienceRaw}
+                invalid={Boolean(errors.audience)}
+                error={errors.audience}
+                disabled={locks.audience}
+                hint="Zero Trust → Access → Applications → your app → Overview → Application Audience (AUD) Tag. One value, or comma-separated for multiple apps."
+                placeholder="a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                onChange={(e) => setDraft((d) => ({ ...d, audienceRaw: e.target.value }))}
+              />
+              {locks.audience && <Badge variant="neutral">Locked by env</Badge>}
+
+              <div className="cf-editor__grid-full">
+                <Input
+                  label="Protected URL paths"
+                  value={draft.protectedPrefixesRaw}
+                  invalid={Boolean(errors.protectedPrefixes)}
+                  error={errors.protectedPrefixes}
+                  disabled={locks.protectedPrefixes}
+                  hint="Paths that require a Cloudflare Access JWT. Default covers the admin UI and admin API. Comma-separated (each must start with /)."
+                  placeholder="/admin, /api/admin"
+                  onChange={(e) => setDraft((d) => ({ ...d, protectedPrefixesRaw: e.target.value }))}
+                />
+              </div>
+              {locks.protectedPrefixes && <Badge variant="neutral">Locked by env</Badge>}
+            </div>
+
+            <div className="cf-editor__test">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={handleTest}
+                disabled={testing || saving}
+                aria-busy={testing}
+              >
+                {testing ? "Testing…" : "Test connection"}
+              </Button>
+            </div>
+          </Card>
+
+          <div className="identity-editor__actions">
+            <Button type="button" variant="ghost" onClick={handleCancel} disabled={saving}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" disabled={saving}>
+              {saving ? "Saving…" : "Save changes"}
+            </Button>
+          </div>
+        </form>
+      </>
+    );
   }
 
   return (
-    <div className="identity-editor__page">
-      <div className="identity-editor__header">
-        <h2 className="identity-editor__title">Cloudflare Access</h2>
-        <p className="identity-editor__subtitle">
-          Require a Cloudflare Zero Trust Access JWT for protected admin paths. Configure your
-          team URL, application audience tag, and protected prefixes.
-        </p>
-        <div className="cf-editor__status">
-          {draft.enabled ? (
-            <Badge variant="ok" dot>Active</Badge>
-          ) : (
-            <Badge variant="neutral" dot>Inactive</Badge>
-          )}
-          {locks.enabled && <Badge variant="warn">Managed by environment</Badge>}
-        </div>
+    <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
+      <div className="identity-modal__backdrop" role="presentation" onClick={handleCancel} />
+      <div ref={panelRef} className="identity-modal__panel">
+        {content}
       </div>
-
-      <form className="identity-editor cf-editor" onSubmit={handleSubmit} noValidate>
-        {fallthroughInfo}
-        {enabledWarning}
-        {envLockedInfo}
-
-        <Card title="Configuration">
-          <div className="identity-editor__grid">
-            <div className="identity-editor__switch cf-editor__enabled">
-              <Switch
-                id="cf-access-enabled"
-                label="Enable Cloudflare Access for protected admin paths"
-                checked={draft.enabled}
-                disabled={locks.enabled}
-                onChange={(e) => setDraft((d) => ({ ...d, enabled: e.target.checked }))}
-              />
-              {locks.enabled && <Badge variant="neutral">Locked by env</Badge>}
-            </div>
-
-            <Input
-              label="Cloudflare team URL"
-              type="url"
-              value={draft.teamDomain}
-              invalid={Boolean(errors.teamDomain)}
-              error={errors.teamDomain}
-              disabled={locks.teamDomain}
-              hint="Zero Trust → Settings → Custom Pages. Paste the team URL (issuer), not the application hostname. https://<team>.cloudflareaccess.com or a schemeless <team>.cloudflareaccess.com host."
-              placeholder="https://yourteam.cloudflareaccess.com"
-              onChange={(e) => setDraft((d) => ({ ...d, teamDomain: e.target.value }))}
-            />
-            {locks.teamDomain && <Badge variant="neutral">Locked by env</Badge>}
-
-            <Input
-              label="Application token (AUD)"
-              value={draft.audienceRaw}
-              invalid={Boolean(errors.audience)}
-              error={errors.audience}
-              disabled={locks.audience}
-              hint="Zero Trust → Access → Applications → your app → Overview → Application Audience (AUD) Tag. One value, or comma-separated for multiple apps."
-              placeholder="a1b2c3d4-e5f6-7890-abcd-ef1234567890"
-              onChange={(e) => setDraft((d) => ({ ...d, audienceRaw: e.target.value }))}
-            />
-            {locks.audience && <Badge variant="neutral">Locked by env</Badge>}
-
-            <div className="cf-editor__grid-full">
-              <Input
-                label="Protected URL paths"
-                value={draft.protectedPrefixesRaw}
-                invalid={Boolean(errors.protectedPrefixes)}
-                error={errors.protectedPrefixes}
-                disabled={locks.protectedPrefixes}
-                hint="Paths that require a Cloudflare Access JWT. Default covers the admin UI and admin API. Comma-separated (each must start with /)."
-                placeholder="/admin, /api/admin"
-                onChange={(e) => setDraft((d) => ({ ...d, protectedPrefixesRaw: e.target.value }))}
-              />
-            </div>
-            {locks.protectedPrefixes && <Badge variant="neutral">Locked by env</Badge>}
-          </div>
-
-          <div className="cf-editor__test">
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={handleTest}
-              disabled={testing || saving}
-              aria-busy={testing}
-            >
-              {testing ? "Testing…" : "Test connection"}
-            </Button>
-          </div>
-        </Card>
-
-        <div className="identity-editor__actions">
-          <Button type="button" variant="ghost" onClick={handleCancel} disabled={saving}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" disabled={saving}>
-            {saving ? "Saving…" : "Save changes"}
-          </Button>
-        </div>
-      </form>
-    </div>
+    </dialog>
   );
 }
