@@ -1601,9 +1601,18 @@ export function EventOverviewPage() {
   const countdownValue =
     daysUntil != null && Math.abs(daysUntil) > 7 ? String(Math.abs(daysUntil)) : countdownLabel;
   // No sub-line (it broke KPI row icon alignment — this was the only tile with a 3rd line).
-  // The far-past bare-number case disambiguates direction via the label itself instead.
-  const daysToEventLabel =
-    daysUntil != null && daysUntil < -7 ? "Days since event" : "Days to event";
+  // Label mirrors countdownValue's own bare-number/prose split above: "Days to/since event" only
+  // once the value is a bare number that needs a unit — a prose value ("In 7 days", "Ended 3 days
+  // ago") already states its own direction, so the label stays a neutral "Event countdown" instead
+  // of repeating "days" or contradicting which way that value points.
+  let daysToEventLabel: string;
+  if (daysUntil == null || Math.abs(daysUntil) <= 7) {
+    daysToEventLabel = "Event countdown";
+  } else if (daysUntil < 0) {
+    daysToEventLabel = "Days since event";
+  } else {
+    daysToEventLabel = "Days to event";
+  }
   const emailFailedTotal =
     currentOverview != null
       ? currentOverview.email_failed + currentOverview.email_bounced
