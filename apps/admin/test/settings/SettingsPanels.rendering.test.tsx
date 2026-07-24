@@ -198,7 +198,13 @@ describe("AuditLogPanel rendering", () => {
     fireEvent.click(localRadio);
 
     expect(localRadio.getAttribute("aria-checked")).toBe("true");
-    expect(screen.queryByText("Time (UTC)")).toBeNull();
+    // The expected label depends on the test runner's own timezone (a developer's machine vs.
+    // CI, which typically runs in UTC) - computed the same way AuditLogPanel itself derives it,
+    // instead of assuming "Local" always renders a different string than "Time (UTC)", which
+    // isn't true when the runner's own local zone happens to be UTC.
+    const viewerTz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    const viewerTzLabel = viewerTz.split("/").pop()?.replaceAll("_", " ") ?? viewerTz;
+    expect(screen.getByText(`Time (${viewerTzLabel})`)).toBeTruthy();
   });
 
   it("paginates via Previous/Next and restores scroll position once the next page has loaded", async () => {
@@ -368,13 +374,18 @@ describe("AuditLogPanel rendering", () => {
         resolveFetch = resolve;
       }),
     );
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const { unmount } = renderWithToast(<AuditLogPanel />);
     unmount();
 
-    // Resolving after unmount races the effect cleanup's abort — must not throw
-    // or warn about setting state on an unmounted component.
+    // Resolving after unmount races the effect cleanup's abort — must not throw, and a broken
+    // abort guard would otherwise surface as React's "state update on an unmounted component"
+    // console.error.
     resolveFetch(emptyAuditLog());
     await Promise.resolve();
+
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
   });
 
   it("bails out of the in-flight request without touching state once the component has unmounted (reject race)", async () => {
@@ -384,11 +395,15 @@ describe("AuditLogPanel rendering", () => {
         rejectFetch = reject;
       }),
     );
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const { unmount } = renderWithToast(<AuditLogPanel />);
     unmount();
 
     rejectFetch(new Error("network error after unmount"));
     await Promise.resolve();
+
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
   });
 });
 

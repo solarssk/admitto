@@ -664,14 +664,14 @@ export function IdentityProviderEditor({
       {mode === "create" && (
         <div className="identity-protocol-picker" aria-label="Identity provider protocol">
           <span className="identity-protocol-tile identity-protocol-tile--active">
-            <i className="ti ti-shield-lock" aria-hidden="true" />
+            <i className="ti ti-shield-lock" aria-hidden="true" />{" "}
             OpenID Connect
           </span>
           <span
             className="identity-protocol-tile identity-protocol-tile--disabled"
             title="SAML support is coming soon"
           >
-            <i className="ti ti-certificate" aria-hidden="true" />
+            <i className="ti ti-certificate" aria-hidden="true" />{" "}
             SAML
             <span className="identity-protocol-tile__badge">Soon</span>
           </span>

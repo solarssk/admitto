@@ -221,6 +221,14 @@ function topUnresolvedReadinessItems(items: ReadinessItem[]): ReadinessItem[] {
     .slice(0, 3);
 }
 
+/** Placeholder text for a card whose `overview` hasn't arrived yet: blank during the no-flash
+ * grace window, "Loading…" once the fetch has genuinely taken a moment, "Unavailable" once it's
+ * settled with nothing (shared by SetupChecklistCard and CheckInProgressCard). */
+function unavailablePlaceholderText(loading: boolean, showLoading: boolean): string {
+  if (loading) return showLoading ? "Loading…" : "";
+  return "Unavailable";
+}
+
 function SetupChecklistCard({
   overview,
   loading,
@@ -236,7 +244,7 @@ function SetupChecklistCard({
     return (
       <Card title="Setup checklist">
         <p className="overview-muted">
-          {loading ? (showLoading ? "Loading…" : "") : "Unavailable"}
+          {unavailablePlaceholderText(loading, showLoading)}
         </p>
       </Card>
     );
@@ -308,7 +316,7 @@ function CheckInProgressCard({
     return (
       <Card title="Check-in progress" className="overview-card--header-fixed">
         <p className="overview-muted">
-          {loading ? (showLoading ? "Loading…" : "") : "Unavailable"}
+          {unavailablePlaceholderText(loading, showLoading)}
         </p>
       </Card>
     );

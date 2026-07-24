@@ -61,7 +61,7 @@ function formatTimestamp(iso: string, mode: TimeMode): string {
 
 /** Short label for the viewer's local timezone (e.g. "Warsaw" from "Europe/Warsaw"). */
 function viewerTzLabel(): string {
-  return VIEWER_TZ.split("/").pop()?.replace(/_/g, " ") ?? VIEWER_TZ;
+  return VIEWER_TZ.split("/").pop()?.replaceAll("_", " ") ?? VIEWER_TZ;
 }
 
 /** Primary actor label; deleted users show a readable fallback (id in cell title). */
