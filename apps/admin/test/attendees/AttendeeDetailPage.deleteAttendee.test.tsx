@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createMemoryRouter, MemoryRouter, RouterProvider, Route, Routes } from "react-router-dom";
+import { RouterProvider } from "react-router/dom";
+import { createMemoryRouter, MemoryRouter, Route, Routes } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { renderWithToast } from "../test-utils.js";
 
@@ -20,8 +21,8 @@ vi.mock("../../src/auth/AuthProvider.js", () => ({
   useAuth: () => ({ assignments: [{ role: "admin", scope_type: "organization", scope_id: "org-1" }] }),
 }));
 
-vi.mock("react-router-dom", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("react-router-dom")>();
+vi.mock("react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router")>();
   return {
     ...actual,
     useOutletContext: () => ({

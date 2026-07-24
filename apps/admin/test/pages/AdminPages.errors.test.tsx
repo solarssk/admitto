@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes, createMemoryRouter, RouterProvider } from "react-router-dom";
+import { RouterProvider } from "react-router/dom";
+import { MemoryRouter, Route, Routes, createMemoryRouter } from "react-router";
 import { ApiError } from "../../src/api/client.js";
 import { EventSettingsPage } from "../../src/pages/EventSettingsPage.js";
 import { UsersPage } from "../../src/pages/UsersPage.js";
@@ -29,8 +30,8 @@ vi.mock("../../src/connection/ConnectionStateProvider.js", () => {
   return { useConnectionState: () => connectionState };
 });
 
-vi.mock("react-router-dom", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("react-router-dom")>();
+vi.mock("react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router")>();
   return {
     ...actual,
     useBlocker: () => ({ state: "unblocked", proceed: vi.fn(), reset: vi.fn() }),

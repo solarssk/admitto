@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet } from "react-router";
 import { StaffShell } from "./StaffShell.js";
 import { BrandMark } from "./BrandMark.js";
 import { InstanceSidebarFoot } from "./InstanceSidebarFoot.js";

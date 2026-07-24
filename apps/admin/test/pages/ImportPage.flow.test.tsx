@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createMemoryRouter, MemoryRouter, RouterProvider, Route, Routes } from "react-router-dom";
+import { RouterProvider } from "react-router/dom";
+import { createMemoryRouter, MemoryRouter, Route, Routes } from "react-router";
 import { ImportPage } from "../../src/pages/ImportPage.js";
 import { renderWithToast } from "../test-utils.js";
 
@@ -40,8 +41,8 @@ vi.mock("../../src/api/client.js", () => ({
   commitImport: (...args: unknown[]) => commitImport(...args),
 }));
 
-vi.mock("react-router-dom", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("react-router-dom")>();
+vi.mock("react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router")>();
   return {
     ...actual,
     useOutletContext: () => ({

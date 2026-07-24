@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams } from "react-router";
 import { Badge, Button, Card, EmptyState, PageHeader, Skeleton, Stat, TICKET_TYPE_COLORS, useToast } from "@admitto/ui";
 import {
   ApiError,

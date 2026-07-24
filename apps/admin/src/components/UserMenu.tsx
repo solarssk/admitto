@@ -1,5 +1,5 @@
 import { Badge, type BadgeVariant } from "@admitto/ui";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import type { AuthUser, RoleAssignment } from "../api/types.js";
 import { isAdmin, isSuperadmin } from "../auth/capabilities.js";
 import { useDropdownMenu } from "./useDropdownMenu.js";

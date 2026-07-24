@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useLocation, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router";
 import { Badge, Button, Card, EmptyState, Skeleton, Switch, useToast } from "@admitto/ui";
 import {
   ApiError,

@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
-import { MemoryRouter, createMemoryRouter, RouterProvider } from "react-router-dom";
+import { MemoryRouter, createMemoryRouter, RouterProvider } from "react-router";
 import { IdentityProvidersPanel } from "../../src/identity/IdentityProvidersPanel.js";
 import { IDENTITY_PROVIDERS_ROUTE } from "../../src/identity/routes.js";
 import { renderWithToast } from "../test-utils.js";

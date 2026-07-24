@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { AdminCheckInRoute } from "../../src/pages/AdminCheckInRoute.js";
 
 const useConnectionState = vi.fn();
@@ -32,8 +32,8 @@ const DEMO_EVENT = {
   archived_at: null as string | null,
 };
 
-vi.mock("react-router-dom", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("react-router-dom")>();
+vi.mock("react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router")>();
   return {
     ...actual,
     useOutletContext: () => outletContext(),

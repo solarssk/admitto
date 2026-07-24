@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter, Route, Routes, useOutletContext } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useOutletContext } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EventDto } from "../../src/api/types.js";
 import { AdminShell } from "../../src/layouts/AdminShell.js";
