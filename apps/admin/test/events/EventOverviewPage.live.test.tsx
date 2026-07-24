@@ -429,7 +429,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(statsRow().querySelector(".at-stat")).toBeNull();
   });
 
-  it("replaces the Checked in KPI tile with a Days to event countdown tile in the 3rd position, reusing the existing countdown util (#E1)", async () => {
+  it("replaces the Checked in KPI tile with an Event countdown tile in the 3rd position, reusing the existing countdown util (#E1)", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       // Fixture event date is 2026-07-01T18:00:00Z (UTC); 5 calendar days after this faked "now"
@@ -446,13 +446,35 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
       const labels = Array.from(statsRow().querySelectorAll(".overview-kpi__label")).map(
         (el) => el.textContent,
       );
-      expect(labels).toEqual(["Attendees", "Tickets sent", "Days to event", "Failed delivery"]);
+      expect(labels).toEqual(["Attendees", "Tickets sent", "Event countdown", "Failed delivery"]);
       expect(within(statsRow()).queryByText("Checked in")).toBeNull();
       expect(within(statsRow()).getByText("In 5 days")).toBeTruthy();
       // No sub-line (round 5, item A) - the calendar date is only shown in the page header now.
       expect(
         within(statsRow()).queryByText(formatEventCalendarDate("2026-07-01T18:00:00.000Z")),
       ).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the neutral 'Event countdown' label, not 'Days to event', for an event that ended within the past week", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      // 3 calendar days after the fixture's 2026-07-01 event date - still inside the +-7 day
+      // window, so the value is prose ("Ended 3 days ago") rather than a bare number.
+      vi.setSystemTime(new Date("2026-07-04T10:00:00.000Z"));
+      fetchEventOverview.mockResolvedValue(overviewFixture(5));
+
+      renderPage();
+
+      await waitFor(() => {
+        expect(within(statsRow()).getByText("Attendees")).toBeTruthy();
+      });
+
+      expect(within(statsRow()).getByText("Ended 3 days ago")).toBeTruthy();
+      expect(within(statsRow()).getByText("Event countdown")).toBeTruthy();
+      expect(within(statsRow()).queryByText("Days to event")).toBeNull();
     } finally {
       vi.useRealTimers();
     }
