@@ -721,14 +721,14 @@ describe("IdentityProviderEditor — legacy invalid mapping role (Codex P2)", ()
     await screen.findByText("Pick a role.");
     expect(mockUpdate).not.toHaveBeenCalled();
 
-    // Bug 2: the role/scope error spans must not become extra grid items — each
-    // Select + its error span is wrapped in a single grid cell, so the row keeps
-    // exactly 5 direct children (Group, Role cell, Scope cell, ScopeId/hidden,
-    // Remove) regardless of which errors are showing.
+    // Bug 2: the role/scope error spans must not become extra flex items — each
+    // Select + its error span is wrapped in a single cell. This mapping's scope
+    // is "instance" (no Organization/Event ID field), so the row has 4 direct
+    // children: Group cell, Role cell, Scope cell, Remove.
     const row = document.querySelector(".identity-mappings__row");
     expect(row).toBeTruthy();
-    expect(row!.children).toHaveLength(5);
-    // The role error span is nested inside the Role cell, not a direct grid child.
+    expect(row!.children).toHaveLength(4);
+    // The role error span is nested inside the Role cell, not a direct flex child.
     const roleError = screen.getByText("Pick a role.");
     expect(row!.contains(roleError)).toBe(true);
     expect(Array.from(row!.children).includes(roleError as Element)).toBe(false);

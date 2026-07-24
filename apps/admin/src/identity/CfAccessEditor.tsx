@@ -245,21 +245,20 @@ export function CfAccessEditor() {
       <>
         <div className="identity-editor__header">
           <div className="identity-editor__header-row">
-            <h2 className="identity-editor__title" id={titleId}>Cloudflare Access</h2>
+            <div className="identity-editor__header-title">
+              <h2 className="identity-editor__title" id={titleId}>Cloudflare Access</h2>
+              {draft.enabled ? (
+                <Badge variant="ok">Active</Badge>
+              ) : (
+                <Badge variant="neutral">Inactive</Badge>
+              )}
+            </div>
             <IconButton label="Close" onClick={handleCancel} icon={<i className="ti ti-x" />} />
           </div>
           <p className="identity-editor__subtitle">
             Require a Cloudflare Zero Trust Access JWT for protected admin paths. Configure your
             team URL, application audience tag, and protected prefixes.
           </p>
-          <div className="cf-editor__status">
-            {draft.enabled ? (
-              <Badge variant="ok" dot>Active</Badge>
-            ) : (
-              <Badge variant="neutral" dot>Inactive</Badge>
-            )}
-            {locks.enabled && <Badge variant="warn">Managed by environment</Badge>}
-          </div>
         </div>
 
         <form className="identity-editor cf-editor" onSubmit={handleSubmit} noValidate>

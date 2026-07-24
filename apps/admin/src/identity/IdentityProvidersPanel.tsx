@@ -254,9 +254,16 @@ export function IdentityProvidersPanel() {
         title="Cloudflare Access"
         actions={
           cfState === "ready" && cf ? (
-            <Link className="at-btn at-btn--secondary at-btn--sm" to={IDENTITY_CLOUDFLARE_ROUTE}>
-              <span>Manage</span>
-            </Link>
+            <>
+              {cf.enabled ? (
+                <Badge variant="ok">Active</Badge>
+              ) : (
+                <Badge variant="neutral">Inactive</Badge>
+              )}
+              <Link className="at-btn at-btn--secondary at-btn--sm" to={IDENTITY_CLOUDFLARE_ROUTE}>
+                <span>Manage</span>
+              </Link>
+            </>
           ) : undefined
         }
       >
@@ -276,14 +283,11 @@ export function IdentityProvidersPanel() {
                 ? `Team domain: ${cf.teamDomain}`
                 : "No team domain configured."}
             </p>
-            <div className="cf-access-summary__badges">
-              {cf.enabled ? (
-                <Badge variant="ok" dot>Active</Badge>
-              ) : (
-                <Badge variant="neutral" dot>Inactive</Badge>
-              )}
-              {cf.locks.enabled && <Badge variant="warn">Managed by environment</Badge>}
-            </div>
+            {cf.locks.enabled && (
+              <div className="cf-access-summary__badges">
+                <Badge variant="warn">Managed by environment</Badge>
+              </div>
+            )}
           </div>
         )}
       </Card>

@@ -44,14 +44,16 @@ export function IdentityMappingRepeater({
         const scopeInvalid = !MAPPING_SCOPES.includes(row.scope_type);
         return (
           <div className="identity-mappings__row" key={row.id}>
-            <Input
-              label="Group"
-              value={row.group}
-              invalid={Boolean(rowError.group)}
-              error={rowError.group}
-              onChange={(e) => updateRow(index, { group: e.target.value })}
-              placeholder="admins"
-            />
+            <div className="identity-mappings__cell identity-mappings__cell--group">
+              <Input
+                label="Group"
+                value={row.group}
+                invalid={Boolean(rowError.group)}
+                error={rowError.group}
+                onChange={(e) => updateRow(index, { group: e.target.value })}
+                placeholder="admins"
+              />
+            </div>
             <div className="identity-mappings__cell">
               <Select
                 label="Role"
@@ -103,19 +105,19 @@ export function IdentityMappingRepeater({
                 <span className="at-hint at-hint--error">{rowError.scope_type}</span>
               )}
             </div>
-            {needsScopeId ? (
-              <Input
-                label={row.scope_type === "organization" ? "Organization ID" : "Event ID"}
-                value={row.scope_id}
-                invalid={Boolean(rowError.scope_id)}
-                error={rowError.scope_id}
-                onChange={(e) => updateRow(index, { scope_id: e.target.value })}
-                placeholder={row.scope_type === "organization" ? "org-uuid" : "event-uuid"}
-              />
-            ) : (
-              <div className="identity-mappings__cell identity-mappings__cell--hidden" />
+            {needsScopeId && (
+              <div className="identity-mappings__cell">
+                <Input
+                  label={row.scope_type === "organization" ? "Organization ID" : "Event ID"}
+                  value={row.scope_id}
+                  invalid={Boolean(rowError.scope_id)}
+                  error={rowError.scope_id}
+                  onChange={(e) => updateRow(index, { scope_id: e.target.value })}
+                  placeholder={row.scope_type === "organization" ? "org-uuid" : "event-uuid"}
+                />
+              </div>
             )}
-            <div className="identity-mappings__cell identity-mappings__remove">
+            <div className="identity-mappings__remove">
               <Button
                 type="button"
                 variant="ghost"
