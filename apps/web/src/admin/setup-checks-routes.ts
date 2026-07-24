@@ -164,6 +164,17 @@ async function checkInstanceUrl(
   };
 }
 
+/** Redis result for a ping that didn't error (caller already handled `"degraded"`). */
+function describeAvailableRedis(status: "ok" | "disabled", latencyMs: number): SetupCheckResult {
+  if (status === "disabled") {
+    return { ok: true, detail: "In-memory rate limit store (no Redis)" };
+  }
+  if (classifyLatency(latencyMs) === "degraded") {
+    return { ok: true, warn: true, detail: `Redis OK (${latencyMs} ms) · slow` };
+  }
+  return { ok: true, detail: `Redis OK (${latencyMs} ms)` };
+}
+
 /** Run wizard step-1 system checks (shared by GET checks and POST complete guard). */
 export async function collectSetupChecks(
   db: PrismaClient,
@@ -173,17 +184,10 @@ export async function collectSetupChecks(
   const database = await checkDatabaseWithMigrations(db);
 
   const redisProbe = await checkRedis(rateLimitStore);
-  const redisLatencyMs = redisProbe.latency_ms ?? 0;
-  const redisAvailableResult: SetupCheckResult =
-    redisProbe.status === "disabled"
-      ? { ok: true, detail: "In-memory rate limit store (no Redis)" }
-      : classifyLatency(redisLatencyMs) === "degraded"
-        ? { ok: true, warn: true, detail: `Redis OK (${redisLatencyMs} ms) · slow` }
-        : { ok: true, detail: `Redis OK (${redisLatencyMs} ms)` };
   const redis: SetupCheckResult =
     redisProbe.status === "degraded"
       ? { ok: false, detail: "Redis unreachable" }
-      : redisAvailableResult;
+      : describeAvailableRedis(redisProbe.status, redisProbe.latency_ms ?? 0);
 
   return {
     database,

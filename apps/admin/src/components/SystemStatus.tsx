@@ -98,20 +98,25 @@ function summarizeEventMail(data: EventMailSettingsResponse): EventMailSummary {
  * Deliberately doesn't name the provider (SMTP/Graph/Power Automate) the old
  * MailerStatusBadge's tooltip did — plain-language scope decision (PO review), the provider
  * name is a Settings → Mail concern, not a topbar-glance one. */
+function eventMailState(eventMail: EventMailSummary): ResolvedRowState {
+  if (!eventMail.configured) return "down";
+  if (eventMail.failedDeliveries > 0) return "degraded";
+  return "ok";
+}
+
+function eventMailDetail(state: ResolvedRowState, eventMail: EventMailSummary): string {
+  if (state === "down") return "Not configured";
+  if (state === "degraded") return "Delivery failures need attention";
+  return eventMail.hasEventOverride ? "Connected · event" : "Connected · organization";
+}
+
 function mailerRow(
   mailerStatus: MailerStatus | null | undefined,
   eventMail: EventMailSummary | null,
 ): StatusRow | null {
   if (eventMail) {
-    const state = !eventMail.configured ? "down" : eventMail.failedDeliveries > 0 ? "degraded" : "ok";
-    const detail =
-      state === "down"
-        ? "Not configured"
-        : state === "degraded"
-          ? "Delivery failures need attention"
-          : eventMail.hasEventOverride
-            ? "Connected · event"
-            : "Connected · organization";
+    const state = eventMailState(eventMail);
+    const detail = eventMailDetail(state, eventMail);
     return { key: "mailer", icon: "mail", label: "Email sending", state, detail };
   }
   if (mailerStatus == null) return null;
@@ -207,7 +212,7 @@ export function SystemStatus({
   );
   const [checksFailed, setChecksFailed] = useState(false);
   const [eventMail, setEventMail] = useState<EventMailSummary | null>(
-    eventId && eventMailCache && eventMailCache.eventId === eventId && eventMailCache.expiresAt > Date.now()
+    eventId && eventMailCache?.eventId === eventId && eventMailCache.expiresAt > Date.now()
       ? eventMailCache.data
       : null,
   );
@@ -259,12 +264,7 @@ export function SystemStatus({
     let currentAbort: AbortController | null = null;
 
     async function load(silent: boolean) {
-      if (
-        !silent &&
-        eventMailCache &&
-        eventMailCache.eventId === currentEventId &&
-        eventMailCache.expiresAt > Date.now()
-      ) {
+      if (!silent && eventMailCache?.eventId === currentEventId && eventMailCache.expiresAt > Date.now()) {
         setEventMail(eventMailCache.data);
         return;
       }
@@ -294,16 +294,17 @@ export function SystemStatus({
   }, [superadmin, eventId]);
 
   const mailer = mailerRow(mailerStatus, eventMail);
-  const rows: StatusRow[] = superadmin
-    ? [
-        setupCheckRow("database", "database", "Database", checks?.database, checks !== null, checksFailed),
-        setupCheckRow("redis", "server-2", "Session storage", checks?.redis, checks !== null, checksFailed),
-        setupCheckRow("encryption", "lock", "Data encryption", checks?.encryption, checks !== null, checksFailed),
-        ...(mailer ? [mailer] : []),
-      ]
-    : mailer
-      ? [mailer]
-      : [];
+  let rows: StatusRow[];
+  if (superadmin) {
+    rows = [
+      setupCheckRow("database", "database", "Database", checks?.database, checks !== null, checksFailed),
+      setupCheckRow("redis", "server-2", "Session storage", checks?.redis, checks !== null, checksFailed),
+      setupCheckRow("encryption", "lock", "Data encryption", checks?.encryption, checks !== null, checksFailed),
+      ...(mailer ? [mailer] : []),
+    ];
+  } else {
+    rows = mailer ? [mailer] : [];
+  }
 
   if (rows.length === 0) return null;
 
