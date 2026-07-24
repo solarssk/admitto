@@ -226,6 +226,25 @@ describe("ensureAttendeeItemStates (Lock #2)", () => {
 });
 
 describe("addAttendeeNote (Lock #8)", () => {
+  it("creates a note for an attendee in the event", async () => {
+    const result = await addAttendeeNote(
+      {
+        attendeeId,
+        eventId: EVENT_ID,
+        body: "Handled a lost-badge request",
+        audit: { operator: OPERATOR, sessionId: "sess-1" },
+      },
+      prisma,
+    );
+    expect(result.id).toBeTruthy();
+
+    const stored = await prisma.attendeeNote.findUnique({ where: { id: result.id } });
+    expect(stored?.attendee_id).toBe(attendeeId);
+    expect(stored?.event_id).toBe(EVENT_ID);
+    expect(stored?.author_user_id).toBe(OPERATOR);
+    expect(stored?.body).toBe("Handled a lost-badge request");
+  });
+
   it("rejects notes longer than 2000 characters", async () => {
     await expect(
       addAttendeeNote(
