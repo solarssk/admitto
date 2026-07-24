@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, screen } from "@testing-library/react";
 import { render } from "@testing-library/react";
-import { MemoryRouter, Outlet, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Outlet, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({

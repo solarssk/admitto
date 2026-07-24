@@ -10,7 +10,7 @@ import {
   type RefObject,
   type SetStateAction,
 } from "react";
-import { useBlocker, useOutletContext, useParams } from "react-router-dom";
+import { useBlocker, useOutletContext, useParams } from "react-router";
 import {
   Badge,
   Button,

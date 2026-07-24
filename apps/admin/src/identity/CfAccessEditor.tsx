@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { useBlocker, useLocation, useNavigate } from "react-router-dom";
-import type { BlockerFunction } from "react-router";
+import { useBlocker, useLocation, useNavigate, type BlockerFunction } from "react-router";
 import { Badge, Button, Card, IconButton, Input, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
 import { ApiError, fetchCfAccessSummary, testCfAccess, updateCfAccess } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";

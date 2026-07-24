@@ -6,7 +6,7 @@ import {
   useState,
 } from "react";
 import { Button, useToast } from "@admitto/ui";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { ApiError, completeSetup } from "../../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import { useWizard } from "./WizardContext.js";

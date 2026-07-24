@@ -1,5 +1,5 @@
 import { useCallback, useEffect } from "react";
-import { Outlet, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { Outlet, useLocation, useNavigate, useSearchParams } from "react-router";
 import { PageHeader } from "@admitto/ui";
 import { IDENTITY_PROVIDERS_ROUTE } from "../identity/routes.js";
 import { ScrollFadeTabs } from "../components/ScrollFadeTabs.js";

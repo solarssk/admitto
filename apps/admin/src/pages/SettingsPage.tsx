@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router";
 import { BrandingPanel } from "../settings/BrandingPanel.js";
 import { OrganisationBrandingPanel } from "../settings/OrganisationBrandingPanel.js";
 import { MailTransportPanel } from "../settings/MailTransportPanel.js";

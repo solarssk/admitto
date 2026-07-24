@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router";
 import { Card, PageHeader } from "@admitto/ui";
 import { ApiError, fetchCheckInEvents } from "../api/client.js";
 import type { EventDto } from "../api/types.js";
