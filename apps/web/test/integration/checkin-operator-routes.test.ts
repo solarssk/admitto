@@ -23,10 +23,12 @@ const EVENT_A = "event-op-routes-a";
 const EVENT_B = "event-op-routes-b";
 const USER_OP_A = "user-op-routes-a";
 const ATTENDEE_A = "attendee-op-routes-a";
+const ATTENDEE_B = "attendee-op-routes-b";
 const SESSION_DEVICE = "tablet-session-a";
 
 let prisma: PrismaClient;
 let attendeeId: string;
+let attendeeIdB: string;
 let sessionCookie = "";
 let sessionId = "";
 
@@ -87,6 +89,18 @@ async function seedFixture(client: PrismaClient): Promise<void> {
     },
   });
   attendeeId = att.id;
+
+  const tokenB = generateToken();
+  const attB = await client.attendee.create({
+    data: {
+      id: ATTENDEE_B,
+      event_id: EVENT_B,
+      email: "anna@firma.pl",
+      name: "Anna Nowak",
+      token_hash: hashToken(tokenB),
+    },
+  });
+  attendeeIdB = attB.id;
 }
 
 function buildMutatingApp() {
@@ -269,5 +283,16 @@ describe("POST /api/checkin/notes (Lock #8)", () => {
     expect(res.status).toBe(400);
     const json = (await res.json()) as { error: string };
     expect(json.error).toMatch(/too long/i);
+  });
+
+  it("cross-event attendeeId with own eventId → 404, not 500", async () => {
+    const res = await post("/api/checkin/notes", {
+      eventId: EVENT_A,
+      attendeeId: attendeeIdB,
+      body: "hello",
+      deviceId: "tablet-op",
+    });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "not found" });
   });
 });

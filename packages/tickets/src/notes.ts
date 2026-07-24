@@ -18,6 +18,13 @@ export class OperatorRequiredError extends Error {
   }
 }
 
+export class AttendeeNotFoundError extends Error {
+  constructor() {
+    super("Attendee not found");
+    this.name = "AttendeeNotFoundError";
+  }
+}
+
 export async function addAttendeeNote(
   params: {
     attendeeId: string;
@@ -38,7 +45,7 @@ export async function addAttendeeNote(
       where: { id: params.attendeeId, event_id: params.eventId },
       select: { id: true },
     });
-    if (!attendee) throw new Error("Attendee not found");
+    if (!attendee) throw new AttendeeNotFoundError();
 
     const note = await tx.attendeeNote.create({
       data: {
