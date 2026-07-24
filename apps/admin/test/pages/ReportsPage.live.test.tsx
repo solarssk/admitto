@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ReportsPage } from "../../src/pages/ReportsPage.js";
@@ -186,6 +186,52 @@ describe("ReportsPage — live SSE updates (ADR 0014)", () => {
       await waitFor(() => {
         expect(fetchEventReports).toHaveBeenCalledTimes(2);
       });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clamps the admission log back to the last real page when a reconcile shrinks it out from under a page 2+ view", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const bigLog = Array.from({ length: 51 }, (_, i) => ({
+        attendee_id: `att-${i + 1}`,
+        name: `Guest ${i + 1}`,
+        email: `guest-${i + 1}@example.com`,
+        ticket_type: null,
+        admitted_at: "2026-06-01T10:00:00.000Z",
+        device_id: null,
+        items: [],
+      }));
+      const smallLog = bigLog.slice(0, 3);
+      fetchEventReports
+        .mockResolvedValueOnce(reportFixture(51, { admission_log: bigLog, admission_log_total: 51 }))
+        .mockResolvedValue(reportFixture(3, { admission_log: smallLog, admission_log_total: 3 }));
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getByText("Guest 1")).toBeTruthy();
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Next" }));
+      await waitFor(() => {
+        expect(screen.getByText("Guest 51")).toBeTruthy();
+      });
+
+      act(() => {
+        streamHandler?.(liveEvent);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+
+      // The reconciled data only has 3 rows (1 page) - page 2 no longer exists. Without the
+      // clamp this would slice past the end and show the empty-filter message despite Guest 1
+      // still being right there on the only page that does exist.
+      await waitFor(() => {
+        expect(fetchEventReports).toHaveBeenCalledTimes(2);
+        expect(screen.getByText("Guest 1")).toBeTruthy();
+      });
+      expect(screen.queryByText("No admissions match the filter.")).toBeNull();
     } finally {
       vi.useRealTimers();
     }

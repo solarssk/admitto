@@ -140,14 +140,27 @@ function ReportStat({ icon, variant, value, label, sub }: ReportStatProps) {
   );
 }
 
+// The mockup's own example window (08-16) is 9 hours - a couple of widely-spaced check-ins
+// padded by just 1 hour on each side (#383) rendered as a handful of bars adrift in a wide
+// card, so sparse data now pads out symmetrically to this same minimum width instead, capped
+// at the actual 24-hour array bounds.
+const MIN_VISIBLE_HOURS = 9;
+
 function visibleHourRange(byHour: EventReportsResponse["by_hour"]): EventReportsResponse["by_hour"] {
   const nonZero = byHour.filter((row) => row.count > 0);
   if (nonZero.length === 0) return byHour;
 
   const firstIdx = byHour.indexOf(nonZero[0]!);
   const lastIdx = byHour.indexOf(nonZero.at(-1)!);
-  const start = Math.max(0, firstIdx - 1);
-  const end = Math.min(byHour.length - 1, lastIdx + 1);
+  let start = Math.max(0, firstIdx - 1);
+  let end = Math.min(byHour.length - 1, lastIdx + 1);
+
+  while (end - start + 1 < MIN_VISIBLE_HOURS && (start > 0 || end < byHour.length - 1)) {
+    if (start > 0) start -= 1;
+    if (end - start + 1 >= MIN_VISIBLE_HOURS) break;
+    if (end < byHour.length - 1) end += 1;
+  }
+
   return byHour.slice(start, end + 1);
 }
 
@@ -410,7 +423,12 @@ function AdmissionLog({
   }
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
+  // Derived, not stored - if a live reconcile (ADR 0014) shrinks the filtered set out from
+  // under a page 2+ view (e.g. an admission gets revoked elsewhere while an operator is
+  // filtered/paged in), this clamps back to the last real page instead of slicing past the
+  // end and showing "No admissions match the filter" despite matching rows still existing.
+  const safePage = Math.min(page, totalPages);
+  const paged = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
   const activeFilterCount = (typeFilter !== "all" ? 1 : 0) + (deviceFilter !== "all" ? 1 : 0);
 
   return (
@@ -600,18 +618,18 @@ function AdmissionLog({
               <Button
                 variant="secondary"
                 size="sm"
-                disabled={page === 1}
+                disabled={safePage === 1}
                 onClick={() => setPage((current) => current - 1)}
               >
                 Previous
               </Button>
               <span>
-                Page {page} of {totalPages}
+                Page {safePage} of {totalPages}
               </span>
               <Button
                 variant="secondary"
                 size="sm"
-                disabled={page >= totalPages}
+                disabled={safePage >= totalPages}
                 onClick={() => setPage((current) => current + 1)}
               >
                 Next
@@ -808,6 +826,12 @@ export function ReportsPage() {
     data && data.summary.total_attendees > 0
       ? Math.round((liveAdmitted / data.summary.total_attendees) * 1000) / 10
       : (data?.summary.admission_rate_pct ?? 0);
+  // Same 1-decimal-place rounding as liveRatePct above - was Math.round(x*100) here (whole
+  // percent only), a cosmetic mismatch against Admitted's own rate line right next to it.
+  const liveNoShowRatePct =
+    data && data.summary.total_attendees > 0
+      ? Math.round((liveNoShows / data.summary.total_attendees) * 1000) / 10
+      : 0;
 
   return (
     <div className="screen reports-page">
@@ -886,7 +910,7 @@ export function ReportsPage() {
                 icon={<i className="ti ti-circle-x" aria-hidden="true" />}
                 value={liveNoShows.toString()}
                 label="No-shows"
-                sub={`${Math.round((liveNoShows / data.summary.total_attendees) * 100)}% of total`}
+                sub={`${liveNoShowRatePct}% of total`}
               />
             </Card>
             <Card>

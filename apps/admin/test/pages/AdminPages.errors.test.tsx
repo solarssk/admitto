@@ -790,6 +790,33 @@ describe("ReportsPage hourly chart", () => {
     // full 5-row range collapsed to just the two non-zero rows.
     expect(container.querySelectorAll(".reports-chart__bar-wrap")).toHaveLength(5);
   });
+
+  it("pads a sparse dataset out to a minimum 9-hour window, not just ±1 hour (#383)", async () => {
+    const fullDay = Array.from({ length: 24 }, (_, i) => ({
+      hour: `${String(i).padStart(2, "0")}:00`,
+      count: i === 10 || i === 12 ? 1 : 0,
+    }));
+    vi.mocked(fetchEventReports).mockResolvedValue({
+      ...emptyReport,
+      summary: { ...emptyReport.summary, total_attendees: 2, admitted: 2, admission_rate_pct: 100 },
+      by_hour: fullDay,
+    });
+    const { container } = renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(container.querySelectorAll(".reports-chart__bar-wrap").length).toBeGreaterThan(0);
+    });
+    // A naive ±1-hour pad around 10:00/12:00 would render just 09:00-13:00 (5 columns) inside
+    // the card's full width - real event data (the API always returns all 24 hours) pads out
+    // symmetrically to the mockup's own 9-hour example window instead.
+    const labels = Array.from(container.querySelectorAll(".reports-chart__label")).map((el) => el.textContent);
+    expect(labels).toEqual(["07", "08", "09", "10", "11", "12", "13", "14", "15"]);
+  });
 });
 
 describe("ReportsPage stat tiles", () => {
@@ -823,6 +850,30 @@ describe("ReportsPage stat tiles", () => {
     expect(container.querySelector(".reports-stat__icon--ok")).toBeTruthy();
     expect(container.querySelector(".reports-stat__icon--warn")).toBeTruthy();
     expect(container.querySelector(".reports-stat__icon--info")).toBeTruthy();
+  });
+
+  it("shows the No-shows rate to one decimal place, matching Admitted's own precision", async () => {
+    vi.mocked(fetchEventReports).mockResolvedValue({
+      ...emptyReport,
+      summary: {
+        total_attendees: 3,
+        admitted: 2,
+        no_shows: 1,
+        admission_rate_pct: 66.7,
+        peak_hour: null,
+        peak_hour_count: 0,
+      },
+    });
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    // Was Math.round(x * 100) here (whole percent only) - a cosmetic mismatch against the
+    // Admitted tile's own 1-decimal rate right next to it.
+    expect(await screen.findByText("33.3% of total")).toBeTruthy();
   });
 });
 
