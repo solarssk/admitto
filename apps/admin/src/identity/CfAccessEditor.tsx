@@ -8,6 +8,7 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { CfAccessSummaryDto } from "../api/types.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import {
   buildCfUpdateBody,
   cfDraftFromSummary,
@@ -136,6 +137,8 @@ export function CfAccessEditor() {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(panelRef, true, handleCancel);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useOverscrollBounceGuard(scrollRef);
   // A fetch that resolves near-instantly (localhost, a warm cache) would
   // otherwise flash the spinner on and off faster than it can register as
   // "loading" — show it only once the fetch has genuinely taken a moment.
@@ -278,7 +281,7 @@ export function CfAccessEditor() {
                 <Tooltip content="Require a Cloudflare Access JWT for protected admin paths">
                   <Switch
                     id="cf-access-enabled"
-                    label="Enabled"
+                    aria-label="Enabled"
                     checked={draft.enabled}
                     disabled={locks.enabled}
                     onChange={(e) => setDraft((d) => ({ ...d, enabled: e.target.checked }))}
@@ -356,7 +359,9 @@ export function CfAccessEditor() {
     <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
       <div className="identity-modal__backdrop" role="presentation" />
       <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
-        {content}
+        <div ref={scrollRef} className="identity-modal__scroll">
+          {content}
+        </div>
       </div>
     </dialog>,
     document.body,

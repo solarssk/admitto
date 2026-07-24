@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useBlocker, useLocation, useNavigate, useParams } from "react-router-dom";
 import type { BlockerFunction } from "react-router";
-import { Button, Card, IconButton, Input, Spinner, Switch, useToast } from "@admitto/ui";
+import { Button, Card, IconButton, Input, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
   ApiError,
   createIdentityProvider,
@@ -16,6 +16,7 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { ProviderDetailDto, ProviderRequestBody, ProviderTestDraftBody } from "../api/types.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import { IdentityMappingRepeater } from "./IdentityMappingRepeater.js";
 import {
   emptyMappingRow,
@@ -434,6 +435,8 @@ export function IdentityProviderEditor({
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(panelRef, true, handleCancel);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useOverscrollBounceGuard(scrollRef);
 
   const handleSubmit = useCallback(
     async (event: React.FormEvent) => {
@@ -680,12 +683,14 @@ export function IdentityProviderEditor({
       <Card
         title="Basics"
         actions={
-          <Switch
-            id="idp-enabled"
-            label="Enabled"
-            checked={draft.enabled}
-            onChange={(e) => setDraft((d) => setField(d, "enabled", e.target.checked))}
-          />
+          <Tooltip content="Allow sign-in through this provider">
+            <Switch
+              id="idp-enabled"
+              aria-label="Enabled"
+              checked={draft.enabled}
+              onChange={(e) => setDraft((d) => setField(d, "enabled", e.target.checked))}
+            />
+          </Tooltip>
         }
       >
         <div className="identity-editor__grid">
@@ -874,21 +879,23 @@ export function IdentityProviderEditor({
     <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
       <div className="identity-modal__backdrop" role="presentation" />
       <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
-        {view === "loading" && showLoadingSpinner && loadingContent}
-        {view === "error" && errorContent}
-        {view === "not_found" && notFoundContent}
-        {view === "form" && (
-          <>
-            <div className="identity-editor__header">
-              <div className="identity-editor__header-row">
-                <h2 className="identity-editor__title" id={titleId}>{title}</h2>
-                <IconButton label="Close" onClick={handleCancel} icon={<i className="ti ti-x" />} />
+        <div ref={scrollRef} className="identity-modal__scroll">
+          {view === "loading" && showLoadingSpinner && loadingContent}
+          {view === "error" && errorContent}
+          {view === "not_found" && notFoundContent}
+          {view === "form" && (
+            <>
+              <div className="identity-editor__header">
+                <div className="identity-editor__header-row">
+                  <h2 className="identity-editor__title" id={titleId}>{title}</h2>
+                  <IconButton label="Close" onClick={handleCancel} icon={<i className="ti ti-x" />} />
+                </div>
+                <p className="identity-editor__subtitle">{editorSubtitle(mode)}</p>
               </div>
-              <p className="identity-editor__subtitle">{editorSubtitle(mode)}</p>
-            </div>
-            {formContent}
-          </>
-        )}
+              {formContent}
+            </>
+          )}
+        </div>
       </div>
     </dialog>,
     document.body,

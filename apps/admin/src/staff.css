@@ -2789,22 +2789,35 @@
   background: var(--surface-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: var(--space-5);
   width: min(520px, 100%);
   max-height: min(90vh, 720px);
-  overflow: auto;
-  /* Without this, scrolling past the panel's own end with a trackpad
-     rubber-bands into the page behind it (scroll chaining) instead of
-     just stopping — visible as a gap at the panel's edge mid-gesture. */
-  overscroll-behavior: contain;
+  /* Scrolling lives on .identity-modal__scroll below, not here — overflow:auto
+     directly on this rounded box would render the native scrollbar as a hard
+     rectangle cutting across the rounded corner instead of following it. */
+  overflow: hidden;
   box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
 }
 
 .identity-modal__panel--wide {
   width: min(720px, 100%);
+}
+
+.identity-modal__scroll {
+  overflow: auto;
+  /* Without this, scrolling past the panel's own end with a trackpad
+     rubber-bands into the page behind it (scroll chaining) instead of
+     just stopping — visible as a gap at the panel's edge mid-gesture.
+     (The element's own bounce past its edge is separately guarded by
+     useOverscrollBounceGuard — this CSS alone doesn't suppress that in
+     every browser.) */
+  overscroll-behavior: contain;
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
 }
 
 .identity-editor__header {
