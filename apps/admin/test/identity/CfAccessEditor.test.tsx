@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor, act } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createMemoryRouter, RouterProvider } from "react-router-dom";
+import { RouterProvider } from "react-router/dom";
+import { createMemoryRouter } from "react-router";
 import { render } from "@testing-library/react";
 import { ToastProvider } from "@admitto/ui";
 import { CfAccessEditor } from "../../src/identity/CfAccessEditor.js";

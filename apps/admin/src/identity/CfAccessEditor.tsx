@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useBlocker, useLocation, useNavigate } from "react-router-dom";
-import type { BlockerFunction } from "react-router";
+import { useBlocker, useLocation, useNavigate, type BlockerFunction } from "react-router";
 import { Badge, Button, Card, Input, Spinner, Switch, useToast } from "@admitto/ui";
 import { ApiError, fetchCfAccessSummary, testCfAccess, updateCfAccess } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";

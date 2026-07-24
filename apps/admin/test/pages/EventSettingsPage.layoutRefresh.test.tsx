@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { EventSettingsPage } from "../../src/pages/EventSettingsPage.js";
 import { renderWithToast } from "../test-utils.js";
 
@@ -23,8 +23,8 @@ vi.mock("../../src/auth/AuthProvider.js", () => ({
 
 const refreshEvent = vi.fn().mockResolvedValue(undefined);
 
-vi.mock("react-router-dom", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("react-router-dom")>();
+vi.mock("react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router")>();
   return {
     ...actual,
     useBlocker: () => ({ state: "unblocked", proceed: vi.fn(), reset: vi.fn() }),
