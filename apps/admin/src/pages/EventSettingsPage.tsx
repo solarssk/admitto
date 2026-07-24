@@ -6,7 +6,7 @@ import {
   useParams,
   useSearchParams,
   type NavigateFunction,
-} from "react-router-dom";
+} from "react-router";
 import { Badge, Button, Card, EmptyState, Input, PageHeader, useToast, type ToastVariant } from "@admitto/ui";
 import {
   ApiError,

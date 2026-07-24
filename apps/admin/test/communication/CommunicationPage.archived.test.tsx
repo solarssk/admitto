@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { CommunicationPage } from "../../src/pages/CommunicationPage.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
 import { getTooltipText, renderWithToast } from "../test-utils.js";
@@ -52,8 +52,8 @@ const blockerState = {
   reset: vi.fn(),
 };
 
-vi.mock("react-router-dom", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("react-router-dom")>();
+vi.mock("react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router")>();
   return {
     ...actual,
     useBlocker: () => blockerState,

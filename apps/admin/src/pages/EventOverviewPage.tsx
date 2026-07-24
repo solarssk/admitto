@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
-import { Link, useOutletContext } from "react-router-dom";
+import { Link, useOutletContext } from "react-router";
 import { Avatar, Badge, Button, Card, EmptyState, Input, PageHeader, Select, TICKET_TYPE_COLORS, useToast } from "@admitto/ui";
 import {
   ApiError,

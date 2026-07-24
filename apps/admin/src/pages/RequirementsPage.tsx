@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import { useOutletContext, useParams } from "react-router-dom";
+import { useOutletContext, useParams } from "react-router";
 import { Button, Card, EmptyState, IconButton, PageHeader, Switch, useToast } from "@admitto/ui";
 import {
   ApiError,

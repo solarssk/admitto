@@ -9,7 +9,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom";
+import { Link, useNavigate, useOutletContext, useParams } from "react-router";
 import { Button, EmptyState, PageHeader, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
 import {
   ApiError,

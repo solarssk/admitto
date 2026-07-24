@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RoleAssignment } from "../../src/api/types.js";
 import { InstanceSidebarFoot } from "../../src/layouts/InstanceSidebarFoot.js";

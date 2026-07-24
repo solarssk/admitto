@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useBlocker, useLocation, useNavigate, useParams } from "react-router-dom";
-import type { BlockerFunction } from "react-router";
+import { useBlocker, useLocation, useNavigate, useParams, type BlockerFunction } from "react-router";
 import { Button, Card, Input, Spinner, Switch, useToast } from "@admitto/ui";
 import {
   ApiError,

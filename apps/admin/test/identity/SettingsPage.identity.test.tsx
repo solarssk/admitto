@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
-import { MemoryRouter, Route, Routes, useNavigate, useLocation } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useNavigate, useLocation } from "react-router";
 import { render } from "@testing-library/react";
 
 vi.mock("../../src/settings/BrandingPanel.js", () => ({
