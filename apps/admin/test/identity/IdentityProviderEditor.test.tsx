@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMemoryRouter, Link, Outlet, RouterProvider } from "react-router-dom";
 import { render } from "@testing-library/react";
@@ -84,6 +84,19 @@ const validDetail = {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
+});
+
+describe("IdentityProviderEditor — edit loading", () => {
+  it("shows the loading spinner once the fetch has genuinely taken a moment", () => {
+    mockFetch.mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderEditorAt("/admin/settings/identity/providers/p1");
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(screen.getByLabelText("Loading provider")).toBeTruthy();
+  });
 });
 
 describe("IdentityProviderEditor — create", () => {

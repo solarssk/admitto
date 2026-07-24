@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EventMailSettingsCard } from "../../src/settings/EventMailSettingsCard.js";
@@ -172,6 +172,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
 });
 
 describe("EventMailSettingsCard — inherited (organization) mode", () => {
@@ -539,6 +540,16 @@ describe("EventMailSettingsCard — archived event", () => {
 });
 
 describe("EventMailSettingsCard — loading and errors", () => {
+  it("shows the loading placeholder once the fetch has genuinely taken a moment", () => {
+    mockFetch.mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderCard();
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(screen.getByText("Loading mail settings…")).toBeTruthy();
+  });
+
   it("shows a retry link on load failure and recovers on retry", async () => {
     mockFetch.mockRejectedValueOnce(new Error("network"));
     mockFetch.mockResolvedValueOnce(inheritedResponse());

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AddAttendeeModal } from "../../src/attendees/AddAttendeeModal.js";
 
@@ -13,11 +13,36 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   };
 });
 
-import { ApiError, createAttendee, fetchTicketTypes } from "../../src/api/client.js";
+import { ApiError, createAttendee, fetchEventCustomFields, fetchTicketTypes } from "../../src/api/client.js";
 
 const mockCreateAttendee = vi.mocked(createAttendee);
+const mockFetchEventCustomFields = vi.mocked(fetchEventCustomFields);
+const mockFetchTicketTypes = vi.mocked(fetchTicketTypes);
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
+
+describe("AddAttendeeModal delayed loading", () => {
+  it("shows both loading hints once the fetches have genuinely taken a moment", () => {
+    mockFetchEventCustomFields.mockImplementation(() => new Promise(() => {}));
+    mockFetchTicketTypes.mockImplementation(() => new Promise(() => {}));
+    try {
+      vi.useFakeTimers();
+      render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
+      expect(screen.getByText("Loading attribute fields…")).toBeTruthy();
+      expect(screen.getByText("Loading ticket types…")).toBeTruthy();
+    } finally {
+      // Never-resolving mocks would otherwise leak into every later test in this file.
+      mockFetchEventCustomFields.mockResolvedValue([]);
+      mockFetchTicketTypes.mockResolvedValue([]);
+    }
+  });
+});
 
 describe("AddAttendeeModal", () => {
   it("keeps submit disabled until email, name, and attribute fields are ready", async () => {

@@ -584,6 +584,18 @@ function classifyPassStatusError(err: unknown): PassStatusErrorOutcome {
   return { kind: "message", message: operatorApiErrorMessage(err, "Could not update pass status.") };
 }
 
+/** First-load-only skeleton, delayed so a near-instant fetch never flashes it (extracted to
+ * keep AttendeeDetailPage's own cognitive complexity down — Sonar S3776). */
+function firstLoadSkeleton(showLoadingSkeleton: boolean) {
+  if (!showLoadingSkeleton) return null;
+  return (
+    <div className="attendee-detail-page">
+      <Skeleton variant="text" lines={2} />
+      <Skeleton variant="rect" height={240} className="attendee-detail-skeleton" />
+    </div>
+  );
+}
+
 export function AttendeeDetailPage() {
   const { eventId, attendeeId } = useParams();
   const { event } = useOutletContext<{ event: EventDto }>();
@@ -937,13 +949,7 @@ export function AttendeeDetailPage() {
   if (!eventId || !attendeeId) return <p>Missing event or attendee.</p>;
 
   if (loading && !detail) {
-    if (!showLoadingSkeleton) return null;
-    return (
-      <div className="attendee-detail-page">
-        <Skeleton variant="text" lines={2} />
-        <Skeleton variant="rect" height={240} className="attendee-detail-skeleton" />
-      </div>
-    );
+    return firstLoadSkeleton(showLoadingSkeleton);
   }
 
   if (notFound) {

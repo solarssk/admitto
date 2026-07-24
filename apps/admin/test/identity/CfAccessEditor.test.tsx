@@ -64,6 +64,17 @@ afterEach(() => {
 });
 
 describe("CfAccessEditor (slice 4)", () => {
+  it("shows the loading spinner once the fetch has genuinely taken a moment", () => {
+    mockFetch.mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderEditorAt();
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(screen.getByLabelText("Loading Cloudflare Access")).toBeTruthy();
+    vi.useRealTimers();
+  });
+
   it("loads the summary and renders the field values + status badges", async () => {
     mockFetch.mockResolvedValueOnce(
       summary({

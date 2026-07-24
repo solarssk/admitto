@@ -91,6 +91,17 @@ function OrgMailSummary({
   );
 }
 
+/** Delayed so a near-instant fetch never flashes it (extracted to keep EventMailSettingsCard's
+ * own cognitive complexity down — Sonar S3776). */
+function mailSettingsLoadingContent(showLoading: boolean) {
+  if (!showLoading) return null;
+  return (
+    <Card title="Mail transport">
+      <p>Loading mail settings…</p>
+    </Card>
+  );
+}
+
 /** Per-event dedicated transport override — inherits the organization's mail settings by
  * default; a superadmin or org admin can switch an event to send through its own transport
  * instead (see issue #511). Reuses the same tile-grid/secret-field building blocks as the
@@ -323,12 +334,7 @@ export function EventMailSettingsCard({
   };
 
   if (loading) {
-    if (!showLoading) return null;
-    return (
-      <Card title="Mail transport">
-        <p>Loading mail settings…</p>
-      </Card>
-    );
+    return mailSettingsLoadingContent(showLoading);
   }
 
   if (loadError || !apiData) {

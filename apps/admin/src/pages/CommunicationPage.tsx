@@ -949,6 +949,16 @@ function DeliveryLogTab({
   );
 }
 
+/** Delayed so a near-instant fetch never flashes it (extracted to keep CommunicationPage's own
+ * cognitive complexity down — Sonar S3776). */
+function communicationLoadingContent(showLoading: boolean): ReactNode {
+  return showLoading ? <p>Loading communication…</p> : null;
+}
+
+function deliveryLoadingContent(showDeliveriesLoading: boolean): ReactNode {
+  return showDeliveriesLoading ? <div className="communication-empty">Loading deliveries…</div> : null;
+}
+
 /** Admin screen for event mail template editing, preview, test-send, and delivery log. */
 export function CommunicationPage() {
   const { eventId } = useParams();
@@ -1565,7 +1575,7 @@ export function CommunicationPage() {
   const showDeliveriesLoading = useDelayedLoading(deliveriesLoading);
 
   if (!eventId) return <p>Missing event.</p>;
-  if (loading) return showLoading ? <p>Loading communication…</p> : null;
+  if (loading) return communicationLoadingContent(showLoading);
   if (error) return <p>{error}</p>;
 
   const deliveryPages = Math.max(1, Math.ceil(deliveryTotal / DELIVERY_PAGE_SIZE));
@@ -1577,9 +1587,7 @@ export function CommunicationPage() {
 
   let deliveryLogContent: ReactNode;
   if (deliveriesLoading) {
-    deliveryLogContent = showDeliveriesLoading ? (
-      <div className="communication-empty">Loading deliveries…</div>
-    ) : null;
+    deliveryLogContent = deliveryLoadingContent(showDeliveriesLoading);
   } else if (deliveriesError) {
     deliveryLogContent = <div className="communication-empty">{deliveriesError}</div>;
   } else if (deliveries.length === 0) {

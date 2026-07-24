@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AccountPage } from "../../src/account/AccountPage.js";
 import type { AccountDto, SessionListDto } from "../../src/api/types.js";
@@ -134,6 +134,37 @@ function mockLoadedAccount(account: AccountDto = baseAccount) {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
+});
+
+describe("AccountPage delayed loading", () => {
+  it("shows the account spinner once the fetch has genuinely taken a moment", () => {
+    mockFetchAccount.mockImplementation(() => new Promise(() => {}));
+    mockFetchSessions.mockImplementation(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderWithToast(<AccountPage />);
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(screen.getByLabelText("Loading account")).toBeTruthy();
+  });
+
+  it("shows the sessions spinner once the fetch has genuinely taken a moment", async () => {
+    let resolveAccountFetch: (value: AccountDto) => void = () => {};
+    mockFetchAccount.mockImplementation(
+      () => new Promise((resolve) => { resolveAccountFetch = resolve; }),
+    );
+    mockFetchSessions.mockImplementation(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderWithToast(<AccountPage />);
+    await act(async () => {
+      resolveAccountFetch(baseAccount);
+    });
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(screen.getByLabelText("Loading sessions")).toBeTruthy();
+  });
 });
 
 describe("AccountPage toasts", () => {

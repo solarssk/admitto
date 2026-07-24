@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import { SessionsPanel } from "../../src/settings/SessionsPanel.js";
@@ -77,6 +77,40 @@ import {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
+});
+
+describe("Settings panels delayed loading", () => {
+  it("SessionsPanel shows the loading placeholder once the fetch has genuinely taken a moment", () => {
+    vi.mocked(fetchSessions).mockImplementationOnce(() => new Promise(() => {}));
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([]);
+    vi.useFakeTimers();
+    renderWithToast(<SessionsPanel />);
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(screen.getByText("Loading…")).toBeTruthy();
+  });
+
+  it("BrandingPanel shows the loading placeholder once the fetch has genuinely taken a moment", () => {
+    vi.mocked(fetchStaffTheme).mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderWithToast(<BrandingPanel />);
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(screen.getByText("Loading branding…")).toBeTruthy();
+  });
+
+  it("EventArchivingPanel shows the loading placeholder once the fetch has genuinely taken a moment", () => {
+    vi.mocked(fetchAdminEvents).mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderWithToast(<EventArchivingPanel />);
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(screen.getByText("Loading…")).toBeTruthy();
+  });
 });
 
 describe("SessionsPanel operator errors", () => {

@@ -1088,6 +1088,13 @@ function FilterToolbar({
   );
 }
 
+/** First-load-only skeleton, delayed so a near-instant fetch never flashes it (extracted to
+ * keep AttendeesListContent's own cognitive complexity down — Sonar S3776). */
+function firstLoadSkeleton(showLoadingSkeleton: boolean, isDesktop: boolean): ReactNode {
+  if (!showLoadingSkeleton) return null;
+  return isDesktop ? <AttendeesTableSkeleton /> : <AttendeesCardsSkeleton />;
+}
+
 /** Desktop table, mobile card list (with its own "Select all" row, since there's no header
  * checkbox to reuse), the empty state, or the loading skeleton — whichever applies. */
 function AttendeesListContent({
@@ -1137,8 +1144,7 @@ function AttendeesListContent({
   // has genuinely taken a moment.
   const showLoadingSkeleton = useDelayedLoading(loading && !hasLoadedOnce);
   if (loading && !hasLoadedOnce) {
-    if (!showLoadingSkeleton) return null;
-    return isDesktop ? <AttendeesTableSkeleton /> : <AttendeesCardsSkeleton />;
+    return firstLoadSkeleton(showLoadingSkeleton, isDesktop);
   }
 
   if (items.length === 0) {

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, createMemoryRouter, RouterProvider } from "react-router-dom";
 import { ApiError } from "../../src/api/client.js";
@@ -165,6 +165,61 @@ const archivedEvent = {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
+});
+
+describe("Admin pages delayed loading", () => {
+  it("EventsPickerPage shows the loading spinner once the fetch has genuinely taken a moment", () => {
+    vi.mocked(fetchAdminEvents).mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin" element={<EventsPickerPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(screen.getByLabelText("Loading events")).toBeTruthy();
+  });
+
+  it("ReportsPage shows the loading skeleton once the fetch has genuinely taken a moment", () => {
+    vi.mocked(fetchEventReports).mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(document.querySelector(".reports-loading")).toBeTruthy();
+  });
+
+  it("UsersPage shows the loading skeleton once the fetch has genuinely taken a moment", () => {
+    vi.mocked(fetchAdminUsers).mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderWithToast(<UsersPage />);
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(document.querySelector(".users-page__table-wrap--desktop")).toBeTruthy();
+  });
+
+  it("RoleAssignmentsTab shows the loading skeleton once the fetch has genuinely taken a moment", () => {
+    vi.mocked(fetchRoleAssignments).mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderWithToast(<RoleAssignmentsTab />);
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(document.querySelector(".users-page__table-wrap--desktop")).toBeTruthy();
+  });
 });
 
 describe("EventSettingsPage operator errors", () => {

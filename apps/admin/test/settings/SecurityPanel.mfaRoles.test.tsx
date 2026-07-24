@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SecurityPanel } from "../../src/settings/SecurityPanel.js";
 import { renderWithToast } from "../test-utils.js";
@@ -26,6 +26,19 @@ import { fetchSecuritySettings, patchSecuritySettings } from "../../src/api/clie
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
+});
+
+describe("SecurityPanel delayed loading", () => {
+  it("shows the loading placeholder once the fetch has genuinely taken a moment", () => {
+    vi.mocked(fetchSecuritySettings).mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderWithToast(<SecurityPanel />);
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(screen.getByText("Loading…")).toBeTruthy();
+  });
 });
 
 describe("SecurityPanel — session/trust duration inputs", () => {
