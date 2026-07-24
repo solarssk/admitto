@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuditLogEntryDto, AuditLogResponse, SessionListDto } from "../../src/api/types.js";
 import { ApiError, fetchAdminEvents, fetchAuditLog, fetchSessions } from "../../src/api/client.js";
@@ -160,6 +160,235 @@ describe("AuditLogPanel rendering", () => {
     const table = await screen.findByRole("table");
     expect(within(table).getAllByText("—")).toHaveLength(2);
     expect(within(table).queryByText("View")).toBeNull();
+  });
+
+  it("closes the Details popover via its backdrop", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [makeAuditEntry()],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderWithToast(<AuditLogPanel />);
+
+    const table = await screen.findByRole("table");
+    const trigger = within(table).getByText("View");
+    fireEvent.click(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+
+    fireEvent.click(screen.getByLabelText("Close details"));
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("switches the Time column to the viewer's local timezone", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [makeAuditEntry()],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderWithToast(<AuditLogPanel />);
+
+    await screen.findByRole("table");
+    expect(screen.getByText("Time (UTC)")).toBeTruthy();
+
+    const localRadio = screen.getByRole("radio", { name: "Local" });
+    fireEvent.click(localRadio);
+
+    expect(localRadio.getAttribute("aria-checked")).toBe("true");
+    expect(screen.queryByText("Time (UTC)")).toBeNull();
+  });
+
+  it("paginates via Previous/Next and restores scroll position once the next page has loaded", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValueOnce({
+      entries: [makeAuditEntry({ id: "audit-p1" })],
+      total: 30,
+      page: 1,
+      pageSize: 25,
+    });
+    vi.mocked(fetchAuditLog).mockResolvedValueOnce({
+      entries: [makeAuditEntry({ id: "audit-p2" })],
+      total: 30,
+      page: 2,
+      pageSize: 25,
+    });
+
+    renderWithToast(<AuditLogPanel />);
+
+    await screen.findByRole("table");
+    expect(screen.getByText("Page 1 of 2 (30 total)")).toBeTruthy();
+    const previous = screen.getByRole("button", { name: "Previous" });
+    const next = screen.getByRole("button", { name: "Next" });
+    expect((previous as HTMLButtonElement).disabled).toBe(true);
+    expect((next as HTMLButtonElement).disabled).toBe(false);
+
+    const scrollToSpy = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    fireEvent.click(next);
+
+    await waitFor(() => {
+      expect(screen.getByText("Page 2 of 2 (30 total)")).toBeTruthy();
+    });
+    expect(fetchAuditLog).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 2 }),
+      expect.anything(),
+    );
+    expect(scrollToSpy).toHaveBeenCalled();
+
+    vi.mocked(fetchAuditLog).mockResolvedValueOnce({
+      entries: [makeAuditEntry({ id: "audit-p1" })],
+      total: 30,
+      page: 1,
+      pageSize: 25,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+    await waitFor(() => {
+      expect(screen.getByText("Page 1 of 2 (30 total)")).toBeTruthy();
+    });
+    expect(fetchAuditLog).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 1 }),
+      expect.anything(),
+    );
+    scrollToSpy.mockRestore();
+  });
+
+  it("resets to page 1 once a retried page no longer exists against the current total", async () => {
+    // Page 1 loads fine; the page-2 request fails (server-side data shrank in the
+    // meantime), so Retry re-issues the *same* page-2 request rather than a filter
+    // change resetting the page itself — the only way `load()` ever re-runs with
+    // an unchanged `page` that's now beyond the new total.
+    vi.mocked(fetchAuditLog).mockResolvedValueOnce({
+      entries: [makeAuditEntry({ id: "audit-p1" })],
+      total: 30,
+      page: 1,
+      pageSize: 25,
+    });
+    vi.mocked(fetchAuditLog).mockRejectedValueOnce(new Error("network hiccup"));
+    const scrollToSpy = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByRole("table");
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    const retry = await screen.findByRole("button", { name: "Retry" });
+
+    vi.mocked(fetchAuditLog).mockResolvedValueOnce({
+      entries: [],
+      total: 5,
+      page: 2,
+      pageSize: 25,
+    });
+    vi.mocked(fetchAuditLog).mockResolvedValueOnce({
+      entries: [makeAuditEntry({ id: "audit-narrowed" })],
+      total: 5,
+      page: 1,
+      pageSize: 25,
+    });
+    fireEvent.click(retry);
+
+    await waitFor(() => {
+      expect(screen.getByText("Page 1 of 1 (5 total)")).toBeTruthy();
+    });
+    scrollToSpy.mockRestore();
+  });
+
+  it("filters by date range and clears all filters at once", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByText("No audit log entries found.");
+
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-01-01" } });
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-01-31" } });
+
+    await waitFor(() => {
+      expect(fetchAuditLog).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          start: expect.any(String),
+          end: expect.any(String),
+        }),
+        expect.anything(),
+      );
+    });
+
+    const clearButton = await screen.findByRole("button", { name: "Clear filters" });
+    fireEvent.click(clearButton);
+
+    await waitFor(() => {
+      expect(fetchAuditLog).toHaveBeenLastCalledWith(
+        expect.objectContaining({ start: undefined, end: undefined, actionType: undefined }),
+        expect.anything(),
+      );
+    });
+    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
+    expect((screen.getByLabelText("From") as HTMLInputElement).value).toBe("");
+  });
+
+  it("falls back to the raw action_type string for an action outside the known label map", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [makeAuditEntry({ action_type: "some_future_action" })],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderWithToast(<AuditLogPanel />);
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("some_future_action")).toBeTruthy();
+  });
+
+  it("falls back to the actor's email, then to a deleted-user label, when the display name is missing", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [
+        makeAuditEntry({ id: "audit-email-only", actor_display_name: null }),
+        makeAuditEntry({
+          id: "audit-deleted",
+          actor_display_name: null,
+          actor_email: null,
+          actor_user_id: "user-ghost",
+        }),
+      ],
+      total: 2,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderWithToast(<AuditLogPanel />);
+
+    const table = await screen.findByRole("table");
+    const rows = within(table).getAllByRole("row").slice(1);
+    expect(within(rows[0]!).getByText("alice@example.com")).toBeTruthy();
+    const deletedCell = within(rows[1]!).getByText("Deleted user").closest("td");
+    expect(deletedCell?.getAttribute("title")).toBe("user-ghost");
+  });
+
+  it("bails out of the in-flight request without touching state once the component has unmounted (resolve race)", async () => {
+    let resolveFetch: (value: AuditLogResponse) => void = () => {};
+    vi.mocked(fetchAuditLog).mockImplementationOnce(
+      () => new Promise<AuditLogResponse>((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+    const { unmount } = renderWithToast(<AuditLogPanel />);
+    unmount();
+
+    // Resolving after unmount races the effect cleanup's abort — must not throw
+    // or warn about setting state on an unmounted component.
+    resolveFetch(emptyAuditLog());
+    await Promise.resolve();
+  });
+
+  it("bails out of the in-flight request without touching state once the component has unmounted (reject race)", async () => {
+    let rejectFetch: (err: unknown) => void = () => {};
+    vi.mocked(fetchAuditLog).mockImplementationOnce(
+      () => new Promise<AuditLogResponse>((_resolve, reject) => {
+        rejectFetch = reject;
+      }),
+    );
+    const { unmount } = renderWithToast(<AuditLogPanel />);
+    unmount();
+
+    rejectFetch(new Error("network error after unmount"));
+    await Promise.resolve();
   });
 });
 
