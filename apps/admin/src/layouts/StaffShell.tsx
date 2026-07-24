@@ -52,9 +52,6 @@ export function StaffShell({ sidebar, subnav, children, eventId }: Readonly<Staf
       <aside // NOSONAR — mouse-only auto-close-on-click convenience; keyboard users already have the dedicated "Close navigation" button and the focusable backdrop button above
         className="sidebar"
         onClick={closeNav}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") closeNav();
-        }}
         onMouseEnter={() => !pinned && setHovered(true)}
         onMouseLeave={() => !pinned && setHovered(false)}
       >
