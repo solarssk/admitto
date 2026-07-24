@@ -628,6 +628,270 @@ describe("GET /api/admin/events/:eventId/reports", () => {
       await prisma.event.deleteMany({ where: { id: EVENT_TZ } });
     }
   });
+
+  it("aggregates RSVP status only for admitted attendees, omitting statuses with zero admissions (Reports redesign)", async () => {
+    const EVENT_RSVP = "evt-reports-rsvp";
+    await prisma.attendee.deleteMany({ where: { event_id: EVENT_RSVP } });
+    await prisma.event.deleteMany({ where: { id: EVENT_RSVP } });
+    await prisma.event.create({
+      data: {
+        id: EVENT_RSVP,
+        title: "RSVP Reports Event",
+        slug: "reports-event-rsvp",
+        date: new Date("2026-10-01T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+    });
+    await prisma.attendee.createMany({
+      data: [
+        {
+          id: "att-rep-rsvp-confirmed",
+          event_id: EVENT_RSVP,
+          email: "rsvp-confirmed@example.com",
+          name: "Confirmed Guest",
+          rsvp_status: "confirmed",
+          admitted_at: new Date("2026-10-01T09:00:00.000Z"),
+          ...mkAttendeeToken(),
+        },
+        {
+          id: "att-rep-rsvp-tentative",
+          event_id: EVENT_RSVP,
+          email: "rsvp-tentative@example.com",
+          name: "Tentative Guest",
+          rsvp_status: "tentative",
+          admitted_at: new Date("2026-10-01T09:05:00.000Z"),
+          ...mkAttendeeToken(),
+        },
+        {
+          id: "att-rep-rsvp-none",
+          event_id: EVENT_RSVP,
+          email: "rsvp-none@example.com",
+          name: "Unresponded Guest",
+          admitted_at: new Date("2026-10-01T09:10:00.000Z"),
+          ...mkAttendeeToken(),
+        },
+        {
+          id: "att-rep-rsvp-declined-not-admitted",
+          event_id: EVENT_RSVP,
+          email: "rsvp-declined@example.com",
+          name: "Declined No-show",
+          rsvp_status: "declined",
+          ...mkAttendeeToken(),
+        },
+      ],
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_RSVP}/reports`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        by_rsvp_status: Array<{ status: string; count: number }>;
+      };
+      const byStatus = new Map(body.by_rsvp_status.map((row) => [row.status, row.count]));
+      expect(byStatus.get("confirmed")).toBe(1);
+      expect(byStatus.get("tentative")).toBe(1);
+      expect(byStatus.get("none")).toBe(1);
+      // "declined" attendee was never admitted, so it's excluded entirely - not a zero-count bucket.
+      expect(byStatus.has("declined")).toBe(false);
+      expect(byStatus.has("cancelled")).toBe(false);
+    } finally {
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_RSVP } });
+      await prisma.event.deleteMany({ where: { id: EVENT_RSVP } });
+    }
+  });
+
+  it("aggregates check-in method and device from valid scan/manual check-ins only, excluding revoked ones (Reports redesign)", async () => {
+    const EVENT_METHOD = "evt-reports-checkin-method";
+    await prisma.checkIn.deleteMany({ where: { event_id: EVENT_METHOD } });
+    await prisma.attendee.deleteMany({ where: { event_id: EVENT_METHOD } });
+    await prisma.event.deleteMany({ where: { id: EVENT_METHOD } });
+    await prisma.event.create({
+      data: {
+        id: EVENT_METHOD,
+        title: "Checkin Method Reports Event",
+        slug: "reports-event-checkin-method",
+        date: new Date("2026-10-01T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+    });
+    await prisma.attendee.createMany({
+      data: [
+        {
+          id: "att-rep-method-scan",
+          event_id: EVENT_METHOD,
+          email: "method-scan@example.com",
+          name: "Scanned Guest",
+          admitted_at: new Date("2026-10-01T09:00:00.000Z"),
+          ...mkAttendeeToken(),
+        },
+        {
+          id: "att-rep-method-manual",
+          event_id: EVENT_METHOD,
+          email: "method-manual@example.com",
+          name: "Manually Searched Guest",
+          admitted_at: new Date("2026-10-01T09:05:00.000Z"),
+          ...mkAttendeeToken(),
+        },
+        {
+          id: "att-rep-method-revoked",
+          event_id: EVENT_METHOD,
+          email: "method-revoked@example.com",
+          name: "Revoked Scan Guest",
+          admitted_at: new Date("2026-10-01T09:10:00.000Z"),
+          ...mkAttendeeToken(),
+        },
+      ],
+    });
+    await prisma.checkIn.createMany({
+      data: [
+        {
+          attendee_id: "att-rep-method-scan",
+          event_id: EVENT_METHOD,
+          checked_in_at: new Date("2026-10-01T09:00:00.000Z"),
+          status: "VALID",
+          source: "scan",
+          device_id: "Tablet 1 — main entrance",
+        },
+        {
+          attendee_id: "att-rep-method-manual",
+          event_id: EVENT_METHOD,
+          checked_in_at: new Date("2026-10-01T09:05:00.000Z"),
+          status: "VALID",
+          source: "manual",
+          device_id: null,
+        },
+        {
+          attendee_id: "att-rep-method-revoked",
+          event_id: EVENT_METHOD,
+          checked_in_at: new Date("2026-10-01T09:10:00.000Z"),
+          status: "REVOKED",
+          source: "scan",
+          device_id: "Tablet 1 — main entrance",
+        },
+      ],
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_METHOD}/reports`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        by_checkin_method: Array<{ method: string; count: number }>;
+        by_device: Array<{ device_id: string | null; count: number }>;
+      };
+      const byMethod = new Map(body.by_checkin_method.map((row) => [row.method, row.count]));
+      expect(byMethod.get("scan")).toBe(1);
+      expect(byMethod.get("manual")).toBe(1);
+
+      // The revoked check-in used the same device but must not count - device totals stay
+      // scoped to the same VALID/scan+manual filter as by_checkin_method.
+      expect(body.by_device).toEqual([
+        { device_id: "Tablet 1 — main entrance", count: 1 },
+        { device_id: null, count: 1 },
+      ]);
+    } finally {
+      await prisma.checkIn.deleteMany({ where: { event_id: EVENT_METHOD } });
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_METHOD } });
+      await prisma.event.deleteMany({ where: { id: EVENT_METHOD } });
+    }
+  });
+
+  it("shows only issued (not pending or returned) event-day items on the admission log, CSV, and PDF exports (Reports redesign)", async () => {
+    const EVENT_ITEMS = "evt-reports-items";
+    await prisma.attendeeItemState.deleteMany({ where: { event_item: { event_id: EVENT_ITEMS } } });
+    await prisma.eventItem.deleteMany({ where: { event_id: EVENT_ITEMS } });
+    await prisma.attendee.deleteMany({ where: { event_id: EVENT_ITEMS } });
+    await prisma.event.deleteMany({ where: { id: EVENT_ITEMS } });
+    await prisma.event.create({
+      data: {
+        id: EVENT_ITEMS,
+        title: "Items Reports Event",
+        slug: "reports-event-items",
+        date: new Date("2026-10-01T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+    });
+    const badge = await prisma.eventItem.create({
+      data: { event_id: EVENT_ITEMS, key: "badge", label: "Badge" },
+    });
+    const giftBag = await prisma.eventItem.create({
+      data: { event_id: EVENT_ITEMS, key: "giftbag", label: "Gift bag" },
+    });
+    const headset = await prisma.eventItem.create({
+      data: { event_id: EVENT_ITEMS, key: "headset", label: "Headset" },
+    });
+    await prisma.attendee.createMany({
+      data: [
+        {
+          id: "att-rep-items-full",
+          event_id: EVENT_ITEMS,
+          email: "items-full@example.com",
+          name: "Fully Issued Guest",
+          admitted_at: new Date("2026-10-01T09:00:00.000Z"),
+          ...mkAttendeeToken(),
+        },
+        {
+          id: "att-rep-items-none",
+          event_id: EVENT_ITEMS,
+          email: "items-none@example.com",
+          name: "Nothing Issued Guest",
+          admitted_at: new Date("2026-10-01T09:05:00.000Z"),
+          ...mkAttendeeToken(),
+        },
+      ],
+    });
+    await prisma.attendeeItemState.createMany({
+      data: [
+        { attendee_id: "att-rep-items-full", event_item_id: badge.id, state: "issued" },
+        { attendee_id: "att-rep-items-full", event_item_id: giftBag.id, state: "issued" },
+        { attendee_id: "att-rep-items-full", event_item_id: headset.id, state: "pending" },
+        { attendee_id: "att-rep-items-none", event_item_id: badge.id, state: "returned" },
+      ],
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_ITEMS}/reports`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        admission_log: Array<{ attendee_id: string; items: string[] }>;
+      };
+      const full = body.admission_log.find((row) => row.attendee_id === "att-rep-items-full");
+      const none = body.admission_log.find((row) => row.attendee_id === "att-rep-items-none");
+      // Badge before Gift bag - ordered by event_item.key ascending ("badge" < "giftbag").
+      expect(full?.items).toEqual(["Badge", "Gift bag"]);
+      expect(none?.items).toEqual([]);
+
+      const csvRes = await app.request(
+        `/api/admin/events/${EVENT_ITEMS}/reports/export?format=csv`,
+        { headers: { Cookie: adminCookie } },
+      );
+      const csvText = (await csvRes.text()).replace(/^﻿/, "");
+      const csvLines = csvText.split("\r\n");
+      expect(csvLines[0]).toContain('"Items"');
+      const fullCsvLine = csvLines.find((line) => line.includes("items-full@example.com"));
+      expect(fullCsvLine).toContain('"Badge, Gift bag"');
+      const noneCsvLine = csvLines.find((line) => line.includes("items-none@example.com"));
+      expect(noneCsvLine).toContain('""');
+
+      const pdfRes = await app.request(
+        `/api/admin/events/${EVENT_ITEMS}/reports/export?format=pdf`,
+        { headers: { Cookie: adminCookie } },
+      );
+      const html = await pdfRes.text();
+      expect(html).toContain("<th>Items</th>");
+      expect(html).toContain("Badge, Gift bag");
+    } finally {
+      await prisma.attendeeItemState.deleteMany({ where: { event_item: { event_id: EVENT_ITEMS } } });
+      await prisma.eventItem.deleteMany({ where: { event_id: EVENT_ITEMS } });
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_ITEMS } });
+      await prisma.event.deleteMany({ where: { id: EVENT_ITEMS } });
+    }
+  });
 });
 
 describe("GET /api/admin/events/:eventId/reports/export", () => {

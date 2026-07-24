@@ -4,10 +4,168 @@
   gap: var(--space-4);
 }
 
+.reports-export-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.reports-export-menu__panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: var(--z-dropdown);
+  min-width: 300px;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.reports-export-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-sans);
+  cursor: pointer;
+}
+
+.reports-export-menu__item:hover {
+  background: var(--surface-hover);
+}
+
+.reports-export-menu__item-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+  font-size: 1rem;
+}
+
+.reports-export-menu__item-text {
+  display: flex;
+  flex-direction: column;
+  font-size: var(--fs-sm);
+}
+
+.reports-export-menu__item-text span {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+/* Same trigger+panel mechanism as .reports-export-menu above and Attendees' own "Filters"
+   button (AttendeesTable.tsx's FilterToolbar, .attendees-filters-menu*) - a floating panel
+   keeps the Card header a single row regardless of how many filters it holds, instead of
+   wrapping selects inline or squeezing them down to fit a fixed header height. */
+.reports-log-filters-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.reports-log-filters-menu__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  margin-left: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+  color: var(--text-on-primary);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.reports-log-filters-menu__panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: var(--z-dropdown);
+  width: 240px;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.reports-log-filters-menu__field .at-select {
+  width: 100%;
+}
+
 .reports-stats-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-4);
+}
+
+.reports-stat {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-width: 0;
+}
+
+.reports-stat__icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.reports-stat__icon--neutral { background: var(--at-gray-100); color: var(--text-secondary); }
+.reports-stat__icon--ok { background: var(--status-ok-tint); color: var(--status-ok); }
+.reports-stat__icon--warn { background: var(--status-warn-tint); color: var(--status-warn); }
+.reports-stat__icon--info { background: var(--primary-tint); color: var(--primary); }
+
+.reports-stat__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.reports-stat__value {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--text-primary);
+}
+
+.reports-stat__label {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reports-stat__sub {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  margin-top: 1px;
 }
 
 .reports-loading {
@@ -28,93 +186,143 @@
 
 .reports-chart {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 4px;
-  height: 120px;
-  padding-bottom: 24px;
-  position: relative;
 }
 
+/* Count, track and label are plain flow siblings stacked top-to-bottom (not absolutely
+   positioned) - an earlier version anchored the hour label to `bottom: 0` of this same column,
+   which put it at the exact same baseline as the bar's own bottom edge, so the label rendered
+   underneath/inside the bar instead of below it and became unreadable against the fill color. */
 .reports-chart__bar-wrap {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-end;
-  height: 100%;
-  min-width: 20px;
-  position: relative;
+  min-width: 30px;
+}
+
+.reports-chart__track {
+  width: 100%;
+  height: 120px;
+  border-radius: var(--radius-sm);
+  background: var(--at-gray-100);
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
 }
 
 .reports-chart__bar {
   width: 100%;
   min-height: 2px;
   border-radius: 2px 2px 0 0;
-  transition: height 0.3s ease;
+  background: var(--primary);
+  transition: height 0.5s var(--ease-out, ease-out);
+}
+
+.reports-chart__bar--peak {
+  background: var(--primary-active);
 }
 
 .reports-chart__label {
-  position: absolute;
-  bottom: 0;
+  margin-top: 6px;
   font-size: var(--fs-2xs, 10px);
   color: var(--text-muted);
   white-space: nowrap;
 }
 
-.reports-chart__bar-wrap:nth-child(even) .reports-chart__label {
-  opacity: 0;
+/* The peak hour's own label - plain-gray like every other hour made it easy to miss which
+   column the "peak at HH:00" subtitle above actually refers to, especially skimming a row of
+   9+ same-weight labels. Bold + dark, matching the peak bar's own darker fill. */
+.reports-chart__label--peak {
+  font-weight: 700;
+  color: var(--text-primary);
 }
 
 .reports-chart__count {
   font-size: var(--fs-2xs, 10px);
   color: var(--text-muted);
   min-height: 14px;
+  margin-bottom: 4px;
 }
 
-.reports-bytype {
+.reports-chart__count--peak {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.reports-breakdown-list {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  max-height: 258px;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
-.reports-bytype__row {
+.reports-breakdown-row {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.reports-bytype__label {
+.reports-breakdown-row__head {
   display: flex;
-  justify-content: space-between;
-  gap: var(--space-3);
+  align-items: center;
+  gap: 7px;
   font-size: var(--fs-sm);
 }
 
-.reports-bytype__name {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.reports-bytype__dot {
-  width: 8px;
-  height: 8px;
+.reports-breakdown-row__dot {
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   flex: none;
 }
 
-.reports-bytype__track {
-  height: 8px;
-  background: var(--surface-sunken);
-  border-radius: 4px;
+.reports-breakdown-row__name {
+  font-weight: 600;
+  flex: 1;
+}
+
+.reports-breakdown-row__meta {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+.reports-breakdown-row__track {
+  height: 7px;
+  background: var(--at-gray-100);
+  border-radius: var(--radius-pill);
   overflow: hidden;
 }
 
-.reports-bytype__fill {
+.reports-breakdown-row__track > div {
   height: 100%;
-  border-radius: 4px;
-  background: var(--primary);
+  border-radius: var(--radius-pill);
   transition: width 0.4s ease;
+}
+
+.reports-section-title {
+  font-size: var(--fs-h3);
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.reports-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-4);
+}
+
+.at-select.reports-log-pagesize-select {
+  height: var(--control-h-sm);
+  width: auto;
+  padding: 0 1.4rem 0 var(--space-2);
+  background-position: right 0.4rem center;
+  background-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 .reports-log-truncated {
@@ -124,35 +332,6 @@
   border-bottom: 1px solid var(--border);
   color: var(--text-muted);
   font-size: 0.875rem;
-}
-
-.reports-log-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border);
-}
-
-.reports-log-filter {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.reports-log-filter__label {
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-}
-
-.reports-log-filter__select {
-  min-width: 180px;
-  padding: 0.35rem 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface-card);
-  color: var(--text);
 }
 
 .reports-log-table-wrap {
@@ -170,7 +349,9 @@
   padding: 0.65rem var(--space-4);
   border-bottom: 1px solid var(--border);
   text-align: left;
-  vertical-align: top;
+  /* The Attendee cell is the only two-line one (name + email) - centering instead of
+     top-aligning keeps every other column's single line level with its midpoint, not its top. */
+  vertical-align: middle;
 }
 
 .reports-log-table th {
@@ -184,6 +365,17 @@
   gap: 2px;
 }
 
+.reports-log-user-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.reports-log-user-link:hover,
+.reports-log-user-link:focus-visible {
+  color: var(--primary);
+  text-decoration: none;
+}
+
 .reports-log-empty {
   text-align: center;
   color: var(--text-muted);
@@ -193,10 +385,100 @@
 .reports-log-foot {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: var(--space-4);
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-4);
   padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--border);
+}
+
+.reports-log-foot__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.reports-log-pagesize {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.reports-log-pager {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Mobile card list (< 768px, same breakpoint/split-via-useIsDesktop convention as the
+   Attendees list) - same data as the table, one admission per card instead of a
+   horizontally-scrolling row. */
+.reports-log-cards {
+  display: flex;
+  flex-direction: column;
+}
+
+.reports-log-card {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.reports-log-card:last-child {
+  border-bottom: 0;
+}
+
+.reports-log-card:hover,
+.reports-log-card:focus-visible {
+  background: var(--surface-hover);
+  text-decoration: none;
+}
+
+.reports-log-card__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.reports-log-card__name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.reports-log-card__time {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  flex: none;
+}
+
+.reports-log-card__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: 4px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+/* Device and issued items were two bare strings back to back (e.g. "scanner-01 Badge, Gift
+   bag") with nothing marking where one ends and the other begins - an icon per field disambiguates
+   without needing a text label that would wrap awkwardly on narrow cards. */
+.reports-log-card__meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.reports-log-card__meta-item i {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
 }
 
 .reports-muted {
@@ -210,13 +492,43 @@
 
 @media (max-width: 960px) {
   .reports-panels {
-    grid-template-columns: 1fr;
+    /* minmax(0, 1fr), not bare 1fr - a bare 1fr track's implicit minimum is its content's
+       auto/min-content size, so the hourly chart's un-scrolled 516px content width was stretching
+       this whole grid track (and the Card inside it) to fit, instead of clamping to the viewport
+       and letting .reports-chart's own overflow-x:auto scroll internally. The result was the
+       entire page scrolling horizontally at this breakpoint rather than just the chart. */
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
 @media (max-width: 640px) {
   .reports-stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .reports-stat__icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    font-size: 17px;
+  }
+
+  .reports-stat__value {
+    font-size: 21px;
+  }
+
+  /* Below tablet width there usually isn't room for every hour column at a readable size -
+     .reports-chart__bar-wrap's flex:1 stretch (desktop) would otherwise keep squeezing columns
+     narrower as the viewport shrinks, down to illegible slivers. Switching to a fixed width and
+     letting the row scroll horizontally instead keeps every bar/label at a consistent, readable
+     size, the same "scroll instead of squish" choice already used for the admission log table. */
+  .reports-chart {
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .reports-chart__bar-wrap {
+    flex: 0 0 36px;
   }
 }
 

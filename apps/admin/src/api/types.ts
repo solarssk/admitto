@@ -1063,9 +1063,17 @@ export interface EventReportsResponse {
     ticket_type: string | null;
     admitted_at: string;
     device_id: string | null;
+    items: string[];
   }>;
   admission_log_truncated: boolean;
   admission_log_total: number;
+  /** Only buckets with at least one admitted attendee - zero-fill the full RsvpStatus set from
+   * RSVP_LABELS' own order when rendering. */
+  by_rsvp_status: Array<{ status: RsvpStatus; count: number }>;
+  by_checkin_method: Array<{ method: "scan" | "manual"; count: number }>;
+  /** Sorted by count descending server-side (a ranked leaderboard, not a fixed-order status set
+   * like the two breakdowns above). */
+  by_device: Array<{ device_id: string | null; count: number }>;
 }
 
 // --- Identity providers & Cloudflare Access (SPA Settings → Identity, #266) ---

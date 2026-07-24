@@ -51,9 +51,22 @@ export interface EventReportsResponse {
     ticket_type: string | null;
     admitted_at: string;
     device_id: string | null;
+    items: string[];
   }>;
   admission_log_truncated: boolean;
   admission_log_total: number;
+  /** Only buckets with at least one admitted attendee - the frontend zero-fills the full status
+   * set (it already owns the canonical order/labels via RSVP_LABELS) rather than duplicating that
+   * list here. */
+  by_rsvp_status: Array<{ status: string; count: number }>;
+  /** Only "scan"/"manual" - the only two check-in sources that represent an actual admission
+   * method (mirrors the same filter loadDeviceIdsByAttendee already uses); "undo"/"admin_revoke"
+   * are lifecycle events, not admission methods. */
+  by_checkin_method: Array<{ method: string; count: number }>;
+  /** Admissions per operator-labeled device (DeviceLabelStep) - same VALID/scan+manual filter as
+   * by_checkin_method. `device_id: null` covers a check-in from a session that skipped labeling,
+   * kept as its own bucket rather than dropped so the total still reconciles. */
+  by_device: Array<{ device_id: string | null; count: number }>;
 }
 
 /** Display label for a raw ticket_type key/null in server-rendered CSV/PDF exports (the admin
@@ -130,6 +143,34 @@ async function loadDeviceIdsByAttendee(
   return map;
 }
 
+/** Items currently in the attendee's hands - "issued" only, not "pending" (never handed out) or
+ * "returned" (handed back). Ordered by the event's item key, same order as the Requirements tab. */
+async function loadIssuedItemLabelsByAttendee(
+  db: PrismaClient,
+  eventId: string,
+  attendeeIds: string[],
+): Promise<Map<string, string[]>> {
+  const map = new Map<string, string[]>();
+  if (attendeeIds.length === 0) return map;
+
+  const states = await db.attendeeItemState.findMany({
+    where: {
+      attendee_id: { in: attendeeIds },
+      state: "issued",
+      event_item: { event_id: eventId },
+    },
+    orderBy: { event_item: { key: "asc" } },
+    select: { attendee_id: true, event_item: { select: { label: true } } },
+  });
+
+  for (const row of states) {
+    const labels = map.get(row.attendee_id) ?? [];
+    labels.push(row.event_item.label);
+    map.set(row.attendee_id, labels);
+  }
+  return map;
+}
+
 type AdmittedRow = {
   id: string;
   name: string;
@@ -141,6 +182,7 @@ type AdmittedRow = {
 function mapAdmissionLogRow(
   row: AdmittedRow,
   deviceByAttendee: Map<string, string | null>,
+  itemsByAttendee: Map<string, string[]>,
 ): EventReportsResponse["admission_log"][number] {
   return {
     attendee_id: row.id,
@@ -149,6 +191,7 @@ function mapAdmissionLogRow(
     ticket_type: row.ticket_type,
     admitted_at: row.admitted_at.toISOString(),
     device_id: deviceByAttendee.get(row.id) ?? null,
+    items: itemsByAttendee.get(row.id) ?? [],
   };
 }
 
@@ -166,9 +209,22 @@ async function loadReportsAggregates(
   peak_hour: string | null;
   peak_hour_count: number;
   ticketTypeCatalog: TicketTypeInfo[];
+  by_rsvp_status: EventReportsResponse["by_rsvp_status"];
+  by_checkin_method: EventReportsResponse["by_checkin_method"];
+  by_device: EventReportsResponse["by_device"];
 }> {
-  const [totalAttendees, admittedCount, byHourRaw, byTypeTotal, byTypeAdmitted, logRows, catalog] =
-    await Promise.all([
+  const [
+    totalAttendees,
+    admittedCount,
+    byHourRaw,
+    byTypeTotal,
+    byTypeAdmitted,
+    logRows,
+    catalog,
+    byRsvpStatusRaw,
+    byCheckinMethodRaw,
+    byDeviceRaw,
+  ] = await Promise.all([
       db.attendee.count({ where: { event_id: eventId } }),
       db.attendee.count({ where: { event_id: eventId, admitted_at: { not: null } } }),
       db.$queryRaw<Array<{ hour: string; count: bigint }>>`
@@ -206,6 +262,21 @@ async function loadReportsAggregates(
         },
       }),
       loadEventTicketTypes(db, eventId),
+      db.attendee.groupBy({
+        by: ["rsvp_status"],
+        where: { event_id: eventId, admitted_at: { not: null } },
+        _count: { _all: true },
+      }),
+      db.checkIn.groupBy({
+        by: ["source"],
+        where: { event_id: eventId, status: "VALID", source: { in: ["scan", "manual"] } },
+        _count: { _all: true },
+      }),
+      db.checkIn.groupBy({
+        by: ["device_id"],
+        where: { event_id: eventId, status: "VALID", source: { in: ["scan", "manual"] } },
+        _count: { _all: true },
+      }),
     ]);
 
   const byHour = buildByHour(byHourRaw);
@@ -254,15 +325,34 @@ async function loadReportsAggregates(
     });
   }
 
-  const deviceByAttendee = await loadDeviceIdsByAttendee(
-    db,
-    eventId,
-    logRows.map((row) => row.id),
-  );
+  const attendeeIds = logRows.map((row) => row.id);
+  const [deviceByAttendee, itemsByAttendee] = await Promise.all([
+    loadDeviceIdsByAttendee(db, eventId, attendeeIds),
+    loadIssuedItemLabelsByAttendee(db, eventId, attendeeIds),
+  ]);
 
   const admission_log = logRows.map((row) =>
-    mapAdmissionLogRow(row as AdmittedRow, deviceByAttendee),
+    mapAdmissionLogRow(row as AdmittedRow, deviceByAttendee, itemsByAttendee),
   );
+
+  const by_rsvp_status = byRsvpStatusRaw.map((row) => ({
+    status: row.rsvp_status,
+    count: row._count._all,
+  }));
+  const by_checkin_method = byCheckinMethodRaw.map((row) => ({
+    method: row.source!,
+    count: row._count._all,
+  }));
+  // Ranked by count descending; ties broken by device_id ascending (Postgres's GROUP BY row
+  // order isn't guaranteed) - the "(unlabeled device)" null bucket sorts last on a tie.
+  const by_device = byDeviceRaw
+    .map((row) => ({ device_id: row.device_id, count: row._count._all }))
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      if (a.device_id === null) return 1;
+      if (b.device_id === null) return -1;
+      return a.device_id.localeCompare(b.device_id);
+    });
 
   return {
     totalAttendees,
@@ -273,6 +363,9 @@ async function loadReportsAggregates(
     ticketTypeCatalog: catalog,
     peak_hour,
     peak_hour_count,
+    by_rsvp_status,
+    by_checkin_method,
+    by_device,
   };
 }
 
@@ -373,6 +466,9 @@ export async function handleGetReports(c: Context, db: PrismaClient): Promise<Re
     admission_log: aggregates.admission_log,
     admission_log_truncated: aggregates.admittedCount > ADMISSION_LOG_LIMIT,
     admission_log_total: aggregates.admittedCount,
+    by_rsvp_status: aggregates.by_rsvp_status,
+    by_checkin_method: aggregates.by_checkin_method,
+    by_device: aggregates.by_device,
   };
 
   return c.json(body);
@@ -422,14 +518,14 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
 
     const truncated = totalAdmitted > CSV_EXPORT_MAX;
 
-    const deviceByAttendee = await loadDeviceIdsByAttendee(
-      db,
-      eventId,
-      rows.map((row) => row.id),
-    );
+    const attendeeIds = rows.map((row) => row.id);
+    const [deviceByAttendee, itemsByAttendee] = await Promise.all([
+      loadDeviceIdsByAttendee(db, eventId, attendeeIds),
+      loadIssuedItemLabelsByAttendee(db, eventId, attendeeIds),
+    ]);
 
     const admittedAtHeader = `Admitted at (${timeZone})`;
-    const header = ["Name", "Email", "Ticket type", admittedAtHeader, "Device"]
+    const header = ["Name", "Email", "Ticket type", admittedAtHeader, "Device", "Items"]
       .map((col) => quoteCsvCell(col))
       .join(",");
     const dataRows = rows.map((row) =>
@@ -439,6 +535,7 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
         resolveTicketTypeLabel(catalog, row.ticket_type),
         formatAdmittedAtExport(row.admitted_at!, timeZone),
         deviceByAttendee.get(row.id) ?? "",
+        (itemsByAttendee.get(row.id) ?? []).join(", "),
       ]
         .map((cell) => quoteCsvCell(sanitizeCsvCell(String(cell))))
         .join(","),
@@ -451,6 +548,7 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
               `Export truncated: first ${CSV_EXPORT_MAX} of ${totalAdmitted} admissions.`,
             ),
           ),
+          quoteCsvCell(""),
           quoteCsvCell(""),
           quoteCsvCell(""),
           quoteCsvCell(""),
@@ -493,7 +591,7 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
   const logRows = aggregates.admission_log
     .map(
       (r) =>
-        `<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.email)}</td><td>${escapeHtml(resolveTicketTypeLabel(aggregates.ticketTypeCatalog, r.ticket_type))}</td><td>${escapeHtml(formatAdmittedAtExport(new Date(r.admitted_at), timeZone))}</td><td>${escapeHtml(r.device_id ?? "—")}</td></tr>`,
+        `<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.email)}</td><td>${escapeHtml(resolveTicketTypeLabel(aggregates.ticketTypeCatalog, r.ticket_type))}</td><td>${escapeHtml(formatAdmittedAtExport(new Date(r.admitted_at), timeZone))}</td><td>${escapeHtml(r.device_id ?? "—")}</td><td>${escapeHtml(r.items.join(", ") || "—")}</td></tr>`,
     )
     .join("");
 
@@ -536,8 +634,8 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
   </table>
   <h2>Admission log${aggregates.admittedCount > PDF_LOG_MAX ? ` (first ${PDF_LOG_MAX} of ${aggregates.admittedCount})` : ""}</h2>
   <table>
-    <thead><tr><th>Name</th><th>Email</th><th>Ticket type</th><th>Admitted at</th><th>Device</th></tr></thead>
-    <tbody>${logRows || '<tr><td colspan="5">No admissions yet</td></tr>'}</tbody>
+    <thead><tr><th>Name</th><th>Email</th><th>Ticket type</th><th>Admitted at</th><th>Device</th><th>Items</th></tr></thead>
+    <tbody>${logRows || '<tr><td colspan="6">No admissions yet</td></tr>'}</tbody>
   </table>
 </body>
 </html>`;
