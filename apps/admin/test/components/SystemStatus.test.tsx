@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { resetSystemStatusCache, SystemStatus } from "../../src/components/SystemStatus.js";
 import { UserMenu } from "../../src/components/UserMenu.js";
 import type { AuthUser, RoleAssignment } from "../../src/api/types.js";

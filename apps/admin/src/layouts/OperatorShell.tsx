@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useParams } from "react-router-dom";
+import { NavLink, Outlet, useParams } from "react-router";
 import { ConnectionBanner } from "../connection/ConnectionStateProvider.js";
 import { StaffShell } from "./StaffShell.js";
 import { BrandMark } from "./BrandMark.js";

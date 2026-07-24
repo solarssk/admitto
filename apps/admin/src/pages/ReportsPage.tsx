@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router";
 import { Badge, Button, Card, EmptyState, PageHeader, Select, Skeleton, TICKET_TYPE_COLORS, useToast } from "@admitto/ui";
 import {
   ApiError,

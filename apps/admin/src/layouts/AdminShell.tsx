@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useParams } from "react-router-dom";
+import { NavLink, Outlet, useParams } from "react-router";
 import type { EventDto } from "../api/types.js";
 import { StaffShell } from "./StaffShell.js";
 import { BrandMark } from "./BrandMark.js";

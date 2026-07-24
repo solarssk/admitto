@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet } from "react-router";
 import { useAuth } from "./AuthProvider.js";
 import { DeviceLabelStep } from "../pages/DeviceLabelStep.js";
 

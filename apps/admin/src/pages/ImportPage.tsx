@@ -7,7 +7,7 @@ import {
   type KeyboardEvent,
   type RefObject,
 } from "react";
-import { Link, useOutletContext, useParams } from "react-router-dom";
+import { Link, useOutletContext, useParams } from "react-router";
 import { Button, Card, PageHeader, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
   ApiError,

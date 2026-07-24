@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
+import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { CommunicationPage } from "../../src/pages/CommunicationPage.js";
 import { renderWithToast } from "../test-utils.js";
 
@@ -60,8 +60,8 @@ vi.mock("../../src/api/client.js", () => ({
   fetchTicketTypes: (...args: unknown[]) => fetchTicketTypes(...args),
 }));
 
-vi.mock("react-router-dom", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("react-router-dom")>();
+vi.mock("react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router")>();
   return {
     ...actual,
     useBlocker: () => blockerState,

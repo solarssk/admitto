@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet } from "react-router";
 import type { RoleAssignment } from "../api/types.js";
 import { canAccessAdminPanel, canAccessCheckInPanel } from "../auth/capabilities.js";
 import { useAuth } from "../auth/AuthProvider.js";

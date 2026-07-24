@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { StaffRoutes } from "../../src/App.js";
 import type { EventDto } from "../../src/api/types.js";
 
@@ -14,7 +14,7 @@ vi.mock("../../src/auth/capabilities.js", () => ({
 }));
 
 vi.mock("../../src/auth/RoleRouter.js", async () => {
-  const { Outlet } = await import("react-router-dom");
+  const { Outlet } = await import("react-router");
   return {
     AdminGuard: () => <Outlet />,
     AuthenticatedGuard: () => <Outlet />,
@@ -24,7 +24,7 @@ vi.mock("../../src/auth/RoleRouter.js", async () => {
 });
 
 vi.mock("../../src/layouts/AdminShell.js", async () => {
-  const { Outlet } = await import("react-router-dom");
+  const { Outlet } = await import("react-router");
   return {
     AdminShell: () => <Outlet />,
   };
