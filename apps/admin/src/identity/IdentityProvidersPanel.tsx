@@ -86,7 +86,7 @@ function ProviderRowItem({
         </Link>
         <Switch
           id={labelId}
-          label="Enabled"
+          aria-label={`${provider.display_name} enabled`}
           checked={provider.enabled}
           disabled={disabled}
           aria-busy={disabled}

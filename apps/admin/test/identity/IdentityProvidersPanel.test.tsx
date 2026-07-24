@@ -161,7 +161,7 @@ describe("IdentityProvidersPanel", () => {
 
     renderPanel();
 
-    const toggleInput = await screen.findByRole("switch", { name: "Enabled" });
+    const toggleInput = await screen.findByRole("switch", { name: "Google enabled" });
     expect(toggleInput).property("checked", true);
     fireEvent.click(toggleInput);
     expect(mockToggle).toHaveBeenCalledWith("p1");
@@ -246,7 +246,7 @@ describe("IdentityProvidersPanel", () => {
 
     renderPanel();
 
-    const toggleInput = await screen.findByRole("switch", { name: "Enabled" });
+    const toggleInput = await screen.findByRole("switch", { name: "Google enabled" });
     fireEvent.click(toggleInput);
     await waitFor(() => expect(mockToggle).toHaveBeenCalledTimes(1));
     // Initial load + refetch after the failed toggle.

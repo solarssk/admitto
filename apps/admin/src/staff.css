@@ -2692,7 +2692,7 @@
 
 .identity-row__main {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-3);
   min-width: 0;
 }
