@@ -52,6 +52,9 @@ export function StaffShell({ sidebar, subnav, children, eventId }: Readonly<Staf
       <aside
         className="sidebar"
         onClick={closeNav}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") closeNav();
+        }}
         onMouseEnter={() => !pinned && setHovered(true)}
         onMouseLeave={() => !pinned && setHovered(false)}
       >

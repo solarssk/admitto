@@ -231,6 +231,103 @@ describe("SystemStatus", () => {
     expect(screen.getByText("Connected · organization")).toBeTruthy();
   });
 
+  it("caches a successful event-level mail result across remounts within the TTL", async () => {
+    fetchSetupChecks.mockResolvedValue({ checks: OK_CHECKS });
+    fetchEventMailSettings.mockResolvedValueOnce(eventMailSettings("smtp", true));
+
+    const { unmount } = renderStatus(SUPERADMIN, null, "evt-1");
+    await screen.findByRole("button", { name: /All systems normal/ });
+    unmount();
+
+    renderStatus(SUPERADMIN, null, "evt-1");
+    await screen.findByRole("button", { name: /All systems normal/ });
+
+    openMenu();
+    // Shows the cached result immediately — no second event-mail fetch.
+    expect(screen.getByText("Connected · event")).toBeTruthy();
+    expect(fetchEventMailSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to org-level mailerStatus when the initial event-level fetch fails", async () => {
+    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
+    fetchEventMailSettings.mockRejectedValueOnce(new Error("network error"));
+
+    renderStatus(SUPERADMIN, { configured: true, provider: "smtp" }, "evt-1");
+    await screen.findByRole("button", { name: /All systems normal/ });
+
+    openMenu();
+    // Database, Session storage, and Email sending (fallen back to the org-level prop) all
+    // read the same plain "Connected" — no event-specific "· event"/"· organization" suffix.
+    expect(screen.getAllByText("Connected")).toHaveLength(3);
+    expect(screen.queryByText("Connected · event")).toBeNull();
+    expect(screen.queryByText("Connected · organization")).toBeNull();
+  });
+
+  it("ignores a resolved event-mail fetch for an eventId that's no longer current (abort branch)", async () => {
+    fetchSetupChecks.mockResolvedValue({ checks: OK_CHECKS });
+    let resolveFirst!: (value: ReturnType<typeof eventMailSettings>) => void;
+    fetchEventMailSettings.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveFirst = resolve; }),
+    );
+    fetchEventMailSettings.mockResolvedValueOnce(eventMailSettings("smtp", false));
+
+    const { rerender } = render(
+      <MemoryRouter>
+        <SystemStatus assignments={SUPERADMIN} mailerStatus={null} eventId="evt-1" />
+      </MemoryRouter>,
+    );
+    await act(async () => {});
+
+    rerender(
+      <MemoryRouter>
+        <SystemStatus assignments={SUPERADMIN} mailerStatus={null} eventId="evt-2" />
+      </MemoryRouter>,
+    );
+    await act(async () => {});
+    openMenu();
+    expect(screen.getByText("Connected · organization")).toBeTruthy();
+
+    // The stale evt-1 fetch resolving late must not clobber evt-2's already-settled value.
+    resolveFirst(eventMailSettings("graph", true));
+    await act(async () => {});
+
+    expect(screen.getByText("Connected · organization")).toBeTruthy();
+    expect(screen.queryByText("Connected · event")).toBeNull();
+  });
+
+  it("ignores a resolved checks fetch for a stale effect instance (superadmin toggled off then on)", async () => {
+    let resolveFirst!: (value: { checks: typeof OK_CHECKS }) => void;
+    fetchSetupChecks.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveFirst = resolve; }),
+    );
+    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
+
+    const { rerender } = render(
+      <MemoryRouter>
+        <SystemStatus assignments={SUPERADMIN} mailerStatus={null} />
+      </MemoryRouter>,
+    );
+    await act(async () => {});
+
+    rerender(
+      <MemoryRouter>
+        <SystemStatus assignments={OPERATOR} mailerStatus={{ configured: true, provider: "smtp" }} />
+      </MemoryRouter>,
+    );
+    rerender(
+      <MemoryRouter>
+        <SystemStatus assignments={SUPERADMIN} mailerStatus={null} />
+      </MemoryRouter>,
+    );
+    await act(async () => {});
+
+    // The stale first request resolving late must not clobber the second effect instance.
+    resolveFirst({ checks: { ...OK_CHECKS, database: { ok: false, detail: "stale response" } } });
+    await act(async () => {});
+
+    expect(screen.getByRole("button", { name: /All systems normal/ })).toBeTruthy();
+  });
+
   it("shows Email sending as degraded (not a flat 'ok') when the event's transport is configured but has unresolved failed deliveries", async () => {
     fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
     fetchEventMailSettings.mockResolvedValueOnce(eventMailSettings("smtp", true, 2));
