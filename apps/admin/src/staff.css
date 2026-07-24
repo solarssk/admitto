@@ -3086,6 +3086,50 @@
     flex-basis: 100%;
     margin-left: calc(var(--control-h) + var(--space-3));
   }
+
+  /* Same fix, same reasoning, for the Cloudflare Access summary row — icon + text
+     wrapper + Manage button collapse to 3 stacked lines otherwise. No Tooltip
+     wrapper here (unlike the provider row's icon) and Manage is a direct child,
+     not a nested actions group, so the selectors below are simpler than above. */
+  .cf-access-summary {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    row-gap: var(--space-1);
+  }
+
+  .cf-access-summary .identity-row__main,
+  .cf-access-summary .cf-access-summary__text {
+    display: contents;
+  }
+
+  .cf-access-summary .identity-row-icon {
+    order: 1;
+  }
+
+  .cf-access-summary__text strong {
+    order: 2;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .cf-access-summary > .at-btn {
+    order: 3;
+    flex: none;
+  }
+
+  .cf-access-summary__text p {
+    order: 4;
+    flex-basis: 100%;
+    margin-left: calc(var(--control-h) + var(--space-3));
+  }
+
+  .cf-access-summary__badges {
+    order: 5;
+    flex-basis: 100%;
+    margin-left: calc(var(--control-h) + var(--space-3));
+  }
 }
 
 .branding-scope-hint {
