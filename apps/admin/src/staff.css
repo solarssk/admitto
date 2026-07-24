@@ -3046,6 +3046,46 @@
   .settings-row .at-btn {
     align-self: flex-start;
   }
+
+  /* The generic column-stack above turns this row into 3 stacked blocks (icon+name,
+     issuer URL, Edit+Switch) — the actions end up dangling on their own line below
+     two lines of text. Un-nest the icon/name/issuer so they can share a line with
+     Edit+Switch instead, with only the (often long) issuer URL forced onto its own
+     full-width line below. `order` controls where each un-nested piece lands,
+     independent of DOM order. */
+  .identity-provider-row {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    row-gap: var(--space-1);
+  }
+
+  .identity-provider-row .identity-row__main,
+  .identity-provider-row .settings-row__text {
+    display: contents;
+  }
+
+  .identity-provider-row .at-tooltip-trigger {
+    order: 1;
+  }
+
+  .identity-provider-row .settings-row__text strong {
+    order: 2;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .identity-provider-row__actions {
+    order: 3;
+    flex: none;
+  }
+
+  .identity-provider-row__issuer {
+    order: 4;
+    flex-basis: 100%;
+    margin-left: calc(var(--control-h) + var(--space-3));
+  }
 }
 
 .branding-scope-hint {
