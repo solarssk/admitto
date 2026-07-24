@@ -132,9 +132,7 @@
 .at-switch input:checked + .at-switch__track { background: var(--primary); }
 .at-switch input:checked + .at-switch__track .at-switch__thumb { transform: translateX(1rem); }
 .at-switch input:focus-visible + .at-switch__track { box-shadow: var(--ring); }
-.at-switch input:disabled + .at-switch__track { background: var(--surface-sunken); }
-.at-switch:has(input:disabled) { cursor: not-allowed; }
-.at-switch:has(input:disabled) .at-switch__label { color: var(--text-disabled); }
+.at-switch:has(input:disabled) { cursor: not-allowed; opacity: 0.5; }
 .at-switch__label { font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--text-secondary); white-space: nowrap; }
 
 /* ---------------- Badge / Tag ---------------- */

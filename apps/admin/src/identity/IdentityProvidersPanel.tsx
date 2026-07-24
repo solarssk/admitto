@@ -69,7 +69,7 @@ function ProviderRowItem({
   const labelId = `idp-enabled-${provider.id}`;
   return (
     <div className="settings-row identity-provider-row">
-      <div className="identity-provider-row__main">
+      <div className="identity-row__main">
         <Tooltip content="OpenID Connect">
           <div className="identity-row-icon" aria-hidden="true">
             <i className="ti ti-shield-lock" />
@@ -246,21 +246,16 @@ export function IdentityProvidersPanel() {
           />
         )}
         {providersState === "ready" && providers.length > 0 && (
-          <>
-            <div className="identity-providers__list">
-              {providers.map((provider) => (
-                <ProviderRowItem
-                  key={provider.id}
-                  provider={provider}
-                  onToggle={handleToggle}
-                  disabled={togglingIds.has(provider.id)}
-                />
-              ))}
-            </div>
-            <p className="identity-providers__hint">
-              Edit a provider to configure endpoints, claims, and group→role mapping.
-            </p>
-          </>
+          <div className="identity-providers__list">
+            {providers.map((provider) => (
+              <ProviderRowItem
+                key={provider.id}
+                provider={provider}
+                onToggle={handleToggle}
+                disabled={togglingIds.has(provider.id)}
+              />
+            ))}
+          </div>
         )}
       </Card>
 
@@ -268,16 +263,11 @@ export function IdentityProvidersPanel() {
         title="Cloudflare Access"
         actions={
           cfState === "ready" && cf ? (
-            <>
-              {cf.enabled ? (
-                <Badge variant="ok">Active</Badge>
-              ) : (
-                <Badge variant="neutral">Inactive</Badge>
-              )}
-              <Link className="at-btn at-btn--secondary at-btn--sm" to={IDENTITY_CLOUDFLARE_ROUTE}>
-                <span>Manage</span>
-              </Link>
-            </>
+            cf.enabled ? (
+              <Badge variant="ok">Active</Badge>
+            ) : (
+              <Badge variant="neutral">Inactive</Badge>
+            )
           ) : undefined
         }
       >
@@ -290,23 +280,28 @@ export function IdentityProvidersPanel() {
           />
         )}
         {cfState === "ready" && cf && (
-          <div className="cf-access-summary">
-            <div className="identity-row-icon" aria-hidden="true">
-              <i className="ti ti-brand-cloudflare" />
+          <div className="settings-row cf-access-summary">
+            <div className="identity-row__main">
+              <div className="identity-row-icon" aria-hidden="true">
+                <i className="ti ti-brand-cloudflare" />
+              </div>
+              <div className="cf-access-summary__text">
+                <strong>Cloudflare Zero Trust</strong>
+                <p>
+                  {cf.teamDomain
+                    ? `Team domain: ${cf.teamDomain}`
+                    : "No team domain configured."}
+                </p>
+                {cf.locks.enabled && (
+                  <div className="cf-access-summary__badges">
+                    <Badge variant="warn">Managed by environment</Badge>
+                  </div>
+                )}
+              </div>
             </div>
-            <div className="cf-access-summary__text">
-              <strong>Cloudflare Zero Trust</strong>
-              <p>
-                {cf.teamDomain
-                  ? `Team domain: ${cf.teamDomain}`
-                  : "No team domain configured."}
-              </p>
-              {cf.locks.enabled && (
-                <div className="cf-access-summary__badges">
-                  <Badge variant="warn">Managed by environment</Badge>
-                </div>
-              )}
-            </div>
+            <Link className="at-btn at-btn--secondary" to={IDENTITY_CLOUDFLARE_ROUTE}>
+              <span>Manage</span>
+            </Link>
           </div>
         )}
       </Card>
