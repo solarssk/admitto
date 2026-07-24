@@ -7,6 +7,7 @@ import { ApiError, fetchCfAccessSummary, testCfAccess, updateCfAccess } from "..
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { CfAccessSummaryDto } from "../api/types.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import {
   buildCfUpdateBody,
   cfDraftFromSummary,
@@ -135,6 +136,10 @@ export function CfAccessEditor() {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(panelRef, true, handleCancel);
+  // A fetch that resolves near-instantly (localhost, a warm cache) would
+  // otherwise flash the spinner on and off faster than it can register as
+  // "loading" — show it only once the fetch has genuinely taken a moment.
+  const showLoadingSpinner = useDelayedLoading(loadState === "loading");
 
   const handleSubmit = useCallback(
     async (event: React.FormEvent) => {
@@ -224,11 +229,11 @@ export function CfAccessEditor() {
 
   let content: ReactNode;
   if (loadState === "loading") {
-    content = (
+    content = showLoadingSpinner ? (
       <output className="identity-editor__loading">
         <Spinner label="Loading Cloudflare Access" />
       </output>
-    );
+    ) : null;
   } else if (loadState === "error") {
     content = (
       <Card title="Cloudflare Access">

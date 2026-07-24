@@ -15,6 +15,7 @@ import {
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { ProviderDetailDto, ProviderRequestBody, ProviderTestDraftBody } from "../api/types.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { IdentityMappingRepeater } from "./IdentityMappingRepeater.js";
 import {
   emptyMappingRow,
@@ -865,11 +866,15 @@ export function IdentityProviderEditor({
   );
 
   const view = resolveEditorView(mode, loadState);
+  // A fetch that resolves near-instantly (localhost, a warm cache) would
+  // otherwise flash the spinner on and off faster than it can register as
+  // "loading" — show it only once the fetch has genuinely taken a moment.
+  const showLoadingSpinner = useDelayedLoading(view === "loading");
   return createPortal(
     <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
       <div className="identity-modal__backdrop" role="presentation" />
       <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
-        {view === "loading" && loadingContent}
+        {view === "loading" && showLoadingSpinner && loadingContent}
         {view === "error" && errorContent}
         {view === "not_found" && notFoundContent}
         {view === "form" && (
