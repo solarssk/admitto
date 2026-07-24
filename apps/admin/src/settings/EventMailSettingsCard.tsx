@@ -125,6 +125,7 @@ export function EventMailSettingsCard({
     setSavedDraft,
     loading,
     setLoading,
+    showLoading,
     loadError,
     setLoadError,
     validationErrors,
@@ -322,6 +323,7 @@ export function EventMailSettingsCard({
   };
 
   if (loading) {
+    if (!showLoading) return null;
     return (
       <Card title="Mail transport">
         <p>Loading mail settings…</p>

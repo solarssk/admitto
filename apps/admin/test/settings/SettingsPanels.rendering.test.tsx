@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuditLogEntryDto, AuditLogResponse, SessionListDto } from "../../src/api/types.js";
 import { ApiError, fetchAdminEvents, fetchAuditLog, fetchSessions } from "../../src/api/client.js";
@@ -62,6 +62,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
 });
 
 describe("AuditLogPanel rendering", () => {
@@ -73,9 +74,16 @@ describe("AuditLogPanel rendering", () => {
       }),
     );
 
+    // useDelayedLoading only shows the skeleton once the fetch has stayed pending past its
+    // 200ms grace window (avoids flashing it for a near-instant response) — fake timers must
+    // be installed before render so the hook's setTimeout is one of ours.
+    vi.useFakeTimers();
     renderWithToast(<AuditLogPanel />);
-
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
     expect(screen.getByLabelText("Loading audit log")).toBeTruthy();
+    vi.useRealTimers();
 
     resolveAuditLog(emptyAuditLog());
     expect(await screen.findByText("No audit log entries found.")).toBeTruthy();

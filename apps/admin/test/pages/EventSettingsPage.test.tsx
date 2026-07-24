@@ -187,9 +187,17 @@ describe("EventSettingsPage subtitle", () => {
 
   it("shows the stable purpose subtitle while loading, before the event title is known", () => {
     vi.mocked(fetchEventSettings).mockImplementation(() => new Promise(() => {}));
+    // useDelayedLoading only shows the placeholder once the fetch has stayed pending past its
+    // 200ms grace window (avoids flashing it for a near-instant response) — fake timers must
+    // be installed before render so the hook's setTimeout is one of ours.
+    vi.useFakeTimers();
     renderSettings();
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
     expect(screen.getByText(SUBTITLE)).toBeTruthy();
     expect(screen.getByRole("status").textContent).toMatch(/Loading event settings/);
+    vi.useRealTimers();
   });
 
   it("shows the same stable subtitle once loaded, not the event's title", async () => {

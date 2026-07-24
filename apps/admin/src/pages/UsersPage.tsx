@@ -14,6 +14,7 @@ import { fetchAdminUsers, revokeUserSessions } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { UserListItemDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { InviteUserModal } from "./users/InviteUserModal.js";
 import { UserEditModal } from "./users/UserEditModal.js";
 import { RoleAssignmentsTab } from "./users/RoleAssignmentsTab.js";
@@ -129,6 +130,10 @@ export function UsersPage() {
   const filtersActive =
     searchQuery.length > 0 || roleFilter !== "all" || statusFilter !== "all";
   const showInitialEmpty = !loading && !error && total === 0 && !filtersActive;
+  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
+  // the skeleton on and off faster than it can register as loading — show it only once
+  // the fetch has genuinely taken a moment.
+  const showLoadingSkeleton = useDelayedLoading(loading);
 
   const handleRevokeSessions = async () => {
     if (!revokeTarget) return;
@@ -207,7 +212,7 @@ export function UsersPage() {
             </Button>
           </div>
 
-          {loading && <StaffUsersSkeleton />}
+          {loading && showLoadingSkeleton && <StaffUsersSkeleton />}
 
           {!loading && error && (
             <div className="users-page__status">

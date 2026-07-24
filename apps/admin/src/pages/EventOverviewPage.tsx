@@ -34,6 +34,7 @@ import {
   pruneAdmitDedupMap,
   registerAdmitDedup,
 } from "../checkin/admitDedup.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
 import { useCountdown, daysUntilEvent } from "../utils/event-countdown.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
@@ -1618,6 +1619,11 @@ export function EventOverviewPage() {
       ? currentOverview.email_failed + currentOverview.email_bounced
       : 0;
 
+  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
+  // these "Loading…" placeholders on and off faster than they can register as loading —
+  // show them only once the fetch has genuinely taken a moment.
+  const showLoading = useDelayedLoading(loading);
+
   return (
     <div className="screen">
       <PageHeader
@@ -1643,13 +1649,13 @@ export function EventOverviewPage() {
           // No raw event.attendee_count fallback here on purpose (#374) — that picker total
           // includes revoked attendees, so falling back to it flashed a higher number (e.g.
           // 5 -> 4) the instant the real active-only overview count arrived.
-          value={kpiCountText(currentOverview?.attendee_count ?? null, loading)}
+          value={kpiCountText(currentOverview?.attendee_count ?? null, showLoading)}
         />
         <OverviewKpiTile
           tone="info"
           icon={<i className="ti ti-mail-check" aria-hidden="true" />}
           label="Tickets sent"
-          value={kpiCountText(currentOverview?.email_sent ?? null, loading)}
+          value={kpiCountText(currentOverview?.email_sent ?? null, showLoading)}
         />
         {/* Replaces the former "Checked in" tile (#E1) — that duplicated the admission
          * count/percentage already shown prominently in the Check-in progress card directly
@@ -1666,13 +1672,13 @@ export function EventOverviewPage() {
           tone="error"
           icon={<i className="ti ti-alert-triangle" aria-hidden="true" />}
           label="Failed delivery"
-          value={kpiCountText(currentOverview != null ? emailFailedTotal : null, loading)}
+          value={kpiCountText(currentOverview != null ? emailFailedTotal : null, showLoading)}
         />
       </div>
 
       <div className="overview-body">
         <div className="overview-row overview-row--stretch">
-          <CheckInProgressCard overview={currentOverview} loading={loading} admittedCount={admittedCount} />
+          <CheckInProgressCard overview={currentOverview} loading={showLoading} admittedCount={admittedCount} />
           <RecentActivityCard
             eventId={event.id}
             activity={currentOverview?.recent_activity ?? []}
@@ -1682,10 +1688,10 @@ export function EventOverviewPage() {
           />
         </div>
         <div className="overview-row">
-          <SetupChecklistCard overview={currentOverview} loading={loading} eventId={event.id} />
+          <SetupChecklistCard overview={currentOverview} loading={showLoading} eventId={event.id} />
           <NotesAndContactsCard
             pinnedNote={pinnedNote}
-            loading={loading}
+            loading={showLoading}
             archived={!!event.archived_at}
             onSaveNote={handleSaveNote}
             contacts={contacts}

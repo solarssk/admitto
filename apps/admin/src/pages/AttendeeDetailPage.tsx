@@ -31,6 +31,7 @@ import {
   toAttendeeForm,
   type AttendeeFormState,
 } from "../attendees/attendeeDetailForm.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { formatAdmissionDisplay, formatEventDateTime } from "../utils/event-dates.js";
 import {
   deriveAttendeeSource,
@@ -928,9 +929,15 @@ export function AttendeeDetailPage() {
     }
   }
 
+  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
+  // the skeleton on and off faster than it can register as loading — show it only once
+  // the fetch has genuinely taken a moment.
+  const showLoadingSkeleton = useDelayedLoading(loading);
+
   if (!eventId || !attendeeId) return <p>Missing event or attendee.</p>;
 
   if (loading && !detail) {
+    if (!showLoadingSkeleton) return null;
     return (
       <div className="attendee-detail-page">
         <Skeleton variant="text" lines={2} />

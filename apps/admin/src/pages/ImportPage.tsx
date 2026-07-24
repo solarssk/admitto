@@ -30,6 +30,7 @@ import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { formatEventDateTime } from "../utils/event-dates.js";
 import { formatFileSize } from "../utils/formatFileSize.js";
 import "../attendees/attendees.css";
@@ -131,12 +132,13 @@ interface ImportHistoryCardProps {
   error: string | null;
   eventTimezone: string | undefined;
   onRetry: () => void;
+  showLoading: boolean;
 }
 
 /** One state at a time (error takes priority, then loading, then empty, then the table) — a
  * plain if/return chain instead of nested ternaries (Sonar S3358), which also reads closer to
  * how an operator actually encounters these: never more than one at once. */
-function renderImportHistoryBody({ history, error, eventTimezone, onRetry }: ImportHistoryCardProps) {
+function renderImportHistoryBody({ history, error, eventTimezone, onRetry, showLoading }: ImportHistoryCardProps) {
   if (error) {
     return (
       <div className="import-history__error">
@@ -148,7 +150,10 @@ function renderImportHistoryBody({ history, error, eventTimezone, onRetry }: Imp
     );
   }
   if (history === null) {
-    return <p className="import-hint import-history__loading">Loading…</p>;
+    // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
+    // this text on and off faster than it can register as "loading" — show it only once the
+    // fetch has genuinely taken a moment.
+    return showLoading ? <p className="import-hint import-history__loading">Loading…</p> : null;
   }
   if (history.length === 0) {
     return <p className="import-hint">No imports yet for this event.</p>;
@@ -656,6 +661,7 @@ export function ImportPage() {
   const [history, setHistory] = useState<ImportHistoryEntry[] | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [historyToken, setHistoryToken] = useState(0);
+  const showHistoryLoading = useDelayedLoading(history === null);
 
   useEffect(() => {
     if (!eventId) return;
@@ -999,6 +1005,7 @@ export function ImportPage() {
               error={historyError}
               eventTimezone={event.timezone}
               onRetry={() => setHistoryToken((n) => n + 1)}
+              showLoading={showHistoryLoading}
             />
           </div>
         </div>

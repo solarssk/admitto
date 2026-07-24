@@ -34,6 +34,7 @@ import { LogoUploadZone } from "../components/LogoUploadZone.js";
 import { ScrollFadeTabs } from "../components/ScrollFadeTabs.js";
 import { TimezoneSelect } from "../components/TimezoneSelect.js";
 import { DatePicker } from "../components/DatePicker.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { formatUtcDateTime } from "../utils/event-dates.js";
 import {
   EVENT_SETTINGS_TABS,
@@ -584,6 +585,11 @@ export function EventSettingsPage() {
   // discard unsaved mail transport edits and pending secret replacements (CodeRabbit review).
   const pageDirty = dirty || mailDirty;
   const saveButtonLabel = computeSaveButtonLabel(saving, logoUploading);
+  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
+  // these "Loading…" placeholders on and off faster than they can register as loading —
+  // show them only once the fetch has genuinely taken a moment.
+  const showLoading = useDelayedLoading(loading);
+  const showTicketTypesLoading = useDelayedLoading(ticketTypesLoading);
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       pageDirty && currentLocation.pathname !== nextLocation.pathname,
@@ -712,6 +718,7 @@ export function EventSettingsPage() {
   if (!eventId) return <p>Missing event.</p>;
 
   if (loading && !event) {
+    if (!showLoading) return null;
     return (
       <div className="event-settings-page screen">
         <PageHeader title="Event settings" subtitle={EVENT_SETTINGS_SUBTITLE} />
@@ -924,7 +931,7 @@ export function EventSettingsPage() {
           eventId={eventId}
           event={event}
           types={ticketTypes}
-          loading={ticketTypesLoading}
+          loading={showTicketTypesLoading}
           error={ticketTypesError}
           onRetry={() => loadTicketTypes().catch(() => {})}
           onChanged={() => loadTicketTypes().catch(() => {})}

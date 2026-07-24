@@ -7,6 +7,7 @@ import { ApiError, fetchAdminEvents } from "../api/client.js";
 import type { EventDto } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { CreateEventModal } from "../events/CreateEventModal.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { formatEventCalendarDate } from "../utils/event-dates.js";
 
 type PickerTab = "active" | "archived";
@@ -66,6 +67,11 @@ export function EventsPickerPage() {
   const smallGridClass = displayedEvents.length > 0 ? "event-grid event-grid--cols-2" : "event-grid";
   const gridClass = displayedEvents.length >= 4 ? "event-grid event-grid--cols-3" : smallGridClass;
 
+  // A fetch that resolves near-instantly (localhost, a warm cache) would
+  // otherwise flash the spinner on and off faster than it can register as
+  // "loading" — show it only once the fetch has genuinely taken a moment.
+  const showLoadingSpinner = useDelayedLoading(loading);
+
   useEffect(() => {
     if (!loading && !tabTouched && events.length > 0 && activeEvents.length === 0) {
       setTab("archived");
@@ -102,7 +108,7 @@ export function EventsPickerPage() {
         ]}
       />
 
-      {loading && (
+      {loading && showLoadingSpinner && (
         <output className="picker-loading">
           <Spinner label="Loading events" />
         </output>

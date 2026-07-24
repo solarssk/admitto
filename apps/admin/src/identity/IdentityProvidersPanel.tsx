@@ -9,6 +9,7 @@ import {
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { CfAccessSummaryDto, IdentityProviderListItem } from "../api/types.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useInFlightIds } from "../hooks/useInFlightIds.js";
 import { CfAccessEditor } from "./CfAccessEditor.js";
 import { IdentityProviderEditor } from "./IdentityProviderEditor.js";
@@ -161,6 +162,12 @@ export function IdentityProvidersPanel() {
   const retryProviders = useCallback(() => setProvidersRetry((n) => n + 1), []);
   const retryCf = useCallback(() => setCfRetry((n) => n + 1), []);
 
+  // A fetch that resolves near-instantly (localhost, a warm cache) would
+  // otherwise flash the skeleton on and off faster than it can register as
+  // "loading" — show it only once the fetch has genuinely taken a moment.
+  const showProvidersSkeleton = useDelayedLoading(providersState === "loading");
+  const showCfSkeleton = useDelayedLoading(cfState === "loading");
+
   // The list no longer unmounts when a modal route is visited (unlike a full page
   // navigation), so refresh both lists ourselves once a modal closes back to the
   // bare providers route — covers create/edit/CF saves without threading an
@@ -216,7 +223,7 @@ export function IdentityProvidersPanel() {
           </Link>
         }
       >
-        {providersState === "loading" && <ProviderListSkeleton />}
+        {providersState === "loading" && showProvidersSkeleton && <ProviderListSkeleton />}
         {providersState === "error" && (
           <EmptyState
             title="Couldn't load providers"
@@ -267,7 +274,7 @@ export function IdentityProvidersPanel() {
           ) : undefined
         }
       >
-        {cfState === "loading" && <Skeleton height={56} />}
+        {cfState === "loading" && showCfSkeleton && <Skeleton height={56} />}
         {cfState === "error" && (
           <EmptyState
             title="Couldn't load Cloudflare Access"

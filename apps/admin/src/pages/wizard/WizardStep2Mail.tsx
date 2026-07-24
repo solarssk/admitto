@@ -27,6 +27,7 @@ import {
 } from "../../settings/mailSettingsValidation.js";
 import { buildMailProviderOptions, MAIL_PROVIDER_LABELS } from "../../settings/mailProviderOptions.js";
 import { draftFromFields } from "../../settings/mailTransportFormParts.js";
+import { useDelayedLoading } from "../../hooks/useDelayedLoading.js";
 import { useWizard } from "./WizardContext.js";
 
 export type WizardStep2MailHandle = {
@@ -179,6 +180,10 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
     );
 
     const provider = draft.provider;
+    // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
+    // the "Loading…" text on and off faster than it can register as loading — show it only
+    // once the fetch has genuinely taken a moment.
+    const showLoading = useDelayedLoading(loading);
 
     return (
       <>
@@ -186,7 +191,7 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
           Choose how Admitto sends ticket and lifecycle emails.
         </p>
 
-        {loading && <p className="setup-wizard__hint">Loading mail settings…</p>}
+        {loading && showLoading && <p className="setup-wizard__hint">Loading mail settings…</p>}
 
         {!loading && apiData && (
           <>

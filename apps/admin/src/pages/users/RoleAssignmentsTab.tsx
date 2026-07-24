@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, EmptyState, Skeleton, useToast } from "@admitto/ui";
+import { useDelayedLoading } from "../../hooks/useDelayedLoading.js";
 import { fetchRoleAssignments, revokeUserRole } from "../../api/client.js";
 import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import type { RoleAssignmentListItemDto } from "../../api/types.js";
@@ -129,6 +130,10 @@ export function RoleAssignmentsTab() {
   }, [load]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
+  // the skeleton on and off faster than it can register as loading — show it only once
+  // the fetch has genuinely taken a moment.
+  const showLoadingSkeleton = useDelayedLoading(loading);
 
   const handleRevoke = async () => {
     if (!confirmTarget) return;
@@ -158,7 +163,7 @@ export function RoleAssignmentsTab() {
 
   return (
     <>
-      {loading && (
+      {loading && showLoadingSkeleton && (
         <>
           <div className="users-page__table-wrap users-page__table-wrap--desktop" aria-hidden="true">
             <table className="table">

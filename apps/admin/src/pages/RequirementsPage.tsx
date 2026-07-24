@@ -16,6 +16,7 @@ import type { EventCustomFieldDto, EventDto, EventItemDto, OpsConfigDto } from "
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useInFlightIds } from "../hooks/useInFlightIds.js";
 import { EventCustomFieldsCard } from "../requirements/EventCustomFieldsCard.js";
 import { EventItemDrawer } from "../requirements/EventItemDrawer.js";
@@ -359,6 +360,10 @@ export function RequirementsPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<EventItemDto | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
+  // the "Loading…" placeholders on and off faster than they can register as loading — show
+  // them only once the fetch has genuinely taken a moment.
+  const showLoading = useDelayedLoading(loading);
 
   const [addOpen, setAddOpen] = useState(false);
   const [addLabel, setAddLabel] = useState("");
@@ -597,7 +602,7 @@ export function RequirementsPage() {
               </thead>
               <tbody>
                 <EventItemsTableBody
-                  loading={loading}
+                  loading={showLoading}
                   items={items}
                   event={event}
                   togglingIds={togglingIds}
@@ -614,7 +619,7 @@ export function RequirementsPage() {
         eventId={eventId}
         event={event}
         fields={customFields}
-        loading={loading}
+        loading={showLoading}
         onChanged={() => setReloadToken((n) => n + 1)}
       />
 
@@ -622,7 +627,7 @@ export function RequirementsPage() {
         <Card title="Event behaviour" padded={false}>
           <EventBehaviourContent
             opsConfig={opsConfig}
-            loading={loading}
+            loading={showLoading}
             event={event}
             opsTogglingIds={opsTogglingIds}
             badgeInactive={badgeInactive}

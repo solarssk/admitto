@@ -14,6 +14,7 @@ import {
   type ArchivedGuardEvent,
 } from "../components/ArchivedGuard.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { MailStatusBadge } from "./mailStatusBadge.js";
 import { PassStatusBadge } from "./passStatusBadge.js";
@@ -1131,7 +1132,12 @@ function AttendeesListContent({
   // Only the very first load ever (never-loaded, items always [] at that point) gets the
   // shimmer skeleton. A later filter/search that also lands on zero matches reuses the same
   // dim-in-place treatment as a non-empty refetch instead of flashing the skeleton again.
+  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash the
+  // skeleton on and off faster than it can register as loading — show it only once the fetch
+  // has genuinely taken a moment.
+  const showLoadingSkeleton = useDelayedLoading(loading && !hasLoadedOnce);
   if (loading && !hasLoadedOnce) {
+    if (!showLoadingSkeleton) return null;
     return isDesktop ? <AttendeesTableSkeleton /> : <AttendeesCardsSkeleton />;
   }
 
@@ -1292,8 +1298,8 @@ function AttendeesListContent({
   );
 }
 
-function footSummary(loading: boolean, items: AttendeeRowDto[], total: number, from: number, to: number): string {
-  if (loading && items.length === 0) return "Loading…";
+function footSummary(showLoadingText: boolean, total: number, from: number, to: number): string {
+  if (showLoadingText) return "Loading…";
   if (total === 0) return "0 attendees";
   return `Showing ${from}–${to} of ${total}`;
 }
@@ -1395,6 +1401,10 @@ export function AttendeesTable({
   const activeSelectedPassCount = selectedRows.filter(
     (row) => row.status !== "cancelled" && row.status !== "revoked",
   ).length;
+  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
+  // this text on and off faster than it can register as loading — show it only once the
+  // fetch has genuinely taken a moment.
+  const showFooterLoadingText = useDelayedLoading(loading && items.length === 0);
 
   return (
     <Card padded={false}>
@@ -1475,7 +1485,7 @@ export function AttendeesTable({
         onRestorePass={onRestorePass}
       />
       <div className="attendees-table-foot">
-        <span>{footSummary(loading, items, total, from, to)}</span>
+        <span>{footSummary(showFooterLoadingText, total, from, to)}</span>
         <div className="attendees-table-foot__pager">
           <div className="attendees-table-foot__pagesize">
             <label htmlFor="attendees-rows-per-page">Rows per page</label>

@@ -12,6 +12,7 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventReportsResponse, TicketTypeDto } from "../api/types.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import {
   calendarDateInZone,
   formatEventCalendarDate,
@@ -388,6 +389,11 @@ export function ReportsPage() {
     window.open(eventReportsPrintUrl(eventId), "_blank", "noopener,noreferrer");
   }, [eventId]);
 
+  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
+  // the skeleton on and off faster than it can register as loading — show it only once
+  // the fetch has genuinely taken a moment.
+  const showLoadingSkeleton = useDelayedLoading(loading);
+
   if (!eventId) return <p>Missing event.</p>;
 
   const subtitle = data
@@ -421,7 +427,7 @@ export function ReportsPage() {
         }
       />
 
-      {loading && (
+      {loading && showLoadingSkeleton && (
         <div className="reports-loading">
           <div className="reports-stats-grid">
             {[1, 2, 3, 4].map((key) => (

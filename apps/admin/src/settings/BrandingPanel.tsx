@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { applyThemeVars, Badge, Button, Card, Input, useToast } from "@admitto/ui";
 import { fetchStaffTheme, saveStaffTheme } from "../api/client.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { BrandingThemeDto } from "../api/types.js";
 import {
@@ -113,6 +114,10 @@ export function BrandingPanel() {
   const displayHex = draft.primary ?? "";
   const invalidHexLabel = displayHex ? "invalid" : "default";
   const previewLabel = displayHex && isValidHex(displayHex) ? displayHex : invalidHexLabel;
+  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
+  // the "Loading…" text on and off faster than it can register as loading — show it only
+  // once the fetch has genuinely taken a moment.
+  const showLoading = useDelayedLoading(loading);
 
   return (
     <Card
@@ -136,7 +141,7 @@ export function BrandingPanel() {
         Instance-wide accent colour and custom font for staff UI and public ticket pages. Ticket logos
         are configured in the Organisation branding card above, not here.
       </p>
-      {loading && <p>Loading branding…</p>}
+      {loading && showLoading && <p>Loading branding…</p>}
       {loadError && !loading && (
         <p className="text-error" role="alert">
           {loadError}{" "}

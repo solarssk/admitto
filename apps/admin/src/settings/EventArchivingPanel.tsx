@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, Card, useToast } from "@admitto/ui";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { archiveEvent, fetchAdminEvents, unarchiveEvent } from "../api/client.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto } from "../api/types.js";
 import { formatEventCalendarDate, formatUtcDateTime } from "../utils/event-dates.js";
@@ -132,6 +133,11 @@ export function EventArchivingPanel() {
     ? `Restore "${confirmAction.event.title}" to active events? Edits will be allowed again.`
     : "";
 
+  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
+  // the "Loading…" text on and off faster than it can register as loading — show it only
+  // once the fetch has genuinely taken a moment.
+  const showLoading = useDelayedLoading(loading);
+
   return (
     <>
       <Card title="Event archiving">
@@ -143,7 +149,7 @@ export function EventArchivingPanel() {
           Data deletion is a separate ops step (v1.0).
         </p>
 
-        {loading && <p className="archiving-status">Loading…</p>}
+        {loading && showLoading && <p className="archiving-status">Loading…</p>}
 
         {!loading && error && (
           <div className="archiving-status">

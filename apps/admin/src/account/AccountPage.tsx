@@ -15,6 +15,7 @@ import {
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AccountDto, MfaEnrollResponse, SessionListDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { formatUtcDateTime } from "../utils/event-dates.js";
 import { LOCALE_OPTIONS, setPreferredLocale as setPreferredLocaleStore } from "../utils/locale-store.js";
 import { TotpDigitInput } from "./TotpDigitInput.js";
@@ -195,7 +196,14 @@ export function AccountPage() {
     return () => controller.abort();
   }, [loadAccount, loadSessions]);
 
+  // A fetch that resolves near-instantly (localhost, a warm cache) would
+  // otherwise flash the spinner on and off faster than it can register as
+  // "loading" — show it only once the fetch has genuinely taken a moment.
+  const showAccountSpinner = useDelayedLoading(loading);
+  const showSessionsSpinner = useDelayedLoading(sessionsLoading);
+
   if (loading) {
+    if (!showAccountSpinner) return null;
     return (
       <Card title="Profile">
         <div className="sessions-status">
@@ -619,7 +627,7 @@ export function AccountPage() {
   function renderSessionsCard() {
     return (
       <Card title="Active sessions" actions={otherSessions.length > 0 ? <Button type="button" variant="danger" size="sm" onClick={() => { setRevokeError(null); setRevokeAllOpen(true); }}>Revoke all other sessions</Button> : undefined}>
-        {sessionsLoading && (
+        {sessionsLoading && showSessionsSpinner && (
           <div className="sessions-status">
             <Spinner label="Loading sessions" />
           </div>

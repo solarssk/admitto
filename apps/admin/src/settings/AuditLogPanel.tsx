@@ -4,6 +4,7 @@ import { fetchAuditLog } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AuditLogEntryDto } from "../api/types.js";
 import { Segmented } from "../components/Segmented.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { formatEventDateTime, formatUtcDateTime, utcDayEndIso, utcDayStartIso } from "../utils/event-dates.js";
 
 type TimeMode = "utc" | "local";
@@ -198,6 +199,8 @@ export function AuditLogPanel() {
     [filters.actionType, filters.start, filters.end],
   );
 
+  const showLoadingSkeleton = useDelayedLoading(loading);
+
   let emptyMessage: string;
   if (total > 0) {
     emptyMessage = "No entries on this page.";
@@ -209,13 +212,16 @@ export function AuditLogPanel() {
 
   let listContent: ReactNode;
   if (loading) {
-    listContent = (
+    // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
+    // this skeleton on and off faster than it can register as loading — show it only once
+    // the fetch has genuinely taken a moment.
+    listContent = showLoadingSkeleton ? (
       <div className="audit-log-skeleton" aria-busy="true" aria-label="Loading audit log">
         {Array.from({ length: 5 }, (_, i) => (
           <div key={i} className="audit-log-skeleton__row" />
         ))}
       </div>
-    );
+    ) : null;
   } else if (error) {
     listContent = (
       <p className="audit-log-error">

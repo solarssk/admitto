@@ -95,6 +95,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
   mockAssignments = [{ role: "admin", scope_type: "organization", scope_id: "org-1" }];
 });
 
@@ -746,12 +747,24 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
 
     expect(await screen.findByText("evt1.csv")).toBeTruthy();
 
-    await act(async () => {
-      await router.navigate("/admin/events/evt-2/attendees/import");
-    });
+    // useDelayedLoading only shows the text once the fetch has stayed pending past its
+    // 200ms grace window (avoids flashing it for a near-instant response) — fake timers
+    // must be installed before the navigation so the hook's setTimeout is one of ours.
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        await router.navigate("/admin/events/evt-2/attendees/import");
+      });
 
-    expect(screen.queryByText("evt1.csv")).toBeNull();
-    expect(screen.getByText("Loading…")).toBeTruthy();
+      expect(screen.queryByText("evt1.csv")).toBeNull();
+
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
+      expect(screen.getByText("Loading…")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
 
     await act(async () => {
       resolveSecond([
