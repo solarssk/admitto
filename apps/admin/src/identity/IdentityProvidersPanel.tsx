@@ -209,7 +209,7 @@ export function IdentityProvidersPanel() {
   return (
     <div className="settings-sections">
       <Card
-        title="OIDC providers"
+        title="Identity providers"
         actions={
           <Link className="at-btn at-btn--primary" to={PROVIDER_NEW_PATH}>
             <span>Add provider</span>

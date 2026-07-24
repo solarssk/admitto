@@ -2783,6 +2783,15 @@
 
 .identity-editor__header {
   display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: var(--space-4);
+}
+
+.identity-editor__header > div {
+  display: flex;
   flex-direction: column;
   gap: var(--space-1);
 }

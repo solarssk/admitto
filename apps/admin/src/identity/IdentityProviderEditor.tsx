@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useBlocker, useLocation, useNavigate, useParams } from "react-router-dom";
 import type { BlockerFunction } from "react-router";
-import { Button, Card, Input, Spinner, Switch, useToast } from "@admitto/ui";
+import { Button, Card, IconButton, Input, Spinner, Switch, useToast } from "@admitto/ui";
 import {
   ApiError,
   createIdentityProvider,
@@ -856,8 +856,11 @@ export function IdentityProviderEditor({
         {view === "form" && (
           <>
             <div className="identity-editor__header">
-              <h2 className="identity-editor__title" id={titleId}>{title}</h2>
-              <p className="identity-editor__subtitle">{editorSubtitle(mode)}</p>
+              <div>
+                <h2 className="identity-editor__title" id={titleId}>{title}</h2>
+                <p className="identity-editor__subtitle">{editorSubtitle(mode)}</p>
+              </div>
+              <IconButton label="Close" onClick={handleCancel} icon={<i className="ti ti-x" />} />
             </div>
             {formContent}
           </>
