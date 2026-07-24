@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AttendeesTable } from "../../src/attendees/AttendeesTable.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
@@ -79,6 +79,7 @@ const tableProps = {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("AttendeesTable toolbar vs bulk bar", () => {
@@ -651,6 +652,18 @@ describe("AttendeesTable Filters dropdown (PO review, third pass)", () => {
 describe("AttendeesTable mobile card view (<768px)", () => {
   beforeEach(() => {
     mockMatchMedia(false);
+  });
+
+  it("shows the mobile card skeleton once the first load has genuinely taken a moment", () => {
+    vi.useFakeTimers();
+    const { container } = render(
+      <AttendeesTable {...tableProps} hasLoadedOnce={false} loading items={[]} total={0} />,
+    );
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(container.querySelector("table[aria-hidden='true']")).toBeNull();
+    expect(document.querySelector(".attendees-cards")).toBeTruthy();
   });
 
   it("renders attendee cards instead of the table, keeping name/email and working checkboxes", () => {
