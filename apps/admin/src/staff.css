@@ -2874,7 +2874,19 @@
   gap: var(--space-3);
 }
 
-.identity-editor__loading,
+/* Centered (not left-aligned like .identity-editor__error below) — this is
+   the modal's only content while loading, so a corner-anchored spinner in an
+   otherwise-empty panel reads as "the popup is briefly narrower" before the
+   real form fills the same, unchanged panel width. */
+.identity-editor__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 12rem;
+  gap: var(--space-3);
+}
+
 .identity-editor__error {
   display: flex;
   flex-direction: column;

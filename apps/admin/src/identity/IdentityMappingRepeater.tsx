@@ -121,7 +121,6 @@ export function IdentityMappingRepeater({
               <Button
                 type="button"
                 variant="ghost"
-                size="sm"
                 onClick={() => removeRow(index)}
                 aria-label="Remove mapping"
               >
