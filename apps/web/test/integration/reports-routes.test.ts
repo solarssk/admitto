@@ -799,6 +799,75 @@ describe("GET /api/admin/events/:eventId/reports", () => {
     }
   });
 
+  it("sorts by_device by count descending, breaking a tie alphabetically by device_id (Reports redesign)", async () => {
+    const EVENT_TIEBREAK = "evt-reports-device-tiebreak";
+    await prisma.checkIn.deleteMany({ where: { event_id: EVENT_TIEBREAK } });
+    await prisma.attendee.deleteMany({ where: { event_id: EVENT_TIEBREAK } });
+    await prisma.event.deleteMany({ where: { id: EVENT_TIEBREAK } });
+    await prisma.event.create({
+      data: {
+        id: EVENT_TIEBREAK,
+        title: "Device Tiebreak Reports Event",
+        slug: "reports-event-device-tiebreak",
+        date: new Date("2026-10-01T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+    });
+    // "Solo" is the only device with a distinct count (exercises the count-descending branch);
+    // "Alpha" and "Zebra" tie at 2 apiece, so only device_id's own alphabetical order can decide
+    // between them (exercises the tie-break branch, both directions).
+    const attendees = [
+      { id: "att-tie-solo-1", device: "Solo", minute: 0 },
+      { id: "att-tie-solo-2", device: "Solo", minute: 1 },
+      { id: "att-tie-solo-3", device: "Solo", minute: 2 },
+      { id: "att-tie-solo-4", device: "Solo", minute: 3 },
+      { id: "att-tie-solo-5", device: "Solo", minute: 4 },
+      { id: "att-tie-zebra-1", device: "Zebra", minute: 5 },
+      { id: "att-tie-zebra-2", device: "Zebra", minute: 6 },
+      { id: "att-tie-alpha-1", device: "Alpha", minute: 7 },
+      { id: "att-tie-alpha-2", device: "Alpha", minute: 8 },
+    ];
+    await prisma.attendee.createMany({
+      data: attendees.map((a) => ({
+        id: a.id,
+        event_id: EVENT_TIEBREAK,
+        email: `${a.id}@example.com`,
+        name: a.id,
+        admitted_at: new Date(`2026-10-01T09:${String(a.minute).padStart(2, "0")}:00.000Z`),
+        ...mkAttendeeToken(),
+      })),
+    });
+    await prisma.checkIn.createMany({
+      data: attendees.map((a) => ({
+        attendee_id: a.id,
+        event_id: EVENT_TIEBREAK,
+        checked_in_at: new Date(`2026-10-01T09:${String(a.minute).padStart(2, "0")}:00.000Z`),
+        status: "VALID",
+        source: "scan",
+        device_id: a.device,
+      })),
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_TIEBREAK}/reports`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        by_device: Array<{ device_id: string | null; count: number }>;
+      };
+      expect(body.by_device).toEqual([
+        { device_id: "Solo", count: 5 },
+        { device_id: "Alpha", count: 2 },
+        { device_id: "Zebra", count: 2 },
+      ]);
+    } finally {
+      await prisma.checkIn.deleteMany({ where: { event_id: EVENT_TIEBREAK } });
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_TIEBREAK } });
+      await prisma.event.deleteMany({ where: { id: EVENT_TIEBREAK } });
+    }
+  });
+
   it("shows only issued (not pending or returned) event-day items on the admission log, CSV, and PDF exports (Reports redesign)", async () => {
     const EVENT_ITEMS = "evt-reports-items";
     await prisma.attendeeItemState.deleteMany({ where: { event_item: { event_id: EVENT_ITEMS } } });
@@ -972,6 +1041,15 @@ describe("GET /api/admin/events/:eventId/reports/export", () => {
     expect(html).toContain("Reports Event");
     expect(html).toContain("By ticket type");
     expect(html).toContain("VIP One");
+  });
+
+  it("PDF admission log falls back to a 'No admissions yet' row when there are none", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EMPTY}/reports/export?format=pdf`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("No admissions yet");
   });
 
   it("audit: reports_exported with format and count after CSV export", async () => {

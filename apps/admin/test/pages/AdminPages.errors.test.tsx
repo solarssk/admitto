@@ -602,6 +602,126 @@ describe("ReportsPage operator errors", () => {
     });
     expect(screen.queryByText("secret_internal")).toBeNull();
   });
+
+  it("redirects to login on a 401 while loading the report", async () => {
+    vi.stubGlobal("location", {
+      ...window.location,
+      assign: vi.fn(),
+      pathname: "/admin/events/evt-1/reports",
+    });
+    vi.mocked(fetchEventReports).mockRejectedValueOnce(new ApiError(401, "unauthenticated"));
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(window.location.assign).toHaveBeenCalledWith("/login?next=%2Fadmin%2Fevents%2Fevt-1%2Freports");
+    });
+  });
+
+  it("redirects to login on a 401 while exporting CSV", async () => {
+    vi.stubGlobal("location", {
+      ...window.location,
+      assign: vi.fn(),
+      pathname: "/admin/events/evt-1/reports",
+    });
+    vi.mocked(fetchEventReports).mockResolvedValueOnce(emptyReport);
+    vi.mocked(exportEventReportsCsv).mockRejectedValueOnce(new ApiError(401, "unauthenticated"));
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Export report" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Export report" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
+    await waitFor(() => {
+      expect(window.location.assign).toHaveBeenCalledWith("/login?next=%2Fadmin%2Fevents%2Fevt-1%2Freports");
+    });
+  });
+
+  it("toasts a generic export failure for a non-API error (e.g. a network failure)", async () => {
+    vi.mocked(fetchEventReports).mockResolvedValueOnce(emptyReport);
+    vi.mocked(exportEventReportsCsv).mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Export report" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Export report" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Export failed/);
+    });
+  });
+
+  it("exports the PDF report by opening the print URL in a new tab", async () => {
+    vi.stubGlobal("open", vi.fn());
+    vi.mocked(fetchEventReports).mockResolvedValueOnce(emptyReport);
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Export report" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Export report" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /PDF/ }));
+    expect(window.open).toHaveBeenCalledWith(
+      "/api/admin/events/evt-1/reports/export?format=pdf",
+      "_blank",
+      "noopener,noreferrer",
+    );
+  });
+
+  it("retries loading the report from the error state", async () => {
+    vi.mocked(fetchEventReports).mockRejectedValueOnce(new Error("boom")).mockResolvedValueOnce(emptyReport);
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Failed to load report.")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => {
+      expect(screen.getByText("No check-ins yet")).toBeTruthy();
+    });
+    expect(fetchEventReports).toHaveBeenCalledTimes(2);
+  });
+
+  it("recovers from a ticket-type catalog fetch failure without crashing", async () => {
+    vi.mocked(fetchTicketTypes).mockRejectedValueOnce(new Error("network down"));
+    vi.mocked(fetchEventReports).mockResolvedValueOnce(emptyReport);
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("No check-ins yet")).toBeTruthy();
+    });
+  });
 });
 
 describe("ReportsPage ticket type breakdown", () => {
@@ -1053,6 +1173,80 @@ describe("ReportsPage admission log", () => {
       expect(screen.getByText("Literal Guest")).toBeTruthy();
     });
     expect(screen.queryByText("Null Guest")).toBeNull();
+  });
+
+  it("filters the admission log by device, including a bucket for admissions with no device", async () => {
+    vi.mocked(fetchEventReports).mockResolvedValueOnce({
+      ...emptyReport,
+      summary: { ...emptyReport.summary, total_attendees: 3, admitted: 3, admission_rate_pct: 100 },
+      by_device: [
+        { device_id: "scanner-01", count: 1 },
+        { device_id: "desk-01", count: 1 },
+        { device_id: null, count: 1 },
+      ],
+      admission_log: [
+        {
+          attendee_id: "att-scanner",
+          name: "Scanner Guest",
+          email: "scanner-guest@example.com",
+          ticket_type: null,
+          admitted_at: "2026-06-01T10:00:00.000Z",
+          device_id: "scanner-01",
+          items: [],
+        },
+        {
+          attendee_id: "att-desk",
+          name: "Desk Guest",
+          email: "desk-guest@example.com",
+          ticket_type: null,
+          admitted_at: "2026-06-01T10:05:00.000Z",
+          device_id: "desk-01",
+          items: [],
+        },
+        {
+          attendee_id: "att-no-device",
+          name: "No Device Guest",
+          email: "no-device-guest@example.com",
+          ticket_type: null,
+          admitted_at: "2026-06-01T10:10:00.000Z",
+          device_id: null,
+          items: [],
+        },
+      ],
+    });
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("Scanner Guest")).toBeTruthy();
+    expect(screen.getByText("Desk Guest")).toBeTruthy();
+    expect(screen.getByText("No Device Guest")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    const deviceSelect = screen.getByLabelText("Filter by device") as HTMLSelectElement;
+    const optionLabels = Array.from(deviceSelect.options).map((o) => o.textContent);
+    expect(optionLabels).toEqual(["All devices", "scanner-01", "desk-01", "(unlabeled device)"]);
+
+    fireEvent.change(deviceSelect, { target: { value: "device:desk-01" } });
+    await waitFor(() => {
+      expect(screen.queryByText("Scanner Guest")).toBeNull();
+    });
+    expect(screen.getByText("Desk Guest")).toBeTruthy();
+    expect(screen.queryByText("No Device Guest")).toBeNull();
+    // The trigger button surfaces how many filters are active.
+    expect(screen.getByText("1")).toBeTruthy();
+
+    const noDeviceOption = Array.from(deviceSelect.options).find((o) => o.textContent === "(unlabeled device)");
+    if (!noDeviceOption) throw new Error("'(unlabeled device)' option not found");
+    fireEvent.change(deviceSelect, { target: { value: noDeviceOption.value } });
+    await waitFor(() => {
+      expect(screen.getByText("No Device Guest")).toBeTruthy();
+    });
+    expect(screen.queryByText("Scanner Guest")).toBeNull();
+    expect(screen.queryByText("Desk Guest")).toBeNull();
   });
 });
 
