@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useBlocker, useLocation, useNavigate, useParams } from "react-router-dom";
 import type { BlockerFunction } from "react-router";
 import { Button, Card, IconButton, Input, Spinner, Switch, useToast } from "@admitto/ui";
@@ -16,6 +17,7 @@ import type { ProviderDetailDto, ProviderRequestBody, ProviderTestDraftBody } fr
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { IdentityMappingRepeater } from "./IdentityMappingRepeater.js";
 import {
+  emptyMappingRow,
   emptyProviderDraft,
   isDraftDirty,
   newMappingId,
@@ -216,10 +218,6 @@ function submitButtonLabel(saving: boolean, mode: EditorMode): string {
   return mode === "create" ? "Create provider" : "Save changes";
 }
 
-function loginButtonPreviewLabel(label: string): string {
-  return label.trim() || "Continue with SSO";
-}
-
 /** True while any async editor action (discover/test/save) is in flight. */
 function isActionBusy(saving: boolean, testing: boolean, discovering: boolean): boolean {
   return saving || testing || discovering;
@@ -374,6 +372,10 @@ export function IdentityProviderEditor({
     // Clear row errors as the operator edits; full re-validation runs on submit.
     setMappingErrors((prev) => (prev.length === 0 ? prev : rows.map(() => ({}))));
   }, []);
+
+  const handleAddMapping = useCallback(() => {
+    handleMappingsChange([...mappings, emptyMappingRow()]);
+  }, [mappings, handleMappingsChange]);
 
   // Router-level dirty guard. The Identity tabs / Settings sidebar / SPA back
   // button are all in-app navigations, which `beforeunload` does not catch — so
@@ -658,7 +660,33 @@ export function IdentityProviderEditor({
 
   const formContent = (
     <form className="identity-editor" onSubmit={handleSubmit} noValidate>
-      <Card title="Basics">
+      {mode === "create" && (
+        <div className="identity-protocol-picker" aria-label="Identity provider protocol">
+          <span className="identity-protocol-tile identity-protocol-tile--active">
+            <i className="ti ti-shield-lock" aria-hidden="true" />
+            OpenID Connect
+          </span>
+          <span
+            className="identity-protocol-tile identity-protocol-tile--disabled"
+            title="SAML support is coming soon"
+          >
+            <i className="ti ti-certificate" aria-hidden="true" />
+            SAML
+            <span className="identity-protocol-tile__badge">Soon</span>
+          </span>
+        </div>
+      )}
+      <Card
+        title="Basics"
+        actions={
+          <Switch
+            id="idp-enabled"
+            label="Enabled"
+            checked={draft.enabled}
+            onChange={(e) => setDraft((d) => setField(d, "enabled", e.target.checked))}
+          />
+        }
+      >
         <div className="identity-editor__grid">
           <Input
             label="Display name"
@@ -697,14 +725,6 @@ export function IdentityProviderEditor({
             autoComplete="new-password"
             required={mode === "create"}
           />
-          <div className="identity-editor__switch">
-            <Switch
-              id="idp-enabled"
-              label="Enabled"
-              checked={draft.enabled}
-              onChange={(e) => setDraft((d) => setField(d, "enabled", e.target.checked))}
-            />
-          </div>
         </div>
       </Card>
 
@@ -790,7 +810,14 @@ export function IdentityProviderEditor({
         </div>
       </Card>
 
-      <Card title="Group → role mapping">
+      <Card
+        title="Group → role mapping"
+        actions={
+          <Button type="button" variant="secondary" size="sm" onClick={handleAddMapping}>
+            Add mapping
+          </Button>
+        }
+      >
         <p className="identity-mappings__intro">
           Map OIDC groups (from the groups claim) to Admitto roles. The full list replaces the
           stored mappings on every save.
@@ -803,23 +830,15 @@ export function IdentityProviderEditor({
       </Card>
 
       <Card title="Login button">
-        <div className="identity-editor__grid">
-          <Input
-            label="SSO login button label"
-            value={draft.login_button_label}
-            invalid={Boolean(errors.login_button_label)}
-            error={errors.login_button_label}
-            hint="Leave blank to use the product default ('Continue with SSO')."
-            onChange={(e) => setDraft((d) => setField(d, "login_button_label", e.target.value))}
-            placeholder="Continue with Google"
-          />
-          <div className="identity-sso-preview" aria-label="SSO login button preview">
-            <span className="identity-sso-preview__label">Preview</span>
-            <span className="identity-sso-preview__button">
-              {loginButtonPreviewLabel(draft.login_button_label)}
-            </span>
-          </div>
-        </div>
+        <Input
+          label="SSO login button label"
+          value={draft.login_button_label}
+          invalid={Boolean(errors.login_button_label)}
+          error={errors.login_button_label}
+          hint="Leave blank to use the product default ('Continue with SSO')."
+          onChange={(e) => setDraft((d) => setField(d, "login_button_label", e.target.value))}
+          placeholder="Continue with Google"
+        />
       </Card>
 
       <div className="identity-editor__actions">
@@ -846,7 +865,7 @@ export function IdentityProviderEditor({
   );
 
   const view = resolveEditorView(mode, loadState);
-  return (
+  return createPortal(
     <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
       <div className="identity-modal__backdrop" role="presentation" onClick={handleCancel} />
       <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
@@ -856,16 +875,17 @@ export function IdentityProviderEditor({
         {view === "form" && (
           <>
             <div className="identity-editor__header">
-              <div>
+              <div className="identity-editor__header-row">
                 <h2 className="identity-editor__title" id={titleId}>{title}</h2>
-                <p className="identity-editor__subtitle">{editorSubtitle(mode)}</p>
+                <IconButton label="Close" onClick={handleCancel} icon={<i className="ti ti-x" />} />
               </div>
-              <IconButton label="Close" onClick={handleCancel} icon={<i className="ti ti-x" />} />
+              <p className="identity-editor__subtitle">{editorSubtitle(mode)}</p>
             </div>
             {formContent}
           </>
         )}
       </div>
-    </dialog>
+    </dialog>,
+    document.body,
   );
 }

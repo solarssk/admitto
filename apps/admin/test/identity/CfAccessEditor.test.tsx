@@ -102,8 +102,8 @@ describe("CfAccessEditor (slice 4)", () => {
   it("blocks save with a toast when required fields are missing for an enabled config", async () => {
     mockFetch.mockResolvedValueOnce(summary({ enabled: false }));
     renderEditorAt();
-    await screen.findByRole("switch", { name: /Enable Cloudflare Access/ });
-    fireEvent.click(screen.getByRole("switch", { name: /Enable Cloudflare Access/ }));
+    await screen.findByRole("switch", { name: "Enabled" });
+    fireEvent.click(screen.getByRole("switch", { name: "Enabled" }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await screen.findByText("Please fix the highlighted fields.");
     expect(mockUpdate).not.toHaveBeenCalled();
@@ -370,7 +370,7 @@ describe("CfAccessEditor (slice 4)", () => {
     renderEditorAt();
     await screen.findByText(/enabled and locked by environment/);
     // The enabled switch is disabled when env-locked.
-    expect(screen.getByRole("switch", { name: /Enable Cloudflare Access/ }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("switch", { name: "Enabled" }).hasAttribute("disabled")).toBe(true);
   });
 
   it("shows the before-enable warning only on the off→on transition", async () => {
@@ -378,9 +378,9 @@ describe("CfAccessEditor (slice 4)", () => {
       summary({ enabled: false, teamDomain: "https://t", audience: ["a"], protectedPrefixes: ["/admin"] }),
     );
     renderEditorAt();
-    await screen.findByRole("switch", { name: /Enable Cloudflare Access/ });
+    await screen.findByRole("switch", { name: "Enabled" });
     expect(screen.queryByText(/Before you enable/)).toBeNull();
-    fireEvent.click(screen.getByRole("switch", { name: /Enable Cloudflare Access/ }));
+    fireEvent.click(screen.getByRole("switch", { name: "Enabled" }));
     await screen.findByText(/Before you enable/);
   });
 
@@ -406,7 +406,7 @@ describe("CfAccessEditor (slice 4)", () => {
     renderEditorAt();
     const teamInput = await screen.findByDisplayValue("https://t");
     fireEvent.change(teamInput, { target: { value: "http://team.cloudflareaccess.com" } });
-    fireEvent.click(screen.getByRole("switch", { name: /Enable Cloudflare Access/ }));
+    fireEvent.click(screen.getByRole("switch", { name: "Enabled" }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await screen.findByText("Please fix the highlighted fields.");
     expect(screen.getByText(/Team URL must use https/)).toBeTruthy();
@@ -427,10 +427,10 @@ describe("CfAccessEditor (slice 4)", () => {
       summary({ enabled: true, teamDomain: "https://team.cloudflareaccess.com", audience: ["a"], protectedPrefixes: ["/admin"], locks: { enabled: false, teamDomain: true, audience: false, protectedPrefixes: false } }),
     );
     renderEditorAt();
-    await screen.findByRole("switch", { name: /Enable Cloudflare Access/ });
+    await screen.findByRole("switch", { name: "Enabled" });
     // Team domain input is disabled (env-locked) and seeded with the schemeless host.
     expect(screen.getByDisplayValue("team.cloudflareaccess.com").hasAttribute("disabled")).toBe(true);
-    fireEvent.click(screen.getByRole("switch", { name: /Enable Cloudflare Access/ }));
+    fireEvent.click(screen.getByRole("switch", { name: "Enabled" }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
     // Locked team domain is omitted from the body; the server keeps the env value.
@@ -461,7 +461,7 @@ describe("CfAccessEditor (slice 4)", () => {
     renderEditorAt();
     await screen.findByText(/enabled and locked by environment/);
     // Every field is env-locked → every input is disabled and carries a badge.
-    expect(screen.getByRole("switch", { name: /Enable Cloudflare Access/ }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("switch", { name: "Enabled" }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByDisplayValue("https://t").hasAttribute("disabled")).toBe(true);
     expect(screen.getByDisplayValue("a").hasAttribute("disabled")).toBe(true);
     expect(screen.getByDisplayValue("/admin").hasAttribute("disabled")).toBe(true);

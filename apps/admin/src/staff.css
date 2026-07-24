@@ -2731,11 +2731,6 @@
   margin-top: var(--space-2);
 }
 
-.cf-access-summary__off {
-  color: var(--text-secondary);
-  font-weight: 400;
-}
-
 /* Identity provider editor (#266 slice 3) */
 /* Identity provider / Cloudflare Access editors render as modals over the
  * Identity list (not full pages) — same reset + centering pattern as
@@ -2783,17 +2778,17 @@
 
 .identity-editor__header {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: var(--space-3);
+  flex-direction: column;
+  gap: var(--space-1);
   border-bottom: 1px solid var(--border);
   padding-bottom: var(--space-4);
 }
 
-.identity-editor__header > div {
+.identity-editor__header-row {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
 }
 
 .identity-editor__title {
@@ -2819,9 +2814,42 @@
   gap: var(--space-3) var(--space-4);
 }
 
-.identity-editor__switch {
-  align-self: center;
-  padding-top: var(--space-4);
+/* Protocol picker (Add identity provider) — visual only today: OIDC is the only
+   wired-up protocol, SAML is a disabled placeholder for the roadmap. */
+.identity-protocol-picker {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.identity-protocol-tile {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.identity-protocol-tile--active {
+  border-color: var(--primary);
+  color: var(--primary-active);
+  background: var(--primary-tint);
+}
+
+.identity-protocol-tile--disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.identity-protocol-tile__badge {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--text-muted);
+  background: var(--surface-sunken);
+  border-radius: var(--radius-pill);
+  padding: 0.05em 0.5em;
 }
 
 .identity-editor__actions {
@@ -2858,7 +2886,7 @@
 
 .identity-mappings__row {
   display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr 1.4fr auto;
+  grid-template-columns: 1.2fr minmax(130px, 1fr) minmax(130px, 1fr) 1.2fr auto;
   gap: var(--space-2) var(--space-3);
   align-items: end;
   padding: var(--space-2) 0;
@@ -2878,43 +2906,6 @@
   align-items: end;
 }
 
-.identity-mappings__add {
-  margin-top: var(--space-3);
-}
-
-.identity-sso-preview {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin-top: var(--space-3);
-  padding: var(--space-3);
-  border: 1px dashed var(--border);
-  border-radius: var(--radius-md);
-}
-
-/* Sits beside the label input in the same grid row (not stacked below it) —
-   bottom-align with the input's field, same pattern as .identity-mappings__remove. */
-.identity-editor__grid > .identity-sso-preview {
-  align-self: end;
-  margin-top: 0;
-}
-
-.identity-sso-preview__label {
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-}
-
-.identity-sso-preview__button {
-  display: inline-flex;
-  align-items: center;
-  padding: 0 var(--space-4);
-  height: var(--control-h-md);
-  border-radius: var(--radius-md);
-  background: var(--primary);
-  color: var(--text-on-primary);
-  font-weight: 600;
-}
-
 /* Cloudflare Access editor (#266 slice 4) */
 .cf-editor__status {
   display: flex;
@@ -2928,7 +2919,6 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
-  grid-column: 1 / -1;
 }
 
 .cf-editor .identity-editor__grid > .at-badge {
@@ -2941,10 +2931,6 @@
    Protected URL paths (comma-separated, can get long) forces its own full row. */
 .cf-editor__grid-full {
   grid-column: 1 / -1;
-}
-
-.cf-editor__test {
-  margin-top: var(--space-4);
 }
 
 .cf-editor__info,

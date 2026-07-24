@@ -2,7 +2,6 @@ import { Button, Input, Select } from "@admitto/ui";
 import {
   MAPPING_ROLES,
   MAPPING_SCOPES,
-  emptyMappingRow,
   type MappingRow,
   type MappingRowError,
 } from "./identityProviderValidation.js";
@@ -27,10 +26,6 @@ export function IdentityMappingRepeater({
 
   const removeRow = (index: number) => {
     onChange(rows.filter((_, i) => i !== index));
-  };
-
-  const addRow = () => {
-    onChange([...rows, emptyMappingRow()]);
   };
 
   return (
@@ -134,12 +129,6 @@ export function IdentityMappingRepeater({
           </div>
         );
       })}
-
-      <div className="identity-mappings__add">
-        <Button type="button" variant="secondary" onClick={addRow}>
-          Add mapping
-        </Button>
-      </div>
     </div>
   );
 }

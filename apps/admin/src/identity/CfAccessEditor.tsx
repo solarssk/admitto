@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useBlocker, useLocation, useNavigate } from "react-router-dom";
 import type { BlockerFunction } from "react-router";
-import { Badge, Button, Card, IconButton, Input, Spinner, Switch, useToast } from "@admitto/ui";
+import { Badge, Button, Card, IconButton, Input, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
 import { ApiError, fetchCfAccessSummary, testCfAccess, updateCfAccess } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { CfAccessSummaryDto } from "../api/types.js";
@@ -243,22 +244,22 @@ export function CfAccessEditor() {
     content = (
       <>
         <div className="identity-editor__header">
-          <div>
+          <div className="identity-editor__header-row">
             <h2 className="identity-editor__title" id={titleId}>Cloudflare Access</h2>
-            <p className="identity-editor__subtitle">
-              Require a Cloudflare Zero Trust Access JWT for protected admin paths. Configure your
-              team URL, application audience tag, and protected prefixes.
-            </p>
-            <div className="cf-editor__status">
-              {draft.enabled ? (
-                <Badge variant="ok" dot>Active</Badge>
-              ) : (
-                <Badge variant="neutral" dot>Inactive</Badge>
-              )}
-              {locks.enabled && <Badge variant="warn">Managed by environment</Badge>}
-            </div>
+            <IconButton label="Close" onClick={handleCancel} icon={<i className="ti ti-x" />} />
           </div>
-          <IconButton label="Close" onClick={handleCancel} icon={<i className="ti ti-x" />} />
+          <p className="identity-editor__subtitle">
+            Require a Cloudflare Zero Trust Access JWT for protected admin paths. Configure your
+            team URL, application audience tag, and protected prefixes.
+          </p>
+          <div className="cf-editor__status">
+            {draft.enabled ? (
+              <Badge variant="ok" dot>Active</Badge>
+            ) : (
+              <Badge variant="neutral" dot>Inactive</Badge>
+            )}
+            {locks.enabled && <Badge variant="warn">Managed by environment</Badge>}
+          </div>
         </div>
 
         <form className="identity-editor cf-editor" onSubmit={handleSubmit} noValidate>
@@ -266,19 +267,24 @@ export function CfAccessEditor() {
           {enabledWarning}
           {envLockedInfo}
 
-          <Card title="Configuration">
-            <div className="identity-editor__grid">
-              <div className="identity-editor__switch cf-editor__enabled">
-                <Switch
-                  id="cf-access-enabled"
-                  label="Enable Cloudflare Access for protected admin paths"
-                  checked={draft.enabled}
-                  disabled={locks.enabled}
-                  onChange={(e) => setDraft((d) => ({ ...d, enabled: e.target.checked }))}
-                />
+          <Card
+            title="Configuration"
+            actions={
+              <div className="cf-editor__enabled">
+                <Tooltip content="Require a Cloudflare Access JWT for protected admin paths">
+                  <Switch
+                    id="cf-access-enabled"
+                    label="Enabled"
+                    checked={draft.enabled}
+                    disabled={locks.enabled}
+                    onChange={(e) => setDraft((d) => ({ ...d, enabled: e.target.checked }))}
+                  />
+                </Tooltip>
                 {locks.enabled && <Badge variant="neutral">Locked by env</Badge>}
               </div>
-
+            }
+          >
+            <div className="identity-editor__grid">
               <Input
                 label="Cloudflare team URL"
                 type="url"
@@ -318,24 +324,20 @@ export function CfAccessEditor() {
               </div>
               {locks.protectedPrefixes && <Badge variant="neutral">Locked by env</Badge>}
             </div>
-
-            <div className="cf-editor__test">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={handleTest}
-                disabled={testing || saving}
-                aria-busy={testing}
-              >
-                {testing ? "Testing…" : "Test connection"}
-              </Button>
-            </div>
           </Card>
 
           <div className="identity-editor__actions">
             <Button type="button" variant="ghost" onClick={handleCancel} disabled={saving}>
               Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handleTest}
+              disabled={testing || saving}
+              aria-busy={testing}
+            >
+              {testing ? "Testing…" : "Test connection"}
             </Button>
             <Button type="submit" variant="primary" disabled={saving}>
               {saving ? "Saving…" : "Save changes"}
@@ -346,12 +348,13 @@ export function CfAccessEditor() {
     );
   }
 
-  return (
+  return createPortal(
     <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
       <div className="identity-modal__backdrop" role="presentation" onClick={handleCancel} />
       <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
         {content}
       </div>
-    </dialog>
+    </dialog>,
+    document.body,
   );
 }

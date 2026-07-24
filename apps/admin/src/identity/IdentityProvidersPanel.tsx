@@ -226,26 +226,27 @@ export function IdentityProvidersPanel() {
         )}
         {providersState === "ready" && providers.length === 0 && (
           <EmptyState
+            icon={<i className="ti ti-shield-lock" />}
             title="No identity providers yet"
-            description="Add an OpenID Connect provider to enable single sign-on for your team."
+            description="Add an identity provider to enable single sign-on for your team."
           />
         )}
         {providersState === "ready" && providers.length > 0 && (
-          <div className="identity-providers__list">
-            {providers.map((provider) => (
-              <ProviderRowItem
-                key={provider.id}
-                provider={provider}
-                onToggle={handleToggle}
-                disabled={togglingIds.has(provider.id)}
-              />
-            ))}
-          </div>
-        )}
-        {providersState === "ready" && (
-          <p className="identity-providers__hint">
-            {togglingIds.size > 0 ? "Saving changes…" : "Add or edit a provider to configure OIDC endpoints, claims, and group→role mapping."}
-          </p>
+          <>
+            <div className="identity-providers__list">
+              {providers.map((provider) => (
+                <ProviderRowItem
+                  key={provider.id}
+                  provider={provider}
+                  onToggle={handleToggle}
+                  disabled={togglingIds.has(provider.id)}
+                />
+              ))}
+            </div>
+            <p className="identity-providers__hint">
+              {togglingIds.size > 0 ? "Saving changes…" : "Edit a provider to configure endpoints, claims, and group→role mapping."}
+            </p>
+          </>
         )}
       </Card>
 
@@ -269,9 +270,7 @@ export function IdentityProvidersPanel() {
         )}
         {cfState === "ready" && cf && (
           <div className="cf-access-summary">
-            <strong>
-              Cloudflare Zero Trust {cf.enabled ? null : <span className="cf-access-summary__off">(disabled)</span>}
-            </strong>
+            <strong>Cloudflare Zero Trust</strong>
             <p>
               {cf.teamDomain
                 ? `Team domain: ${cf.teamDomain}`
@@ -279,9 +278,9 @@ export function IdentityProvidersPanel() {
             </p>
             <div className="cf-access-summary__badges">
               {cf.enabled ? (
-                <Badge variant="ok" dot>Enabled</Badge>
+                <Badge variant="ok" dot>Active</Badge>
               ) : (
-                <Badge variant="neutral" dot>Disabled</Badge>
+                <Badge variant="neutral" dot>Inactive</Badge>
               )}
               {cf.locks.enabled && <Badge variant="warn">Managed by environment</Badge>}
             </div>

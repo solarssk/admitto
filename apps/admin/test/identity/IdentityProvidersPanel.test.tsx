@@ -295,9 +295,8 @@ describe("IdentityProvidersPanel", () => {
     renderPanel();
 
     await waitFor(() => {
-      expect(screen.getByText("(disabled)")).toBeTruthy();
       expect(screen.getByText("No team domain configured.")).toBeTruthy();
-      expect(screen.getByText("Disabled")).toBeTruthy();
+      expect(screen.getByText("Inactive")).toBeTruthy();
     });
   });
 
