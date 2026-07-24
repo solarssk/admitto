@@ -7,9 +7,9 @@ VERSION="${VERSION#v}"
 TAG="v${VERSION}"
 TITLE_FILE=".github/release-notes/${TAG}.title"
 
-if [ -f "$TITLE_FILE" ]; then
+if [[ -f "$TITLE_FILE" ]]; then
   TAGLINE="$(tr -d '\r' < "$TITLE_FILE" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
-  if [ -n "$TAGLINE" ]; then
+  if [[ -n "$TAGLINE" ]]; then
     printf '%s — %s\n' "$TAG" "$TAGLINE"
     exit 0
   fi

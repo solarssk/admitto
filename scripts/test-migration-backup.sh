@@ -58,7 +58,7 @@ if ! $COMPOSE up -d --build --wait; then
 fi
 
 backup_count="$($COMPOSE run --rm --no-deps --entrypoint sh migrate -c 'ls -1 /backups/pre-migration-*.sql.gz 2>/dev/null | wc -l' | tr -d ' ')"
-if [ "${backup_count:-0}" -lt 1 ]; then
+if [[ "${backup_count:-0}" -lt 1 ]]; then
   echo "expected at least one pre-migration backup on first start" >&2
   on_fail
   exit 1
@@ -71,7 +71,7 @@ echo "== Scenario B: re-run with no pending migrations → no new backup =="
 before="$backup_count"
 $COMPOSE run --rm --no-deps migrate
 after="$($COMPOSE run --rm --no-deps --entrypoint sh migrate -c 'ls -1 /backups/pre-migration-*.sql.gz 2>/dev/null | wc -l' | tr -d ' ')"
-if [ "$after" != "$before" ]; then
+if [[ "$after" != "$before" ]]; then
   echo "expected backup count unchanged after re-running migrate (before=$before after=$after)" >&2
   exit 1
 fi
@@ -105,8 +105,8 @@ if $COMPOSE run --rm \
 fi
 
 applied="$($COMPOSE exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT COUNT(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL" 2>/dev/null || echo 0' | tr -d ' ')"
-if [ -z "$applied" ]; then applied=0; fi
-if [ "${applied:-0}" != "0" ]; then
+if [[ -z "$applied" ]]; then applied=0; fi
+if [[ "${applied:-0}" != "0" ]]; then
   echo "expected zero applied migrations after pg_dump failure (got $applied)" >&2
   exit 1
 fi

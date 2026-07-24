@@ -161,4 +161,11 @@ describe("sanitizeDeliveryError", () => {
     expect(out).not.toContain("https://");
     expect(out).toContain("[redacted]");
   });
+
+  it("fully redacts an email whose domain has multiple labels (subdomains)", () => {
+    const out = sanitizeDeliveryError("Delivery failed for user@smtp.internal.corp.com");
+    expect(out).not.toContain("smtp.internal.corp.com");
+    expect(out).not.toContain("user@");
+    expect(out).toBe("Delivery failed for [redacted]");
+  });
 });

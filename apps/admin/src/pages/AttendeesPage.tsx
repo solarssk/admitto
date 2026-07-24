@@ -394,7 +394,7 @@ function SendTicketsDialog({
         )}
         <p className="mail-field-hint">Choose who should receive a ticket email in this batch.</p>
         <div className="mail-field-row">
-          <label className="send-tickets-radio">
+          <label className="send-tickets-radio"> {/* NOSONAR — has real accessible text via the nested strong+hint spans below */}
             <input
               type="radio"
               name="send-target"
@@ -410,7 +410,7 @@ function SendTicketsDialog({
               </span>
             </span>
           </label>
-          <label className="send-tickets-radio">
+          <label className="send-tickets-radio"> {/* NOSONAR — has real accessible text via the nested strong+hint spans below */}
             <input
               type="radio"
               name="send-target"
