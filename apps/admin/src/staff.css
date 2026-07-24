@@ -2772,6 +2772,10 @@
   width: min(520px, 100%);
   max-height: min(90vh, 720px);
   overflow: auto;
+  /* Without this, scrolling past the panel's own end with a trackpad
+     rubber-bands into the page behind it (scroll chaining) instead of
+     just stopping — visible as a gap at the panel's edge mid-gesture. */
+  overscroll-behavior: contain;
   box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
