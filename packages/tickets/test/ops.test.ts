@@ -11,7 +11,12 @@ import {
   ensureAttendeeItemStates,
   operatorItemActions,
 } from "../src/item-states.js";
-import { addAttendeeNote, NoteTooLongError, OperatorRequiredError } from "../src/notes.js";
+import {
+  addAttendeeNote,
+  NoteTooLongError,
+  OperatorRequiredError,
+  AttendeeNotFoundError,
+} from "../src/notes.js";
 import { generateToken, hashToken } from "../src/index.js";
 import { getAttendeeCard, getCheckInStats, lookupAttendees } from "../src/attendee-card.js";
 import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
@@ -221,6 +226,25 @@ describe("ensureAttendeeItemStates (Lock #2)", () => {
 });
 
 describe("addAttendeeNote (Lock #8)", () => {
+  it("creates a note for an attendee in the event", async () => {
+    const result = await addAttendeeNote(
+      {
+        attendeeId,
+        eventId: EVENT_ID,
+        body: "Handled a lost-badge request",
+        audit: { operator: OPERATOR, sessionId: "sess-1" },
+      },
+      prisma,
+    );
+    expect(result.id).toBeTruthy();
+
+    const stored = await prisma.attendeeNote.findUnique({ where: { id: result.id } });
+    expect(stored?.attendee_id).toBe(attendeeId);
+    expect(stored?.event_id).toBe(EVENT_ID);
+    expect(stored?.author_user_id).toBe(OPERATOR);
+    expect(stored?.body).toBe("Handled a lost-badge request");
+  });
+
   it("rejects notes longer than 2000 characters", async () => {
     await expect(
       addAttendeeNote(
@@ -247,6 +271,20 @@ describe("addAttendeeNote (Lock #8)", () => {
         prisma,
       ),
     ).rejects.toBeInstanceOf(OperatorRequiredError);
+  });
+
+  it("rejects an attendee that does not belong to the event", async () => {
+    await expect(
+      addAttendeeNote(
+        {
+          attendeeId: "no-such-attendee",
+          eventId: EVENT_ID,
+          body: "hello",
+          audit: { operator: OPERATOR, sessionId: "sess-1" },
+        },
+        prisma,
+      ),
+    ).rejects.toBeInstanceOf(AttendeeNotFoundError);
   });
 });
 
