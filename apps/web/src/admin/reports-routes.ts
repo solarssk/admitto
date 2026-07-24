@@ -222,8 +222,7 @@ async function loadReportsAggregates(
     logRows,
     catalog,
     byRsvpStatusRaw,
-    byCheckinMethodRaw,
-    byDeviceRaw,
+    validCheckIns,
   ] = await Promise.all([
       db.attendee.count({ where: { event_id: eventId } }),
       db.attendee.count({ where: { event_id: eventId, admitted_at: { not: null } } }),
@@ -267,15 +266,13 @@ async function loadReportsAggregates(
         where: { event_id: eventId, admitted_at: { not: null } },
         _count: { _all: true },
       }),
-      db.checkIn.groupBy({
-        by: ["source"],
+      // Ordered oldest-first so the per-attendee dedup below (keep first seen) matches
+      // loadDeviceIdsByAttendee's own convention - same event/status/source filter as that
+      // function, just event-wide instead of scoped to a batch of attendee IDs.
+      db.checkIn.findMany({
         where: { event_id: eventId, status: "VALID", source: { in: ["scan", "manual"] } },
-        _count: { _all: true },
-      }),
-      db.checkIn.groupBy({
-        by: ["device_id"],
-        where: { event_id: eventId, status: "VALID", source: { in: ["scan", "manual"] } },
-        _count: { _all: true },
+        orderBy: [{ checked_in_at: "asc" }, { id: "asc" }],
+        select: { attendee_id: true, source: true, device_id: true },
       }),
     ]);
 
@@ -339,20 +336,33 @@ async function loadReportsAggregates(
     status: row.rsvp_status,
     count: row._count._all,
   }));
-  const by_checkin_method = byCheckinMethodRaw.map((row) => ({
-    method: row.source!,
-    count: row._count._all,
-  }));
-  // Ranked by count descending; ties broken by device_id ascending (Postgres's GROUP BY row
-  // order isn't guaranteed) - the "(unlabeled device)" null bucket sorts last on a tie.
-  const by_device = byDeviceRaw
-    .map((row) => ({ device_id: row.device_id, count: row._count._all }))
-    .sort((a, b) => {
+  // Deduped to one row per attendee (keep the earliest VALID check-in) before tallying -
+  // grouping the raw rows directly would count every row, not every attendee: a revoke leaves
+  // the original VALID row's status untouched (undo.ts only inserts a new UNDO row), so a
+  // revoke-then-re-admit cycle leaves 2+ VALID rows for the same attendee, which the old
+  // row-based groupBy counted twice, letting these breakdowns' totals exceed admittedCount.
+  const seenAttendees = new Set<string>();
+  const methodCounts = new Map<string, number>();
+  const deviceCounts = new Map<string | null, number>();
+  for (const row of validCheckIns) {
+    if (seenAttendees.has(row.attendee_id)) continue;
+    seenAttendees.add(row.attendee_id);
+    if (row.source === "scan" || row.source === "manual") {
+      methodCounts.set(row.source, (methodCounts.get(row.source) ?? 0) + 1);
+    }
+    deviceCounts.set(row.device_id, (deviceCounts.get(row.device_id) ?? 0) + 1);
+  }
+  const by_checkin_method = Array.from(methodCounts, ([method, count]) => ({ method, count }));
+  // Ranked by count descending; ties broken by device_id ascending - the "(unlabeled device)"
+  // null bucket sorts last on a tie.
+  const by_device = Array.from(deviceCounts, ([device_id, count]) => ({ device_id, count })).sort(
+    (a, b) => {
       if (b.count !== a.count) return b.count - a.count;
       if (a.device_id === null) return 1;
       if (b.device_id === null) return -1;
       return a.device_id.localeCompare(b.device_id);
-    });
+    },
+  );
 
   return {
     totalAttendees,

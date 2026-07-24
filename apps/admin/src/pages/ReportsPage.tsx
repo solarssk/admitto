@@ -14,6 +14,7 @@ import type { EventReportsResponse, RsvpStatus, TicketTypeDto } from "../api/typ
 import { RSVP_LABELS, RSVP_VARIANTS } from "../attendees/rsvpStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { isAdmitDedupHit, registerAdmitDedup } from "../checkin/admitDedup.js";
+import { FiltersMenu } from "../components/FiltersMenu.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
@@ -49,14 +50,17 @@ const EXPORT_FORMATS: { key: ExportFormat; label: string; icon: string; hint: st
 ];
 
 interface ReportsExportMenuProps {
-  readonly exporting: boolean;
+  readonly exportingCsv: boolean;
   readonly disabled: boolean;
   readonly onExport: (format: ExportFormat) => void;
 }
 
 /** Single "Export report" entry point for CSV/PDF, replacing two separate buttons - same
- * useDropdownMenu-backed pattern as the Attendees list's own Export menu. */
-function ReportsExportMenu({ exporting, disabled, onExport }: Readonly<ReportsExportMenuProps>) {
+ * useDropdownMenu-backed pattern as the Attendees list's own Export menu. The trigger itself is
+ * only gated on `disabled` (loading/error) - CSV's own in-flight state only disables the CSV
+ * menuitem, so PDF (a synchronous window.open, no loading state of its own) stays reachable
+ * while a CSV export is running, matching the two formats' old independent buttons. */
+function ReportsExportMenu({ exportingCsv, disabled, onExport }: Readonly<ReportsExportMenuProps>) {
   const { open, setOpen, close, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
 
   return (
@@ -69,37 +73,71 @@ function ReportsExportMenu({ exporting, disabled, onExport }: Readonly<ReportsEx
         hasMenu
         aria-haspopup="menu"
         aria-expanded={open}
-        disabled={disabled || exporting}
+        disabled={disabled}
         onClick={() => setOpen((current) => !current)}
       >
-        {exporting ? "Exporting…" : "Export report"}
+        Export report
       </Button>
       {open && (
         <div className="reports-export-menu__panel" role="menu" ref={panelRef}>
-          {EXPORT_FORMATS.map((format) => (
-            <button
-              key={format.key}
-              type="button"
-              role="menuitem"
-              className="reports-export-menu__item"
-              onClick={() => {
-                close();
-                onExport(format.key);
-              }}
-            >
-              <span className="reports-export-menu__item-icon">
-                <i className={`ti ti-${format.icon}`} aria-hidden="true" />
-              </span>
-              <span className="reports-export-menu__item-text">
-                <strong>{format.label}</strong>
-                <span>{format.hint}</span>
-              </span>
-            </button>
-          ))}
+          {EXPORT_FORMATS.map((format) => {
+            const busy = format.key === "csv" && exportingCsv;
+            return (
+              <button
+                key={format.key}
+                type="button"
+                role="menuitem"
+                className="reports-export-menu__item"
+                disabled={busy}
+                onClick={() => {
+                  close();
+                  onExport(format.key);
+                }}
+              >
+                <span className="reports-export-menu__item-icon">
+                  <i className={`ti ti-${format.icon}`} aria-hidden="true" />
+                </span>
+                <span className="reports-export-menu__item-text">
+                  <strong>{busy ? "Exporting…" : format.label}</strong>
+                  <span>{format.hint}</span>
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
   );
+}
+
+/** Starts at `false` and flips to `true` two animation frames after mount, so a caller can grow
+ * a bar/row from its 0 state into place instead of snapping straight to its final size - the
+ * double rAF (not a single one) guarantees the browser has actually painted the 0% state before
+ * a CSS transition has something to animate from. Shared by HourlyChart and BreakdownRows,
+ * which both had their own copy of this effect with the same bug: the `raf2` cleanup was
+ * returned from the inner rAF callback instead of the effect itself, so it was silently never
+ * called - only `raf1` was ever cancelled on unmount. Assigning `raf2` to an outer `let` and
+ * cancelling both from the effect's own return fixes that for both call sites at once. */
+function useMountAnimation(): boolean {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => setMounted(true));
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, []);
+  return mounted;
+}
+
+/** 1-decimal-place percentage, matching the KPI tiles' own precision (liveRatePct/
+ * liveNoShowRatePct) - the three breakdown-row builders below used to round to a whole percent
+ * instead, showing e.g. "83%" next to a KPI tile reading "83.3%" for a comparable ratio. */
+function pctOf(count: number, total: number): number {
+  return total > 0 ? Math.round((count / total) * 1000) / 10 : 0;
 }
 
 function admissionLogSpansMultipleDates(
@@ -170,17 +208,7 @@ function HourlyChart({
 }: Readonly<{ byHour: EventReportsResponse["by_hour"]; peakHour: string | null }>) {
   const visible = visibleHourRange(byHour);
   const max = Math.max(...visible.map((row) => row.count), 1);
-  // Bars start at 0 height and grow into place once mounted, rather than snapping straight to
-  // their final height - a double rAF (not a single one) guarantees the browser has actually
-  // painted the 0% state before the CSS transition below has something to animate from.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    const raf1 = requestAnimationFrame(() => {
-      const raf2 = requestAnimationFrame(() => setMounted(true));
-      return () => cancelAnimationFrame(raf2);
-    });
-    return () => cancelAnimationFrame(raf1);
-  }, []);
+  const mounted = useMountAnimation();
 
   return (
     <div>
@@ -193,13 +221,15 @@ function HourlyChart({
                 {row.count > 0 ? row.count : ""}
               </div>
               <div className="reports-chart__track">
-                <div
-                  className={`reports-chart__bar${isPeak ? " reports-chart__bar--peak" : ""}`}
-                  style={{
-                    height: mounted ? `${(row.count / max) * 100}%` : "0%",
-                    transitionDelay: `${Math.min(index * 25, 300)}ms`,
-                  }}
-                />
+                {row.count > 0 && (
+                  <div
+                    className={`reports-chart__bar${isPeak ? " reports-chart__bar--peak" : ""}`}
+                    style={{
+                      height: mounted ? `${(row.count / max) * 100}%` : "0%",
+                      transitionDelay: `${Math.min(index * 25, 300)}ms`,
+                    }}
+                  />
+                )}
               </div>
               <div className={`reports-chart__label${isPeak ? " reports-chart__label--peak" : ""}`}>
                 {row.hour.slice(0, 2)}
@@ -260,17 +290,7 @@ interface BreakdownRow {
  * (a "3/4 (75%)" fraction for ticket type, a "18 · 4%" count for the other two) rather than a
  * fixed shape, since each card's real-world meaning of the number differs. */
 function BreakdownRows({ rows }: Readonly<{ rows: BreakdownRow[] }>) {
-  // Same grow-on-mount treatment as the hourly chart's bars - a double rAF guarantees the
-  // browser has painted the 0%-width state before the CSS transition has something to animate
-  // from, rather than snapping straight to each row's final width.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    const raf1 = requestAnimationFrame(() => {
-      const raf2 = requestAnimationFrame(() => setMounted(true));
-      return () => cancelAnimationFrame(raf2);
-    });
-    return () => cancelAnimationFrame(raf1);
-  }, []);
+  const mounted = useMountAnimation();
 
   if (rows.length === 0) {
     return <p className="reports-muted">No data yet.</p>;
@@ -314,15 +334,20 @@ function ticketTypeBreakdownRows(rows: EventReportsResponse["by_ticket_type"]): 
 }
 
 /** Always renders all 5 RSVP statuses (even at 0), in RSVP_LABELS' own order, so the card reads
- * as a complete status breakdown rather than only whichever buckets happen to have admissions. */
+ * as a complete status breakdown rather than only whichever buckets happen to have admissions.
+ * rsvp_status is a plain String column, not a DB enum, so a row written outside the app's
+ * validated write paths can hold a value outside those 5 - without a fallback bucket, such an
+ * attendee stays counted in `admitted` but silently vanishes from this card (mirrors ticket_type's
+ * own "(not in catalog)" handling for the same class of legacy/orphaned data). */
 function rsvpBreakdownRows(
   byRsvpStatus: EventReportsResponse["by_rsvp_status"],
   admitted: number,
 ): BreakdownRow[] {
   const countByStatus = new Map(byRsvpStatus.map((row) => [row.status, row.count]));
-  return (Object.keys(RSVP_LABELS) as RsvpStatus[]).map((status) => {
+  const knownStatuses = new Set<string>(Object.keys(RSVP_LABELS));
+  const known = (Object.keys(RSVP_LABELS) as RsvpStatus[]).map((status) => {
     const count = countByStatus.get(status) ?? 0;
-    const pct = admitted > 0 ? Math.round((count / admitted) * 100) : 0;
+    const pct = pctOf(count, admitted);
     return {
       id: status,
       label: RSVP_LABELS[status],
@@ -331,6 +356,19 @@ function rsvpBreakdownRows(
       color: STATUS_DOT_COLOR[RSVP_VARIANTS[status]],
     };
   });
+  const unmatched = byRsvpStatus
+    .filter((row) => !knownStatuses.has(row.status))
+    .map((row) => {
+      const pct = pctOf(row.count, admitted);
+      return {
+        id: `unmatched:${row.status}`,
+        label: `${row.status} (not in catalog)`,
+        meta: `${row.count} · ${pct}%`,
+        pct,
+        color: STATUS_DOT_COLOR.neutral,
+      };
+    });
+  return [...known, ...unmatched];
 }
 
 /** "scan"/"manual" are the only two check-in sources that represent an admission method - see
@@ -342,7 +380,7 @@ function checkinMethodBreakdownRows(
   const countByMethod = new Map(byCheckinMethod.map((row) => [row.method, row.count]));
   return (["scan", "manual"] as const).map((method) => {
     const count = countByMethod.get(method) ?? 0;
-    const pct = admitted > 0 ? Math.round((count / admitted) * 100) : 0;
+    const pct = pctOf(count, admitted);
     return {
       id: method,
       label: CHECKIN_METHOD_LABELS[method],
@@ -361,7 +399,7 @@ function deviceBreakdownRows(
   admitted: number,
 ): BreakdownRow[] {
   return byDevice.map((row) => {
-    const pct = admitted > 0 ? Math.round((row.count / admitted) * 100) : 0;
+    const pct = pctOf(row.count, admitted);
     return {
       id: row.device_id ?? "__unlabeled__",
       label: row.device_id ?? "(unlabeled device)",
@@ -402,8 +440,6 @@ function AdmissionLog({
   // "Filters" button (AttendeesTable.tsx's FilterToolbar) - splitting the selects out of the
   // card header into a floating panel keeps the header a single row at any viewport, instead of
   // wrapping or squeezing selects inline on narrow screens.
-  const { open: filtersOpen, setOpen: setFiltersOpen, rootRef, triggerRef, panelRef } =
-    useDropdownMenu<HTMLButtonElement, HTMLFieldSetElement>();
 
   const includeAdmissionDate = useMemo(
     () => admissionLogSpansMultipleDates(log, timeZone),
@@ -436,68 +472,47 @@ function AdmissionLog({
       title="Admission log"
       padded={false}
       actions={
-        <div className="reports-log-filters-menu" ref={rootRef}>
-          <Button
-            ref={triggerRef}
-            type="button"
-            variant="secondary"
-            size="sm"
-            icon={<i className="ti ti-filter" aria-hidden="true" />}
-            hasMenu
-            aria-haspopup="true"
-            aria-expanded={filtersOpen}
-            onClick={() => setFiltersOpen((current) => !current)}
-          >
-            Filters
-            {activeFilterCount > 0 && (
-              <span className="reports-log-filters-menu__count">{activeFilterCount}</span>
-            )}
-          </Button>
-          {filtersOpen && (
-            <fieldset className="reports-log-filters-menu__panel" ref={panelRef}>
-              <legend className="sr-only">Filters</legend>
-              <div className="reports-log-filters-menu__field">
-                <Select
-                  id="reports-log-ticket-type-filter"
-                  aria-label="Filter by ticket type"
-                  value={typeFilter}
-                  onChange={(e) => {
-                    setTypeFilter(e.target.value);
-                    setPage(1);
-                  }}
+        <FiltersMenu activeCount={activeFilterCount} className="reports-log-filters-menu" size="sm">
+          <div className="reports-log-filters-menu__field">
+            <Select
+              id="reports-log-ticket-type-filter"
+              aria-label="Filter by ticket type"
+              value={typeFilter}
+              onChange={(e) => {
+                setTypeFilter(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="all">All ticket types</option>
+              {byTicketType.map((row) => (
+                <option key={encodeTypeFilterValue(row.key)} value={encodeTypeFilterValue(row.key)}>
+                  {row.type}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div className="reports-log-filters-menu__field">
+            <Select
+              id="reports-log-device-filter"
+              aria-label="Filter by device"
+              value={deviceFilter}
+              onChange={(e) => {
+                setDeviceFilter(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="all">All devices</option>
+              {byDevice.map((row) => (
+                <option
+                  key={encodeDeviceFilterValue(row.device_id)}
+                  value={encodeDeviceFilterValue(row.device_id)}
                 >
-                  <option value="all">All ticket types</option>
-                  {byTicketType.map((row) => (
-                    <option key={encodeTypeFilterValue(row.key)} value={encodeTypeFilterValue(row.key)}>
-                      {row.type}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <div className="reports-log-filters-menu__field">
-                <Select
-                  id="reports-log-device-filter"
-                  aria-label="Filter by device"
-                  value={deviceFilter}
-                  onChange={(e) => {
-                    setDeviceFilter(e.target.value);
-                    setPage(1);
-                  }}
-                >
-                  <option value="all">All devices</option>
-                  {byDevice.map((row) => (
-                    <option
-                      key={encodeDeviceFilterValue(row.device_id)}
-                      value={encodeDeviceFilterValue(row.device_id)}
-                    >
-                      {row.device_id ?? "(unlabeled device)"}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-            </fieldset>
-          )}
-        </div>
+                  {row.device_id ?? "(unlabeled device)"}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </FiltersMenu>
       }
     >
       {truncated && (
@@ -619,7 +634,7 @@ function AdmissionLog({
                 variant="secondary"
                 size="sm"
                 disabled={safePage === 1}
-                onClick={() => setPage((current) => current - 1)}
+                onClick={() => setPage(() => Math.max(1, safePage - 1))}
               >
                 Previous
               </Button>
@@ -630,7 +645,7 @@ function AdmissionLog({
                 variant="secondary"
                 size="sm"
                 disabled={safePage >= totalPages}
-                onClick={() => setPage((current) => current + 1)}
+                onClick={() => setPage(() => Math.min(totalPages, safePage + 1))}
               >
                 Next
               </Button>
@@ -686,6 +701,14 @@ export function ReportsPage() {
   const [optimisticAdmittedDelta, setOptimisticAdmittedDelta] = useState(0);
   const seenCheckinsRef = useRef(new Map<string, number>());
   const reconcileTimerRef = useRef<number | null>(null);
+  const reconcileAbortRef = useRef<AbortController | null>(null);
+  // Mirrors optimisticAdmittedDelta so scheduleReconcile's setTimeout callback (a stable
+  // useCallback that can't depend on the latest delta without losing its identity) can read the
+  // delta as of when its fetch actually starts, not when it was scheduled.
+  const deltaRef = useRef(0);
+  useEffect(() => {
+    deltaRef.current = optimisticAdmittedDelta;
+  }, [optimisticAdmittedDelta]);
 
   useEffect(() => {
     if (!eventId) return;
@@ -736,16 +759,28 @@ export function ReportsPage() {
   useEffect(() => () => exportAbortRef.current?.abort(), []);
 
   // Silent background refresh - unlike loadData above, this never toggles `loading`/`error`, so a
-  // live check-in mid-session doesn't flash the whole page back to its skeleton state.
+  // live check-in mid-session doesn't flash the whole page back to its skeleton state. Guarded
+  // like loadData against an eventId switch: aborted via reconcileAbortRef (see the cleanup
+  // effect below) and double-checked against ac.signal.aborted before touching state, since an
+  // in-flight fetch that started before the switch can still resolve after it.
   const scheduleReconcile = useCallback(() => {
     if (!eventId) return;
     if (reconcileTimerRef.current != null) window.clearTimeout(reconcileTimerRef.current);
     reconcileTimerRef.current = window.setTimeout(() => {
       reconcileTimerRef.current = null;
-      fetchEventReports(eventId)
+      reconcileAbortRef.current?.abort();
+      const ac = new AbortController();
+      reconcileAbortRef.current = ac;
+      const deltaAtFetchStart = deltaRef.current;
+      fetchEventReports(eventId, ac.signal)
         .then((report) => {
+          if (ac.signal.aborted) return;
           setData(report);
-          setOptimisticAdmittedDelta(0);
+          // Subtracts only the portion this fetch accounts for, not a hard reset to 0 - a
+          // second live check-in that arrived after this fetch started (and armed its own
+          // independent timer, since reconcileTimerRef was already cleared above) bumped the
+          // delta again in the meantime, and that bump isn't reflected in `report` yet.
+          setOptimisticAdmittedDelta((current) => current - deltaAtFetchStart);
         })
         .catch(() => {
           /* keep the optimistic count until the next live event or a manual retry */
@@ -765,11 +800,19 @@ export function ReportsPage() {
 
   useEventStream(eventId, handleLiveCheckin);
 
+  // Keyed on [eventId], not []: a pending reconcile timer or in-flight reconcile fetch scheduled
+  // for the previous event must not survive an in-SPA switch to a different event on this same
+  // route (ReportsPage doesn't remount on an eventId-only navigation) - without this, a stale
+  // reconcile could silently overwrite the newly-loaded event's data a few seconds later.
   useEffect(
     () => () => {
-      if (reconcileTimerRef.current != null) window.clearTimeout(reconcileTimerRef.current);
+      if (reconcileTimerRef.current != null) {
+        window.clearTimeout(reconcileTimerRef.current);
+        reconcileTimerRef.current = null;
+      }
+      reconcileAbortRef.current?.abort();
     },
-    [],
+    [eventId],
   );
 
   const handleExportCsv = useCallback(async () => {
@@ -822,16 +865,10 @@ export function ReportsPage() {
   // render branch below already guards on `data` being present.
   const liveAdmitted = (data?.summary.admitted ?? 0) + optimisticAdmittedDelta;
   const liveNoShows = Math.max(0, (data?.summary.no_shows ?? 0) - optimisticAdmittedDelta);
-  const liveRatePct =
-    data && data.summary.total_attendees > 0
-      ? Math.round((liveAdmitted / data.summary.total_attendees) * 1000) / 10
-      : (data?.summary.admission_rate_pct ?? 0);
-  // Same 1-decimal-place rounding as liveRatePct above - was Math.round(x*100) here (whole
-  // percent only), a cosmetic mismatch against Admitted's own rate line right next to it.
-  const liveNoShowRatePct =
-    data && data.summary.total_attendees > 0
-      ? Math.round((liveNoShows / data.summary.total_attendees) * 1000) / 10
-      : 0;
+  const liveRatePct = data
+    ? pctOf(liveAdmitted, data.summary.total_attendees)
+    : 0;
+  const liveNoShowRatePct = data ? pctOf(liveNoShows, data.summary.total_attendees) : 0;
 
   return (
     <div className="screen reports-page">
@@ -840,7 +877,7 @@ export function ReportsPage() {
         subtitle={REPORT_SUBTITLE}
         actions={
           <ReportsExportMenu
-            exporting={exportingCsv}
+            exportingCsv={exportingCsv}
             disabled={loading || !!error}
             onExport={handleExport}
           />
@@ -871,7 +908,7 @@ export function ReportsPage() {
         />
       )}
 
-      {!loading && !error && data?.summary.admitted === 0 && (
+      {!loading && !error && liveAdmitted === 0 && (
         <EmptyState
           icon={<i className="ti ti-chart-bar-off" aria-hidden="true" />}
           title="No check-ins yet"
@@ -879,7 +916,7 @@ export function ReportsPage() {
         />
       )}
 
-      {!loading && !error && data && data.summary.admitted > 0 && (
+      {!loading && !error && data && liveAdmitted > 0 && (
         <>
           <div className="reports-stats-grid">
             <Card>

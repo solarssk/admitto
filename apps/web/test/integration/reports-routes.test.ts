@@ -799,6 +799,93 @@ describe("GET /api/admin/events/:eventId/reports", () => {
     }
   });
 
+  it("counts a revoke-then-re-admit cycle once in by_checkin_method/by_device, not once per VALID row (independent PR #587 review)", async () => {
+    const EVENT_REVOKE = "evt-reports-revoke-readmit";
+    await prisma.checkIn.deleteMany({ where: { event_id: EVENT_REVOKE } });
+    await prisma.attendee.deleteMany({ where: { event_id: EVENT_REVOKE } });
+    await prisma.event.deleteMany({ where: { id: EVENT_REVOKE } });
+    await prisma.event.create({
+      data: {
+        id: EVENT_REVOKE,
+        title: "Revoke Readmit Reports Event",
+        slug: "reports-event-revoke-readmit",
+        date: new Date("2026-10-01T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+    });
+    await prisma.attendee.create({
+      data: {
+        id: "att-rep-revoke-readmit",
+        event_id: EVENT_REVOKE,
+        email: "revoke-readmit@example.com",
+        name: "Revoked Then Readmitted Guest",
+        // Currently admitted, via the second (manual) check-in below.
+        admitted_at: new Date("2026-10-01T09:10:00.000Z"),
+        ...mkAttendeeToken(),
+      },
+    });
+    // Mirrors what an operator revoke actually leaves behind (packages/tickets/src/undo.ts):
+    // the original VALID row's own status is never updated, only a separate UNDO row is
+    // inserted and attendee.admitted_at is cleared/reset - so a revoke-then-re-admit cycle
+    // really does leave 2 VALID rows for the same attendee, not 1.
+    await prisma.checkIn.createMany({
+      data: [
+        {
+          attendee_id: "att-rep-revoke-readmit",
+          event_id: EVENT_REVOKE,
+          checked_in_at: new Date("2026-10-01T09:00:00.000Z"),
+          status: "VALID",
+          source: "scan",
+          device_id: "Tablet 1 — main entrance",
+        },
+        {
+          attendee_id: "att-rep-revoke-readmit",
+          event_id: EVENT_REVOKE,
+          checked_in_at: new Date("2026-10-01T09:05:00.000Z"),
+          status: "UNDO",
+          source: "admin_revoke",
+          device_id: null,
+        },
+        {
+          attendee_id: "att-rep-revoke-readmit",
+          event_id: EVENT_REVOKE,
+          checked_in_at: new Date("2026-10-01T09:10:00.000Z"),
+          status: "VALID",
+          source: "manual",
+          device_id: "Tablet 2 — side entrance",
+        },
+      ],
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_REVOKE}/reports`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        summary: { admitted: number };
+        by_checkin_method: Array<{ method: string; count: number }>;
+        by_device: Array<{ device_id: string | null; count: number }>;
+      };
+      expect(body.summary.admitted).toBe(1);
+      // One attendee, one counted check-in - not two, even though 2 rows are status:VALID.
+      const totalMethodCount = body.by_checkin_method.reduce((sum, row) => sum + row.count, 0);
+      const totalDeviceCount = body.by_device.reduce((sum, row) => sum + row.count, 0);
+      expect(totalMethodCount).toBe(1);
+      expect(totalDeviceCount).toBe(1);
+      // The earliest VALID row wins, matching loadDeviceIdsByAttendee's own dedup convention -
+      // so the admission log's per-row Device value and this aggregate agree on the same row.
+      expect(body.by_device).toEqual([{ device_id: "Tablet 1 — main entrance", count: 1 }]);
+      const byMethod = new Map(body.by_checkin_method.map((row) => [row.method, row.count]));
+      expect(byMethod.get("scan")).toBe(1);
+      expect(byMethod.get("manual")).toBeUndefined();
+    } finally {
+      await prisma.checkIn.deleteMany({ where: { event_id: EVENT_REVOKE } });
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_REVOKE } });
+      await prisma.event.deleteMany({ where: { id: EVENT_REVOKE } });
+    }
+  });
+
   it("sorts by_device by count descending, breaking a tie alphabetically by device_id (Reports redesign)", async () => {
     const EVENT_TIEBREAK = "evt-reports-device-tiebreak";
     await prisma.checkIn.deleteMany({ where: { event_id: EVENT_TIEBREAK } });
@@ -920,6 +1007,19 @@ describe("GET /api/admin/events/:eventId/reports", () => {
         { attendee_id: "att-rep-items-none", event_item_id: badge.id, state: "returned" },
       ],
     });
+    // A populated Device column on the "none" row - without this, the CSV assertion below
+    // (checking the row's last cell is an empty quoted string) couldn't actually distinguish
+    // "Items is empty" from "every trailing cell on this row happens to be empty."
+    await prisma.checkIn.create({
+      data: {
+        attendee_id: "att-rep-items-none",
+        event_id: EVENT_ITEMS,
+        checked_in_at: new Date("2026-10-01T09:05:00.000Z"),
+        status: "VALID",
+        source: "scan",
+        device_id: "Tablet 1 — main entrance",
+      },
+    });
 
     try {
       const res = await app.request(`/api/admin/events/${EVENT_ITEMS}/reports`, {
@@ -945,7 +1045,11 @@ describe("GET /api/admin/events/:eventId/reports", () => {
       const fullCsvLine = csvLines.find((line) => line.includes("items-full@example.com"));
       expect(fullCsvLine).toContain('"Badge, Gift bag"');
       const noneCsvLine = csvLines.find((line) => line.includes("items-none@example.com"));
-      expect(noneCsvLine).toContain('""');
+      // Items is the CSV's last column - checking the line's own trailing cell (not just "the
+      // line contains an empty quoted string somewhere") is what actually pins this down to
+      // Items specifically, since Device is deliberately non-empty on this row above.
+      expect(noneCsvLine?.endsWith(',""')).toBe(true);
+      expect(noneCsvLine).toContain('"Tablet 1 — main entrance"');
 
       const pdfRes = await app.request(
         `/api/admin/events/${EVENT_ITEMS}/reports/export?format=pdf`,
@@ -955,6 +1059,7 @@ describe("GET /api/admin/events/:eventId/reports", () => {
       expect(html).toContain("<th>Items</th>");
       expect(html).toContain("Badge, Gift bag");
     } finally {
+      await prisma.checkIn.deleteMany({ where: { event_id: EVENT_ITEMS } });
       await prisma.attendeeItemState.deleteMany({ where: { event_item: { event_id: EVENT_ITEMS } } });
       await prisma.eventItem.deleteMany({ where: { event_id: EVENT_ITEMS } });
       await prisma.attendee.deleteMany({ where: { event_id: EVENT_ITEMS } });

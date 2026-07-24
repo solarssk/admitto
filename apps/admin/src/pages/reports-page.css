@@ -184,10 +184,16 @@
   gap: var(--space-4);
 }
 
+/* overflow-x: auto isn't scoped to a mobile media query - visibleHourRange() (ReportsPage.tsx)
+   can legitimately return up to 24 columns for an event with admissions spread across the day,
+   which already exceeds the "Hourly admissions" card's share of the two-column .reports-panels
+   grid at tablet/desktop widths too, not just on mobile. */
 .reports-chart {
   display: flex;
   align-items: flex-start;
   gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 4px;
 }
 
 /* Count, track and label are plain flow siblings stacked top-to-bottom (not absolutely
@@ -520,13 +526,9 @@
   /* Below tablet width there usually isn't room for every hour column at a readable size -
      .reports-chart__bar-wrap's flex:1 stretch (desktop) would otherwise keep squeezing columns
      narrower as the viewport shrinks, down to illegible slivers. Switching to a fixed width and
-     letting the row scroll horizontally instead keeps every bar/label at a consistent, readable
-     size, the same "scroll instead of squish" choice already used for the admission log table. */
-  .reports-chart {
-    overflow-x: auto;
-    padding-bottom: 4px;
-  }
-
+     letting the row scroll horizontally instead (already the base .reports-chart behavior)
+     keeps every bar/label at a consistent, readable size, the same "scroll instead of squish"
+     choice already used for the admission log table. */
   .reports-chart__bar-wrap {
     flex: 0 0 36px;
   }
