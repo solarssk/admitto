@@ -192,8 +192,8 @@ function editorTitle(mode: EditorMode): string {
 
 function editorSubtitle(mode: EditorMode): string {
   return mode === "create"
-    ? "Register an OpenID Connect identity provider for single sign-on."
-    : "Update this OpenID Connect identity provider.";
+    ? "Register an identity provider for single sign-on."
+    : "Update this identity provider.";
 }
 
 function clientSecretFieldLabel(mode: EditorMode, hasSecret: boolean): string {
@@ -867,7 +867,7 @@ export function IdentityProviderEditor({
   const view = resolveEditorView(mode, loadState);
   return createPortal(
     <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
-      <div className="identity-modal__backdrop" role="presentation" onClick={handleCancel} />
+      <div className="identity-modal__backdrop" role="presentation" />
       <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
         {view === "loading" && loadingContent}
         {view === "error" && errorContent}

@@ -2748,7 +2748,13 @@
   border: none;
   background: transparent;
   color: inherit;
+  /* The <dialog> UA stylesheet defaults width/height to fit-content, which
+     `inset: 0` alone does not override (that only stretches an auto-sized
+     box) — without an explicit 100% height the whole dialog (backdrop
+     included) only grows as tall as the panel, leaving the rest of the
+     viewport (e.g. the sidebar) undimmed. */
   width: 100%;
+  height: 100%;
 }
 
 .identity-modal__backdrop {

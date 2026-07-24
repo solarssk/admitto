@@ -211,7 +211,7 @@ export function IdentityProvidersPanel() {
       <Card
         title="Identity providers"
         actions={
-          <Link className="at-btn at-btn--primary" to={PROVIDER_NEW_PATH}>
+          <Link className="at-btn at-btn--primary at-btn--sm" to={PROVIDER_NEW_PATH}>
             <span>Add provider</span>
           </Link>
         }
@@ -254,7 +254,7 @@ export function IdentityProvidersPanel() {
         title="Cloudflare Access"
         actions={
           cfState === "ready" && cf ? (
-            <Link className="at-btn at-btn--secondary" to={IDENTITY_CLOUDFLARE_ROUTE}>
+            <Link className="at-btn at-btn--secondary at-btn--sm" to={IDENTITY_CLOUDFLARE_ROUTE}>
               <span>Manage</span>
             </Link>
           ) : undefined

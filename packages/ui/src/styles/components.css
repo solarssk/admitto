@@ -181,7 +181,7 @@
 
 /* ---------------- Card ---------------- */
 .at-card { background: var(--surface-card); border: var(--border-width) solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-card); }
-.at-card__header { min-height: calc(var(--control-h) + 2 * var(--space-4)); padding: var(--space-4) var(--pad-card); border-bottom: var(--border-width) solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); box-sizing: border-box; }
+.at-card__header { min-height: calc(var(--control-h-sm) + 2 * var(--space-4)); padding: var(--space-4) var(--pad-card); border-bottom: var(--border-width) solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); box-sizing: border-box; }
 .at-card__title { font-size: var(--fs-h3); font-weight: var(--fw-semibold); color: var(--text-primary); }
 .at-card__body { padding: var(--pad-card); }
 .at-card__footer { padding: var(--space-3) var(--pad-card); border-top: var(--border-width) solid var(--border); background: var(--surface-sunken); border-radius: 0 0 var(--radius) var(--radius); }

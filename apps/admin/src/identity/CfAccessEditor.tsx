@@ -350,7 +350,7 @@ export function CfAccessEditor() {
 
   return createPortal(
     <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
-      <div className="identity-modal__backdrop" role="presentation" onClick={handleCancel} />
+      <div className="identity-modal__backdrop" role="presentation" />
       <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
         {content}
       </div>
