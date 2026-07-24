@@ -14,6 +14,7 @@ import {
   undoLastCheckIn,
   NoteTooLongError,
   OperatorRequiredError,
+  AttendeeNotFoundError,
   UndoNotAllowedError,
   parseCustomData,
   type CheckInScanResult,
@@ -259,6 +260,9 @@ export async function handleCheckinNote(c: Context, db: PrismaClient): Promise<R
     }
     if (err instanceof OperatorRequiredError) {
       return c.json({ error: "unauthorized" }, 401);
+    }
+    if (err instanceof AttendeeNotFoundError) {
+      return c.json({ error: "not found" }, 404);
     }
     console.error("addAttendeeNote failed:", err);
     return c.json({ error: "server error" }, 500);

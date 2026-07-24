@@ -11,7 +11,12 @@ import {
   ensureAttendeeItemStates,
   operatorItemActions,
 } from "../src/item-states.js";
-import { addAttendeeNote, NoteTooLongError, OperatorRequiredError } from "../src/notes.js";
+import {
+  addAttendeeNote,
+  NoteTooLongError,
+  OperatorRequiredError,
+  AttendeeNotFoundError,
+} from "../src/notes.js";
 import { generateToken, hashToken } from "../src/index.js";
 import { getAttendeeCard, getCheckInStats, lookupAttendees } from "../src/attendee-card.js";
 import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
@@ -247,6 +252,20 @@ describe("addAttendeeNote (Lock #8)", () => {
         prisma,
       ),
     ).rejects.toBeInstanceOf(OperatorRequiredError);
+  });
+
+  it("rejects an attendee that does not belong to the event", async () => {
+    await expect(
+      addAttendeeNote(
+        {
+          attendeeId: "no-such-attendee",
+          eventId: EVENT_ID,
+          body: "hello",
+          audit: { operator: OPERATOR, sessionId: "sess-1" },
+        },
+        prisma,
+      ),
+    ).rejects.toBeInstanceOf(AttendeeNotFoundError);
   });
 });
 

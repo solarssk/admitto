@@ -20,7 +20,13 @@ export {
   revokeAllItemsForEvent,
   revokeItemsForAttendees,
 } from "./bulk-revoke.js";
-export { addAttendeeNote, NoteTooLongError, OperatorRequiredError, MAX_ATTENDEE_NOTE_LENGTH } from "./notes.js";
+export {
+  addAttendeeNote,
+  NoteTooLongError,
+  OperatorRequiredError,
+  AttendeeNotFoundError,
+  MAX_ATTENDEE_NOTE_LENGTH,
+} from "./notes.js";
 export {
   undoLastCheckIn,
   revokeCheckIn,
