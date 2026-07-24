@@ -2951,6 +2951,7 @@
    instead of leaving a placeholder-shaped gap. */
 .identity-mappings__row {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   gap: var(--space-3);
   padding: var(--space-2) 0;
@@ -3020,15 +3021,6 @@
   background: var(--status-warn-tint);
   border: 1px solid var(--status-warn);
   color: var(--status-warn-fg);
-}
-
-@media (max-width: 860px) {
-  .identity-mappings__row {
-    grid-template-columns: 1fr 1fr;
-  }
-  .identity-mappings__cell--hidden {
-    display: none;
-  }
 }
 
 @media (max-width: 720px) {

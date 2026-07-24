@@ -638,28 +638,21 @@ export function IdentityProviderEditor({
   );
 
   const errorContent = (
-    <Card title={title}>
-      <div className="identity-editor__error">
-        <p>Couldn't load this provider.</p>
-        <Button
-          variant="secondary"
-          onClick={retryLoad}
-        >
-          Retry
-        </Button>
-      </div>
-    </Card>
+    <div className="identity-editor__error">
+      <p>Couldn't load this provider.</p>
+      <Button variant="secondary" onClick={retryLoad}>
+        Retry
+      </Button>
+    </div>
   );
 
   const notFoundContent = (
-    <Card title={title}>
-      <div className="identity-editor__error">
-        <p>This provider no longer exists.</p>
-        <Button variant="secondary" onClick={() => navigate(IDENTITY_PROVIDERS_ROUTE)}>
-          Back to providers
-        </Button>
-      </div>
-    </Card>
+    <div className="identity-editor__error">
+      <p>This provider no longer exists.</p>
+      <Button variant="secondary" onClick={() => navigate(IDENTITY_PROVIDERS_ROUTE)}>
+        Back to providers
+      </Button>
+    </div>
   );
 
   const formContent = (
@@ -878,21 +871,17 @@ export function IdentityProviderEditor({
       <div className="identity-modal__backdrop" aria-hidden="true" />
       <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
         <div ref={scrollRef} className="identity-modal__scroll">
+          <div className="identity-editor__header">
+            <div className="identity-editor__header-row">
+              <h2 className="identity-editor__title" id={titleId}>{title}</h2>
+              <IconButton label="Close" onClick={handleCancel} icon={<i className="ti ti-x" />} />
+            </div>
+            {view === "form" && <p className="identity-editor__subtitle">{editorSubtitle(mode)}</p>}
+          </div>
           {view === "loading" && showLoadingSpinner && loadingContent}
           {view === "error" && errorContent}
           {view === "not_found" && notFoundContent}
-          {view === "form" && (
-            <>
-              <div className="identity-editor__header">
-                <div className="identity-editor__header-row">
-                  <h2 className="identity-editor__title" id={titleId}>{title}</h2>
-                  <IconButton label="Close" onClick={handleCancel} icon={<i className="ti ti-x" />} />
-                </div>
-                <p className="identity-editor__subtitle">{editorSubtitle(mode)}</p>
-              </div>
-              {formContent}
-            </>
-          )}
+          {view === "form" && formContent}
         </div>
       </div>
     </dialog>,

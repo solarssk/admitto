@@ -239,119 +239,97 @@ export function CfAccessEditor() {
     ) : null;
   } else if (loadState === "error") {
     content = (
-      <Card title="Cloudflare Access">
-        <div className="identity-editor__error">
-          <p>Couldn't load the Cloudflare Access configuration.</p>
-          <Button variant="secondary" onClick={retryLoad}>
-            Retry
-          </Button>
-        </div>
-      </Card>
+      <div className="identity-editor__error">
+        <p>Couldn't load the Cloudflare Access configuration.</p>
+        <Button variant="secondary" onClick={retryLoad}>
+          Retry
+        </Button>
+      </div>
     );
   } else {
     content = (
-      <>
-        <div className="identity-editor__header">
-          <div className="identity-editor__header-row">
-            <div className="identity-editor__header-title">
-              <h2 className="identity-editor__title" id={titleId}>Cloudflare Access</h2>
-              {draft.enabled ? (
-                <Badge variant="ok">Active</Badge>
-              ) : (
-                <Badge variant="neutral">Inactive</Badge>
-              )}
-            </div>
-            <IconButton label="Close" onClick={handleCancel} icon={<i className="ti ti-x" />} />
-          </div>
-          <p className="identity-editor__subtitle">
-            Require a Cloudflare Zero Trust Access JWT for protected admin paths. Configure your
-            team URL, application audience tag, and protected prefixes.
-          </p>
-        </div>
+      <form className="identity-editor cf-editor" onSubmit={handleSubmit} noValidate>
+        {fallthroughInfo}
+        {enabledWarning}
+        {envLockedInfo}
 
-        <form className="identity-editor cf-editor" onSubmit={handleSubmit} noValidate>
-          {fallthroughInfo}
-          {enabledWarning}
-          {envLockedInfo}
-
-          <Card
-            title="Configuration"
-            actions={
-              <div className="cf-editor__enabled">
-                <Tooltip content="Require a Cloudflare Access JWT for protected admin paths">
-                  <Switch
-                    id="cf-access-enabled"
-                    aria-label="Enabled"
-                    checked={draft.enabled}
-                    disabled={locks.enabled}
-                    onChange={(e) => setDraft((d) => ({ ...d, enabled: e.target.checked }))}
-                  />
-                </Tooltip>
-                {locks.enabled && <Badge variant="neutral">Locked by env</Badge>}
-              </div>
-            }
-          >
-            <div className="identity-editor__grid">
-              <Input
-                label="Cloudflare team URL"
-                type="url"
-                value={draft.teamDomain}
-                invalid={Boolean(errors.teamDomain)}
-                error={errors.teamDomain}
-                disabled={locks.teamDomain}
-                hint="Zero Trust → Settings → Custom Pages. Paste the team URL (issuer), not the application hostname. https://<team>.cloudflareaccess.com or a schemeless <team>.cloudflareaccess.com host."
-                placeholder="https://yourteam.cloudflareaccess.com"
-                onChange={(e) => setDraft((d) => ({ ...d, teamDomain: e.target.value }))}
-              />
-              {locks.teamDomain && <Badge variant="neutral">Locked by env</Badge>}
-
-              <Input
-                label="Application token (AUD)"
-                value={draft.audienceRaw}
-                invalid={Boolean(errors.audience)}
-                error={errors.audience}
-                disabled={locks.audience}
-                hint="Zero Trust → Access → Applications → your app → Overview → Application Audience (AUD) Tag. One value, or comma-separated for multiple apps."
-                placeholder="a1b2c3d4-e5f6-7890-abcd-ef1234567890"
-                onChange={(e) => setDraft((d) => ({ ...d, audienceRaw: e.target.value }))}
-              />
-              {locks.audience && <Badge variant="neutral">Locked by env</Badge>}
-
-              <div className="cf-editor__grid-full">
-                <Input
-                  label="Protected URL paths"
-                  value={draft.protectedPrefixesRaw}
-                  invalid={Boolean(errors.protectedPrefixes)}
-                  error={errors.protectedPrefixes}
-                  disabled={locks.protectedPrefixes}
-                  hint="Paths that require a Cloudflare Access JWT. Default covers the admin UI and admin API. Comma-separated (each must start with /)."
-                  placeholder="/admin, /api/admin"
-                  onChange={(e) => setDraft((d) => ({ ...d, protectedPrefixesRaw: e.target.value }))}
+        <Card
+          title="Configuration"
+          actions={
+            <div className="cf-editor__enabled">
+              <Tooltip content="Require a Cloudflare Access JWT for protected admin paths">
+                <Switch
+                  id="cf-access-enabled"
+                  aria-label="Enabled"
+                  checked={draft.enabled}
+                  disabled={locks.enabled}
+                  onChange={(e) => setDraft((d) => ({ ...d, enabled: e.target.checked }))}
                 />
-              </div>
-              {locks.protectedPrefixes && <Badge variant="neutral">Locked by env</Badge>}
+              </Tooltip>
+              {locks.enabled && <Badge variant="neutral">Locked by env</Badge>}
             </div>
-          </Card>
+          }
+        >
+          <div className="identity-editor__grid">
+            <Input
+              label="Cloudflare team URL"
+              type="url"
+              value={draft.teamDomain}
+              invalid={Boolean(errors.teamDomain)}
+              error={errors.teamDomain}
+              disabled={locks.teamDomain}
+              hint="Zero Trust → Settings → Custom Pages. Paste the team URL (issuer), not the application hostname. https://<team>.cloudflareaccess.com or a schemeless <team>.cloudflareaccess.com host."
+              placeholder="https://yourteam.cloudflareaccess.com"
+              onChange={(e) => setDraft((d) => ({ ...d, teamDomain: e.target.value }))}
+            />
+            {locks.teamDomain && <Badge variant="neutral">Locked by env</Badge>}
 
-          <div className="identity-editor__actions">
-            <Button type="button" variant="ghost" onClick={handleCancel} disabled={saving}>
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={handleTest}
-              disabled={testing || saving}
-              aria-busy={testing}
-            >
-              {testing ? "Testing…" : "Test connection"}
-            </Button>
-            <Button type="submit" variant="primary" disabled={saving}>
-              {saving ? "Saving…" : "Save changes"}
-            </Button>
+            <Input
+              label="Application token (AUD)"
+              value={draft.audienceRaw}
+              invalid={Boolean(errors.audience)}
+              error={errors.audience}
+              disabled={locks.audience}
+              hint="Zero Trust → Access → Applications → your app → Overview → Application Audience (AUD) Tag. One value, or comma-separated for multiple apps."
+              placeholder="a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+              onChange={(e) => setDraft((d) => ({ ...d, audienceRaw: e.target.value }))}
+            />
+            {locks.audience && <Badge variant="neutral">Locked by env</Badge>}
+
+            <div className="cf-editor__grid-full">
+              <Input
+                label="Protected URL paths"
+                value={draft.protectedPrefixesRaw}
+                invalid={Boolean(errors.protectedPrefixes)}
+                error={errors.protectedPrefixes}
+                disabled={locks.protectedPrefixes}
+                hint="Paths that require a Cloudflare Access JWT. Default covers the admin UI and admin API. Comma-separated (each must start with /)."
+                placeholder="/admin, /api/admin"
+                onChange={(e) => setDraft((d) => ({ ...d, protectedPrefixesRaw: e.target.value }))}
+              />
+            </div>
+            {locks.protectedPrefixes && <Badge variant="neutral">Locked by env</Badge>}
           </div>
-        </form>
-      </>
+        </Card>
+
+        <div className="identity-editor__actions">
+          <Button type="button" variant="ghost" onClick={handleCancel} disabled={saving}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handleTest}
+            disabled={testing || saving}
+            aria-busy={testing}
+          >
+            {testing ? "Testing…" : "Test connection"}
+          </Button>
+          <Button type="submit" variant="primary" disabled={saving}>
+            {saving ? "Saving…" : "Save changes"}
+          </Button>
+        </div>
+      </form>
     );
   }
 
@@ -360,6 +338,26 @@ export function CfAccessEditor() {
       <div className="identity-modal__backdrop" aria-hidden="true" />
       <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
         <div ref={scrollRef} className="identity-modal__scroll">
+          <div className="identity-editor__header">
+            <div className="identity-editor__header-row">
+              <div className="identity-editor__header-title">
+                <h2 className="identity-editor__title" id={titleId}>Cloudflare Access</h2>
+                {loadState === "ready" &&
+                  (draft.enabled ? (
+                    <Badge variant="ok">Active</Badge>
+                  ) : (
+                    <Badge variant="neutral">Inactive</Badge>
+                  ))}
+              </div>
+              <IconButton label="Close" onClick={handleCancel} icon={<i className="ti ti-x" />} />
+            </div>
+            {loadState === "ready" && (
+              <p className="identity-editor__subtitle">
+                Require a Cloudflare Zero Trust Access JWT for protected admin paths. Configure your
+                team URL, application audience tag, and protected prefixes.
+              </p>
+            )}
+          </div>
           {content}
         </div>
       </div>
