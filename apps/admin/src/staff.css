@@ -2713,6 +2713,17 @@
   font-size: var(--fs-sm);
 }
 
+.cf-access-summary strong {
+  display: block;
+  margin-bottom: var(--space-1);
+}
+
+.cf-access-summary p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+
 .cf-access-summary__badges {
   display: flex;
   flex-wrap: wrap;
@@ -2834,6 +2845,13 @@
   border-radius: var(--radius-md);
 }
 
+/* Sits beside the label input in the same grid row (not stacked below it) —
+   bottom-align with the input's field, same pattern as .identity-mappings__remove. */
+.identity-editor__grid > .identity-sso-preview {
+  align-self: end;
+  margin-top: 0;
+}
+
 .identity-sso-preview__label {
   color: var(--text-secondary);
   font-size: var(--fs-sm);
@@ -2866,17 +2884,15 @@
   grid-column: 1 / -1;
 }
 
-.cf-editor__enabled + .at-badge,
 .cf-editor .identity-editor__grid > .at-badge {
   grid-column: 1 / -1;
   align-self: start;
   margin-top: calc(var(--space-2) * -1);
 }
 
-/* Full-width text inputs (team URL, AUD, protected prefixes) so comma-separated
-   lists and long URLs have room; the 2-col grid above stays for any future fields. */
-.cf-editor .identity-editor__grid > .at-input,
-.cf-editor .identity-editor__grid > .at-input-group {
+/* Team URL + AUD share the 2-col grid row like other settings panels; only
+   Protected URL paths (comma-separated, can get long) forces its own full row. */
+.cf-editor__grid-full {
   grid-column: 1 / -1;
 }
 
@@ -3910,23 +3926,50 @@ output.mail-field-hint {
   font-size: var(--fs-sm);
 }
 
-.audit-log-details__summary {
+/* Details popover — absolutely positioned so opening it never changes the
+   table row's height or pushes other rows around (unlike the old <details>). */
+.audit-log-details {
+  position: relative;
+  display: inline-block;
+}
+
+.audit-log-details__trigger {
   cursor: pointer;
   font-size: var(--fs-sm);
   color: var(--primary);
-  user-select: none;
+  background: none;
+  border: 0;
+  padding: 0;
 }
 
-.audit-log-metadata {
-  margin: var(--space-2) 0 0;
+.audit-log-details__backdrop {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: default;
+  z-index: var(--z-dropdown);
+}
+
+.audit-log-details__panel {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin: var(--space-1) 0 0;
   padding: var(--space-2);
-  max-height: 8rem;
+  width: max-content;
+  max-width: 22rem;
+  max-height: 12rem;
   overflow: auto;
   font-size: var(--fs-xs, 0.75rem);
-  background: var(--surface-muted, #f4f4f5);
+  background: var(--surface-elevated, #fafafa);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
   white-space: pre-wrap;
   overflow-wrap: break-word;
+  z-index: calc(var(--z-dropdown) + 1);
 }
 
 .audit-log-footer {

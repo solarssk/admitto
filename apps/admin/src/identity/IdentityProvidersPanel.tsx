@@ -214,7 +214,16 @@ export function IdentityProvidersPanel() {
         )}
       </Card>
 
-      <Card title="Cloudflare Access">
+      <Card
+        title="Cloudflare Access"
+        actions={
+          cfState === "ready" && cf ? (
+            <Link className="at-btn at-btn--secondary" to={IDENTITY_CLOUDFLARE_ROUTE}>
+              <span>Manage</span>
+            </Link>
+          ) : undefined
+        }
+      >
         {cfState === "loading" && <Skeleton height={56} />}
         {cfState === "error" && (
           <EmptyState
@@ -224,28 +233,23 @@ export function IdentityProvidersPanel() {
           />
         )}
         {cfState === "ready" && cf && (
-          <div className="settings-row cf-access-summary">
-            <div className="settings-row__text">
-              <strong>
-                Cloudflare Zero Trust {cf.enabled ? null : <span className="cf-access-summary__off">(disabled)</span>}
-              </strong>
-              <p>
-                {cf.teamDomain
-                  ? `Team domain: ${cf.teamDomain}`
-                  : "No team domain configured."}
-              </p>
-              <div className="cf-access-summary__badges">
-                {cf.enabled ? (
-                  <Badge variant="ok" dot>Enabled</Badge>
-                ) : (
-                  <Badge variant="neutral" dot>Disabled</Badge>
-                )}
-                {cf.locks.enabled && <Badge variant="warn">Managed by environment</Badge>}
-              </div>
+          <div className="cf-access-summary">
+            <strong>
+              Cloudflare Zero Trust {cf.enabled ? null : <span className="cf-access-summary__off">(disabled)</span>}
+            </strong>
+            <p>
+              {cf.teamDomain
+                ? `Team domain: ${cf.teamDomain}`
+                : "No team domain configured."}
+            </p>
+            <div className="cf-access-summary__badges">
+              {cf.enabled ? (
+                <Badge variant="ok" dot>Enabled</Badge>
+              ) : (
+                <Badge variant="neutral" dot>Disabled</Badge>
+              )}
+              {cf.locks.enabled && <Badge variant="warn">Managed by environment</Badge>}
             </div>
-            <Link className="at-btn at-btn--secondary" to={IDENTITY_CLOUDFLARE_ROUTE}>
-              <span>Manage</span>
-            </Link>
           </div>
         )}
       </Card>

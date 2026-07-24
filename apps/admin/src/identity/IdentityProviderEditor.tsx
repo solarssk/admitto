@@ -808,12 +808,12 @@ export function IdentityProviderEditor({
             onChange={(e) => setDraft((d) => setField(d, "login_button_label", e.target.value))}
             placeholder="Continue with Google"
           />
-        </div>
-        <div className="identity-sso-preview" aria-label="SSO login button preview">
-          <span className="identity-sso-preview__label">Preview</span>
-          <span className="identity-sso-preview__button">
-            {loginButtonPreviewLabel(draft.login_button_label)}
-          </span>
+          <div className="identity-sso-preview" aria-label="SSO login button preview">
+            <span className="identity-sso-preview__label">Preview</span>
+            <span className="identity-sso-preview__button">
+              {loginButtonPreviewLabel(draft.login_button_label)}
+            </span>
+          </div>
         </div>
       </Card>
 

@@ -1,9 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button, Card } from "@admitto/ui";
 import { fetchAuditLog } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AuditLogEntryDto } from "../api/types.js";
-import { formatUtcDateTime, utcDayEndIso, utcDayStartIso } from "../utils/event-dates.js";
+import { Segmented } from "../components/Segmented.js";
+import { formatEventDateTime, formatUtcDateTime, utcDayEndIso, utcDayStartIso } from "../utils/event-dates.js";
+
+type TimeMode = "utc" | "local";
+
+const VIEWER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+const TIME_MODE_OPTIONS: ReadonlyArray<{ value: TimeMode; label: string }> = [
+  { value: "utc", label: "UTC" },
+  { value: "local", label: "Local" },
+];
 
 /** Human-readable labels for `AdminAuditLog.action_type` (current + planned IAM types). */
 const ACTION_LABELS: Record<string, string> = {
@@ -44,9 +53,14 @@ const ACTION_OPTIONS = Object.keys(ACTION_LABELS).sort((a, b) =>
 
 const PAGE_SIZE = 25;
 
-/** Format an ISO timestamp for the audit log table. */
-function formatTimestamp(iso: string): string {
-  return formatUtcDateTime(iso);
+/** Format an ISO timestamp for the audit log table in the selected time mode. */
+function formatTimestamp(iso: string, mode: TimeMode): string {
+  return mode === "utc" ? formatUtcDateTime(iso) : formatEventDateTime(iso, VIEWER_TZ);
+}
+
+/** Short label for the viewer's local timezone (e.g. "Warsaw" from "Europe/Warsaw"). */
+function viewerTzLabel(): string {
+  return VIEWER_TZ.split("/").pop()?.replace(/_/g, " ") ?? VIEWER_TZ;
 }
 
 /** Primary actor label; deleted users show a readable fallback (id in cell title). */
@@ -67,9 +81,42 @@ function hasMetadata(metadata: Record<string, unknown> | null): boolean {
   return !!metadata && Object.keys(metadata).length > 0;
 }
 
-/** Pretty-print audit metadata JSON for the expandable Details cell. */
+/** Pretty-print audit metadata JSON for the Details popover. */
 function metadataPreview(metadata: Record<string, unknown>): string {
   return JSON.stringify(metadata, null, 2);
+}
+
+/**
+ * Details cell — shows metadata JSON in a small absolutely-positioned popover
+ * instead of an inline `<details>` block, so opening it never changes the
+ * table row's height or pushes other rows around.
+ */
+function DetailsCell({ metadata }: Readonly<{ metadata: Record<string, unknown> | null }>) {
+  const [open, setOpen] = useState(false);
+  if (!hasMetadata(metadata)) return <>—</>;
+  return (
+    <div className="audit-log-details">
+      <button
+        type="button"
+        className="audit-log-details__trigger"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        View
+      </button>
+      {open && (
+        <>
+          <button
+            type="button"
+            className="audit-log-details__backdrop"
+            aria-label="Close details"
+            onClick={() => setOpen(false)}
+          />
+          <pre className="audit-log-details__panel">{metadataPreview(metadata!)}</pre>
+        </>
+      )}
+    </div>
+  );
 }
 
 /** Superadmin audit log viewer — read-only paginated table with action and date filters. */
@@ -77,10 +124,26 @@ export function AuditLogPanel() {
   const [entries, setEntries] = useState<AuditLogEntryDto[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [timeMode, setTimeMode] = useState<TimeMode>("utc");
   const [filters, setFilters] = useState({ actionType: "", start: "", end: "" });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const loadAbortRef = useRef<AbortController | null>(null);
+  // Previous/Next can shrink the table (e.g. a shorter last page), which the
+  // browser clamps scroll position for — restore the pre-click offset once the
+  // new page has actually rendered instead of letting Settings jump to the top.
+  const scrollRestoreRef = useRef<number | null>(null);
+  const goToPage = useCallback((next: number) => {
+    scrollRestoreRef.current = window.scrollY;
+    setPage(next);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!loading && scrollRestoreRef.current !== null) {
+      window.scrollTo(0, scrollRestoreRef.current);
+      scrollRestoreRef.current = null;
+    }
+  }, [loading, entries]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -170,7 +233,7 @@ export function AuditLogPanel() {
         <table className="table audit-log-table">
           <thead>
             <tr>
-              <th scope="col">Time (UTC)</th>
+              <th scope="col">Time ({timeMode === "utc" ? "UTC" : viewerTzLabel()})</th>
               <th scope="col">Action</th>
               <th scope="col">Actor</th>
               <th scope="col">IP</th>
@@ -180,7 +243,7 @@ export function AuditLogPanel() {
           <tbody>
             {entries.map((entry) => (
               <tr key={entry.id}>
-                <td>{formatTimestamp(entry.created_at)}</td>
+                <td>{formatTimestamp(entry.created_at, timeMode)}</td>
                 <td>{actionLabel(entry.action_type)}</td>
                 <td title={actorTitle(entry)}>
                   {actorDisplay(entry)}
@@ -190,14 +253,7 @@ export function AuditLogPanel() {
                 </td>
                 <td>{entry.ip ?? "—"}</td>
                 <td>
-                  {hasMetadata(entry.metadata) ? (
-                    <details className="audit-log-details">
-                      <summary className="audit-log-details__summary">View</summary>
-                      <pre className="audit-log-metadata">{metadataPreview(entry.metadata!)}</pre>
-                    </details>
-                  ) : (
-                    "—"
-                  )}
+                  <DetailsCell metadata={entry.metadata} />
                 </td>
               </tr>
             ))}
@@ -257,6 +313,12 @@ export function AuditLogPanel() {
             Clear filters
           </Button>
         )}
+        <Segmented
+          ariaLabel="Time zone"
+          value={timeMode}
+          onChange={setTimeMode}
+          options={TIME_MODE_OPTIONS}
+        />
       </div>
 
       {listContent}
@@ -271,7 +333,7 @@ export function AuditLogPanel() {
               type="button"
               variant="secondary"
               disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              onClick={() => goToPage(Math.max(1, page - 1))}
             >
               Previous
             </Button>
@@ -279,7 +341,7 @@ export function AuditLogPanel() {
               type="button"
               variant="secondary"
               disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
+              onClick={() => goToPage(page + 1)}
             >
               Next
             </Button>

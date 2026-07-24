@@ -132,11 +132,10 @@ describe("AuditLogPanel rendering", () => {
     expect(within(table).getByText("alice@example.com")).toBeTruthy();
     expect(within(table).getByText("192.0.2.10")).toBeTruthy();
 
-    const summary = within(table).getByText("View");
-    const details = summary.closest("details") as HTMLDetailsElement | null;
-    expect(details).toBeTruthy();
-    fireEvent.click(summary);
-    expect(details?.open).toBe(true);
+    const trigger = within(table).getByText("View");
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
     expect(within(table).getByText(/"event_id": "evt-1"/)).toBeTruthy();
   });
 

@@ -298,16 +298,18 @@ export function CfAccessEditor() {
             />
             {locks.audience && <Badge variant="neutral">Locked by env</Badge>}
 
-            <Input
-              label="Protected URL paths"
-              value={draft.protectedPrefixesRaw}
-              invalid={Boolean(errors.protectedPrefixes)}
-              error={errors.protectedPrefixes}
-              disabled={locks.protectedPrefixes}
-              hint="Paths that require a Cloudflare Access JWT. Default covers the admin UI and admin API. Comma-separated (each must start with /)."
-              placeholder="/admin, /api/admin"
-              onChange={(e) => setDraft((d) => ({ ...d, protectedPrefixesRaw: e.target.value }))}
-            />
+            <div className="cf-editor__grid-full">
+              <Input
+                label="Protected URL paths"
+                value={draft.protectedPrefixesRaw}
+                invalid={Boolean(errors.protectedPrefixes)}
+                error={errors.protectedPrefixes}
+                disabled={locks.protectedPrefixes}
+                hint="Paths that require a Cloudflare Access JWT. Default covers the admin UI and admin API. Comma-separated (each must start with /)."
+                placeholder="/admin, /api/admin"
+                onChange={(e) => setDraft((d) => ({ ...d, protectedPrefixesRaw: e.target.value }))}
+              />
+            </div>
             {locks.protectedPrefixes && <Badge variant="neutral">Locked by env</Badge>}
           </div>
 
