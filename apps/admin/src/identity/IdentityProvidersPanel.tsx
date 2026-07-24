@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { Badge, Button, Card, EmptyState, Skeleton, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
@@ -47,6 +47,10 @@ function providerEditPath(id: string): string {
 }
 
 const PROVIDER_NEW_PATH = "/admin/settings/identity/providers/new";
+
+function cfStatusBadge(cf: CfAccessSummaryDto): ReactNode {
+  return cf.enabled ? <Badge variant="ok">Active</Badge> : <Badge variant="neutral">Inactive</Badge>;
+}
 
 function ProviderListSkeleton() {
   return (
@@ -261,15 +265,7 @@ export function IdentityProvidersPanel() {
 
       <Card
         title="Cloudflare Access"
-        actions={
-          cfState === "ready" && cf ? (
-            cf.enabled ? (
-              <Badge variant="ok">Active</Badge>
-            ) : (
-              <Badge variant="neutral">Inactive</Badge>
-            )
-          ) : undefined
-        }
+        actions={cfState === "ready" && cf ? cfStatusBadge(cf) : undefined}
       >
         {cfState === "loading" && showCfSkeleton && <Skeleton height={56} />}
         {cfState === "error" && (

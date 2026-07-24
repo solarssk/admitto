@@ -333,7 +333,7 @@ describe("IdentityProvidersPanel", () => {
     renderPanelAt(`${IDENTITY_PROVIDERS_ROUTE}/new`);
 
     // The list is still visible underneath...
-    await waitFor(() => expect(screen.getByText("Google")).toBeTruthy());
+    expect(await screen.findByText("Google")).toBeTruthy();
     // ...and the create modal is open on top of it.
     expect(await screen.findByText("Add identity provider")).toBeTruthy();
   });

@@ -667,15 +667,13 @@ export function IdentityProviderEditor({
       {mode === "create" && (
         <div className="identity-protocol-picker" aria-label="Identity provider protocol">
           <span className="identity-protocol-tile identity-protocol-tile--active">
-            <i className="ti ti-shield-lock" aria-hidden="true" />
-            OpenID Connect
+            <i className="ti ti-shield-lock" aria-hidden="true" /> OpenID Connect
           </span>
           <span
             className="identity-protocol-tile identity-protocol-tile--disabled"
             title="SAML support is coming soon"
           >
-            <i className="ti ti-certificate" aria-hidden="true" />
-            SAML
+            <i className="ti ti-certificate" aria-hidden="true" /> SAML
             <span className="identity-protocol-tile__badge">Soon</span>
           </span>
         </div>
@@ -877,7 +875,7 @@ export function IdentityProviderEditor({
   const showLoadingSpinner = useDelayedLoading(view === "loading");
   return createPortal(
     <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
-      <div className="identity-modal__backdrop" role="presentation" />
+      <div className="identity-modal__backdrop" aria-hidden="true" />
       <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
         <div ref={scrollRef} className="identity-modal__scroll">
           {view === "loading" && showLoadingSpinner && loadingContent}
