@@ -12,10 +12,20 @@ vi.mock("../../src/auth/AuthProvider.js", () => ({
 }));
 
 vi.mock("../../src/layouts/StaffShell.js", () => ({
-  StaffShell: ({ sidebar, children }: { sidebar: React.ReactNode; children: React.ReactNode }) => (
+  StaffShell: ({
+    sidebar,
+    children,
+    eventId,
+  }: {
+    sidebar: React.ReactNode;
+    children: React.ReactNode;
+    eventId?: string;
+  }) => (
     <div>
       <nav data-testid="sidebar">{sidebar}</nav>
-      <main>{children}</main>
+      <main data-testid="main" data-event-id={eventId ?? ""}>
+        {children}
+      </main>
     </div>
   ),
 }));
@@ -83,6 +93,11 @@ describe("AdminShell", () => {
     expect(screen.getByRole("link", { name: "Attendees" }).getAttribute("href")).toBe(
       "/admin/events/evt-1/attendees",
     );
+  });
+
+  it("forwards the route's eventId to StaffShell (for SystemStatus's event-aware Email sending row)", () => {
+    renderShell();
+    expect(screen.getByTestId("main").dataset.eventId).toBe("evt-1");
   });
 
   it("marks live lifecycle segments as links and defers upcoming segments", () => {

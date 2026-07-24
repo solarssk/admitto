@@ -63,6 +63,16 @@ async function hasEventMailOverride(db: PrismaClient, eventId: string): Promise<
   return row !== null;
 }
 
+/** Count of this event's deliveries still marked `retryable` after failing — mirrors
+ * `ops/readyz.ts`'s `collectGauges()` instance-wide gauge, narrowed to one event. Not a
+ * time-windowed "recent failures" count: nothing in this codebase auto-retries (only the
+ * `admitto mail retry-failed` CLI does), so a row can sit here for weeks until the retention
+ * job eventually flips `retryable` to `false` — a nonzero count means "needs manual attention
+ * at some point," not "just happened." */
+async function countFailedRetryableDeliveries(db: PrismaClient, eventId: string): Promise<number> {
+  return db.emailDelivery.count({ where: { event_id: eventId, status: "failed", retryable: true } });
+}
+
 /** Thrown inside the PUT transaction when a concurrent deletion removed the event while
  * this request was validating — signals the route to return 404 instead of writing an
  * orphaned MailSettings row for an event that no longer exists. */
@@ -90,9 +100,10 @@ export async function handleGetEventMailSettings(c: Context, db: PrismaClient): 
   const org = await loadEventOrg(db, eventId);
   if (!org) return c.json({ error: "not_found" }, 404);
 
-  const [desc, hasOverride] = await Promise.all([
+  const [desc, hasOverride, failedDeliveries] = await Promise.all([
     describeMailConfig(eventId, db, process.env),
     hasEventMailOverride(db, eventId),
+    countFailedRetryableDeliveries(db, eventId),
   ]);
 
   return c.json({
@@ -100,6 +111,7 @@ export async function handleGetEventMailSettings(c: Context, db: PrismaClient): 
     organizationId: org.organizationId,
     isProduction: isProductionEnv(process.env),
     hasEventOverride: hasOverride,
+    failedDeliveries,
     fields: serializeDescriptor(desc),
   });
 }

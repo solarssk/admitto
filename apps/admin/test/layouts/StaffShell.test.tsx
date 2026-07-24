@@ -11,7 +11,9 @@ vi.mock("../../src/auth/AuthProvider.js", () => ({
 }));
 
 vi.mock("../../src/components/SystemStatus.js", () => ({
-  SystemStatus: () => <span data-testid="system-status" />,
+  SystemStatus: ({ eventId }: { eventId?: string }) => (
+    <span data-testid="system-status" data-event-id={eventId ?? ""} />
+  ),
 }));
 
 vi.mock("../../src/components/UserMenu.js", () => ({
@@ -20,9 +22,9 @@ vi.mock("../../src/components/UserMenu.js", () => ({
 
 const SIDEBAR_PIN_KEY = "admitto_sidebar_pinned";
 
-function renderShell() {
+function renderShell(eventId?: string) {
   return render(
-    <StaffShell sidebar={<span>nav items</span>} subnav={<span>section nav</span>}>
+    <StaffShell sidebar={<span>nav items</span>} subnav={<span>section nav</span>} eventId={eventId}>
       <div>page content</div>
     </StaffShell>,
   );
@@ -53,6 +55,11 @@ describe("StaffShell", () => {
     expect(screen.getByText("page content")).toBeTruthy();
     expect(screen.getByTestId("system-status")).toBeTruthy();
     expect(screen.getByTestId("user-menu")).toBeTruthy();
+  });
+
+  it("forwards eventId to SystemStatus", () => {
+    renderShell("evt-123");
+    expect(screen.getByTestId("system-status").dataset.eventId).toBe("evt-123");
   });
 
   it("defaults to a pinned sidebar when no preference is stored", () => {

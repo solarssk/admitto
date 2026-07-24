@@ -685,6 +685,9 @@ export interface EventMailSettingsResponse {
   organizationId: string;
   isProduction: boolean;
   hasEventOverride: boolean;
+  /** Deliveries still marked retryable after failing — not time-windowed, so nonzero can mean
+   * "weeks-old and unresolved," not "just happened" (see the route's own comment). */
+  failedDeliveries: number;
   fields: MailSettingsFieldsDto;
 }
 
@@ -864,6 +867,9 @@ export interface SetupCheckResult {
   ok: boolean;
   detail: string;
   warn?: boolean;
+  /** Only set by the `database` check — distinguishes a connection failure from "connected
+   * but can't confirm migrations are current" (see SystemStatus.tsx's PLAIN_DETAIL). */
+  reason?: "unreachable" | "migrations_pending";
 }
 
 export interface SetupChecksResponse {

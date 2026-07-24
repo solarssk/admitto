@@ -435,7 +435,14 @@
 
 .sys-status__label {
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 400;
+}
+
+/* All-clear stays quiet at the default weight above; degraded/down pick up extra weight so
+   an actual problem draws the eye instead of blending in the same as "everything's fine". */
+.sys-status__label--degraded,
+.sys-status__label--down {
+  font-weight: 600;
 }
 
 /* Below 1200px there's no room for the full sentence, but a bare dot floating next to
