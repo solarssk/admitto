@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
-import { Badge, Button, Card, EmptyState, Skeleton, Switch, useToast } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, Skeleton, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
   ApiError,
   fetchCfAccessSummary,
@@ -9,6 +9,7 @@ import {
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { CfAccessSummaryDto, IdentityProviderListItem } from "../api/types.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useInFlightIds } from "../hooks/useInFlightIds.js";
 import { CfAccessEditor } from "./CfAccessEditor.js";
 import { IdentityProviderEditor } from "./IdentityProviderEditor.js";
@@ -68,9 +69,16 @@ function ProviderRowItem({
   const labelId = `idp-enabled-${provider.id}`;
   return (
     <div className="settings-row identity-provider-row">
-      <div className="settings-row__text">
-        <strong>{provider.display_name}</strong>
-        <p className="identity-provider-row__issuer">{provider.issuer}</p>
+      <div className="identity-provider-row__main">
+        <Tooltip content="OpenID Connect">
+          <div className="identity-row-icon" aria-hidden="true">
+            <i className="ti ti-shield-lock" />
+          </div>
+        </Tooltip>
+        <div className="settings-row__text">
+          <strong>{provider.display_name}</strong>
+          <p className="identity-provider-row__issuer">{provider.issuer}</p>
+        </div>
       </div>
       <div className="identity-provider-row__actions">
         <Link className="at-btn at-btn--ghost" to={providerEditPath(provider.id)}>
@@ -161,6 +169,12 @@ export function IdentityProvidersPanel() {
   const retryProviders = useCallback(() => setProvidersRetry((n) => n + 1), []);
   const retryCf = useCallback(() => setCfRetry((n) => n + 1), []);
 
+  // A fetch that resolves near-instantly (localhost, a warm cache) would
+  // otherwise flash the skeleton on and off faster than it can register as
+  // "loading" — show it only once the fetch has genuinely taken a moment.
+  const showProvidersSkeleton = useDelayedLoading(providersState === "loading");
+  const showCfSkeleton = useDelayedLoading(cfState === "loading");
+
   // The list no longer unmounts when a modal route is visited (unlike a full page
   // navigation), so refresh both lists ourselves once a modal closes back to the
   // bare providers route — covers create/edit/CF saves without threading an
@@ -216,7 +230,7 @@ export function IdentityProvidersPanel() {
           </Link>
         }
       >
-        {providersState === "loading" && <ProviderListSkeleton />}
+        {providersState === "loading" && showProvidersSkeleton && <ProviderListSkeleton />}
         {providersState === "error" && (
           <EmptyState
             title="Couldn't load providers"
@@ -244,7 +258,7 @@ export function IdentityProvidersPanel() {
               ))}
             </div>
             <p className="identity-providers__hint">
-              {togglingIds.size > 0 ? "Saving changes…" : "Edit a provider to configure endpoints, claims, and group→role mapping."}
+              Edit a provider to configure endpoints, claims, and group→role mapping.
             </p>
           </>
         )}
@@ -267,7 +281,7 @@ export function IdentityProvidersPanel() {
           ) : undefined
         }
       >
-        {cfState === "loading" && <Skeleton height={56} />}
+        {cfState === "loading" && showCfSkeleton && <Skeleton height={56} />}
         {cfState === "error" && (
           <EmptyState
             title="Couldn't load Cloudflare Access"
@@ -277,17 +291,22 @@ export function IdentityProvidersPanel() {
         )}
         {cfState === "ready" && cf && (
           <div className="cf-access-summary">
-            <strong>Cloudflare Zero Trust</strong>
-            <p>
-              {cf.teamDomain
-                ? `Team domain: ${cf.teamDomain}`
-                : "No team domain configured."}
-            </p>
-            {cf.locks.enabled && (
-              <div className="cf-access-summary__badges">
-                <Badge variant="warn">Managed by environment</Badge>
-              </div>
-            )}
+            <div className="identity-row-icon" aria-hidden="true">
+              <i className="ti ti-brand-cloudflare" />
+            </div>
+            <div className="cf-access-summary__text">
+              <strong>Cloudflare Zero Trust</strong>
+              <p>
+                {cf.teamDomain
+                  ? `Team domain: ${cf.teamDomain}`
+                  : "No team domain configured."}
+              </p>
+              {cf.locks.enabled && (
+                <div className="cf-access-summary__badges">
+                  <Badge variant="warn">Managed by environment</Badge>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </Card>

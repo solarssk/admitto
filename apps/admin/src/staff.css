@@ -2690,6 +2690,13 @@
   flex-direction: column;
 }
 
+.identity-provider-row__main {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
 .identity-provider-row__actions {
   display: flex;
   align-items: center;
@@ -2699,6 +2706,22 @@
 
 .identity-provider-row__issuer {
   word-break: break-all;
+}
+
+/* Protocol/type icon tile — left of a provider row or the CF summary, so the row
+   reads as "what kind of identity source is this" at a glance. OIDC is the only
+   wired-up protocol today; swap the glyph per-provider once SAML/Entra ship. */
+.identity-row-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--control-h);
+  height: var(--control-h);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: 1.1rem;
 }
 
 .identity-providers__skeleton {
@@ -2711,6 +2734,16 @@
   margin: var(--space-3) 0 0;
   color: var(--text-secondary);
   font-size: var(--fs-sm);
+}
+
+.cf-access-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.cf-access-summary__text {
+  min-width: 0;
 }
 
 .cf-access-summary strong {
