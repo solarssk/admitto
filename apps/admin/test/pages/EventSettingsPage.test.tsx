@@ -322,6 +322,23 @@ describe("EventSettingsPage tabs", () => {
     expect(screen.queryByText("Could not load ticket types")).toBeNull();
   });
 
+  it("never claims 'No ticket types yet' during the no-flash grace window of the very first load (Sonar/PO review)", async () => {
+    // Regression test: TicketTypesCard must be gated on the raw ticketTypesLoading flag, not the
+    // delayed showTicketTypesLoading flag alone — otherwise the pre-delay window (real fetch still
+    // in flight, ticketTypes still its initial []) falls straight through to the confirmed-empty
+    // message below. Deliberately no fake timers / advancing here: the assertion only needs the
+    // real elapsed time since mount to stay under the 200ms grace window, same as production.
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchTicketTypes).mockImplementationOnce(() => new Promise(() => {}));
+    renderSettings();
+    await screen.findByRole("tab", { name: "Ticket types" });
+    fireEvent.click(screen.getByRole("tab", { name: "Ticket types" }));
+
+    expect(
+      screen.queryByText("No ticket types yet. Add at least one before sending tickets."),
+    ).toBeNull();
+  });
+
   it("shows a superadmin-only notice instead of the image asset library for a non-superadmin org admin", async () => {
     mockAssignments = orgAdminAssignments;
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);

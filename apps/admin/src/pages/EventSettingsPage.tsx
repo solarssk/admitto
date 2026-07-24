@@ -931,7 +931,8 @@ export function EventSettingsPage() {
           eventId={eventId}
           event={event}
           types={ticketTypes}
-          loading={showTicketTypesLoading}
+          loading={ticketTypesLoading}
+          showLoading={showTicketTypesLoading}
           error={ticketTypesError}
           onRetry={() => loadTicketTypes().catch(() => {})}
           onChanged={() => loadTicketTypes().catch(() => {})}

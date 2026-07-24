@@ -224,16 +224,20 @@ function topUnresolvedReadinessItems(items: ReadinessItem[]): ReadinessItem[] {
 function SetupChecklistCard({
   overview,
   loading,
+  showLoading,
   eventId,
 }: Readonly<{
   overview: EventOverviewDto | null;
   loading: boolean;
+  showLoading: boolean;
   eventId: string;
 }>) {
   if (!overview) {
     return (
       <Card title="Setup checklist">
-        <p className="overview-muted">{loading ? "Loading…" : "Unavailable"}</p>
+        <p className="overview-muted">
+          {loading ? (showLoading ? "Loading…" : "") : "Unavailable"}
+        </p>
       </Card>
     );
   }
@@ -292,16 +296,20 @@ function SetupChecklistCard({
 function CheckInProgressCard({
   overview,
   loading,
+  showLoading,
   admittedCount,
 }: Readonly<{
   overview: EventOverviewDto | null;
   loading: boolean;
+  showLoading: boolean;
   admittedCount: number | null;
 }>) {
   if (!overview) {
     return (
       <Card title="Check-in progress" className="overview-card--header-fixed">
-        <p className="overview-muted">{loading ? "Loading…" : "Unavailable"}</p>
+        <p className="overview-muted">
+          {loading ? (showLoading ? "Loading…" : "") : "Unavailable"}
+        </p>
       </Card>
     );
   }
@@ -995,11 +1003,13 @@ function ResourceModal({
 function PinnedNoteSection({
   note,
   loading,
+  showLoading,
   archived,
   onSave,
 }: Readonly<{
   note: string | null;
   loading: boolean;
+  showLoading: boolean;
   archived: boolean;
   onSave: (note: string | null) => Promise<void>;
 }>) {
@@ -1017,7 +1027,7 @@ function PinnedNoteSection({
   if (note) {
     body = <p className="overview-pinned-note__body">{note}</p>;
   } else if (loading) {
-    body = <p className="overview-muted">Loading…</p>;
+    body = showLoading ? <p className="overview-muted">Loading…</p> : null;
   } else if (archived) {
     body = <p className="overview-muted">No operational note.</p>;
   } else {
@@ -1060,6 +1070,7 @@ function PinnedNoteSection({
 function KeyContactsSection({
   contacts,
   loading,
+  showLoading,
   archived,
   onAdd,
   onUpdate,
@@ -1067,6 +1078,7 @@ function KeyContactsSection({
 }: Readonly<{
   contacts: EventContactDto[];
   loading: boolean;
+  showLoading: boolean;
   archived: boolean;
   onAdd: (data: { name: string; role?: string | null; phone?: string | null; email?: string | null }) => Promise<void>;
   onUpdate: (id: string, data: { name: string; role?: string | null; phone?: string | null; email?: string | null }) => Promise<void>;
@@ -1132,7 +1144,7 @@ function KeyContactsSection({
       </ul>
     );
   } else if (loading) {
-    body = <p className="overview-muted">Loading…</p>;
+    body = showLoading ? <p className="overview-muted">Loading…</p> : null;
   } else if (archived) {
     body = <p className="overview-muted">No contacts yet.</p>;
   } else {
@@ -1186,6 +1198,7 @@ function KeyContactsSection({
 function LinksFilesSection({
   resources,
   loading,
+  showLoading,
   archived,
   onAdd,
   onUpdate,
@@ -1193,6 +1206,7 @@ function LinksFilesSection({
 }: Readonly<{
   resources: EventResourceDto[];
   loading: boolean;
+  showLoading: boolean;
   archived: boolean;
   onAdd: (data: { title: string; type: "link" | "file"; url: string; description?: string | null }) => Promise<void>;
   onUpdate: (id: string, data: { title: string; type: "link" | "file"; url: string; description?: string | null }) => Promise<void>;
@@ -1265,7 +1279,7 @@ function LinksFilesSection({
       </>
     );
   } else if (loading) {
-    body = <p className="overview-muted">Loading…</p>;
+    body = showLoading ? <p className="overview-muted">Loading…</p> : null;
   } else if (archived) {
     body = <p className="overview-muted">No links or files yet.</p>;
   } else {
@@ -1322,6 +1336,7 @@ function LinksFilesSection({
 function NotesAndContactsCard(props: Readonly<{
   pinnedNote: string | null;
   loading: boolean;
+  showLoading: boolean;
   archived: boolean;
   onSaveNote: (note: string | null) => Promise<void>;
   contacts: EventContactDto[];
@@ -1338,12 +1353,14 @@ function NotesAndContactsCard(props: Readonly<{
       <PinnedNoteSection
         note={props.pinnedNote}
         loading={props.loading}
+        showLoading={props.showLoading}
         archived={props.archived}
         onSave={props.onSaveNote}
       />
       <KeyContactsSection
         contacts={props.contacts}
         loading={props.loading}
+        showLoading={props.showLoading}
         archived={props.archived}
         onAdd={props.onAddContact}
         onUpdate={props.onUpdateContact}
@@ -1352,6 +1369,7 @@ function NotesAndContactsCard(props: Readonly<{
       <LinksFilesSection
         resources={props.resources}
         loading={props.loading}
+        showLoading={props.showLoading}
         archived={props.archived}
         onAdd={props.onAddResource}
         onUpdate={props.onUpdateResource}
@@ -1363,10 +1381,14 @@ function NotesAndContactsCard(props: Readonly<{
 
 /** A KPI tile's numeric value has 3 states: the real count once loaded, an ellipsis while the
  * initial fetch is in flight, or a dash if it never arrived — extracted so the 3 tiles reading
- * straight off `currentOverview` don't each repeat the same nested ternary. */
-function kpiCountText(value: number | null, loading: boolean): string {
+ * straight off `currentOverview` don't each repeat the same nested ternary. `loading` (raw) picks
+ * the state; `showLoading` (delayed) only decides whether the ellipsis itself renders yet, so a
+ * fetch still within the no-flash grace window renders blank instead of prematurely claiming the
+ * value is unavailable ("—"). */
+function kpiCountText(value: number | null, loading: boolean, showLoading: boolean): string {
   if (value != null) return String(value);
-  return loading ? "…" : "—";
+  if (loading) return showLoading ? "…" : "";
+  return "—";
 }
 
 /** Event-scoped dashboard — event command center with KPIs, a setup checklist, check-in progress,
@@ -1649,13 +1671,13 @@ export function EventOverviewPage() {
           // No raw event.attendee_count fallback here on purpose (#374) — that picker total
           // includes revoked attendees, so falling back to it flashed a higher number (e.g.
           // 5 -> 4) the instant the real active-only overview count arrived.
-          value={kpiCountText(currentOverview?.attendee_count ?? null, showLoading)}
+          value={kpiCountText(currentOverview?.attendee_count ?? null, loading, showLoading)}
         />
         <OverviewKpiTile
           tone="info"
           icon={<i className="ti ti-mail-check" aria-hidden="true" />}
           label="Tickets sent"
-          value={kpiCountText(currentOverview?.email_sent ?? null, showLoading)}
+          value={kpiCountText(currentOverview?.email_sent ?? null, loading, showLoading)}
         />
         {/* Replaces the former "Checked in" tile (#E1) — that duplicated the admission
          * count/percentage already shown prominently in the Check-in progress card directly
@@ -1672,13 +1694,13 @@ export function EventOverviewPage() {
           tone="error"
           icon={<i className="ti ti-alert-triangle" aria-hidden="true" />}
           label="Failed delivery"
-          value={kpiCountText(currentOverview != null ? emailFailedTotal : null, showLoading)}
+          value={kpiCountText(currentOverview != null ? emailFailedTotal : null, loading, showLoading)}
         />
       </div>
 
       <div className="overview-body">
         <div className="overview-row overview-row--stretch">
-          <CheckInProgressCard overview={currentOverview} loading={showLoading} admittedCount={admittedCount} />
+          <CheckInProgressCard overview={currentOverview} loading={loading} showLoading={showLoading} admittedCount={admittedCount} />
           <RecentActivityCard
             eventId={event.id}
             activity={currentOverview?.recent_activity ?? []}
@@ -1688,10 +1710,11 @@ export function EventOverviewPage() {
           />
         </div>
         <div className="overview-row">
-          <SetupChecklistCard overview={currentOverview} loading={showLoading} eventId={event.id} />
+          <SetupChecklistCard overview={currentOverview} loading={loading} showLoading={showLoading} eventId={event.id} />
           <NotesAndContactsCard
             pinnedNote={pinnedNote}
-            loading={showLoading}
+            loading={loading}
+            showLoading={showLoading}
             archived={!!event.archived_at}
             onSaveNote={handleSaveNote}
             contacts={contacts}

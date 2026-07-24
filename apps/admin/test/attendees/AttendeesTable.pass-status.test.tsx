@@ -226,6 +226,20 @@ describe("AttendeesTable loading states (#271)", () => {
     expect(screen.queryByText("0 attendees")).toBeNull();
   });
 
+  it("never claims '0 attendees' during the no-flash grace window of the very first load, even before Loading… itself appears", () => {
+    // Regression test: footSummary must gate on the raw first-load condition, not the
+    // delayed flag alone — otherwise, for the first ~200ms of every single page load
+    // (fast or slow), "total" is still its pre-fetch default (0) and the footer would
+    // wrongly read "0 attendees" instead of showing nothing until Loading… is warranted.
+    vi.useFakeTimers();
+    render(
+      <AttendeesTable {...tableProps} hasLoadedOnce={false} loading items={[]} total={0} />,
+    );
+    // Deliberately NOT advancing timers past 200ms — this is the pre-delay window.
+    expect(screen.queryByText("0 attendees")).toBeNull();
+    expect(screen.queryByText("Loading…")).toBeNull();
+  });
+
   it("shows the shimmer skeleton only on the very first load, not a later filter landing on zero matches", () => {
     vi.useFakeTimers();
     const { container, rerender } = render(

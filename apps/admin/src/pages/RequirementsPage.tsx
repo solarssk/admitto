@@ -40,6 +40,7 @@ function loadErrorMessage(err: unknown): string {
 
 function EventItemsTableBody({
   loading,
+  showLoading,
   items,
   event,
   togglingIds,
@@ -47,6 +48,7 @@ function EventItemsTableBody({
   onEdit,
 }: {
   readonly loading: boolean;
+  readonly showLoading: boolean;
   readonly items: EventItemDto[];
   readonly event: EventDto;
   readonly togglingIds: ReadonlySet<string>;
@@ -54,6 +56,7 @@ function EventItemsTableBody({
   readonly onEdit: (item: EventItemDto) => void;
 }) {
   if (loading) {
+    if (!showLoading) return null;
     return (
       <tr>
         <td colSpan={3} className="attendees-empty">
@@ -602,7 +605,8 @@ export function RequirementsPage() {
               </thead>
               <tbody>
                 <EventItemsTableBody
-                  loading={showLoading}
+                  loading={loading}
+                  showLoading={showLoading}
                   items={items}
                   event={event}
                   togglingIds={togglingIds}
@@ -619,7 +623,8 @@ export function RequirementsPage() {
         eventId={eventId}
         event={event}
         fields={customFields}
-        loading={showLoading}
+        loading={loading}
+        showLoading={showLoading}
         onChanged={() => setReloadToken((n) => n + 1)}
       />
 

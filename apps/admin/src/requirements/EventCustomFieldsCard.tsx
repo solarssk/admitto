@@ -13,6 +13,7 @@ export interface EventCustomFieldsCardProps {
   readonly event: EventDto;
   readonly fields: EventCustomFieldDto[];
   readonly loading: boolean;
+  readonly showLoading: boolean;
   readonly onChanged: () => void;
 }
 
@@ -73,7 +74,7 @@ function CustomFieldRow({
 /** Requirements screen card: manages the event's custom attendee data field registry
  * (dietary, shirt size, ...) — the single source of truth consumed by attendee edit/create,
  * import, export, and referenced by items as operator hints (see EventItemDrawer). */
-export function EventCustomFieldsCard({ eventId, event, fields, loading, onChanged }: EventCustomFieldsCardProps) {
+export function EventCustomFieldsCard({ eventId, event, fields, loading, showLoading, onChanged }: EventCustomFieldsCardProps) {
   const { addToast } = useToast();
   const [addOpen, setAddOpen] = useState(false);
   const [editField, setEditField] = useState<EventCustomFieldDto | null>(null);
@@ -106,6 +107,7 @@ export function EventCustomFieldsCard({ eventId, event, fields, loading, onChang
 
   function renderRows() {
     if (loading) {
+      if (!showLoading) return null;
       return (
         <tr>
           <td colSpan={4} className="attendees-empty">
