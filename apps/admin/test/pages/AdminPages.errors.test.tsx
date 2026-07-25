@@ -12,7 +12,7 @@ import { ReportsPage } from "../../src/pages/ReportsPage.js";
 import { EventsPickerPage } from "../../src/pages/EventsPickerPage.js";
 import { ImportPage } from "../../src/pages/ImportPage.js";
 import { DeviceLabelStep } from "../../src/pages/DeviceLabelStep.js";
-import { getTooltipText, renderWithToast } from "../test-utils.js";
+import { getTooltipText, mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const superadminAssignments = [
   { role: "superadmin", scope_type: "instance", scope_id: null },
@@ -20,6 +20,12 @@ const superadminAssignments = [
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({
   useAuth: () => ({ assignments: superadminAssignments }),
+}));
+
+// ReportsPage's live SSE wiring (ADR 0014) isn't under test in this shared error-handling file -
+// jsdom has no real EventSource, so every ReportsPage render here needs this stubbed out.
+vi.mock("../../src/hooks/useEventStream.js", () => ({
+  useEventStream: () => ({ connected: true, status: "connected" }),
 }));
 
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => {
@@ -147,6 +153,9 @@ const emptyReport = {
   admission_log: [],
   admission_log_truncated: false,
   admission_log_total: 0,
+  by_rsvp_status: [],
+  by_checkin_method: [],
+  by_device: [],
 };
 
 const archivedEvent = {
@@ -163,10 +172,18 @@ const archivedEvent = {
   attendee_count: 12,
 };
 
+// ReportsPage's AdmissionLog picks a table (desktop) or card list (mobile) via useIsDesktop(),
+// which reads window.matchMedia - jsdom doesn't implement it. Defaults to desktop so the
+// existing table-shaped assertions elsewhere in this file keep working unchanged.
+beforeEach(() => {
+  mockMatchMedia(true);
+});
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe("Admin pages delayed loading", () => {
@@ -632,13 +649,134 @@ describe("ReportsPage operator errors", () => {
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Export CSV" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Export report" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Export CSV" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export report" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed/);
     });
     expect(screen.queryByText("secret_internal")).toBeNull();
+  });
+
+  it("redirects to login on a 401 while loading the report", async () => {
+    vi.stubGlobal("location", {
+      ...window.location,
+      assign: vi.fn(),
+      pathname: "/admin/events/evt-1/reports",
+    });
+    vi.mocked(fetchEventReports).mockRejectedValueOnce(new ApiError(401, "unauthenticated"));
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(window.location.assign).toHaveBeenCalledWith("/login?next=%2Fadmin%2Fevents%2Fevt-1%2Freports");
+    });
+  });
+
+  it("redirects to login on a 401 while exporting CSV", async () => {
+    vi.stubGlobal("location", {
+      ...window.location,
+      assign: vi.fn(),
+      pathname: "/admin/events/evt-1/reports",
+    });
+    vi.mocked(fetchEventReports).mockResolvedValueOnce(emptyReport);
+    vi.mocked(exportEventReportsCsv).mockRejectedValueOnce(new ApiError(401, "unauthenticated"));
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Export report" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Export report" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
+    await waitFor(() => {
+      expect(window.location.assign).toHaveBeenCalledWith("/login?next=%2Fadmin%2Fevents%2Fevt-1%2Freports");
+    });
+  });
+
+  it("toasts a generic export failure for a non-API error (e.g. a network failure)", async () => {
+    vi.mocked(fetchEventReports).mockResolvedValueOnce(emptyReport);
+    vi.mocked(exportEventReportsCsv).mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Export report" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Export report" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Export failed/);
+    });
+  });
+
+  it("exports the PDF report by opening the print URL in a new tab", async () => {
+    vi.stubGlobal("open", vi.fn());
+    vi.mocked(fetchEventReports).mockResolvedValueOnce(emptyReport);
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Export report" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Export report" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /PDF/ }));
+    expect(window.open).toHaveBeenCalledWith(
+      "/api/admin/events/evt-1/reports/export?format=pdf",
+      "_blank",
+      "noopener,noreferrer",
+    );
+  });
+
+  it("retries loading the report from the error state", async () => {
+    vi.mocked(fetchEventReports).mockRejectedValueOnce(new Error("boom")).mockResolvedValueOnce(emptyReport);
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Failed to load report.")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => {
+      expect(screen.getByText("No check-ins yet")).toBeTruthy();
+    });
+    expect(fetchEventReports).toHaveBeenCalledTimes(2);
+  });
+
+  it("recovers from a ticket-type catalog fetch failure without crashing", async () => {
+    vi.mocked(fetchTicketTypes).mockRejectedValueOnce(new Error("network down"));
+    vi.mocked(fetchEventReports).mockResolvedValueOnce(emptyReport);
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("No check-ins yet")).toBeTruthy();
+    });
   });
 });
 
@@ -661,11 +799,13 @@ describe("ReportsPage ticket type breakdown", () => {
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(container.querySelector(".reports-bytype")).toBeTruthy();
+      expect(container.querySelector(".reports-breakdown-list")).toBeTruthy();
     });
     // "None" also legitimately appears in the admission-log filter's <option> below, so this is
     // scoped to the breakdown panel - a React key collision would drop or misrender one of these.
-    const breakdown = container.querySelector(".reports-bytype");
+    // The ticket-type card renders first among the (now three) breakdown-list cards on the page,
+    // so the first match in document order is still the right one.
+    const breakdown = container.querySelector(".reports-breakdown-list");
     if (!breakdown) throw new Error("breakdown panel not found");
     expect(within(breakdown as HTMLElement).getByText("None")).toBeTruthy();
     expect(within(breakdown as HTMLElement).getByText("(none)")).toBeTruthy();
@@ -706,6 +846,169 @@ describe("ReportsPage hourly chart", () => {
     // full 5-row range collapsed to just the two non-zero rows.
     expect(container.querySelectorAll(".reports-chart__bar-wrap")).toHaveLength(5);
   });
+
+  it("pads a sparse dataset out to a minimum 9-hour window, not just ±1 hour (#383)", async () => {
+    const fullDay = Array.from({ length: 24 }, (_, i) => ({
+      hour: `${String(i).padStart(2, "0")}:00`,
+      count: i === 10 || i === 12 ? 1 : 0,
+    }));
+    vi.mocked(fetchEventReports).mockResolvedValue({
+      ...emptyReport,
+      summary: { ...emptyReport.summary, total_attendees: 2, admitted: 2, admission_rate_pct: 100 },
+      by_hour: fullDay,
+    });
+    const { container } = renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(container.querySelectorAll(".reports-chart__bar-wrap").length).toBeGreaterThan(0);
+    });
+    // A naive ±1-hour pad around 10:00/12:00 would render just 09:00-13:00 (5 columns) inside
+    // the card's full width - real event data (the API always returns all 24 hours) pads out
+    // symmetrically to the mockup's own 9-hour example window instead.
+    const labels = Array.from(container.querySelectorAll(".reports-chart__label")).map((el) => el.textContent);
+    expect(labels).toEqual(["07", "08", "09", "10", "11", "12", "13", "14", "15"]);
+  });
+});
+
+describe("ReportsPage stat tiles", () => {
+  it("renders all four KPI tiles with values and icon variants", async () => {
+    vi.mocked(fetchEventReports).mockResolvedValue({
+      ...emptyReport,
+      summary: {
+        total_attendees: 10,
+        admitted: 7,
+        no_shows: 3,
+        admission_rate_pct: 70,
+        peak_hour: "14:00",
+        peak_hour_count: 4,
+      },
+    });
+    const { container } = renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Total attendees")).toBeTruthy();
+    });
+    // Scoped to each tile by its own label, not a bare getByText("10") - a bare number is
+    // fragile against any future breakdown row that happens to render the same digits.
+    function statValue(label: string): string | null | undefined {
+      const labelEl = Array.from(container.querySelectorAll(".reports-stat__label")).find(
+        (el) => el.textContent === label,
+      );
+      return labelEl?.closest(".reports-stat")?.querySelector(".reports-stat__value")?.textContent;
+    }
+    expect(statValue("Total attendees")).toBe("10");
+    expect(statValue("Admitted")).toBe("7");
+    expect(statValue("No-shows")).toBe("3");
+    expect(statValue("Peak hour")).toBe("14:00");
+    expect(container.querySelector(".reports-stat__icon--neutral")).toBeTruthy();
+    expect(container.querySelector(".reports-stat__icon--ok")).toBeTruthy();
+    expect(container.querySelector(".reports-stat__icon--warn")).toBeTruthy();
+    expect(container.querySelector(".reports-stat__icon--info")).toBeTruthy();
+  });
+
+  it("shows the No-shows rate to one decimal place, matching Admitted's own precision", async () => {
+    vi.mocked(fetchEventReports).mockResolvedValue({
+      ...emptyReport,
+      summary: {
+        total_attendees: 3,
+        admitted: 2,
+        no_shows: 1,
+        admission_rate_pct: 66.7,
+        peak_hour: null,
+        peak_hour_count: 0,
+      },
+    });
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    // Was Math.round(x * 100) here (whole percent only) - a cosmetic mismatch against the
+    // Admitted tile's own 1-decimal rate right next to it.
+    expect(await screen.findByText("33.3% of total")).toBeTruthy();
+  });
+});
+
+describe("ReportsPage — Check-in details section", () => {
+  it("zero-fills all 5 RSVP buckets, shows only the 2 real check-in methods, and ranks devices by admissions", async () => {
+    vi.mocked(fetchEventReports).mockResolvedValue({
+      ...emptyReport,
+      summary: { ...emptyReport.summary, total_attendees: 3, admitted: 3, admission_rate_pct: 100 },
+      by_rsvp_status: [
+        { status: "confirmed", count: 2 },
+        { status: "declined", count: 1 },
+      ],
+      by_checkin_method: [{ method: "scan", count: 3 }],
+      by_device: [
+        { device_id: "Tablet 1 — main entrance", count: 2 },
+        { device_id: null, count: 1 },
+      ],
+    });
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Attendance confirmation")).toBeTruthy();
+    });
+    // All 5 statuses render even though the API only returned 2 - the other 3 are zero-filled.
+    expect(screen.getByText("Confirmed")).toBeTruthy();
+    expect(screen.getByText("Declined")).toBeTruthy();
+    expect(screen.getByText("Tentative")).toBeTruthy();
+    expect(screen.getByText("Cancelled")).toBeTruthy();
+    expect(screen.getByText("Registered")).toBeTruthy();
+
+    expect(screen.getByText("QR scan")).toBeTruthy();
+    expect(screen.getByText("Manual search")).toBeTruthy();
+
+    expect(screen.getByText("By device")).toBeTruthy();
+    expect(screen.getByText("Tablet 1 — main entrance")).toBeTruthy();
+    expect(screen.getByText("(unlabeled device)")).toBeTruthy();
+  });
+
+  it("adds a fallback row for an rsvp_status outside the 5 known values, instead of silently dropping it (#587 review)", async () => {
+    vi.mocked(fetchEventReports).mockResolvedValue({
+      ...emptyReport,
+      summary: { ...emptyReport.summary, total_attendees: 4, admitted: 4, admission_rate_pct: 100 },
+      // rsvp_status is an unconstrained DB column - "invited" isn't one of the 5 statuses this
+      // app's own write paths ever set, simulating a row written outside them (e.g. a script).
+      by_rsvp_status: [
+        { status: "confirmed", count: 3 },
+        { status: "invited", count: 1 },
+      ],
+    });
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Attendance confirmation")).toBeTruthy();
+    });
+    // Still zero-fills the 5 known buckets...
+    expect(screen.getByText("Confirmed")).toBeTruthy();
+    expect(screen.getByText("Declined")).toBeTruthy();
+    // ...plus a fallback row for the unrecognized value, instead of that attendee just vanishing
+    // from the card despite being counted in the "4" admitted total above.
+    expect(screen.getByText("invited (not in catalog)")).toBeTruthy();
+  });
 });
 
 describe("ReportsPage admission log", () => {
@@ -717,6 +1020,7 @@ describe("ReportsPage admission log", () => {
       ticket_type: null,
       admitted_at: "2026-06-01T10:00:00.000Z",
       device_id: null,
+      items: [],
     }));
     vi.mocked(fetchEventReports).mockResolvedValue({
       ...emptyReport,
@@ -743,6 +1047,160 @@ describe("ReportsPage admission log", () => {
     expect(screen.queryByText("Guest 51")).toBeNull();
   });
 
+  it("re-pages the admission log when rows-per-page changes, resetting to page 1", async () => {
+    const admissionLog = Array.from({ length: 51 }, (_, index) => ({
+      attendee_id: `att-${index + 1}`,
+      name: `Guest ${index + 1}`,
+      email: `guest-${index + 1}@example.com`,
+      ticket_type: null,
+      admitted_at: "2026-06-01T10:00:00.000Z",
+      device_id: null,
+      items: [],
+    }));
+    vi.mocked(fetchEventReports).mockResolvedValue({
+      ...emptyReport,
+      summary: { ...emptyReport.summary, total_attendees: 51, admitted: 51, admission_rate_pct: 100 },
+      admission_log: admissionLog,
+      admission_log_total: admissionLog.length,
+    });
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Guest 1")).toBeTruthy();
+    expect(screen.getByText("Page 1 of 2")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText("Guest 51")).toBeTruthy();
+
+    const pageSizeSelect = screen.getByLabelText("Rows per page") as HTMLSelectElement;
+    fireEvent.change(pageSizeSelect, { target: { value: "100" } });
+
+    // All 51 rows fit on one page at size 100 - the pager disappears and page 1's rows return,
+    // proving the page index reset instead of staying on the now out-of-range page 2.
+    await waitFor(() => {
+      expect(screen.getByText("Guest 1")).toBeTruthy();
+      expect(screen.getByText("Guest 51")).toBeTruthy();
+    });
+    expect(screen.queryByText("Page 1 of 2")).toBeNull();
+  });
+
+  it("renders the admission log as cards instead of a table below the desktop breakpoint", async () => {
+    mockMatchMedia(false);
+    vi.mocked(fetchEventReports).mockResolvedValue({
+      ...emptyReport,
+      summary: { ...emptyReport.summary, total_attendees: 1, admitted: 1, admission_rate_pct: 100 },
+      admission_log: [
+        {
+          attendee_id: "att-mobile",
+          name: "Mobile Guest",
+          email: "mobile-guest@example.com",
+          ticket_type: null,
+          admitted_at: "2026-06-01T10:00:00.000Z",
+          device_id: "scanner-01",
+          items: ["Badge"],
+        },
+      ],
+      admission_log_total: 1,
+    });
+    const { container } = renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Mobile Guest")).toBeTruthy();
+    });
+    expect(container.querySelector(".reports-log-cards")).toBeTruthy();
+    expect(container.querySelector(".reports-log-table")).toBeNull();
+    const card = screen.getByText("Mobile Guest").closest("a");
+    expect(card?.getAttribute("href")).toBe("/admin/events/evt-1/attendees/att-mobile");
+  });
+
+  it("renders joined issued item labels in the Items column, or a dash when none", async () => {
+    vi.mocked(fetchEventReports).mockResolvedValue({
+      ...emptyReport,
+      summary: { ...emptyReport.summary, total_attendees: 2, admitted: 2, admission_rate_pct: 100 },
+      admission_log: [
+        {
+          attendee_id: "att-with-items",
+          name: "Has Items Guest",
+          email: "has-items@example.com",
+          ticket_type: null,
+          admitted_at: "2026-06-01T10:00:00.000Z",
+          device_id: null,
+          items: ["Badge", "Gift bag"],
+        },
+        {
+          attendee_id: "att-no-items",
+          name: "No Items Guest",
+          email: "no-items@example.com",
+          ticket_type: null,
+          admitted_at: "2026-06-01T10:05:00.000Z",
+          device_id: null,
+          items: [],
+        },
+      ],
+      admission_log_total: 2,
+    });
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Has Items Guest")).toBeTruthy();
+    });
+    expect(screen.getByText("Badge, Gift bag")).toBeTruthy();
+    const noItemsRow = screen.getByText("No Items Guest").closest("tr");
+    if (!noItemsRow) throw new Error("admission log row not found");
+    const itemsCell = noItemsRow.querySelectorAll("td")[4];
+    if (!itemsCell) throw new Error("items cell not found");
+    expect(itemsCell.textContent).toBe("—");
+  });
+
+  it("links the admission log's attendee name/email to that attendee's detail page", async () => {
+    vi.mocked(fetchEventReports).mockResolvedValue({
+      ...emptyReport,
+      summary: { ...emptyReport.summary, total_attendees: 1, admitted: 1, admission_rate_pct: 100 },
+      admission_log: [
+        {
+          attendee_id: "att-linked",
+          name: "Linked Guest",
+          email: "linked-guest@example.com",
+          ticket_type: null,
+          admitted_at: "2026-06-01T10:00:00.000Z",
+          device_id: null,
+          items: [],
+        },
+      ],
+      admission_log_total: 1,
+    });
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Linked Guest")).toBeTruthy();
+    });
+    const link = screen.getByText("Linked Guest").closest("a");
+    if (!link) throw new Error("attendee link not found");
+    expect(link.getAttribute("href")).toBe("/admin/events/evt-1/attendees/att-linked");
+    expect(screen.getByText("linked-guest@example.com").closest("a")).toBe(link);
+  });
+
   it("labels an untyped admission as (none), matching the breakdown/filter instead of the Attendees table's dash", async () => {
     // mockResolvedValue (not ...Once): the mocked useConnectionState() below returns a fresh
     // object every render, so ReportsPage's load effect can legitimately fire more than once -
@@ -761,6 +1219,7 @@ describe("ReportsPage admission log", () => {
           ticket_type: null,
           admitted_at: "2026-06-01T10:00:00.000Z",
           device_id: null,
+          items: [],
         },
       ],
       admission_log_total: 1,
@@ -777,8 +1236,8 @@ describe("ReportsPage admission log", () => {
     });
     const row = screen.getByText("Jan Kowalski").closest("tr");
     if (!row) throw new Error("admission log row not found");
-    // Second <td> is "Ticket type" (Attendee, Ticket type, Admitted at, Device) - scoped past the
-    // Device cell, which legitimately shows "-" for this row's own null device_id.
+    // Second <td> is "Ticket type" (Attendee, Ticket type, Admitted at, Device, Items) - scoped
+    // past the Device cell, which legitimately shows "-" for this row's own null device_id.
     const typeCell = row.querySelectorAll("td")[1];
     if (!typeCell) throw new Error("ticket-type cell not found");
     // The Attendees table's shared badge renders "-" for a null ticket_type - this cell must show
@@ -810,6 +1269,7 @@ describe("ReportsPage admission log", () => {
           ticket_type: null,
           admitted_at: "2026-06-01T10:00:00.000Z",
           device_id: null,
+          items: [],
         },
         {
           attendee_id: "att-literal",
@@ -821,6 +1281,7 @@ describe("ReportsPage admission log", () => {
           ticket_type: "__none__",
           admitted_at: "2026-06-01T10:05:00.000Z",
           device_id: null,
+          items: [],
         },
       ],
       admission_log_total: 2,
@@ -837,7 +1298,8 @@ describe("ReportsPage admission log", () => {
     });
     expect(screen.getByText("Literal Guest")).toBeTruthy();
 
-    const select = screen.getByLabelText("Ticket type") as HTMLSelectElement;
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    const select = screen.getByLabelText("Filter by ticket type") as HTMLSelectElement;
     const options = Array.from(select.options).map((o) => o.value);
     // The two buckets must not share a select option value.
     expect(new Set(options).size).toBe(options.length);
@@ -855,6 +1317,82 @@ describe("ReportsPage admission log", () => {
       expect(screen.getByText("Literal Guest")).toBeTruthy();
     });
     expect(screen.queryByText("Null Guest")).toBeNull();
+  });
+
+  it("filters the admission log by device, including a bucket for admissions with no device", async () => {
+    vi.mocked(fetchEventReports).mockResolvedValueOnce({
+      ...emptyReport,
+      summary: { ...emptyReport.summary, total_attendees: 3, admitted: 3, admission_rate_pct: 100 },
+      by_device: [
+        { device_id: "scanner-01", count: 1 },
+        { device_id: "desk-01", count: 1 },
+        { device_id: null, count: 1 },
+      ],
+      admission_log: [
+        {
+          attendee_id: "att-scanner",
+          name: "Scanner Guest",
+          email: "scanner-guest@example.com",
+          ticket_type: null,
+          admitted_at: "2026-06-01T10:00:00.000Z",
+          device_id: "scanner-01",
+          items: [],
+        },
+        {
+          attendee_id: "att-desk",
+          name: "Desk Guest",
+          email: "desk-guest@example.com",
+          ticket_type: null,
+          admitted_at: "2026-06-01T10:05:00.000Z",
+          device_id: "desk-01",
+          items: [],
+        },
+        {
+          attendee_id: "att-no-device",
+          name: "No Device Guest",
+          email: "no-device-guest@example.com",
+          ticket_type: null,
+          admitted_at: "2026-06-01T10:10:00.000Z",
+          device_id: null,
+          items: [],
+        },
+      ],
+    });
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("Scanner Guest")).toBeTruthy();
+    expect(screen.getByText("Desk Guest")).toBeTruthy();
+    expect(screen.getByText("No Device Guest")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    const deviceSelect = screen.getByLabelText("Filter by device") as HTMLSelectElement;
+    const optionLabels = Array.from(deviceSelect.options).map((o) => o.textContent);
+    expect(optionLabels).toEqual(["All devices", "scanner-01", "desk-01", "(unlabeled device)"]);
+
+    fireEvent.change(deviceSelect, { target: { value: "device:desk-01" } });
+    await waitFor(() => {
+      expect(screen.queryByText("Scanner Guest")).toBeNull();
+    });
+    expect(screen.getByText("Desk Guest")).toBeTruthy();
+    expect(screen.queryByText("No Device Guest")).toBeNull();
+    // The trigger button surfaces how many filters are active - scoped to the trigger itself,
+    // not a bare getByText("1"), since the By device breakdown's own "1 · 33.3%" meta text could
+    // otherwise make this ambiguous depending on the exact counts in play.
+    expect(screen.getByRole("button", { name: /Filters/ }).textContent).toMatch(/1/);
+
+    const noDeviceOption = Array.from(deviceSelect.options).find((o) => o.textContent === "(unlabeled device)");
+    if (!noDeviceOption) throw new Error("'(unlabeled device)' option not found");
+    fireEvent.change(deviceSelect, { target: { value: noDeviceOption.value } });
+    await waitFor(() => {
+      expect(screen.getByText("No Device Guest")).toBeTruthy();
+    });
+    expect(screen.queryByText("Scanner Guest")).toBeNull();
+    expect(screen.queryByText("Desk Guest")).toBeNull();
   });
 });
 
@@ -883,6 +1421,7 @@ describe("ReportsPage — ticket type catalog cross-event staleness", () => {
           ticket_type: "vip",
           admitted_at: "2026-06-01T10:00:00.000Z",
           device_id: null,
+          items: [],
         },
       ],
     });

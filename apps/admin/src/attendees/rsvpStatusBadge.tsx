@@ -9,7 +9,7 @@ export const RSVP_LABELS: Record<RsvpStatus, string> = {
   none: "Registered",
 };
 
-const RSVP_VARIANTS: Record<RsvpStatus, "neutral" | "ok" | "error" | "warn"> = {
+export const RSVP_VARIANTS: Record<RsvpStatus, "neutral" | "ok" | "error" | "warn"> = {
   none: "neutral",
   confirmed: "ok",
   declined: "error",

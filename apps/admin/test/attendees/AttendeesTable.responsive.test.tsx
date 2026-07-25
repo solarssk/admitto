@@ -589,9 +589,11 @@ describe("AttendeesTable Filters dropdown (PO review, third pass)", () => {
     );
 
     const trigger = screen.getByRole("button", { name: "Filters" });
-    // Not "menu" - the panel holds native <select>s, not menuitems, so useDropdownMenu's
-    // menuitem-focus/roving-arrow-key behavior doesn't apply here.
-    expect(trigger.getAttribute("aria-haspopup")).toBe("true");
+    // No aria-haspopup at all - not even "true", which the ARIA spec treats as equivalent to
+    // "menu". The panel holds native <select>s in a <fieldset>, not menuitems in a menu, so this
+    // is a plain disclosure button and aria-expanded alone is the correct pattern (CodeRabbit
+    // review on PR #587's FiltersMenu extraction).
+    expect(trigger.getAttribute("aria-haspopup")).toBeNull();
 
     fireEvent.click(trigger);
 
