@@ -88,6 +88,11 @@ function metadataPreview(metadata: Record<string, unknown>): string {
   return JSON.stringify(metadata, null, 2);
 }
 
+// Matches .audit-log-details__panel's max-height (12rem) and gap (--space-1) in
+// staff.css — used to decide above-vs-below placement before the panel exists to measure.
+const DETAILS_PANEL_MAX_HEIGHT_PX = 192;
+const DETAILS_PANEL_GAP_PX = 4;
+
 /**
  * Details cell — shows metadata JSON in a small popover instead of an inline
  * `<details>` block, so opening it never changes the table row's height or
@@ -95,10 +100,12 @@ function metadataPreview(metadata: Record<string, unknown>): string {
  * (recomputed on open/resize/scroll, same technique as DatePicker) so it
  * floats over the page instead of being clipped by the table's horizontal
  * scroll wrapper, which forces a matching `overflow-y` per the CSS spec.
+ * Flips above the trigger when there isn't room below, so a row near the
+ * bottom of the viewport doesn't push the panel off-screen.
  */
 function DetailsCell({ metadata }: Readonly<{ metadata: Record<string, unknown> | null }>) {
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
@@ -109,7 +116,13 @@ function DetailsCell({ metadata }: Readonly<{ metadata: Record<string, unknown> 
     const updatePosition = () => {
       const rect = triggerRef.current?.getBoundingClientRect();
       if (!rect) return;
-      setPos({ top: rect.bottom, right: window.innerWidth - rect.right });
+      const right = window.innerWidth - rect.right;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      if (spaceBelow < DETAILS_PANEL_MAX_HEIGHT_PX && rect.top > spaceBelow) {
+        setPos({ bottom: window.innerHeight - rect.top + DETAILS_PANEL_GAP_PX, right });
+      } else {
+        setPos({ top: rect.bottom + DETAILS_PANEL_GAP_PX, right });
+      }
     };
     updatePosition();
     window.addEventListener("resize", updatePosition);
@@ -133,7 +146,7 @@ function DetailsCell({ metadata }: Readonly<{ metadata: Record<string, unknown> 
         View
       </button>
       {open && pos && (
-        <pre className="audit-log-details__panel" style={{ top: pos.top, right: pos.right }}>
+        <pre className="audit-log-details__panel" style={{ top: pos.top, bottom: pos.bottom, right: pos.right }}>
           {metadataPreview(metadata!)}
         </pre>
       )}

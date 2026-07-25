@@ -129,6 +129,32 @@ describe("IdentityProviderEditor — create", () => {
       expect(screen.getByText("providers-list")).toBeTruthy();
     });
   });
+
+  it("keeps the modal open when Close is clicked or Escape is pressed while creating", async () => {
+    let resolveCreate: (r: typeof validDetail) => void = () => {};
+    mockCreate.mockImplementationOnce(() => new Promise((resolve) => { resolveCreate = resolve; }));
+    renderEditorAt("/admin/settings/identity/providers/new");
+
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google" } });
+    fireEvent.change(screen.getByLabelText("Issuer URL"), {
+      target: { value: "https://accounts.google.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Client ID"), { target: { value: "client-123" } });
+    fireEvent.change(screen.getByLabelText("Client secret"), { target: { value: "secret-abc" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create provider" }));
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+
+    const closeButton = screen.getByRole("button", { name: "Close" });
+    expect(closeButton.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(closeButton);
+    expect(screen.queryByText("providers-list")).toBeNull();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByText("providers-list")).toBeNull();
+
+    resolveCreate(validDetail);
+    await waitFor(() => expect(screen.getByText("providers-list")).toBeTruthy());
+  });
 });
 
 describe("IdentityProviderEditor — edit", () => {

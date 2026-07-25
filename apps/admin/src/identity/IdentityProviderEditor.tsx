@@ -426,10 +426,11 @@ export function IdentityProviderEditor({
   }, [dirty]);
 
   const handleCancel = useCallback(() => {
+    if (isActionBusy(saving, testing, discovering)) return;
     if (dirty && !window.confirm("Discard unsaved changes?")) return;
     skipBlockRef.current = true;
     navigate(IDENTITY_PROVIDERS_ROUTE);
-  }, [dirty, navigate]);
+  }, [dirty, navigate, saving, testing, discovering]);
 
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -873,7 +874,12 @@ export function IdentityProviderEditor({
           <div className="identity-editor__header">
             <div className="identity-editor__header-row">
               <h2 className="identity-editor__title" id={titleId}>{title}</h2>
-              <IconButton label="Close" onClick={handleCancel} icon={<i className="ti ti-x" />} />
+              <IconButton
+                label="Close"
+                onClick={handleCancel}
+                disabled={isActionBusy(saving, testing, discovering)}
+                icon={<i className="ti ti-x" />}
+              />
             </div>
             {view === "form" && <p className="identity-editor__subtitle">{editorSubtitle(mode)}</p>}
           </div>

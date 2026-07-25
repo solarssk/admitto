@@ -4121,7 +4121,6 @@ output.mail-field-hint {
 
 .audit-log-details__panel {
   position: fixed;
-  margin-top: var(--space-1);
   padding: var(--space-2);
   width: max-content;
   max-width: 22rem;

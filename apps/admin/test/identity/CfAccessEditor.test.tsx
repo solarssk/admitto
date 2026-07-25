@@ -111,6 +111,30 @@ describe("CfAccessEditor (slice 4)", () => {
     await waitFor(() => expect(router.state.location.pathname).toBe("/admin/settings/identity/providers"));
   });
 
+  it("keeps the modal open when Close is clicked or Escape is pressed while saving", async () => {
+    mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://old", audience: ["a"] }));
+    let resolveUpdate: (r: ReturnType<typeof summary>) => void = () => {};
+    mockUpdate.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveUpdate = resolve; }),
+    );
+    const { router } = renderEditorAt();
+    const teamInput = await screen.findByDisplayValue("https://old");
+    fireEvent.change(teamInput, { target: { value: "https://new" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+
+    const closeButton = screen.getByRole("button", { name: "Close" });
+    expect(closeButton.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(closeButton);
+    expect(router.state.location.pathname).toBe("/admin/settings/identity/cloudflare");
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(router.state.location.pathname).toBe("/admin/settings/identity/cloudflare");
+
+    resolveUpdate(summary({ teamDomain: "https://new", audience: ["a"] }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/admin/settings/identity/providers"));
+  });
+
   it("blocks save with a toast when required fields are missing for an enabled config", async () => {
     mockFetch.mockResolvedValueOnce(summary({ enabled: false }));
     renderEditorAt();

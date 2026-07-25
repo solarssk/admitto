@@ -128,10 +128,11 @@ export function CfAccessEditor() {
   }, [dirty]);
 
   const handleCancel = useCallback(() => {
+    if (saving || testing) return;
     if (dirty && !window.confirm("Discard unsaved changes?")) return;
     skipBlockRef.current = true;
     navigate(IDENTITY_PROVIDERS_ROUTE);
-  }, [dirty, navigate]);
+  }, [dirty, navigate, saving, testing]);
 
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -353,7 +354,12 @@ export function CfAccessEditor() {
                   <Badge variant="warn">Managed by environment</Badge>
                 )}
               </div>
-              <IconButton label="Close" onClick={handleCancel} icon={<i className="ti ti-x" />} />
+              <IconButton
+                label="Close"
+                onClick={handleCancel}
+                disabled={saving || testing}
+                icon={<i className="ti ti-x" />}
+              />
             </div>
             {loadState === "ready" && (
               <p className="identity-editor__subtitle">
