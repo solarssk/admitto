@@ -424,8 +424,8 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     });
     expect(statsRow().querySelectorAll(".overview-kpi")).toHaveLength(4);
     expect(statsRow().querySelectorAll(".overview-kpi__icon")).toHaveLength(4);
-    // Scoped to Overview only - the shared Stat component (and its icon-circle-top-right layout)
-    // must not render here anymore.
+    // @admitto/ui's generic Stat component (icon-circle-top-right layout) this once diverged
+    // from has since been removed entirely (see #590) - .at-stat can no longer render anywhere.
     expect(statsRow().querySelector(".at-stat")).toBeNull();
   });
 
