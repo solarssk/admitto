@@ -4274,11 +4274,12 @@ output.mail-field-hint {
   }
 }
 
-/* KPI tiles (D, E2) — icon-square-left layout scoped to Overview's 4 top tiles only;
- * @admitto/ui's generic Stat (small icon circle, top-right) is unchanged for every other page
- * that uses it. Left-anchored (not centered as a unit) so all 4 tiles' icons line up in one
- * column regardless of value/label length — centering each tile's content independently made
- * icons drift sideways per tile, which read worse than the "empty" space it was meant to fix. */
+/* KPI tiles (D, E2) — icon-square-left layout scoped to Overview's 4 top tiles only, a separate
+ * bespoke tile from ReportsPage's own (both migrated off @admitto/ui's generic Stat component
+ * independently, which has since been removed entirely — see #590). Left-anchored (not centered
+ * as a unit) so all 4 tiles' icons line up in one column regardless of value/label length —
+ * centering each tile's content independently made icons drift sideways per tile, which read
+ * worse than the "empty" space it was meant to fix. */
 .overview-kpi {
   display: flex;
   align-items: center;
@@ -4309,8 +4310,8 @@ output.mail-field-hint {
 }
 
 .overview-kpi__value {
-  /* --fs-display is this codebase's own "hero number" token (also what the generic Stat
-   * component's .at-stat__value uses) — matching it instead of an off-scale custom size. */
+  /* --fs-display is this codebase's own "hero number" token — matching it instead of an
+   * off-scale custom size. */
   font-size: var(--fs-display);
   font-weight: var(--fw-bold);
   color: var(--text-primary);

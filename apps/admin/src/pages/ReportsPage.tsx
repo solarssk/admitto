@@ -162,8 +162,10 @@ interface ReportStatProps {
   readonly sub: string;
 }
 
-/** Reports-page-scoped KPI tile - deliberately not the shared @admitto/ui `Stat` component,
- * which is used on 6 other pages and stays out of scope for this redesign. */
+/** Reports-page-scoped KPI tile - deliberately not a shared component; @admitto/ui's generic
+ * `Stat` this once diverged from has since been removed entirely, having ended up with zero
+ * remaining consumers once this and EventOverviewPage both migrated to their own bespoke tiles
+ * (see #590). */
 function ReportStat({ icon, variant, value, label, sub }: ReportStatProps) {
   return (
     <div className="reports-stat">

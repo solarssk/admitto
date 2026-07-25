@@ -97,10 +97,10 @@ function formatBusiestHourRange(hour: string): string {
 type KpiTone = "primary" | "info" | "ok" | "error";
 
 /** Overview's own icon-square-left KPI tile (mockup-aligned): a bigger colored icon square beside
- * a stacked value/label/sub block, instead of @admitto/ui's generic Stat (small icon circle,
- * top-right corner). ReportsPage's own KPI row (checked first) has no bespoke tile layout of its
- * own to reuse — it also renders the generic Stat — so this is scoped fresh to these 4 tiles only;
- * Stat itself is untouched for every other page that still uses it. */
+ * a stacked value/label/sub block. ReportsPage has its own separate bespoke KPI tile (ReportStat)
+ * with a different layout, not shared with this one — both pages migrated off @admitto/ui's
+ * generic Stat component independently, which has since been removed entirely, having ended up
+ * with zero remaining consumers (see #590). */
 function OverviewKpiTile({
   icon,
   tone,
