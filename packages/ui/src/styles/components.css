@@ -125,16 +125,14 @@
 .at-check input:disabled + .at-check__box { background: var(--surface-sunken); border-color: var(--border); }
 .at-check:has(input:disabled) { cursor: not-allowed; color: var(--text-disabled); }
 
-.at-switch { display: inline-flex; align-items: center; gap: var(--space-2); cursor: pointer; }
+.at-switch { display: inline-flex; align-items: center; gap: var(--space-2); cursor: pointer; transition: opacity var(--dur-fast) var(--ease-out); }
 .at-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
 .at-switch__track { width: 2.25rem; height: 1.25rem; border-radius: var(--radius-pill); background: var(--at-gray-300); position: relative; transition: background var(--dur) var(--ease-out); flex: none; }
 .at-switch__thumb { position: absolute; top: 2px; left: 2px; width: calc(1.25rem - 4px); height: calc(1.25rem - 4px); border-radius: 50%; background: var(--surface-card); box-shadow: var(--shadow-sm); transition: transform var(--dur) var(--ease-out); }
 .at-switch input:checked + .at-switch__track { background: var(--primary); }
 .at-switch input:checked + .at-switch__track .at-switch__thumb { transform: translateX(1rem); }
 .at-switch input:focus-visible + .at-switch__track { box-shadow: var(--ring); }
-.at-switch input:disabled + .at-switch__track { background: var(--surface-sunken); }
-.at-switch:has(input:disabled) { cursor: not-allowed; }
-.at-switch:has(input:disabled) .at-switch__label { color: var(--text-disabled); }
+.at-switch:has(input:disabled) { cursor: not-allowed; opacity: 0.5; }
 .at-switch__label { font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--text-secondary); white-space: nowrap; }
 
 /* ---------------- Badge / Tag ---------------- */
@@ -181,7 +179,7 @@
 
 /* ---------------- Card ---------------- */
 .at-card { background: var(--surface-card); border: var(--border-width) solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-card); }
-.at-card__header { padding: var(--space-4) var(--pad-card); border-bottom: var(--border-width) solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.at-card__header { min-height: calc(var(--control-h-sm) + 2 * var(--space-4)); padding: var(--space-4) var(--pad-card); border-bottom: var(--border-width) solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); box-sizing: border-box; }
 .at-card__title { font-size: var(--fs-h3); font-weight: var(--fw-semibold); color: var(--text-primary); }
 .at-card__body { padding: var(--pad-card); }
 .at-card__footer { padding: var(--space-3) var(--pad-card); border-top: var(--border-width) solid var(--border); background: var(--surface-sunken); border-radius: 0 0 var(--radius) var(--radius); }

@@ -2690,6 +2690,13 @@
   flex-direction: column;
 }
 
+.identity-row__main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
 .identity-provider-row__actions {
   display: flex;
   align-items: center;
@@ -2701,14 +2708,39 @@
   word-break: break-all;
 }
 
+/* Protocol/type icon tile — left of a provider row or the CF summary, so the row
+   reads as "what kind of identity source is this" at a glance. OIDC is the only
+   wired-up protocol today; swap the glyph per-provider once SAML/Entra ship. */
+.identity-row-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--control-h);
+  height: var(--control-h);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: 1.1rem;
+}
+
 .identity-providers__skeleton {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
 }
 
-.identity-providers__hint {
-  margin: var(--space-3) 0 0;
+.cf-access-summary__text {
+  min-width: 0;
+}
+
+.cf-access-summary strong {
+  display: block;
+  margin-bottom: var(--space-1);
+}
+
+.cf-access-summary p {
+  margin: 0;
   color: var(--text-secondary);
   font-size: var(--fs-sm);
 }
@@ -2720,22 +2752,93 @@
   margin-top: var(--space-2);
 }
 
-.cf-access-summary__off {
-  color: var(--text-secondary);
-  font-weight: 400;
+/* Identity provider editor (#266 slice 3) */
+/* Identity provider / Cloudflare Access editors render as modals over the
+ * Identity list (not full pages) — same reset + centering pattern as
+ * .users-modal in users-page.css, with a wider panel for the longer provider
+ * form (Basics/Endpoints/Claims/Mappings/Login button). */
+.identity-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  /* The <dialog> UA stylesheet defaults width/height to fit-content, which
+     `inset: 0` alone does not override (that only stretches an auto-sized
+     box) — without an explicit 100% height the whole dialog (backdrop
+     included) only grows as tall as the panel, leaving the rest of the
+     viewport (e.g. the sidebar) undimmed. */
+  width: 100%;
+  height: 100%;
 }
 
-/* Identity provider editor (#266 slice 3) */
-.identity-editor__page {
+.identity-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.identity-modal__panel {
+  position: relative;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  width: min(520px, 100%);
+  max-height: min(90vh, 720px);
+  /* Scrolling lives on .identity-modal__scroll below, not here — overflow:auto
+     directly on this rounded box would render the native scrollbar as a hard
+     rectangle cutting across the rounded corner instead of following it. */
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+}
+
+.identity-modal__panel--wide {
+  width: min(720px, 100%);
+}
+
+.identity-modal__scroll {
+  overflow: auto;
+  /* Without this, scrolling past the panel's own end with a trackpad
+     rubber-bands into the page behind it (scroll chaining) instead of
+     just stopping — visible as a gap at the panel's edge mid-gesture.
+     (The element's own bounce past its edge is separately guarded by
+     useOverscrollBounceGuard — this CSS alone doesn't suppress that in
+     every browser.) */
+  overscroll-behavior: contain;
+  padding: var(--space-5);
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  min-height: 0;
 }
 
 .identity-editor__header {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: var(--space-4);
+}
+
+.identity-editor__header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.identity-editor__header-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .identity-editor__title {
@@ -2761,9 +2864,42 @@
   gap: var(--space-3) var(--space-4);
 }
 
-.identity-editor__switch {
-  align-self: center;
-  padding-top: var(--space-4);
+/* Protocol picker (Add identity provider) — visual only today: OIDC is the only
+   wired-up protocol, SAML is a disabled placeholder for the roadmap. */
+.identity-protocol-picker {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.identity-protocol-tile {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.identity-protocol-tile--active {
+  border-color: var(--primary);
+  color: var(--primary-active);
+  background: var(--primary-tint);
+}
+
+.identity-protocol-tile--disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.identity-protocol-tile__badge {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--text-muted);
+  background: var(--surface-sunken);
+  border-radius: var(--radius-pill);
+  padding: 0.05em 0.5em;
 }
 
 .identity-editor__actions {
@@ -2772,7 +2908,19 @@
   gap: var(--space-3);
 }
 
-.identity-editor__loading,
+/* Centered (not left-aligned like .identity-editor__error below) — this is
+   the modal's only content while loading, so a corner-anchored spinner in an
+   otherwise-empty panel reads as "the popup is briefly narrower" before the
+   real form fills the same, unchanged panel width. */
+.identity-editor__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 12rem;
+  gap: var(--space-3);
+}
+
 .identity-editor__error {
   display: flex;
   flex-direction: column;
@@ -2798,11 +2946,14 @@
   font-size: var(--fs-sm);
 }
 
+/* Flex, not grid: a row with no Organization/Event ID field (instance scope)
+   simply has one fewer cell, and the rest stretch to fill the freed space
+   instead of leaving a placeholder-shaped gap. */
 .identity-mappings__row {
-  display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr 1.4fr auto;
-  gap: var(--space-2) var(--space-3);
-  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
   padding: var(--space-2) 0;
   border-bottom: 1px solid var(--border);
 }
@@ -2811,77 +2962,44 @@
   border-bottom: 0;
 }
 
-.identity-mappings__cell--hidden {
-  visibility: hidden;
+.identity-mappings__cell {
+  flex: 1 1 0;
+  min-width: 130px;
+}
+
+.identity-mappings__cell--group {
+  flex: 1.2 1 0;
 }
 
 .identity-mappings__remove {
+  flex: none;
   display: flex;
-  align-items: end;
+  align-items: flex-end;
 }
 
-.identity-mappings__add {
-  margin-top: var(--space-3);
-}
-
-.identity-sso-preview {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin-top: var(--space-3);
-  padding: var(--space-3);
-  border: 1px dashed var(--border);
-  border-radius: var(--radius-md);
-}
-
-.identity-sso-preview__label {
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-}
-
-.identity-sso-preview__button {
-  display: inline-flex;
-  align-items: center;
-  padding: 0 var(--space-4);
-  height: var(--control-h-md);
-  border-radius: var(--radius-md);
-  background: var(--primary);
-  color: var(--text-on-primary);
-  font-weight: 600;
+.identity-mappings__remove .at-btn:hover:not(:disabled) {
+  background: var(--status-error-tint);
+  color: var(--status-error-fg);
 }
 
 /* Cloudflare Access editor (#266 slice 4) */
-.cf-editor__status {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-}
-
 .cf-editor__enabled {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
-  grid-column: 1 / -1;
 }
 
-.cf-editor__enabled + .at-badge,
 .cf-editor .identity-editor__grid > .at-badge {
   grid-column: 1 / -1;
   align-self: start;
   margin-top: calc(var(--space-2) * -1);
 }
 
-/* Full-width text inputs (team URL, AUD, protected prefixes) so comma-separated
-   lists and long URLs have room; the 2-col grid above stays for any future fields. */
-.cf-editor .identity-editor__grid > .at-input,
-.cf-editor .identity-editor__grid > .at-input-group {
+/* Team URL + AUD share the 2-col grid row like other settings panels; only
+   Protected URL paths (comma-separated, can get long) forces its own full row. */
+.cf-editor__grid-full {
   grid-column: 1 / -1;
-}
-
-.cf-editor__test {
-  margin-top: var(--space-4);
 }
 
 .cf-editor__info,
@@ -2905,15 +3023,6 @@
   color: var(--status-warn-fg);
 }
 
-@media (max-width: 860px) {
-  .identity-mappings__row {
-    grid-template-columns: 1fr 1fr;
-  }
-  .identity-mappings__cell--hidden {
-    display: none;
-  }
-}
-
 @media (max-width: 720px) {
   .identity-editor__grid {
     grid-template-columns: 1fr;
@@ -2928,6 +3037,90 @@
 
   .settings-row .at-btn {
     align-self: flex-start;
+  }
+
+  /* The generic column-stack above turns this row into 3 stacked blocks (icon+name,
+     issuer URL, Edit+Switch) — the actions end up dangling on their own line below
+     two lines of text. Un-nest the icon/name/issuer so they can share a line with
+     Edit+Switch instead, with only the (often long) issuer URL forced onto its own
+     full-width line below. `order` controls where each un-nested piece lands,
+     independent of DOM order. */
+  .identity-provider-row {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    row-gap: var(--space-1);
+  }
+
+  .identity-provider-row .identity-row__main,
+  .identity-provider-row .settings-row__text {
+    display: contents;
+  }
+
+  .identity-provider-row .at-tooltip-trigger {
+    order: 1;
+  }
+
+  .identity-provider-row .settings-row__text strong {
+    order: 2;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .identity-provider-row__actions {
+    order: 3;
+    flex: none;
+  }
+
+  .identity-provider-row__issuer {
+    order: 4;
+    flex-basis: 100%;
+    margin-left: calc(var(--control-h) + var(--space-3));
+  }
+
+  /* Same fix, same reasoning, for the Cloudflare Access summary row — icon + text
+     wrapper + Manage button collapse to 3 stacked lines otherwise. No Tooltip
+     wrapper here (unlike the provider row's icon) and Manage is a direct child,
+     not a nested actions group, so the selectors below are simpler than above. */
+  .cf-access-summary {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    row-gap: var(--space-1);
+  }
+
+  .cf-access-summary .identity-row__main,
+  .cf-access-summary .cf-access-summary__text {
+    display: contents;
+  }
+
+  .cf-access-summary .identity-row-icon {
+    order: 1;
+  }
+
+  .cf-access-summary__text strong {
+    order: 2;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .cf-access-summary > .at-btn {
+    order: 3;
+    flex: none;
+  }
+
+  .cf-access-summary__text p {
+    order: 4;
+    flex-basis: 100%;
+    margin-left: calc(var(--control-h) + var(--space-3));
+  }
+
+  .cf-access-summary__badges {
+    order: 5;
+    flex-basis: 100%;
+    margin-left: calc(var(--control-h) + var(--space-3));
   }
 }
 
@@ -3910,23 +4103,37 @@ output.mail-field-hint {
   font-size: var(--fs-sm);
 }
 
-.audit-log-details__summary {
+/* Details popover — absolutely positioned so opening it never changes the
+   table row's height or pushes other rows around (unlike the old <details>). */
+.audit-log-details {
+  position: relative;
+  display: inline-block;
+}
+
+.audit-log-details__trigger {
   cursor: pointer;
   font-size: var(--fs-sm);
   color: var(--primary);
-  user-select: none;
+  background: none;
+  border: 0;
+  padding: 0;
 }
 
-.audit-log-metadata {
-  margin: var(--space-2) 0 0;
+.audit-log-details__panel {
+  position: fixed;
   padding: var(--space-2);
-  max-height: 8rem;
+  width: max-content;
+  max-width: 22rem;
+  max-height: 12rem;
   overflow: auto;
   font-size: var(--fs-xs, 0.75rem);
-  background: var(--surface-muted, #f4f4f5);
+  background: var(--surface-elevated, #fafafa);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
   white-space: pre-wrap;
   overflow-wrap: break-word;
+  z-index: calc(var(--z-dropdown) + 1);
 }
 
 .audit-log-footer {

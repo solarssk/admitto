@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useBlocker, useLocation, useNavigate, useParams, type BlockerFunction } from "react-router";
-import { Button, Card, Input, Spinner, Switch, useToast } from "@admitto/ui";
+import { Button, Card, IconButton, Input, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
   ApiError,
   createIdentityProvider,
@@ -12,8 +13,12 @@ import {
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { ProviderDetailDto, ProviderRequestBody, ProviderTestDraftBody } from "../api/types.js";
+import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import { IdentityMappingRepeater } from "./IdentityMappingRepeater.js";
 import {
+  emptyMappingRow,
   emptyProviderDraft,
   isDraftDirty,
   newMappingId,
@@ -188,8 +193,8 @@ function editorTitle(mode: EditorMode): string {
 
 function editorSubtitle(mode: EditorMode): string {
   return mode === "create"
-    ? "Register an OpenID Connect identity provider for single sign-on."
-    : "Update this OpenID Connect identity provider.";
+    ? "Register an identity provider for single sign-on."
+    : "Update this identity provider.";
 }
 
 function clientSecretFieldLabel(mode: EditorMode, hasSecret: boolean): string {
@@ -212,10 +217,6 @@ function testButtonLabel(testing: boolean): string {
 function submitButtonLabel(saving: boolean, mode: EditorMode): string {
   if (saving) return "Saving…";
   return mode === "create" ? "Create provider" : "Save changes";
-}
-
-function loginButtonPreviewLabel(label: string): string {
-  return label.trim() || "Continue with SSO";
 }
 
 /** True while any async editor action (discover/test/save) is in flight. */
@@ -373,6 +374,10 @@ export function IdentityProviderEditor({
     setMappingErrors((prev) => (prev.length === 0 ? prev : rows.map(() => ({}))));
   }, []);
 
+  const handleAddMapping = useCallback(() => {
+    handleMappingsChange([...mappings, emptyMappingRow()]);
+  }, [mappings, handleMappingsChange]);
+
   // Router-level dirty guard. The Identity tabs / Settings sidebar / SPA back
   // button are all in-app navigations, which `beforeunload` does not catch — so
   // a superadmin could leave the editor with unsaved changes and no prompt.
@@ -421,10 +426,17 @@ export function IdentityProviderEditor({
   }, [dirty]);
 
   const handleCancel = useCallback(() => {
+    if (isActionBusy(saving, testing, discovering)) return;
     if (dirty && !window.confirm("Discard unsaved changes?")) return;
     skipBlockRef.current = true;
     navigate(IDENTITY_PROVIDERS_ROUTE);
-  }, [dirty, navigate]);
+  }, [dirty, navigate, saving, testing, discovering]);
+
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  useModalFocusTrap(panelRef, true, handleCancel);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useOverscrollBounceGuard(scrollRef);
 
   const handleSubmit = useCallback(
     async (event: React.FormEvent) => {
@@ -626,33 +638,52 @@ export function IdentityProviderEditor({
   );
 
   const errorContent = (
-    <Card title={title}>
-      <div className="identity-editor__error">
-        <p>Couldn't load this provider.</p>
-        <Button
-          variant="secondary"
-          onClick={retryLoad}
-        >
-          Retry
-        </Button>
-      </div>
-    </Card>
+    <div className="identity-editor__error">
+      <p>Couldn't load this provider.</p>
+      <Button variant="secondary" onClick={retryLoad}>
+        Retry
+      </Button>
+    </div>
   );
 
   const notFoundContent = (
-    <Card title={title}>
-      <div className="identity-editor__error">
-        <p>This provider no longer exists.</p>
-        <Button variant="secondary" onClick={() => navigate(IDENTITY_PROVIDERS_ROUTE)}>
-          Back to providers
-        </Button>
-      </div>
-    </Card>
+    <div className="identity-editor__error">
+      <p>This provider no longer exists.</p>
+      <Button variant="secondary" onClick={() => navigate(IDENTITY_PROVIDERS_ROUTE)}>
+        Back to providers
+      </Button>
+    </div>
   );
 
   const formContent = (
     <form className="identity-editor" onSubmit={handleSubmit} noValidate>
-      <Card title="Basics">
+      {mode === "create" && (
+        <div className="identity-protocol-picker" aria-label="Identity provider protocol">
+          <span className="identity-protocol-tile identity-protocol-tile--active">
+            <i className="ti ti-shield-lock" aria-hidden="true" /> OpenID Connect
+          </span>
+          <span
+            className="identity-protocol-tile identity-protocol-tile--disabled"
+            title="SAML support is coming soon"
+          >
+            <i className="ti ti-certificate" aria-hidden="true" /> SAML{" "}
+            <span className="identity-protocol-tile__badge">Soon</span>
+          </span>
+        </div>
+      )}
+      <Card
+        title="Basics"
+        actions={
+          <Tooltip content="Allow sign-in through this provider">
+            <Switch
+              id="idp-enabled"
+              aria-label="Enabled"
+              checked={draft.enabled}
+              onChange={(e) => setDraft((d) => setField(d, "enabled", e.target.checked))}
+            />
+          </Tooltip>
+        }
+      >
         <div className="identity-editor__grid">
           <Input
             label="Display name"
@@ -691,14 +722,6 @@ export function IdentityProviderEditor({
             autoComplete="new-password"
             required={mode === "create"}
           />
-          <div className="identity-editor__switch">
-            <Switch
-              id="idp-enabled"
-              label="Enabled"
-              checked={draft.enabled}
-              onChange={(e) => setDraft((d) => setField(d, "enabled", e.target.checked))}
-            />
-          </div>
         </div>
       </Card>
 
@@ -784,7 +807,14 @@ export function IdentityProviderEditor({
         </div>
       </Card>
 
-      <Card title="Group → role mapping">
+      <Card
+        title="Group → role mapping"
+        actions={
+          <Button type="button" variant="secondary" size="sm" onClick={handleAddMapping}>
+            Add mapping
+          </Button>
+        }
+      >
         <p className="identity-mappings__intro">
           Map OIDC groups (from the groups claim) to Admitto roles. The full list replaces the
           stored mappings on every save.
@@ -797,23 +827,15 @@ export function IdentityProviderEditor({
       </Card>
 
       <Card title="Login button">
-        <div className="identity-editor__grid">
-          <Input
-            label="SSO login button label"
-            value={draft.login_button_label}
-            invalid={Boolean(errors.login_button_label)}
-            error={errors.login_button_label}
-            hint="Leave blank to use the product default ('Continue with SSO')."
-            onChange={(e) => setDraft((d) => setField(d, "login_button_label", e.target.value))}
-            placeholder="Continue with Google"
-          />
-        </div>
-        <div className="identity-sso-preview" aria-label="SSO login button preview">
-          <span className="identity-sso-preview__label">Preview</span>
-          <span className="identity-sso-preview__button">
-            {loginButtonPreviewLabel(draft.login_button_label)}
-          </span>
-        </div>
+        <Input
+          label="SSO login button label"
+          value={draft.login_button_label}
+          invalid={Boolean(errors.login_button_label)}
+          error={errors.login_button_label}
+          hint="Leave blank to use the product default ('Continue with SSO')."
+          onChange={(e) => setDraft((d) => setField(d, "login_button_label", e.target.value))}
+          placeholder="Continue with Google"
+        />
       </Card>
 
       <div className="identity-editor__actions">
@@ -840,20 +862,34 @@ export function IdentityProviderEditor({
   );
 
   const view = resolveEditorView(mode, loadState);
-  return (
-    <div className="identity-editor__page">
-      {view === "loading" && loadingContent}
-      {view === "error" && errorContent}
-      {view === "not_found" && notFoundContent}
-      {view === "form" && (
-        <>
+  // A fetch that resolves near-instantly (localhost, a warm cache) would
+  // otherwise flash the spinner on and off faster than it can register as
+  // "loading" — show it only once the fetch has genuinely taken a moment.
+  const showLoadingSpinner = useDelayedLoading(view === "loading");
+  return createPortal(
+    <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
+      <div className="identity-modal__backdrop" aria-hidden="true" />
+      <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
+        <div ref={scrollRef} className="identity-modal__scroll">
           <div className="identity-editor__header">
-            <h2 className="identity-editor__title">{title}</h2>
-            <p className="identity-editor__subtitle">{editorSubtitle(mode)}</p>
+            <div className="identity-editor__header-row">
+              <h2 className="identity-editor__title" id={titleId}>{title}</h2>
+              <IconButton
+                label="Close"
+                onClick={handleCancel}
+                disabled={isActionBusy(saving, testing, discovering)}
+                icon={<i className="ti ti-x" />}
+              />
+            </div>
+            {view === "form" && <p className="identity-editor__subtitle">{editorSubtitle(mode)}</p>}
           </div>
-          {formContent}
-        </>
-      )}
-    </div>
+          {view === "loading" && showLoadingSpinner && loadingContent}
+          {view === "error" && errorContent}
+          {view === "not_found" && notFoundContent}
+          {view === "form" && formContent}
+        </div>
+      </div>
+    </dialog>,
+    document.body,
   );
 }
