@@ -661,7 +661,8 @@ export function ImportPage() {
   const [history, setHistory] = useState<ImportHistoryEntry[] | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [historyToken, setHistoryToken] = useState(0);
-  const showHistoryLoading = useDelayedLoading(history === null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const showHistoryLoading = useDelayedLoading(historyLoading);
 
   useEffect(() => {
     if (!eventId) return;
@@ -688,11 +689,19 @@ export function ImportPage() {
     // another's — reset to the loading state so the previous event's history can't flash under
     // the new event's timezone while this fetch is in flight (CodeRabbit review).
     setHistory(null);
+    // A dedicated in-flight flag, not `history === null` - that stays true across a failed
+    // fetch (history is never set) all the way through a subsequent Retry, so its rising edge
+    // only ever fires once and useDelayedLoading's no-flash window never gets a fresh start on
+    // retry (bot review).
+    setHistoryLoading(true);
     fetchImportHistory(eventId, ac.signal)
       .then((items) => setHistory(items))
       .catch((err) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
         setHistoryError("Couldn't load import history.");
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setHistoryLoading(false);
       });
     return () => ac.abort();
   }, [eventId, historyToken]);

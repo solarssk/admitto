@@ -653,6 +653,44 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
     expect(await screen.findByText("No imports yet for this event.")).toBeTruthy();
   });
 
+  it("starts a fresh no-flash delay on Retry after a load failure, instead of showing Loading immediately (bot review)", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    fetchImportHistory.mockRejectedValueOnce(new Error("boom"));
+    renderPage();
+
+    expect(await screen.findByText("Couldn't load import history.")).toBeTruthy();
+
+    let resolveRetry!: (items: unknown) => void;
+    fetchImportHistory.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveRetry = resolve; }),
+    );
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+      expect(screen.queryByText("Couldn't load import history.")).toBeNull();
+      expect(screen.queryByText("Loading…")).toBeNull();
+
+      act(() => {
+        vi.advanceTimersByTime(199);
+      });
+      expect(screen.queryByText("Loading…")).toBeNull();
+
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(screen.getByText("Loading…")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+
+    await act(async () => {
+      resolveRetry([]);
+    });
+    expect(await screen.findByText("No imports yet for this event.")).toBeTruthy();
+  });
+
   it("shows the mockup done screen after commit and 'Import another file' resets the flow", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());
