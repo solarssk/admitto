@@ -873,16 +873,88 @@ describe("GET /api/admin/events/:eventId/reports", () => {
       const totalDeviceCount = body.by_device.reduce((sum, row) => sum + row.count, 0);
       expect(totalMethodCount).toBe(1);
       expect(totalDeviceCount).toBe(1);
-      // The earliest VALID row wins, matching loadDeviceIdsByAttendee's own dedup convention -
-      // so the admission log's per-row Device value and this aggregate agree on the same row.
-      expect(body.by_device).toEqual([{ device_id: "Tablet 1 — main entrance", count: 1 }]);
+      // The latest VALID row wins, matching loadDeviceIdsByAttendee's own dedup convention - the
+      // attendee's admitted_at reflects the re-admission (manual, Tablet 2), not the original scan
+      // that got revoked, so this aggregate attributes to the same row the admission log does.
+      expect(body.by_device).toEqual([{ device_id: "Tablet 2 — side entrance", count: 1 }]);
       const byMethod = new Map(body.by_checkin_method.map((row) => [row.method, row.count]));
-      expect(byMethod.get("scan")).toBe(1);
-      expect(byMethod.get("manual")).toBeUndefined();
+      expect(byMethod.get("manual")).toBe(1);
+      expect(byMethod.get("scan")).toBeUndefined();
     } finally {
       await prisma.checkIn.deleteMany({ where: { event_id: EVENT_REVOKE } });
       await prisma.attendee.deleteMany({ where: { event_id: EVENT_REVOKE } });
       await prisma.event.deleteMany({ where: { id: EVENT_REVOKE } });
+    }
+  });
+
+  it("excludes a revoked-and-not-readmitted attendee entirely, even though their original VALID row is untouched (CodeRabbit #587 review)", async () => {
+    const EVENT_REVOKE_ONLY = "evt-reports-revoke-only";
+    await prisma.checkIn.deleteMany({ where: { event_id: EVENT_REVOKE_ONLY } });
+    await prisma.attendee.deleteMany({ where: { event_id: EVENT_REVOKE_ONLY } });
+    await prisma.event.deleteMany({ where: { id: EVENT_REVOKE_ONLY } });
+    await prisma.event.create({
+      data: {
+        id: EVENT_REVOKE_ONLY,
+        title: "Revoke Only Reports Event",
+        slug: "reports-event-revoke-only",
+        date: new Date("2026-10-01T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+    });
+    await prisma.attendee.create({
+      data: {
+        id: "att-rep-revoke-only",
+        event_id: EVENT_REVOKE_ONLY,
+        email: "revoke-only@example.com",
+        name: "Revoked Not Readmitted Guest",
+        // Cleared by the revoke, matching what undo.ts actually does - never re-set since this
+        // attendee is never re-admitted.
+        admitted_at: null,
+        ...mkAttendeeToken(),
+      },
+    });
+    // Same undo.ts shape as the revoke-then-readmit case above, minus the re-admission: the
+    // original VALID row's own status is left as-is, only a separate UNDO row is inserted.
+    await prisma.checkIn.createMany({
+      data: [
+        {
+          attendee_id: "att-rep-revoke-only",
+          event_id: EVENT_REVOKE_ONLY,
+          checked_in_at: new Date("2026-10-01T09:00:00.000Z"),
+          status: "VALID",
+          source: "scan",
+          device_id: "Tablet 1 — main entrance",
+        },
+        {
+          attendee_id: "att-rep-revoke-only",
+          event_id: EVENT_REVOKE_ONLY,
+          checked_in_at: new Date("2026-10-01T09:05:00.000Z"),
+          status: "UNDO",
+          source: "admin_revoke",
+          device_id: null,
+        },
+      ],
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_REVOKE_ONLY}/reports`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        summary: { admitted: number };
+        by_checkin_method: Array<{ method: string; count: number }>;
+        by_device: Array<{ device_id: string | null; count: number }>;
+      };
+      // Not currently admitted - the status:VALID row is a red herring left over from the
+      // revoked visit, not evidence this attendee should count anywhere in the report.
+      expect(body.summary.admitted).toBe(0);
+      expect(body.by_checkin_method).toEqual([]);
+      expect(body.by_device).toEqual([]);
+    } finally {
+      await prisma.checkIn.deleteMany({ where: { event_id: EVENT_REVOKE_ONLY } });
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_REVOKE_ONLY } });
+      await prisma.event.deleteMany({ where: { id: EVENT_REVOKE_ONLY } });
     }
   });
 

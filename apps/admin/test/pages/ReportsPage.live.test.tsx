@@ -129,7 +129,11 @@ describe("ReportsPage — live SSE updates (ADR 0014)", () => {
     // reliably alone, occasionally missed its window with 160+ other files running).
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
-      fetchEventReports.mockResolvedValueOnce(reportFixture(5)).mockResolvedValue(reportFixture(6));
+      // The reconciled fixture (7) is deliberately different from the optimistic bump's result
+      // (5+1=6) - representing the server having observed more admissions than this client's own
+      // SSE delivery did - so the final assertion can only pass if the reconcile fetch's data
+      // actually replaced the optimistic guess, not merely if the guess happened to match.
+      fetchEventReports.mockResolvedValueOnce(reportFixture(5)).mockResolvedValue(reportFixture(7));
       renderPage();
 
       await waitFor(() => {
@@ -146,14 +150,16 @@ describe("ReportsPage — live SSE updates (ADR 0014)", () => {
       });
       expect(noShowsValue()).toBe("4");
 
-      // The debounced reconcile fetch replaces the optimistic guess with the server's real count.
+      // The debounced reconcile fetch replaces the optimistic guess with the server's real count -
+      // 7, not 6, proving this assertion actually observed the reconciled fetch rather than just
+      // re-confirming the optimistic bump from before.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(3_000);
       });
 
       await waitFor(() => {
         expect(fetchEventReports).toHaveBeenCalledTimes(2);
-        expect(admittedValue()).toBe("6");
+        expect(admittedValue()).toBe("7");
       });
     } finally {
       vi.useRealTimers();

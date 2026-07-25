@@ -752,6 +752,16 @@ export function ReportsPage() {
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
+    // A pending/in-flight reconcile (ADR 0014) captured its own deltaAtFetchStart snapshot and
+    // would subtract it from optimisticAdmittedDelta whenever it resolves - if that landed after
+    // the reset below, it would subtract from the now-0 delta and drive it negative (CodeRabbit
+    // review). This load is about to replace `data` wholesale anyway, so any reconcile still
+    // outstanding for the pre-load state is moot - cancel it outright.
+    if (reconcileTimerRef.current != null) {
+      window.clearTimeout(reconcileTimerRef.current);
+      reconcileTimerRef.current = null;
+    }
+    reconcileAbortRef.current?.abort();
 
     setLoading(true);
     setError(null);

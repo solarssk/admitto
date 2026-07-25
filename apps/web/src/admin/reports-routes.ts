@@ -124,6 +124,10 @@ async function loadDeviceIdsByAttendee(
   const map = new Map<string, string | null>();
   if (attendeeIds.length === 0) return map;
 
+  // Newest first: a revoke leaves the attendee's original VALID row untouched (undo.ts only
+  // inserts a separate UNDO row) and a re-admission sets admitted_at to the new time, so the
+  // *latest* VALID row is the one that actually matches what "Admitted at" shows for a
+  // re-admitted attendee - not the first one they ever scanned in on (CodeRabbit review).
   const checkIns = await db.checkIn.findMany({
     where: {
       event_id: eventId,
@@ -131,7 +135,7 @@ async function loadDeviceIdsByAttendee(
       status: "VALID",
       source: { in: ["scan", "manual"] },
     },
-    orderBy: [{ checked_in_at: "asc" }, { id: "asc" }],
+    orderBy: [{ checked_in_at: "desc" }, { id: "desc" }],
     select: { attendee_id: true, device_id: true },
   });
 
@@ -266,12 +270,21 @@ async function loadReportsAggregates(
         where: { event_id: eventId, admitted_at: { not: null } },
         _count: { _all: true },
       }),
-      // Ordered oldest-first so the per-attendee dedup below (keep first seen) matches
-      // loadDeviceIdsByAttendee's own convention - same event/status/source filter as that
-      // function, just event-wide instead of scoped to a batch of attendee IDs.
+      // attendee.admitted_at: { not: null } excludes an attendee who was admitted and then
+      // revoked with no re-admission since - their original VALID row is otherwise still sitting
+      // in this table (undo.ts never touches it), which would count them here despite them not
+      // counting in summary.admitted at all (CodeRabbit review). Ordered newest-first so the
+      // per-attendee dedup below (keep first seen) picks each attendee's *current* admission -
+      // same convention as loadDeviceIdsByAttendee, just event-wide instead of scoped to a batch
+      // of attendee IDs.
       db.checkIn.findMany({
-        where: { event_id: eventId, status: "VALID", source: { in: ["scan", "manual"] } },
-        orderBy: [{ checked_in_at: "asc" }, { id: "asc" }],
+        where: {
+          event_id: eventId,
+          status: "VALID",
+          source: { in: ["scan", "manual"] },
+          attendee: { admitted_at: { not: null } },
+        },
+        orderBy: [{ checked_in_at: "desc" }, { id: "desc" }],
         select: { attendee_id: true, source: true, device_id: true },
       }),
     ]);
