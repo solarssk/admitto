@@ -4309,8 +4309,8 @@ output.mail-field-hint {
 }
 
 .overview-kpi__value {
-  /* --fs-display is this codebase's own "hero number" token (also what the generic Stat
-   * component's .at-stat__value uses) — matching it instead of an off-scale custom size. */
+  /* --fs-display is this codebase's own "hero number" token — matching it instead of an
+   * off-scale custom size. */
   font-size: var(--fs-display);
   font-weight: var(--fw-bold);
   color: var(--text-primary);
