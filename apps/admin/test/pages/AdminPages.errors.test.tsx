@@ -917,6 +917,35 @@ describe("ReportsPage — Check-in details section", () => {
     expect(screen.getByText("Tablet 1 — main entrance")).toBeTruthy();
     expect(screen.getByText("(unlabeled device)")).toBeTruthy();
   });
+
+  it("adds a fallback row for an rsvp_status outside the 5 known values, instead of silently dropping it (#587 review)", async () => {
+    vi.mocked(fetchEventReports).mockResolvedValue({
+      ...emptyReport,
+      summary: { ...emptyReport.summary, total_attendees: 4, admitted: 4, admission_rate_pct: 100 },
+      // rsvp_status is an unconstrained DB column - "invited" isn't one of the 5 statuses this
+      // app's own write paths ever set, simulating a row written outside them (e.g. a script).
+      by_rsvp_status: [
+        { status: "confirmed", count: 3 },
+        { status: "invited", count: 1 },
+      ],
+    });
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Attendance confirmation")).toBeTruthy();
+    });
+    // Still zero-fills the 5 known buckets...
+    expect(screen.getByText("Confirmed")).toBeTruthy();
+    expect(screen.getByText("Declined")).toBeTruthy();
+    // ...plus a fallback row for the unrecognized value, instead of that attendee just vanishing
+    // from the card despite being counted in the "4" admitted total above.
+    expect(screen.getByText("invited (not in catalog)")).toBeTruthy();
+  });
 });
 
 describe("ReportsPage admission log", () => {

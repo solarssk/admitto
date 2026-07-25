@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { createMemoryRouter, MemoryRouter, Route, RouterProvider, Routes } from "react-router";
 import { ReportsPage } from "../../src/pages/ReportsPage.js";
 import type { EventReportsResponse } from "../../src/api/types.js";
 import type { StreamCheckinEvent } from "../../src/hooks/useEventStream.js";
@@ -232,6 +232,50 @@ describe("ReportsPage — live SSE updates (ADR 0014)", () => {
         expect(screen.getByText("Guest 1")).toBeTruthy();
       });
       expect(screen.queryByText("No admissions match the filter.")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("cancels a pending reconcile timer when the viewed event changes, instead of letting it fire against the old event later (#587 review)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      fetchEventReports.mockImplementation(async (eventId: string) =>
+        reportFixture(5, {
+          event: { id: eventId, title: "Demo Event", date: "2026-07-01T18:00:00.000Z", capacity: 100 },
+        }),
+      );
+      // createMemoryRouter + RouterProvider (not the plain <MemoryRouter> renderPage() uses), so
+      // router.navigate() can change the :eventId param in place without remounting ReportsPage -
+      // the same in-SPA navigation the bug this guards against actually happens on.
+      const router = createMemoryRouter(
+        [{ path: "/admin/events/:eventId/reports", element: <ReportsPage /> }],
+        { initialEntries: ["/admin/events/evt-a/reports"] },
+      );
+      renderWithToast(<RouterProvider router={router} />);
+
+      await waitFor(() => {
+        expect(fetchEventReports).toHaveBeenCalledWith("evt-a", expect.anything());
+      });
+
+      // Arms a 3s reconcile timer scoped to evt-a.
+      act(() => {
+        streamHandler?.(liveEvent);
+      });
+
+      await router.navigate("/admin/events/evt-b/reports");
+      await waitFor(() => {
+        expect(fetchEventReports).toHaveBeenCalledWith("evt-b", expect.anything());
+      });
+      fetchEventReports.mockClear();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+
+      // If the evt-a timer had survived the switch, this advance would fire a stale
+      // fetchEventReports("evt-a") call whose result could silently overwrite evt-b's data.
+      expect(fetchEventReports).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
