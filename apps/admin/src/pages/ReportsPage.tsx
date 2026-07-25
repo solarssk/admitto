@@ -614,6 +614,8 @@ function AdmissionLog({
           <label className="reports-log-pagesize">
             <span>Rows per page</span>
             <select
+              id="reports-log-pagesize-select"
+              name="reports-log-pagesize-select"
               className="at-select reports-log-pagesize-select"
               value={pageSize}
               onChange={(e) => {
@@ -967,7 +969,7 @@ export function ReportsPage() {
 
           <div className="reports-panels">
             <Card
-              title={`Hourly admissions (${data.timezone})`}
+              title="Hourly admissions"
               actions={
                 <Badge variant="ok" dot className="overview-live-badge">
                   live
