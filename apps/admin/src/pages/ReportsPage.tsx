@@ -684,6 +684,20 @@ function handleLoadDataError(
   setError(err.status === 403 ? "You do not have access to this event." : operatorApiErrorMessage(err, "Request failed."));
 }
 
+/** Applies a resolved reconcile fetch: replaces `data` and folds the optimistic delta back down
+ * by only the portion this fetch accounts for (see scheduleReconcile's own comment). Extracted
+ * purely to keep the nested useCallback/setTimeout/then chain within Sonar's nesting-depth
+ * threshold - behavior is unchanged. */
+function applyReconcileResult(
+  report: EventReportsResponse,
+  deltaAtFetchStart: number,
+  setData: (data: EventReportsResponse) => void,
+  setOptimisticAdmittedDelta: (updater: (current: number) => number) => void,
+): void {
+  setData(report);
+  setOptimisticAdmittedDelta((current) => current - deltaAtFetchStart);
+}
+
 export function ReportsPage() {
   const { eventId } = useParams();
   const { addToast } = useToast();
@@ -774,15 +788,13 @@ export function ReportsPage() {
       const ac = new AbortController();
       reconcileAbortRef.current = ac;
       const deltaAtFetchStart = deltaRef.current;
+      // Subtracts only the portion this fetch accounts for, not a hard reset to 0 - a second
+      // live check-in that arrived after this fetch started (and armed its own independent
+      // timer, since reconcileTimerRef was already cleared above) bumped the delta again in the
+      // meantime, and that bump isn't reflected in `report` yet.
       fetchEventReports(eventId, ac.signal)
         .then((report) => {
-          if (ac.signal.aborted) return;
-          setData(report);
-          // Subtracts only the portion this fetch accounts for, not a hard reset to 0 - a
-          // second live check-in that arrived after this fetch started (and armed its own
-          // independent timer, since reconcileTimerRef was already cleared above) bumped the
-          // delta again in the meantime, and that bump isn't reflected in `report` yet.
-          setOptimisticAdmittedDelta((current) => current - deltaAtFetchStart);
+          if (!ac.signal.aborted) applyReconcileResult(report, deltaAtFetchStart, setData, setOptimisticAdmittedDelta);
         })
         .catch(() => {
           /* keep the optimistic count until the next live event or a manual retry */
