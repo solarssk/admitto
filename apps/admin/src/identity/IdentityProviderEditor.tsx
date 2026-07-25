@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useBlocker, useLocation, useNavigate, useParams, type BlockerFunction } from "react-router";
-import { Button, Card, IconButton, Input, Spinner, Switch, useToast } from "@admitto/ui";
+import { Button, Card, Input, Spinner, Switch, useToast } from "@admitto/ui";
 import {
   ApiError,
   createIdentityProvider,
@@ -16,6 +16,7 @@ import type { ProviderDetailDto, ProviderRequestBody, ProviderTestDraftBody } fr
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { IdentityMappingRepeater } from "./IdentityMappingRepeater.js";
+import { IdentityModalHeader } from "./IdentityModalHeader.js";
 import {
   emptyMappingRow,
   emptyProviderDraft,
@@ -888,13 +889,12 @@ export function IdentityProviderEditor({
     <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
       <div className="identity-modal__backdrop" role="presentation" onClick={handleCancel} />
       <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
-        <div className="identity-editor__header">
-          <div className="identity-editor__header-row">
-            <h2 className="identity-editor__title" id={titleId}>{title}</h2>
-            <IconButton label="Close" onClick={handleCancel} icon={<i className="ti ti-x" />} />
-          </div>
-          {view === "form" && <p className="identity-editor__subtitle">{editorSubtitle(mode)}</p>}
-        </div>
+        <IdentityModalHeader
+          titleId={titleId}
+          title={title}
+          subtitle={view === "form" ? editorSubtitle(mode) : undefined}
+          onClose={handleCancel}
+        />
         {view === "loading" && showLoadingSpinner && loadingContent}
         {view === "error" && errorContent}
         {view === "not_found" && notFoundContent}

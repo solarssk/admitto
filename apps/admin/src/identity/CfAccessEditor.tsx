@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useBlocker, useLocation, useNavigate, type BlockerFunction } from "react-router";
-import { Badge, Button, Card, IconButton, Input, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
+import { Badge, Button, Card, Input, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
 import { ApiError, fetchCfAccessSummary, testCfAccess, updateCfAccess } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { CfAccessSummaryDto } from "../api/types.js";
@@ -16,6 +16,7 @@ import {
   type CfAccessDraft,
   type CfAccessFieldErrors,
 } from "./cfAccessValidation.js";
+import { IdentityModalHeader } from "./IdentityModalHeader.js";
 import { IDENTITY_PROVIDERS_ROUTE } from "./routes.js";
 
 type LoadState = "loading" | "ready" | "error";
@@ -337,26 +338,23 @@ export function CfAccessEditor() {
     <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
       <div className="identity-modal__backdrop" role="presentation" onClick={handleCancel} />
       <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
-        <div className="identity-editor__header">
-          <div className="identity-editor__header-row">
-            <div className="identity-editor__header-title">
-              <h2 className="identity-editor__title" id={titleId}>Cloudflare Access</h2>
-              {loadState === "ready" &&
-                (draft.enabled ? (
-                  <Badge variant="ok">Active</Badge>
-                ) : (
-                  <Badge variant="neutral">Inactive</Badge>
-                ))}
-            </div>
-            <IconButton label="Close" onClick={handleCancel} icon={<i className="ti ti-x" />} />
-          </div>
-          {loadState === "ready" && (
-            <p className="identity-editor__subtitle">
-              Require a Cloudflare Zero Trust Access JWT for protected admin paths. Configure your
-              team URL, application audience tag, and protected prefixes.
-            </p>
-          )}
-        </div>
+        <IdentityModalHeader
+          titleId={titleId}
+          title="Cloudflare Access"
+          badge={
+            loadState === "ready" &&
+            (draft.enabled ? <Badge variant="ok">Active</Badge> : <Badge variant="neutral">Inactive</Badge>)
+          }
+          subtitle={
+            loadState === "ready" && (
+              <>
+                Require a Cloudflare Zero Trust Access JWT for protected admin paths. Configure your
+                team URL, application audience tag, and protected prefixes.
+              </>
+            )
+          }
+          onClose={handleCancel}
+        />
         {content}
       </div>
     </dialog>,
