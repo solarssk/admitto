@@ -11,12 +11,14 @@ export function IdentityModalHeader({
   badge,
   subtitle,
   onClose,
+  closeDisabled = false,
 }: Readonly<{
   titleId: string;
   title: string;
   badge?: ReactNode;
   subtitle?: ReactNode;
   onClose: () => void;
+  closeDisabled?: boolean;
 }>) {
   const titleEl = (
     <h2 className="identity-editor__title" id={titleId}>
@@ -34,7 +36,7 @@ export function IdentityModalHeader({
         ) : (
           titleEl
         )}
-        <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" />} />
+        <IconButton label="Close" onClick={onClose} disabled={closeDisabled} icon={<i className="ti ti-x" />} />
       </div>
       {subtitle && <p className="identity-editor__subtitle">{subtitle}</p>}
     </div>

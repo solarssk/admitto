@@ -7,6 +7,7 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { CfAccessSummaryDto } from "../api/types.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import {
   buildCfUpdateBody,
   cfDraftFromSummary,
@@ -128,23 +129,19 @@ export function CfAccessEditor() {
   }, [dirty]);
 
   const handleCancel = useCallback(() => {
-    // A pending save has no abort/cancellation path (updateCfAccess is a plain awaited fetch) -
-    // dismissing the modal mid-save would only hide it, not stop it, silently applying the
-    // change (particularly risky for enabling Cloudflare Access) after the operator thought
-    // they'd discarded. Blocking every dismissal path (button, backdrop, close icon, Escape all
-    // funnel through this one function) while saving is simpler and safer than trying to
-    // cancel/ignore the in-flight mutation.
-    if (saving) return;
+    if (saving || testing) return;
     if (dirty && !window.confirm("Discard unsaved changes?")) return;
     skipBlockRef.current = true;
     navigate(IDENTITY_PROVIDERS_ROUTE);
-  }, [saving, dirty, navigate]);
+  }, [dirty, navigate, saving, testing]);
 
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   // Always starts in loadState "loading" - the real form fields don't exist in the DOM
   // until the fetch resolves, so initial focus must be re-attempted once loadState changes.
   useModalFocusTrap(panelRef, true, handleCancel, loadState);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useOverscrollBounceGuard(scrollRef);
   // A fetch that resolves near-instantly (localhost, a warm cache) would
   // otherwise flash the spinner on and off faster than it can register as
   // "loading" — show it only once the fetch has genuinely taken a moment.
@@ -168,6 +165,8 @@ export function CfAccessEditor() {
         setLocks(refreshed.locks);
         setErrors({});
         addToast("Cloudflare Access settings saved.", "success");
+        skipBlockRef.current = true;
+        navigate(IDENTITY_PROVIDERS_ROUTE);
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
           redirectToLogin();
@@ -179,7 +178,7 @@ export function CfAccessEditor() {
         setSaving(false);
       }
     },
-    [draft, locks, addToast],
+    [draft, locks, addToast, navigate],
   );
 
   // Test probes the team domain's JWKS endpoint. Send the draft team domain when
@@ -245,14 +244,12 @@ export function CfAccessEditor() {
     ) : null;
   } else if (loadState === "error") {
     content = (
-      <Card>
-        <div className="identity-editor__error">
-          <p>Couldn't load the Cloudflare Access configuration.</p>
-          <Button variant="secondary" onClick={retryLoad}>
-            Retry
-          </Button>
-        </div>
-      </Card>
+      <div className="identity-editor__error">
+        <p>Couldn't load the Cloudflare Access configuration.</p>
+        <Button variant="secondary" onClick={retryLoad}>
+          Retry
+        </Button>
+      </div>
     );
   } else {
     content = (
@@ -268,7 +265,7 @@ export function CfAccessEditor() {
               <Tooltip content="Require a Cloudflare Access JWT for protected admin paths">
                 <Switch
                   id="cf-access-enabled"
-                  label="Enabled"
+                  aria-label="Enabled"
                   checked={draft.enabled}
                   disabled={locks.enabled}
                   onChange={(e) => setDraft((d) => ({ ...d, enabled: e.target.checked }))}
@@ -343,26 +340,37 @@ export function CfAccessEditor() {
 
   return createPortal(
     <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
-      <div className="identity-modal__backdrop" role="presentation" onClick={handleCancel} />
+      <div className="identity-modal__backdrop" aria-hidden="true" />
       <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
-        <IdentityModalHeader
-          titleId={titleId}
-          title="Cloudflare Access"
-          badge={
-            loadState === "ready" &&
-            (draft.enabled ? <Badge variant="ok">Active</Badge> : <Badge variant="neutral">Inactive</Badge>)
-          }
-          subtitle={
-            loadState === "ready" && (
-              <>
-                Require a Cloudflare Zero Trust Access JWT for protected admin paths. Configure your
-                team URL, application audience tag, and protected prefixes.
-              </>
-            )
-          }
-          onClose={handleCancel}
-        />
-        {content}
+        <div ref={scrollRef} className="identity-modal__scroll">
+          <IdentityModalHeader
+            titleId={titleId}
+            title="Cloudflare Access"
+            badge={
+              loadState === "ready" && (
+                <>
+                  {draft.enabled ? (
+                    <Badge variant="ok">Active</Badge>
+                  ) : (
+                    <Badge variant="neutral">Inactive</Badge>
+                  )}
+                  {locks.enabled && <Badge variant="warn">Managed by environment</Badge>}
+                </>
+              )
+            }
+            subtitle={
+              loadState === "ready" && (
+                <>
+                  Require a Cloudflare Zero Trust Access JWT for protected admin paths. Configure
+                  your team URL, application audience tag, and protected prefixes.
+                </>
+              )
+            }
+            onClose={handleCancel}
+            closeDisabled={saving || testing}
+          />
+          {content}
+        </div>
       </div>
     </dialog>,
     document.body,

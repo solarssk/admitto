@@ -1,6 +1,6 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useParams } from "react-router";
-import { Badge, Button, Card, EmptyState, Skeleton, Switch, useToast } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, Skeleton, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
   ApiError,
   fetchCfAccessSummary,
@@ -13,14 +13,14 @@ import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useInFlightIds } from "../hooks/useInFlightIds.js";
 import { IDENTITY_CLOUDFLARE_ROUTE, IDENTITY_PROVIDERS_ROUTE } from "./routes.js";
 
-// Lazy so opening the list itself doesn't also download both editors' code — most visits
-// never open either modal (each is its own chunk again, like before the two were folded
-// into this one panel).
-const CfAccessEditor = lazy(() =>
-  import("./CfAccessEditor.js").then((m) => ({ default: m.CfAccessEditor })),
-);
+// Modal editors are only needed once an operator opens Add/Edit/Manage — keep them
+// out of the list's own chunk the same way App.tsx code-split them before these
+// routes moved to render inline here.
 const IdentityProviderEditor = lazy(() =>
   import("./IdentityProviderEditor.js").then((m) => ({ default: m.IdentityProviderEditor })),
+);
+const CfAccessEditor = lazy(() =>
+  import("./CfAccessEditor.js").then((m) => ({ default: m.CfAccessEditor })),
 );
 
 type Modal =
@@ -54,7 +54,11 @@ function providerEditPath(id: string): string {
   return `/admin/settings/identity/providers/${encodeURIComponent(id)}`;
 }
 
-const PROVIDER_NEW_PATH = "/admin/settings/identity/providers/new";
+const PROVIDER_NEW_PATH = `${IDENTITY_PROVIDERS_ROUTE}/new`;
+
+function cfStatusBadge(cf: CfAccessSummaryDto): ReactNode {
+  return cf.enabled ? <Badge variant="ok">Active</Badge> : <Badge variant="neutral">Inactive</Badge>;
+}
 
 function ProviderListSkeleton() {
   return (
@@ -77,9 +81,16 @@ function ProviderRowItem({
   const labelId = `idp-enabled-${provider.id}`;
   return (
     <div className="settings-row identity-provider-row">
-      <div className="settings-row__text">
-        <strong>{provider.display_name}</strong>
-        <p className="identity-provider-row__issuer">{provider.issuer}</p>
+      <div className="identity-row__main">
+        <Tooltip content="OpenID Connect">
+          <div className="identity-row-icon" aria-hidden="true">
+            <i className="ti ti-shield-lock" />
+          </div>
+        </Tooltip>
+        <div className="settings-row__text">
+          <strong>{provider.display_name}</strong>
+          <p className="identity-provider-row__issuer">{provider.issuer}</p>
+        </div>
       </div>
       <div className="identity-provider-row__actions">
         <Link className="at-btn at-btn--ghost" to={providerEditPath(provider.id)}>
@@ -87,7 +98,7 @@ function ProviderRowItem({
         </Link>
         <Switch
           id={labelId}
-          label="Enabled"
+          aria-label={`${provider.display_name} enabled`}
           checked={provider.enabled}
           disabled={disabled}
           aria-busy={disabled}
@@ -247,40 +258,22 @@ export function IdentityProvidersPanel() {
           />
         )}
         {providersState === "ready" && providers.length > 0 && (
-          <>
-            <div className="identity-providers__list">
-              {providers.map((provider) => (
-                <ProviderRowItem
-                  key={provider.id}
-                  provider={provider}
-                  onToggle={handleToggle}
-                  disabled={togglingIds.has(provider.id)}
-                />
-              ))}
-            </div>
-            <p className="identity-providers__hint">
-              {togglingIds.size > 0 ? "Saving changes…" : "Edit a provider to configure endpoints, claims, and group→role mapping."}
-            </p>
-          </>
+          <div className="identity-providers__list">
+            {providers.map((provider) => (
+              <ProviderRowItem
+                key={provider.id}
+                provider={provider}
+                onToggle={handleToggle}
+                disabled={togglingIds.has(provider.id)}
+              />
+            ))}
+          </div>
         )}
       </Card>
 
       <Card
         title="Cloudflare Access"
-        actions={
-          cfState === "ready" && cf ? (
-            <>
-              {cf.enabled ? (
-                <Badge variant="ok">Active</Badge>
-              ) : (
-                <Badge variant="neutral">Inactive</Badge>
-              )}
-              <Link className="at-btn at-btn--secondary at-btn--sm" to={IDENTITY_CLOUDFLARE_ROUTE}>
-                <span>Manage</span>
-              </Link>
-            </>
-          ) : undefined
-        }
+        actions={cfState === "ready" && cf ? cfStatusBadge(cf) : undefined}
       >
         {cfState === "loading" && showCfSkeleton && <Skeleton height={56} />}
         {cfState === "error" && (
@@ -291,29 +284,37 @@ export function IdentityProvidersPanel() {
           />
         )}
         {cfState === "ready" && cf && (
-          <div className="cf-access-summary">
-            <strong>Cloudflare Zero Trust</strong>
-            <p>
-              {cf.teamDomain
-                ? `Team domain: ${cf.teamDomain}`
-                : "No team domain configured."}
-            </p>
-            {cf.locks.enabled && (
-              <div className="cf-access-summary__badges">
-                <Badge variant="warn">Managed by environment</Badge>
+          <div className="settings-row cf-access-summary">
+            <div className="identity-row__main">
+              <div className="identity-row-icon" aria-hidden="true">
+                <i className="ti ti-brand-cloudflare" />
               </div>
-            )}
+              <div className="cf-access-summary__text">
+                <strong>Cloudflare Zero Trust</strong>
+                <p>
+                  {cf.teamDomain
+                    ? `Team domain: ${cf.teamDomain}`
+                    : "No team domain configured."}
+                </p>
+                {cf.locks.enabled && (
+                  <div className="cf-access-summary__badges">
+                    <Badge variant="warn">Managed by environment</Badge>
+                  </div>
+                )}
+              </div>
+            </div>
+            <Link className="at-btn at-btn--secondary" to={IDENTITY_CLOUDFLARE_ROUTE}>
+              <span>Manage</span>
+            </Link>
           </div>
         )}
       </Card>
 
-      {modal.kind !== "none" && (
-        <Suspense fallback={null}>
-          {modal.kind === "create" && <IdentityProviderEditor mode="create" />}
-          {modal.kind === "edit" && <IdentityProviderEditor mode="edit" providerId={modal.providerId} />}
-          {modal.kind === "cloudflare" && <CfAccessEditor />}
-        </Suspense>
-      )}
+      <Suspense fallback={null}>
+        {modal.kind === "create" && <IdentityProviderEditor mode="create" />}
+        {modal.kind === "edit" && <IdentityProviderEditor mode="edit" providerId={modal.providerId} />}
+        {modal.kind === "cloudflare" && <CfAccessEditor />}
+      </Suspense>
     </div>
   );
 }

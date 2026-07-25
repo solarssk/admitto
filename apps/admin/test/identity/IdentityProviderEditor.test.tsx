@@ -108,14 +108,16 @@ describe("IdentityProviderEditor — edit loading", () => {
     expect(screen.getByText("providers-list")).toBeTruthy();
   });
 
-  it("closes via a backdrop click, including while still loading (Sonar/PO review)", () => {
-    // The dialog renders via createPortal(document.body), not inside the render() container.
+  it("ignores a backdrop click, including while still loading", () => {
+    // Backdrop-click is deliberately inert (not a close action) - a superadmin mid-edit
+    // shouldn't lose work to a stray click outside the panel. The dialog renders via
+    // createPortal(document.body), not inside the render() container.
     mockFetch.mockImplementationOnce(() => new Promise(() => {}));
-    renderEditorAt("/admin/settings/identity/providers/p1");
+    const { router } = renderEditorAt("/admin/settings/identity/providers/p1");
 
     fireEvent.click(document.querySelector(".identity-modal__backdrop")!);
 
-    expect(screen.getByText("providers-list")).toBeTruthy();
+    expect(router.state.location.pathname).toBe("/admin/settings/identity/providers/p1");
   });
 
   it("moves focus into the modal once the load resolves, instead of leaving it stuck outside (Sonar/PO review)", async () => {
@@ -172,16 +174,9 @@ describe("IdentityProviderEditor — create", () => {
     });
   });
 
-  it("blocks the backdrop, close button, and Escape from dismissing the modal while a save is pending (bot review)", async () => {
-    // createIdentityProvider has no abort/cancellation path - dismissing mid-save would only
-    // hide the modal, not stop the request, silently creating the provider after the operator
-    // thought they'd discarded. Confirm returning true simulates the operator confirming the
-    // discard prompt (the draft is dirty), same as the reported scenario.
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
-    let resolveCreate!: (value: typeof validDetail) => void;
-    mockCreate.mockImplementationOnce(
-      () => new Promise((resolve) => { resolveCreate = resolve; }),
-    );
+  it("keeps the modal open when Close is clicked or Escape is pressed while creating", async () => {
+    let resolveCreate: (r: typeof validDetail) => void = () => {};
+    mockCreate.mockImplementationOnce(() => new Promise((resolve) => { resolveCreate = resolve; }));
     renderEditorAt("/admin/settings/identity/providers/new");
 
     fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google" } });
@@ -190,15 +185,16 @@ describe("IdentityProviderEditor — create", () => {
     });
     fireEvent.change(screen.getByLabelText("Client ID"), { target: { value: "client-123" } });
     fireEvent.change(screen.getByLabelText("Client secret"), { target: { value: "secret-abc" } });
-
     fireEvent.click(screen.getByRole("button", { name: "Create provider" }));
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(document.querySelector(".identity-modal__backdrop")!);
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    const closeButton = screen.getByRole("button", { name: "Close" });
+    expect(closeButton.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(closeButton);
+    expect(screen.queryByText("providers-list")).toBeNull();
+
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByText("providers-list")).toBeNull();
-    expect(confirmSpy).not.toHaveBeenCalled();
 
     resolveCreate(validDetail);
     expect(await screen.findByText("providers-list")).toBeTruthy();

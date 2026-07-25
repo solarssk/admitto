@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useBlocker, useLocation, useNavigate, useParams, type BlockerFunction } from "react-router";
-import { Button, Card, Input, Spinner, Switch, useToast } from "@admitto/ui";
+import { Button, Card, Input, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
   ApiError,
   createIdentityProvider,
@@ -15,6 +15,7 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { ProviderDetailDto, ProviderRequestBody, ProviderTestDraftBody } from "../api/types.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import { IdentityMappingRepeater } from "./IdentityMappingRepeater.js";
 import { IdentityModalHeader } from "./IdentityModalHeader.js";
 import {
@@ -217,10 +218,6 @@ function testButtonLabel(testing: boolean): string {
 function submitButtonLabel(saving: boolean, mode: EditorMode): string {
   if (saving) return "Saving…";
   return mode === "create" ? "Create provider" : "Save changes";
-}
-
-function loginButtonPreviewLabel(label: string): string {
-  return label.trim() || "Continue with SSO";
 }
 
 /** True while any async editor action (discover/test/save) is in flight. */
@@ -447,6 +444,8 @@ export function IdentityProviderEditor({
   // until the fetch resolves, so initial focus must be re-attempted once loadState changes
   // (create mode is already "ready" at mount, so this is a no-op there).
   useModalFocusTrap(panelRef, true, handleCancel, loadState);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useOverscrollBounceGuard(scrollRef);
 
   const handleSubmit = useCallback(
     async (event: React.FormEvent) => {
@@ -648,28 +647,21 @@ export function IdentityProviderEditor({
   );
 
   const errorContent = (
-    <Card>
-      <div className="identity-editor__error">
-        <p>Couldn't load this provider.</p>
-        <Button
-          variant="secondary"
-          onClick={retryLoad}
-        >
-          Retry
-        </Button>
-      </div>
-    </Card>
+    <div className="identity-editor__error">
+      <p>Couldn't load this provider.</p>
+      <Button variant="secondary" onClick={retryLoad}>
+        Retry
+      </Button>
+    </div>
   );
 
   const notFoundContent = (
-    <Card>
-      <div className="identity-editor__error">
-        <p>This provider no longer exists.</p>
-        <Button variant="secondary" onClick={() => navigate(IDENTITY_PROVIDERS_ROUTE)}>
-          Back to providers
-        </Button>
-      </div>
-    </Card>
+    <div className="identity-editor__error">
+      <p>This provider no longer exists.</p>
+      <Button variant="secondary" onClick={() => navigate(IDENTITY_PROVIDERS_ROUTE)}>
+        Back to providers
+      </Button>
+    </div>
   );
 
   const formContent = (
@@ -693,12 +685,14 @@ export function IdentityProviderEditor({
       <Card
         title="Basics"
         actions={
-          <Switch
-            id="idp-enabled"
-            label="Enabled"
-            checked={draft.enabled}
-            onChange={(e) => setDraft((d) => setField(d, "enabled", e.target.checked))}
-          />
+          <Tooltip content="Allow sign-in through this provider">
+            <Switch
+              id="idp-enabled"
+              aria-label="Enabled"
+              checked={draft.enabled}
+              onChange={(e) => setDraft((d) => setField(d, "enabled", e.target.checked))}
+            />
+          </Tooltip>
         }
       >
         <div className="identity-editor__grid">
@@ -844,23 +838,15 @@ export function IdentityProviderEditor({
       </Card>
 
       <Card title="Login button">
-        <div className="identity-editor__grid">
-          <Input
-            label="SSO login button label"
-            value={draft.login_button_label}
-            invalid={Boolean(errors.login_button_label)}
-            error={errors.login_button_label}
-            hint="Leave blank to use the product default ('Continue with SSO')."
-            onChange={(e) => setDraft((d) => setField(d, "login_button_label", e.target.value))}
-            placeholder="Continue with Google"
-          />
-          <div className="identity-sso-preview" aria-label="SSO login button preview">
-            <span className="identity-sso-preview__label">Preview</span>
-            <span className="identity-sso-preview__button">
-              {loginButtonPreviewLabel(draft.login_button_label)}
-            </span>
-          </div>
-        </div>
+        <Input
+          label="SSO login button label"
+          value={draft.login_button_label}
+          invalid={Boolean(errors.login_button_label)}
+          error={errors.login_button_label}
+          hint="Leave blank to use the product default ('Continue with SSO')."
+          onChange={(e) => setDraft((d) => setField(d, "login_button_label", e.target.value))}
+          placeholder="Continue with Google"
+        />
       </Card>
 
       <div className="identity-editor__actions">
@@ -893,18 +879,21 @@ export function IdentityProviderEditor({
   const showLoadingSpinner = useDelayedLoading(view === "loading");
   return createPortal(
     <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
-      <div className="identity-modal__backdrop" role="presentation" onClick={handleCancel} />
+      <div className="identity-modal__backdrop" aria-hidden="true" />
       <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
-        <IdentityModalHeader
-          titleId={titleId}
-          title={title}
-          subtitle={view === "form" ? editorSubtitle(mode) : undefined}
-          onClose={handleCancel}
-        />
-        {view === "loading" && showLoadingSpinner && loadingContent}
-        {view === "error" && errorContent}
-        {view === "not_found" && notFoundContent}
-        {view === "form" && formContent}
+        <div ref={scrollRef} className="identity-modal__scroll">
+          <IdentityModalHeader
+            titleId={titleId}
+            title={title}
+            subtitle={view === "form" ? editorSubtitle(mode) : undefined}
+            onClose={handleCancel}
+            closeDisabled={isActionBusy(saving, testing, discovering)}
+          />
+          {view === "loading" && showLoadingSpinner && loadingContent}
+          {view === "error" && errorContent}
+          {view === "not_found" && notFoundContent}
+          {view === "form" && formContent}
+        </div>
       </div>
     </dialog>,
     document.body,

@@ -2690,6 +2690,13 @@
   flex-direction: column;
 }
 
+.identity-row__main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
 .identity-provider-row__actions {
   display: flex;
   align-items: center;
@@ -2701,14 +2708,39 @@
   word-break: break-all;
 }
 
+/* Protocol/type icon tile — left of a provider row or the CF summary, so the row
+   reads as "what kind of identity source is this" at a glance. OIDC is the only
+   wired-up protocol today; swap the glyph per-provider once SAML/Entra ship. */
+.identity-row-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--control-h);
+  height: var(--control-h);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: 1.1rem;
+}
+
 .identity-providers__skeleton {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
 }
 
-.identity-providers__hint {
-  margin: var(--space-3) 0 0;
+.cf-access-summary__text {
+  min-width: 0;
+}
+
+.cf-access-summary strong {
+  display: block;
+  margin-bottom: var(--space-1);
+}
+
+.cf-access-summary p {
+  margin: 0;
   color: var(--text-secondary);
   font-size: var(--fs-sm);
 }
@@ -2768,22 +2800,35 @@
   background: var(--surface-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: var(--space-5);
   width: min(520px, 100%);
   max-height: min(90vh, 720px);
-  overflow: auto;
-  /* Without this, scrolling past the panel's own end with a trackpad
-     rubber-bands into the page behind it (scroll chaining) instead of
-     just stopping — visible as a gap at the panel's edge mid-gesture. */
-  overscroll-behavior: contain;
+  /* Scrolling lives on .identity-modal__scroll below, not here — overflow:auto
+     directly on this rounded box would render the native scrollbar as a hard
+     rectangle cutting across the rounded corner instead of following it. */
+  overflow: hidden;
   box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
 }
 
 .identity-modal__panel--wide {
   width: min(720px, 100%);
+}
+
+.identity-modal__scroll {
+  overflow: auto;
+  /* Without this, scrolling past the panel's own end with a trackpad
+     rubber-bands into the page behind it (scroll chaining) instead of
+     just stopping — visible as a gap at the panel's edge mid-gesture.
+     (The element's own bounce past its edge is separately guarded by
+     useOverscrollBounceGuard — this CSS alone doesn't suppress that in
+     every browser.) */
+  overscroll-behavior: contain;
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
 }
 
 .identity-editor__header {
@@ -2828,32 +2873,6 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-3) var(--space-4);
-}
-
-.identity-sso-preview {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  align-self: end;
-  padding: var(--space-3);
-  border: 1px dashed var(--border);
-  border-radius: var(--radius-md);
-}
-
-.identity-sso-preview__label {
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-}
-
-.identity-sso-preview__button {
-  display: inline-flex;
-  align-items: center;
-  padding: 0 var(--space-4);
-  height: var(--control-h-md);
-  border-radius: var(--radius-md);
-  background: var(--primary);
-  color: var(--text-on-primary);
-  font-weight: 600;
 }
 
 /* Protocol picker (Add identity provider) — visual only today: OIDC is the only
@@ -2943,6 +2962,7 @@
    instead of leaving a placeholder-shaped gap. */
 .identity-mappings__row {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   gap: var(--space-3);
   padding: var(--space-2) 0;
@@ -3014,20 +3034,6 @@
   color: var(--status-warn-fg);
 }
 
-@media (max-width: 860px) {
-  /* The row's up-to-4 cells (130px min-width each) plus the remove button no
-     longer fit on one line at this width — wrap instead of overflowing the
-     modal panel, roughly 2 cells per line like the row's own group cell already
-     gets 1.2x the flex-basis of the rest. */
-  .identity-mappings__row {
-    flex-wrap: wrap;
-  }
-
-  .identity-mappings__cell {
-    flex-basis: calc(50% - var(--space-3) / 2);
-  }
-}
-
 @media (max-width: 720px) {
   .identity-editor__grid {
     grid-template-columns: 1fr;
@@ -3042,6 +3048,90 @@
 
   .settings-row .at-btn {
     align-self: flex-start;
+  }
+
+  /* The generic column-stack above turns this row into 3 stacked blocks (icon+name,
+     issuer URL, Edit+Switch) — the actions end up dangling on their own line below
+     two lines of text. Un-nest the icon/name/issuer so they can share a line with
+     Edit+Switch instead, with only the (often long) issuer URL forced onto its own
+     full-width line below. `order` controls where each un-nested piece lands,
+     independent of DOM order. */
+  .identity-provider-row {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    row-gap: var(--space-1);
+  }
+
+  .identity-provider-row .identity-row__main,
+  .identity-provider-row .settings-row__text {
+    display: contents;
+  }
+
+  .identity-provider-row .at-tooltip-trigger {
+    order: 1;
+  }
+
+  .identity-provider-row .settings-row__text strong {
+    order: 2;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .identity-provider-row__actions {
+    order: 3;
+    flex: none;
+  }
+
+  .identity-provider-row__issuer {
+    order: 4;
+    flex-basis: 100%;
+    margin-left: calc(var(--control-h) + var(--space-3));
+  }
+
+  /* Same fix, same reasoning, for the Cloudflare Access summary row — icon + text
+     wrapper + Manage button collapse to 3 stacked lines otherwise. No Tooltip
+     wrapper here (unlike the provider row's icon) and Manage is a direct child,
+     not a nested actions group, so the selectors below are simpler than above. */
+  .cf-access-summary {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    row-gap: var(--space-1);
+  }
+
+  .cf-access-summary .identity-row__main,
+  .cf-access-summary .cf-access-summary__text {
+    display: contents;
+  }
+
+  .cf-access-summary .identity-row-icon {
+    order: 1;
+  }
+
+  .cf-access-summary__text strong {
+    order: 2;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .cf-access-summary > .at-btn {
+    order: 3;
+    flex: none;
+  }
+
+  .cf-access-summary__text p {
+    order: 4;
+    flex-basis: 100%;
+    margin-left: calc(var(--control-h) + var(--space-3));
+  }
+
+  .cf-access-summary__badges {
+    order: 5;
+    flex-basis: 100%;
+    margin-left: calc(var(--control-h) + var(--space-3));
   }
 }
 
@@ -4040,20 +4130,8 @@ output.mail-field-hint {
   padding: 0;
 }
 
-.audit-log-details__backdrop {
-  position: fixed;
-  inset: 0;
-  background: transparent;
-  border: 0;
-  padding: 0;
-  cursor: default;
-  z-index: var(--z-dropdown);
-}
-
 .audit-log-details__panel {
-  /* position/top/left set inline (measured from the trigger at open-time, flips upward when
-     there isn't room below) - portaled to document.body so an ancestor's overflow (the table
-     wrap's own vertical scroll) can never clip it. */
+  position: fixed;
   padding: var(--space-2);
   width: max-content;
   max-width: 22rem;

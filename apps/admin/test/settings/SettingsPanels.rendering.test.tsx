@@ -58,6 +58,8 @@ function makeSession(overrides: Partial<SessionListDto> = {}): SessionListDto {
 
 beforeEach(() => {
   vi.mocked(fetchAdminEvents).mockResolvedValue([]);
+  // jsdom does not implement scrollIntoView.
+  Element.prototype.scrollIntoView = vi.fn();
 });
 
 afterEach(() => {
@@ -145,30 +147,7 @@ describe("AuditLogPanel rendering", () => {
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(trigger);
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    // The details panel portals into document.body (bot review: it must escape the table
-    // wrap's own clipping), so it's no longer a descendant of `table`.
-    expect(screen.getByText(/"event_id": "evt-1"/)).toBeTruthy();
-  });
-
-  it("renders the details popover outside .sessions-table-wrap so its own overflow can't clip it (bot review)", async () => {
-    // .sessions-table-wrap sets overflow-x: auto, which per the CSS spec also computes
-    // overflow-y to auto (not the default visible) - a popover left in-flow inside it could
-    // open below the wrap's own clipped/scrollable bounds for a row near the bottom.
-    vi.mocked(fetchAuditLog).mockResolvedValue({
-      entries: [makeAuditEntry()],
-      total: 1,
-      page: 1,
-      pageSize: 25,
-    });
-    renderWithToast(<AuditLogPanel />);
-
-    const table = await screen.findByRole("table");
-    fireEvent.click(within(table).getByText("View"));
-
-    const panel = screen.getByText(/"event_id": "evt-1"/);
-    const wrap = document.querySelector(".sessions-table-wrap");
-    expect(wrap?.contains(panel)).toBe(false);
-    expect(document.body.contains(panel)).toBe(true);
+    expect(within(table).getByText(/"event_id": "evt-1"/)).toBeTruthy();
   });
 
   it("renders safe fallbacks when an audit entry has no IP address or metadata", async () => {
@@ -186,7 +165,7 @@ describe("AuditLogPanel rendering", () => {
     expect(within(table).queryByText("View")).toBeNull();
   });
 
-  it("closes the Details popover via its backdrop", async () => {
+  it("closes the Details popover on an outside click", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue({
       entries: [makeAuditEntry()],
       total: 1,
@@ -201,37 +180,8 @@ describe("AuditLogPanel rendering", () => {
     fireEvent.click(trigger);
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
 
-    fireEvent.click(screen.getByLabelText("Close details"));
+    fireEvent.pointerDown(document.body);
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
-  });
-
-  it("switches the Time column to the viewer's local timezone", async () => {
-    vi.mocked(fetchAuditLog).mockResolvedValue({
-      entries: [makeAuditEntry()],
-      total: 1,
-      page: 1,
-      pageSize: 25,
-    });
-
-    renderWithToast(<AuditLogPanel />);
-
-    await screen.findByRole("table");
-    expect(screen.getByText("Time (UTC)")).toBeTruthy();
-
-    const localRadio = screen.getByRole("radio", { name: "Local" });
-    fireEvent.click(localRadio);
-
-    expect(localRadio.getAttribute("aria-checked")).toBe("true");
-    // Switching time mode now also reloads (the date filters need to reload in the
-    // newly-selected zone too) - await the table reappearing before reading its header text.
-    await screen.findByRole("table");
-    // The expected label depends on the test runner's own timezone (a developer's machine vs.
-    // CI, which typically runs in UTC) - computed the same way AuditLogPanel itself derives it,
-    // instead of assuming "Local" always renders a different string than "Time (UTC)", which
-    // isn't true when the runner's own local zone happens to be UTC.
-    const viewerTz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-    const viewerTzLabel = viewerTz.split("/").pop()?.replaceAll("_", " ") ?? viewerTz;
-    expect(screen.getByText(`Time (${viewerTzLabel})`)).toBeTruthy();
   });
 
   it("recomputes the viewer's timezone on each use instead of caching it once at module load (Sonar/PO review)", async () => {
@@ -254,9 +204,9 @@ describe("AuditLogPanel rendering", () => {
     const utcRadio = screen.getByRole("radio", { name: "UTC" });
 
     fireEvent.click(localRadio);
-    // Switching time mode now also reloads (fixed below: the date filters need to reload in
-    // the newly-selected zone too) - await the table reappearing so the reload settles before
-    // counting, instead of catching mid-flight state with nothing rendered yet.
+    // Switching time mode also reloads (the date filters need to reload in the newly-selected
+    // zone too) - await the table reappearing so the reload settles before counting, instead of
+    // catching mid-flight state with nothing rendered yet.
     await screen.findByRole("table");
     const zeroArgCallsAfterFirstToggle = spy.mock.calls.filter((args) => args.length === 0).length;
     expect(zeroArgCallsAfterFirstToggle).toBeGreaterThan(0);
@@ -271,58 +221,6 @@ describe("AuditLogPanel rendering", () => {
     spy.mockRestore();
   });
 
-  it("paginates via Previous/Next and restores scroll position once the next page has loaded", async () => {
-    vi.mocked(fetchAuditLog).mockResolvedValueOnce({
-      entries: [makeAuditEntry({ id: "audit-p1" })],
-      total: 30,
-      page: 1,
-      pageSize: 25,
-    });
-    vi.mocked(fetchAuditLog).mockResolvedValueOnce({
-      entries: [makeAuditEntry({ id: "audit-p2" })],
-      total: 30,
-      page: 2,
-      pageSize: 25,
-    });
-
-    renderWithToast(<AuditLogPanel />);
-
-    await screen.findByRole("table");
-    expect(screen.getByText("Page 1 of 2 (30 total)")).toBeTruthy();
-    const previous = screen.getByRole("button", { name: "Previous" });
-    const next = screen.getByRole("button", { name: "Next" });
-    expect((previous as HTMLButtonElement).disabled).toBe(true);
-    expect((next as HTMLButtonElement).disabled).toBe(false);
-
-    const scrollToSpy = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
-    fireEvent.click(next);
-
-    await waitFor(() => {
-      expect(screen.getByText("Page 2 of 2 (30 total)")).toBeTruthy();
-    });
-    expect(fetchAuditLog).toHaveBeenLastCalledWith(
-      expect.objectContaining({ page: 2 }),
-      expect.anything(),
-    );
-    expect(scrollToSpy).toHaveBeenCalled();
-
-    vi.mocked(fetchAuditLog).mockResolvedValueOnce({
-      entries: [makeAuditEntry({ id: "audit-p1" })],
-      total: 30,
-      page: 1,
-      pageSize: 25,
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
-    await waitFor(() => {
-      expect(screen.getByText("Page 1 of 2 (30 total)")).toBeTruthy();
-    });
-    expect(fetchAuditLog).toHaveBeenLastCalledWith(
-      expect.objectContaining({ page: 1 }),
-      expect.anything(),
-    );
-    scrollToSpy.mockRestore();
-  });
-
   it("resets to page 1 once a retried page no longer exists against the current total", async () => {
     // Page 1 loads fine; the page-2 request fails (server-side data shrank in the
     // meantime), so Retry re-issues the *same* page-2 request rather than a filter
@@ -335,7 +233,6 @@ describe("AuditLogPanel rendering", () => {
       pageSize: 25,
     });
     vi.mocked(fetchAuditLog).mockRejectedValueOnce(new Error("network hiccup"));
-    const scrollToSpy = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     renderWithToast(<AuditLogPanel />);
     await screen.findByRole("table");
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
@@ -358,38 +255,6 @@ describe("AuditLogPanel rendering", () => {
     await waitFor(() => {
       expect(screen.getByText("Page 1 of 1 (5 total)")).toBeTruthy();
     });
-    scrollToSpy.mockRestore();
-  });
-
-  it("filters by date range and clears all filters at once", async () => {
-    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
-    renderWithToast(<AuditLogPanel />);
-    await screen.findByText("No audit log entries found.");
-
-    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-01-01" } });
-    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-01-31" } });
-
-    await waitFor(() => {
-      expect(fetchAuditLog).toHaveBeenLastCalledWith(
-        expect.objectContaining({
-          start: expect.any(String),
-          end: expect.any(String),
-        }),
-        expect.anything(),
-      );
-    });
-
-    const clearButton = await screen.findByRole("button", { name: "Clear filters" });
-    fireEvent.click(clearButton);
-
-    await waitFor(() => {
-      expect(fetchAuditLog).toHaveBeenLastCalledWith(
-        expect.objectContaining({ start: undefined, end: undefined, actionType: undefined }),
-        expect.anything(),
-      );
-    });
-    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
-    expect((screen.getByLabelText("From") as HTMLInputElement).value).toBe("");
   });
 
   it("computes date filter bounds in the selected zone, not always UTC (bot review)", async () => {
@@ -434,7 +299,6 @@ describe("AuditLogPanel rendering", () => {
     const table = await screen.findByRole("table");
     expect(within(table).getByText("some_future_action")).toBeTruthy();
   });
-
   it("falls back to the actor's email, then to a deleted-user label, when the display name is missing", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue({
       entries: [
@@ -497,6 +361,129 @@ describe("AuditLogPanel rendering", () => {
 
     expect(consoleErrorSpy).not.toHaveBeenCalled();
     consoleErrorSpy.mockRestore();
+  });
+
+  it("shows the viewer's local timezone label after switching the Time column to Local", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [makeAuditEntry()],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByRole("table");
+    expect(screen.getByText("Time (UTC)")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Local" }));
+    const tzLabel = Intl.DateTimeFormat().resolvedOptions().timeZone.split("/").pop()?.replaceAll("_", " ");
+    expect(await screen.findByText(`Time (${tzLabel})`)).toBeTruthy();
+  });
+
+  it("applies the From/To date filters and resets to page 1", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [makeAuditEntry()],
+      total: 50,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByRole("table");
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText("Page 2 of 2 (50 total)")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-01-01" } });
+    expect(await screen.findByText("Page 1 of 2 (50 total)")).toBeTruthy();
+    expect(vi.mocked(fetchAuditLog).mock.calls.at(-1)![0]).toMatchObject({ page: 1, start: "2026-01-01T00:00:00.000Z" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByText("Page 2 of 2 (50 total)");
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-01-31" } });
+    expect(await screen.findByText("Page 1 of 2 (50 total)")).toBeTruthy();
+    expect(vi.mocked(fetchAuditLog).mock.calls.at(-1)![0]).toMatchObject({ page: 1, end: "2026-01-31T23:59:59.999Z" });
+  });
+
+  it("clears the action filter and reloads unfiltered", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByText("No audit log entries found.");
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Action" }), {
+      target: { value: "event_created" },
+    });
+    expect(await screen.findByText("No audit log entries match the filters.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(await screen.findByText("No audit log entries found.")).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Action" })).property("value", "");
+  });
+
+  it("pages forward and back through results", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [makeAuditEntry()],
+      total: 50,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderWithToast(<AuditLogPanel />);
+    expect(await screen.findByText("Page 1 of 2 (50 total)")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Previous" })).property("disabled", true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText("Page 2 of 2 (50 total)")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Next" })).property("disabled", true);
+    expect(vi.mocked(fetchAuditLog).mock.calls.at(-1)![0]).toMatchObject({ page: 2 });
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+    expect(await screen.findByText("Page 1 of 2 (50 total)")).toBeTruthy();
+    expect(vi.mocked(fetchAuditLog).mock.calls.at(-1)![0]).toMatchObject({ page: 1 });
+  });
+
+  it("scrolls the panel back into view after paginating", async () => {
+    vi.mocked(fetchAuditLog)
+      .mockResolvedValueOnce({ entries: [makeAuditEntry()], total: 50, page: 1, pageSize: 25 })
+      .mockResolvedValueOnce({ entries: [makeAuditEntry()], total: 50, page: 2, pageSize: 25 });
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByText("Page 1 of 2 (50 total)");
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByText("Page 2 of 2 (50 total)");
+
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
+  });
+
+  it("ignores a stale scroll-restore when an unrelated reload resolves instead of the pagination fetch", async () => {
+    let resolveInitial: (r: AuditLogResponse) => void = () => {};
+    let resolveFiltered: (r: AuditLogResponse) => void = () => {};
+    const impls = [
+      () => new Promise<AuditLogResponse>((r) => { resolveInitial = r; }),
+      () => new Promise<AuditLogResponse>(() => {}), // the Next-triggered fetch: never resolves (superseded)
+      () => new Promise<AuditLogResponse>((r) => { resolveFiltered = r; }),
+    ];
+    let call = 0;
+    vi.mocked(fetchAuditLog).mockImplementation(() => impls[call++]!());
+
+    renderWithToast(<AuditLogPanel />);
+    resolveInitial({ entries: [makeAuditEntry()], total: 50, page: 1, pageSize: 25 });
+    await screen.findByText("Page 1 of 2 (50 total)");
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await act(async () => {});
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Action" }), {
+      target: { value: "event_created" },
+    });
+    await act(async () => {});
+
+    resolveFiltered({ entries: [], total: 0, page: 1, pageSize: 25 });
+    await screen.findByText("No audit log entries match the filters.");
+
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
   });
 });
 

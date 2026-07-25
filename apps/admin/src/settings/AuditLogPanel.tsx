@@ -1,19 +1,10 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type ReactNode,
-} from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button, Card } from "@admitto/ui";
 import { fetchAuditLog } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AuditLogEntryDto } from "../api/types.js";
 import { Segmented } from "../components/Segmented.js";
+import { useClickOutside } from "../components/useClickOutside.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import {
   formatEventDateTime,
@@ -123,54 +114,54 @@ function metadataPreview(metadata: Record<string, unknown>): string {
   return JSON.stringify(metadata, null, 2);
 }
 
-const DETAILS_PANEL_MARGIN = 5;
-const DETAILS_PANEL_VIEWPORT_PADDING = 8;
+// Matches .audit-log-details__panel's max-height (12rem) and gap (--space-1) in
+// staff.css — used to decide above-vs-below placement before the panel exists to measure.
+const DETAILS_PANEL_MAX_HEIGHT_PX = 192;
+const DETAILS_PANEL_GAP_PX = 4;
 
 /**
  * Details cell — shows metadata JSON in a small popover instead of an inline
  * `<details>` block, so opening it never changes the table row's height or
- * pushes other rows around. Portal-rendered into document.body (not just
- * `position: fixed` in place) so it's never clipped by `.sessions-table-wrap`'s
- * own overflow, which also makes the wrapper scrollable vertically — a row
- * near the bottom would otherwise open a popover mostly or entirely outside
- * the wrapper's visible bounds. Position is measured from the trigger at
- * open-time and flips upward when there isn't room below, matching the same
- * viewport-collision approach `@admitto/ui`'s `Tooltip` already uses.
+ * pushes other rows around. Positioned `fixed` from the trigger's own rect
+ * (recomputed on open/resize/scroll, same technique as DatePicker) so it
+ * floats over the page instead of being clipped by the table's horizontal
+ * scroll wrapper, which forces a matching `overflow-y` per the CSS spec.
+ * Flips above the trigger when there isn't room below, so a row near the
+ * bottom of the viewport doesn't push the panel off-screen.
  */
 function DetailsCell({ metadata }: Readonly<{ metadata: Record<string, unknown> | null }>) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const panelRef = useRef<HTMLPreElement>(null);
-  const [style, setStyle] = useState<CSSProperties>({ top: 0, left: 0, visibility: "hidden" });
 
-  useLayoutEffect(() => {
+  useClickOutside(rootRef, open, () => setOpen(false));
+
+  useEffect(() => {
     if (!open) return;
-    const trigger = triggerRef.current;
-    const panel = panelRef.current;
-    if (!trigger || !panel) return;
-
-    const triggerRect = trigger.getBoundingClientRect();
-    const panelRect = panel.getBoundingClientRect();
-
-    const spaceAbove = triggerRect.top;
-    const spaceBelow = window.innerHeight - triggerRect.bottom;
-    const placeAbove = spaceAbove >= panelRect.height + DETAILS_PANEL_MARGIN || spaceAbove > spaceBelow;
-    const top = placeAbove
-      ? triggerRect.top - panelRect.height - DETAILS_PANEL_MARGIN
-      : triggerRect.bottom + DETAILS_PANEL_MARGIN;
-
-    // Right-aligned to the trigger's own right edge (matches the prior in-flow layout), clamped
-    // to stay on-screen.
-    let left = triggerRect.right - panelRect.width;
-    left = Math.min(left, window.innerWidth - DETAILS_PANEL_VIEWPORT_PADDING - panelRect.width);
-    left = Math.max(left, DETAILS_PANEL_VIEWPORT_PADDING);
-
-    setStyle({ position: "fixed", top, left, visibility: "visible" });
+    const updatePosition = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const right = window.innerWidth - rect.right;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      if (spaceBelow < DETAILS_PANEL_MAX_HEIGHT_PX && rect.top > spaceBelow) {
+        setPos({ bottom: window.innerHeight - rect.top + DETAILS_PANEL_GAP_PX, right });
+      } else {
+        setPos({ top: rect.bottom + DETAILS_PANEL_GAP_PX, right });
+      }
+    };
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
   }, [open]);
 
   if (!hasMetadata(metadata)) return <>—</>;
   return (
-    <div className="audit-log-details">
+    <div ref={rootRef} className="audit-log-details">
       <button
         ref={triggerRef}
         type="button"
@@ -180,21 +171,11 @@ function DetailsCell({ metadata }: Readonly<{ metadata: Record<string, unknown> 
       >
         View
       </button>
-      {open &&
-        createPortal(
-          <>
-            <button
-              type="button"
-              className="audit-log-details__backdrop"
-              aria-label="Close details"
-              onClick={() => setOpen(false)}
-            />
-            <pre ref={panelRef} className="audit-log-details__panel" style={style}>
-              {metadataPreview(metadata!)}
-            </pre>
-          </>,
-          document.body,
-        )}
+      {open && pos && (
+        <pre className="audit-log-details__panel" style={{ top: pos.top, bottom: pos.bottom, right: pos.right }}>
+          {metadataPreview(metadata!)}
+        </pre>
+      )}
     </div>
   );
 }
@@ -209,19 +190,26 @@ export function AuditLogPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const loadAbortRef = useRef<AbortController | null>(null);
-  // Previous/Next can shrink the table (e.g. a shorter last page), which the
-  // browser clamps scroll position for — restore the pre-click offset once the
-  // new page has actually rendered instead of letting Settings jump to the top.
-  const scrollRestoreRef = useRef<number | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  // Previous/Next can shrink the table (e.g. a shorter last page), which can
+  // otherwise leave the card scrolled out of view — keep it in view once the
+  // new page has actually rendered instead of letting Settings jump around.
+  // Keyed to the load() call that armed it (not just loading/entries) so an
+  // unrelated reload that happens to finish around the same time (a filter
+  // change, Clear filters, Retry) doesn't also trigger a scroll it never asked for.
+  const loadSeqRef = useRef(0);
+  const scrollRestoreSeqRef = useRef<number | null>(null);
   const goToPage = useCallback((next: number) => {
-    scrollRestoreRef.current = window.scrollY;
+    scrollRestoreSeqRef.current = loadSeqRef.current + 1;
     setPage(next);
   }, []);
 
   useLayoutEffect(() => {
-    if (!loading && scrollRestoreRef.current !== null) {
-      window.scrollTo(0, scrollRestoreRef.current);
-      scrollRestoreRef.current = null;
+    if (!loading && scrollRestoreSeqRef.current !== null) {
+      if (loadSeqRef.current === scrollRestoreSeqRef.current) {
+        rootRef.current?.scrollIntoView({ block: "nearest" });
+      }
+      scrollRestoreSeqRef.current = null;
     }
   }, [loading, entries]);
 
@@ -231,6 +219,7 @@ export function AuditLogPanel() {
     loadAbortRef.current?.abort();
     const ac = new AbortController();
     loadAbortRef.current = ac;
+    loadSeqRef.current += 1;
     setLoading(true);
     setError(null);
     try {
@@ -350,7 +339,7 @@ export function AuditLogPanel() {
 
   return (
     <Card title="Audit log">
-      <div className="audit-log-toolbar">
+      <div ref={rootRef} className="audit-log-toolbar">
         <label className="audit-log-filter">
           <span className="audit-log-filter__label">Action</span>
           <select

@@ -85,14 +85,16 @@ describe("CfAccessEditor (slice 4)", () => {
     expect(screen.getByText("providers-list")).toBeTruthy();
   });
 
-  it("closes via a backdrop click, including while still loading (Sonar/PO review)", () => {
-    // The dialog renders via createPortal(document.body), not inside the render() container.
+  it("ignores a backdrop click, including while still loading", () => {
+    // Backdrop-click is deliberately inert (not a close action) - a superadmin mid-edit
+    // shouldn't lose work to a stray click outside the panel. The dialog renders via
+    // createPortal(document.body), not inside the render() container.
     mockFetch.mockImplementationOnce(() => new Promise(() => {}));
-    renderEditorAt();
+    const { router } = renderEditorAt();
 
     fireEvent.click(document.querySelector(".identity-modal__backdrop")!);
 
-    expect(screen.getByText("providers-list")).toBeTruthy();
+    expect(router.state.location.pathname).toBe("/admin/settings/identity/cloudflare");
   });
 
   it("moves focus into the modal once the load resolves, instead of leaving it stuck outside (Sonar/PO review)", async () => {
@@ -140,31 +142,39 @@ describe("CfAccessEditor (slice 4)", () => {
     await screen.findByText("Cloudflare Access settings saved.");
   });
 
-  it("blocks the backdrop, close button, and Escape from dismissing the modal while a save is pending (bot review)", async () => {
-    // updateCfAccess has no abort/cancellation path - dismissing mid-save would only hide the
-    // modal, not stop the request, silently applying the change (particularly risky for
-    // enabling Cloudflare Access) after the operator thought they'd discarded. Confirm
-    // returning true simulates the operator confirming the discard prompt (the draft is dirty).
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+  it("navigates back to the providers list after a successful save", async () => {
     mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://old", audience: ["a"] }));
-    let resolveUpdate!: (value: ReturnType<typeof summary>) => void;
+    mockUpdate.mockResolvedValueOnce(summary({ teamDomain: "https://new", audience: ["a"] }));
+    const { router } = renderEditorAt();
+    const teamInput = await screen.findByDisplayValue("https://old");
+    fireEvent.change(teamInput, { target: { value: "https://new" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/admin/settings/identity/providers"));
+  });
+
+  it("keeps the modal open when Close is clicked or Escape is pressed while saving", async () => {
+    mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://old", audience: ["a"] }));
+    let resolveUpdate: (r: ReturnType<typeof summary>) => void = () => {};
     mockUpdate.mockImplementationOnce(
       () => new Promise((resolve) => { resolveUpdate = resolve; }),
     );
-    renderEditorAt();
+    const { router } = renderEditorAt();
     const teamInput = await screen.findByDisplayValue("https://old");
     fireEvent.change(teamInput, { target: { value: "https://new" } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(document.querySelector(".identity-modal__backdrop")!);
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    const closeButton = screen.getByRole("button", { name: "Close" });
+    expect(closeButton.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(closeButton);
+    expect(router.state.location.pathname).toBe("/admin/settings/identity/cloudflare");
+
     fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.queryByText("providers-list")).toBeNull();
-    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(router.state.location.pathname).toBe("/admin/settings/identity/cloudflare");
 
     resolveUpdate(summary({ teamDomain: "https://new", audience: ["a"] }));
-    await screen.findByText("Cloudflare Access settings saved.");
+    await waitFor(() => expect(router.state.location.pathname).toBe("/admin/settings/identity/providers"));
   });
 
   it("blocks save with a toast when required fields are missing for an enabled config", async () => {
@@ -439,6 +449,8 @@ describe("CfAccessEditor (slice 4)", () => {
     await screen.findByText(/enabled and locked by environment/);
     // The enabled switch is disabled when env-locked.
     expect(screen.getByRole("switch", { name: "Enabled" }).hasAttribute("disabled")).toBe(true);
+    // The header also carries an at-a-glance "Managed by environment" badge.
+    expect(screen.getByText("Managed by environment")).toBeTruthy();
   });
 
   it("shows the before-enable warning only on the off→on transition", async () => {

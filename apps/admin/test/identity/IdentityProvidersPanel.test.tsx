@@ -2,7 +2,8 @@
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
-import { MemoryRouter, createMemoryRouter, RouterProvider } from "react-router";
+import { RouterProvider } from "react-router/dom";
+import { MemoryRouter, createMemoryRouter } from "react-router";
 import { IdentityProvidersPanel } from "../../src/identity/IdentityProvidersPanel.js";
 import { IDENTITY_PROVIDERS_ROUTE } from "../../src/identity/routes.js";
 import { renderWithToast } from "../test-utils.js";
@@ -184,7 +185,7 @@ describe("IdentityProvidersPanel", () => {
 
     renderPanel();
 
-    const toggleInput = await screen.findByRole("switch", { name: "Enabled" });
+    const toggleInput = await screen.findByRole("switch", { name: "Google enabled" });
     expect(toggleInput).property("checked", true);
     fireEvent.click(toggleInput);
     expect(mockToggle).toHaveBeenCalledWith("p1");
@@ -269,7 +270,7 @@ describe("IdentityProvidersPanel", () => {
 
     renderPanel();
 
-    const toggleInput = await screen.findByRole("switch", { name: "Enabled" });
+    const toggleInput = await screen.findByRole("switch", { name: "Google enabled" });
     fireEvent.click(toggleInput);
     await waitFor(() => expect(mockToggle).toHaveBeenCalledTimes(1));
     // Initial load + refetch after the failed toggle.

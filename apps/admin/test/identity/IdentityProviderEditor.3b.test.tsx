@@ -275,26 +275,6 @@ describe("IdentityProviderEditor — discover & test (slice 3b)", () => {
   });
 });
 
-describe("IdentityProviderEditor — SSO preview (slice 3b)", () => {
-  it("renders the custom label in the preview", async () => {
-    mockFetch.mockResolvedValueOnce(validDetail);
-    renderEditorAt("/admin/settings/identity/providers/p1");
-
-    await screen.findByDisplayValue("Continue with Google");
-    expect(screen.getByText("Continue with Google")).toBeTruthy();
-  });
-
-  it("falls back to the product default when the label is cleared", async () => {
-    mockFetch.mockResolvedValueOnce(validDetail);
-    renderEditorAt("/admin/settings/identity/providers/p1");
-
-    await screen.findByDisplayValue("Continue with Google");
-    fireEvent.change(screen.getByLabelText("SSO login button label"), { target: { value: "" } });
-    // Preview now shows the default copy.
-    expect(screen.getByText("Continue with SSO")).toBeTruthy();
-  });
-});
-
 describe("IdentityProviderEditor — discover & test error paths", () => {
   it("shows error toast when Discover is clicked without an issuer (create mode)", async () => {
     renderEditorAt("/admin/settings/identity/providers/new");
