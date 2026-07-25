@@ -207,6 +207,37 @@ describe("AuditLogPanel rendering", () => {
     expect(screen.getByText(`Time (${viewerTzLabel})`)).toBeTruthy();
   });
 
+  it("recomputes the viewer's timezone on each use instead of caching it once at module load (Sonar/PO review)", async () => {
+    // A module-level `const VIEWER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone`
+    // would only ever call the zero-arg Intl.DateTimeFormat() once, at first import - stale
+    // for the rest of a long-lived session if the browser's timezone changes. Recomputing it
+    // per use means a second visit to "Local" mode makes a fresh zero-arg call.
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [makeAuditEntry()],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+    const spy = vi.spyOn(Intl, "DateTimeFormat");
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByRole("table");
+
+    const localRadio = screen.getByRole("radio", { name: "Local" });
+    const utcRadio = screen.getByRole("radio", { name: "UTC" });
+
+    fireEvent.click(localRadio);
+    const zeroArgCallsAfterFirstToggle = spy.mock.calls.filter((args) => args.length === 0).length;
+    expect(zeroArgCallsAfterFirstToggle).toBeGreaterThan(0);
+
+    fireEvent.click(utcRadio);
+    fireEvent.click(localRadio);
+    const zeroArgCallsAfterSecondToggle = spy.mock.calls.filter((args) => args.length === 0).length;
+    expect(zeroArgCallsAfterSecondToggle).toBeGreaterThan(zeroArgCallsAfterFirstToggle);
+
+    spy.mockRestore();
+  });
+
   it("paginates via Previous/Next and restores scroll position once the next page has loaded", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValueOnce({
       entries: [makeAuditEntry({ id: "audit-p1" })],

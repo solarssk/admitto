@@ -2830,6 +2830,32 @@
   gap: var(--space-3) var(--space-4);
 }
 
+.identity-sso-preview {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  align-self: end;
+  padding: var(--space-3);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+}
+
+.identity-sso-preview__label {
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+
+.identity-sso-preview__button {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-4);
+  height: var(--control-h-md);
+  border-radius: var(--radius-md);
+  background: var(--primary);
+  color: var(--text-on-primary);
+  font-weight: 600;
+}
+
 /* Protocol picker (Add identity provider) — visual only today: OIDC is the only
    wired-up protocol, SAML is a disabled placeholder for the roadmap. */
 .identity-protocol-picker {
@@ -2989,11 +3015,16 @@
 }
 
 @media (max-width: 860px) {
+  /* The row's up-to-4 cells (130px min-width each) plus the remove button no
+     longer fit on one line at this width — wrap instead of overflowing the
+     modal panel, roughly 2 cells per line like the row's own group cell already
+     gets 1.2x the flex-basis of the rest. */
   .identity-mappings__row {
-    grid-template-columns: 1fr 1fr;
+    flex-wrap: wrap;
   }
-  .identity-mappings__cell--hidden {
-    display: none;
+
+  .identity-mappings__cell {
+    flex-basis: calc(50% - var(--space-3) / 2);
   }
 }
 

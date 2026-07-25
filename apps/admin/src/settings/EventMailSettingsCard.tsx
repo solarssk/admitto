@@ -13,6 +13,7 @@ import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { Segmented } from "../components/Segmented.js";
+import { whenShown } from "../hooks/useDelayedLoading.js";
 import {
   buildSaveMailSettingsBody,
   emptyMailDraft,
@@ -88,17 +89,6 @@ function OrgMailSummary({
         </Button>
       )}
     </div>
-  );
-}
-
-/** Delayed so a near-instant fetch never flashes it (extracted to keep EventMailSettingsCard's
- * own cognitive complexity down — Sonar S3776). */
-function mailSettingsLoadingContent(showLoading: boolean) {
-  if (!showLoading) return null;
-  return (
-    <Card title="Mail transport">
-      <p>Loading mail settings…</p>
-    </Card>
   );
 }
 
@@ -334,7 +324,12 @@ export function EventMailSettingsCard({
   };
 
   if (loading) {
-    return mailSettingsLoadingContent(showLoading);
+    return whenShown(
+      showLoading,
+      <Card title="Mail transport">
+        <p>Loading mail settings…</p>
+      </Card>,
+    );
   }
 
   if (loadError || !apiData) {

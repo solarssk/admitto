@@ -76,6 +76,35 @@ describe("CfAccessEditor (slice 4)", () => {
     vi.useRealTimers();
   });
 
+  it("shows the title and a working close button even while still loading (Sonar/PO review)", () => {
+    mockFetch.mockImplementationOnce(() => new Promise(() => {}));
+    renderEditorAt();
+
+    expect(screen.getByText("Cloudflare Access")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.getByText("providers-list")).toBeTruthy();
+  });
+
+  it("closes via a backdrop click, including while still loading (Sonar/PO review)", () => {
+    // The dialog renders via createPortal(document.body), not inside the render() container.
+    mockFetch.mockImplementationOnce(() => new Promise(() => {}));
+    renderEditorAt();
+
+    fireEvent.click(document.querySelector(".identity-modal__backdrop")!);
+
+    expect(screen.getByText("providers-list")).toBeTruthy();
+  });
+
+  it("moves focus into the modal once the load resolves, instead of leaving it stuck outside (Sonar/PO review)", async () => {
+    mockFetch.mockResolvedValueOnce(summary());
+    renderEditorAt();
+
+    await waitFor(() => {
+      const panel = document.querySelector(".identity-modal__panel");
+      expect(panel?.contains(document.activeElement)).toBe(true);
+    });
+  });
+
   it("loads the summary and renders the field values + status badges", async () => {
     mockFetch.mockResolvedValueOnce(
       summary({

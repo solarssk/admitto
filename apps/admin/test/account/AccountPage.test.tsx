@@ -165,6 +165,38 @@ describe("AccountPage delayed loading", () => {
     });
     expect(screen.getByLabelText("Loading sessions")).toBeTruthy();
   });
+
+  it("measures the sessions no-flash window from when the sessions card becomes visible, not from mount (Sonar/PO review)", async () => {
+    let resolveAccountFetch: (value: AccountDto) => void = () => {};
+    mockFetchAccount.mockImplementation(
+      () => new Promise((resolve) => { resolveAccountFetch = resolve; }),
+    );
+    mockFetchSessions.mockImplementation(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderWithToast(<AccountPage />);
+
+    // Let 150ms elapse on the account fetch's own clock before it resolves — almost the
+    // whole no-flash window — to prove the sessions spinner's window doesn't inherit this
+    // elapsed time from a timer that started ticking at mount.
+    act(() => {
+      vi.advanceTimersByTime(150);
+    });
+    await act(async () => {
+      resolveAccountFetch(baseAccount);
+    });
+
+    // Only 50ms further (200ms total since mount) — not nearly enough for the sessions
+    // card's own fresh 200ms window, which only starts once it becomes visible here.
+    act(() => {
+      vi.advanceTimersByTime(50);
+    });
+    expect(screen.queryByLabelText("Loading sessions")).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(150);
+    });
+    expect(screen.getByLabelText("Loading sessions")).toBeTruthy();
+  });
 });
 
 describe("AccountPage toasts", () => {

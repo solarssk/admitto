@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { act, cleanup, renderHook } from "@testing-library/react";
+import { act, cleanup, render, renderHook, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useDelayedLoading } from "../../src/hooks/useDelayedLoading.js";
+import { useDelayedLoading, whenShown } from "../../src/hooks/useDelayedLoading.js";
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -67,5 +67,17 @@ describe("useDelayedLoading", () => {
       vi.advanceTimersByTime(1);
     });
     expect(result.current).toBe(true);
+  });
+});
+
+describe("whenShown", () => {
+  it("renders the given content when show is true", () => {
+    render(<>{whenShown(true, <p>Loading…</p>)}</>);
+    expect(screen.getByText("Loading…")).toBeTruthy();
+  });
+
+  it("renders nothing when show is false", () => {
+    render(<>{whenShown(false, <p>Loading…</p>)}</>);
+    expect(screen.queryByText("Loading…")).toBeNull();
   });
 });

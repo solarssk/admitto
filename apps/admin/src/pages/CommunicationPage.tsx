@@ -51,7 +51,7 @@ import type {
   MailTemplateListItem,
 } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { CommunicationSendDialog } from "../communication/CommunicationSendDialog.js";
@@ -949,16 +949,6 @@ function DeliveryLogTab({
   );
 }
 
-/** Delayed so a near-instant fetch never flashes it (extracted to keep CommunicationPage's own
- * cognitive complexity down — Sonar S3776). */
-function communicationLoadingContent(showLoading: boolean): ReactNode {
-  return showLoading ? <p>Loading communication…</p> : null;
-}
-
-function deliveryLoadingContent(showDeliveriesLoading: boolean): ReactNode {
-  return showDeliveriesLoading ? <div className="communication-empty">Loading deliveries…</div> : null;
-}
-
 /** Admin screen for event mail template editing, preview, test-send, and delivery log. */
 export function CommunicationPage() {
   const { eventId } = useParams();
@@ -1575,7 +1565,7 @@ export function CommunicationPage() {
   const showDeliveriesLoading = useDelayedLoading(deliveriesLoading);
 
   if (!eventId) return <p>Missing event.</p>;
-  if (loading) return communicationLoadingContent(showLoading);
+  if (loading) return whenShown(showLoading, <p>Loading communication…</p>);
   if (error) return <p>{error}</p>;
 
   const deliveryPages = Math.max(1, Math.ceil(deliveryTotal / DELIVERY_PAGE_SIZE));
@@ -1587,7 +1577,10 @@ export function CommunicationPage() {
 
   let deliveryLogContent: ReactNode;
   if (deliveriesLoading) {
-    deliveryLogContent = deliveryLoadingContent(showDeliveriesLoading);
+    deliveryLogContent = whenShown(
+      showDeliveriesLoading,
+      <div className="communication-empty">Loading deliveries…</div>,
+    );
   } else if (deliveriesError) {
     deliveryLogContent = <div className="communication-empty">{deliveriesError}</div>;
   } else if (deliveries.length === 0) {

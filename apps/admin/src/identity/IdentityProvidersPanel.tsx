@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
 import { Badge, Button, Card, EmptyState, Skeleton, Switch, useToast } from "@admitto/ui";
 import {
@@ -11,9 +11,17 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { CfAccessSummaryDto, IdentityProviderListItem } from "../api/types.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useInFlightIds } from "../hooks/useInFlightIds.js";
-import { CfAccessEditor } from "./CfAccessEditor.js";
-import { IdentityProviderEditor } from "./IdentityProviderEditor.js";
 import { IDENTITY_CLOUDFLARE_ROUTE, IDENTITY_PROVIDERS_ROUTE } from "./routes.js";
+
+// Lazy so opening the list itself doesn't also download both editors' code — most visits
+// never open either modal (each is its own chunk again, like before the two were folded
+// into this one panel).
+const CfAccessEditor = lazy(() =>
+  import("./CfAccessEditor.js").then((m) => ({ default: m.CfAccessEditor })),
+);
+const IdentityProviderEditor = lazy(() =>
+  import("./IdentityProviderEditor.js").then((m) => ({ default: m.IdentityProviderEditor })),
+);
 
 type Modal =
   | { kind: "none" }
@@ -299,9 +307,13 @@ export function IdentityProvidersPanel() {
         )}
       </Card>
 
-      {modal.kind === "create" && <IdentityProviderEditor mode="create" />}
-      {modal.kind === "edit" && <IdentityProviderEditor mode="edit" providerId={modal.providerId} />}
-      {modal.kind === "cloudflare" && <CfAccessEditor />}
+      {modal.kind !== "none" && (
+        <Suspense fallback={null}>
+          {modal.kind === "create" && <IdentityProviderEditor mode="create" />}
+          {modal.kind === "edit" && <IdentityProviderEditor mode="edit" providerId={modal.providerId} />}
+          {modal.kind === "cloudflare" && <CfAccessEditor />}
+        </Suspense>
+      )}
     </div>
   );
 }

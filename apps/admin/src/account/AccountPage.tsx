@@ -200,7 +200,12 @@ export function AccountPage() {
   // otherwise flash the spinner on and off faster than it can register as
   // "loading" — show it only once the fetch has genuinely taken a moment.
   const showAccountSpinner = useDelayedLoading(loading);
-  const showSessionsSpinner = useDelayedLoading(sessionsLoading);
+  // Gated on `!loading` too, not just `sessionsLoading` on its own - the sessions card
+  // only becomes visible once the account section's own loading gate above clears, so its
+  // no-flash window must start counting from there, not from mount (when the account fetch
+  // may still have most of its own 200ms left to run, silently eating into the sessions
+  // card's window before it's ever shown).
+  const showSessionsSpinner = useDelayedLoading(sessionsLoading && !loading);
 
   if (loading) {
     if (!showAccountSpinner) return null;

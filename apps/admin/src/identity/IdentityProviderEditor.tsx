@@ -218,6 +218,10 @@ function submitButtonLabel(saving: boolean, mode: EditorMode): string {
   return mode === "create" ? "Create provider" : "Save changes";
 }
 
+function loginButtonPreviewLabel(label: string): string {
+  return label.trim() || "Continue with SSO";
+}
+
 /** True while any async editor action (discover/test/save) is in flight. */
 function isActionBusy(saving: boolean, testing: boolean, discovering: boolean): boolean {
   return saving || testing || discovering;
@@ -432,7 +436,10 @@ export function IdentityProviderEditor({
 
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
-  useModalFocusTrap(panelRef, true, handleCancel);
+  // Edit mode starts in loadState "loading" - its real form fields don't exist in the DOM
+  // until the fetch resolves, so initial focus must be re-attempted once loadState changes
+  // (create mode is already "ready" at mount, so this is a no-op there).
+  useModalFocusTrap(panelRef, true, handleCancel, loadState);
 
   const handleSubmit = useCallback(
     async (event: React.FormEvent) => {
@@ -634,7 +641,7 @@ export function IdentityProviderEditor({
   );
 
   const errorContent = (
-    <Card title={title}>
+    <Card>
       <div className="identity-editor__error">
         <p>Couldn't load this provider.</p>
         <Button
@@ -648,7 +655,7 @@ export function IdentityProviderEditor({
   );
 
   const notFoundContent = (
-    <Card title={title}>
+    <Card>
       <div className="identity-editor__error">
         <p>This provider no longer exists.</p>
         <Button variant="secondary" onClick={() => navigate(IDENTITY_PROVIDERS_ROUTE)}>
@@ -830,15 +837,23 @@ export function IdentityProviderEditor({
       </Card>
 
       <Card title="Login button">
-        <Input
-          label="SSO login button label"
-          value={draft.login_button_label}
-          invalid={Boolean(errors.login_button_label)}
-          error={errors.login_button_label}
-          hint="Leave blank to use the product default ('Continue with SSO')."
-          onChange={(e) => setDraft((d) => setField(d, "login_button_label", e.target.value))}
-          placeholder="Continue with Google"
-        />
+        <div className="identity-editor__grid">
+          <Input
+            label="SSO login button label"
+            value={draft.login_button_label}
+            invalid={Boolean(errors.login_button_label)}
+            error={errors.login_button_label}
+            hint="Leave blank to use the product default ('Continue with SSO')."
+            onChange={(e) => setDraft((d) => setField(d, "login_button_label", e.target.value))}
+            placeholder="Continue with Google"
+          />
+          <div className="identity-sso-preview" aria-label="SSO login button preview">
+            <span className="identity-sso-preview__label">Preview</span>
+            <span className="identity-sso-preview__button">
+              {loginButtonPreviewLabel(draft.login_button_label)}
+            </span>
+          </div>
+        </div>
       </Card>
 
       <div className="identity-editor__actions">
@@ -871,23 +886,19 @@ export function IdentityProviderEditor({
   const showLoadingSpinner = useDelayedLoading(view === "loading");
   return createPortal(
     <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
-      <div className="identity-modal__backdrop" role="presentation" />
+      <div className="identity-modal__backdrop" role="presentation" onClick={handleCancel} />
       <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
+        <div className="identity-editor__header">
+          <div className="identity-editor__header-row">
+            <h2 className="identity-editor__title" id={titleId}>{title}</h2>
+            <IconButton label="Close" onClick={handleCancel} icon={<i className="ti ti-x" />} />
+          </div>
+          {view === "form" && <p className="identity-editor__subtitle">{editorSubtitle(mode)}</p>}
+        </div>
         {view === "loading" && showLoadingSpinner && loadingContent}
         {view === "error" && errorContent}
         {view === "not_found" && notFoundContent}
-        {view === "form" && (
-          <>
-            <div className="identity-editor__header">
-              <div className="identity-editor__header-row">
-                <h2 className="identity-editor__title" id={titleId}>{title}</h2>
-                <IconButton label="Close" onClick={handleCancel} icon={<i className="ti ti-x" />} />
-              </div>
-              <p className="identity-editor__subtitle">{editorSubtitle(mode)}</p>
-            </div>
-            {formContent}
-          </>
-        )}
+        {view === "form" && formContent}
       </div>
     </dialog>,
     document.body,

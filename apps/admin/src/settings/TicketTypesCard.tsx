@@ -6,6 +6,7 @@ import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-er
 import type { EventSettingsDto, TicketTypeDto } from "../api/types.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { whenShown } from "../hooks/useDelayedLoading.js";
 import "./ticket-types-card.css";
 
 export interface TicketTypesCardProps {
@@ -161,12 +162,6 @@ function TicketTypeRow({
   );
 }
 
-/** "Loading…" text once the fetch has genuinely taken a moment, otherwise nothing - shown only
- * while the raw fetch is still in flight. */
-function TicketTypesLoadingHint({ showLoading }: Readonly<{ showLoading: boolean }>) {
-  return showLoading ? <p className="field-hint">Loading…</p> : null;
-}
-
 /** Event Settings tab: the only place a ticket type's name and color are set (batch 04 / #351).
  * Every other screen (add/edit attendee, import, filters, bulk-send, check-in, Reports) reads
  * this catalog through TicketTypeBadge's resolver instead of accepting free text. */
@@ -288,7 +283,7 @@ export function TicketTypesCard({
               list, so you never type it in twice.
             </p>
             {loading ? (
-              <TicketTypesLoadingHint showLoading={showLoading} />
+              whenShown(showLoading, <p className="field-hint">Loading…</p>)
             ) : (
               <div className="tt-list">
                 {types.map((type) => (

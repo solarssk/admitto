@@ -132,6 +132,7 @@ function EventItemsTableBody({
 function EventBehaviourContent({
   opsConfig,
   loading,
+  showLoading,
   event,
   opsTogglingIds,
   badgeInactive,
@@ -139,12 +140,13 @@ function EventBehaviourContent({
 }: {
   readonly opsConfig: OpsConfigDto | null;
   readonly loading: boolean;
+  readonly showLoading: boolean;
   readonly event: EventDto;
   readonly opsTogglingIds: ReadonlySet<string>;
   readonly badgeInactive: boolean;
   readonly onToggle: (field: keyof OpsConfigDto, value: boolean) => void;
 }) {
-  if (opsConfig == null && loading) return <p>Loading…</p>;
+  if (opsConfig == null && loading) return showLoading ? <p>Loading…</p> : null;
   if (!opsConfig) return null;
   return (
     <>
@@ -632,7 +634,8 @@ export function RequirementsPage() {
         <Card title="Event behaviour" padded={false}>
           <EventBehaviourContent
             opsConfig={opsConfig}
-            loading={showLoading}
+            loading={loading}
+            showLoading={showLoading}
             event={event}
             opsTogglingIds={opsTogglingIds}
             badgeInactive={badgeInactive}

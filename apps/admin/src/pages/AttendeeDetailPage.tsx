@@ -31,7 +31,7 @@ import {
   toAttendeeForm,
   type AttendeeFormState,
 } from "../attendees/attendeeDetailForm.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { formatAdmissionDisplay, formatEventDateTime } from "../utils/event-dates.js";
 import {
   deriveAttendeeSource,
@@ -584,18 +584,6 @@ function classifyPassStatusError(err: unknown): PassStatusErrorOutcome {
   return { kind: "message", message: operatorApiErrorMessage(err, "Could not update pass status.") };
 }
 
-/** First-load-only skeleton, delayed so a near-instant fetch never flashes it (extracted to
- * keep AttendeeDetailPage's own cognitive complexity down — Sonar S3776). */
-function firstLoadSkeleton(showLoadingSkeleton: boolean) {
-  if (!showLoadingSkeleton) return null;
-  return (
-    <div className="attendee-detail-page">
-      <Skeleton variant="text" lines={2} />
-      <Skeleton variant="rect" height={240} className="attendee-detail-skeleton" />
-    </div>
-  );
-}
-
 export function AttendeeDetailPage() {
   const { eventId, attendeeId } = useParams();
   const { event } = useOutletContext<{ event: EventDto }>();
@@ -949,7 +937,13 @@ export function AttendeeDetailPage() {
   if (!eventId || !attendeeId) return <p>Missing event or attendee.</p>;
 
   if (loading && !detail) {
-    return firstLoadSkeleton(showLoadingSkeleton);
+    return whenShown(
+      showLoadingSkeleton,
+      <div className="attendee-detail-page">
+        <Skeleton variant="text" lines={2} />
+        <Skeleton variant="rect" height={240} className="attendee-detail-skeleton" />
+      </div>,
+    );
   }
 
   if (notFound) {

@@ -98,6 +98,35 @@ describe("IdentityProviderEditor — edit loading", () => {
     });
     expect(screen.getByLabelText("Loading provider")).toBeTruthy();
   });
+
+  it("shows the title and a working close button even while still loading (Sonar/PO review)", () => {
+    mockFetch.mockImplementationOnce(() => new Promise(() => {}));
+    renderEditorAt("/admin/settings/identity/providers/p1");
+
+    expect(screen.getByText("Edit identity provider")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.getByText("providers-list")).toBeTruthy();
+  });
+
+  it("closes via a backdrop click, including while still loading (Sonar/PO review)", () => {
+    // The dialog renders via createPortal(document.body), not inside the render() container.
+    mockFetch.mockImplementationOnce(() => new Promise(() => {}));
+    renderEditorAt("/admin/settings/identity/providers/p1");
+
+    fireEvent.click(document.querySelector(".identity-modal__backdrop")!);
+
+    expect(screen.getByText("providers-list")).toBeTruthy();
+  });
+
+  it("moves focus into the modal once the load resolves, instead of leaving it stuck outside (Sonar/PO review)", async () => {
+    mockFetch.mockResolvedValueOnce(validDetail);
+    renderEditorAt("/admin/settings/identity/providers/p1");
+
+    await waitFor(() => {
+      const panel = document.querySelector(".identity-modal__panel");
+      expect(panel?.contains(document.activeElement)).toBe(true);
+    });
+  });
 });
 
 describe("IdentityProviderEditor — create", () => {
