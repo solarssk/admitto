@@ -201,7 +201,7 @@ describe("IdentityProviderEditor — create", () => {
     expect(confirmSpy).not.toHaveBeenCalled();
 
     resolveCreate(validDetail);
-    await waitFor(() => expect(screen.getByText("providers-list")).toBeTruthy());
+    expect(await screen.findByText("providers-list")).toBeTruthy();
   });
 });
 
