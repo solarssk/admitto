@@ -628,6 +628,516 @@ describe("GET /api/admin/events/:eventId/reports", () => {
       await prisma.event.deleteMany({ where: { id: EVENT_TZ } });
     }
   });
+
+  it("aggregates RSVP status only for admitted attendees, omitting statuses with zero admissions (Reports redesign)", async () => {
+    const EVENT_RSVP = "evt-reports-rsvp";
+    await prisma.attendee.deleteMany({ where: { event_id: EVENT_RSVP } });
+    await prisma.event.deleteMany({ where: { id: EVENT_RSVP } });
+    await prisma.event.create({
+      data: {
+        id: EVENT_RSVP,
+        title: "RSVP Reports Event",
+        slug: "reports-event-rsvp",
+        date: new Date("2026-10-01T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+    });
+    await prisma.attendee.createMany({
+      data: [
+        {
+          id: "att-rep-rsvp-confirmed",
+          event_id: EVENT_RSVP,
+          email: "rsvp-confirmed@example.com",
+          name: "Confirmed Guest",
+          rsvp_status: "confirmed",
+          admitted_at: new Date("2026-10-01T09:00:00.000Z"),
+          ...mkAttendeeToken(),
+        },
+        {
+          id: "att-rep-rsvp-tentative",
+          event_id: EVENT_RSVP,
+          email: "rsvp-tentative@example.com",
+          name: "Tentative Guest",
+          rsvp_status: "tentative",
+          admitted_at: new Date("2026-10-01T09:05:00.000Z"),
+          ...mkAttendeeToken(),
+        },
+        {
+          id: "att-rep-rsvp-none",
+          event_id: EVENT_RSVP,
+          email: "rsvp-none@example.com",
+          name: "Unresponded Guest",
+          admitted_at: new Date("2026-10-01T09:10:00.000Z"),
+          ...mkAttendeeToken(),
+        },
+        {
+          id: "att-rep-rsvp-declined-not-admitted",
+          event_id: EVENT_RSVP,
+          email: "rsvp-declined@example.com",
+          name: "Declined No-show",
+          rsvp_status: "declined",
+          ...mkAttendeeToken(),
+        },
+      ],
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_RSVP}/reports`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        by_rsvp_status: Array<{ status: string; count: number }>;
+      };
+      const byStatus = new Map(body.by_rsvp_status.map((row) => [row.status, row.count]));
+      expect(byStatus.get("confirmed")).toBe(1);
+      expect(byStatus.get("tentative")).toBe(1);
+      expect(byStatus.get("none")).toBe(1);
+      // "declined" attendee was never admitted, so it's excluded entirely - not a zero-count bucket.
+      expect(byStatus.has("declined")).toBe(false);
+      expect(byStatus.has("cancelled")).toBe(false);
+    } finally {
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_RSVP } });
+      await prisma.event.deleteMany({ where: { id: EVENT_RSVP } });
+    }
+  });
+
+  it("aggregates check-in method and device from valid scan/manual check-ins only, excluding revoked ones (Reports redesign)", async () => {
+    const EVENT_METHOD = "evt-reports-checkin-method";
+    await prisma.checkIn.deleteMany({ where: { event_id: EVENT_METHOD } });
+    await prisma.attendee.deleteMany({ where: { event_id: EVENT_METHOD } });
+    await prisma.event.deleteMany({ where: { id: EVENT_METHOD } });
+    await prisma.event.create({
+      data: {
+        id: EVENT_METHOD,
+        title: "Checkin Method Reports Event",
+        slug: "reports-event-checkin-method",
+        date: new Date("2026-10-01T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+    });
+    await prisma.attendee.createMany({
+      data: [
+        {
+          id: "att-rep-method-scan",
+          event_id: EVENT_METHOD,
+          email: "method-scan@example.com",
+          name: "Scanned Guest",
+          admitted_at: new Date("2026-10-01T09:00:00.000Z"),
+          ...mkAttendeeToken(),
+        },
+        {
+          id: "att-rep-method-manual",
+          event_id: EVENT_METHOD,
+          email: "method-manual@example.com",
+          name: "Manually Searched Guest",
+          admitted_at: new Date("2026-10-01T09:05:00.000Z"),
+          ...mkAttendeeToken(),
+        },
+        {
+          id: "att-rep-method-revoked",
+          event_id: EVENT_METHOD,
+          email: "method-revoked@example.com",
+          name: "Revoked Scan Guest",
+          admitted_at: new Date("2026-10-01T09:10:00.000Z"),
+          ...mkAttendeeToken(),
+        },
+      ],
+    });
+    await prisma.checkIn.createMany({
+      data: [
+        {
+          attendee_id: "att-rep-method-scan",
+          event_id: EVENT_METHOD,
+          checked_in_at: new Date("2026-10-01T09:00:00.000Z"),
+          status: "VALID",
+          source: "scan",
+          device_id: "Tablet 1 — main entrance",
+        },
+        {
+          attendee_id: "att-rep-method-manual",
+          event_id: EVENT_METHOD,
+          checked_in_at: new Date("2026-10-01T09:05:00.000Z"),
+          status: "VALID",
+          source: "manual",
+          device_id: null,
+        },
+        {
+          attendee_id: "att-rep-method-revoked",
+          event_id: EVENT_METHOD,
+          checked_in_at: new Date("2026-10-01T09:10:00.000Z"),
+          status: "REVOKED",
+          source: "scan",
+          device_id: "Tablet 1 — main entrance",
+        },
+      ],
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_METHOD}/reports`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        by_checkin_method: Array<{ method: string; count: number }>;
+        by_device: Array<{ device_id: string | null; count: number }>;
+      };
+      const byMethod = new Map(body.by_checkin_method.map((row) => [row.method, row.count]));
+      expect(byMethod.get("scan")).toBe(1);
+      expect(byMethod.get("manual")).toBe(1);
+
+      // The revoked check-in used the same device but must not count - device totals stay
+      // scoped to the same VALID/scan+manual filter as by_checkin_method.
+      expect(body.by_device).toEqual([
+        { device_id: "Tablet 1 — main entrance", count: 1 },
+        { device_id: null, count: 1 },
+      ]);
+    } finally {
+      await prisma.checkIn.deleteMany({ where: { event_id: EVENT_METHOD } });
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_METHOD } });
+      await prisma.event.deleteMany({ where: { id: EVENT_METHOD } });
+    }
+  });
+
+  it("counts a revoke-then-re-admit cycle once in by_checkin_method/by_device, not once per VALID row (independent PR #587 review)", async () => {
+    const EVENT_REVOKE = "evt-reports-revoke-readmit";
+    await prisma.checkIn.deleteMany({ where: { event_id: EVENT_REVOKE } });
+    await prisma.attendee.deleteMany({ where: { event_id: EVENT_REVOKE } });
+    await prisma.event.deleteMany({ where: { id: EVENT_REVOKE } });
+    await prisma.event.create({
+      data: {
+        id: EVENT_REVOKE,
+        title: "Revoke Readmit Reports Event",
+        slug: "reports-event-revoke-readmit",
+        date: new Date("2026-10-01T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+    });
+    await prisma.attendee.create({
+      data: {
+        id: "att-rep-revoke-readmit",
+        event_id: EVENT_REVOKE,
+        email: "revoke-readmit@example.com",
+        name: "Revoked Then Readmitted Guest",
+        // Currently admitted, via the second (manual) check-in below.
+        admitted_at: new Date("2026-10-01T09:10:00.000Z"),
+        ...mkAttendeeToken(),
+      },
+    });
+    // Mirrors what an operator revoke actually leaves behind (packages/tickets/src/undo.ts):
+    // the original VALID row's own status is never updated, only a separate UNDO row is
+    // inserted and attendee.admitted_at is cleared/reset - so a revoke-then-re-admit cycle
+    // really does leave 2 VALID rows for the same attendee, not 1.
+    await prisma.checkIn.createMany({
+      data: [
+        {
+          attendee_id: "att-rep-revoke-readmit",
+          event_id: EVENT_REVOKE,
+          checked_in_at: new Date("2026-10-01T09:00:00.000Z"),
+          status: "VALID",
+          source: "scan",
+          device_id: "Tablet 1 — main entrance",
+        },
+        {
+          attendee_id: "att-rep-revoke-readmit",
+          event_id: EVENT_REVOKE,
+          checked_in_at: new Date("2026-10-01T09:05:00.000Z"),
+          status: "UNDO",
+          source: "admin_revoke",
+          device_id: null,
+        },
+        {
+          attendee_id: "att-rep-revoke-readmit",
+          event_id: EVENT_REVOKE,
+          checked_in_at: new Date("2026-10-01T09:10:00.000Z"),
+          status: "VALID",
+          source: "manual",
+          device_id: "Tablet 2 — side entrance",
+        },
+      ],
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_REVOKE}/reports`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        summary: { admitted: number };
+        by_checkin_method: Array<{ method: string; count: number }>;
+        by_device: Array<{ device_id: string | null; count: number }>;
+      };
+      expect(body.summary.admitted).toBe(1);
+      // One attendee, one counted check-in - not two, even though 2 rows are status:VALID.
+      const totalMethodCount = body.by_checkin_method.reduce((sum, row) => sum + row.count, 0);
+      const totalDeviceCount = body.by_device.reduce((sum, row) => sum + row.count, 0);
+      expect(totalMethodCount).toBe(1);
+      expect(totalDeviceCount).toBe(1);
+      // The latest VALID row wins, matching loadDeviceIdsByAttendee's own dedup convention - the
+      // attendee's admitted_at reflects the re-admission (manual, Tablet 2), not the original scan
+      // that got revoked, so this aggregate attributes to the same row the admission log does.
+      expect(body.by_device).toEqual([{ device_id: "Tablet 2 — side entrance", count: 1 }]);
+      const byMethod = new Map(body.by_checkin_method.map((row) => [row.method, row.count]));
+      expect(byMethod.get("manual")).toBe(1);
+      expect(byMethod.get("scan")).toBeUndefined();
+    } finally {
+      await prisma.checkIn.deleteMany({ where: { event_id: EVENT_REVOKE } });
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_REVOKE } });
+      await prisma.event.deleteMany({ where: { id: EVENT_REVOKE } });
+    }
+  });
+
+  it("excludes a revoked-and-not-readmitted attendee entirely, even though their original VALID row is untouched (CodeRabbit #587 review)", async () => {
+    const EVENT_REVOKE_ONLY = "evt-reports-revoke-only";
+    await prisma.checkIn.deleteMany({ where: { event_id: EVENT_REVOKE_ONLY } });
+    await prisma.attendee.deleteMany({ where: { event_id: EVENT_REVOKE_ONLY } });
+    await prisma.event.deleteMany({ where: { id: EVENT_REVOKE_ONLY } });
+    await prisma.event.create({
+      data: {
+        id: EVENT_REVOKE_ONLY,
+        title: "Revoke Only Reports Event",
+        slug: "reports-event-revoke-only",
+        date: new Date("2026-10-01T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+    });
+    await prisma.attendee.create({
+      data: {
+        id: "att-rep-revoke-only",
+        event_id: EVENT_REVOKE_ONLY,
+        email: "revoke-only@example.com",
+        name: "Revoked Not Readmitted Guest",
+        // Cleared by the revoke, matching what undo.ts actually does - never re-set since this
+        // attendee is never re-admitted.
+        admitted_at: null,
+        ...mkAttendeeToken(),
+      },
+    });
+    // Same undo.ts shape as the revoke-then-readmit case above, minus the re-admission: the
+    // original VALID row's own status is left as-is, only a separate UNDO row is inserted.
+    await prisma.checkIn.createMany({
+      data: [
+        {
+          attendee_id: "att-rep-revoke-only",
+          event_id: EVENT_REVOKE_ONLY,
+          checked_in_at: new Date("2026-10-01T09:00:00.000Z"),
+          status: "VALID",
+          source: "scan",
+          device_id: "Tablet 1 — main entrance",
+        },
+        {
+          attendee_id: "att-rep-revoke-only",
+          event_id: EVENT_REVOKE_ONLY,
+          checked_in_at: new Date("2026-10-01T09:05:00.000Z"),
+          status: "UNDO",
+          source: "admin_revoke",
+          device_id: null,
+        },
+      ],
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_REVOKE_ONLY}/reports`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        summary: { admitted: number };
+        by_checkin_method: Array<{ method: string; count: number }>;
+        by_device: Array<{ device_id: string | null; count: number }>;
+      };
+      // Not currently admitted - the status:VALID row is a red herring left over from the
+      // revoked visit, not evidence this attendee should count anywhere in the report.
+      expect(body.summary.admitted).toBe(0);
+      expect(body.by_checkin_method).toEqual([]);
+      expect(body.by_device).toEqual([]);
+    } finally {
+      await prisma.checkIn.deleteMany({ where: { event_id: EVENT_REVOKE_ONLY } });
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_REVOKE_ONLY } });
+      await prisma.event.deleteMany({ where: { id: EVENT_REVOKE_ONLY } });
+    }
+  });
+
+  it("sorts by_device by count descending, breaking a tie alphabetically by device_id (Reports redesign)", async () => {
+    const EVENT_TIEBREAK = "evt-reports-device-tiebreak";
+    await prisma.checkIn.deleteMany({ where: { event_id: EVENT_TIEBREAK } });
+    await prisma.attendee.deleteMany({ where: { event_id: EVENT_TIEBREAK } });
+    await prisma.event.deleteMany({ where: { id: EVENT_TIEBREAK } });
+    await prisma.event.create({
+      data: {
+        id: EVENT_TIEBREAK,
+        title: "Device Tiebreak Reports Event",
+        slug: "reports-event-device-tiebreak",
+        date: new Date("2026-10-01T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+    });
+    // "Solo" is the only device with a distinct count (exercises the count-descending branch);
+    // "Alpha" and "Zebra" tie at 2 apiece, so only device_id's own alphabetical order can decide
+    // between them (exercises the tie-break branch, both directions).
+    const attendees = [
+      { id: "att-tie-solo-1", device: "Solo", minute: 0 },
+      { id: "att-tie-solo-2", device: "Solo", minute: 1 },
+      { id: "att-tie-solo-3", device: "Solo", minute: 2 },
+      { id: "att-tie-solo-4", device: "Solo", minute: 3 },
+      { id: "att-tie-solo-5", device: "Solo", minute: 4 },
+      { id: "att-tie-zebra-1", device: "Zebra", minute: 5 },
+      { id: "att-tie-zebra-2", device: "Zebra", minute: 6 },
+      { id: "att-tie-alpha-1", device: "Alpha", minute: 7 },
+      { id: "att-tie-alpha-2", device: "Alpha", minute: 8 },
+    ];
+    await prisma.attendee.createMany({
+      data: attendees.map((a) => ({
+        id: a.id,
+        event_id: EVENT_TIEBREAK,
+        email: `${a.id}@example.com`,
+        name: a.id,
+        admitted_at: new Date(`2026-10-01T09:${String(a.minute).padStart(2, "0")}:00.000Z`),
+        ...mkAttendeeToken(),
+      })),
+    });
+    await prisma.checkIn.createMany({
+      data: attendees.map((a) => ({
+        attendee_id: a.id,
+        event_id: EVENT_TIEBREAK,
+        checked_in_at: new Date(`2026-10-01T09:${String(a.minute).padStart(2, "0")}:00.000Z`),
+        status: "VALID",
+        source: "scan",
+        device_id: a.device,
+      })),
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_TIEBREAK}/reports`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        by_device: Array<{ device_id: string | null; count: number }>;
+      };
+      expect(body.by_device).toEqual([
+        { device_id: "Solo", count: 5 },
+        { device_id: "Alpha", count: 2 },
+        { device_id: "Zebra", count: 2 },
+      ]);
+    } finally {
+      await prisma.checkIn.deleteMany({ where: { event_id: EVENT_TIEBREAK } });
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_TIEBREAK } });
+      await prisma.event.deleteMany({ where: { id: EVENT_TIEBREAK } });
+    }
+  });
+
+  it("shows only issued (not pending or returned) event-day items on the admission log, CSV, and PDF exports (Reports redesign)", async () => {
+    const EVENT_ITEMS = "evt-reports-items";
+    await prisma.attendeeItemState.deleteMany({ where: { event_item: { event_id: EVENT_ITEMS } } });
+    await prisma.eventItem.deleteMany({ where: { event_id: EVENT_ITEMS } });
+    await prisma.attendee.deleteMany({ where: { event_id: EVENT_ITEMS } });
+    await prisma.event.deleteMany({ where: { id: EVENT_ITEMS } });
+    await prisma.event.create({
+      data: {
+        id: EVENT_ITEMS,
+        title: "Items Reports Event",
+        slug: "reports-event-items",
+        date: new Date("2026-10-01T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+    });
+    const badge = await prisma.eventItem.create({
+      data: { event_id: EVENT_ITEMS, key: "badge", label: "Badge" },
+    });
+    const giftBag = await prisma.eventItem.create({
+      data: { event_id: EVENT_ITEMS, key: "giftbag", label: "Gift bag" },
+    });
+    const headset = await prisma.eventItem.create({
+      data: { event_id: EVENT_ITEMS, key: "headset", label: "Headset" },
+    });
+    await prisma.attendee.createMany({
+      data: [
+        {
+          id: "att-rep-items-full",
+          event_id: EVENT_ITEMS,
+          email: "items-full@example.com",
+          name: "Fully Issued Guest",
+          admitted_at: new Date("2026-10-01T09:00:00.000Z"),
+          ...mkAttendeeToken(),
+        },
+        {
+          id: "att-rep-items-none",
+          event_id: EVENT_ITEMS,
+          email: "items-none@example.com",
+          name: "Nothing Issued Guest",
+          admitted_at: new Date("2026-10-01T09:05:00.000Z"),
+          ...mkAttendeeToken(),
+        },
+      ],
+    });
+    await prisma.attendeeItemState.createMany({
+      data: [
+        { attendee_id: "att-rep-items-full", event_item_id: badge.id, state: "issued" },
+        { attendee_id: "att-rep-items-full", event_item_id: giftBag.id, state: "issued" },
+        { attendee_id: "att-rep-items-full", event_item_id: headset.id, state: "pending" },
+        { attendee_id: "att-rep-items-none", event_item_id: badge.id, state: "returned" },
+      ],
+    });
+    // A populated Device column on the "none" row - without this, the CSV assertion below
+    // (checking the row's last cell is an empty quoted string) couldn't actually distinguish
+    // "Items is empty" from "every trailing cell on this row happens to be empty."
+    await prisma.checkIn.create({
+      data: {
+        attendee_id: "att-rep-items-none",
+        event_id: EVENT_ITEMS,
+        checked_in_at: new Date("2026-10-01T09:05:00.000Z"),
+        status: "VALID",
+        source: "scan",
+        device_id: "Tablet 1 — main entrance",
+      },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_ITEMS}/reports`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        admission_log: Array<{ attendee_id: string; items: string[] }>;
+      };
+      const full = body.admission_log.find((row) => row.attendee_id === "att-rep-items-full");
+      const none = body.admission_log.find((row) => row.attendee_id === "att-rep-items-none");
+      // Badge before Gift bag - ordered by event_item.key ascending ("badge" < "giftbag").
+      expect(full?.items).toEqual(["Badge", "Gift bag"]);
+      expect(none?.items).toEqual([]);
+
+      const csvRes = await app.request(
+        `/api/admin/events/${EVENT_ITEMS}/reports/export?format=csv`,
+        { headers: { Cookie: adminCookie } },
+      );
+      const csvText = (await csvRes.text()).replace(/^﻿/, "");
+      const csvLines = csvText.split("\r\n");
+      expect(csvLines[0]).toContain('"Items"');
+      const fullCsvLine = csvLines.find((line) => line.includes("items-full@example.com"));
+      expect(fullCsvLine).toContain('"Badge, Gift bag"');
+      const noneCsvLine = csvLines.find((line) => line.includes("items-none@example.com"));
+      // Items is the CSV's last column - checking the line's own trailing cell (not just "the
+      // line contains an empty quoted string somewhere") is what actually pins this down to
+      // Items specifically, since Device is deliberately non-empty on this row above.
+      expect(noneCsvLine?.endsWith(',""')).toBe(true);
+      expect(noneCsvLine).toContain('"Tablet 1 — main entrance"');
+
+      const pdfRes = await app.request(
+        `/api/admin/events/${EVENT_ITEMS}/reports/export?format=pdf`,
+        { headers: { Cookie: adminCookie } },
+      );
+      const html = await pdfRes.text();
+      expect(html).toContain("<th>Items</th>");
+      expect(html).toContain("Badge, Gift bag");
+    } finally {
+      await prisma.checkIn.deleteMany({ where: { event_id: EVENT_ITEMS } });
+      await prisma.attendeeItemState.deleteMany({ where: { event_item: { event_id: EVENT_ITEMS } } });
+      await prisma.eventItem.deleteMany({ where: { event_id: EVENT_ITEMS } });
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_ITEMS } });
+      await prisma.event.deleteMany({ where: { id: EVENT_ITEMS } });
+    }
+  });
 });
 
 describe("GET /api/admin/events/:eventId/reports/export", () => {
@@ -708,6 +1218,15 @@ describe("GET /api/admin/events/:eventId/reports/export", () => {
     expect(html).toContain("Reports Event");
     expect(html).toContain("By ticket type");
     expect(html).toContain("VIP One");
+  });
+
+  it("PDF admission log falls back to a 'No admissions yet' row when there are none", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EMPTY}/reports/export?format=pdf`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("No admissions yet");
   });
 
   it("audit: reports_exported with format and count after CSV export", async () => {
