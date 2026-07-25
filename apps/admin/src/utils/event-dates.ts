@@ -112,7 +112,7 @@ function zonedWallClockToUtcIso(yyyyMmDd: string, hhMmSsMs: string, timeZone: st
       { instant: candidate, readBack },
       { instant: other, readBack: otherReadBack },
     ].sort((a, b) => a.readBack - b.readBack);
-    candidate = (options.find((o) => o.readBack >= target) ?? options[options.length - 1]!).instant;
+    candidate = (options.find((o) => o.readBack >= target) ?? options.at(-1)!).instant;
   }
 
   return new Date(candidate).toISOString();
