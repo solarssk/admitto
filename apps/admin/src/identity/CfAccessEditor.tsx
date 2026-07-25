@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useBlocker, useLocation, useNavigate, type BlockerFunction } from "react-router";
-import { Badge, Button, Card, Input, Spinner, Switch, useToast } from "@admitto/ui";
+import { Badge, Button, Card, IconButton, Input, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
 import { ApiError, fetchCfAccessSummary, testCfAccess, updateCfAccess } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { CfAccessSummaryDto } from "../api/types.js";
+import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import {
   buildCfUpdateBody,
   cfDraftFromSummary,
@@ -124,10 +128,21 @@ export function CfAccessEditor() {
   }, [dirty]);
 
   const handleCancel = useCallback(() => {
+    if (saving || testing) return;
     if (dirty && !window.confirm("Discard unsaved changes?")) return;
     skipBlockRef.current = true;
     navigate(IDENTITY_PROVIDERS_ROUTE);
-  }, [dirty, navigate]);
+  }, [dirty, navigate, saving, testing]);
+
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  useModalFocusTrap(panelRef, true, handleCancel);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useOverscrollBounceGuard(scrollRef);
+  // A fetch that resolves near-instantly (localhost, a warm cache) would
+  // otherwise flash the spinner on and off faster than it can register as
+  // "loading" — show it only once the fetch has genuinely taken a moment.
+  const showLoadingSpinner = useDelayedLoading(loadState === "loading");
 
   const handleSubmit = useCallback(
     async (event: React.FormEvent) => {
@@ -147,6 +162,8 @@ export function CfAccessEditor() {
         setLocks(refreshed.locks);
         setErrors({});
         addToast("Cloudflare Access settings saved.", "success");
+        skipBlockRef.current = true;
+        navigate(IDENTITY_PROVIDERS_ROUTE);
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
           redirectToLogin();
@@ -158,7 +175,7 @@ export function CfAccessEditor() {
         setSaving(false);
       }
     },
-    [draft, locks, addToast],
+    [draft, locks, addToast, navigate],
   );
 
   // Test probes the team domain's JWKS endpoint. Send the draft team domain when
@@ -215,63 +232,47 @@ export function CfAccessEditor() {
     </div>
   );
 
+  let content: ReactNode;
   if (loadState === "loading") {
-    return (
+    content = showLoadingSpinner ? (
       <output className="identity-editor__loading">
         <Spinner label="Loading Cloudflare Access" />
       </output>
-    );
-  }
-
-  if (loadState === "error") {
-    return (
-      <Card title="Cloudflare Access">
-        <div className="identity-editor__error">
-          <p>Couldn't load the Cloudflare Access configuration.</p>
-          <Button variant="secondary" onClick={retryLoad}>
-            Retry
-          </Button>
-        </div>
-      </Card>
-    );
-  }
-
-  return (
-    <div className="identity-editor__page">
-      <div className="identity-editor__header">
-        <h2 className="identity-editor__title">Cloudflare Access</h2>
-        <p className="identity-editor__subtitle">
-          Require a Cloudflare Zero Trust Access JWT for protected admin paths. Configure your
-          team URL, application audience tag, and protected prefixes.
-        </p>
-        <div className="cf-editor__status">
-          {draft.enabled ? (
-            <Badge variant="ok" dot>Active</Badge>
-          ) : (
-            <Badge variant="neutral" dot>Inactive</Badge>
-          )}
-          {locks.enabled && <Badge variant="warn">Managed by environment</Badge>}
-        </div>
+    ) : null;
+  } else if (loadState === "error") {
+    content = (
+      <div className="identity-editor__error">
+        <p>Couldn't load the Cloudflare Access configuration.</p>
+        <Button variant="secondary" onClick={retryLoad}>
+          Retry
+        </Button>
       </div>
-
+    );
+  } else {
+    content = (
       <form className="identity-editor cf-editor" onSubmit={handleSubmit} noValidate>
         {fallthroughInfo}
         {enabledWarning}
         {envLockedInfo}
 
-        <Card title="Configuration">
-          <div className="identity-editor__grid">
-            <div className="identity-editor__switch cf-editor__enabled">
-              <Switch
-                id="cf-access-enabled"
-                label="Enable Cloudflare Access for protected admin paths"
-                checked={draft.enabled}
-                disabled={locks.enabled}
-                onChange={(e) => setDraft((d) => ({ ...d, enabled: e.target.checked }))}
-              />
+        <Card
+          title="Configuration"
+          actions={
+            <div className="cf-editor__enabled">
+              <Tooltip content="Require a Cloudflare Access JWT for protected admin paths">
+                <Switch
+                  id="cf-access-enabled"
+                  aria-label="Enabled"
+                  checked={draft.enabled}
+                  disabled={locks.enabled}
+                  onChange={(e) => setDraft((d) => ({ ...d, enabled: e.target.checked }))}
+                />
+              </Tooltip>
               {locks.enabled && <Badge variant="neutral">Locked by env</Badge>}
             </div>
-
+          }
+        >
+          <div className="identity-editor__grid">
             <Input
               label="Cloudflare team URL"
               type="url"
@@ -297,30 +298,19 @@ export function CfAccessEditor() {
             />
             {locks.audience && <Badge variant="neutral">Locked by env</Badge>}
 
-            <Input
-              label="Protected URL paths"
-              value={draft.protectedPrefixesRaw}
-              invalid={Boolean(errors.protectedPrefixes)}
-              error={errors.protectedPrefixes}
-              disabled={locks.protectedPrefixes}
-              hint="Paths that require a Cloudflare Access JWT. Default covers the admin UI and admin API. Comma-separated (each must start with /)."
-              placeholder="/admin, /api/admin"
-              onChange={(e) => setDraft((d) => ({ ...d, protectedPrefixesRaw: e.target.value }))}
-            />
+            <div className="cf-editor__grid-full">
+              <Input
+                label="Protected URL paths"
+                value={draft.protectedPrefixesRaw}
+                invalid={Boolean(errors.protectedPrefixes)}
+                error={errors.protectedPrefixes}
+                disabled={locks.protectedPrefixes}
+                hint="Paths that require a Cloudflare Access JWT. Default covers the admin UI and admin API. Comma-separated (each must start with /)."
+                placeholder="/admin, /api/admin"
+                onChange={(e) => setDraft((d) => ({ ...d, protectedPrefixesRaw: e.target.value }))}
+              />
+            </div>
             {locks.protectedPrefixes && <Badge variant="neutral">Locked by env</Badge>}
-          </div>
-
-          <div className="cf-editor__test">
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={handleTest}
-              disabled={testing || saving}
-              aria-busy={testing}
-            >
-              {testing ? "Testing…" : "Test connection"}
-            </Button>
           </div>
         </Card>
 
@@ -328,11 +318,60 @@ export function CfAccessEditor() {
           <Button type="button" variant="ghost" onClick={handleCancel} disabled={saving}>
             Cancel
           </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handleTest}
+            disabled={testing || saving}
+            aria-busy={testing}
+          >
+            {testing ? "Testing…" : "Test connection"}
+          </Button>
           <Button type="submit" variant="primary" disabled={saving}>
             {saving ? "Saving…" : "Save changes"}
           </Button>
         </div>
       </form>
-    </div>
+    );
+  }
+
+  return createPortal(
+    <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
+      <div className="identity-modal__backdrop" aria-hidden="true" />
+      <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
+        <div ref={scrollRef} className="identity-modal__scroll">
+          <div className="identity-editor__header">
+            <div className="identity-editor__header-row">
+              <div className="identity-editor__header-title">
+                <h2 className="identity-editor__title" id={titleId}>Cloudflare Access</h2>
+                {loadState === "ready" &&
+                  (draft.enabled ? (
+                    <Badge variant="ok">Active</Badge>
+                  ) : (
+                    <Badge variant="neutral">Inactive</Badge>
+                  ))}
+                {loadState === "ready" && locks.enabled && (
+                  <Badge variant="warn">Managed by environment</Badge>
+                )}
+              </div>
+              <IconButton
+                label="Close"
+                onClick={handleCancel}
+                disabled={saving || testing}
+                icon={<i className="ti ti-x" />}
+              />
+            </div>
+            {loadState === "ready" && (
+              <p className="identity-editor__subtitle">
+                Require a Cloudflare Zero Trust Access JWT for protected admin paths. Configure your
+                team URL, application audience tag, and protected prefixes.
+              </p>
+            )}
+          </div>
+          {content}
+        </div>
+      </div>
+    </dialog>,
+    document.body,
   );
 }

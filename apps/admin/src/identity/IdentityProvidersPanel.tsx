@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router";
-import { Badge, Button, Card, EmptyState, Skeleton, Switch, useToast } from "@admitto/ui";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Link, useLocation, useParams } from "react-router";
+import { Badge, Button, Card, EmptyState, Skeleton, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
   ApiError,
   fetchCfAccessSummary,
@@ -9,8 +9,35 @@ import {
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { CfAccessSummaryDto, IdentityProviderListItem } from "../api/types.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useInFlightIds } from "../hooks/useInFlightIds.js";
-import { IDENTITY_CLOUDFLARE_ROUTE } from "./routes.js";
+import { IDENTITY_CLOUDFLARE_ROUTE, IDENTITY_PROVIDERS_ROUTE } from "./routes.js";
+
+// Modal editors are only needed once an operator opens Add/Edit/Manage — keep them
+// out of the list's own chunk the same way App.tsx code-split them before these
+// routes moved to render inline here.
+const IdentityProviderEditor = lazy(() =>
+  import("./IdentityProviderEditor.js").then((m) => ({ default: m.IdentityProviderEditor })),
+);
+const CfAccessEditor = lazy(() =>
+  import("./CfAccessEditor.js").then((m) => ({ default: m.CfAccessEditor })),
+);
+
+type Modal =
+  | { kind: "none" }
+  | { kind: "create" }
+  | { kind: "edit"; providerId: string }
+  | { kind: "cloudflare" };
+
+/** Derive which modal (if any) sits on top of the list from the matched route —
+ * `providers/new`, `providers/:providerId`, and `cloudflare` all render this same
+ * panel so the list never unmounts while a modal is open on top of it. */
+function resolveModal(pathname: string, providerId: string | undefined): Modal {
+  if (pathname === `${IDENTITY_PROVIDERS_ROUTE}/new`) return { kind: "create" };
+  if (providerId) return { kind: "edit", providerId };
+  if (pathname === IDENTITY_CLOUDFLARE_ROUTE) return { kind: "cloudflare" };
+  return { kind: "none" };
+}
 
 type LoadState = "loading" | "ready" | "error";
 /** Row shape is 1:1 with the API list DTO. */
@@ -27,7 +54,11 @@ function providerEditPath(id: string): string {
   return `/admin/settings/identity/providers/${encodeURIComponent(id)}`;
 }
 
-const PROVIDER_NEW_PATH = "/admin/settings/identity/providers/new";
+const PROVIDER_NEW_PATH = `${IDENTITY_PROVIDERS_ROUTE}/new`;
+
+function cfStatusBadge(cf: CfAccessSummaryDto): ReactNode {
+  return cf.enabled ? <Badge variant="ok">Active</Badge> : <Badge variant="neutral">Inactive</Badge>;
+}
 
 function ProviderListSkeleton() {
   return (
@@ -50,9 +81,16 @@ function ProviderRowItem({
   const labelId = `idp-enabled-${provider.id}`;
   return (
     <div className="settings-row identity-provider-row">
-      <div className="settings-row__text">
-        <strong>{provider.display_name}</strong>
-        <p className="identity-provider-row__issuer">{provider.issuer}</p>
+      <div className="identity-row__main">
+        <Tooltip content="OpenID Connect">
+          <div className="identity-row-icon" aria-hidden="true">
+            <i className="ti ti-shield-lock" />
+          </div>
+        </Tooltip>
+        <div className="settings-row__text">
+          <strong>{provider.display_name}</strong>
+          <p className="identity-provider-row__issuer">{provider.issuer}</p>
+        </div>
       </div>
       <div className="identity-provider-row__actions">
         <Link className="at-btn at-btn--ghost" to={providerEditPath(provider.id)}>
@@ -60,7 +98,7 @@ function ProviderRowItem({
         </Link>
         <Switch
           id={labelId}
-          label="Enabled"
+          aria-label={`${provider.display_name} enabled`}
           checked={provider.enabled}
           disabled={disabled}
           aria-busy={disabled}
@@ -79,6 +117,9 @@ function ProviderRowItem({
  */
 export function IdentityProvidersPanel() {
   const { addToast } = useToast();
+  const location = useLocation();
+  const params = useParams<{ providerId?: string }>();
+  const modal = resolveModal(location.pathname, params.providerId);
   const [providers, setProviders] = useState<ProviderRow[]>([]);
   const [cf, setCf] = useState<CfAccessSummaryDto | null>(null);
   const [providersState, setProvidersState] = useState<LoadState>("loading");
@@ -140,6 +181,26 @@ export function IdentityProvidersPanel() {
   const retryProviders = useCallback(() => setProvidersRetry((n) => n + 1), []);
   const retryCf = useCallback(() => setCfRetry((n) => n + 1), []);
 
+  // A fetch that resolves near-instantly (localhost, a warm cache) would
+  // otherwise flash the skeleton on and off faster than it can register as
+  // "loading" — show it only once the fetch has genuinely taken a moment.
+  const showProvidersSkeleton = useDelayedLoading(providersState === "loading");
+  const showCfSkeleton = useDelayedLoading(cfState === "loading");
+
+  // The list no longer unmounts when a modal route is visited (unlike a full page
+  // navigation), so refresh both lists ourselves once a modal closes back to the
+  // bare providers route — covers create/edit/CF saves without threading an
+  // onSaved callback through both editors.
+  const modalWasOpenRef = useRef(modal.kind !== "none");
+  useEffect(() => {
+    const isOpen = modal.kind !== "none";
+    if (modalWasOpenRef.current && !isOpen) {
+      retryProviders();
+      retryCf();
+    }
+    modalWasOpenRef.current = isOpen;
+  }, [modal.kind, retryProviders, retryCf]);
+
   const handleToggle = useCallback(
     async (provider: ProviderRow) => {
       const next = !provider.enabled;
@@ -174,14 +235,14 @@ export function IdentityProvidersPanel() {
   return (
     <div className="settings-sections">
       <Card
-        title="OIDC providers"
+        title="Identity providers"
         actions={
-          <Link className="at-btn at-btn--primary" to={PROVIDER_NEW_PATH}>
+          <Link className="at-btn at-btn--primary at-btn--sm" to={PROVIDER_NEW_PATH}>
             <span>Add provider</span>
           </Link>
         }
       >
-        {providersState === "loading" && <ProviderListSkeleton />}
+        {providersState === "loading" && showProvidersSkeleton && <ProviderListSkeleton />}
         {providersState === "error" && (
           <EmptyState
             title="Couldn't load providers"
@@ -191,8 +252,9 @@ export function IdentityProvidersPanel() {
         )}
         {providersState === "ready" && providers.length === 0 && (
           <EmptyState
+            icon={<i className="ti ti-shield-lock" />}
             title="No identity providers yet"
-            description="Add an OpenID Connect provider to enable single sign-on for your team."
+            description="Add an identity provider to enable single sign-on for your team."
           />
         )}
         {providersState === "ready" && providers.length > 0 && (
@@ -207,15 +269,13 @@ export function IdentityProvidersPanel() {
             ))}
           </div>
         )}
-        {providersState === "ready" && (
-          <p className="identity-providers__hint">
-            {togglingIds.size > 0 ? "Saving changes…" : "Add or edit a provider to configure OIDC endpoints, claims, and group→role mapping."}
-          </p>
-        )}
       </Card>
 
-      <Card title="Cloudflare Access">
-        {cfState === "loading" && <Skeleton height={56} />}
+      <Card
+        title="Cloudflare Access"
+        actions={cfState === "ready" && cf ? cfStatusBadge(cf) : undefined}
+      >
+        {cfState === "loading" && showCfSkeleton && <Skeleton height={56} />}
         {cfState === "error" && (
           <EmptyState
             title="Couldn't load Cloudflare Access"
@@ -225,22 +285,22 @@ export function IdentityProvidersPanel() {
         )}
         {cfState === "ready" && cf && (
           <div className="settings-row cf-access-summary">
-            <div className="settings-row__text">
-              <strong>
-                Cloudflare Zero Trust {cf.enabled ? null : <span className="cf-access-summary__off">(disabled)</span>}
-              </strong>
-              <p>
-                {cf.teamDomain
-                  ? `Team domain: ${cf.teamDomain}`
-                  : "No team domain configured."}
-              </p>
-              <div className="cf-access-summary__badges">
-                {cf.enabled ? (
-                  <Badge variant="ok" dot>Enabled</Badge>
-                ) : (
-                  <Badge variant="neutral" dot>Disabled</Badge>
+            <div className="identity-row__main">
+              <div className="identity-row-icon" aria-hidden="true">
+                <i className="ti ti-brand-cloudflare" />
+              </div>
+              <div className="cf-access-summary__text">
+                <strong>Cloudflare Zero Trust</strong>
+                <p>
+                  {cf.teamDomain
+                    ? `Team domain: ${cf.teamDomain}`
+                    : "No team domain configured."}
+                </p>
+                {cf.locks.enabled && (
+                  <div className="cf-access-summary__badges">
+                    <Badge variant="warn">Managed by environment</Badge>
+                  </div>
                 )}
-                {cf.locks.enabled && <Badge variant="warn">Managed by environment</Badge>}
               </div>
             </div>
             <Link className="at-btn at-btn--secondary" to={IDENTITY_CLOUDFLARE_ROUTE}>
@@ -249,6 +309,12 @@ export function IdentityProvidersPanel() {
           </div>
         )}
       </Card>
+
+      <Suspense fallback={null}>
+        {modal.kind === "create" && <IdentityProviderEditor mode="create" />}
+        {modal.kind === "edit" && <IdentityProviderEditor mode="edit" providerId={modal.providerId} />}
+        {modal.kind === "cloudflare" && <CfAccessEditor />}
+      </Suspense>
     </div>
   );
 }
