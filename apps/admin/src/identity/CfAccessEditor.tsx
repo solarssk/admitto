@@ -161,6 +161,8 @@ export function CfAccessEditor() {
         setLocks(refreshed.locks);
         setErrors({});
         addToast("Cloudflare Access settings saved.", "success");
+        skipBlockRef.current = true;
+        navigate(IDENTITY_PROVIDERS_ROUTE);
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
           redirectToLogin();
@@ -172,7 +174,7 @@ export function CfAccessEditor() {
         setSaving(false);
       }
     },
-    [draft, locks, addToast],
+    [draft, locks, addToast, navigate],
   );
 
   // Test probes the team domain's JWKS endpoint. Send the draft team domain when
@@ -347,6 +349,9 @@ export function CfAccessEditor() {
                   ) : (
                     <Badge variant="neutral">Inactive</Badge>
                   ))}
+                {loadState === "ready" && locks.enabled && (
+                  <Badge variant="warn">Managed by environment</Badge>
+                )}
               </div>
               <IconButton label="Close" onClick={handleCancel} icon={<i className="ti ti-x" />} />
             </div>

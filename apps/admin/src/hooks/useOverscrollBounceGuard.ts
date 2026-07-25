@@ -16,8 +16,8 @@ export function useOverscrollBounceGuard(ref: RefObject<HTMLElement | null>): vo
 
     const onWheel = (event: WheelEvent) => {
       // 2px tolerance for sub-pixel scroll positions (same as useScrollFade) —
-      // an exact >= comparison can miss the bottom by a fraction of a pixel.
-      const atTop = el.scrollTop <= 0;
+      // an exact >= comparison can miss either edge by a fraction of a pixel.
+      const atTop = el.scrollTop <= 2;
       const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
       if ((atTop && event.deltaY < 0) || (atBottom && event.deltaY > 0)) {
         event.preventDefault();

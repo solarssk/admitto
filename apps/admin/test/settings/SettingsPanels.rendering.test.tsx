@@ -57,6 +57,8 @@ function makeSession(overrides: Partial<SessionListDto> = {}): SessionListDto {
 
 beforeEach(() => {
   vi.mocked(fetchAdminEvents).mockResolvedValue([]);
+  // jsdom does not implement scrollIntoView.
+  Element.prototype.scrollIntoView = vi.fn();
 });
 
 afterEach(() => {
@@ -162,7 +164,7 @@ describe("AuditLogPanel rendering", () => {
     expect(within(table).queryByText("View")).toBeNull();
   });
 
-  it("closes the Details popover via its backdrop", async () => {
+  it("closes the Details popover on an outside click", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue({
       entries: [makeAuditEntry()],
       total: 1,
@@ -177,7 +179,7 @@ describe("AuditLogPanel rendering", () => {
     fireEvent.click(trigger);
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
 
-    fireEvent.click(screen.getByLabelText("Close details"));
+    fireEvent.pointerDown(document.body);
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
   });
 
@@ -284,6 +286,49 @@ describe("AuditLogPanel rendering", () => {
     fireEvent.click(screen.getByRole("button", { name: "Previous" }));
     expect(await screen.findByText("Page 1 of 2 (50 total)")).toBeTruthy();
     expect(vi.mocked(fetchAuditLog).mock.calls.at(-1)![0]).toMatchObject({ page: 1 });
+  });
+
+  it("scrolls the panel back into view after paginating", async () => {
+    vi.mocked(fetchAuditLog)
+      .mockResolvedValueOnce({ entries: [makeAuditEntry()], total: 50, page: 1, pageSize: 25 })
+      .mockResolvedValueOnce({ entries: [makeAuditEntry()], total: 50, page: 2, pageSize: 25 });
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByText("Page 1 of 2 (50 total)");
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByText("Page 2 of 2 (50 total)");
+
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
+  });
+
+  it("ignores a stale scroll-restore when an unrelated reload resolves instead of the pagination fetch", async () => {
+    let resolveInitial: (r: AuditLogResponse) => void = () => {};
+    let resolveFiltered: (r: AuditLogResponse) => void = () => {};
+    const impls = [
+      () => new Promise<AuditLogResponse>((r) => { resolveInitial = r; }),
+      () => new Promise<AuditLogResponse>(() => {}), // the Next-triggered fetch: never resolves (superseded)
+      () => new Promise<AuditLogResponse>((r) => { resolveFiltered = r; }),
+    ];
+    let call = 0;
+    vi.mocked(fetchAuditLog).mockImplementation(() => impls[call++]!());
+
+    renderWithToast(<AuditLogPanel />);
+    resolveInitial({ entries: [makeAuditEntry()], total: 50, page: 1, pageSize: 25 });
+    await screen.findByText("Page 1 of 2 (50 total)");
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await act(async () => {});
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Action" }), {
+      target: { value: "event_created" },
+    });
+    await act(async () => {});
+
+    resolveFiltered({ entries: [], total: 0, page: 1, pageSize: 25 });
+    await screen.findByText("No audit log entries match the filters.");
+
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
   });
 });
 

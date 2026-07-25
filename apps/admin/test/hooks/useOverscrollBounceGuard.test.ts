@@ -38,6 +38,15 @@ describe("useOverscrollBounceGuard", () => {
     expect(notCancelled).toBe(false);
   });
 
+  it("tolerates sub-pixel scroll positions at the top boundary", () => {
+    // scrollTop lands 0.5px past 0 — still "at top".
+    const el = makeScrollable({ scrollTop: 0.5 });
+    renderHook(() => useOverscrollBounceGuard({ current: el }));
+
+    const notCancelled = dispatchWheel(el, -100);
+    expect(notCancelled).toBe(false);
+  });
+
   it("tolerates sub-pixel scroll positions at the bottom boundary", () => {
     // scrollTop + clientHeight lands 1.5px short of scrollHeight — still "at bottom".
     const el = makeScrollable({ scrollTop: 198.5, clientHeight: 100, scrollHeight: 300 });

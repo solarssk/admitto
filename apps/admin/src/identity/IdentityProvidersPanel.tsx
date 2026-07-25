@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useParams } from "react-router";
 import { Badge, Button, Card, EmptyState, Skeleton, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
@@ -11,9 +11,17 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { CfAccessSummaryDto, IdentityProviderListItem } from "../api/types.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useInFlightIds } from "../hooks/useInFlightIds.js";
-import { CfAccessEditor } from "./CfAccessEditor.js";
-import { IdentityProviderEditor } from "./IdentityProviderEditor.js";
 import { IDENTITY_CLOUDFLARE_ROUTE, IDENTITY_PROVIDERS_ROUTE } from "./routes.js";
+
+// Modal editors are only needed once an operator opens Add/Edit/Manage — keep them
+// out of the list's own chunk the same way App.tsx code-split them before these
+// routes moved to render inline here.
+const IdentityProviderEditor = lazy(() =>
+  import("./IdentityProviderEditor.js").then((m) => ({ default: m.IdentityProviderEditor })),
+);
+const CfAccessEditor = lazy(() =>
+  import("./CfAccessEditor.js").then((m) => ({ default: m.CfAccessEditor })),
+);
 
 type Modal =
   | { kind: "none" }
@@ -46,7 +54,7 @@ function providerEditPath(id: string): string {
   return `/admin/settings/identity/providers/${encodeURIComponent(id)}`;
 }
 
-const PROVIDER_NEW_PATH = "/admin/settings/identity/providers/new";
+const PROVIDER_NEW_PATH = `${IDENTITY_PROVIDERS_ROUTE}/new`;
 
 function cfStatusBadge(cf: CfAccessSummaryDto): ReactNode {
   return cf.enabled ? <Badge variant="ok">Active</Badge> : <Badge variant="neutral">Inactive</Badge>;
@@ -302,9 +310,11 @@ export function IdentityProvidersPanel() {
         )}
       </Card>
 
-      {modal.kind === "create" && <IdentityProviderEditor mode="create" />}
-      {modal.kind === "edit" && <IdentityProviderEditor mode="edit" providerId={modal.providerId} />}
-      {modal.kind === "cloudflare" && <CfAccessEditor />}
+      <Suspense fallback={null}>
+        {modal.kind === "create" && <IdentityProviderEditor mode="create" />}
+        {modal.kind === "edit" && <IdentityProviderEditor mode="edit" providerId={modal.providerId} />}
+        {modal.kind === "cloudflare" && <CfAccessEditor />}
+      </Suspense>
     </div>
   );
 }

@@ -4119,21 +4119,9 @@ output.mail-field-hint {
   padding: 0;
 }
 
-.audit-log-details__backdrop {
-  position: fixed;
-  inset: 0;
-  background: transparent;
-  border: 0;
-  padding: 0;
-  cursor: default;
-  z-index: var(--z-dropdown);
-}
-
 .audit-log-details__panel {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  margin: var(--space-1) 0 0;
+  position: fixed;
+  margin-top: var(--space-1);
   padding: var(--space-2);
   width: max-content;
   max-width: 22rem;

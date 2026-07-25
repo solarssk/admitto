@@ -4,6 +4,7 @@ import { fetchAuditLog } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AuditLogEntryDto } from "../api/types.js";
 import { Segmented } from "../components/Segmented.js";
+import { useClickOutside } from "../components/useClickOutside.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { formatEventDateTime, formatUtcDateTime, utcDayEndIso, utcDayStartIso } from "../utils/event-dates.js";
 
@@ -88,16 +89,42 @@ function metadataPreview(metadata: Record<string, unknown>): string {
 }
 
 /**
- * Details cell — shows metadata JSON in a small absolutely-positioned popover
- * instead of an inline `<details>` block, so opening it never changes the
- * table row's height or pushes other rows around.
+ * Details cell — shows metadata JSON in a small popover instead of an inline
+ * `<details>` block, so opening it never changes the table row's height or
+ * pushes other rows around. Positioned `fixed` from the trigger's own rect
+ * (recomputed on open/resize/scroll, same technique as DatePicker) so it
+ * floats over the page instead of being clipped by the table's horizontal
+ * scroll wrapper, which forces a matching `overflow-y` per the CSS spec.
  */
 function DetailsCell({ metadata }: Readonly<{ metadata: Record<string, unknown> | null }>) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  useClickOutside(rootRef, open, () => setOpen(false));
+
+  useEffect(() => {
+    if (!open) return;
+    const updatePosition = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setPos({ top: rect.bottom, right: window.innerWidth - rect.right });
+    };
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open]);
+
   if (!hasMetadata(metadata)) return <>—</>;
   return (
-    <div className="audit-log-details">
+    <div ref={rootRef} className="audit-log-details">
       <button
+        ref={triggerRef}
         type="button"
         className="audit-log-details__trigger"
         aria-expanded={open}
@@ -105,16 +132,10 @@ function DetailsCell({ metadata }: Readonly<{ metadata: Record<string, unknown> 
       >
         View
       </button>
-      {open && (
-        <>
-          <button
-            type="button"
-            className="audit-log-details__backdrop"
-            aria-label="Close details"
-            onClick={() => setOpen(false)}
-          />
-          <pre className="audit-log-details__panel">{metadataPreview(metadata!)}</pre>
-        </>
+      {open && pos && (
+        <pre className="audit-log-details__panel" style={{ top: pos.top, right: pos.right }}>
+          {metadataPreview(metadata!)}
+        </pre>
       )}
     </div>
   );
@@ -130,19 +151,26 @@ export function AuditLogPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const loadAbortRef = useRef<AbortController | null>(null);
-  // Previous/Next can shrink the table (e.g. a shorter last page), which the
-  // browser clamps scroll position for — restore the pre-click offset once the
-  // new page has actually rendered instead of letting Settings jump to the top.
-  const scrollRestoreRef = useRef<number | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  // Previous/Next can shrink the table (e.g. a shorter last page), which can
+  // otherwise leave the card scrolled out of view — keep it in view once the
+  // new page has actually rendered instead of letting Settings jump around.
+  // Keyed to the load() call that armed it (not just loading/entries) so an
+  // unrelated reload that happens to finish around the same time (a filter
+  // change, Clear filters, Retry) doesn't also trigger a scroll it never asked for.
+  const loadSeqRef = useRef(0);
+  const scrollRestoreSeqRef = useRef<number | null>(null);
   const goToPage = useCallback((next: number) => {
-    scrollRestoreRef.current = window.scrollY;
+    scrollRestoreSeqRef.current = loadSeqRef.current + 1;
     setPage(next);
   }, []);
 
   useLayoutEffect(() => {
-    if (!loading && scrollRestoreRef.current !== null) {
-      window.scrollTo(0, scrollRestoreRef.current);
-      scrollRestoreRef.current = null;
+    if (!loading && scrollRestoreSeqRef.current !== null) {
+      if (loadSeqRef.current === scrollRestoreSeqRef.current) {
+        rootRef.current?.scrollIntoView({ block: "nearest" });
+      }
+      scrollRestoreSeqRef.current = null;
     }
   }, [loading, entries]);
 
@@ -152,6 +180,7 @@ export function AuditLogPanel() {
     loadAbortRef.current?.abort();
     const ac = new AbortController();
     loadAbortRef.current = ac;
+    loadSeqRef.current += 1;
     setLoading(true);
     setError(null);
     try {
@@ -271,7 +300,7 @@ export function AuditLogPanel() {
 
   return (
     <Card title="Audit log">
-      <div className="audit-log-toolbar">
+      <div ref={rootRef} className="audit-log-toolbar">
         <label className="audit-log-filter">
           <span className="audit-log-filter__label">Action</span>
           <select

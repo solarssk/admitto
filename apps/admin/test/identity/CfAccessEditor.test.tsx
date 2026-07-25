@@ -100,6 +100,17 @@ describe("CfAccessEditor (slice 4)", () => {
     await screen.findByText("Cloudflare Access settings saved.");
   });
 
+  it("navigates back to the providers list after a successful save", async () => {
+    mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://old", audience: ["a"] }));
+    mockUpdate.mockResolvedValueOnce(summary({ teamDomain: "https://new", audience: ["a"] }));
+    const { router } = renderEditorAt();
+    const teamInput = await screen.findByDisplayValue("https://old");
+    fireEvent.change(teamInput, { target: { value: "https://new" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/admin/settings/identity/providers"));
+  });
+
   it("blocks save with a toast when required fields are missing for an enabled config", async () => {
     mockFetch.mockResolvedValueOnce(summary({ enabled: false }));
     renderEditorAt();
@@ -372,6 +383,8 @@ describe("CfAccessEditor (slice 4)", () => {
     await screen.findByText(/enabled and locked by environment/);
     // The enabled switch is disabled when env-locked.
     expect(screen.getByRole("switch", { name: "Enabled" }).hasAttribute("disabled")).toBe(true);
+    // The header also carries an at-a-glance "Managed by environment" badge.
+    expect(screen.getByText("Managed by environment")).toBeTruthy();
   });
 
   it("shows the before-enable warning only on the off→on transition", async () => {
