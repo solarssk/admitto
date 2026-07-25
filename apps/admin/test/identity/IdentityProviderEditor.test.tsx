@@ -171,6 +171,38 @@ describe("IdentityProviderEditor — create", () => {
       expect(screen.getByText("providers-list")).toBeTruthy();
     });
   });
+
+  it("blocks the backdrop, close button, and Escape from dismissing the modal while a save is pending (bot review)", async () => {
+    // createIdentityProvider has no abort/cancellation path - dismissing mid-save would only
+    // hide the modal, not stop the request, silently creating the provider after the operator
+    // thought they'd discarded. Confirm returning true simulates the operator confirming the
+    // discard prompt (the draft is dirty), same as the reported scenario.
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    let resolveCreate!: (value: typeof validDetail) => void;
+    mockCreate.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveCreate = resolve; }),
+    );
+    renderEditorAt("/admin/settings/identity/providers/new");
+
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google" } });
+    fireEvent.change(screen.getByLabelText("Issuer URL"), {
+      target: { value: "https://accounts.google.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Client ID"), { target: { value: "client-123" } });
+    fireEvent.change(screen.getByLabelText("Client secret"), { target: { value: "secret-abc" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Create provider" }));
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(document.querySelector(".identity-modal__backdrop")!);
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByText("providers-list")).toBeNull();
+    expect(confirmSpy).not.toHaveBeenCalled();
+
+    resolveCreate(validDetail);
+    await waitFor(() => expect(screen.getByText("providers-list")).toBeTruthy());
+  });
 });
 
 describe("IdentityProviderEditor — edit", () => {

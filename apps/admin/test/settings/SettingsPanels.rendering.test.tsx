@@ -6,6 +6,7 @@ import { ApiError, fetchAdminEvents, fetchAuditLog, fetchSessions } from "../../
 import { AuditLogPanel } from "../../src/settings/AuditLogPanel.js";
 import { SessionsPanel } from "../../src/settings/SessionsPanel.js";
 import { renderWithToast } from "../test-utils.js";
+import { zonedDayEndIso, zonedDayStartIso } from "../../src/utils/event-dates.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -144,7 +145,30 @@ describe("AuditLogPanel rendering", () => {
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(trigger);
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    expect(within(table).getByText(/"event_id": "evt-1"/)).toBeTruthy();
+    // The details panel portals into document.body (bot review: it must escape the table
+    // wrap's own clipping), so it's no longer a descendant of `table`.
+    expect(screen.getByText(/"event_id": "evt-1"/)).toBeTruthy();
+  });
+
+  it("renders the details popover outside .sessions-table-wrap so its own overflow can't clip it (bot review)", async () => {
+    // .sessions-table-wrap sets overflow-x: auto, which per the CSS spec also computes
+    // overflow-y to auto (not the default visible) - a popover left in-flow inside it could
+    // open below the wrap's own clipped/scrollable bounds for a row near the bottom.
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [makeAuditEntry()],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+    renderWithToast(<AuditLogPanel />);
+
+    const table = await screen.findByRole("table");
+    fireEvent.click(within(table).getByText("View"));
+
+    const panel = screen.getByText(/"event_id": "evt-1"/);
+    const wrap = document.querySelector(".sessions-table-wrap");
+    expect(wrap?.contains(panel)).toBe(false);
+    expect(document.body.contains(panel)).toBe(true);
   });
 
   it("renders safe fallbacks when an audit entry has no IP address or metadata", async () => {
@@ -198,6 +222,9 @@ describe("AuditLogPanel rendering", () => {
     fireEvent.click(localRadio);
 
     expect(localRadio.getAttribute("aria-checked")).toBe("true");
+    // Switching time mode now also reloads (the date filters need to reload in the
+    // newly-selected zone too) - await the table reappearing before reading its header text.
+    await screen.findByRole("table");
     // The expected label depends on the test runner's own timezone (a developer's machine vs.
     // CI, which typically runs in UTC) - computed the same way AuditLogPanel itself derives it,
     // instead of assuming "Local" always renders a different string than "Time (UTC)", which
@@ -227,11 +254,17 @@ describe("AuditLogPanel rendering", () => {
     const utcRadio = screen.getByRole("radio", { name: "UTC" });
 
     fireEvent.click(localRadio);
+    // Switching time mode now also reloads (fixed below: the date filters need to reload in
+    // the newly-selected zone too) - await the table reappearing so the reload settles before
+    // counting, instead of catching mid-flight state with nothing rendered yet.
+    await screen.findByRole("table");
     const zeroArgCallsAfterFirstToggle = spy.mock.calls.filter((args) => args.length === 0).length;
     expect(zeroArgCallsAfterFirstToggle).toBeGreaterThan(0);
 
     fireEvent.click(utcRadio);
+    await screen.findByRole("table");
     fireEvent.click(localRadio);
+    await screen.findByRole("table");
     const zeroArgCallsAfterSecondToggle = spy.mock.calls.filter((args) => args.length === 0).length;
     expect(zeroArgCallsAfterSecondToggle).toBeGreaterThan(zeroArgCallsAfterFirstToggle);
 
@@ -357,6 +390,35 @@ describe("AuditLogPanel rendering", () => {
     });
     expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
     expect((screen.getByLabelText("From") as HTMLInputElement).value).toBe("");
+  });
+
+  it("computes date filter bounds in the selected zone, not always UTC (bot review)", async () => {
+    // Local mode changes what timestamps look like, but the From/To bounds sent to the server
+    // must shift with it too - otherwise a displayed "Local" day doesn't match what's actually
+    // filtered (adjacent-day records included/excluded near the boundary).
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByText("No audit log entries found.");
+
+    fireEvent.click(screen.getByRole("radio", { name: "Local" }));
+    await waitFor(() => expect(fetchAuditLog).toHaveBeenLastCalledWith(
+      expect.objectContaining({ start: undefined, end: undefined }),
+      expect.anything(),
+    ));
+
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-06-15" } });
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-06-15" } });
+
+    const viewerTz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    await waitFor(() => {
+      expect(fetchAuditLog).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          start: zonedDayStartIso("2026-06-15", viewerTz),
+          end: zonedDayEndIso("2026-06-15", viewerTz),
+        }),
+        expect.anything(),
+      );
+    });
   });
 
   it("falls back to the raw action_type string for an action outside the known label map", async () => {

@@ -128,10 +128,17 @@ export function CfAccessEditor() {
   }, [dirty]);
 
   const handleCancel = useCallback(() => {
+    // A pending save has no abort/cancellation path (updateCfAccess is a plain awaited fetch) -
+    // dismissing the modal mid-save would only hide it, not stop it, silently applying the
+    // change (particularly risky for enabling Cloudflare Access) after the operator thought
+    // they'd discarded. Blocking every dismissal path (button, backdrop, close icon, Escape all
+    // funnel through this one function) while saving is simpler and safer than trying to
+    // cancel/ignore the in-flight mutation.
+    if (saving) return;
     if (dirty && !window.confirm("Discard unsaved changes?")) return;
     skipBlockRef.current = true;
     navigate(IDENTITY_PROVIDERS_ROUTE);
-  }, [dirty, navigate]);
+  }, [saving, dirty, navigate]);
 
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);

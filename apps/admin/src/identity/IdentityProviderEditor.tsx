@@ -430,10 +430,16 @@ export function IdentityProviderEditor({
   }, [dirty]);
 
   const handleCancel = useCallback(() => {
+    // A pending save has no abort/cancellation path (create/updateIdentityProvider are plain
+    // awaited fetches) - dismissing the modal mid-save would only hide it, not stop it, silently
+    // creating/updating the provider after the operator thought they'd discarded. Blocking every
+    // dismissal path (button, backdrop, close icon, Escape all funnel through this one function)
+    // while busy is simpler and safer than trying to cancel/ignore the in-flight mutation.
+    if (isActionBusy(saving, testing, discovering)) return;
     if (dirty && !window.confirm("Discard unsaved changes?")) return;
     skipBlockRef.current = true;
     navigate(IDENTITY_PROVIDERS_ROUTE);
-  }, [dirty, navigate]);
+  }, [saving, testing, discovering, dirty, navigate]);
 
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);

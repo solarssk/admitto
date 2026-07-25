@@ -1,11 +1,28 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 import { Button, Card } from "@admitto/ui";
 import { fetchAuditLog } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AuditLogEntryDto } from "../api/types.js";
 import { Segmented } from "../components/Segmented.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
-import { formatEventDateTime, formatUtcDateTime, utcDayEndIso, utcDayStartIso } from "../utils/event-dates.js";
+import {
+  formatEventDateTime,
+  formatUtcDateTime,
+  utcDayEndIso,
+  utcDayStartIso,
+  zonedDayEndIso,
+  zonedDayStartIso,
+} from "../utils/event-dates.js";
 
 type TimeMode = "utc" | "local";
 
@@ -71,6 +88,18 @@ function viewerTzLabel(): string {
   return tz.split("/").pop()?.replaceAll("_", " ") ?? tz;
 }
 
+/** Start/end bounds for a `From`/`To` date filter, computed in whichever zone the Time column
+ * is currently displaying - otherwise a "Local" date picked in the UI (e.g. an America/New_York
+ * calendar day) would still be sent to the server as a UTC calendar day, filtering out records
+ * near the day's actual boundary and including ones from the adjacent UTC day instead. */
+function filterDayStartIso(yyyyMmDd: string, mode: TimeMode): string {
+  return mode === "utc" ? utcDayStartIso(yyyyMmDd) : zonedDayStartIso(yyyyMmDd, viewerTimeZone());
+}
+
+function filterDayEndIso(yyyyMmDd: string, mode: TimeMode): string {
+  return mode === "utc" ? utcDayEndIso(yyyyMmDd) : zonedDayEndIso(yyyyMmDd, viewerTimeZone());
+}
+
 /** Primary actor label; deleted users show a readable fallback (id in cell title). */
 function actorDisplay(entry: AuditLogEntryDto): string {
   if (entry.actor_display_name) return entry.actor_display_name;
@@ -94,17 +123,56 @@ function metadataPreview(metadata: Record<string, unknown>): string {
   return JSON.stringify(metadata, null, 2);
 }
 
+const DETAILS_PANEL_MARGIN = 5;
+const DETAILS_PANEL_VIEWPORT_PADDING = 8;
+
 /**
- * Details cell — shows metadata JSON in a small absolutely-positioned popover
- * instead of an inline `<details>` block, so opening it never changes the
- * table row's height or pushes other rows around.
+ * Details cell — shows metadata JSON in a small popover instead of an inline
+ * `<details>` block, so opening it never changes the table row's height or
+ * pushes other rows around. Portal-rendered into document.body (not just
+ * `position: fixed` in place) so it's never clipped by `.sessions-table-wrap`'s
+ * own overflow, which also makes the wrapper scrollable vertically — a row
+ * near the bottom would otherwise open a popover mostly or entirely outside
+ * the wrapper's visible bounds. Position is measured from the trigger at
+ * open-time and flips upward when there isn't room below, matching the same
+ * viewport-collision approach `@admitto/ui`'s `Tooltip` already uses.
  */
 function DetailsCell({ metadata }: Readonly<{ metadata: Record<string, unknown> | null }>) {
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLPreElement>(null);
+  const [style, setStyle] = useState<CSSProperties>({ top: 0, left: 0, visibility: "hidden" });
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const trigger = triggerRef.current;
+    const panel = panelRef.current;
+    if (!trigger || !panel) return;
+
+    const triggerRect = trigger.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+
+    const spaceAbove = triggerRect.top;
+    const spaceBelow = window.innerHeight - triggerRect.bottom;
+    const placeAbove = spaceAbove >= panelRect.height + DETAILS_PANEL_MARGIN || spaceAbove > spaceBelow;
+    const top = placeAbove
+      ? triggerRect.top - panelRect.height - DETAILS_PANEL_MARGIN
+      : triggerRect.bottom + DETAILS_PANEL_MARGIN;
+
+    // Right-aligned to the trigger's own right edge (matches the prior in-flow layout), clamped
+    // to stay on-screen.
+    let left = triggerRect.right - panelRect.width;
+    left = Math.min(left, window.innerWidth - DETAILS_PANEL_VIEWPORT_PADDING - panelRect.width);
+    left = Math.max(left, DETAILS_PANEL_VIEWPORT_PADDING);
+
+    setStyle({ position: "fixed", top, left, visibility: "visible" });
+  }, [open]);
+
   if (!hasMetadata(metadata)) return <>—</>;
   return (
     <div className="audit-log-details">
       <button
+        ref={triggerRef}
         type="button"
         className="audit-log-details__trigger"
         aria-expanded={open}
@@ -112,17 +180,21 @@ function DetailsCell({ metadata }: Readonly<{ metadata: Record<string, unknown> 
       >
         View
       </button>
-      {open && (
-        <>
-          <button
-            type="button"
-            className="audit-log-details__backdrop"
-            aria-label="Close details"
-            onClick={() => setOpen(false)}
-          />
-          <pre className="audit-log-details__panel">{metadataPreview(metadata!)}</pre>
-        </>
-      )}
+      {open &&
+        createPortal(
+          <>
+            <button
+              type="button"
+              className="audit-log-details__backdrop"
+              aria-label="Close details"
+              onClick={() => setOpen(false)}
+            />
+            <pre ref={panelRef} className="audit-log-details__panel" style={style}>
+              {metadataPreview(metadata!)}
+            </pre>
+          </>,
+          document.body,
+        )}
     </div>
   );
 }
@@ -167,8 +239,8 @@ export function AuditLogPanel() {
           page,
           pageSize: PAGE_SIZE,
           actionType: filters.actionType || undefined,
-          start: filters.start ? utcDayStartIso(filters.start) : undefined,
-          end: filters.end ? utcDayEndIso(filters.end) : undefined,
+          start: filters.start ? filterDayStartIso(filters.start, timeMode) : undefined,
+          end: filters.end ? filterDayEndIso(filters.end, timeMode) : undefined,
         },
         ac.signal,
       );
@@ -189,7 +261,7 @@ export function AuditLogPanel() {
     } finally {
       if (!ac.signal.aborted) setLoading(false);
     }
-  }, [page, filters.actionType, filters.start, filters.end]);
+  }, [page, filters.actionType, filters.start, filters.end, timeMode]);
 
   useEffect(() => {
     void load();

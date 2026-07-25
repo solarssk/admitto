@@ -4051,10 +4051,9 @@ output.mail-field-hint {
 }
 
 .audit-log-details__panel {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  margin: var(--space-1) 0 0;
+  /* position/top/left set inline (measured from the trigger at open-time, flips upward when
+     there isn't room below) - portaled to document.body so an ancestor's overflow (the table
+     wrap's own vertical scroll) can never clip it. */
   padding: var(--space-2);
   width: max-content;
   max-width: 22rem;

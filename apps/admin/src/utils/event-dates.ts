@@ -59,6 +59,46 @@ export function utcDayEndIso(yyyyMmDd: string): string {
   return `${yyyyMmDd}T23:59:59.999Z`;
 }
 
+/** UTC instant for a given wall-clock time (`HH:mm:ss.SSS`) of `yyyyMmDd` as observed in
+ * `timeZone` - the "double conversion" trick: a naive guess treating the wall-clock time as
+ * UTC, corrected by however far that guess's own reading (via Intl) in `timeZone` drifted from
+ * what was actually asked for (the zone's UTC offset at that moment, DST included). */
+function zonedWallClockToUtcIso(yyyyMmDd: string, hhMmSsMs: string, timeZone: string): string {
+  const naiveUtc = new Date(`${yyyyMmDd}T${hhMmSsMs}Z`);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(naiveUtc);
+  const get = (type: string): number => Number(parts.find((p) => p.type === type)?.value ?? "0");
+  const hour = get("hour");
+  const asIfUtc = Date.UTC(
+    get("year"),
+    get("month") - 1,
+    get("day"),
+    hour === 24 ? 0 : hour,
+    get("minute"),
+    get("second"),
+    naiveUtc.getUTCMilliseconds(),
+  );
+  return new Date(naiveUtc.getTime() + (naiveUtc.getTime() - asIfUtc)).toISOString();
+}
+
+/** Start of a calendar day in `timeZone` as a UTC ISO instant (for a timezone-aware date filter). */
+export function zonedDayStartIso(yyyyMmDd: string, timeZone: string): string {
+  return zonedWallClockToUtcIso(yyyyMmDd, "00:00:00.000", timeZone);
+}
+
+/** End of a calendar day in `timeZone` as a UTC ISO instant (inclusive upper bound). */
+export function zonedDayEndIso(yyyyMmDd: string, timeZone: string): string {
+  return zonedWallClockToUtcIso(yyyyMmDd, "23:59:59.999", timeZone);
+}
+
 /** Display label for a `YYYY-MM-DD` event date field value. */
 export function formatIsoCalendarDate(yyyyMmDd: string): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(yyyyMmDd)) return yyyyMmDd;
