@@ -153,7 +153,7 @@ describe("IdentityProviderEditor — create", () => {
     expect(screen.queryByText("providers-list")).toBeNull();
 
     resolveCreate(validDetail);
-    await waitFor(() => expect(screen.getByText("providers-list")).toBeTruthy());
+    expect(await screen.findByText("providers-list")).toBeTruthy();
   });
 });
 
