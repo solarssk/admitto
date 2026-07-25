@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, Card, Checkbox, Input, useToast } from "@admitto/ui";
 import { fetchSecuritySettings, patchSecuritySettings } from "../api/client.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { PatchSystemSettingsBody, SystemSettingsDto, SettingSource } from "../api/types.js";
 
@@ -152,7 +153,13 @@ export function SecurityPanel() {
     setDraft({ ...draft, mfaRoles: next });
   };
 
+  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
+  // the "Loading…" text on and off faster than it can register as loading — show it only
+  // once the fetch has genuinely taken a moment.
+  const showLoading = useDelayedLoading(loading);
+
   if (loading) {
+    if (!showLoading) return null;
     return (
       <Card title="Security">
         <p className="sessions-status">Loading…</p>

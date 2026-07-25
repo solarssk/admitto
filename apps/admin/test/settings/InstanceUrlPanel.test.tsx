@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InstanceUrlPanel } from "../../src/settings/InstanceUrlPanel.js";
 import { renderWithToast } from "../test-utils.js";
@@ -29,9 +29,20 @@ const emptySettings = {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
 });
 
 describe("InstanceUrlPanel", () => {
+  it("shows the loading placeholder once the fetch has genuinely taken a moment", () => {
+    mockFetch.mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderWithToast(<InstanceUrlPanel />);
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(screen.getByText("Loading…")).toBeTruthy();
+  });
+
   it("shows operator-safe message when settings fail to load", async () => {
     mockFetch.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToast(<InstanceUrlPanel />);

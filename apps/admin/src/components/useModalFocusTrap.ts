@@ -1,16 +1,29 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { FOCUSABLE_SELECTOR } from "./focusable.js";
 
-/** Trap focus inside a modal panel, close on Escape, lock body scroll while open. */
+/** Trap focus inside a modal panel, close on Escape, lock body scroll while open.
+ *
+ * `focusWhenReady` is for a panel whose real content loads asynchronously after the
+ * modal itself mounts (e.g. an always-routed editor showing a spinner first, unlike
+ * a conditionally-opened dialog that already has its content at mount) — pass the
+ * value that changes once that content exists (e.g. a `view`/`loadState` variable)
+ * so initial focus is re-attempted then, instead of finding nothing focusable and
+ * never trying again. Most callers don't need this and can omit it. */
 export function useModalFocusTrap(
   panelRef: RefObject<HTMLElement | null>,
   open: boolean,
   onCancel: () => void,
+  focusWhenReady: unknown = null,
 ): void {
   const onCancelRef = useRef(onCancel);
   useEffect(() => {
     onCancelRef.current = onCancel;
   });
+
+  useEffect(() => {
+    if (!open) return;
+    panelRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)?.focus();
+  }, [open, panelRef, focusWhenReady]);
 
   useEffect(() => {
     if (!open) return;
@@ -21,7 +34,6 @@ export function useModalFocusTrap(
     const panel = panelRef.current;
     const queryFocusables = (): HTMLElement[] =>
       panel ? Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)) : [];
-    queryFocusables()[0]?.focus();
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {

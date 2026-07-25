@@ -3,6 +3,7 @@ import { Button, Card, EmptyState, Input, useToast } from "@admitto/ui";
 import { createEventImageAsset, deleteEventImageAsset, fetchEventImageAssets } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventImageAssetDto } from "../api/types.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { formatFileSize } from "../utils/formatFileSize.js";
 import { brandingLogoImgSrc } from "../utils/safeBrandingLogoHref.js";
 import { ConfirmDialog } from "./ConfirmDialog.js";
@@ -145,9 +146,13 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
   };
 
   const deletingAsset = assets.find((a) => a.id === confirmDeleteId) ?? null;
+  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
+  // the "Loading…" text on and off faster than it can register as loading — show it only
+  // once the fetch has genuinely taken a moment.
+  const showLoading = useDelayedLoading(loading);
 
   function renderAssetsList(): ReactNode {
-    if (loading) return <p className="field-hint">Loading assets…</p>;
+    if (loading) return showLoading ? <p className="field-hint">Loading assets…</p> : null;
     if (loadError) {
       return (
         <EmptyState

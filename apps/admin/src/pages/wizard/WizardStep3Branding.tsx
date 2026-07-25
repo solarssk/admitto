@@ -9,6 +9,7 @@ import { Input, useToast } from "@admitto/ui";
 import { LogoUploadZone } from "../../components/LogoUploadZone.js";
 import { fetchOrgBranding, patchOrgBranding } from "../../api/client.js";
 import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
+import { useDelayedLoading } from "../../hooks/useDelayedLoading.js";
 import { safeBrandingLogoHref } from "../../utils/safeBrandingLogoHref.js";
 import { useWizard } from "./WizardContext.js";
 
@@ -87,13 +88,18 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
       saveAndContinue: saveBranding,
     }));
 
+    // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
+    // the "Loading…" text on and off faster than it can register as loading — show it only
+    // once the fetch has genuinely taken a moment.
+    const showLoading = useDelayedLoading(loading);
+
     return (
       <>
         <p className="setup-wizard__step-sub">
           Set your organisation name and logo for ticket pages and emails.
         </p>
 
-        {loading && <p>Loading branding…</p>}
+        {loading && showLoading && <p>Loading branding…</p>}
 
         {!loading && (
           <>

@@ -188,9 +188,17 @@ describe("EventSettingsPage subtitle", () => {
 
   it("shows the stable purpose subtitle while loading, before the event title is known", () => {
     vi.mocked(fetchEventSettings).mockImplementation(() => new Promise(() => {}));
+    // useDelayedLoading only shows the placeholder once the fetch has stayed pending past its
+    // 200ms grace window (avoids flashing it for a near-instant response) — fake timers must
+    // be installed before render so the hook's setTimeout is one of ours.
+    vi.useFakeTimers();
     renderSettings();
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
     expect(screen.getByText(SUBTITLE)).toBeTruthy();
     expect(screen.getByRole("status").textContent).toMatch(/Loading event settings/);
+    vi.useRealTimers();
   });
 
   it("shows the same stable subtitle once loaded, not the event's title", async () => {
@@ -313,6 +321,23 @@ describe("EventSettingsPage tabs", () => {
 
     expect(await screen.findByText("VIP")).toBeTruthy();
     expect(screen.queryByText("Could not load ticket types")).toBeNull();
+  });
+
+  it("never claims 'No ticket types yet' during the no-flash grace window of the very first load (Sonar/PO review)", async () => {
+    // Regression test: TicketTypesCard must be gated on the raw ticketTypesLoading flag, not the
+    // delayed showTicketTypesLoading flag alone — otherwise the pre-delay window (real fetch still
+    // in flight, ticketTypes still its initial []) falls straight through to the confirmed-empty
+    // message below. Deliberately no fake timers / advancing here: the assertion only needs the
+    // real elapsed time since mount to stay under the 200ms grace window, same as production.
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchTicketTypes).mockImplementationOnce(() => new Promise(() => {}));
+    renderSettings();
+    await screen.findByRole("tab", { name: "Ticket types" });
+    fireEvent.click(screen.getByRole("tab", { name: "Ticket types" }));
+
+    expect(
+      screen.queryByText("No ticket types yet. Add at least one before sending tickets."),
+    ).toBeNull();
   });
 
   it("shows a superadmin-only notice instead of the image asset library for a non-superadmin org admin", async () => {

@@ -17,6 +17,7 @@ import { isAdmitDedupHit, registerAdmitDedup } from "../checkin/admitDedup.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { calendarDateInZone, formatEventDateTime, formatEventTime } from "../utils/event-dates.js";
@@ -872,6 +873,11 @@ export function ReportsPage() {
     window.open(eventReportsPrintUrl(eventId), "_blank", "noopener,noreferrer");
   }, [eventId]);
 
+  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
+  // the skeleton on and off faster than it can register as loading — show it only once
+  // the fetch has genuinely taken a moment.
+  const showLoadingSkeleton = useDelayedLoading(loading);
+
   const handleExport = useCallback(
     (format: ExportFormat) => {
       if (format === "csv") void handleExportCsv();
@@ -908,7 +914,7 @@ export function ReportsPage() {
         }
       />
 
-      {loading && (
+      {loading && showLoadingSkeleton && (
         <div className="reports-loading">
           <div className="reports-stats-grid">
             {[1, 2, 3, 4].map((key) => (

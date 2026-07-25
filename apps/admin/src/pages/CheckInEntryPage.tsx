@@ -4,6 +4,7 @@ import { Card, PageHeader } from "@admitto/ui";
 import { ApiError, fetchCheckInEvents } from "../api/client.js";
 import type { EventDto } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { formatEventCalendarDate } from "../utils/event-dates.js";
 
 function formatDate(iso: string): string {
@@ -45,8 +46,13 @@ export function CheckInEntryPage() {
     };
   }, [navigate, reportApiError]);
 
+  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
+  // the "Loading…" text on and off faster than it can register as loading — show it only
+  // once the fetch has genuinely taken a moment.
+  const showLoading = useDelayedLoading(loading);
+
   if (loading) {
-    return <p>Loading check-in events…</p>;
+    return showLoading ? <p>Loading check-in events…</p> : null;
   }
 
   if (error) {

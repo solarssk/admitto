@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AttendeesTable } from "../../src/attendees/AttendeesTable.js";
 import { mockMatchMedia } from "../test-utils.js";
@@ -60,6 +60,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("AttendeesTable pass status actions", () => {
@@ -213,16 +214,40 @@ describe("AttendeesTable loading states (#271)", () => {
   });
 
   it("shows a neutral Loading… footer instead of falsely claiming 0 attendees while re-fetching", () => {
+    // useDelayedLoading only shows the text once the fetch has stayed pending past its
+    // 200ms grace window (avoids flashing it for a near-instant response) — fake timers
+    // must be installed before render so the hook's setTimeout is one of ours.
+    vi.useFakeTimers();
     render(<AttendeesTable {...tableProps} loading items={[]} total={0} />);
-
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
     expect(screen.getByText("Loading…")).toBeTruthy();
     expect(screen.queryByText("0 attendees")).toBeNull();
   });
 
+  it("never claims '0 attendees' during the no-flash grace window of the very first load, even before Loading… itself appears", () => {
+    // Regression test: footSummary must gate on the raw first-load condition, not the
+    // delayed flag alone — otherwise, for the first ~200ms of every single page load
+    // (fast or slow), "total" is still its pre-fetch default (0) and the footer would
+    // wrongly read "0 attendees" instead of showing nothing until Loading… is warranted.
+    vi.useFakeTimers();
+    render(
+      <AttendeesTable {...tableProps} hasLoadedOnce={false} loading items={[]} total={0} />,
+    );
+    // Deliberately NOT advancing timers past 200ms — this is the pre-delay window.
+    expect(screen.queryByText("0 attendees")).toBeNull();
+    expect(screen.queryByText("Loading…")).toBeNull();
+  });
+
   it("shows the shimmer skeleton only on the very first load, not a later filter landing on zero matches", () => {
+    vi.useFakeTimers();
     const { container, rerender } = render(
       <AttendeesTable {...tableProps} hasLoadedOnce={false} loading items={[]} total={0} />,
     );
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
     expect(container.querySelector("table[aria-hidden='true']")).toBeTruthy();
     expect(screen.queryByText("No matches")).toBeNull();
 

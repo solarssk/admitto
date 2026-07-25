@@ -11,6 +11,7 @@ import {
   type CustomDataFieldDef,
 } from "./customData.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import "./add-attendee-modal.css";
 
@@ -175,6 +176,12 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
     }
   };
 
+  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
+  // these "Loading…" hints on and off faster than they can register as loading — show them
+  // only once the fetch has genuinely taken a moment.
+  const showAttributeFieldsLoading = useDelayedLoading(attributeFieldsLoading);
+  const showTicketTypesLoading = useDelayedLoading(ticketTypesLoading);
+
   if (!open) return null;
 
   return (
@@ -202,10 +209,10 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
             {ticketTypesError}
           </p>
         )}
-        {attributeFieldsLoading && (
+        {attributeFieldsLoading && showAttributeFieldsLoading && (
           <p className="add-attendee-modal__hint">Loading attribute fields…</p>
         )}
-        {ticketTypesLoading && (
+        {ticketTypesLoading && showTicketTypesLoading && (
           <p className="add-attendee-modal__hint">Loading ticket types…</p>
         )}
         <div className="add-attendee-modal__fields">

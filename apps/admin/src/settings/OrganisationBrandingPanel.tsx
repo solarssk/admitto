@@ -4,6 +4,7 @@ import { fetchOrgBranding, patchOrgBranding } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { SetupOrgBrandingDto } from "../api/types.js";
 import { LogoUploadZone } from "../components/LogoUploadZone.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { safeBrandingLogoHref } from "../utils/safeBrandingLogoHref.js";
 
 const EMPTY_DRAFT: SetupOrgBrandingDto = { org_name: "", logo_url: "" };
@@ -87,6 +88,11 @@ export function OrganisationBrandingPanel() {
 
   const formDisabled = saving;
 
+  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
+  // the "Loading…" text on and off faster than it can register as loading — show it only
+  // once the fetch has genuinely taken a moment.
+  const showLoading = useDelayedLoading(loading);
+
   let saveButtonLabel: string;
   if (saving) {
     saveButtonLabel = "Saving…";
@@ -122,7 +128,7 @@ export function OrganisationBrandingPanel() {
         Name and logo shown on tickets and emails for every event in this organisation. This is the
         primary place to manage your logo after completing the setup wizard.
       </p>
-      {loading && <p>Loading organisation branding…</p>}
+      {loading && showLoading && <p>Loading organisation branding…</p>}
       {loadError && !loading && (
         <p className="text-error" role="alert">
           {loadError}{" "}

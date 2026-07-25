@@ -16,6 +16,7 @@ import type { EventCustomFieldDto, EventDto, EventItemDto, OpsConfigDto } from "
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useInFlightIds } from "../hooks/useInFlightIds.js";
 import { EventCustomFieldsCard } from "../requirements/EventCustomFieldsCard.js";
 import { EventItemDrawer } from "../requirements/EventItemDrawer.js";
@@ -39,6 +40,7 @@ function loadErrorMessage(err: unknown): string {
 
 function EventItemsTableBody({
   loading,
+  showLoading,
   items,
   event,
   togglingIds,
@@ -46,6 +48,7 @@ function EventItemsTableBody({
   onEdit,
 }: {
   readonly loading: boolean;
+  readonly showLoading: boolean;
   readonly items: EventItemDto[];
   readonly event: EventDto;
   readonly togglingIds: ReadonlySet<string>;
@@ -53,6 +56,7 @@ function EventItemsTableBody({
   readonly onEdit: (item: EventItemDto) => void;
 }) {
   if (loading) {
+    if (!showLoading) return null;
     return (
       <tr>
         <td colSpan={3} className="attendees-empty">
@@ -128,6 +132,7 @@ function EventItemsTableBody({
 function EventBehaviourContent({
   opsConfig,
   loading,
+  showLoading,
   event,
   opsTogglingIds,
   badgeInactive,
@@ -135,12 +140,13 @@ function EventBehaviourContent({
 }: {
   readonly opsConfig: OpsConfigDto | null;
   readonly loading: boolean;
+  readonly showLoading: boolean;
   readonly event: EventDto;
   readonly opsTogglingIds: ReadonlySet<string>;
   readonly badgeInactive: boolean;
   readonly onToggle: (field: keyof OpsConfigDto, value: boolean) => void;
 }) {
-  if (opsConfig == null && loading) return <p>Loading…</p>;
+  if (opsConfig == null && loading) return showLoading ? <p>Loading…</p> : null;
   if (!opsConfig) return null;
   return (
     <>
@@ -359,6 +365,10 @@ export function RequirementsPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<EventItemDto | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
+  // the "Loading…" placeholders on and off faster than they can register as loading — show
+  // them only once the fetch has genuinely taken a moment.
+  const showLoading = useDelayedLoading(loading);
 
   const [addOpen, setAddOpen] = useState(false);
   const [addLabel, setAddLabel] = useState("");
@@ -598,6 +608,7 @@ export function RequirementsPage() {
               <tbody>
                 <EventItemsTableBody
                   loading={loading}
+                  showLoading={showLoading}
                   items={items}
                   event={event}
                   togglingIds={togglingIds}
@@ -615,6 +626,7 @@ export function RequirementsPage() {
         event={event}
         fields={customFields}
         loading={loading}
+        showLoading={showLoading}
         onChanged={() => setReloadToken((n) => n + 1)}
       />
 
@@ -623,6 +635,7 @@ export function RequirementsPage() {
           <EventBehaviourContent
             opsConfig={opsConfig}
             loading={loading}
+            showLoading={showLoading}
             event={event}
             opsTogglingIds={opsTogglingIds}
             badgeInactive={badgeInactive}

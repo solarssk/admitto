@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import { EventImageAssetLibrary } from "../../src/components/EventImageAssetLibrary.js";
@@ -39,13 +39,24 @@ const asset: EventImageAssetDto = {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
 });
 
 describe("EventImageAssetLibrary", () => {
   it("shows a loading state, then an empty-state message when there are no assets", async () => {
     mockFetch.mockResolvedValueOnce([]);
+    // useDelayedLoading only shows the text once the fetch has stayed pending past its
+    // 200ms grace window (avoids flashing it for a near-instant response) — fake timers
+    // must be installed before render so the hook's setTimeout is one of ours, and the
+    // synchronous advance+assert below runs before the resolved fetch's microtask can flip
+    // `loading` back to false.
+    vi.useFakeTimers();
     renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
     expect(screen.getByText("Loading assets…")).toBeTruthy();
+    vi.useRealTimers();
     expect(await screen.findByText(/No image assets yet/)).toBeTruthy();
     expect(mockFetch).toHaveBeenCalledWith("evt-1", expect.any(AbortSignal));
   });

@@ -39,6 +39,7 @@ export function MailTransportPanel() {
     setSavedDraft,
     loading,
     setLoading,
+    showLoading,
     loadError,
     setLoadError,
     validationErrors,
@@ -188,6 +189,7 @@ export function MailTransportPanel() {
   const provider = draft.provider;
 
   if (loading) {
+    if (!showLoading) return null;
     return (
       <Card title="Mail transport">
         <p>Loading mail settings…</p>

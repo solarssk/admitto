@@ -586,6 +586,57 @@ describe("IdentityProviderEditor — repeater onChange coverage", () => {
       scope_id: "org-1",
     });
   });
+
+  it("labels the scope_id field 'Event ID' for event scope, and clears it on switching back to instance", async () => {
+    mockFetch.mockResolvedValueOnce(validDetail);
+    mockUpdate.mockResolvedValueOnce(validDetail);
+    renderEditorAt("/admin/settings/identity/providers/p1");
+    await screen.findByDisplayValue("admins");
+
+    fireEvent.change(screen.getByLabelText("Scope"), { target: { value: "event" } });
+    expect(screen.getByLabelText("Event ID")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Event ID"), { target: { value: "evt-1" } });
+
+    // Switching back to instance drops the scope_id field entirely, and clears
+    // the value it held — a stale org/event id must not silently survive under
+    // the "instance" scope it no longer applies to.
+    fireEvent.change(screen.getByLabelText("Scope"), { target: { value: "instance" } });
+    expect(screen.queryByLabelText("Event ID")).toBeNull();
+    expect(screen.queryByLabelText("Organization ID")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    expect(mockUpdate.mock.calls[0][1].mappings[0]).toMatchObject({
+      scope_type: "instance",
+      scope_id: null,
+    });
+  });
+});
+
+describe("IdentityProviderEditor — legacy invalid mapping scope_type (Codex P2)", () => {
+  it("renders the invalid scope inline and blocks save with row errors", async () => {
+    const legacyDetail = {
+      ...validDetail,
+      mappings: [{ group: "admins", role: "admin", scope_type: "legacy_scope", scope_id: "" }],
+    };
+    mockFetch.mockResolvedValueOnce(legacyDetail);
+    renderEditorAt("/admin/settings/identity/providers/p1");
+
+    await screen.findByDisplayValue("admins");
+    // The legacy scope is outside MAPPING_SCOPES → an "(invalid — pick a scope)"
+    // option is rendered, same treatment as an out-of-range role.
+    expect(screen.getByText(/legacy_scope \(invalid/)).toBeTruthy();
+    const scopeSelect = screen.getByLabelText("Scope") as HTMLSelectElement;
+    expect(scopeSelect.className).toContain("at-select--invalid");
+    // Any non-"instance" scope_type (valid or not) still requires a scope_id.
+    expect(screen.getByLabelText("Event ID")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await screen.findByText("Pick a scope.");
+    expect(screen.getByText("Scope ID is required for this scope.")).toBeTruthy();
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
 });
 
 describe("IdentityProviderEditor — create with a mapping", () => {

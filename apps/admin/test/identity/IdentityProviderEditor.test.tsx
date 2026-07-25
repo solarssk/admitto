@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RouterProvider } from "react-router/dom";
 import { createMemoryRouter, Link, Outlet } from "react-router";
@@ -85,6 +85,50 @@ const validDetail = {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
+});
+
+describe("IdentityProviderEditor — edit loading", () => {
+  it("shows the loading spinner once the fetch has genuinely taken a moment", () => {
+    mockFetch.mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderEditorAt("/admin/settings/identity/providers/p1");
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(screen.getByLabelText("Loading provider")).toBeTruthy();
+  });
+
+  it("shows the title and a working close button even while still loading (Sonar/PO review)", () => {
+    mockFetch.mockImplementationOnce(() => new Promise(() => {}));
+    renderEditorAt("/admin/settings/identity/providers/p1");
+
+    expect(screen.getByText("Edit identity provider")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.getByText("providers-list")).toBeTruthy();
+  });
+
+  it("ignores a backdrop click, including while still loading", () => {
+    // Backdrop-click is deliberately inert (not a close action) - a superadmin mid-edit
+    // shouldn't lose work to a stray click outside the panel. The dialog renders via
+    // createPortal(document.body), not inside the render() container.
+    mockFetch.mockImplementationOnce(() => new Promise(() => {}));
+    const { router } = renderEditorAt("/admin/settings/identity/providers/p1");
+
+    fireEvent.click(document.querySelector(".identity-modal__backdrop")!);
+
+    expect(router.state.location.pathname).toBe("/admin/settings/identity/providers/p1");
+  });
+
+  it("moves focus into the modal once the load resolves, instead of leaving it stuck outside (Sonar/PO review)", async () => {
+    mockFetch.mockResolvedValueOnce(validDetail);
+    renderEditorAt("/admin/settings/identity/providers/p1");
+
+    await waitFor(() => {
+      const panel = document.querySelector(".identity-modal__panel");
+      expect(panel?.contains(document.activeElement)).toBe(true);
+    });
+  });
 });
 
 describe("IdentityProviderEditor — create", () => {

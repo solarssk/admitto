@@ -9,6 +9,7 @@ import {
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto, SessionListDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { formatUtcDateTime } from "../utils/event-dates.js";
 
 const BROWSER_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
@@ -135,6 +136,11 @@ export function SessionsPanel() {
     ? ` (${confirmTarget.deviceLabel})`
     : "";
 
+  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
+  // the "Loading…" text on and off faster than it can register as loading — show it only
+  // once the fetch has genuinely taken a moment.
+  const showLoading = useDelayedLoading(loading);
+
   return (
     <>
       <Card title="Sessions">
@@ -151,7 +157,7 @@ export function SessionsPanel() {
           ))}
         </div>
 
-        {loading && <p className="sessions-status">Loading…</p>}
+        {loading && showLoading && <p className="sessions-status">Loading…</p>}
 
         {!loading && error && (
           <div className="sessions-status">

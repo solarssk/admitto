@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useBlocker, useLocation, useNavigate, type BlockerFunction } from "react-router";
-import { Badge, Button, Card, IconButton, Input, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
+import { Badge, Button, Card, Input, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
 import { ApiError, fetchCfAccessSummary, testCfAccess, updateCfAccess } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { CfAccessSummaryDto } from "../api/types.js";
@@ -17,6 +17,7 @@ import {
   type CfAccessDraft,
   type CfAccessFieldErrors,
 } from "./cfAccessValidation.js";
+import { IdentityModalHeader } from "./IdentityModalHeader.js";
 import { IDENTITY_PROVIDERS_ROUTE } from "./routes.js";
 
 type LoadState = "loading" | "ready" | "error";
@@ -136,7 +137,9 @@ export function CfAccessEditor() {
 
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
-  useModalFocusTrap(panelRef, true, handleCancel);
+  // Always starts in loadState "loading" - the real form fields don't exist in the DOM
+  // until the fetch resolves, so initial focus must be re-attempted once loadState changes.
+  useModalFocusTrap(panelRef, true, handleCancel, loadState);
   const scrollRef = useRef<HTMLDivElement>(null);
   useOverscrollBounceGuard(scrollRef);
   // A fetch that resolves near-instantly (localhost, a warm cache) would
@@ -340,34 +343,32 @@ export function CfAccessEditor() {
       <div className="identity-modal__backdrop" aria-hidden="true" />
       <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
         <div ref={scrollRef} className="identity-modal__scroll">
-          <div className="identity-editor__header">
-            <div className="identity-editor__header-row">
-              <div className="identity-editor__header-title">
-                <h2 className="identity-editor__title" id={titleId}>Cloudflare Access</h2>
-                {loadState === "ready" &&
-                  (draft.enabled ? (
+          <IdentityModalHeader
+            titleId={titleId}
+            title="Cloudflare Access"
+            badge={
+              loadState === "ready" && (
+                <>
+                  {draft.enabled ? (
                     <Badge variant="ok">Active</Badge>
                   ) : (
                     <Badge variant="neutral">Inactive</Badge>
-                  ))}
-                {loadState === "ready" && locks.enabled && (
-                  <Badge variant="warn">Managed by environment</Badge>
-                )}
-              </div>
-              <IconButton
-                label="Close"
-                onClick={handleCancel}
-                disabled={saving || testing}
-                icon={<i className="ti ti-x" />}
-              />
-            </div>
-            {loadState === "ready" && (
-              <p className="identity-editor__subtitle">
-                Require a Cloudflare Zero Trust Access JWT for protected admin paths. Configure your
-                team URL, application audience tag, and protected prefixes.
-              </p>
-            )}
-          </div>
+                  )}
+                  {locks.enabled && <Badge variant="warn">Managed by environment</Badge>}
+                </>
+              )
+            }
+            subtitle={
+              loadState === "ready" && (
+                <>
+                  Require a Cloudflare Zero Trust Access JWT for protected admin paths. Configure
+                  your team URL, application audience tag, and protected prefixes.
+                </>
+              )
+            }
+            onClose={handleCancel}
+            closeDisabled={saving || testing}
+          />
           {content}
         </div>
       </div>

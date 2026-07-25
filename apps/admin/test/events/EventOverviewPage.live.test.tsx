@@ -398,6 +398,24 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     });
   });
 
+  it("never claims a tile/section is confirmed-empty during the no-flash grace window of the very first load (Sonar/PO review)", () => {
+    // Regression test: every one of these must gate on the raw loading flag, not the delayed
+    // showLoading flag alone — otherwise the pre-delay window (real fetch in flight,
+    // currentOverview still null) falls straight through to a "confirmed" state: the KPI dash,
+    // the cards' "Unavailable", or the notes/contacts/links sections' empty-state add-CTAs.
+    // Checked synchronously right after render (no await) — currentOverview is null on the very
+    // first render already, so there is nothing to wait for, and waiting would itself risk
+    // crossing the 200ms grace window this test exists to probe.
+    fetchEventOverview.mockImplementationOnce(() => new Promise(() => {}));
+    renderPage();
+
+    expect(within(statsRow()).queryAllByText("—")).toHaveLength(0);
+    expect(screen.queryAllByText("Unavailable")).toHaveLength(0);
+    expect(screen.queryByText("Add a pinned note for staff")).toBeNull();
+    expect(screen.queryByText("Add a key contact")).toBeNull();
+    expect(screen.queryByText("Add a link or file")).toBeNull();
+  });
+
   it("replaces the duplicate-date Event date tile with a Failed delivery tile and labels the KPI row per the mockup (#350)", async () => {
     fetchEventOverview.mockResolvedValue(
       overviewFixture(5, { email_failed: 2, email_bounced: 1 }),
