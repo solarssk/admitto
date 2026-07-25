@@ -6,6 +6,7 @@ import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-er
 import type { EventSettingsDto, TicketTypeDto } from "../api/types.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { whenShown } from "../hooks/useDelayedLoading.js";
 import "./ticket-types-card.css";
 
 export interface TicketTypesCardProps {
@@ -13,6 +14,7 @@ export interface TicketTypesCardProps {
   readonly event: EventSettingsDto;
   readonly types: TicketTypeDto[];
   readonly loading: boolean;
+  readonly showLoading: boolean;
   /** Set when the catalog failed to load (initial load or a background refresh) - renders in
    * place of the list, with a Retry button (CodeRabbit review, batch 04 / #351). */
   readonly error?: string | null;
@@ -168,6 +170,7 @@ export function TicketTypesCard({
   event,
   types,
   loading,
+  showLoading,
   error,
   onRetry,
   onChanged,
@@ -280,7 +283,7 @@ export function TicketTypesCard({
               list, so you never type it in twice.
             </p>
             {loading ? (
-              <p className="field-hint">Loading…</p>
+              whenShown(showLoading, <p className="field-hint">Loading…</p>)
             ) : (
               <div className="tt-list">
                 {types.map((type) => (

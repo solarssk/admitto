@@ -96,6 +96,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
   mockAssignments = [{ role: "admin", scope_type: "organization", scope_id: "org-1" }];
 });
 
@@ -652,6 +653,44 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
     expect(await screen.findByText("No imports yet for this event.")).toBeTruthy();
   });
 
+  it("starts a fresh no-flash delay on Retry after a load failure, instead of showing Loading immediately (bot review)", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    fetchImportHistory.mockRejectedValueOnce(new Error("boom"));
+    renderPage();
+
+    expect(await screen.findByText("Couldn't load import history.")).toBeTruthy();
+
+    let resolveRetry!: (items: unknown) => void;
+    fetchImportHistory.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveRetry = resolve; }),
+    );
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+      expect(screen.queryByText("Couldn't load import history.")).toBeNull();
+      expect(screen.queryByText("Loading…")).toBeNull();
+
+      act(() => {
+        vi.advanceTimersByTime(199);
+      });
+      expect(screen.queryByText("Loading…")).toBeNull();
+
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(screen.getByText("Loading…")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+
+    await act(async () => {
+      resolveRetry([]);
+    });
+    expect(await screen.findByText("No imports yet for this event.")).toBeTruthy();
+  });
+
   it("shows the mockup done screen after commit and 'Import another file' resets the flow", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());
@@ -747,12 +786,24 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
 
     expect(await screen.findByText("evt1.csv")).toBeTruthy();
 
-    await act(async () => {
-      await router.navigate("/admin/events/evt-2/attendees/import");
-    });
+    // useDelayedLoading only shows the text once the fetch has stayed pending past its
+    // 200ms grace window (avoids flashing it for a near-instant response) — fake timers
+    // must be installed before the navigation so the hook's setTimeout is one of ours.
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        await router.navigate("/admin/events/evt-2/attendees/import");
+      });
 
-    expect(screen.queryByText("evt1.csv")).toBeNull();
-    expect(screen.getByText("Loading…")).toBeTruthy();
+      expect(screen.queryByText("evt1.csv")).toBeNull();
+
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
+      expect(screen.getByText("Loading…")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
 
     await act(async () => {
       resolveSecond([

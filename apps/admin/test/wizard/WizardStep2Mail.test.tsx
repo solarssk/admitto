@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   MailPlainFieldDto,
@@ -93,6 +93,19 @@ afterEach(() => {
   cleanup();
   sessionStorage.clear();
   vi.clearAllMocks();
+  vi.useRealTimers();
+});
+
+describe("WizardStep2Mail delayed loading", () => {
+  it("shows the loading placeholder once the fetch has genuinely taken a moment", () => {
+    mockFetch.mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderStep();
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(screen.getByText("Loading mail settings…")).toBeTruthy();
+  });
 });
 
 describe("WizardStep2Mail test-send feedback", () => {

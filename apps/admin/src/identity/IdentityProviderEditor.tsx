@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useBlocker, useLocation, useNavigate, useParams, type BlockerFunction } from "react-router";
-import { Button, Card, IconButton, Input, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
+import { Button, Card, Input, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
   ApiError,
   createIdentityProvider,
@@ -17,6 +17,7 @@ import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import { IdentityMappingRepeater } from "./IdentityMappingRepeater.js";
+import { IdentityModalHeader } from "./IdentityModalHeader.js";
 import {
   emptyMappingRow,
   emptyProviderDraft,
@@ -426,15 +427,23 @@ export function IdentityProviderEditor({
   }, [dirty]);
 
   const handleCancel = useCallback(() => {
+    // A pending save has no abort/cancellation path (create/updateIdentityProvider are plain
+    // awaited fetches) - dismissing the modal mid-save would only hide it, not stop it, silently
+    // creating/updating the provider after the operator thought they'd discarded. Blocking every
+    // dismissal path (button, backdrop, close icon, Escape all funnel through this one function)
+    // while busy is simpler and safer than trying to cancel/ignore the in-flight mutation.
     if (isActionBusy(saving, testing, discovering)) return;
     if (dirty && !window.confirm("Discard unsaved changes?")) return;
     skipBlockRef.current = true;
     navigate(IDENTITY_PROVIDERS_ROUTE);
-  }, [dirty, navigate, saving, testing, discovering]);
+  }, [saving, testing, discovering, dirty, navigate]);
 
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
-  useModalFocusTrap(panelRef, true, handleCancel);
+  // Edit mode starts in loadState "loading" - its real form fields don't exist in the DOM
+  // until the fetch resolves, so initial focus must be re-attempted once loadState changes
+  // (create mode is already "ready" at mount, so this is a no-op there).
+  useModalFocusTrap(panelRef, true, handleCancel, loadState);
   const scrollRef = useRef<HTMLDivElement>(null);
   useOverscrollBounceGuard(scrollRef);
 
@@ -660,13 +669,15 @@ export function IdentityProviderEditor({
       {mode === "create" && (
         <div className="identity-protocol-picker" aria-label="Identity provider protocol">
           <span className="identity-protocol-tile identity-protocol-tile--active">
-            <i className="ti ti-shield-lock" aria-hidden="true" /> OpenID Connect
+            <i className="ti ti-shield-lock" aria-hidden="true" />{" "}
+            OpenID Connect
           </span>
           <span
             className="identity-protocol-tile identity-protocol-tile--disabled"
             title="SAML support is coming soon"
           >
-            <i className="ti ti-certificate" aria-hidden="true" /> SAML{" "}
+            <i className="ti ti-certificate" aria-hidden="true" />{" "}
+            SAML
             <span className="identity-protocol-tile__badge">Soon</span>
           </span>
         </div>
@@ -871,18 +882,13 @@ export function IdentityProviderEditor({
       <div className="identity-modal__backdrop" aria-hidden="true" />
       <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
         <div ref={scrollRef} className="identity-modal__scroll">
-          <div className="identity-editor__header">
-            <div className="identity-editor__header-row">
-              <h2 className="identity-editor__title" id={titleId}>{title}</h2>
-              <IconButton
-                label="Close"
-                onClick={handleCancel}
-                disabled={isActionBusy(saving, testing, discovering)}
-                icon={<i className="ti ti-x" />}
-              />
-            </div>
-            {view === "form" && <p className="identity-editor__subtitle">{editorSubtitle(mode)}</p>}
-          </div>
+          <IdentityModalHeader
+            titleId={titleId}
+            title={title}
+            subtitle={view === "form" ? editorSubtitle(mode) : undefined}
+            onClose={handleCancel}
+            closeDisabled={isActionBusy(saving, testing, discovering)}
+          />
           {view === "loading" && showLoadingSpinner && loadingContent}
           {view === "error" && errorContent}
           {view === "not_found" && notFoundContent}

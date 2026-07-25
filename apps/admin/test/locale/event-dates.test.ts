@@ -12,6 +12,8 @@ import {
   parseFlexibleCalendarDate,
   utcDayEndIso,
   utcDayStartIso,
+  zonedDayEndIso,
+  zonedDayStartIso,
 } from "../../src/utils/event-dates.js";
 import { setPreferredLocale } from "../../src/utils/locale-store.js";
 
@@ -93,6 +95,43 @@ describe("utcDayIso helpers", () => {
   it("utcDayStartIso and utcDayEndIso bound UTC calendar days", () => {
     expect(utcDayStartIso("2026-06-28")).toBe("2026-06-28T00:00:00.000Z");
     expect(utcDayEndIso("2026-06-28")).toBe("2026-06-28T23:59:59.999Z");
+  });
+});
+
+describe("zonedDayIso helpers (bot review)", () => {
+  it("passing through UTC matches the plain utcDay helpers", () => {
+    expect(zonedDayStartIso("2026-06-28", "UTC")).toBe(utcDayStartIso("2026-06-28"));
+    expect(zonedDayEndIso("2026-06-28", "UTC")).toBe(utcDayEndIso("2026-06-28"));
+  });
+
+  it("bounds a calendar day in a UTC-behind zone (America/New_York, EDT -4 in June)", () => {
+    expect(zonedDayStartIso("2026-06-15", "America/New_York")).toBe("2026-06-15T04:00:00.000Z");
+    expect(zonedDayEndIso("2026-06-15", "America/New_York")).toBe("2026-06-16T03:59:59.999Z");
+  });
+
+  it("bounds a calendar day in a UTC-ahead zone (Europe/Warsaw, CEST +2 in June)", () => {
+    expect(zonedDayStartIso("2026-06-15", "Europe/Warsaw")).toBe("2026-06-14T22:00:00.000Z");
+    expect(zonedDayEndIso("2026-06-15", "Europe/Warsaw")).toBe("2026-06-15T21:59:59.999Z");
+  });
+
+  it("uses the zone's own offset at that date, not a fixed one (DST: EST -5 in January)", () => {
+    expect(zonedDayStartIso("2026-01-15", "America/New_York")).toBe("2026-01-15T05:00:00.000Z");
+  });
+
+  it("resolves a local midnight that a spring-forward DST transition skips over, instead of landing on the previous day (bot review)", () => {
+    // Egypt's 2023 DST transition jumped clocks from 00:00 EET straight to 01:00 EEST, so
+    // 2023-04-28T00:00:00 local never existed. A one-pass correction returns 2023-04-27T21:00Z
+    // (23:00 the previous day locally) - the first instant that actually reads as April 28 is
+    // 2023-04-27T22:00Z (01:00, right after the gap).
+    expect(zonedDayStartIso("2023-04-28", "Africa/Cairo")).toBe("2023-04-27T22:00:00.000Z");
+  });
+
+  it("resolves a wall-clock time that exists but sits right before the same transition, using the correct (pre-transition) offset", () => {
+    // 2023-04-27T23:59:59.999 local isn't itself skipped (unlike the gap above), but a naive
+    // single-pass correction reads it against the *post*-transition offset anyway (the naive
+    // UTC guess for these digits already falls after the actual transition instant), landing an
+    // hour early at 2023-04-27T20:59:59.999Z instead of 21:59:59.999Z.
+    expect(zonedDayEndIso("2023-04-27", "Africa/Cairo")).toBe("2023-04-27T21:59:59.999Z");
   });
 });
 

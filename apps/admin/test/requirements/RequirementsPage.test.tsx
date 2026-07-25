@@ -96,6 +96,23 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
+});
+
+describe("RequirementsPage delayed loading (no-flash grace window)", () => {
+  it("never claims 'No items yet'/'No custom fields yet' during the first ~200ms of the very first load", () => {
+    // Regression test: EventItemsTableBody and EventCustomFieldsCard must gate their
+    // 3-way branch on the raw loading state, not the delayed flag alone — otherwise the
+    // pre-delay window (real fetch in flight, items/fields still their initial []) would
+    // fall straight through "Loading…" into the "confirmed empty" messages below.
+    fetchEventItems.mockImplementationOnce(() => new Promise(() => {}));
+    fetchOpsConfig.mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderPage();
+    // Deliberately not advancing timers — this is the pre-delay window.
+    expect(screen.queryByText("No items yet. Add one to configure what operators issue at check-in.")).toBeNull();
+    expect(screen.queryByText(/No custom fields yet/)).toBeNull();
+  });
 });
 
 describe("RequirementsPage load failure", () => {

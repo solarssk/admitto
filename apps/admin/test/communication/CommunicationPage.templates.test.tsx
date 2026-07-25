@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { CommunicationPage } from "../../src/pages/CommunicationPage.js";
@@ -189,6 +189,19 @@ afterEach(() => {
   previewEventTemplateById.mockReset();
   saveEventTemplateById.mockReset();
   testSendEventTemplateById.mockReset();
+  vi.useRealTimers();
+});
+
+describe("CommunicationPage delayed loading", () => {
+  it("shows the loading placeholder once the fetch has genuinely taken a moment", () => {
+    fetchEventTemplates.mockImplementation(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderPage();
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(screen.getByText("Loading communication…")).toBeTruthy();
+  });
 });
 
 describe("CommunicationPage templates", () => {

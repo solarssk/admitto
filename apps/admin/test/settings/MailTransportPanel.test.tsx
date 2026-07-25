@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MailTransportPanel } from "../../src/settings/MailTransportPanel.js";
 import { renderWithToast } from "../test-utils.js";
@@ -148,6 +148,19 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
+});
+
+describe("MailTransportPanel delayed loading", () => {
+  it("shows the loading placeholder once the fetch has genuinely taken a moment", () => {
+    mockFetch.mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderWithToast(<MailTransportPanel />);
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(screen.getByText("Loading mail settings…")).toBeTruthy();
+  });
 });
 
 describe("MailTransportPanel — provider rendering (#406/#408/#409)", () => {

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, renderHook } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useModalFocusTrap } from "../../src/components/useModalFocusTrap.js";
+import { useRef, useState } from "react";
 
 function makePanel(): HTMLDivElement {
   const panel = document.createElement("div");
@@ -58,5 +59,43 @@ describe("useModalFocusTrap", () => {
     fireEvent.keyDown(document, { key: "Escape" });
 
     expect(onCancel).not.toHaveBeenCalled();
+  });
+});
+
+describe("useModalFocusTrap focusWhenReady", () => {
+  it("re-attempts initial focus once async content becomes ready, instead of only trying once at mount when nothing was focusable yet", () => {
+    // Regression test: a panel that mounts before its real content has loaded (e.g. an
+    // always-routed editor showing a spinner first) found nothing focusable at mount and
+    // never tried again — passing the value that flips once content exists as `focusWhenReady`
+    // must make the hook re-attempt focus then.
+    let triggerReady: (() => void) | null = null;
+
+    function AsyncPanel() {
+      const panelRef = useRef<HTMLDivElement>(null);
+      const [ready, setReady] = useState(false);
+      useModalFocusTrap(panelRef, true, vi.fn(), ready);
+      triggerReady = () => setReady(true);
+      return (
+        <div ref={panelRef}>
+          {ready ? <button id="real">Real content</button> : <span>Loading…</span>}
+        </div>
+      );
+    }
+
+    render(<AsyncPanel />);
+    expect(document.activeElement).not.toBe(document.querySelector("#real"));
+
+    act(() => {
+      triggerReady?.();
+    });
+
+    expect(document.activeElement).toBe(document.querySelector("#real"));
+  });
+
+  it("still only focuses once at mount when focusWhenReady is omitted (existing callers unaffected)", () => {
+    const panel = makePanel();
+    renderHook(() => useModalFocusTrap({ current: panel }, true, vi.fn()));
+
+    expect(document.activeElement).toBe(panel.querySelector("#first"));
   });
 });

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import { RouterProvider } from "react-router/dom";
@@ -74,9 +74,32 @@ const emptyCf = () => ({
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
 });
 
 describe("IdentityProvidersPanel", () => {
+  it("shows the providers skeleton once the fetch has genuinely taken a moment", () => {
+    mockProviders.mockImplementationOnce(() => new Promise(() => {}));
+    mockCf.mockResolvedValueOnce(emptyCf());
+    vi.useFakeTimers();
+    const { container } = renderPanel();
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(container.querySelector(".identity-providers__skeleton")).toBeTruthy();
+  });
+
+  it("shows the Cloudflare Access skeleton once the fetch has genuinely taken a moment", () => {
+    mockProviders.mockResolvedValueOnce({ providers: [] });
+    mockCf.mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    const { container } = renderPanel();
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(container.querySelector(".at-skeleton")).toBeTruthy();
+  });
+
   it("renders provider rows and CF summary after load", async () => {
     mockProviders.mockResolvedValueOnce({
       providers: [

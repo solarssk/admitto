@@ -30,6 +30,7 @@ import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { formatEventDateTime } from "../utils/event-dates.js";
 import { formatFileSize } from "../utils/formatFileSize.js";
 import "../attendees/attendees.css";
@@ -131,12 +132,13 @@ interface ImportHistoryCardProps {
   error: string | null;
   eventTimezone: string | undefined;
   onRetry: () => void;
+  showLoading: boolean;
 }
 
 /** One state at a time (error takes priority, then loading, then empty, then the table) — a
  * plain if/return chain instead of nested ternaries (Sonar S3358), which also reads closer to
  * how an operator actually encounters these: never more than one at once. */
-function renderImportHistoryBody({ history, error, eventTimezone, onRetry }: ImportHistoryCardProps) {
+function renderImportHistoryBody({ history, error, eventTimezone, onRetry, showLoading }: ImportHistoryCardProps) {
   if (error) {
     return (
       <div className="import-history__error">
@@ -148,7 +150,10 @@ function renderImportHistoryBody({ history, error, eventTimezone, onRetry }: Imp
     );
   }
   if (history === null) {
-    return <p className="import-hint import-history__loading">Loading…</p>;
+    // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
+    // this text on and off faster than it can register as "loading" — show it only once the
+    // fetch has genuinely taken a moment.
+    return showLoading ? <p className="import-hint import-history__loading">Loading…</p> : null;
   }
   if (history.length === 0) {
     return <p className="import-hint">No imports yet for this event.</p>;
@@ -656,6 +661,8 @@ export function ImportPage() {
   const [history, setHistory] = useState<ImportHistoryEntry[] | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [historyToken, setHistoryToken] = useState(0);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const showHistoryLoading = useDelayedLoading(historyLoading);
 
   useEffect(() => {
     if (!eventId) return;
@@ -682,11 +689,19 @@ export function ImportPage() {
     // another's — reset to the loading state so the previous event's history can't flash under
     // the new event's timezone while this fetch is in flight (CodeRabbit review).
     setHistory(null);
+    // A dedicated in-flight flag, not `history === null` - that stays true across a failed
+    // fetch (history is never set) all the way through a subsequent Retry, so its rising edge
+    // only ever fires once and useDelayedLoading's no-flash window never gets a fresh start on
+    // retry (bot review).
+    setHistoryLoading(true);
     fetchImportHistory(eventId, ac.signal)
       .then((items) => setHistory(items))
       .catch((err) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
         setHistoryError("Couldn't load import history.");
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setHistoryLoading(false);
       });
     return () => ac.abort();
   }, [eventId, historyToken]);
@@ -999,6 +1014,7 @@ export function ImportPage() {
               error={historyError}
               eventTimezone={event.timezone}
               onRetry={() => setHistoryToken((n) => n + 1)}
+              showLoading={showHistoryLoading}
             />
           </div>
         </div>

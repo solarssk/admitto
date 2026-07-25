@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuditLogEntryDto, AuditLogResponse, SessionListDto } from "../../src/api/types.js";
 import { ApiError, fetchAdminEvents, fetchAuditLog, fetchSessions } from "../../src/api/client.js";
 import { AuditLogPanel } from "../../src/settings/AuditLogPanel.js";
 import { SessionsPanel } from "../../src/settings/SessionsPanel.js";
 import { renderWithToast } from "../test-utils.js";
+import { zonedDayEndIso, zonedDayStartIso } from "../../src/utils/event-dates.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -183,6 +184,121 @@ describe("AuditLogPanel rendering", () => {
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
   });
 
+  it("recomputes the viewer's timezone on each use instead of caching it once at module load (Sonar/PO review)", async () => {
+    // A module-level `const VIEWER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone`
+    // would only ever call the zero-arg Intl.DateTimeFormat() once, at first import - stale
+    // for the rest of a long-lived session if the browser's timezone changes. Recomputing it
+    // per use means a second visit to "Local" mode makes a fresh zero-arg call.
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [makeAuditEntry()],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+    const spy = vi.spyOn(Intl, "DateTimeFormat");
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByRole("table");
+
+    const localRadio = screen.getByRole("radio", { name: "Local" });
+    const utcRadio = screen.getByRole("radio", { name: "UTC" });
+
+    fireEvent.click(localRadio);
+    // Switching time mode also reloads (the date filters need to reload in the newly-selected
+    // zone too) - await the table reappearing so the reload settles before counting, instead of
+    // catching mid-flight state with nothing rendered yet.
+    await screen.findByRole("table");
+    const zeroArgCallsAfterFirstToggle = spy.mock.calls.filter((args) => args.length === 0).length;
+    expect(zeroArgCallsAfterFirstToggle).toBeGreaterThan(0);
+
+    fireEvent.click(utcRadio);
+    await screen.findByRole("table");
+    fireEvent.click(localRadio);
+    await screen.findByRole("table");
+    const zeroArgCallsAfterSecondToggle = spy.mock.calls.filter((args) => args.length === 0).length;
+    expect(zeroArgCallsAfterSecondToggle).toBeGreaterThan(zeroArgCallsAfterFirstToggle);
+
+    spy.mockRestore();
+  });
+
+  it("resets to page 1 once a retried page no longer exists against the current total", async () => {
+    // Page 1 loads fine; the page-2 request fails (server-side data shrank in the
+    // meantime), so Retry re-issues the *same* page-2 request rather than a filter
+    // change resetting the page itself — the only way `load()` ever re-runs with
+    // an unchanged `page` that's now beyond the new total.
+    vi.mocked(fetchAuditLog).mockResolvedValueOnce({
+      entries: [makeAuditEntry({ id: "audit-p1" })],
+      total: 30,
+      page: 1,
+      pageSize: 25,
+    });
+    vi.mocked(fetchAuditLog).mockRejectedValueOnce(new Error("network hiccup"));
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByRole("table");
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    const retry = await screen.findByRole("button", { name: "Retry" });
+
+    vi.mocked(fetchAuditLog).mockResolvedValueOnce({
+      entries: [],
+      total: 5,
+      page: 2,
+      pageSize: 25,
+    });
+    vi.mocked(fetchAuditLog).mockResolvedValueOnce({
+      entries: [makeAuditEntry({ id: "audit-narrowed" })],
+      total: 5,
+      page: 1,
+      pageSize: 25,
+    });
+    fireEvent.click(retry);
+
+    await waitFor(() => {
+      expect(screen.getByText("Page 1 of 1 (5 total)")).toBeTruthy();
+    });
+  });
+
+  it("computes date filter bounds in the selected zone, not always UTC (bot review)", async () => {
+    // Local mode changes what timestamps look like, but the From/To bounds sent to the server
+    // must shift with it too - otherwise a displayed "Local" day doesn't match what's actually
+    // filtered (adjacent-day records included/excluded near the boundary).
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByText("No audit log entries found.");
+
+    fireEvent.click(screen.getByRole("radio", { name: "Local" }));
+    await waitFor(() => expect(fetchAuditLog).toHaveBeenLastCalledWith(
+      expect.objectContaining({ start: undefined, end: undefined }),
+      expect.anything(),
+    ));
+
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-06-15" } });
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-06-15" } });
+
+    const viewerTz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    await waitFor(() => {
+      expect(fetchAuditLog).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          start: zonedDayStartIso("2026-06-15", viewerTz),
+          end: zonedDayEndIso("2026-06-15", viewerTz),
+        }),
+        expect.anything(),
+      );
+    });
+  });
+
+  it("falls back to the raw action_type string for an action outside the known label map", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [makeAuditEntry({ action_type: "some_future_action" })],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderWithToast(<AuditLogPanel />);
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("some_future_action")).toBeTruthy();
+  });
   it("falls back to the actor's email, then to a deleted-user label, when the display name is missing", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue({
       entries: [
@@ -206,6 +322,45 @@ describe("AuditLogPanel rendering", () => {
     expect(within(rows[0]!).getByText("alice@example.com")).toBeTruthy();
     const deletedCell = within(rows[1]!).getByText("Deleted user").closest("td");
     expect(deletedCell?.getAttribute("title")).toBe("user-ghost");
+  });
+
+  it("bails out of the in-flight request without touching state once the component has unmounted (resolve race)", async () => {
+    let resolveFetch: (value: AuditLogResponse) => void = () => {};
+    vi.mocked(fetchAuditLog).mockImplementationOnce(
+      () => new Promise<AuditLogResponse>((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { unmount } = renderWithToast(<AuditLogPanel />);
+    unmount();
+
+    // Resolving after unmount races the effect cleanup's abort — must not throw, and a broken
+    // abort guard would otherwise surface as React's "state update on an unmounted component"
+    // console.error.
+    resolveFetch(emptyAuditLog());
+    await Promise.resolve();
+
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("bails out of the in-flight request without touching state once the component has unmounted (reject race)", async () => {
+    let rejectFetch: (err: unknown) => void = () => {};
+    vi.mocked(fetchAuditLog).mockImplementationOnce(
+      () => new Promise<AuditLogResponse>((_resolve, reject) => {
+        rejectFetch = reject;
+      }),
+    );
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { unmount } = renderWithToast(<AuditLogPanel />);
+    unmount();
+
+    rejectFetch(new Error("network error after unmount"));
+    await Promise.resolve();
+
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
   });
 
   it("shows the viewer's local timezone label after switching the Time column to Local", async () => {

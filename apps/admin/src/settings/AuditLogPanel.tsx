@@ -6,11 +6,24 @@ import type { AuditLogEntryDto } from "../api/types.js";
 import { Segmented } from "../components/Segmented.js";
 import { useClickOutside } from "../components/useClickOutside.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
-import { formatEventDateTime, formatUtcDateTime, utcDayEndIso, utcDayStartIso } from "../utils/event-dates.js";
+import {
+  formatEventDateTime,
+  formatUtcDateTime,
+  utcDayEndIso,
+  utcDayStartIso,
+  zonedDayEndIso,
+  zonedDayStartIso,
+} from "../utils/event-dates.js";
 
 type TimeMode = "utc" | "local";
 
-const VIEWER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+/** Not cached at module scope - recomputed on every call so a timezone change during a
+ * long-lived session (e.g. resuming a laptop from sleep while traveling) is reflected
+ * without needing a page reload. */
+function viewerTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
 const TIME_MODE_OPTIONS: ReadonlyArray<{ value: TimeMode; label: string }> = [
   { value: "utc", label: "UTC" },
   { value: "local", label: "Local" },
@@ -57,12 +70,25 @@ const PAGE_SIZE = 25;
 
 /** Format an ISO timestamp for the audit log table in the selected time mode. */
 function formatTimestamp(iso: string, mode: TimeMode): string {
-  return mode === "utc" ? formatUtcDateTime(iso) : formatEventDateTime(iso, VIEWER_TZ);
+  return mode === "utc" ? formatUtcDateTime(iso) : formatEventDateTime(iso, viewerTimeZone());
 }
 
 /** Short label for the viewer's local timezone (e.g. "Warsaw" from "Europe/Warsaw"). */
 function viewerTzLabel(): string {
-  return VIEWER_TZ.split("/").pop()?.replaceAll("_", " ") ?? VIEWER_TZ;
+  const tz = viewerTimeZone();
+  return tz.split("/").pop()?.replaceAll("_", " ") ?? tz;
+}
+
+/** Start/end bounds for a `From`/`To` date filter, computed in whichever zone the Time column
+ * is currently displaying - otherwise a "Local" date picked in the UI (e.g. an America/New_York
+ * calendar day) would still be sent to the server as a UTC calendar day, filtering out records
+ * near the day's actual boundary and including ones from the adjacent UTC day instead. */
+function filterDayStartIso(yyyyMmDd: string, mode: TimeMode): string {
+  return mode === "utc" ? utcDayStartIso(yyyyMmDd) : zonedDayStartIso(yyyyMmDd, viewerTimeZone());
+}
+
+function filterDayEndIso(yyyyMmDd: string, mode: TimeMode): string {
+  return mode === "utc" ? utcDayEndIso(yyyyMmDd) : zonedDayEndIso(yyyyMmDd, viewerTimeZone());
 }
 
 /** Primary actor label; deleted users show a readable fallback (id in cell title). */
@@ -202,8 +228,8 @@ export function AuditLogPanel() {
           page,
           pageSize: PAGE_SIZE,
           actionType: filters.actionType || undefined,
-          start: filters.start ? utcDayStartIso(filters.start) : undefined,
-          end: filters.end ? utcDayEndIso(filters.end) : undefined,
+          start: filters.start ? filterDayStartIso(filters.start, timeMode) : undefined,
+          end: filters.end ? filterDayEndIso(filters.end, timeMode) : undefined,
         },
         ac.signal,
       );
@@ -224,7 +250,7 @@ export function AuditLogPanel() {
     } finally {
       if (!ac.signal.aborted) setLoading(false);
     }
-  }, [page, filters.actionType, filters.start, filters.end]);
+  }, [page, filters.actionType, filters.start, filters.end, timeMode]);
 
   useEffect(() => {
     void load();

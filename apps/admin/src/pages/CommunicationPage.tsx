@@ -51,6 +51,7 @@ import type {
   MailTemplateListItem,
 } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
+import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { CommunicationSendDialog } from "../communication/CommunicationSendDialog.js";
@@ -1557,8 +1558,14 @@ export function CommunicationPage() {
     }
   };
 
+  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
+  // these "Loading…" placeholders on and off faster than they can register as loading —
+  // show them only once the fetch has genuinely taken a moment.
+  const showLoading = useDelayedLoading(loading);
+  const showDeliveriesLoading = useDelayedLoading(deliveriesLoading);
+
   if (!eventId) return <p>Missing event.</p>;
-  if (loading) return <p>Loading communication…</p>;
+  if (loading) return whenShown(showLoading, <p>Loading communication…</p>);
   if (error) return <p>{error}</p>;
 
   const deliveryPages = Math.max(1, Math.ceil(deliveryTotal / DELIVERY_PAGE_SIZE));
@@ -1570,7 +1577,10 @@ export function CommunicationPage() {
 
   let deliveryLogContent: ReactNode;
   if (deliveriesLoading) {
-    deliveryLogContent = <div className="communication-empty">Loading deliveries…</div>;
+    deliveryLogContent = whenShown(
+      showDeliveriesLoading,
+      <div className="communication-empty">Loading deliveries…</div>,
+    );
   } else if (deliveriesError) {
     deliveryLogContent = <div className="communication-empty">{deliveriesError}</div>;
   } else if (deliveries.length === 0) {

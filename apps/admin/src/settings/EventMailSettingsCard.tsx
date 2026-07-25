@@ -13,6 +13,7 @@ import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { Segmented } from "../components/Segmented.js";
+import { whenShown } from "../hooks/useDelayedLoading.js";
 import {
   buildSaveMailSettingsBody,
   emptyMailDraft,
@@ -125,6 +126,7 @@ export function EventMailSettingsCard({
     setSavedDraft,
     loading,
     setLoading,
+    showLoading,
     loadError,
     setLoadError,
     validationErrors,
@@ -322,10 +324,11 @@ export function EventMailSettingsCard({
   };
 
   if (loading) {
-    return (
+    return whenShown(
+      showLoading,
       <Card title="Mail transport">
         <p>Loading mail settings…</p>
-      </Card>
+      </Card>,
     );
   }
 

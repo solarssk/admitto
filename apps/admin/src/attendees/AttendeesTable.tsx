@@ -15,6 +15,7 @@ import {
 } from "../components/ArchivedGuard.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
+import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { MailStatusBadge } from "./mailStatusBadge.js";
 import { PassStatusBadge } from "./passStatusBadge.js";
@@ -1104,8 +1105,12 @@ function AttendeesListContent({
   // Only the very first load ever (never-loaded, items always [] at that point) gets the
   // shimmer skeleton. A later filter/search that also lands on zero matches reuses the same
   // dim-in-place treatment as a non-empty refetch instead of flashing the skeleton again.
+  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash the
+  // skeleton on and off faster than it can register as loading — show it only once the fetch
+  // has genuinely taken a moment.
+  const showLoadingSkeleton = useDelayedLoading(loading && !hasLoadedOnce);
   if (loading && !hasLoadedOnce) {
-    return isDesktop ? <AttendeesTableSkeleton /> : <AttendeesCardsSkeleton />;
+    return whenShown(showLoadingSkeleton, isDesktop ? <AttendeesTableSkeleton /> : <AttendeesCardsSkeleton />);
   }
 
   if (items.length === 0) {
@@ -1265,8 +1270,17 @@ function AttendeesListContent({
   );
 }
 
-function footSummary(loading: boolean, items: AttendeeRowDto[], total: number, from: number, to: number): string {
-  if (loading && items.length === 0) return "Loading…";
+/** "0 attendees" is a confirmed-empty claim, not a loading placeholder — it must never render
+ * while the first fetch (which "total" hasn't been set from yet) is still in flight, even during
+ * the no-flash grace window before showLoadingText itself flips true (Sonar/PO review). */
+function footSummary(
+  isInitialLoad: boolean,
+  showLoadingText: boolean,
+  total: number,
+  from: number,
+  to: number,
+): string {
+  if (isInitialLoad) return showLoadingText ? "Loading…" : "";
   if (total === 0) return "0 attendees";
   return `Showing ${from}–${to} of ${total}`;
 }
@@ -1368,6 +1382,13 @@ export function AttendeesTable({
   const activeSelectedPassCount = selectedRows.filter(
     (row) => row.status !== "cancelled" && row.status !== "revoked",
   ).length;
+  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
+  // this text on and off faster than it can register as loading — show it only once the
+  // fetch has genuinely taken a moment. isInitialLoad itself (not the delayed derivative)
+  // gates footSummary's 3-way branch so a fast response never renders "0 attendees" against
+  // a "total" that hasn't been set from a real response yet.
+  const isInitialLoad = loading && items.length === 0;
+  const showFooterLoadingText = useDelayedLoading(isInitialLoad);
 
   return (
     <Card padded={false}>
@@ -1448,7 +1469,7 @@ export function AttendeesTable({
         onRestorePass={onRestorePass}
       />
       <div className="attendees-table-foot">
-        <span>{footSummary(loading, items, total, from, to)}</span>
+        <span>{footSummary(isInitialLoad, showFooterLoadingText, total, from, to)}</span>
         <div className="attendees-table-foot__pager">
           <div className="attendees-table-foot__pagesize">
             <label htmlFor="attendees-rows-per-page">Rows per page</label>

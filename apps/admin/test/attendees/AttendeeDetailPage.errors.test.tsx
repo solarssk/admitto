@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { ApiError } from "../../src/api/client.js";
@@ -88,9 +88,20 @@ function renderPage() {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
 });
 
 describe("AttendeeDetailPage operator errors", () => {
+  it("shows the loading skeleton once the fetch has genuinely taken a moment", () => {
+    loadAttendeeDetailData.mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderPage();
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(document.querySelector(".attendee-detail-skeleton")).toBeTruthy();
+  });
+
   it("shows load failure", async () => {
     loadAttendeeDetailData.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderPage();

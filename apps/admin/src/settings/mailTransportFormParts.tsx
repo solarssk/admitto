@@ -14,6 +14,7 @@ import type {
   MailTransportTestSendResponse,
 } from "../api/types.js";
 import { ApiError } from "../api/client.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { emptyMailDraft, emptySecretEdits, type MailDraft, type SecretEdits } from "./mailSettingsValidation.js";
 import { buildMailProviderOptions, MAIL_PROVIDER_LABELS } from "./mailProviderOptions.js";
@@ -962,6 +963,11 @@ export function useMailSettingsFormState() {
     setSecrets(updater);
   };
 
+  // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
+  // the "Loading…" text on and off faster than it can register as loading — show it only
+  // once the fetch has genuinely taken a moment.
+  const showLoading = useDelayedLoading(loading);
+
   return {
     draft,
     setDraft,
@@ -971,6 +977,7 @@ export function useMailSettingsFormState() {
     setSavedDraft,
     loading,
     setLoading,
+    showLoading,
     loadError,
     setLoadError,
     validationErrors,
