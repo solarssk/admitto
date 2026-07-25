@@ -1243,9 +1243,10 @@ export async function deleteTicketType(eventId: string, typeId: string): Promise
 
 type AttendeeExportFormat = "xlsx" | "csv" | "pdf";
 
-/** Shared by both export entry points: validates the response, then triggers the browser
- * download from the returned blob. */
-async function downloadExportResponse(res: Response, format: AttendeeExportFormat): Promise<void> {
+/** Shared by every export entry point: validates the response, then triggers the browser
+ * download from the returned blob. `fallbackFilename` is only used if the server response is
+ * somehow missing its Content-Disposition header. */
+export async function downloadExportResponse(res: Response, fallbackFilename: string): Promise<void> {
   if (!res.ok) {
     let message = `HTTP ${res.status}`;
     try {
@@ -1260,7 +1261,7 @@ async function downloadExportResponse(res: Response, format: AttendeeExportForma
   const blob = await res.blob();
   const disposition = res.headers.get("Content-Disposition") ?? "";
   const match = /filename="([^"]+)"/.exec(disposition);
-  const filename = match?.[1] ?? `attendees.${format}`;
+  const filename = match?.[1] ?? fallbackFilename;
 
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -1296,7 +1297,7 @@ export async function exportAttendees(
     `/api/admin/events/${encodeURIComponent(eventId)}/attendees/export?${urlParams.toString()}`,
     { credentials: "same-origin", signal },
   );
-  await downloadExportResponse(res, format);
+  await downloadExportResponse(res, `attendees.${format}`);
 }
 
 /** Explicit-selection export (bulk bar's "Export selected") — a POST with the ids in the JSON
@@ -1313,7 +1314,7 @@ export async function exportSelectedAttendees(
     ...jsonPostInit({ attendee_ids: attendeeIds, format }),
     signal,
   });
-  await downloadExportResponse(res, format);
+  await downloadExportResponse(res, `attendees.${format}`);
 }
 
 /** Load instance mail transport settings (superadmin). */
@@ -1568,30 +1569,48 @@ export async function completeSetup(): Promise<{ setup_complete: boolean }> {
   return parseJson<{ setup_complete: boolean }>(res);
 }
 
-/** Load paginated instance admin audit log (superadmin). Pass ISO instants for date bounds (local-day from UI). */
-export async function fetchAuditLog(
-  params: {
-    page?: number;
-    pageSize?: number;
-    actionType?: string;
-    start?: string;
-    end?: string;
-  },
-  signal?: AbortSignal,
-): Promise<AuditLogResponse> {
+type AuditLogFilterParams = {
+  actionType?: string;
+  eventId?: string;
+  start?: string;
+  end?: string;
+};
+
+function auditLogQuery(params: AuditLogFilterParams): URLSearchParams {
   const q = new URLSearchParams();
-  if (params.page != null) q.set("page", String(params.page));
-  if (params.pageSize != null) q.set("pageSize", String(params.pageSize));
   if (params.actionType) q.set("action_type", params.actionType);
+  if (params.eventId) q.set("event_id", params.eventId);
   if (params.start) q.set("start", params.start);
   if (params.end) q.set("end", params.end);
+  return q;
+}
+
+/** Load paginated instance admin audit log (superadmin). Pass ISO instants for date bounds (local-day from UI). */
+export async function fetchAuditLog(
+  params: AuditLogFilterParams & { page?: number; pageSize?: number },
+  signal?: AbortSignal,
+): Promise<AuditLogResponse> {
+  const q = auditLogQuery(params);
+  if (params.page != null) q.set("page", String(params.page));
+  if (params.pageSize != null) q.set("pageSize", String(params.pageSize));
   const qs = q.toString();
-  const queryPart = qs ? `?${qs}` : "";
-  const res = await fetch(`/api/admin/audit-log${queryPart}`, {
+  const res = await fetch(`/api/admin/audit-log${qs ? `?${qs}` : ""}`, {
     credentials: "same-origin",
     signal,
   });
   return parseJson<AuditLogResponse>(res);
+}
+
+/** Export the (filtered) instance admin audit log as CSV — same filters as fetchAuditLog, but
+ * every matching row, not just the current page. */
+export async function exportAuditLog(params: AuditLogFilterParams, signal?: AbortSignal): Promise<void> {
+  const q = auditLogQuery(params);
+  q.set("format", "csv");
+  const res = await fetch(`/api/admin/audit-log/export?${q.toString()}`, {
+    credentials: "same-origin",
+    signal,
+  });
+  await downloadExportResponse(res, "audit-log.csv");
 }
 
 export async function fetchAccount(signal?: AbortSignal): Promise<AccountDto> {

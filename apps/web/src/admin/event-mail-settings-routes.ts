@@ -183,6 +183,7 @@ export async function handlePutEventMailSettings(c: Context, db: PrismaClient): 
         actorUserId: audit.operator!,
         sessionId: audit.sessionId,
         ip: audit.ip,
+        timezone: audit.timezone,
         actionType: "event_mail_settings_updated",
         metadata: {
           eventId,
@@ -233,6 +234,7 @@ export async function handleDeleteEventMailSettings(c: Context, db: PrismaClient
       actorUserId: audit.operator!,
       sessionId: audit.sessionId,
       ip: audit.ip,
+      timezone: audit.timezone,
       actionType: "event_mail_settings_cleared",
       metadata: { eventId },
     });
@@ -284,6 +286,7 @@ export async function handlePostEventMailSettingsTest(
       actorUserId: audit.operator!,
       sessionId: audit.sessionId,
       ip: audit.ip,
+      timezone: audit.timezone,
       actionType: "event_mail_transport_tested",
       metadata: { eventId, result: outcome.resultStatus },
     });

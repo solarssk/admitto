@@ -361,7 +361,7 @@ export function SystemStatus({
                 className="user-menu__item"
                 onClick={() => {
                   close();
-                  navigate(`${SETTINGS_INDEX_PATH}?tab=security`);
+                  navigate(`${SETTINGS_INDEX_PATH}?tab=logs`);
                 }}
               >
                 <span className="user-menu__item-icon">

@@ -57,6 +57,7 @@ export async function handlePatchEventNote(c: Context, db: PrismaClient): Promis
     actorUserId: audit.operator!,
     sessionId: audit.sessionId,
     ip: audit.ip,
+    timezone: audit.timezone,
     actionType: note ? "event_pinned_note_set" : "event_pinned_note_cleared",
     metadata: { eventId },
   });
@@ -107,6 +108,7 @@ export async function handleCreateContact(c: Context, db: PrismaClient): Promise
     actorUserId: audit.operator!,
     sessionId: audit.sessionId,
     ip: audit.ip,
+    timezone: audit.timezone,
     actionType: "event_contact_created",
     metadata: { eventId, contactId: contact.id, name: contact.name },
   });
@@ -161,6 +163,7 @@ export async function handleUpdateContact(c: Context, db: PrismaClient): Promise
       actorUserId: audit.operator!,
       sessionId: audit.sessionId,
       ip: audit.ip,
+      timezone: audit.timezone,
       actionType: "event_contact_updated",
       metadata: { eventId, contactId, name: contact.name },
     });
@@ -202,6 +205,7 @@ export async function handleDeleteContact(c: Context, db: PrismaClient): Promise
     actorUserId: audit.operator!,
     sessionId: audit.sessionId,
     ip: audit.ip,
+    timezone: audit.timezone,
     actionType: "event_contact_deleted",
     metadata: { eventId, contactId, name: existing.name },
   });
@@ -258,6 +262,7 @@ export async function handleCreateResource(c: Context, db: PrismaClient): Promis
     actorUserId: audit.operator!,
     sessionId: audit.sessionId,
     ip: audit.ip,
+    timezone: audit.timezone,
     actionType: "event_resource_created",
     metadata: { eventId, resourceId: resource.id, title: resource.title, type: resource.type },
   });
@@ -330,6 +335,7 @@ export async function handleUpdateResource(c: Context, db: PrismaClient): Promis
       actorUserId: audit.operator!,
       sessionId: audit.sessionId,
       ip: audit.ip,
+      timezone: audit.timezone,
       actionType: "event_resource_updated",
       metadata: { eventId, resourceId, title: resource.title },
     });
@@ -371,6 +377,7 @@ export async function handleDeleteResource(c: Context, db: PrismaClient): Promis
     actorUserId: audit.operator!,
     sessionId: audit.sessionId,
     ip: audit.ip,
+    timezone: audit.timezone,
     actionType: "event_resource_deleted",
     metadata: { eventId, resourceId, title: existing.title },
   });

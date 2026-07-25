@@ -180,6 +180,7 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
         actorUserId: audit.operator ?? auth.userId,
         sessionId: audit.sessionId,
         ip: audit.ip,
+        timezone: audit.timezone,
         actionType: "event_created",
         metadata: { eventId: created.id, title: created.title, slug: created.slug },
       });

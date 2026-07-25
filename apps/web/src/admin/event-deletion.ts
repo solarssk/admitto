@@ -120,6 +120,7 @@ export async function deleteEvent(
   actor: DeleteActor,
   ip: string | null | undefined,
   sessionId: string | null | undefined,
+  timezone?: string | null,
 ): Promise<DeleteEventResult> {
   try {
     return await db.$transaction(async (tx): Promise<DeleteEventResult> => {
@@ -157,6 +158,7 @@ export async function deleteEvent(
         actorUserId: actor.userId,
         sessionId,
         ip,
+        timezone,
         actionType: "event_deleted",
         metadata: { eventId },
       });
@@ -187,7 +189,14 @@ export async function handleDeleteEvent(c: Context, db: PrismaClient): Promise<R
   const audit = requireAuditActor(c);
   if (audit instanceof Response) return audit;
 
-  const result = await deleteEvent(db, eventId, { userId: audit.operator }, audit.ip, audit.sessionId);
+  const result = await deleteEvent(
+    db,
+    eventId,
+    { userId: audit.operator },
+    audit.ip,
+    audit.sessionId,
+    audit.timezone,
+  );
 
   if ("code" in result) {
     if (result.code === "not_found") return c.json({ error: "not_found" }, 404);

@@ -37,6 +37,7 @@ export async function archiveEvent(
   actor: ArchiveActor,
   ip: string | null | undefined,
   sessionId: string | null | undefined,
+  timezone?: string | null,
 ): Promise<ArchiveDomainResult> {
   try {
     const outcome = await db.$transaction(async (tx) => {
@@ -57,6 +58,7 @@ export async function archiveEvent(
         actorUserId: actor.userId,
         sessionId,
         ip,
+        timezone,
         actionType: "event_archived",
         metadata: { eventId },
       });
@@ -82,6 +84,7 @@ export async function unarchiveEvent(
   actor: ArchiveActor,
   ip: string | null | undefined,
   sessionId: string | null | undefined,
+  timezone?: string | null,
 ): Promise<UnarchiveDomainResult> {
   try {
     const outcome = await db.$transaction(async (tx) => {
@@ -102,6 +105,7 @@ export async function unarchiveEvent(
         actorUserId: actor.userId,
         sessionId,
         ip,
+        timezone,
         actionType: "event_unarchived",
         metadata: { eventId },
       });
@@ -167,7 +171,14 @@ export async function handlePostArchiveEvent(c: Context, db: PrismaClient): Prom
   const audit = requireAuditActor(c);
   if (audit instanceof Response) return audit;
 
-  const result = await archiveEvent(db, eventId, { userId: audit.operator }, audit.ip, audit.sessionId);
+  const result = await archiveEvent(
+    db,
+    eventId,
+    { userId: audit.operator },
+    audit.ip,
+    audit.sessionId,
+    audit.timezone,
+  );
 
   if ("code" in result) {
     if (result.code === "not_found") return c.json({ error: "not_found" }, 404);
@@ -190,7 +201,14 @@ export async function handlePostUnarchiveEvent(c: Context, db: PrismaClient): Pr
   const audit = requireAuditActor(c);
   if (audit instanceof Response) return audit;
 
-  const result = await unarchiveEvent(db, eventId, { userId: audit.operator }, audit.ip, audit.sessionId);
+  const result = await unarchiveEvent(
+    db,
+    eventId,
+    { userId: audit.operator },
+    audit.ip,
+    audit.sessionId,
+    audit.timezone,
+  );
 
   if ("code" in result) {
     if (result.code === "not_found") return c.json({ error: "not_found" }, 404);

@@ -376,6 +376,9 @@ model AdminAuditLog {
   ip              String?
   session_id      String?
   created_at      DateTime @default(now())
+  // Actor's IANA timezone at write time — null for rows predating this column or written
+  // outside a browser request. Mirrors AttendeeActionLog.client_timezone.
+  actor_timezone  String?
 
   @@index([organization_id, created_at(sort: Desc)])
 }

@@ -326,6 +326,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
         actorUserId: audit.operator!,
         sessionId: audit.sessionId,
         ip: audit.ip,
+        timezone: audit.timezone,
         actionType: "event_updated",
         metadata: { eventId, fields: changedFields },
       });
@@ -435,6 +436,7 @@ export async function handleExportEventPii(c: Context, db: PrismaClient): Promis
     actorUserId: audit.operator,
     sessionId: audit.sessionId,
     ip: audit.ip,
+    timezone: audit.timezone,
     actionType: "event_pii_exported",
     metadata: { eventId, rowCount: attendees.length, totalCount, truncated },
   });

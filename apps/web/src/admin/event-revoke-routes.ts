@@ -47,6 +47,7 @@ export async function handleRevokeAllCheckIns(c: Context, db: PrismaClient): Pro
     actorUserId: audit.operator ?? c.get("auth").userId,
     sessionId: audit.sessionId,
     ip: audit.ip,
+    timezone: audit.timezone,
     actionType: "event_checkins_bulk_revoked",
     metadata: { eventId, revokedCount },
   });
@@ -78,6 +79,7 @@ export async function handleRevokeAllItems(c: Context, db: PrismaClient): Promis
     actorUserId: audit.operator ?? c.get("auth").userId,
     sessionId: audit.sessionId,
     ip: audit.ip,
+    timezone: audit.timezone,
     actionType: "event_items_bulk_revoked",
     metadata: { eventId, revokedCount },
   });

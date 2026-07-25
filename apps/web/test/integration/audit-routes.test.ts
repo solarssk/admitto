@@ -122,6 +122,15 @@ async function seed(client: PrismaClient) {
         created_at: new Date("2026-06-30T23:45:00.000Z"),
       },
       {
+        organization_id: ORG_AUDIT,
+        actor_user_id: superId,
+        action_type: "event_updated",
+        ip: "1.2.3.7",
+        metadata: { eventId: "evt-2" },
+        actor_timezone: "Europe/Warsaw",
+        created_at: new Date("2026-07-02T09:00:00.000Z"),
+      },
+      {
         organization_id: ORG_OTHER,
         actor_user_id: superId,
         action_type: "session_revoked",
@@ -193,6 +202,7 @@ describe("GET /api/admin/audit-log", () => {
         action_type: string;
         actor_email: string | null;
         actor_display_name: string | null;
+        actor_timezone: string | null;
         metadata: Record<string, unknown> | null;
       }[];
       total: number;
@@ -201,12 +211,39 @@ describe("GET /api/admin/audit-log", () => {
     };
     expect(body.page).toBe(1);
     expect(body.pageSize).toBe(25);
-    expect(body.total).toBe(4);
-    expect(body.entries).toHaveLength(4);
+    expect(body.total).toBe(5);
+    expect(body.entries).toHaveLength(5);
     expect(body.entries[0]?.actor_email).toBe(EMAIL_SUPER);
     for (const entry of body.entries) {
       assertNoPiiKeys(entry.metadata);
     }
+    const withTimezone = body.entries.find((e) => e.action_type === "event_updated");
+    expect(withTimezone?.actor_timezone).toBe("Europe/Warsaw");
+    const withoutTimezone = body.entries.find((e) => e.action_type === "session_revoked");
+    expect(withoutTimezone?.actor_timezone).toBeNull();
+  });
+
+  it("filters by event_id, matching either the eventId or legacy event_id metadata key", async () => {
+    const legacyKeyRes = await app.request("/api/admin/audit-log?event_id=evt-1", {
+      headers: { Cookie: superCookie },
+    });
+    expect(legacyKeyRes.status).toBe(200);
+    const legacyKeyBody = (await legacyKeyRes.json()) as { entries: { action_type: string }[]; total: number };
+    expect(legacyKeyBody.total).toBe(1);
+    expect(legacyKeyBody.entries[0]?.action_type).toBe("event_archived");
+
+    const camelKeyRes = await app.request("/api/admin/audit-log?event_id=evt-2", {
+      headers: { Cookie: superCookie },
+    });
+    const camelKeyBody = (await camelKeyRes.json()) as { entries: { action_type: string }[]; total: number };
+    expect(camelKeyBody.total).toBe(1);
+    expect(camelKeyBody.entries[0]?.action_type).toBe("event_updated");
+
+    const unknownRes = await app.request("/api/admin/audit-log?event_id=evt-does-not-exist", {
+      headers: { Cookie: superCookie },
+    });
+    const unknownBody = (await unknownRes.json()) as { total: number };
+    expect(unknownBody.total).toBe(0);
   });
 
   it("filters by action_type", async () => {
@@ -304,7 +341,7 @@ describe("GET /api/admin/audit-log", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { total: number };
-    expect(body.total).toBe(4);
+    expect(body.total).toBe(5);
   });
 
   it("returns empty list for unknown action_type filter", async () => {
@@ -315,5 +352,69 @@ describe("GET /api/admin/audit-log", () => {
     const body = (await res.json()) as { entries: unknown[]; total: number };
     expect(body.total).toBe(0);
     expect(body.entries).toHaveLength(0);
+  });
+});
+
+describe("GET /api/admin/audit-log/export", () => {
+  it("returns 401 without auth", async () => {
+    const res = await app.request("/api/admin/audit-log/export?format=csv");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 403 for non-superadmin admin", async () => {
+    const adminSession = await createSession(prisma, { userId: adminId, stage: SESSION_STAGE.FULL });
+    const res = await app.request("/api/admin/audit-log/export?format=csv", {
+      headers: { Cookie: `admitto_session=${adminSession.rawToken}` },
+    });
+    expect(res.status).toBe(403);
+    await prisma.session.delete({ where: { id: adminSession.session.id } });
+  });
+
+  it("rejects a format other than csv", async () => {
+    const res = await app.request("/api/admin/audit-log/export?format=xlsx", {
+      headers: { Cookie: superCookie },
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns a filtered CSV and self-audits the export", async () => {
+    const before = await app.request("/api/admin/audit-log?action_type=audit_log_exported", {
+      headers: { Cookie: superCookie },
+    });
+    const beforeTotal = ((await before.json()) as { total: number }).total;
+
+    const res = await app.request("/api/admin/audit-log/export?format=csv&action_type=session_revoked", {
+      headers: { Cookie: superCookie },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/csv");
+    expect(res.headers.get("Content-Disposition")).toMatch(/^attachment; filename="audit-log-\d{4}-\d{2}-\d{2}\.csv"$/);
+
+    const csv = await res.text();
+    const lines = csv.split("\r\n");
+    expect(lines[0]).toBe('"time","action","scope","actor","ip","details"');
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toContain('"session_revoked"');
+    expect(lines[1]).toContain(`"${EMAIL_SUPER}"`);
+    expect(lines[1]).toContain('"1.2.3.4"');
+    expect(lines[1]).toContain('"Instance"');
+
+    const after = await app.request("/api/admin/audit-log?action_type=audit_log_exported", {
+      headers: { Cookie: superCookie },
+    });
+    const afterTotal = ((await after.json()) as { total: number }).total;
+    expect(afterTotal).toBe(beforeTotal + 1);
+  });
+
+  it("filters the export by event_id, matching the eventId metadata key", async () => {
+    const res = await app.request("/api/admin/audit-log/export?format=csv&event_id=evt-2", {
+      headers: { Cookie: superCookie },
+    });
+    expect(res.status).toBe(200);
+    const csv = await res.text();
+    const lines = csv.split("\r\n");
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toContain('"event_updated"');
+    expect(lines[1]).toContain('"evt-2"');
   });
 });

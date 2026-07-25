@@ -4091,18 +4091,6 @@ output.mail-field-hint {
   }
 }
 
-.audit-log-empty {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-}
-
-.audit-log-error {
-  margin: 0;
-  color: var(--status-error-fg, #b42318);
-  font-size: var(--fs-sm);
-}
-
 /* Details popover — absolutely positioned so opening it never changes the
    table row's height or pushes other rows around (unlike the old <details>). */
 .audit-log-details {
@@ -4131,9 +4119,24 @@ output.mail-field-hint {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-md);
-  white-space: pre-wrap;
   overflow-wrap: break-word;
   z-index: calc(var(--z-dropdown) + 1);
+}
+
+.audit-log-details__list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.audit-log-details__row dt {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.audit-log-details__row dd {
+  margin: 0;
 }
 
 .audit-log-footer {
@@ -4154,7 +4157,26 @@ output.mail-field-hint {
 
 .audit-log-footer__buttons {
   display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.audit-log-pagesize {
+  display: flex;
+  align-items: center;
   gap: var(--space-2);
+  font-size: var(--fs-sm);
+  color: var(--text-muted, var(--text-secondary));
+  white-space: nowrap;
+}
+
+.at-select.audit-log-pagesize-select {
+  height: var(--control-h-sm);
+  width: auto;
+  padding: 0 1.4rem 0 var(--space-2);
+  background-position: right 0.4rem center;
+  background-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 /* Native select styled to match Input component */

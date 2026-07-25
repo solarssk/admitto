@@ -1,5 +1,5 @@
 /** Shared Settings tab ids for the instance settings shell (#266 slice 7b). */
-export type SettingsTab = "general" | "mail" | "security" | "archiving" | "identity";
+export type SettingsTab = "general" | "mail" | "security" | "archiving" | "identity" | "logs";
 
 export const SETTINGS_TABS = [
   { id: "general", label: "General" },
@@ -7,6 +7,7 @@ export const SETTINGS_TABS = [
   { id: "security", label: "Security" },
   { id: "archiving", label: "Archiving" },
   { id: "identity", label: "Identity" },
+  { id: "logs", label: "Logs & audit" },
 ] as const;
 
 export const SETTINGS_INDEX_PATH = "/admin/settings";

@@ -205,6 +205,7 @@ describe("SecurityPanel operator errors", () => {
 describe("AuditLogPanel operator errors", () => {
   it("shows operator-safe load failure", async () => {
     vi.mocked(fetchAuditLog).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([]);
     renderWithToast(<AuditLogPanel />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();

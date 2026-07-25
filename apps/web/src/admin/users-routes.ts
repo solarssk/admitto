@@ -298,6 +298,7 @@ export async function handlePostUser(c: Context, db: PrismaClient): Promise<Resp
         actorUserId,
         sessionId: audit.sessionId,
         ip: audit.ip,
+        timezone: audit.timezone,
         actionType: "user_created",
         metadata: { userId: user.id, email: redactEmail(user.email) },
       });
@@ -370,6 +371,7 @@ async function applyUserPatch(
     actorUserId: audit.operator ?? actorId,
     sessionId: audit.sessionId,
     ip: audit.ip,
+    timezone: audit.timezone,
     actionType,
     metadata: { userId: id },
   });
@@ -481,6 +483,7 @@ export async function handlePostUserRole(c: Context, db: PrismaClient): Promise<
         actorUserId: audit.operator ?? actorId,
         sessionId: audit.sessionId,
         ip: audit.ip,
+        timezone: audit.timezone,
         actionType: "role_granted",
         metadata: {
           userId: id,
@@ -561,6 +564,7 @@ export async function handleDeleteUserRole(c: Context, db: PrismaClient): Promis
           actorUserId: audit.operator ?? actorId,
           sessionId: audit.sessionId,
           ip: audit.ip,
+          timezone: audit.timezone,
           actionType: "role_revoked",
           metadata: {
             userId: id,
@@ -615,6 +619,7 @@ export async function handlePostResetUserMfa(c: Context, db: PrismaClient): Prom
       actorUserId: audit.operator ?? c.get("auth").userId,
       sessionId: audit.sessionId,
       ip: audit.ip,
+      timezone: audit.timezone,
       actionType: "user_mfa_reset",
       metadata: { userId: id },
     });
@@ -657,6 +662,7 @@ export async function handlePostResetUserPassword(c: Context, db: PrismaClient):
       actorUserId: audit.operator ?? c.get("auth").userId,
       sessionId: audit.sessionId,
       ip: audit.ip,
+      timezone: audit.timezone,
       actionType: "user_password_reset",
       metadata: { userId: id },
     });
@@ -686,6 +692,7 @@ export async function handlePostRevokeUserSessions(c: Context, db: PrismaClient)
       actorUserId: audit.operator ?? c.get("auth").userId,
       sessionId: audit.sessionId,
       ip: audit.ip,
+      timezone: audit.timezone,
       actionType: "user_sessions_revoked",
       metadata: { userId: id, sessionsRevoked: revoked.sessionsRevoked },
     });
