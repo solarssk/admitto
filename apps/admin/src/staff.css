@@ -2745,17 +2745,6 @@
   font-size: var(--fs-sm);
 }
 
-.cf-access-summary strong {
-  display: block;
-  margin-bottom: var(--space-1);
-}
-
-.cf-access-summary p {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-}
-
 .cf-access-summary__badges {
   display: flex;
   flex-wrap: wrap;
