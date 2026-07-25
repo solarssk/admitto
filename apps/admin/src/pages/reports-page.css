@@ -39,7 +39,8 @@
   cursor: pointer;
 }
 
-.reports-export-menu__item:hover {
+.reports-export-menu__item:hover,
+.reports-export-menu__item:focus-visible {
   background: var(--surface-hover);
 }
 

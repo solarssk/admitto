@@ -34,7 +34,6 @@ export function FiltersMenu({ activeCount, children, className, size }: Readonly
         size={size}
         icon={<i className="ti ti-filter" aria-hidden="true" />}
         hasMenu
-        aria-haspopup="true"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
@@ -46,6 +45,9 @@ export function FiltersMenu({ activeCount, children, className, size }: Readonly
         // aria-haspopup="menu" previously advertised a menu useDropdownMenu couldn't find a
         // menuitem in, so focus never moved into the panel on open) nor `role="group"` on a
         // plain div (SonarCloud S6819: prefer the native grouping element over the ARIA role).
+        // The trigger itself carries no aria-haspopup at all (not even "true", which the ARIA
+        // spec treats as equivalent to "menu") - this is a disclosure button revealing a form,
+        // not a menu, and aria-expanded alone is the correct pattern for that (CodeRabbit review).
         <fieldset className={`${className}__panel`} ref={panelRef}>
           <legend className="sr-only">Filters</legend>
           {children}

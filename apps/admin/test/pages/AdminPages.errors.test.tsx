@@ -843,10 +843,18 @@ describe("ReportsPage stat tiles", () => {
     await waitFor(() => {
       expect(screen.getByText("Total attendees")).toBeTruthy();
     });
-    expect(screen.getByText("10")).toBeTruthy();
-    expect(screen.getByText("7")).toBeTruthy();
-    expect(screen.getByText("3")).toBeTruthy();
-    expect(screen.getByText("14:00")).toBeTruthy();
+    // Scoped to each tile by its own label, not a bare getByText("10") - a bare number is
+    // fragile against any future breakdown row that happens to render the same digits.
+    function statValue(label: string): string | null | undefined {
+      const labelEl = Array.from(container.querySelectorAll(".reports-stat__label")).find(
+        (el) => el.textContent === label,
+      );
+      return labelEl?.closest(".reports-stat")?.querySelector(".reports-stat__value")?.textContent;
+    }
+    expect(statValue("Total attendees")).toBe("10");
+    expect(statValue("Admitted")).toBe("7");
+    expect(statValue("No-shows")).toBe("3");
+    expect(statValue("Peak hour")).toBe("14:00");
     expect(container.querySelector(".reports-stat__icon--neutral")).toBeTruthy();
     expect(container.querySelector(".reports-stat__icon--ok")).toBeTruthy();
     expect(container.querySelector(".reports-stat__icon--warn")).toBeTruthy();
@@ -1317,8 +1325,10 @@ describe("ReportsPage admission log", () => {
     });
     expect(screen.getByText("Desk Guest")).toBeTruthy();
     expect(screen.queryByText("No Device Guest")).toBeNull();
-    // The trigger button surfaces how many filters are active.
-    expect(screen.getByText("1")).toBeTruthy();
+    // The trigger button surfaces how many filters are active - scoped to the trigger itself,
+    // not a bare getByText("1"), since the By device breakdown's own "1 · 33.3%" meta text could
+    // otherwise make this ambiguous depending on the exact counts in play.
+    expect(screen.getByRole("button", { name: /Filters/ }).textContent).toMatch(/1/);
 
     const noDeviceOption = Array.from(deviceSelect.options).find((o) => o.textContent === "(unlabeled device)");
     if (!noDeviceOption) throw new Error("'(unlabeled device)' option not found");

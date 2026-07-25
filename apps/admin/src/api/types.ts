@@ -1068,8 +1068,10 @@ export interface EventReportsResponse {
   admission_log_truncated: boolean;
   admission_log_total: number;
   /** Only buckets with at least one admitted attendee - zero-fill the full RsvpStatus set from
-   * RSVP_LABELS' own order when rendering. */
-  by_rsvp_status: Array<{ status: RsvpStatus; count: number }>;
+   * RSVP_LABELS' own order when rendering. `status` is a free-form String column server-side
+   * (see reports-routes.ts), not narrowed to RsvpStatus - a value outside the 5 known statuses
+   * is possible (legacy/orphaned data) and the renderer buckets those separately. */
+  by_rsvp_status: Array<{ status: string; count: number }>;
   by_checkin_method: Array<{ method: "scan" | "manual"; count: number }>;
   /** Sorted by count descending server-side (a ranked leaderboard, not a fixed-order status set
    * like the two breakdowns above). */
