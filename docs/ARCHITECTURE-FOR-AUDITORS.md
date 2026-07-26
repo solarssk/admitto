@@ -99,7 +99,7 @@ coupling public docs to one customer's perimeter design.
 | Ticket secret | PostgreSQL (encrypted field) | Random identifier for QR |
 | Check-in state | PostgreSQL | Operational |
 | Mail credentials | PostgreSQL (encrypted) | Customer Graph / SMTP settings |
-| Audit events | PostgreSQL + operational logs | Designed to minimise PII in log lines |
+| Audit events | PostgreSQL + operational logs | Attendee data minimised in log lines; a small, named set of staff-accountability events (login, admin actions) logs the acting staff member's own email — see [DATA-PROTECTION.md](../DATA-PROTECTION.md) |
 
 Privacy detail: [DATA-PROTECTION.md](../DATA-PROTECTION.md), [GDPR-ONE-PAGER.md](GDPR-ONE-PAGER.md).
 

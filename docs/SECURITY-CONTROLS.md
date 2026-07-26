@@ -32,7 +32,7 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
 | Secrets | No credentials in source code | Env / secret manager; integration secrets encrypted in DB | App · Operator |
 | Data at rest | Protect tickets and integration secrets | Field-level encryption for sensitive data; **disk encryption** | App · Operator |
 | Transport | TLS to users | Terminated at customer **reverse proxy, load balancer, or CDN** | Operator |
-| Logging | Minimise personal data in logs | Redacted identifiers in audit output; no secrets in log lines | App |
+| Logging | Minimise personal data in logs | Redacted identifiers in audit output; no secrets in log lines; a superadmin-only live tail of recent activity (see **System logs** in [DATA-PROTECTION.md](../DATA-PROTECTION.md)) | App |
 | Supply chain | Scans on code and container image | Documented in [SECURITY.md](../SECURITY.md) | App |
 
 ---
@@ -231,7 +231,11 @@ discover/test. Residual risk: compromised superadmin account can still trigger o
 - **Ticket / QR payload:** opaque random identifier — no attendee name or email embedded in the QR.
 - **Integration credentials** (mail, OIDC): stored encrypted in the application database; key
   supplied at deploy time via environment variable.
-- **Logs:** intended for operations, not analytics — avoid logging full email addresses or secrets.
+- **Logs:** intended for operations, not analytics. Attendee-facing data (recipient addresses,
+  import content) and secrets are never logged in full. A small, named set of staff/operator
+  accountability events (login success, admin actions) does log the acting staff member's own
+  email address — see **Logs** and **System logs (live tail)** in
+  [DATA-PROTECTION.md](../DATA-PROTECTION.md) for exactly which events and why.
 - **Health endpoints:** `/healthz` — liveness + DB ping, rate-limited, no PII; `/readyz` —
   token-gated detailed readiness (disabled when `OPS_HEALTH_TOKEN` unset). Both return baseline
   security headers; neither exposes secrets or attendee data.
@@ -242,7 +246,10 @@ discover/test. Residual risk: compromised superadmin account can still trigger o
 
 Be explicit with auditors about what is **out of product scope** today:
 
-- No built-in SIEM or central log platform (forward container logs if required).
+- No built-in SIEM or central log platform (forward container logs if required). The in-app
+  **System logs** screen (superadmin only, see [DATA-PROTECTION.md](../DATA-PROTECTION.md)) is a
+  short, in-memory live tail for day-to-day diagnostics — not a substitute for a SIEM: it holds
+  only the last 1000 entries and is emptied on every restart.
 - No HA / multi-region failover in the default compose topology.
 - No always-on scheduler for all long-term PII purge domains yet (retention **policy** documented;
   auth-state purge and email delivery snapshot nullification run best-effort at container startup
