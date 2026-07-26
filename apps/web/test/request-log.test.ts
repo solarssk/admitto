@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import type { PrismaClient } from "@prisma/client";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { createApp } from "../src/app.js";
 import { createRateLimitStore } from "../src/rate-limit/index.js";
 import {
@@ -31,6 +32,10 @@ function appWithLogging(): Hono {
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+beforeEach(() => {
+  resetSystemLogBufferForTest();
 });
 
 describe("redactRequestPath", () => {
@@ -148,5 +153,35 @@ describe("createApp logHttpRequests wiring", () => {
     const lines = captureInfoLines();
     await buildApp(false).request("/no-such-route");
     expect(lines.filter((l) => l.includes("http_request"))).toHaveLength(0);
+  });
+});
+
+describe("createApp global error handler", () => {
+  it("records a bounded error entry without exception text", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const app = createApp({
+      prisma: { $queryRaw: vi.fn(async () => [{ "?column?": 1 }]) } as unknown as PrismaClient,
+      baseUrl: "https://tickets.example.com",
+      skipCheckinBootValidation: true,
+      rateLimitStore: createRateLimitStore(),
+      logHttpRequests: false,
+    });
+    app.get("/__test/unhandled", () => {
+      throw new Error("ticket-token-123 and attendee@example.com must not be logged");
+    });
+
+    const res = await app.request("/__test/unhandled");
+
+    expect(res.status).toBe(500);
+    expect(await res.text()).toBe("Internal Server Error");
+    expect(querySystemLogs({ source: "api" })).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        message: "unhandled_exception",
+        fields: { method: "GET", path: "/__test/unhandled", errorKind: "error" },
+      }),
+    );
+    expect(JSON.stringify(querySystemLogs())).not.toContain("ticket-token-123");
+    expect(JSON.stringify(querySystemLogs())).not.toContain("attendee@example.com");
   });
 });

@@ -270,15 +270,21 @@ import {
   handleApiTestCfAccess,
 } from "./admin/identity-api-routes.js";
 import { applyBaselineSecurityHeaders } from "./security-headers.js";
-import { createRequestLogMiddleware, resolveLogHttpRequests } from "./request-log.js";
+import { createRequestLogMiddleware, redactRequestPath, resolveLogHttpRequests } from "./request-log.js";
 import { resolvePostLoginRedirectForUser } from "./auth/post-login-redirect.js";
 import { handleReadyz } from "./ops/readyz.js";
+import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 
 /** Parse check-in history `limit` query param: default 10, clamped to 1–100. */
 function parseCheckinHistoryLimit(raw: string | undefined): number {
   const limitParam = Number.parseInt(raw ?? "10", 10);
   const parsed = Number.isFinite(limitParam) ? limitParam : 10;
   return Math.max(1, Math.min(parsed, 100));
+}
+
+/** A bounded error category for operational logs; never copy arbitrary error text into a log. */
+function systemLogErrorKind(err: unknown): "error" | "non_error" {
+  return err instanceof Error ? "error" : "non_error";
 }
 
 /** Injectable dependencies for `createApp()` (tests and custom deploy wiring). */
@@ -351,6 +357,16 @@ export function createApp(options: CreateAppOptions = {}) {
   const mailDeliveryDeps = options.mailDeliveryDeps ?? {};
 
   const app = new Hono();
+  // Catch route errors once with enough request context to diagnose them, without putting
+  // token-bearing paths or arbitrary exception text into the live tail/stdout logs.
+  app.onError((err, c) => {
+    emitSystemLog("api", "error", "unhandled_exception", {
+      method: c.req.method,
+      path: redactRequestPath(new URL(c.req.url).pathname),
+      errorKind: systemLogErrorKind(err),
+    });
+    return c.text("Internal Server Error", 500);
+  });
   // First middleware so the access log also covers 404s and rate-limited requests.
   if (options.logHttpRequests ?? resolveLogHttpRequests()) {
     app.use("*", createRequestLogMiddleware());
@@ -457,6 +473,7 @@ export function createApp(options: CreateAppOptions = {}) {
     c: Context,
     resolved: NonNullable<Awaited<ReturnType<typeof resolveTicket>>>,
     internalToken?: string,
+    route = "/t/:token",
   ) {
     const { attendee, event } = resolved;
 
@@ -470,6 +487,12 @@ export function createApp(options: CreateAppOptions = {}) {
     if (resolved.mode === "internal") {
       if (!internalToken) {
         console.error(`Internal attendee ${attendee.id} missing token for ticket page QR`);
+        recordSystemLog({
+          level: "error",
+          source: "api",
+          message: "ticket_internal_token_missing",
+          fields: { route, attendeeId: attendee.id },
+        });
         return htmlWithSecurityHeaders(c, renderServerError(), 500);
       }
       qrPayload = buildQrPayload("internal", { baseUrl, token: internalToken });
@@ -477,6 +500,12 @@ export function createApp(options: CreateAppOptions = {}) {
       const agencyPayload = attendee.qr_payload ?? attendee.external_uuid;
       if (!agencyPayload) {
         console.error(`Agency attendee ${attendee.id} has neither qr_payload nor external_uuid`);
+        recordSystemLog({
+          level: "error",
+          source: "api",
+          message: "ticket_agency_payload_missing",
+          fields: { route, attendeeId: attendee.id },
+        });
         return htmlWithSecurityHeaders(c, renderServerError(), 500);
       }
       qrPayload = buildQrPayload("agency", { agencyPayload });
@@ -488,6 +517,12 @@ export function createApp(options: CreateAppOptions = {}) {
       qrDataUrl = `data:image/png;base64,${qrPng.toString("base64")}`;
     } catch (err) {
       console.error("generateQrPng failed:", err);
+      recordSystemLog({
+        level: "error",
+        source: "api",
+        message: "qr_png_generation_failed",
+        fields: { route },
+      });
       return htmlWithSecurityHeaders(c, renderServerError(), 500);
     }
 
@@ -1152,12 +1187,18 @@ export function createApp(options: CreateAppOptions = {}) {
       resolved = await findAttendeeForEventRoute(eventSlug, ref, db);
     } catch (err) {
       console.error("findAttendeeForEventRoute error:", err);
+      recordSystemLog({
+        level: "error",
+        source: "api",
+        message: "ticket_agency_lookup_failed",
+        fields: { route: "/t/:eventSlug/a/:ref" },
+      });
       return htmlWithSecurityHeaders(c, renderServerError(), 500);
     }
     if (resolved?.mode !== "agency") {
       return htmlWithSecurityHeaders(c, renderNotFound(), 404);
     }
-    return renderTicketPage(c, resolved);
+    return renderTicketPage(c, resolved, undefined, "/t/:eventSlug/a/:ref");
   });
 
   // Mode A ticket page
@@ -1174,8 +1215,20 @@ export function createApp(options: CreateAppOptions = {}) {
         err instanceof Prisma.PrismaClientUnknownRequestError
       ) {
         console.error("resolveTicket database error:", err);
+        recordSystemLog({
+          level: "error",
+          source: "api",
+          message: "ticket_resolution_failed",
+          fields: { route: "/t/:token", errorKind: "database" },
+        });
       } else {
         console.error("resolveTicket unexpected error:", err);
+        recordSystemLog({
+          level: "error",
+          source: "api",
+          message: "ticket_resolution_failed",
+          fields: { route: "/t/:token", errorKind: "unexpected" },
+        });
       }
       return htmlWithSecurityHeaders(c, renderServerError(), 500);
     }
@@ -1199,6 +1252,12 @@ export function createApp(options: CreateAppOptions = {}) {
       resolved = await findAttendeeForEventRoute(eventSlug, publicRef, db);
     } catch (err) {
       console.error("findAttendeeForEventRoute error:", err);
+      recordSystemLog({
+        level: "error",
+        source: "api",
+        message: "ticket_agency_lookup_failed",
+        fields: { route: "/q/:eventSlug/a/:filename" },
+      });
       return c.body(null, 500);
     }
     if (resolved?.mode !== "agency") {
@@ -1214,6 +1273,12 @@ export function createApp(options: CreateAppOptions = {}) {
       c.header("Cache-Control", "private, max-age=300");
       return c.body(new Uint8Array(png), 200);
     } catch {
+      recordSystemLog({
+        level: "error",
+        source: "api",
+        message: "qr_png_generation_failed",
+        fields: { route: "/q/:eventSlug/a/:filename" },
+      });
       return c.body(null, 500);
     }
   });
@@ -1234,6 +1299,12 @@ export function createApp(options: CreateAppOptions = {}) {
       });
     } catch (err) {
       console.error("attendee lookup error:", err);
+      recordSystemLog({
+        level: "error",
+        source: "api",
+        message: "ticket_qr_attendee_lookup_failed",
+        fields: { route: "/q/:filename" },
+      });
       return c.body(null, 500);
     }
     if (!attendee) {
@@ -1247,6 +1318,12 @@ export function createApp(options: CreateAppOptions = {}) {
       c.header("Cache-Control", "private, max-age=300");
       return c.body(new Uint8Array(png), 200);
     } catch {
+      recordSystemLog({
+        level: "error",
+        source: "api",
+        message: "qr_png_generation_failed",
+        fields: { route: "/q/:filename" },
+      });
       return c.body(null, 500);
     }
   });
