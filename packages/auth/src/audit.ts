@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
+import { redactEmail } from "@admitto/shared";
 import { recordSystemLog } from "@admitto/shared/system-log";
 
-export { redactEmail } from "@admitto/shared";
+export { redactEmail };
 
 /** Short SHA-256 fingerprint for IDs in audit logs (no raw UUIDs). */
 export function fingerprint(value: string): string {
@@ -80,10 +81,14 @@ export function logLoginSuccess(ctx: LoginAuditContext): void {
   });
 }
 
-/** Emit `auth.login.fail` as JSON to stdout (uniform shape for enumeration-safe failures). */
+/** Emit `auth.login.fail` as JSON to stdout (uniform shape for enumeration-safe failures).
+ * Redacted, unlike logLoginSuccess above: `ctx.email` here is unauthenticated form input - the
+ * login attempt failed, so this could be any real address someone typed in, not a verified
+ * staff identity (external review on PR #593). Full email on success is fine precisely because
+ * it's post-authentication; that reasoning doesn't extend to a failed attempt. */
 export function logLoginFailure(ctx: LoginAuditContext): void {
   emitAuditEvent("auth.login.fail", {
-    email: ctx.email,
+    email: redactEmail(ctx.email),
     ip: ctx.ip ?? null,
     userAgent: ctx.userAgent ?? null,
   });

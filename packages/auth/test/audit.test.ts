@@ -2,6 +2,7 @@ import { describe, expect, it, vi, afterEach, beforeEach } from "vitest";
 import {
   emitAuditEvent,
   fingerprint,
+  logLoginFailure,
   logLoginSuccess,
   logMfaSuccess,
   logRateLimitExceeded,
@@ -76,6 +77,17 @@ describe("audit", () => {
     expect(payload.email).toBe("bob@example.com");
     expect(payload.ip).toBe("1.2.3.4");
     expect(payload.ts).toBeDefined();
+  });
+
+  it("logLoginFailure redacts the email (unauthenticated input, unlike a successful login)", () => {
+    const spy = vi.spyOn(console, "info").mockImplementation(() => {});
+    logLoginFailure({ email: "bob@example.com", ip: "1.2.3.4" });
+    const payload = JSON.parse(String(spy.mock.calls[0]?.[0]));
+    expect(payload.event).toBe("auth.login.fail");
+    expect(payload.email).toBe("b***@example.com");
+
+    const entries = querySystemLogs({ source: "security" });
+    expect(entries.some((e) => e.message === "auth.login.fail" && e.fields?.email === "b***@example.com")).toBe(true);
   });
 
   it("logMfaSuccess fingerprints user id without raw uuid", () => {

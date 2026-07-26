@@ -12,6 +12,9 @@ type SourceFilter = "" | SystemLogEntryDto["source"];
 const SEARCH_DEBOUNCE_MS = 300;
 const POLL_INTERVAL_MS = 1750;
 const MAX_RENDERED_ENTRIES = 1000;
+// A single missed tick is normal network noise and never surfaced; this many in a row (~9s at
+// the interval above) means the endpoint is genuinely down, not just one slow request.
+const POLL_DEGRADED_THRESHOLD = 5;
 
 const SOURCE_LABELS: Record<SystemLogEntryDto["source"], string> = {
   api: "API",
@@ -147,8 +150,14 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
   // Bumped by the Retry action below - included in the snapshot effect's own deps so a
   // failed initial/filter-change load can be retried without touching level/source/search.
   const [retryTick, setRetryTick] = useState(0);
+  // True once the live poll has failed several times in a row (lost superadmin role, the
+  // endpoint returning 500s, a network outage) - a single missed tick is never surfaced, but a
+  // sustained run of them must not leave the Live pill green and the lines silently stale
+  // forever (external review on PR #593).
+  const [pollDegraded, setPollDegraded] = useState(false);
   const { addToast } = useToast();
   const cursorRef = useRef(0);
+  const pollFailureCountRef = useRef(0);
   const filtersRef = useRef({ level, source, search });
   const consoleRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -199,6 +208,9 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
   // toggling Live off and back on resumes from where it left off instead of resetting the view.
   useEffect(() => {
     if (!live) return;
+    // Re-enabling Live always starts the degraded-state tracking fresh.
+    pollFailureCountRef.current = 0;
+    setPollDegraded(false);
     let currentAbort: AbortController | null = null;
     // Guards against overlapping polls (CodeRabbit review): without it, a response slower
     // than the 1.75s interval left the previous tick's request in flight when the next tick
@@ -214,25 +226,38 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
       const ac = new AbortController();
       currentAbort = ac;
       const f = filtersRef.current;
+      const requestedSince = cursorRef.current;
+      const filterParams = { level: f.level || undefined, source: f.source || undefined, search: f.search || undefined };
       try {
-        const data = await fetchSystemLogs(
-          {
-            since: cursorRef.current,
-            level: f.level || undefined,
-            source: f.source || undefined,
-            search: f.search || undefined,
-          },
-          ac.signal,
-        );
+        const data = await fetchSystemLogs({ since: requestedSince, ...filterParams }, ac.signal);
         if (ac.signal.aborted) return;
-        cursorRef.current = data.cursor;
-        if (data.entries.length === 0) return;
-        setEntries((prev) => {
-          const next = [...prev, ...data.entries];
-          return next.length > MAX_RENDERED_ENTRIES ? next.slice(next.length - MAX_RENDERED_ENTRIES) : next;
-        });
+        // The server's cursor is lower than what we just asked for - the process restarted (a
+        // fresh in-memory buffer starts its ids at 1 again) or otherwise reset, so `since` no
+        // longer means anything and every entry logged since startup would otherwise be
+        // silently skipped forever (external review on PR #593). Re-fetch a full snapshot
+        // instead of just adopting the new (lower) cursor.
+        if (data.cursor < requestedSince) {
+          const snapshot = await fetchSystemLogs(filterParams, ac.signal);
+          if (ac.signal.aborted) return;
+          cursorRef.current = snapshot.cursor;
+          setEntries(snapshot.entries);
+        } else {
+          cursorRef.current = data.cursor;
+          if (data.entries.length > 0) {
+            setEntries((prev) => {
+              const next = [...prev, ...data.entries];
+              return next.length > MAX_RENDERED_ENTRIES ? next.slice(next.length - MAX_RENDERED_ENTRIES) : next;
+            });
+          }
+        }
+        pollFailureCountRef.current = 0;
+        setPollDegraded(false);
       } catch {
         // A single missed poll tick isn't worth surfacing - the next tick 1.75s later retries.
+        // But a sustained run of failures (endpoint down, role revoked, network outage) must not
+        // leave Live looking green with silently stale lines forever (external review on PR #593).
+        pollFailureCountRef.current += 1;
+        if (pollFailureCountRef.current >= POLL_DEGRADED_THRESHOLD) setPollDegraded(true);
       } finally {
         inFlight = false;
       }
@@ -377,6 +402,15 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
           </div>
         )}
       </div>
+
+      {live && pollDegraded && (
+        <div className="system-log-panel__poll-warning" role="status">
+          Live updates stopped coming through - the lines below may be out of date.{" "}
+          <button type="button" className="system-log-panel__poll-warning-retry" onClick={() => setRetryTick((t) => t + 1)}>
+            Retry now
+          </button>
+        </div>
+      )}
 
       {/* Always renders this same dark shell, at the same height, regardless of content -
           Clear view (which empties `entries`) used to swap the whole console out for a

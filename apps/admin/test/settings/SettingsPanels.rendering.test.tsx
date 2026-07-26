@@ -1213,6 +1213,67 @@ describe("SystemLogsPanel rendering", () => {
     );
   }, 10000);
 
+  it("replaces the view with a fresh snapshot when the server cursor resets (restart recovery)", async () => {
+    // Real timers throughout, same reasoning as the test above - the poll interval is created
+    // at real mount time.
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+    vi.mocked(fetchSystemLogs)
+      .mockResolvedValueOnce({
+        entries: [{ id: 5, ts: "2026-01-01T12:00:00.000Z", level: "info", source: "api", message: "before-restart" }],
+        cursor: 5,
+      })
+      .mockResolvedValueOnce({
+        // Poll asked for since=5; a cursor lower than that means the buffer reset (server
+        // restart), not "zero new entries".
+        entries: [],
+        cursor: 1,
+      })
+      .mockResolvedValueOnce({
+        entries: [{ id: 1, ts: "2026-01-01T12:05:00.000Z", level: "info", source: "api", message: "after-restart" }],
+        cursor: 1,
+      });
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByText("No audit log entries yet");
+    openSystemLogsView();
+    await screen.findByText("before-restart");
+
+    expect(await screen.findByText("after-restart", {}, { timeout: 3000 })).toBeTruthy();
+    expect(screen.queryByText("before-restart")).toBeNull();
+    // Third call is the full re-fetch snapshot triggered by the cursor reset - no `since`.
+    expect(fetchSystemLogs).toHaveBeenNthCalledWith(
+      3,
+      { level: undefined, source: undefined, search: undefined },
+      expect.anything(),
+    );
+  }, 10000);
+
+  it("surfaces a banner after sustained live-poll failures, and clears it on the next success", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+    vi.mocked(fetchSystemLogs)
+      .mockResolvedValueOnce(emptySystemLog()) // initial snapshot
+      .mockRejectedValueOnce(new Error("network error")) // poll 1
+      .mockRejectedValueOnce(new Error("network error")) // poll 2
+      .mockRejectedValueOnce(new Error("network error")) // poll 3
+      .mockRejectedValueOnce(new Error("network error")) // poll 4
+      .mockRejectedValueOnce(new Error("network error")) // poll 5 - crosses POLL_DEGRADED_THRESHOLD
+      .mockResolvedValueOnce(emptySystemLog()); // poll 6 - recovers
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByText("No audit log entries yet");
+    openSystemLogsView();
+    await screen.findByText("No log activity yet");
+
+    expect(
+      await screen.findByText(/Live updates stopped coming through/, {}, { timeout: 12000 }),
+    ).toBeTruthy();
+
+    await waitFor(
+      () => expect(screen.queryByText(/Live updates stopped coming through/)).toBeNull(),
+      { timeout: 5000 },
+    );
+  }, 20000);
+
   it("stops polling once Live is turned off", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
     vi.mocked(fetchSystemLogs).mockResolvedValue(emptySystemLog());
