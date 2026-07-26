@@ -42,7 +42,8 @@ function logOidcError(context: string, err: unknown): void {
   const contextKey = context
     .toLowerCase()
     .replaceAll(/[^a-z0-9]+/g, "_")
-    .replaceAll(/^_+|_+$/g, "");
+    .replace(/^_/, "")
+    .replace(/_$/, "");
   recordSystemLog({
     level: "warn",
     source: "security",
