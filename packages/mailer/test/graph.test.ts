@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GraphAdapter } from "../src/adapters/graph.js";
 import type { GraphConfig } from "../src/config.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
+import { resetMailSentThrottleForTest } from "../src/adapterUtils.js";
 
 beforeEach(() => {
   resetSystemLogBufferForTest();
+  resetMailSentThrottleForTest();
 });
 
 const config: GraphConfig = {

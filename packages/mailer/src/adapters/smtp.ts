@@ -2,7 +2,7 @@ import nodemailer, { type Transporter } from "nodemailer";
 import type { SmtpConfig } from "../config.js";
 import { SMTP_CAPABILITIES } from "../capabilities.js";
 import { extractSmtpCode, mapSmtpError } from "../errorMapping.js";
-import { rejectedSendResult } from "../adapterUtils.js";
+import { logMailSent, rejectedSendResult } from "../adapterUtils.js";
 import { formatFromHeader, parseAddressList, resolveReplyTo } from "../senderUtils.js";
 import { validateMailMessage } from "../validation.js";
 import { assertSafeMailDestination, resolveSafeMailDestination } from "../ssrfGuard.js";
@@ -119,10 +119,7 @@ export class SmtpAdapter implements MailerAdapter {
 
     try {
       const info = await this.transporter.sendMail(mail);
-      emitSystemLog("mail", "info", "mail_sent", {
-        provider: this.provider,
-        to: redactEmail(message.to),
-      });
+      logMailSent(this.provider, redactEmail(message.to));
       return {
         status: "accepted",
         provider: this.provider,

@@ -7,7 +7,7 @@ import {
   resolveReplyTo,
   shouldSetGraphMessageFrom,
 } from "../senderUtils.js";
-import { rejectedSendResult } from "../adapterUtils.js";
+import { logMailSent, rejectedSendResult } from "../adapterUtils.js";
 import { validateMailMessage } from "../validation.js";
 import type { FetchFn, MailMessage, MailerAdapter, SendResult } from "../types.js";
 import { emitSystemLog } from "@admitto/shared/system-log";
@@ -137,7 +137,7 @@ export class GraphAdapter implements MailerAdapter {
 
       if (res.status === 202) {
         const requestId = res.headers.get("request-id") ?? undefined;
-        emitSystemLog("mail", "info", "mail_sent", { provider: this.provider, to: redactEmail(message.to) });
+        logMailSent(this.provider, redactEmail(message.to));
         return {
           status: "accepted",
           provider: this.provider,

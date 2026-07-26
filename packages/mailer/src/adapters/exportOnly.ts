@@ -1,6 +1,6 @@
 import type { ExportOnlyConfig } from "../config.js";
 import { EXPORT_ONLY_CAPABILITIES } from "../capabilities.js";
-import { rejectedSendResult } from "../adapterUtils.js";
+import { logMailSent, rejectedSendResult } from "../adapterUtils.js";
 import { toMailSender } from "../senderUtils.js";
 import { validateMailMessage } from "../validation.js";
 import type { ExportPayload, MailMessage, MailerAdapter, SendResult } from "../types.js";
@@ -52,7 +52,7 @@ export class ExportOnlyAdapter implements MailerAdapter {
       }
     }
 
-    emitSystemLog("mail", "info", "mail_sent", { provider: this.provider, to: redactEmail(message.to) });
+    logMailSent(this.provider, redactEmail(message.to));
     return {
       status: "accepted",
       provider: this.provider,

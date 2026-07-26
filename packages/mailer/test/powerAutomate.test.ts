@@ -5,6 +5,7 @@ import { PowerAutomateAdapter } from "../src/adapters/powerAutomate.js";
 import type { PowerAutomateConfig } from "../src/config.js";
 import * as ssrfGuard from "../src/ssrfGuard.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
+import { resetMailSentThrottleForTest } from "../src/adapterUtils.js";
 
 vi.mock("node:dns/promises", () => ({
   lookup: vi.fn(),
@@ -32,6 +33,7 @@ beforeEach(() => {
   mockedUndiciFetch.mockClear();
   MockedAgent.mockClear();
   resetSystemLogBufferForTest();
+  resetMailSentThrottleForTest();
 });
 
 const config: PowerAutomateConfig = {

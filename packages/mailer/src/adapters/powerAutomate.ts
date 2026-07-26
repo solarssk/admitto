@@ -3,7 +3,7 @@ import { Agent, fetch as undiciFetch } from "undici";
 import type { PowerAutomateConfig } from "../config.js";
 import { POWER_AUTOMATE_CAPABILITIES } from "../capabilities.js";
 import { mapHttpStatus, mapNetworkError, sanitizeProviderErrorForLog } from "../errorMapping.js";
-import { rejectedSendResult } from "../adapterUtils.js";
+import { logMailSent, rejectedSendResult } from "../adapterUtils.js";
 import { resolveReplyTo } from "../senderUtils.js";
 import { validateMailMessage } from "../validation.js";
 import { resolveSafeMailDestination } from "../ssrfGuard.js";
@@ -154,7 +154,7 @@ export class PowerAutomateAdapter implements MailerAdapter {
             processResponse,
           );
       if (isSendSuccess(result.status)) {
-        emitSystemLog("mail", "info", "mail_sent", { provider: this.provider, to: redactEmail(message.to) });
+        logMailSent(this.provider, redactEmail(message.to));
       } else {
         // Drop the response-body suffix - `processResponse` includes up to 200 raw chars
         // of the flow's HTTP response, which could echo the message we just posted

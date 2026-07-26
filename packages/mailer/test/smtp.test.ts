@@ -5,6 +5,7 @@ import { SmtpAdapter } from "../src/adapters/smtp.js";
 import type { SmtpConfig } from "../src/config.js";
 import * as ssrfGuard from "../src/ssrfGuard.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
+import { resetMailSentThrottleForTest } from "../src/adapterUtils.js";
 
 vi.mock("node:dns/promises", () => ({
   lookup: vi.fn(),
@@ -18,6 +19,7 @@ beforeEach(() => {
     ReturnType<typeof lookup>
   >);
   resetSystemLogBufferForTest();
+  resetMailSentThrottleForTest();
 });
 
 const config: SmtpConfig = {
