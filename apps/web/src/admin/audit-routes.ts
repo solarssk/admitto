@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { canManageInstance } from "@admitto/auth";
-import { EXPORT_ROW_CAP, sanitizeCsvCell, writeAdminAuditLog } from "@admitto/tickets";
+import { EXPORT_ROW_CAP, quoteCsvCell, sanitizeCsvCell, writeAdminAuditLog } from "@admitto/tickets";
 import { adminAuditFromContext, positiveIntQuery } from "./admin-helpers.js";
 import { attachmentContentDisposition } from "./content-disposition.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
@@ -176,11 +176,6 @@ export async function handleGetAuditLog(c: Context, db: PrismaClient): Promise<R
   return c.json({ entries, total, page, pageSize });
 }
 
-/** RFC 4180 CSV field quoting (escape embedded double quotes). */
-function quoteCsvCell(value: string): string {
-  return `"${value.replaceAll('"', '""')}"`;
-}
-
 const CSV_COLUMNS = ["time", "action", "scope", "actor", "ip", "details"] as const;
 
 /** Build CSV text for a page of audit log rows (CRLF, quoted, formula-injection-safe fields). */
@@ -231,7 +226,9 @@ export async function handleExportAuditLog(c: Context, db: PrismaClient): Promis
     return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
   }
 
-  const rows = await db.adminAuditLog.findMany({ where, orderBy: { created_at: "desc" } });
+  // `take` is defense-in-depth, not the primary guard (the count() check above already rejects
+  // an over-cap export) - matches findFilteredAttendeesForExport's own belt-and-suspenders cap.
+  const rows = await db.adminAuditLog.findMany({ where, orderBy: { created_at: "desc" }, take: EXPORT_ROW_CAP });
   const actorMap = await resolveActorMap(db, rows);
   const csv = buildAuditLogCsv(rows, actorMap);
 
@@ -247,7 +244,11 @@ export async function handleExportAuditLog(c: Context, db: PrismaClient): Promis
   });
 
   const timestamp = new Date().toISOString().slice(0, 10);
-  return new Response(csv, {
+  // BOM so Excel detects UTF-8 - actor display names and JSON `details` values can carry
+  // non-ASCII text, matching the same prefix handleExportEventPii already uses for the same
+  // reason.
+  const bom = "\uFEFF";
+  return new Response(bom + csv, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": attachmentContentDisposition(`audit-log-${timestamp}.csv`),

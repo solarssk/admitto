@@ -88,7 +88,7 @@ export type {
   AttendeeSortDir,
   ExportAttendeeSqlRow,
 } from "./attendees-list-filters.js";
-export { sanitizeCsvCell } from "./csv-sanitize.js";
+export { quoteCsvCell, sanitizeCsvCell } from "./csv-sanitize.js";
 export type { OpsAuditContext } from "./ops-audit.js";
 export type { AdminAuditWriteInput } from "./admin-audit.js";
 export type {

@@ -8,7 +8,7 @@ import { ADMITTABLE_STATUS_LIST, REVOCABLE_ITEM_STATES, writeAdminAuditLog } fro
 import { InvalidHttpUrlError, resolveBrandingFromEvent, validateBrandingUrl } from "@admitto/mail-templates";
 import { z } from "zod";
 import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
-import { sanitizeCsvCell } from "./csv-sanitize.js";
+import { quoteCsvCell, sanitizeCsvCell } from "./csv-sanitize.js";
 import { timezoneField } from "./timezone.js";
 import { countEventActivitySignals, isEventDeletable } from "./event-deletion.js";
 import { attachmentContentDisposition } from "./content-disposition.js";
@@ -341,10 +341,6 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     console.error("[audit] event_updated transaction failed", err);
     return c.json({ error: "audit_failed" }, 500);
   }
-}
-
-function quoteCsvCell(value: string): string {
-  return `"${value.replaceAll('"', '""')}"`;
 }
 
 const PII_EXPORT_MAX_ROWS = 10_000;

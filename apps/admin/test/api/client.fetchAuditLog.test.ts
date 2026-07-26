@@ -49,6 +49,10 @@ describe("fetchAuditLog (client) — query string building", () => {
 describe("exportAuditLog (client)", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    // Restores the HTMLAnchorElement.prototype.click spy below even if an assertion throws
+    // first - a manual mockRestore() at the end of the test body would never run in that case,
+    // leaving the prototype mocked for every test after it.
+    vi.restoreAllMocks();
   });
 
   it("requests format=csv plus the current filters, then triggers a browser download", async () => {
@@ -66,7 +70,5 @@ describe("exportAuditLog (client)", () => {
     const [url] = fetchMock.mock.calls[0]!;
     expect(url).toBe("/api/admin/audit-log/export?action_type=event_created&event_id=evt-1&format=csv");
     expect(clickSpy).toHaveBeenCalledOnce();
-
-    clickSpy.mockRestore();
   });
 });

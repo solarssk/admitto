@@ -4135,6 +4135,11 @@ output.mail-field-hint {
   color: var(--text-primary);
 }
 
+.audit-log-search-clear:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--border-focus);
+}
+
 .audit-log-filter__label {
   font-size: var(--fs-sm);
   color: var(--text-secondary);
@@ -4267,6 +4272,11 @@ output.mail-field-hint {
 .audit-log-row-copy:hover {
   background: var(--surface-hover);
   color: var(--text-primary);
+}
+
+.audit-log-row-copy:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--border-focus);
 }
 
 .audit-log-details__panel {
@@ -5830,6 +5840,18 @@ output.mail-field-hint {
   border-radius: var(--radius-md, 0.5rem);
   background: var(--surface-card, #fff);
   box-shadow: var(--shadow-md, 0 8px 24px rgba(15, 23, 42, 0.12));
+}
+
+/* Below the same 768px breakpoint useIsDesktop() switches on, a DatePicker can render inside
+   a narrower host than its own field would suggest (e.g. AuditLogPanel's mobile Filters
+   dropdown, ~236px of content width) - the panel positions relative to the field itself, not
+   whichever container it's actually nested in, so the fixed 18.5rem (296px) width would bleed
+   past that host's edge instead of being clipped. Narrower here fits every mobile host without
+   needing per-page overrides, and a calendar this size is still perfectly comfortable to use. */
+@media (max-width: 767px) {
+  .date-picker__panel {
+    width: 14rem;
+  }
 }
 
 .date-picker__panel--above {

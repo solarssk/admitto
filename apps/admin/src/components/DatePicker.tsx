@@ -160,7 +160,12 @@ export function DatePicker({
     if (!open || !containerRef.current || !panelRef.current) return;
     const updatePlacement = () => {
       const rect = containerRef.current!.getBoundingClientRect();
-      const panelHeight = panelRef.current!.offsetHeight;
+      // scrollHeight (natural content height), not offsetHeight - the panel may already be
+      // clamped by the maxHeight this same effect applied last run; measuring the clamped box
+      // instead of the true content height would make the clamp look unnecessary, remove
+      // itself, regrow the panel, then re-clamp on the next scroll/resize tick - a visible
+      // height oscillation every time the panel is open during a scroll or resize.
+      const panelHeight = panelRef.current!.scrollHeight;
       const panelWidth = panelRef.current!.offsetWidth;
       const spaceBelow = window.innerHeight - rect.bottom;
       const spaceAbove = rect.top;

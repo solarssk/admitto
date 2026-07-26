@@ -434,8 +434,14 @@ describe("GET /api/admin/audit-log/export", () => {
     expect(res.headers.get("Content-Type")).toContain("text/csv");
     expect(res.headers.get("Content-Disposition")).toMatch(/^attachment; filename="audit-log-\d{4}-\d{2}-\d{2}\.csv"$/);
 
-    const csv = await res.text();
-    const lines = csv.split("\r\n");
+    const buf = await res.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    expect(bytes[0]).toBe(0xef);
+    expect(bytes[1]).toBe(0xbb);
+    expect(bytes[2]).toBe(0xbf);
+
+    const csv = new TextDecoder("utf-8").decode(buf);
+    const lines = csv.replace(/^\uFEFF/, "").split("\r\n");
     expect(lines[0]).toBe('"time","action","scope","actor","ip","details"');
     expect(lines).toHaveLength(2);
     expect(lines[1]).toContain('"session_revoked"');
