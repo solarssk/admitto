@@ -285,7 +285,7 @@ export async function handlePostUser(c: Context, db: PrismaClient): Promise<Resp
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
-  const actorUserId = audit.operator ?? c.get("auth").userId;
+  const actorUserId = c.get("auth").userId;
 
   let created;
   try {
@@ -379,7 +379,7 @@ async function applyUserPatch(
 
   await writeAdminAuditLog(tx, {
     organizationId: orgId,
-    actorUserId: audit.operator ?? actorId,
+    actorUserId: actorId,
     sessionId: audit.sessionId,
     ip: audit.ip,
     timezone: audit.timezone,
@@ -500,7 +500,7 @@ export async function handlePostUserRole(c: Context, db: PrismaClient): Promise<
       });
       await writeAdminAuditLog(tx, {
         organizationId: orgId,
-        actorUserId: audit.operator ?? actorId,
+        actorUserId: actorId,
         sessionId: audit.sessionId,
         ip: audit.ip,
         timezone: audit.timezone,
@@ -594,7 +594,7 @@ export async function handleDeleteUserRole(c: Context, db: PrismaClient): Promis
         await tx.roleAssignment.delete({ where: { id: assignmentId } });
         await writeAdminAuditLog(tx, {
           organizationId: orgId,
-          actorUserId: audit.operator ?? actorId,
+          actorUserId: actorId,
           sessionId: audit.sessionId,
           ip: audit.ip,
           timezone: audit.timezone,
@@ -653,7 +653,7 @@ export async function handlePostResetUserMfa(c: Context, db: PrismaClient): Prom
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
-  const actorUserId = audit.operator ?? c.get("auth").userId;
+  const actorUserId = c.get("auth").userId;
 
   await db.$transaction(async (tx) => {
     await resetUserMfa(tx, id);
@@ -696,7 +696,7 @@ export async function handlePostResetUserPassword(c: Context, db: PrismaClient):
   const hash = await hashPassword(newPassword);
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
-  const actorUserId = audit.operator ?? c.get("auth").userId;
+  const actorUserId = c.get("auth").userId;
 
   await db.$transaction(async (tx) => {
     await tx.user.update({
@@ -742,7 +742,7 @@ export async function handlePostRevokeUserSessions(c: Context, db: PrismaClient)
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
-  const actorUserId = audit.operator ?? c.get("auth").userId;
+  const actorUserId = c.get("auth").userId;
 
   const { sessionsRevoked } = await db.$transaction(async (tx) => {
     const revoked = await revokeUserAuthState(tx, id);

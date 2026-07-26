@@ -153,7 +153,7 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
   }
 
   const audit = adminAuditFromContext(c);
-  const actorUserId = audit.operator ?? auth.userId;
+  const actorUserId = auth.userId;
 
   try {
     const event = await db.$transaction(async (tx) => {

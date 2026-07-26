@@ -303,7 +303,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
   if (!existing) return c.json({ error: "not_found" }, 404);
 
   const audit = adminAuditFromContext(c);
-  const actorUserId = audit.operator ?? c.get("auth").userId;
+  const actorUserId = c.get("auth").userId;
 
   const data: {
     title?: string;

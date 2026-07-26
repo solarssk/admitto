@@ -159,7 +159,7 @@ export async function handlePatchSystemSettings(c: Context, db: PrismaClient): P
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
-  const actorUserId = audit.operator ?? c.get("auth").userId;
+  const actorUserId = c.get("auth").userId;
 
   await db.$transaction(async (tx) => {
     for (const bodyKey of presentKeys) {
