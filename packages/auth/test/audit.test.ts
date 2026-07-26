@@ -68,12 +68,12 @@ describe("audit", () => {
     expect(payload.scope).toBe("login_ip");
   });
 
-  it("logLoginSuccess redacts email and includes ts", () => {
+  it("logLoginSuccess logs the full email and includes ts", () => {
     const spy = vi.spyOn(console, "info").mockImplementation(() => {});
     logLoginSuccess({ email: "bob@example.com", ip: "1.2.3.4" });
     const payload = JSON.parse(String(spy.mock.calls[0]?.[0]));
     expect(payload.event).toBe("auth.login.success");
-    expect(payload.email).toBe("b***@example.com");
+    expect(payload.email).toBe("bob@example.com");
     expect(payload.ip).toBe("1.2.3.4");
     expect(payload.ts).toBeDefined();
   });

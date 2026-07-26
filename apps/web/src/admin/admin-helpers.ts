@@ -1,6 +1,5 @@
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@prisma/client";
-import { redactEmail } from "@admitto/shared";
 import { canManageEvent, canManageInstance } from "@admitto/auth";
 import { IllegalItemTransitionError, type OpsAuditContext } from "@admitto/tickets";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
@@ -62,15 +61,16 @@ export function adminAuditFromContext(c: Context): OpsAuditContext {
 /** Best-effort actor email for System-logs enrichment - the session/auth context only ever
  * carries a userId, so a raw admin action (session revoke, event archive/delete) previously
  * logged an unreadable actorUserId with no way to tell which person did it without a DB lookup.
- * Already redacted (a***@example.com): this return value dual-sinks to stdout via
- * emitSystemLog/recordSystemLog, so it must never carry a full address. Null if the user row is
- * gone (should not happen for an authenticated actor, but must not throw either way). */
+ * Full email, not redacted - internal staff accountability, matching the per-org Audit log's
+ * own already-unredacted actor identification (see `actor_email` in audit-routes.ts). Null if
+ * the user row is gone (should not happen for an authenticated actor, but must not throw either
+ * way). */
 export async function resolveActorEmailForLog(
   db: PrismaClient | Prisma.TransactionClient,
   userId: string,
 ): Promise<string | null> {
   const user = await db.user.findUnique({ where: { id: userId }, select: { email: true } });
-  return user ? redactEmail(user.email) : null;
+  return user?.email ?? null;
 }
 
 /** Require `:eventId` route param or return 400. */

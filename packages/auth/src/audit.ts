@@ -69,10 +69,13 @@ export type RateLimitScope =
   | "admin_mail_transport_test"
   | "admin_event_mail_transport_test";
 
-/** Emit `auth.login.success` as JSON to stdout (no password/token fields). */
+/** Emit `auth.login.success` as JSON to stdout (no password/token fields). Full email, not
+ * redacted - staff/operator sign-in is exactly the internal accountability case this log
+ * exists for, matching the already-unredacted actor identification in the per-org Audit log
+ * (`AdminAuditLog`, resolved via `actor_email` in audit-routes.ts). */
 export function logLoginSuccess(ctx: LoginAuditContext): void {
   emitAuditEvent("auth.login.success", {
-    email: redactEmail(ctx.email),
+    email: ctx.email,
     ip: ctx.ip ?? null,
     userAgent: ctx.userAgent ?? null,
   });
@@ -81,7 +84,7 @@ export function logLoginSuccess(ctx: LoginAuditContext): void {
 /** Emit `auth.login.fail` as JSON to stdout (uniform shape for enumeration-safe failures). */
 export function logLoginFailure(ctx: LoginAuditContext): void {
   emitAuditEvent("auth.login.fail", {
-    email: redactEmail(ctx.email),
+    email: ctx.email,
     ip: ctx.ip ?? null,
     userAgent: ctx.userAgent ?? null,
   });
@@ -91,7 +94,7 @@ export function logLoginFailure(ctx: LoginAuditContext): void {
 export function logMfaBreakGlass(ctx: { action: string; email: string; ip?: string }): void {
   emitAuditEvent("auth.mfa.break_glass", {
     action: ctx.action,
-    email: redactEmail(ctx.email),
+    email: ctx.email,
     ip: ctx.ip ?? null,
   });
 }

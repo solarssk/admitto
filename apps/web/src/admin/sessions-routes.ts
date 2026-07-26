@@ -8,7 +8,6 @@ import {
 } from "@admitto/auth";
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog } from "@admitto/shared/system-log";
-import { redactEmail } from "@admitto/shared";
 import {
   adminAuditFromContext,
   assertEventManageAccess,
@@ -114,7 +113,7 @@ export async function handleRevokeSession(c: Context, db: PrismaClient): Promise
     emitSystemLog("security", "info", "session_revoked", {
       sessionId: id,
       targetUserId: row.user_id,
-      targetEmail: redactEmail(row.user.email),
+      targetEmail: row.user.email,
       actorUserId,
       actorEmail: await resolveActorEmailForLog(tx, actorUserId),
       ip: audit.ip,
