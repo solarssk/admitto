@@ -13,6 +13,7 @@ import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 // its tests exercise the <table> markup they assert against.
 beforeEach(() => {
   mockMatchMedia(true);
+  vi.mocked(fetchSystemLogs).mockResolvedValue({ entries: [], cursor: 0 });
 });
 
 const emptySettings = {
@@ -60,6 +61,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchSecuritySettings: vi.fn(),
     patchSecuritySettings: vi.fn(),
     fetchAuditLog: vi.fn(),
+    fetchSystemLogs: vi.fn(),
     fetchStaffTheme: vi.fn(),
     saveStaffTheme: vi.fn(),
     archiveEvent: vi.fn(),
@@ -74,6 +76,7 @@ import {
   fetchSecuritySettings,
   fetchSessions,
   fetchStaffTheme,
+  fetchSystemLogs,
   patchSecuritySettings,
   revokeAllOperatorSessions,
   revokeSessionById,
@@ -214,6 +217,8 @@ describe("AuditLogPanel operator errors", () => {
     vi.mocked(fetchAuditLog).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     vi.mocked(fetchAdminEvents).mockResolvedValueOnce([]);
     renderWithToast(<AuditLogPanel />);
+    // AuditLogPanel now opens on the System view by default - switch to Audit to see this.
+    fireEvent.click(screen.getByRole("radio", { name: "Audit" }));
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     });

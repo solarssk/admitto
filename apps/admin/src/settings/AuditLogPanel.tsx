@@ -776,7 +776,7 @@ const LOGS_VIEW_OPTIONS: ReadonlyArray<SegmentedOption<LogsView>> = [
 
 /** Superadmin audit log viewer — read-only paginated table with action and date filters. */
 export function AuditLogPanel() {
-  const [view, setView] = useState<LogsView>("audit");
+  const [view, setView] = useState<LogsView>("system");
   // Mirrored up from SystemLogsPanel purely so the header's Live/Download buttons (which live
   // here, next to the System/Audit toggle, rather than being duplicated inside the panel) can
   // reflect its state - SystemLogsPanel itself remains the source of truth for both.
@@ -1008,6 +1008,31 @@ export function AuditLogPanel() {
     />
   );
 
+  // Built once, rendered either in the Card header (desktop) or passed down into
+  // SystemLogsPanel's own toolbar (mobile, where the header only has room for the title and the
+  // System/Audit toggle) - mirrors clearFiltersButton/exportButton's own dual placement above.
+  const liveButton = (
+    <Button
+      type="button"
+      variant={systemLive ? "success" : "secondary"}
+      size="sm"
+      onClick={() => systemLogsRef.current?.toggleLive()}
+    >
+      {systemLive ? "Live" : "Paused"}
+    </Button>
+  );
+  const downloadButton = (
+    <Button
+      type="button"
+      variant="secondary"
+      size="sm"
+      disabled={!systemHasEntries}
+      onClick={() => systemLogsRef.current?.download()}
+    >
+      Download .log
+    </Button>
+  );
+
   return (
     <Card
       title={view === "system" ? "System logs" : "Audit log"}
@@ -1016,32 +1041,17 @@ export function AuditLogPanel() {
         <>
           {/* On mobile these two move down into the toolbar instead (next to Filters) - a
               narrow card header can only fit the title plus this always-present toggle before
-              wrapping onto a second line. Audit-only: System logs has its own filter row. */}
+              wrapping onto a second line. */}
           {isDesktop && view === "audit" && (
             <>
               {clearFiltersButton}
               {exportButton}
             </>
           )}
-          {view === "system" && (
+          {isDesktop && view === "system" && (
             <>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                disabled={!systemHasEntries}
-                onClick={() => systemLogsRef.current?.download()}
-              >
-                Download .log
-              </Button>
-              <Button
-                type="button"
-                variant={systemLive ? "success" : "secondary"}
-                size="sm"
-                onClick={() => systemLogsRef.current?.toggleLive()}
-              >
-                {systemLive ? "Live" : "Paused"}
-              </Button>
+              {liveButton}
+              {downloadButton}
             </>
           )}
           {/* Always last: with the actions row right-anchored, a trailing item's own edge
@@ -1057,9 +1067,23 @@ export function AuditLogPanel() {
         </>
       }
     >
-      {view === "system" ? (
-        <SystemLogsPanel ref={systemLogsRef} onLiveChange={setSystemLive} onHasEntriesChange={setSystemHasEntries} />
-      ) : (
+      {/* Both views stay mounted the whole time, toggled by visibility rather than by
+          conditional rendering - switching the toggle used to unmount/remount whichever side
+          you left, which meant losing all of System's polled state and re-fetching from
+          scratch on every return trip (a visible flash even on a fast local request). Neither
+          side's effects care that they're temporarily hidden - polling simply continues, so
+          flipping back shows already-current data instead of an empty/loading flash. */}
+      <div style={{ display: view === "system" ? undefined : "none" }}>
+        <SystemLogsPanel
+          ref={systemLogsRef}
+          isDesktop={isDesktop}
+          liveButton={!isDesktop ? liveButton : undefined}
+          downloadButton={!isDesktop ? downloadButton : undefined}
+          onLiveChange={setSystemLive}
+          onHasEntriesChange={setSystemHasEntries}
+        />
+      </div>
+      <div style={{ display: view === "audit" ? undefined : "none" }}>
         <AuditLogView
           isDesktop={isDesktop}
           rootRef={rootRef}
@@ -1085,7 +1109,7 @@ export function AuditLogPanel() {
           goToPage={goToPage}
           totalPages={totalPages}
         />
-      )}
+      </div>
     </Card>
   );
 }

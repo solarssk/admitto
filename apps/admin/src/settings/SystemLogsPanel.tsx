@@ -1,8 +1,10 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button, EmptyState, useToast } from "@admitto/ui";
 import { fetchSystemLogs } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { SystemLogEntryDto } from "../api/types.js";
+import { FiltersMenu } from "../components/FiltersMenu.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 
 type LevelFilter = "" | SystemLogEntryDto["level"];
 type SourceFilter = "" | SystemLogEntryDto["source"];
@@ -13,7 +15,7 @@ const MAX_RENDERED_ENTRIES = 1000;
 
 const SOURCE_LABELS: Record<SystemLogEntryDto["source"], string> = {
   api: "API",
-  db: "DB",
+  db: "Database",
   cache: "Cache",
   mail: "Mail",
   admin: "Admin",
@@ -59,6 +61,13 @@ export interface SystemLogsPanelHandle {
 }
 
 interface SystemLogsPanelProps {
+  isDesktop: boolean;
+  /** Rendered inline in this panel's own toolbar on mobile, where AuditLogPanel's Card header
+   * only has room for the title and the System/Audit toggle - matches how AuditLogView's own
+   * Clear filters/Export CSV move down the same way. Undefined on desktop, where AuditLogPanel
+   * renders them in the Card header instead. */
+  liveButton?: ReactNode;
+  downloadButton?: ReactNode;
   /** Mirrors this panel's own `live` state up so the header's Live/Paused button can reflect it -
    * display only, the panel itself remains the source of truth. */
   onLiveChange?: (live: boolean) => void;
@@ -74,7 +83,7 @@ interface SystemLogsPanelProps {
  * stdout independent of this view, so nothing is lost if the buffer resets or the UI is down.
  */
 export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanelProps>(function SystemLogsPanel(
-  { onLiveChange, onHasEntriesChange },
+  { isDesktop, liveButton, downloadButton, onLiveChange, onHasEntriesChange },
   ref,
 ) {
   const [entries, setEntries] = useState<SystemLogEntryDto[]>([]);
@@ -89,6 +98,7 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
   const cursorRef = useRef(0);
   const filtersRef = useRef({ level, source, search });
   const consoleRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     filtersRef.current = { level, source, search };
@@ -203,11 +213,53 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
     [lines],
   );
 
+  // A request that resolves near-instantly (localhost, a warm cache) shouldn't flip the empty
+  // state between "Loading…" and "No log activity yet" every time a filter changes - only a
+  // load that's genuinely taking a moment earns the loading copy.
+  const showLoadingState = useDelayedLoading(loading);
+  const activeFilterCount = (source ? 1 : 0) + (level ? 1 : 0);
+
+  const sourceSelect = (
+    <select
+      id="system-log-filter-source"
+      name="system-log-filter-source"
+      className="at-select system-log-panel__field"
+      aria-label={isDesktop ? "Source" : undefined}
+      value={source}
+      onChange={(e) => setSource(e.target.value as SourceFilter)}
+    >
+      <option value="">All sources</option>
+      {(Object.keys(SOURCE_LABELS) as SystemLogEntryDto["source"][]).map((key) => (
+        <option key={key} value={key}>
+          {SOURCE_LABELS[key]}
+        </option>
+      ))}
+    </select>
+  );
+  const levelSelect = (
+    <select
+      id="system-log-filter-level"
+      name="system-log-filter-level"
+      className="at-select system-log-panel__field"
+      aria-label={isDesktop ? "Level" : undefined}
+      value={level}
+      onChange={(e) => setLevel(e.target.value as LevelFilter)}
+    >
+      <option value="">All levels</option>
+      {(Object.keys(LEVEL_LABELS) as SystemLogEntryDto["level"][]).map((key) => (
+        <option key={key} value={key}>
+          {LEVEL_LABELS[key]}
+        </option>
+      ))}
+    </select>
+  );
+
   return (
     <div className="system-log-panel">
       <div className="system-log-panel__toolbar">
         <div className="system-log-panel__field system-log-panel__field--search">
           <input
+            ref={searchInputRef}
             id="system-log-search"
             name="system-log-search"
             type="text"
@@ -217,40 +269,50 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
           />
+          {searchInput.length > 0 && (
+            <button
+              type="button"
+              className="audit-log-search-clear"
+              onClick={() => {
+                setSearchInput("");
+                searchInputRef.current?.focus();
+              }}
+              aria-label="Clear search"
+            >
+              <i className="ti ti-x" aria-hidden="true" />
+            </button>
+          )}
         </div>
-        <select
-          id="system-log-filter-source"
-          name="system-log-filter-source"
-          className="at-select system-log-panel__field"
-          aria-label="Source"
-          value={source}
-          onChange={(e) => setSource(e.target.value as SourceFilter)}
-        >
-          <option value="">All sources</option>
-          {(Object.keys(SOURCE_LABELS) as SystemLogEntryDto["source"][]).map((key) => (
-            <option key={key} value={key}>
-              {SOURCE_LABELS[key]}
-            </option>
-          ))}
-        </select>
-        <select
-          id="system-log-filter-level"
-          name="system-log-filter-level"
-          className="at-select system-log-panel__field"
-          aria-label="Level"
-          value={level}
-          onChange={(e) => setLevel(e.target.value as LevelFilter)}
-        >
-          <option value="">All levels</option>
-          {(Object.keys(LEVEL_LABELS) as SystemLogEntryDto["level"][]).map((key) => (
-            <option key={key} value={key}>
-              {LEVEL_LABELS[key]}
-            </option>
-          ))}
-        </select>
+        {isDesktop ? (
+          <>
+            {sourceSelect}
+            {levelSelect}
+          </>
+        ) : (
+          <FiltersMenu activeCount={activeFilterCount} className="system-log-filters-menu">
+            <div className="system-log-filters-menu__field">
+              <label className="audit-log-filter__label" htmlFor="system-log-filter-source">
+                Source
+              </label>
+              {sourceSelect}
+            </div>
+            <div className="system-log-filters-menu__field">
+              <label className="audit-log-filter__label" htmlFor="system-log-filter-level">
+                Level
+              </label>
+              {levelSelect}
+            </div>
+          </FiltersMenu>
+        )}
+        {!isDesktop && (liveButton || downloadButton) && (
+          <div className="system-log-panel__toolbar-actions">
+            {liveButton}
+            {downloadButton}
+          </div>
+        )}
       </div>
 
-      {loading && entries.length === 0 ? (
+      {showLoadingState && entries.length === 0 ? (
         <EmptyState title="Loading system logs…" />
       ) : error ? (
         <EmptyState title="Could not load system logs" description={error} />

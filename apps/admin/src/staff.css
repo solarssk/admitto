@@ -4511,15 +4511,94 @@ output.mail-field-hint {
   margin-bottom: var(--space-3);
 }
 
-.system-log-panel__field {
-  min-width: 9rem;
-}
-
 .system-log-panel__field--search {
+  position: relative;
   flex: 1 1 14rem;
 }
 
 .system-log-panel__field--search .at-input {
+  max-width: none;
+}
+
+/* Below the same breakpoint useIsDesktop() switches on, mirroring .audit-log-filter--search:
+   the search input's own width:100% intrinsic size otherwise claims the whole toolbar row,
+   forcing the Filters trigger onto its own wrapped line. Shrinking instead of stretching lets
+   Filters sit alongside it on the same row. */
+@media (max-width: 767px) {
+  .system-log-panel__field--search {
+    flex: 1 1 0%;
+    min-width: 0;
+  }
+}
+
+/* Source/Level selects, inline in the toolbar on desktop (moved into a Filters dropdown on
+   mobile, see FiltersMenu below) - .at-select's own width:100% would otherwise have each one
+   claim the full toolbar row on its own. */
+select.system-log-panel__field {
+  width: auto;
+  max-width: 11rem;
+  flex: 0 1 auto;
+}
+
+/* Mobile only - Live/Download move down from the Card header into this row, mirroring
+   .audit-log-toolbar-actions exactly. */
+.system-log-panel__toolbar-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex: 1 1 100%;
+}
+
+/* Mobile Filters dropdown for Source/Level - same trigger/panel/badge shape as
+   .audit-log-filters-menu, just renamed per FiltersMenu's own per-page className contract. */
+.system-log-filters-menu {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.system-log-filters-menu__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  margin-left: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+  color: var(--text-on-primary);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.system-log-filters-menu__panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  left: auto;
+  z-index: var(--z-dropdown);
+  width: 220px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-3);
+  margin: 0;
+}
+
+.system-log-filters-menu__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.system-log-filters-menu__field .at-select {
+  width: 100%;
   max-width: none;
 }
 
@@ -4589,19 +4668,6 @@ output.mail-field-hint {
 .system-log-panel__footer-actions {
   display: flex;
   gap: var(--space-2);
-}
-
-@media (max-width: 600px) {
-  .system-log-panel__toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .system-log-panel__footer {
-    flex-direction: column;
-    align-items: stretch;
-    gap: var(--space-2);
-  }
 }
 
 /* Event archiving panel */
