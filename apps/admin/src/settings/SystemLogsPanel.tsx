@@ -99,6 +99,9 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [live, setLive] = useState(true);
+  // Bumped by the Retry action below - included in the snapshot effect's own deps so a
+  // failed initial/filter-change load can be retried without touching level/source/search.
+  const [retryTick, setRetryTick] = useState(0);
   const { addToast } = useToast();
   const cursorRef = useRef(0);
   const filtersRef = useRef({ level, source, search });
@@ -145,39 +148,52 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
         if (!ac.signal.aborted) setLoading(false);
       });
     return () => ac.abort();
-  }, [level, source, search]);
+  }, [level, source, search, retryTick]);
 
   // Polling loop, independent of filter changes - reads filtersRef/cursorRef fresh each tick so
   // toggling Live off and back on resumes from where it left off instead of resetting the view.
   useEffect(() => {
     if (!live) return;
     let currentAbort: AbortController | null = null;
-    const intervalId = window.setInterval(() => {
+    // Guards against overlapping polls (CodeRabbit review): without it, a response slower
+    // than the 1.75s interval left the previous tick's request in flight when the next tick
+    // started a new one - `currentAbort` only ever tracked the latest, so the earlier
+    // request was never aborted, and its result could still resolve out of order and rewind
+    // cursorRef to an older cursor. Skipping a tick while one is already in flight also means
+    // there is only ever one request to abort on unmount/pause.
+    let inFlight = false;
+
+    const pollOnce = async () => {
+      if (inFlight) return;
+      inFlight = true;
       const ac = new AbortController();
       currentAbort = ac;
       const f = filtersRef.current;
-      fetchSystemLogs(
-        {
-          since: cursorRef.current,
-          level: f.level || undefined,
-          source: f.source || undefined,
-          search: f.search || undefined,
-        },
-        ac.signal,
-      )
-        .then((data) => {
-          if (ac.signal.aborted) return;
-          cursorRef.current = data.cursor;
-          if (data.entries.length === 0) return;
-          setEntries((prev) => {
-            const next = [...prev, ...data.entries];
-            return next.length > MAX_RENDERED_ENTRIES ? next.slice(next.length - MAX_RENDERED_ENTRIES) : next;
-          });
-        })
-        .catch(() => {
-          // A single missed poll tick isn't worth surfacing - the next tick 1.75s later retries.
+      try {
+        const data = await fetchSystemLogs(
+          {
+            since: cursorRef.current,
+            level: f.level || undefined,
+            source: f.source || undefined,
+            search: f.search || undefined,
+          },
+          ac.signal,
+        );
+        if (ac.signal.aborted) return;
+        cursorRef.current = data.cursor;
+        if (data.entries.length === 0) return;
+        setEntries((prev) => {
+          const next = [...prev, ...data.entries];
+          return next.length > MAX_RENDERED_ENTRIES ? next.slice(next.length - MAX_RENDERED_ENTRIES) : next;
         });
-    }, POLL_INTERVAL_MS);
+      } catch {
+        // A single missed poll tick isn't worth surfacing - the next tick 1.75s later retries.
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const intervalId = window.setInterval(() => void pollOnce(), POLL_INTERVAL_MS);
     return () => {
       currentAbort?.abort();
       window.clearInterval(intervalId);
@@ -326,7 +342,10 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
           <div className="system-log-panel__console-empty">Loading system logs…</div>
         ) : error ? (
           <div className="system-log-panel__console-empty system-log-panel__console-empty--error">
-            Could not load system logs: {error}
+            <p>Could not load system logs: {error}</p>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setRetryTick((t) => t + 1)}>
+              Retry
+            </Button>
           </div>
         ) : entries.length === 0 ? (
           <div className="system-log-panel__console-empty">

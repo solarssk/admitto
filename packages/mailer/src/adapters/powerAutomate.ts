@@ -2,7 +2,7 @@ import type { LookupAddress } from "node:dns";
 import { Agent, fetch as undiciFetch } from "undici";
 import type { PowerAutomateConfig } from "../config.js";
 import { POWER_AUTOMATE_CAPABILITIES } from "../capabilities.js";
-import { mapHttpStatus, mapNetworkError } from "../errorMapping.js";
+import { mapHttpStatus, mapNetworkError, sanitizeProviderErrorForLog } from "../errorMapping.js";
 import { rejectedSendResult } from "../adapterUtils.js";
 import { resolveReplyTo } from "../senderUtils.js";
 import { validateMailMessage } from "../validation.js";
@@ -86,7 +86,12 @@ export class PowerAutomateAdapter implements MailerAdapter {
       records = await resolveSafeMailDestination(hostname);
     } catch (e) {
       const error = e instanceof Error ? e.message : "mail transport destination is not permitted";
-      emitSystemLog("security", "warn", "mail_destination_blocked", { provider: this.provider, error });
+      // Fixed category, not `error` - see the same note in smtp.ts. The real message
+      // still reaches the caller via the return value below.
+      emitSystemLog("security", "warn", "mail_destination_blocked", {
+        provider: this.provider,
+        error: "destination blocked or unresolvable",
+      });
       return rejectedSendResult(this.provider, error, message.idempotencyKey);
     }
 
@@ -151,7 +156,14 @@ export class PowerAutomateAdapter implements MailerAdapter {
       if (isSendSuccess(result.status)) {
         emitSystemLog("mail", "info", "mail_sent", { provider: this.provider, to: redactEmail(message.to) });
       } else {
-        emitSystemLog("mail", "error", "mail_send_failed", { provider: this.provider, error: result.error });
+        // Drop the response-body suffix - `processResponse` includes up to 200 raw chars
+        // of the flow's HTTP response, which could echo the message we just posted
+        // (recipient, subject) if the flow reflects request content back on error. The
+        // full error (with suffix) still reaches the caller via SendResult.error.
+        emitSystemLog("mail", "error", "mail_send_failed", {
+          provider: this.provider,
+          error: sanitizeProviderErrorForLog(result.error ?? "Power Automate send failed"),
+        });
       }
       return result;
     } catch (e) {

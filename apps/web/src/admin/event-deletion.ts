@@ -116,6 +116,11 @@ type DeleteActor = { userId: string };
  * actual delete, so a concurrent change to the event between page-load and click can only
  * ever make this stricter, never bypass it.
  */
+type DeleteTxResult =
+  | { kind: "not_found" }
+  | { kind: "not_deletable" }
+  | { kind: "ok"; eventTitle: string };
+
 export async function deleteEvent(
   db: PrismaClient,
   eventId: string,
@@ -125,7 +130,7 @@ export async function deleteEvent(
   timezone?: string | null,
 ): Promise<DeleteEventResult> {
   try {
-    return await db.$transaction(async (tx): Promise<DeleteEventResult> => {
+    const txResult = await db.$transaction(async (tx): Promise<DeleteTxResult> => {
       // Serializes with the event mail-settings PUT transaction on the same eventId (see
       // that route) — without this, a concurrent PUT can validate the event exists, then
       // this transaction deletes it, then the PUT's upsert recreates an orphaned
@@ -136,10 +141,10 @@ export async function deleteEvent(
         where: { id: eventId },
         select: { archived_at: true, pinned_note: true, organization_id: true, title: true },
       });
-      if (!event) return { code: "not_found" };
+      if (!event) return { kind: "not_found" };
 
       const signals = await countEventActivitySignals(tx, eventId);
-      if (!isEventDeletable(event, signals)) return { code: "not_deletable" };
+      if (!isEventDeletable(event, signals)) return { kind: "not_deletable" };
 
       // Defensive cleanup: MailTemplate has no FK to Event, so this is a no-op given the
       // guard above already requires eventMailTemplateCount === 0 — kept so a deleted
@@ -164,15 +169,23 @@ export async function deleteEvent(
         actionType: "event_deleted",
         metadata: { eventId },
       });
-      emitSystemLog("admin", "info", "event_deleted", {
-        eventId,
-        eventTitle: event.title,
-        actorUserId: actor.userId,
-        actorEmail: await resolveActorEmailForLog(tx, actor.userId),
-        ip,
-      });
-      return { ok: true };
+      return { kind: "ok", eventTitle: event.title };
     });
+
+    if (txResult.kind === "not_found") return { code: "not_found" };
+    if (txResult.kind === "not_deletable") return { code: "not_deletable" };
+
+    // Emitted after the transaction has committed (CodeRabbit review) - emitSystemLog is
+    // not transactional, so logging it from inside the callback above would record a
+    // deletion the transaction could still roll back on a later statement/commit failure.
+    emitSystemLog("admin", "info", "event_deleted", {
+      eventId,
+      eventTitle: txResult.eventTitle,
+      actorUserId: actor.userId,
+      actorEmail: await resolveActorEmailForLog(db, actor.userId),
+      ip,
+    });
+    return { ok: true };
   } catch (err) {
     // A concurrent change adding real activity between the count-check and the delete
     // (e.g. a new attendee) is caught here as a Postgres FK-restrict rejection — that is

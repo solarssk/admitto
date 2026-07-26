@@ -95,12 +95,12 @@ export async function handleRevokeSession(c: Context, db: PrismaClient): Promise
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
   const actorUserId = audit.operator ?? c.get("auth").userId;
-  await runInTransaction(db, async (tx) => {
+  const revoked = await runInTransaction(db, async (tx) => {
     // Re-check inside the transaction: two concurrent revoke calls (or a retry after the
     // first already succeeded) can both reach here before either commits. Only the one that
     // actually revoked the session gets audited.
-    const revoked = await revokeSession(tx, id);
-    if (!revoked) return;
+    const wasRevoked = await revokeSession(tx, id);
+    if (!wasRevoked) return false;
     await writeAdminAuditLog(tx, {
       organizationId: orgId,
       actorUserId,
@@ -110,15 +110,22 @@ export async function handleRevokeSession(c: Context, db: PrismaClient): Promise
       actionType: "session_revoked",
       metadata: { session_id: id, target_user_id: row.user_id },
     });
+    return true;
+  });
+
+  // Emitted after the transaction has committed (CodeRabbit review) - emitSystemLog is not
+  // transactional, so logging it from inside the callback above would record a revoke the
+  // transaction could still roll back on a later statement/commit failure.
+  if (revoked) {
     emitSystemLog("security", "info", "session_revoked", {
       sessionId: id,
       targetUserId: row.user_id,
       targetEmail: row.user.email,
       actorUserId,
-      actorEmail: await resolveActorEmailForLog(tx, actorUserId),
+      actorEmail: await resolveActorEmailForLog(db, actorUserId),
       ip: audit.ip,
     });
-  });
+  }
 
   return c.json({}, 200);
 }

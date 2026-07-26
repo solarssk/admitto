@@ -990,6 +990,25 @@ describe("SystemLogsPanel rendering", () => {
     expect(screen.getByText("Showing 1 line")).toBeTruthy();
   });
 
+  it("shows a Retry action on load failure and recovers once clicked", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+    vi.mocked(fetchSystemLogs).mockRejectedValueOnce(new Error("network error"));
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByText("No audit log entries yet");
+    openSystemLogsView();
+
+    await screen.findByText(/Could not load system logs/);
+    vi.mocked(fetchSystemLogs).mockResolvedValueOnce({
+      entries: [{ id: 1, ts: "2026-01-01T12:00:00.000Z", level: "info", source: "api", message: "http_request" }],
+      cursor: 1,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByText("http_request")).toBeTruthy();
+    expect(screen.queryByText(/Could not load system logs/)).toBeNull();
+  });
+
   it("renders an entry's fields alongside its message, for entries that have them", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
     vi.mocked(fetchSystemLogs).mockResolvedValueOnce({

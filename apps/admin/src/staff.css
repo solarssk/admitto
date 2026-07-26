@@ -4640,7 +4640,7 @@ select.system-log-panel__field {
   column-gap: var(--space-2);
   row-gap: 0;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
   color: var(--at-gray-300);
   /* Tighter than --space-2 - with row-gap now 0 inside an entry, an 8px top+8px bottom (16px
      total between entries) read as too wide a jump relative to the now-flush header/fields

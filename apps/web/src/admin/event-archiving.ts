@@ -72,13 +72,21 @@ export async function archiveEvent(
       if (!exists) return { code: "not_found" };
       return { code: "already_archived" };
     }
-    emitSystemLog("admin", "info", "event_archived", {
-      eventId,
-      eventTitle: outcome.eventTitle,
-      actorUserId: actor.userId,
-      actorEmail: await resolveActorEmailForLog(db, actor.userId),
-      ip,
-    });
+    // Best-effort: the archive itself already committed above, so a failure enriching the
+    // System-logs entry (e.g. a transient DB error resolving the actor's email) must not
+    // report this as a failed archive (CodeRabbit review) - own try/catch, outside the one
+    // that guards the actual transaction.
+    try {
+      emitSystemLog("admin", "info", "event_archived", {
+        eventId,
+        eventTitle: outcome.eventTitle,
+        actorUserId: actor.userId,
+        actorEmail: await resolveActorEmailForLog(db, actor.userId),
+        ip,
+      });
+    } catch (logErr) {
+      console.error("[audit] event_archived log enrichment failed", logErr);
+    }
     return { ok: true };
   } catch (err) {
     console.error("[audit] event_archived transaction failed", err);
@@ -132,13 +140,18 @@ export async function unarchiveEvent(
       if (!exists) return { code: "not_found" };
       return { code: "not_archived" };
     }
-    emitSystemLog("admin", "info", "event_unarchived", {
-      eventId,
-      eventTitle: outcome.eventTitle,
-      actorUserId: actor.userId,
-      actorEmail: await resolveActorEmailForLog(db, actor.userId),
-      ip,
-    });
+    // Best-effort - see the matching comment in archiveEvent above.
+    try {
+      emitSystemLog("admin", "info", "event_unarchived", {
+        eventId,
+        eventTitle: outcome.eventTitle,
+        actorUserId: actor.userId,
+        actorEmail: await resolveActorEmailForLog(db, actor.userId),
+        ip,
+      });
+    } catch (logErr) {
+      console.error("[audit] event_unarchived log enrichment failed", logErr);
+    }
     return { ok: true };
   } catch (err) {
     console.error("[audit] event_unarchived transaction failed", err);

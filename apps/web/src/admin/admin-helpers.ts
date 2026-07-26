@@ -69,8 +69,12 @@ export async function resolveActorEmailForLog(
   db: PrismaClient | Prisma.TransactionClient,
   userId: string,
 ): Promise<string | null> {
-  const user = await db.user.findUnique({ where: { id: userId }, select: { email: true } });
-  return user?.email ?? null;
+  try {
+    const user = await db.user.findUnique({ where: { id: userId }, select: { email: true } });
+    return user?.email ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** Require `:eventId` route param or return 400. */

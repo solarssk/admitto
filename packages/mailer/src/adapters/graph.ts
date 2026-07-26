@@ -1,6 +1,6 @@
 import type { GraphConfig } from "../config.js";
 import { GRAPH_CAPABILITIES } from "../capabilities.js";
-import { mapHttpStatus, mapNetworkError } from "../errorMapping.js";
+import { mapHttpStatus, mapNetworkError, sanitizeProviderErrorForLog } from "../errorMapping.js";
 import {
   graphDisplayFromAddress,
   graphRecipients,
@@ -147,7 +147,14 @@ export class GraphAdapter implements MailerAdapter {
       }
 
       const errorResult = await this.buildSendErrorResult(base, res);
-      emitSystemLog("mail", "error", "mail_send_failed", { provider: this.provider, error: errorResult.error });
+      // Drop the response-body suffix - `buildSendErrorResult` falls back to up to 200 raw
+      // chars of Graph's response body when it isn't a structured {error} JSON payload,
+      // which could echo request content back. The full error still reaches the caller via
+      // SendResult.error.
+      emitSystemLog("mail", "error", "mail_send_failed", {
+        provider: this.provider,
+        error: sanitizeProviderErrorForLog(errorResult.error ?? "Graph sendMail failed"),
+      });
       return errorResult;
     } catch (e) {
       const mapped = mapNetworkError();

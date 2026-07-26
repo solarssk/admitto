@@ -182,14 +182,16 @@ describe("SmtpAdapter", () => {
     expect(res.error).toMatch(/private, loopback, or link-local/);
     expect(sendMail).not.toHaveBeenCalled();
 
+    // The logged reason is a fixed category, not the raw guard message - a DNS-lookup
+    // failure (a different throw site than this one) could otherwise surface the
+    // configured hostname in System logs/stdout.
     const logs = querySystemLogs({ source: "security" });
     expect(
       logs.some(
         (entry) =>
           entry.message === "mail_destination_blocked" &&
           entry.level === "warn" &&
-          typeof entry.fields?.error === "string" &&
-          (entry.fields.error as string).match(/private, loopback, or link-local/),
+          entry.fields?.error === "destination blocked or unresolvable",
       ),
     ).toBe(true);
   });
