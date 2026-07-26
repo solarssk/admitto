@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { canManageInstance } from "@admitto/auth";
 import { EXPORT_ROW_CAP, quoteCsvCell, sanitizeCsvCell, writeAdminAuditLog } from "@admitto/tickets";
+import { emitSystemLog } from "@admitto/shared/system-log";
 import { adminAuditFromContext, positiveIntQuery } from "./admin-helpers.js";
 import { attachmentContentDisposition } from "./content-disposition.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
@@ -242,6 +243,7 @@ export async function handleExportAuditLog(c: Context, db: PrismaClient): Promis
     actionType: "audit_log_exported",
     metadata: { rowCount: rows.length },
   });
+  emitSystemLog("admin", "info", "audit_log_exported", { rowCount: rows.length });
 
   const timestamp = new Date().toISOString().slice(0, 10);
   // BOM so Excel detects UTF-8 - actor display names and JSON `details` values can carry

@@ -4,6 +4,7 @@ import { lookup } from "node:dns/promises";
 import { SmtpAdapter } from "../src/adapters/smtp.js";
 import type { SmtpConfig } from "../src/config.js";
 import * as ssrfGuard from "../src/ssrfGuard.js";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
 vi.mock("node:dns/promises", () => ({
   lookup: vi.fn(),
@@ -16,6 +17,7 @@ beforeEach(() => {
   mockedLookup.mockResolvedValue([{ address: "93.184.216.34", family: 4 }] as Awaited<
     ReturnType<typeof lookup>
   >);
+  resetSystemLogBufferForTest();
 });
 
 const config: SmtpConfig = {
@@ -56,6 +58,18 @@ describe("SmtpAdapter", () => {
     expect(res.providerMessageId).toBeTruthy();
     expect(res.idempotencyKey).toBe("att-9");
     expect(adapter.capabilities.supportsEnvelopeFrom).toBe(true);
+
+    const mailLogs = querySystemLogs({ source: "mail" });
+    expect(mailLogs).toContainEqual(
+      expect.objectContaining({
+        message: "mail_sent",
+        fields: expect.objectContaining({ to: "j***@example.com" }),
+      }),
+    );
+
+    for (const entry of querySystemLogs()) {
+      expect(JSON.stringify(entry)).not.toContain("jan@example.com");
+    }
   });
 
   it("formats From header and envelope.from from sender config", async () => {
@@ -147,6 +161,13 @@ describe("SmtpAdapter", () => {
     expect(res.status).toBe("rejected");
     expect(res.retryable).toBe(false);
     expect(res.error).toContain("535");
+
+    expect(querySystemLogs({ source: "mail" })).toContainEqual(
+      expect.objectContaining({
+        message: "mail_send_failed",
+        fields: expect.objectContaining({ error: expect.stringContaining("535") }),
+      }),
+    );
   });
 
   it("rejects a private/loopback host without ever calling sendMail (SSRF guard)", async () => {

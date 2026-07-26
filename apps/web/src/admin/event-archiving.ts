@@ -11,6 +11,7 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { writeAdminAuditLog } from "@admitto/tickets";
+import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import {
   assertEventManageAccess,
   requireAuditActor,
@@ -70,9 +71,16 @@ export async function archiveEvent(
       if (!exists) return { code: "not_found" };
       return { code: "already_archived" };
     }
+    emitSystemLog("admin", "info", "event_archived", { eventId });
     return { ok: true };
   } catch (err) {
     console.error("[audit] event_archived transaction failed", err);
+    recordSystemLog({
+      level: "error",
+      source: "admin",
+      message: "event_archived transaction failed",
+      fields: { eventId },
+    });
     return { code: "audit_failed" };
   }
 }
@@ -117,9 +125,16 @@ export async function unarchiveEvent(
       if (!exists) return { code: "not_found" };
       return { code: "not_archived" };
     }
+    emitSystemLog("admin", "info", "event_unarchived", { eventId });
     return { ok: true };
   } catch (err) {
     console.error("[audit] event_unarchived transaction failed", err);
+    recordSystemLog({
+      level: "error",
+      source: "admin",
+      message: "event_unarchived transaction failed",
+      fields: { eventId },
+    });
     return { code: "audit_failed" };
   }
 }

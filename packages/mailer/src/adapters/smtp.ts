@@ -7,6 +7,8 @@ import { formatFromHeader, parseAddressList, resolveReplyTo } from "../senderUti
 import { validateMailMessage } from "../validation.js";
 import { assertSafeMailDestination, resolveSafeMailDestination } from "../ssrfGuard.js";
 import type { MailMessage, MailerAdapter, SendResult } from "../types.js";
+import { emitSystemLog } from "@admitto/shared/system-log";
+import { redactEmail } from "@admitto/shared";
 
 /**
  * SMTP via nodemailer. Works with any standards-compliant mail server.
@@ -108,6 +110,10 @@ export class SmtpAdapter implements MailerAdapter {
 
     try {
       const info = await this.transporter.sendMail(mail);
+      emitSystemLog("mail", "info", "mail_sent", {
+        provider: this.provider,
+        to: redactEmail(message.to),
+      });
       return {
         status: "accepted",
         provider: this.provider,
@@ -116,6 +122,10 @@ export class SmtpAdapter implements MailerAdapter {
       };
     } catch (e) {
       const mapped = mapSmtpError(e);
+      emitSystemLog("mail", "error", "mail_send_failed", {
+        provider: this.provider,
+        error: e instanceof Error ? e.message : String(e),
+      });
       return {
         status: mapped.status,
         provider: this.provider,

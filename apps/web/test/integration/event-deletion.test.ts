@@ -1,9 +1,10 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 
@@ -105,6 +106,10 @@ beforeAll(async () => {
   const adminSession = await createSession(prisma, { userId: adminId, stage: SESSION_STAGE.FULL });
   superCookie = `admitto_session=${superSession.rawToken}`;
   adminCookie = `admitto_session=${adminSession.rawToken}`;
+});
+
+beforeEach(() => {
+  resetSystemLogBufferForTest();
 });
 
 afterEach(async () => {
@@ -333,5 +338,10 @@ describe("DELETE /api/admin/events/:eventId", () => {
     expect(audit!.actor_user_id).toBe(superId);
     const meta = audit!.metadata as { eventId?: string };
     expect(meta.eventId).toBe(eventId);
+
+    const logs = querySystemLogs({ source: "admin" });
+    expect(
+      logs.some((entry) => entry.message === "event_deleted" && entry.fields?.eventId === eventId),
+    ).toBe(true);
   });
 });

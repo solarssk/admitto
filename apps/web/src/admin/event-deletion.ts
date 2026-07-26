@@ -28,6 +28,7 @@
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { BADGE_ITEM_KEY, STANDARD_TICKET_TYPE_KEY, writeAdminAuditLog } from "@admitto/tickets";
+import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import {
   lockEventForMailSettingsWrite,
   requireAuditActor,
@@ -162,6 +163,7 @@ export async function deleteEvent(
         actionType: "event_deleted",
         metadata: { eventId },
       });
+      emitSystemLog("admin", "info", "event_deleted", { eventId });
       return { ok: true };
     });
   } catch (err) {
@@ -173,6 +175,12 @@ export async function deleteEvent(
       return { code: "not_deletable" };
     }
     console.error("[audit] event_deleted transaction failed", err);
+    recordSystemLog({
+      level: "error",
+      source: "admin",
+      message: "event_deleted transaction failed",
+      fields: { eventId },
+    });
     return { code: "audit_failed" };
   }
 }
