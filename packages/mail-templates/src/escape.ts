@@ -90,7 +90,6 @@ function hasBrandingImageExtension(fileName: string): boolean {
 
 function isBrandingUploadPath(value: string): boolean {
   const segments = value.split("/");
-  if (segments.at(0) !== "" || segments.at(1) !== "uploads") return false;
 
   const organization = segments.at(2);
   if (!organization || !isBrandingPathSlug(organization, 64)) return false;

@@ -113,14 +113,14 @@ function enterAttributeValue(html: string, i: number, index: number, state: Attr
 
 /**
  * Processes the character at `i`, mutating `state` as needed, and returns the next
- * index to resume scanning from, or `null` when the opening tag ends here.
+ * index to resume scanning from.
  */
 function advanceTagScan(
   html: string,
   i: number,
   index: number,
   state: AttributeScanState,
-): number | null {
+): number {
   const ch = html.charAt(i);
 
   if (state.inQuote) {
@@ -134,8 +134,6 @@ function advanceTagScan(
   }
 
   if (/\s/.test(ch)) return i + 1;
-
-  if (ch === ">" || (ch === "/" && html.charAt(i + 1) === ">")) return null;
 
   if (ch === "=") {
     if (state.pendingAttr) return enterAttributeValue(html, i, index, state);
@@ -164,9 +162,7 @@ function scanOpeningTagAttributes(html: string, start: number, index: number): A
 
   let i = start;
   while (i < index) {
-    const next = advanceTagScan(html, i, index, state);
-    if (next === null) break;
-    i = next;
+    i = advanceTagScan(html, i, index, state);
   }
 
   return state;

@@ -66,6 +66,7 @@ describe("validateBrandingUrl", () => {
 
   it.each([
     "/uploads//logo.png",
+    "uploads/org/logo.png",
     "/uploads/_org/logo.png",
     "/uploads/org!/logo.png",
     "/uploads/org/logo.gif",
