@@ -1,5 +1,5 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { CAPACITY_EXCLUDED_STATUSES } from "@admitto/db";
+import { CAPACITY_EXCLUDED_STATUSES } from "@admitto/db/status";
 import { parseCustomData } from "./custom-data.js";
 import { buildItemDetail } from "./event-item-contents.js";
 import { loadEventCustomDataFields } from "./event-custom-fields.js";
