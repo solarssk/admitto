@@ -223,6 +223,15 @@ describe("POST /api/admin/events/:eventId/archive", () => {
     });
     expect(res.status).toBe(403);
   });
+
+  it("returns 404 not_found for a nonexistent event", async () => {
+    const res = await app.request("/api/admin/events/does-not-exist/archive", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{}",
+    });
+    expect(res.status).toBe(404);
+  });
 });
 
 describe("POST /api/admin/events/:eventId/unarchive", () => {
@@ -298,6 +307,15 @@ describe("POST /api/admin/events/:eventId/unarchive", () => {
       where: { organization_id: ORG_ARCH, action_type: "event_unarchived" },
     });
     expect(audit).toBeNull();
+  });
+
+  it("returns 404 not_found for a nonexistent event", async () => {
+    const res = await app.request("/api/admin/events/does-not-exist/unarchive", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{}",
+    });
+    expect(res.status).toBe(404);
   });
 });
 

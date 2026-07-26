@@ -303,6 +303,14 @@ describe("POST /api/admin/sessions/:id/revoke", () => {
     expect(auditCountAfter).toBe(auditCountBefore);
   });
 
+  it("returns 200 for a session id that doesn't exist at all (idempotent no-op)", async () => {
+    const res = await app.request("/api/admin/sessions/does-not-exist/revoke", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(200);
+  });
+
   it("rejects missing CSRF header", async () => {
     const target = await createSession(prisma, { userId: operatorId, stage: SESSION_STAGE.FULL });
     const res = await app.request(`/api/admin/sessions/${target.session.id}/revoke`, {

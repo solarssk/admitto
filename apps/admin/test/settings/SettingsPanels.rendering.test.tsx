@@ -1091,6 +1091,100 @@ describe("SystemLogsPanel rendering", () => {
     );
   });
 
+  it("refetches when the level filter changes", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+    vi.mocked(fetchSystemLogs).mockResolvedValue(emptySystemLog());
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByText("No audit log entries yet");
+    openSystemLogsView();
+    await screen.findByText("No log activity yet");
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Level" }), { target: { value: "error" } });
+
+    await waitFor(() =>
+      expect(fetchSystemLogs).toHaveBeenLastCalledWith(
+        { level: "error", source: undefined, search: undefined },
+        expect.anything(),
+      ),
+    );
+  });
+
+  it("copies the visible lines to the clipboard and Clear view empties them", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+    vi.mocked(fetchSystemLogs).mockResolvedValueOnce({
+      entries: [{ id: 1, ts: "2026-01-01T12:00:00.000Z", level: "info", source: "api", message: "http_request" }],
+      cursor: 1,
+    });
+    const originalClipboard = navigator.clipboard;
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    try {
+      renderWithToast(<AuditLogPanel />);
+      await screen.findByText("No audit log entries yet");
+      openSystemLogsView();
+      await screen.findByText("http_request");
+
+      fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+      await screen.findByText("Log lines copied to clipboard");
+      expect(writeText).toHaveBeenCalledTimes(1);
+      expect(writeText.mock.calls[0]![0]).toContain("http_request");
+
+      fireEvent.click(screen.getByRole("button", { name: "Clear view" }));
+      expect(screen.getByText("No log activity yet")).toBeTruthy();
+    } finally {
+      Object.assign(navigator, { clipboard: originalClipboard });
+    }
+  });
+
+  it("toasts an error when the clipboard write is blocked", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+    vi.mocked(fetchSystemLogs).mockResolvedValueOnce({
+      entries: [{ id: 1, ts: "2026-01-01T12:00:00.000Z", level: "info", source: "api", message: "http_request" }],
+      cursor: 1,
+    });
+    const originalClipboard = navigator.clipboard;
+    Object.assign(navigator, { clipboard: { writeText: vi.fn().mockRejectedValue(new Error("blocked")) } });
+
+    try {
+      renderWithToast(<AuditLogPanel />);
+      await screen.findByText("No audit log entries yet");
+      openSystemLogsView();
+      await screen.findByText("http_request");
+
+      fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+      expect(await screen.findByText("Could not copy — clipboard access was blocked.")).toBeTruthy();
+    } finally {
+      Object.assign(navigator, { clipboard: originalClipboard });
+    }
+  });
+
+  it("downloads the visible lines as a .log file via the header Download button", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+    vi.mocked(fetchSystemLogs).mockResolvedValueOnce({
+      entries: [{ id: 1, ts: "2026-01-01T12:00:00.000Z", level: "info", source: "api", message: "http_request" }],
+      cursor: 1,
+    });
+    vi.stubGlobal("URL", { ...URL, createObjectURL: vi.fn(() => "blob:mock"), revokeObjectURL: vi.fn() });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    try {
+      renderWithToast(<AuditLogPanel />);
+      await screen.findByText("No audit log entries yet");
+      openSystemLogsView();
+      await screen.findByText("http_request");
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "Download .log" })).property("disabled", false));
+      fireEvent.click(screen.getByRole("button", { name: "Download .log" }));
+
+      expect(clickSpy).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+      clickSpy.mockRestore();
+    }
+  });
+
   it("polls with the last cursor as since, appending new lines without resetting existing ones", async () => {
     // Real timers throughout - the poll interval is created at real mount time, so faking
     // timers only around the wait (as elsewhere in this file) wouldn't control it; this is a
