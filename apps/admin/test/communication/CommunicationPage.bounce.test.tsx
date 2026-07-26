@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RouterProvider } from "react-router/dom";
 import { MemoryRouter, Route, Routes, createMemoryRouter } from "react-router";
@@ -97,11 +97,11 @@ describe("CommunicationPage bounce banner", () => {
 
     renderPage();
 
-    await waitFor(() => {
-      expect(screen.getByRole("alert")).toBeTruthy();
-    });
-    expect(screen.getByText(/3 emails bounced/i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "View delivery log" })).toBeTruthy();
+    // Scoped to the captured alert node (not re-queried from `screen`) so a later, unrelated
+    // re-render can't race this assertion the way two separate screen queries could.
+    const banner = await screen.findByRole("alert");
+    expect(within(banner).getByText(/3 emails bounced/i)).toBeTruthy();
+    expect(within(banner).getByRole("button", { name: "View delivery log" })).toBeTruthy();
   });
 
   it("hides bounce banner when email_bounced is 0", async () => {
