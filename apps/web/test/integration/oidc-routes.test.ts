@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { Hono } from "hono";
 import { hashPassword, SESSION_COOKIE_NAME, OIDC_FLOW_COOKIE_NAME, createSession, SESSION_STAGE } from "@admitto/auth";
@@ -7,6 +7,7 @@ import { beginOidcAuthorizationRedirect } from "../../src/auth/oidc-flow.js";
 import { createRateLimitStore, type InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 import { startMockOidcIdp, stopMockOidcIdp, type MockOidcIdp } from "../helpers/mock-oidc-idp.js";
 import { encryptClientSecret } from "@admitto/auth";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
 const PROVIDER_ID = "web-oidc-flow-provider";
 const BASE = "http://localhost";
@@ -219,11 +220,19 @@ describe("oidc routes", () => {
   });
 
   it("callback requires both an authorization code and a state", async () => {
+    resetSystemLogBufferForTest();
     const res = await app.request(`/api/auth/oidc/${PROVIDER_ID}/callback?code=x`, {
       redirect: "manual",
     });
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/login?error=oidc_failed");
+    const [entry] = querySystemLogs({ source: "security" });
+    expect(entry).toMatchObject({
+      level: "warn",
+      message: "oidc_callback_failed",
+      fields: { errorKind: "non_error" },
+    });
+    expect(JSON.stringify(entry)).not.toContain("code=x");
   });
 
   it("callback rejects a mismatched OIDC flow cookie", async () => {
@@ -416,6 +425,8 @@ describe("oidc routes", () => {
   });
 
   it("fails closed when the authorization code exchange is rejected", async () => {
+    resetSystemLogBufferForTest();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const start = await app.request(`/api/auth/oidc/${PROVIDER_ID}/start`, { redirect: "manual" });
     const authorizeUrl = new URL(start.headers.get("location")!);
     const state = authorizeUrl.searchParams.get("state")!;
@@ -430,6 +441,16 @@ describe("oidc routes", () => {
 
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/login?error=oidc_failed");
+    const tokenValidationCall = errorSpy.mock.calls.find(([message]) => message === "OIDC token validation:");
+    expect(tokenValidationCall?.[1]).toEqual(expect.any(String));
+    expect(tokenValidationCall?.[1]).not.toBe("unknown");
+    const [entry] = querySystemLogs({ source: "security" });
+    expect(entry).toMatchObject({
+      message: "oidc_token_validation_failed",
+      fields: { errorKind: "error" },
+    });
+    expect(JSON.stringify(entry)).not.toContain("unissued-code");
+    errorSpy.mockRestore();
   });
 
   it("fails closed instead of auto-linking a pre-existing local account", async () => {

@@ -30,6 +30,7 @@ import {
   type IdentityProviderFormView,
   type IdentityProviderInput,
 } from "@admitto/auth";
+import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 
 const MAPPING_ROLE = z.enum(["superadmin", "admin", "operator"]);
 const MAPPING_SCOPE = z.enum(["instance", "organization", "event"]);
@@ -133,6 +134,35 @@ function actorUserId(c: Context): string {
   return c.get("auth").userId;
 }
 
+/** Record only a stable failure category for superadmin identity work. External OIDC/CF values
+ * and exception text may be attacker-controlled or sensitive configuration, so never enter the
+ * System logs buffer. */
+function recordIdentityFailure(
+  c: Context,
+  message: string,
+  fields: Record<string, unknown> = {},
+): void {
+  recordSystemLog({
+    level: "warn",
+    source: "security",
+    message,
+    fields: { actorUserId: actorUserId(c), errorKind: "unexpected", ...fields },
+  });
+}
+
+/** Same safe shape for failures that previously had no stdout signal at all. */
+function emitIdentityFailure(
+  c: Context,
+  message: string,
+  fields: Record<string, unknown> = {},
+): void {
+  emitSystemLog("security", "warn", message, {
+    actorUserId: actorUserId(c),
+    errorKind: "unexpected",
+    ...fields,
+  });
+}
+
 function toMappingInput(m: z.infer<typeof mappingSchema>): GroupRoleMappingInput {
   return {
     group: m.group,
@@ -219,6 +249,7 @@ export async function handleApiCreateProvider(c: Context, db: PrismaClient): Pro
     );
   } catch (err) {
     console.error("[identity] create provider failed:", err);
+    recordIdentityFailure(c, "oidc_provider_save_failed", { operation: "create" });
     return c.json({ error: "save_failed" }, 500);
   }
 
@@ -254,6 +285,7 @@ export async function handleApiUpdateProvider(c: Context, db: PrismaClient): Pro
     updated = await updateIdentityProviderWithMappings(db, id, toProviderInput(body), body.mappings.map(toMappingInput));
   } catch (err) {
     console.error("[identity] update provider failed:", err);
+    recordIdentityFailure(c, "oidc_provider_save_failed", { providerId: id, operation: "update" });
     return c.json({ error: "save_failed" }, 500);
   }
 
@@ -303,6 +335,7 @@ export async function handleApiDiscoverProvider(c: Context, db: PrismaClient): P
     discovery = await fetchOidcDiscovery(provider.issuer);
   } catch (err) {
     console.warn("[identity] OIDC discovery failed:", err);
+    recordIdentityFailure(c, "oidc_provider_discover_failed", { providerId: id });
     return c.json({ ok: false, error: "discovery_failed" }, 400);
   }
 
@@ -320,6 +353,7 @@ export async function handleApiDiscoverProvider(c: Context, db: PrismaClient): P
     });
   } catch (err) {
     console.error("[identity] persist discovery failed:", err);
+    recordIdentityFailure(c, "oidc_provider_discover_failed", { providerId: id });
     return c.json({ ok: false, error: "save_failed" }, 500);
   }
 
@@ -369,6 +403,7 @@ export async function handleApiTestProviderDraft(c: Context): Promise<Response> 
     ...(auth && token && jwks ? { authorization_endpoint: auth, token_endpoint: token, jwks_uri: jwks } : {}),
     ...(userinfo ? { userinfo_endpoint: userinfo } : {}),
   });
+  if (!result.ok) emitIdentityFailure(c, "oidc_test_connection_failed", { flow: "draft" });
   return c.json({ ok: result.ok, ...(result.ok ? {} : { error: result.error }) });
 }
 
@@ -395,6 +430,7 @@ export async function handleApiDiscoverProviderPreview(c: Context): Promise<Resp
     });
   } catch (err) {
     console.warn("[identity] discovery preview failed:", err);
+    recordIdentityFailure(c, "oidc_provider_discover_failed", { flow: "draft" });
     return c.json({ ok: false, error: "discovery_failed" }, 400);
   }
 }
@@ -412,6 +448,7 @@ export async function handleApiTestProvider(c: Context, db: PrismaClient): Promi
     jwks_uri: provider.jwks_uri,
   });
   if (result.ok) return c.json({ ok: true });
+  emitIdentityFailure(c, "oidc_test_connection_failed", { providerId: id });
   return c.json({ ok: false, error: result.error }, 400);
 }
 
@@ -503,6 +540,7 @@ export async function handleApiUpdateCfAccess(c: Context, db: PrismaClient): Pro
     });
   } catch (err) {
     console.error("[identity] CF Access save failed:", err);
+    recordIdentityFailure(c, "cf_access_save_failed");
     return c.json({ error: "save_failed" }, 500);
   }
 
@@ -543,5 +581,6 @@ export async function handleApiTestCfAccess(c: Context, db: PrismaClient): Promi
 
   const result = await testCfAccessConnection({ teamDomain });
   if (result.ok) return c.json({ ok: true });
+  emitIdentityFailure(c, "cf_access_test_failed");
   return c.json({ ok: false, error: result.error }, 400);
 }

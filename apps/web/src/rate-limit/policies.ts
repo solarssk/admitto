@@ -17,7 +17,10 @@ export interface RateLimitCheck {
   windowMs: number;
   max: number;
   onExceeded?: (c: Context) => Response;
-  logOnExceeded?: { scope: RateLimitScope; keyHint?: string };
+  logOnExceeded?: {
+    scope: RateLimitScope;
+    keyHint?: string | ((c: Context) => string | undefined);
+  };
   /** When present and returns false, this check is skipped (e.g. global resend for authed users only). */
   when?: (c: Context) => boolean;
 }
@@ -77,6 +80,10 @@ function checkinRateLimitKey(c: Context, kind: CheckinRateLimitKind): string {
   const userId = c.get("operatorUserId") as string | undefined;
   if (userId) return `checkin:${kind}:user:${userId}`;
   return `checkin:${kind}:ip:${resolveClientIp(c)}`;
+}
+
+function checkinRateLimitKeyHint(c: Context): "ip" | "user" {
+  return c.get("checkinAuth") === "bearer" ? "ip" : "user";
 }
 
 function healthzRateLimitKey(ip: string, instanceId: string): string {
@@ -204,6 +211,7 @@ export const RATE_POLICIES = {
         keyOf: (c) => `admin:export:user:${c.get("auth").userId}:route:${routePath(c)}`,
         windowMs: 3_600_000,
         max: 10,
+        logOnExceeded: { scope: "admin_export", keyHint: "user_route" },
       },
     ],
   },
@@ -213,6 +221,7 @@ export const RATE_POLICIES = {
         keyOf: (c) => `admin:export:user:${c.get("auth").userId}:route:${routePath(c)}`,
         windowMs: 3_600_000,
         max: 5,
+        logOnExceeded: { scope: "admin_export_pii", keyHint: "user_route" },
       },
     ],
   },
@@ -271,6 +280,7 @@ export const RATE_POLICIES = {
         },
         windowMs: 60_000,
         max: 5,
+        logOnExceeded: { scope: "admin_resend", keyHint: "user_attendee" },
       },
       {
         when: (c) => Boolean(authUserId(c)),
@@ -278,6 +288,7 @@ export const RATE_POLICIES = {
         windowMs: 3_600_000,
         max: 30,
         onExceeded: (c) => c.json({ error: "resend_global_limit" }, 429),
+        logOnExceeded: { scope: "admin_resend", keyHint: "user_global" },
       },
     ],
   },
@@ -292,6 +303,7 @@ export const RATE_POLICIES = {
         },
         windowMs: 600_000,
         max: 3,
+        logOnExceeded: { scope: "admin_resend_bulk", keyHint: "user" },
       },
     ],
   },
@@ -301,6 +313,7 @@ export const RATE_POLICIES = {
         keyOf: (c) => checkinRateLimitKey(c, "scan"),
         windowMs: 60_000,
         max: 120,
+        logOnExceeded: { scope: "checkin_scan", keyHint: checkinRateLimitKeyHint },
       },
     ],
   },
@@ -310,6 +323,7 @@ export const RATE_POLICIES = {
         keyOf: (c) => checkinRateLimitKey(c, "history"),
         windowMs: 60_000,
         max: 180,
+        logOnExceeded: { scope: "checkin_history", keyHint: checkinRateLimitKeyHint },
       },
     ],
   },
@@ -319,6 +333,7 @@ export const RATE_POLICIES = {
         keyOf: (c) => checkinRateLimitKey(c, "stream"),
         windowMs: 60_000,
         max: 12,
+        logOnExceeded: { scope: "checkin_stream", keyHint: checkinRateLimitKeyHint },
       },
     ],
   },
@@ -364,7 +379,10 @@ async function runCheck(
       logRateLimitExceeded({
         scope: check.logOnExceeded.scope,
         ip: resolveClientIp(c),
-        keyHint: check.logOnExceeded.keyHint,
+        keyHint:
+          typeof check.logOnExceeded.keyHint === "function"
+            ? check.logOnExceeded.keyHint(c)
+            : check.logOnExceeded.keyHint,
       });
     }
     return { kind: "blocked", response: check.onExceeded ? check.onExceeded(c) : jsonTooManyRequests(c) };

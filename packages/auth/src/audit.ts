@@ -67,7 +67,14 @@ export type RateLimitScope =
   | "admin_oidc_provider_ops"
   | "admin_attendees_search"
   | "admin_mail_transport_test"
-  | "admin_event_mail_transport_test";
+  | "admin_event_mail_transport_test"
+  | "admin_export_pii"
+  | "checkin_scan"
+  | "admin_resend_bulk"
+  | "admin_resend"
+  | "admin_export"
+  | "checkin_stream"
+  | "checkin_history";
 
 /** Emit `auth.login.success` as JSON to stdout (no password/token fields). Full email, not
  * redacted - staff/operator sign-in is exactly the internal accountability case this log
