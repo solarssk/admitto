@@ -1,6 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { Hono } from "hono";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
@@ -11,6 +12,7 @@ import * as ticketOperations from "@admitto/tickets";
 import * as mailDelivery from "@admitto/mail-delivery";
 import type { ExportPayload } from "@admitto/mailer";
 import { createApp } from "../../src/app.js";
+import { handleBulkRevokeAttendeeItems } from "../../src/admin/attendees-api-routes.js";
 import { createRateLimitStore, InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 import { CAPACITY_EXCLUDED_STATUSES } from "../../src/admin/event-capacity.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
@@ -41,6 +43,15 @@ let adminId: string;
 let opId: string;
 let adminCookie = "";
 let opCookie = "";
+
+function buildNoEmailBulkHarness() {
+  const harness = new Hono();
+  harness.post("/api/admin/events/:eventId/attendees/bulk-revoke-items", (c) => {
+    c.set("auth", { userId: adminId });
+    return handleBulkRevokeAttendeeItems(c, prisma);
+  });
+  return harness;
+}
 
 async function seed(client: PrismaClient) {
   await client.attendeeActionLog.deleteMany({
@@ -982,6 +993,62 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-checkin", () => {
     }
   });
 
+  it("reuses the authenticated staff email across per-attendee failures", async () => {
+    const ids = ["att-bulk-checkin-log-lookup-1", "att-bulk-checkin-log-lookup-2"];
+    await seedCheckable(ids);
+    const userLookupSpy = vi.spyOn(prisma.user, "findUnique");
+    const operationSpy = vi.spyOn(ticketOperations, "admitAttendee")
+      .mockRejectedValueOnce(new Error("database failed"))
+      .mockRejectedValueOnce(new Error("database failed"));
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-checkin`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ attendeeIds: ids }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ checkedIn: 0, alreadyCheckedIn: 0, revoked: 0, invalid: 0, errored: 2 });
+      // StaffAdminGate loads the verified account once for its password-change guard. The
+      // per-attendee failure recorder must not add a lookup for every rejected operation.
+      expect(userLookupSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      operationSpy.mockRestore();
+      userLookupSpy.mockRestore();
+    }
+  });
+
+  it("records a whole-request check-in lookup failure without attendee data", async () => {
+    resetSystemLogBufferForTest();
+    const spy = vi.spyOn(prisma.attendee, "findMany").mockRejectedValueOnce(
+      new Error("database failed for attendee@example.com"),
+    );
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-checkin`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ attendeeIds: [ATT_A1] }),
+      });
+
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: "server error" });
+      const [entry] = querySystemLogs({ source: "admin", search: "bulk_attendee_action_failed" });
+      expect(entry).toMatchObject({
+        fields: {
+          eventId: EVENT_A,
+          attendeeCount: 1,
+          action: "checkin",
+          actorUserId: adminId,
+          actorEmail: EMAIL_ADMIN,
+        },
+      });
+      expect(JSON.stringify(entry)).not.toContain("database failed");
+      expect(JSON.stringify(entry)).not.toContain("attendee@example.com");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("spans more than one bounded-concurrency chunk and sums counts correctly across chunks", async () => {
     // BULK_CHECKIN_CONCURRENCY is 10 - 12 ids force exactly two chunks (10 + 2), exercising the
     // outer `for (const batch of chunk(...))` accumulation that every other test in this block
@@ -1204,6 +1271,37 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-revoke-checkin", () => 
     }
   });
 
+  it("records a whole-request revoke-checkin lookup failure without attendee data", async () => {
+    resetSystemLogBufferForTest();
+    const spy = vi.spyOn(prisma.attendee, "findMany").mockRejectedValueOnce(
+      new Error("database failed for attendee@example.com"),
+    );
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-revoke-checkin`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ attendeeIds: [ATT_A1] }),
+      });
+
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: "server error" });
+      const [entry] = querySystemLogs({ source: "admin", search: "bulk_attendee_action_failed" });
+      expect(entry).toMatchObject({
+        fields: {
+          eventId: EVENT_A,
+          attendeeCount: 1,
+          action: "revoke_checkin",
+          actorUserId: adminId,
+          actorEmail: EMAIL_ADMIN,
+        },
+      });
+      expect(JSON.stringify(entry)).not.toContain("database failed");
+      expect(JSON.stringify(entry)).not.toContain("attendee@example.com");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("counts an attendee who wasn't checked in as notAdmitted instead of failing the request", async () => {
     const admittedId = "att-bulk-revoke-checkin-mixed-admitted";
     const freshId = "att-bulk-revoke-checkin-mixed-fresh";
@@ -1412,6 +1510,33 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-revoke-items", () => {
       });
       expect(JSON.stringify(entry)).not.toContain("database failed");
       expect(JSON.stringify(entry)).not.toContain(`${id}@example.com`);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("omits actorEmail when a bulk-failure context has no pre-resolved staff email", async () => {
+    resetSystemLogBufferForTest();
+    const spy = vi.spyOn(ticketOperations, "revokeItemsForAttendees").mockRejectedValueOnce(
+      new Error("database failed for attendee@example.com"),
+    );
+    try {
+      const res = await buildNoEmailBulkHarness().request(
+        `/api/admin/events/${EVENT_A}/attendees/bulk-revoke-items`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: [ATT_A1] }),
+        },
+      );
+
+      expect(res.status).toBe(500);
+      const [entry] = querySystemLogs({ source: "admin", search: "bulk_attendee_action_failed" });
+      expect(entry).toMatchObject({
+        fields: { eventId: EVENT_A, attendeeCount: 1, action: "revoke_items", actorUserId: adminId },
+      });
+      expect(entry?.fields).not.toHaveProperty("actorEmail");
+      expect(JSON.stringify(entry)).not.toContain("database failed");
     } finally {
       spy.mockRestore();
     }
@@ -1630,6 +1755,37 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-revoke-pass", () => {
       });
       expect(JSON.stringify(entry)).not.toContain("database failed");
       expect(JSON.stringify(entry)).not.toContain(`${id}@example.com`);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("records a whole-request pass-revoke lookup failure without attendee data", async () => {
+    resetSystemLogBufferForTest();
+    const spy = vi.spyOn(prisma.attendee, "findMany").mockRejectedValueOnce(
+      new Error("database failed for attendee@example.com"),
+    );
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-revoke-pass`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ attendeeIds: [ATT_A1] }),
+      });
+
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: "server error" });
+      const [entry] = querySystemLogs({ source: "admin", search: "bulk_attendee_action_failed" });
+      expect(entry).toMatchObject({
+        fields: {
+          eventId: EVENT_A,
+          attendeeCount: 1,
+          action: "revoke_pass",
+          actorUserId: adminId,
+          actorEmail: EMAIL_ADMIN,
+        },
+      });
+      expect(JSON.stringify(entry)).not.toContain("database failed");
+      expect(JSON.stringify(entry)).not.toContain("attendee@example.com");
     } finally {
       spy.mockRestore();
     }

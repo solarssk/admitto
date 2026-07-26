@@ -69,7 +69,6 @@ import {
   itemTransitionErrorResponse,
   positiveIntQuery,
   requireEventId,
-  resolveActorEmailForLog,
   resolveClientTimezone,
   resolveMailInstanceBaseUrl,
 } from "./admin-helpers.js";
@@ -1987,7 +1986,7 @@ export async function handleBulkRsvpEventAttendees(
   } catch (err) {
     if (err instanceof Response) return err;
     console.error("handleBulkRsvpEventAttendees failed:", err);
-    await recordBulkAttendeeActionFailure(c, db, eventId, "rsvp", { attendeeCount: attendeeIds.length });
+    recordBulkAttendeeActionFailure(c, eventId, "rsvp", { attendeeCount: attendeeIds.length });
     return c.json({ error: "server error" }, 500);
   }
 }
@@ -2014,14 +2013,13 @@ type BulkFailureTarget = { attendeeId: string } | { attendeeCount: number };
 
 /** Record a bounded failure signal for a staff-triggered bulk operation. The selected attendee
  * remains referable by its internal id, but arbitrary exception text and attendee PII do not. */
-async function recordBulkAttendeeActionFailure(
+function recordBulkAttendeeActionFailure(
   c: Context,
-  db: PrismaClient,
   eventId: string,
   action: BulkAttendeeAction,
   target: BulkFailureTarget,
-): Promise<void> {
-  const actorUserId = c.get("auth").userId;
+): void {
+  const { userId: actorUserId, userEmail: actorEmail } = c.get("auth");
   recordSystemLog({
     level: "error",
     source: "admin",
@@ -2032,7 +2030,7 @@ async function recordBulkAttendeeActionFailure(
       action,
       errorKind: "unexpected",
       actorUserId,
-      actorEmail: await resolveActorEmailForLog(db, actorUserId),
+      ...(actorEmail ? { actorEmail } : {}),
     },
   });
 }
@@ -2094,31 +2092,39 @@ export async function handleBulkCheckInEventAttendees(c: Context, db: PrismaClie
   const parsed = bulkCheckInAttendeesBodySchema.safeParse(body);
   if (!parsed.success) return c.json({ error: "validation_failed" }, 400);
 
-  const owned = await db.attendee.findMany({
-    where: { id: { in: parsed.data.attendeeIds }, event_id: eventId },
-    select: { id: true },
-  });
-
-  const audit = adminAuditFromContext(c);
   const counts = { checkedIn: 0, alreadyCheckedIn: 0, revoked: 0, invalid: 0, errored: 0 };
-  for (const batch of chunk(owned, BULK_CHECKIN_CONCURRENCY)) {
-    const settled = await Promise.allSettled(
-      batch.map(({ id }) => admitAttendee({ attendeeId: id, eventId, method: "manual", audit }, db)),
-    );
-    for (const [index, outcome] of settled.entries()) {
-      if (outcome.status === "rejected") {
-        console.error("bulk check-in: admitAttendee failed:", outcome.reason);
-        await recordBulkAttendeeActionFailure(c, db, eventId, "checkin", {
-          attendeeId: batch[index]!.id,
-        });
-        counts.errored += 1;
-        continue;
-      }
-      counts[BULK_CHECKIN_STATUS_COUNTER[outcome.value.status]] += 1;
-    }
-  }
+  try {
+    const owned = await db.attendee.findMany({
+      where: { id: { in: parsed.data.attendeeIds }, event_id: eventId },
+      select: { id: true },
+    });
 
-  return c.json(counts);
+    const audit = adminAuditFromContext(c);
+    for (const batch of chunk(owned, BULK_CHECKIN_CONCURRENCY)) {
+      const settled = await Promise.allSettled(
+        batch.map(({ id }) => admitAttendee({ attendeeId: id, eventId, method: "manual", audit }, db)),
+      );
+      for (const [index, outcome] of settled.entries()) {
+        if (outcome.status === "rejected") {
+          console.error("bulk check-in: admitAttendee failed:", outcome.reason);
+          recordBulkAttendeeActionFailure(c, eventId, "checkin", {
+            attendeeId: batch[index]!.id,
+          });
+          counts.errored += 1;
+          continue;
+        }
+        counts[BULK_CHECKIN_STATUS_COUNTER[outcome.value.status]] += 1;
+      }
+    }
+
+    return c.json(counts);
+  } catch (err) {
+    console.error("bulk check-in failed:", err);
+    recordBulkAttendeeActionFailure(c, eventId, "checkin", {
+      attendeeCount: parsed.data.attendeeIds.length,
+    });
+    return c.json({ error: "server error" }, 500);
+  }
 }
 
 const bulkRevokeCheckInAttendeesBodySchema = z
@@ -2132,6 +2138,42 @@ const bulkRevokePassAttendeesBodySchema = z
     attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
   })
   .strict();
+
+type BulkRevokeCheckInCounts = {
+  revoked: number;
+  notAdmitted: number;
+  blocked: number;
+  errored: number;
+};
+
+/** Account for each settled revoke independently so one unexpected failure does not hide the
+ * result of its neighbours in the same chunk. Kept outside the request handler to keep the
+ * handler focused on request-level failures such as the initial owned-attendee lookup. */
+function tallyBulkRevokeCheckInOutcomes(
+  c: Context,
+  eventId: string,
+  batch: ReadonlyArray<{ id: string }>,
+  settled: ReadonlyArray<PromiseSettledResult<unknown>>,
+  counts: BulkRevokeCheckInCounts,
+): void {
+  for (const [index, outcome] of settled.entries()) {
+    if (outcome.status === "fulfilled") {
+      counts.revoked += 1;
+      continue;
+    }
+    if (outcome.reason instanceof UndoNotAllowedError) {
+      counts.notAdmitted += 1;
+    } else if (outcome.reason instanceof IllegalItemTransitionError) {
+      counts.blocked += 1;
+    } else {
+      console.error("bulk revoke check-in: revokeCheckInMutation failed:", outcome.reason);
+      recordBulkAttendeeActionFailure(c, eventId, "revoke_checkin", {
+        attendeeId: batch[index]!.id,
+      });
+      counts.errored += 1;
+    }
+  }
+}
 
 /** POST /api/admin/events/:eventId/attendees/bulk-revoke-checkin — undo check-in for a selection
  * of attendees at once, from the Attendees list's row-selection bulk bar. Mirrors bulk-checkin's
@@ -2165,41 +2207,33 @@ export async function handleBulkRevokeCheckInEventAttendees(c: Context, db: Pris
   const parsed = bulkRevokeCheckInAttendeesBodySchema.safeParse(body);
   if (!parsed.success) return c.json({ error: "validation_failed" }, 400);
 
-  const owned = await db.attendee.findMany({
-    where: { id: { in: parsed.data.attendeeIds }, event_id: eventId },
-    select: { id: true },
-  });
+  const counts: BulkRevokeCheckInCounts = { revoked: 0, notAdmitted: 0, blocked: 0, errored: 0 };
+  try {
+    const owned = await db.attendee.findMany({
+      where: { id: { in: parsed.data.attendeeIds }, event_id: eventId },
+      select: { id: true },
+    });
 
-  const audit = adminAuditFromContext(c);
-  const counts = { revoked: 0, notAdmitted: 0, blocked: 0, errored: 0 };
-  for (const batch of chunk(owned, BULK_CHECKIN_CONCURRENCY)) {
-    const settled = await Promise.allSettled(
-      batch.map(({ id }) =>
-        db.$transaction((tx) =>
-          revokeCheckInMutation({ eventId, attendeeId: id, audit, resetItems: true }, tx),
+    const audit = adminAuditFromContext(c);
+    for (const batch of chunk(owned, BULK_CHECKIN_CONCURRENCY)) {
+      const settled = await Promise.allSettled(
+        batch.map(({ id }) =>
+          db.$transaction((tx) =>
+            revokeCheckInMutation({ eventId, attendeeId: id, audit, resetItems: true }, tx),
+          ),
         ),
-      ),
-    );
-    for (const [index, outcome] of settled.entries()) {
-      if (outcome.status === "fulfilled") {
-        counts.revoked += 1;
-        continue;
-      }
-      if (outcome.reason instanceof UndoNotAllowedError) {
-        counts.notAdmitted += 1;
-      } else if (outcome.reason instanceof IllegalItemTransitionError) {
-        counts.blocked += 1;
-      } else {
-        console.error("bulk revoke check-in: revokeCheckInMutation failed:", outcome.reason);
-        await recordBulkAttendeeActionFailure(c, db, eventId, "revoke_checkin", {
-          attendeeId: batch[index]!.id,
-        });
-        counts.errored += 1;
-      }
+      );
+      tallyBulkRevokeCheckInOutcomes(c, eventId, batch, settled, counts);
     }
-  }
 
-  return c.json(counts);
+    return c.json(counts);
+  } catch (err) {
+    console.error("bulk revoke check-in failed:", err);
+    recordBulkAttendeeActionFailure(c, eventId, "revoke_checkin", {
+      attendeeCount: parsed.data.attendeeIds.length,
+    });
+    return c.json({ error: "server error" }, 500);
+  }
 }
 
 const bulkRevokeItemsAttendeesBodySchema = z
@@ -2243,7 +2277,7 @@ export async function handleBulkRevokeAttendeeItems(c: Context, db: PrismaClient
     return c.json({ revokedCount });
   } catch (err) {
     console.error("bulk revoke items: revokeItemsForAttendees failed:", err);
-    await recordBulkAttendeeActionFailure(c, db, eventId, "revoke_items", {
+    recordBulkAttendeeActionFailure(c, eventId, "revoke_items", {
       attendeeCount: parsed.data.attendeeIds.length,
     });
     return c.json({ error: "server error" }, 500);
@@ -2325,33 +2359,41 @@ export async function handleBulkRevokeAttendeePass(c: Context, db: PrismaClient)
   const parsed = bulkRevokePassAttendeesBodySchema.safeParse(body);
   if (!parsed.success) return c.json({ error: "validation_failed" }, 400);
 
-  const owned = await db.attendee.findMany({
-    where: { id: { in: parsed.data.attendeeIds }, event_id: eventId },
-    select: { id: true, status: true },
-  });
-
-  const audit = adminAuditFromContext(c);
   const counts = { revoked: 0, skipped: 0, errored: 0 };
-  for (const batch of chunk(owned, BULK_CHECKIN_CONCURRENCY)) {
-    const settled = await Promise.allSettled(
-      batch.map((a) =>
-        revokeOneAttendeePass(eventId, a.id, a.status as AttendeeStatus, audit, db),
-      ),
-    );
-    for (const [index, outcome] of settled.entries()) {
-      if (outcome.status === "rejected") {
-        console.error("bulk revoke pass: revokeOneAttendeePass failed:", outcome.reason);
-        await recordBulkAttendeeActionFailure(c, db, eventId, "revoke_pass", {
-          attendeeId: batch[index]!.id,
-        });
-        counts.errored += 1;
-        continue;
-      }
-      counts[outcome.value] += 1;
-    }
-  }
+  try {
+    const owned = await db.attendee.findMany({
+      where: { id: { in: parsed.data.attendeeIds }, event_id: eventId },
+      select: { id: true, status: true },
+    });
 
-  return c.json(counts);
+    const audit = adminAuditFromContext(c);
+    for (const batch of chunk(owned, BULK_CHECKIN_CONCURRENCY)) {
+      const settled = await Promise.allSettled(
+        batch.map((a) =>
+          revokeOneAttendeePass(eventId, a.id, a.status as AttendeeStatus, audit, db),
+        ),
+      );
+      for (const [index, outcome] of settled.entries()) {
+        if (outcome.status === "rejected") {
+          console.error("bulk revoke pass: revokeOneAttendeePass failed:", outcome.reason);
+          recordBulkAttendeeActionFailure(c, eventId, "revoke_pass", {
+            attendeeId: batch[index]!.id,
+          });
+          counts.errored += 1;
+          continue;
+        }
+        counts[outcome.value] += 1;
+      }
+    }
+
+    return c.json(counts);
+  } catch (err) {
+    console.error("bulk revoke pass failed:", err);
+    recordBulkAttendeeActionFailure(c, eventId, "revoke_pass", {
+      attendeeCount: parsed.data.attendeeIds.length,
+    });
+    return c.json({ error: "server error" }, 500);
+  }
 }
 
 /** POST /api/admin/events/:eventId/attendees — manual attendee create (admin/superadmin). */

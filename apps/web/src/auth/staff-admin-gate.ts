@@ -82,7 +82,7 @@ export function createStaffAdminGate(prisma: PrismaClient) {
 
     const passwordChange = await prisma.user.findUnique({
       where: { id: result.auth.userId },
-      select: { must_change_password: true },
+      select: { must_change_password: true, email: true },
     });
     if (passwordChange?.must_change_password && isAdminSpaPath(c.req.path)) {
       return c.redirect("/change-password", 302);
@@ -91,7 +91,7 @@ export function createStaffAdminGate(prisma: PrismaClient) {
       return c.json({ error: "password_change_required" }, 403);
     }
 
-    c.set("auth", result.auth);
+    c.set("auth", { ...result.auth, userEmail: passwordChange?.email });
     await next();
   };
 }

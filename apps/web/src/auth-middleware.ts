@@ -12,6 +12,8 @@ import {
 /** Authenticated principal attached to Hono context after full session validation. */
 export interface AuthContext {
   userId: string;
+  /** Verified staff email when the authenticating gate already loaded it. */
+  userEmail?: string;
   sessionId?: string;
   authSource?: "session" | "cloudflare-access";
 }

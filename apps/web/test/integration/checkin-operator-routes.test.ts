@@ -170,6 +170,24 @@ function postBearer(path: string, body: Record<string, unknown>) {
   });
 }
 
+/** Exercise the post-auth race where a session is no longer readable when the handler builds its
+ * audit context. Authentication has already established the operator, so the bounded log must
+ * retain the id but omit an unavailable email. */
+function postWithMissingAuditSession(body: Record<string, unknown>) {
+  const app = new Hono();
+  app.post("/api/checkin/scan", (c) => {
+    c.set("checkinAuth", "session");
+    c.set("operatorUserId", USER_OP_A);
+    (c as unknown as { set(key: string, value: unknown): void }).set(
+      "checkinSessionId",
+      "missing-session-after-auth",
+    );
+    c.set("parsedScanBody", body);
+    return handleCheckinScan(c, prisma);
+  });
+  return app.request("/api/checkin/scan", { method: "POST" });
+}
+
 describe("POST /api/checkin/lookup (Lock #3)", () => {
   it("returns matches without email in response", async () => {
     const res = await post("/api/checkin/lookup", { eventId: EVENT_A, q: "jan@firma.pl" });
@@ -289,6 +307,22 @@ describe("POST /api/checkin/admit — session_id audit (Lock #5)", () => {
     expect(JSON.stringify(entries)).not.toContain("unrecognized-bearer-ticket");
   });
 
+  it("keeps an authenticated actor id but omits email when its session disappears before audit enrichment", async () => {
+    const res = await postWithMissingAuditSession({
+      eventId: EVENT_A,
+      scanned: "unrecognized-missing-session-ticket",
+      deviceId: "spoofed-tablet",
+    });
+
+    expect(res.status).toBe(200);
+    const [entry] = querySystemLogs({ source: "security", search: "checkin_rejected" });
+    expect(entry).toMatchObject({
+      fields: { eventId: EVENT_A, status: "INVALID", deviceId: null, actorUserId: USER_OP_A },
+    });
+    expect(entry?.fields).not.toHaveProperty("actorEmail");
+    expect(JSON.stringify(entry)).not.toContain("unrecognized-missing-session-ticket");
+  });
+
   it("records every rejected status without the scanned ticket", async () => {
     const spy = vi.spyOn(ticketOperations, "checkInScan");
     try {
@@ -315,6 +349,7 @@ describe("POST /api/checkin/admit — session_id audit (Lock #5)", () => {
   });
 
   it("records a session scan failure with the verified operator and no raw scan data", async () => {
+    const userLookupSpy = vi.spyOn(prisma.user, "findUnique");
     const spy = vi.spyOn(ticketOperations, "checkInScan").mockRejectedValueOnce(
       new Error("database failed for jan@firma.pl"),
     );
@@ -336,6 +371,30 @@ describe("POST /api/checkin/admit — session_id audit (Lock #5)", () => {
       expect(JSON.stringify(entry)).not.toContain("database failed");
       expect(JSON.stringify(entry)).not.toContain("private-session-ticket");
       expect(JSON.stringify(entry)).not.toContain("jan@firma.pl");
+      expect(userLookupSpy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+      userLookupSpy.mockRestore();
+    }
+  });
+
+  it("omits actorEmail from a session scan failure when audit enrichment cannot read the session", async () => {
+    const spy = vi.spyOn(ticketOperations, "checkInScan").mockRejectedValueOnce(
+      new Error("database failed for jan@firma.pl"),
+    );
+    try {
+      const res = await postWithMissingAuditSession({
+        eventId: EVENT_A,
+        scanned: "private-missing-session-ticket",
+        deviceId: "spoofed-tablet",
+      });
+
+      expect(res.status).toBe(500);
+      const [entry] = querySystemLogs({ source: "api", search: "checkin_scan_failed" });
+      expect(entry).toMatchObject({ fields: { eventId: EVENT_A, actorUserId: USER_OP_A } });
+      expect(entry?.fields).not.toHaveProperty("actorEmail");
+      expect(JSON.stringify(entry)).not.toContain("database failed");
+      expect(JSON.stringify(entry)).not.toContain("private-missing-session-ticket");
     } finally {
       spy.mockRestore();
     }
