@@ -1,8 +1,10 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { backfillAgencyPublicRefs } from "@admitto/db";
 import { encryptToString } from "@admitto/crypto";
 import { generateToken, hashToken } from "@admitto/tickets";
+import * as tickets from "@admitto/tickets";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 
@@ -75,6 +77,14 @@ beforeAll(async () => {
   });
 });
 
+beforeEach(() => {
+  resetSystemLogBufferForTest();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 afterAll(async () => {
   await prisma?.$disconnect();
 });
@@ -108,6 +118,169 @@ describe("Mode B public routes — public_ref", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("image/png");
     expect(res.headers.get("Cache-Control")).toBe("private, max-age=300");
+  });
+
+  it("records QR generation failures without copying the ticket token or error text", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(tickets, "generateQrPng").mockRejectedValueOnce(
+      new Error("attendee@example.com and secret payload must stay out of System logs"),
+    );
+
+    const res = await app.request(`/q/${MODE_A_TOKEN}.png`);
+
+    expect(res.status).toBe(500);
+    expect(querySystemLogs({ source: "api" })).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        message: "qr_png_generation_failed",
+        fields: { route: "/q/:filename" },
+      }),
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"msg":"qr_png_generation_failed"'),
+    );
+    expect(JSON.stringify(querySystemLogs())).not.toContain(MODE_A_TOKEN);
+    expect(JSON.stringify(querySystemLogs())).not.toContain("attendee@example.com");
+  });
+
+  it("records ticket-page QR failures for an agency route", async () => {
+    vi.spyOn(tickets, "generateQrPng").mockRejectedValueOnce(
+      new Error("attendee@example.com and agency payload must stay out of System logs"),
+    );
+
+    const res = await app.request(`/t/${EVENT_SLUG}/a/${PUBLIC_REF}`);
+
+    expect(res.status).toBe(500);
+    expect(querySystemLogs({ source: "api" })).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        message: "qr_png_generation_failed",
+        fields: { route: "/t/:eventSlug/a/:ref" },
+      }),
+    );
+    expect(JSON.stringify(querySystemLogs())).not.toContain(PUBLIC_REF);
+    expect(JSON.stringify(querySystemLogs())).not.toContain("attendee@example.com");
+  });
+
+  it("records hosted agency QR generation failures", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(tickets, "generateQrPng").mockRejectedValueOnce(
+      new Error("attendee@example.com and agency payload must stay out of System logs"),
+    );
+
+    const res = await app.request(`/q/${EVENT_SLUG}/a/${PUBLIC_REF}.png`);
+
+    expect(res.status).toBe(500);
+    expect(querySystemLogs({ source: "api" })).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        message: "qr_png_generation_failed",
+        fields: { route: "/q/:eventSlug/a/:filename" },
+      }),
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"msg":"qr_png_generation_failed"'),
+    );
+    expect(JSON.stringify(querySystemLogs())).not.toContain(PUBLIC_REF);
+    expect(JSON.stringify(querySystemLogs())).not.toContain("attendee@example.com");
+  });
+
+  it("records ticket-resolution failures with a static route label", async () => {
+    vi.spyOn(tickets, "resolveTicket").mockRejectedValueOnce(
+      new Error("private-token and attendee@example.com must stay out of System logs"),
+    );
+
+    const res = await app.request("/t/private-token");
+
+    expect(res.status).toBe(500);
+    expect(querySystemLogs({ source: "api" })).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        message: "ticket_resolution_failed",
+        fields: { route: "/t/:token", errorKind: "unexpected" },
+      }),
+    );
+    expect(JSON.stringify(querySystemLogs())).not.toContain("private-token");
+    expect(JSON.stringify(querySystemLogs())).not.toContain("attendee@example.com");
+  });
+
+  it("records database ticket-resolution failures with a safe category", async () => {
+    vi.spyOn(tickets, "resolveTicket").mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError("attendee@example.com must stay out of System logs", {
+        code: "P2025",
+        clientVersion: "test",
+      }),
+    );
+
+    const res = await app.request("/t/private-token");
+
+    expect(res.status).toBe(500);
+    expect(querySystemLogs({ source: "api" })).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        message: "ticket_resolution_failed",
+        fields: { route: "/t/:token", errorKind: "database" },
+      }),
+    );
+    expect(JSON.stringify(querySystemLogs())).not.toContain("private-token");
+    expect(JSON.stringify(querySystemLogs())).not.toContain("attendee@example.com");
+  });
+
+  it("records agency ticket lookup failures without the public reference", async () => {
+    vi.spyOn(prisma.event, "findUnique").mockRejectedValueOnce(
+      new Error("attendee@example.com and public reference must stay out of System logs"),
+    );
+
+    const res = await app.request(`/t/${EVENT_SLUG}/a/${PUBLIC_REF}`);
+
+    expect(res.status).toBe(500);
+    expect(querySystemLogs({ source: "api" })).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        message: "ticket_agency_lookup_failed",
+        fields: { route: "/t/:eventSlug/a/:ref" },
+      }),
+    );
+    expect(JSON.stringify(querySystemLogs())).not.toContain(PUBLIC_REF);
+    expect(JSON.stringify(querySystemLogs())).not.toContain("attendee@example.com");
+  });
+
+  it("records hosted agency QR lookup failures without the public reference", async () => {
+    vi.spyOn(prisma.event, "findUnique").mockRejectedValueOnce(
+      new Error("attendee@example.com and public reference must stay out of System logs"),
+    );
+
+    const res = await app.request(`/q/${EVENT_SLUG}/a/${PUBLIC_REF}.png`);
+
+    expect(res.status).toBe(500);
+    expect(querySystemLogs({ source: "api" })).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        message: "ticket_agency_lookup_failed",
+        fields: { route: "/q/:eventSlug/a/:filename" },
+      }),
+    );
+    expect(JSON.stringify(querySystemLogs())).not.toContain(PUBLIC_REF);
+    expect(JSON.stringify(querySystemLogs())).not.toContain("attendee@example.com");
+  });
+
+  it("records internal QR attendee lookup failures without the ticket token", async () => {
+    vi.spyOn(prisma.attendee, "findUnique").mockRejectedValueOnce(
+      new Error("attendee@example.com and ticket token must stay out of System logs"),
+    );
+
+    const res = await app.request(`/q/${MODE_A_TOKEN}.png`);
+
+    expect(res.status).toBe(500);
+    expect(querySystemLogs({ source: "api" })).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        message: "ticket_qr_attendee_lookup_failed",
+        fields: { route: "/q/:filename" },
+      }),
+    );
+    expect(JSON.stringify(querySystemLogs())).not.toContain(MODE_A_TOKEN);
+    expect(JSON.stringify(querySystemLogs())).not.toContain("attendee@example.com");
   });
 
   it("legacy Attendee.id in URL returns 404", async () => {
