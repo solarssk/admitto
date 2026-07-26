@@ -282,11 +282,6 @@ function parseCheckinHistoryLimit(raw: string | undefined): number {
   return Math.max(1, Math.min(parsed, 100));
 }
 
-/** A bounded error category for operational logs; never copy arbitrary error text into a log. */
-function systemLogErrorKind(err: unknown): "error" | "non_error" {
-  return err instanceof Error ? "error" : "non_error";
-}
-
 /** Injectable dependencies for `createApp()` (tests and custom deploy wiring). */
 export interface CreateAppOptions {
   prisma?: PrismaClient;
@@ -363,7 +358,7 @@ export function createApp(options: CreateAppOptions = {}) {
     emitSystemLog("api", "error", "unhandled_exception", {
       method: c.req.method,
       path: redactRequestPath(new URL(c.req.url).pathname),
-      errorKind: systemLogErrorKind(err),
+      errorKind: "error",
     });
     return c.text("Internal Server Error", 500);
   });
@@ -487,12 +482,6 @@ export function createApp(options: CreateAppOptions = {}) {
     if (resolved.mode === "internal") {
       if (!internalToken) {
         console.error(`Internal attendee ${attendee.id} missing token for ticket page QR`);
-        recordSystemLog({
-          level: "error",
-          source: "api",
-          message: "ticket_internal_token_missing",
-          fields: { route, attendeeId: attendee.id },
-        });
         return htmlWithSecurityHeaders(c, renderServerError(), 500);
       }
       qrPayload = buildQrPayload("internal", { baseUrl, token: internalToken });
@@ -500,12 +489,6 @@ export function createApp(options: CreateAppOptions = {}) {
       const agencyPayload = attendee.qr_payload ?? attendee.external_uuid;
       if (!agencyPayload) {
         console.error(`Agency attendee ${attendee.id} has neither qr_payload nor external_uuid`);
-        recordSystemLog({
-          level: "error",
-          source: "api",
-          message: "ticket_agency_payload_missing",
-          fields: { route, attendeeId: attendee.id },
-        });
         return htmlWithSecurityHeaders(c, renderServerError(), 500);
       }
       qrPayload = buildQrPayload("agency", { agencyPayload });
