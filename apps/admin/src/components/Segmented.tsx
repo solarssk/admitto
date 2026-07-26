@@ -2,6 +2,9 @@
 export interface SegmentedOption<T extends string> {
   readonly value: T;
   readonly label: string;
+  /** Present but not yet selectable — e.g. a feature announced in the UI ahead of its backing
+   * data existing. Disables only this option; the rest of the control stays interactive. */
+  readonly disabled?: boolean;
 }
 
 export function Segmented<T extends string>({
@@ -9,16 +12,22 @@ export function Segmented<T extends string>({
   value,
   ariaLabel,
   disabled,
+  className,
   onChange,
 }: Readonly<{
   options: ReadonlyArray<SegmentedOption<T>>;
   value: T;
   ariaLabel: string;
   disabled?: boolean;
+  className?: string;
   onChange: (value: T) => void;
 }>) {
   return (
-    <div className="seg-control" role="radiogroup" aria-label={ariaLabel}>
+    <div
+      className={className ? `seg-control ${className}` : "seg-control"}
+      role="radiogroup"
+      aria-label={ariaLabel}
+    >
       {options.map((opt) => {
         const active = opt.value === value;
         return (
@@ -28,7 +37,7 @@ export function Segmented<T extends string>({
             role="radio"
             aria-checked={active}
             className={`seg-btn${active ? " seg-btn--active" : ""}`}
-            disabled={disabled}
+            disabled={disabled || opt.disabled}
             onClick={() => onChange(opt.value)}
           >
             {opt.label}

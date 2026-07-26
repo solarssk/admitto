@@ -55,3 +55,38 @@
 .scroll-fade-tabs--at-end::after {
   opacity: 0;
 }
+
+/* Arrow buttons - only rendered (not just hidden) once there's actually more to scroll to in
+   that direction, matching the fade's own at-start/at-end gating. Sit above the fade gradient
+   (z-index) so they stay visible against it. */
+.scroll-fade-tabs__arrow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  border: none;
+  /* The fade gradient behind this (::before/::after) is transparent for most of its width,
+     by design, so tab text can be legible as it scrolls under the edge - but that same
+     transparency let the tab text show through behind the arrow icon itself. A solid
+     background here (not the gradient) fully occludes the tab underneath across the whole
+     28px hit target. */
+  background: var(--surface-page);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.scroll-fade-tabs__arrow:hover {
+  color: var(--text-primary);
+}
+
+.scroll-fade-tabs__arrow--left {
+  left: 0;
+}
+
+.scroll-fade-tabs__arrow--right {
+  right: 0;
+}

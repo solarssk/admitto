@@ -177,6 +177,9 @@ const archivedEvent = {
 // existing table-shaped assertions elsewhere in this file keep working unchanged.
 beforeEach(() => {
   mockMatchMedia(true);
+  // ScrollFadeTabs (wrapping EventSettingsPage's own tab strip) scrolls its active tab into
+  // view on mount/change - jsdom does not implement scrollIntoView.
+  Element.prototype.scrollIntoView = vi.fn();
 });
 
 afterEach(() => {

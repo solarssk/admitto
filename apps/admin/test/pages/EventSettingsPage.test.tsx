@@ -155,6 +155,9 @@ beforeEach(() => {
   // The ticket-type staleness tests queue one-off mock implementations. Resetting them before
   // every test prevents an unconsumed async response in a failed test from affecting the next one.
   vi.resetAllMocks();
+  // ScrollFadeTabs (wrapping this page's own tab strip) scrolls its active tab into view on
+  // mount/change - jsdom does not implement scrollIntoView.
+  Element.prototype.scrollIntoView = vi.fn();
   // The Branding tab also mounts EventImageAssetLibrary, which fetches its own list on mount.
   // Default to an empty library so tests that don't care about it never hit a real network
   // call (jsdom's `fetch` is real, not auto-mocked) or leak an unresolved promise into the

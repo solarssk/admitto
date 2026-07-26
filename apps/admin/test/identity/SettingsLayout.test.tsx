@@ -2,8 +2,12 @@
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { render } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SettingsLayout } from "../../src/layouts/SettingsLayout.js";
+
+// ScrollFadeTabs (wrapping this layout's own tab strip) scrolls its active tab into view on
+// mount/change - jsdom does not implement scrollIntoView.
+Element.prototype.scrollIntoView = vi.fn();
 
 afterEach(() => {
   cleanup();

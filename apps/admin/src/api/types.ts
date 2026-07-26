@@ -893,6 +893,7 @@ export interface AuditLogEntryDto {
   actor_user_id: string;
   actor_email: string | null;
   actor_display_name: string | null;
+  actor_timezone: string | null;
   ip: string | null;
   metadata: Record<string, unknown> | null;
   created_at: string;

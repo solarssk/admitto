@@ -33,6 +33,10 @@ vi.mock("../../src/settings/AuditLogPanel.js", () => ({
 import { SettingsLayout } from "../../src/layouts/SettingsLayout.js";
 import { SettingsTabContent } from "../../src/pages/SettingsPage.js";
 
+// ScrollFadeTabs (wrapping this layout's own tab strip) scrolls its active tab into view on
+// mount/change - jsdom does not implement scrollIntoView.
+Element.prototype.scrollIntoView = vi.fn();
+
 afterEach(() => {
   cleanup();
 });

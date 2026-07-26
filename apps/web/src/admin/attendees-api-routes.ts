@@ -1649,6 +1649,7 @@ export async function handleDeleteEventAttendee(c: Context, db: PrismaClient): P
       actorUserId: audit.operator ?? c.get("auth").userId,
       sessionId: audit.sessionId,
       ip: audit.ip,
+      timezone: audit.timezone,
       actionType: "attendee_erased",
       metadata: {
         event_id: eventId,
@@ -1741,6 +1742,7 @@ export async function handleBulkDeleteEventAttendees(c: Context, db: PrismaClien
       actorUserId: audit.operator ?? c.get("auth").userId,
       sessionId: audit.sessionId,
       ip: audit.ip,
+      timezone: audit.timezone,
       actionType: "attendees_bulk_erased",
       metadata: {
         event_id: eventId,
@@ -2415,6 +2417,7 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
         actorUserId: audit.operator ?? c.get("auth").userId,
         sessionId: audit.sessionId,
         ip: audit.ip,
+        timezone: audit.timezone,
         actionType: "attendee_created_manual",
         metadata: {
           event_id: eventId,

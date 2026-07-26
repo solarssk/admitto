@@ -88,10 +88,18 @@ export function SettingsTabContent() {
       >
         <SecurityPanel />
         <SessionsPanel />
-        <AuditLogPanel />
       </SettingsTabPanel>
       <SettingsTabPanel tab="archiving" activeTab={tab} visited={visitedTabs} label="Archiving">
         <EventArchivingPanel />
+      </SettingsTabPanel>
+      <SettingsTabPanel
+        tab="logs"
+        activeTab={tab}
+        visited={visitedTabs}
+        label="Logs & audit"
+        className="settings-sections"
+      >
+        <AuditLogPanel />
       </SettingsTabPanel>
     </>
   );

@@ -7,6 +7,7 @@ export type AdminAuditWriteInput = {
   ip?: string | null;
   actionType: string;
   metadata?: Record<string, unknown>;
+  timezone?: string | null;
 };
 
 /** Append an instance/org-scoped admin audit row (ADR 0031). */
@@ -22,6 +23,7 @@ export async function writeAdminAuditLog(
       session_id: data.sessionId ?? null,
       ip: data.ip ?? null,
       metadata: (data.metadata ?? undefined) as Prisma.InputJsonValue | undefined,
+      actor_timezone: data.timezone ?? null,
     },
   });
 }

@@ -105,6 +105,7 @@ export async function handlePutMailSettings(c: Context, db: PrismaClient): Promi
       actorUserId: audit.operator!,
       sessionId: audit.sessionId,
       ip: audit.ip,
+      timezone: audit.timezone,
       actionType: "mail_settings_updated",
       metadata: {
         provider: body.provider ?? current.provider.value,
@@ -154,6 +155,7 @@ export async function handlePostMailSettingsTest(
       actorUserId: audit.operator!,
       sessionId: audit.sessionId,
       ip: audit.ip,
+      timezone: audit.timezone,
       actionType: "mail_transport_tested",
       metadata: { result: outcome.resultStatus },
     });

@@ -1,1 +1,1 @@
-export { sanitizeCsvCell } from "@admitto/tickets";
+export { quoteCsvCell, sanitizeCsvCell } from "@admitto/tickets";

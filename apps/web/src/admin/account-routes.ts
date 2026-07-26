@@ -380,6 +380,7 @@ export async function handlePatchAccountPassword(
         actorUserId: audit.operator ?? userId,
         sessionId: audit.sessionId,
         ip: audit.ip,
+        timezone: audit.timezone,
         actionType: "account_password_changed",
         metadata: { sessionsRevoked: revokedCount },
       });
@@ -446,6 +447,7 @@ export async function handleDeleteAccountSession(c: Context, db: PrismaClient): 
       actorUserId: audit.operator ?? auth.userId,
       sessionId: audit.sessionId,
       ip: audit.ip,
+      timezone: audit.timezone,
       actionType: "account_session_revoked",
       metadata: { sessionId },
     });
@@ -534,6 +536,7 @@ export async function handlePostMfaConfirm(
       actorUserId: audit.operator ?? userId,
       sessionId: audit.sessionId,
       ip: audit.ip,
+      timezone: audit.timezone,
       actionType: "account_mfa_enrolled",
     });
     return true;
@@ -605,6 +608,7 @@ export async function handlePostMfaReset(
           actorUserId: audit.operator ?? userId,
           sessionId: audit.sessionId,
           ip: audit.ip,
+          timezone: audit.timezone,
           actionType: "account_mfa_reset",
           metadata: { sessionsRevoked: revokedCount },
         });

@@ -1,13 +1,19 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import { SessionsPanel } from "../../src/settings/SessionsPanel.js";
 import { SecurityPanel } from "../../src/settings/SecurityPanel.js";
 import { AuditLogPanel } from "../../src/settings/AuditLogPanel.js";
 import { BrandingPanel } from "../../src/settings/BrandingPanel.js";
 import { EventArchivingPanel } from "../../src/settings/EventArchivingPanel.js";
-import { renderWithToast } from "../test-utils.js";
+import { mockMatchMedia, renderWithToast } from "../test-utils.js";
+
+// AuditLogPanel picks table vs. mobile cards via useIsDesktop() - default to desktop so
+// its tests exercise the <table> markup they assert against.
+beforeEach(() => {
+  mockMatchMedia(true);
+});
 
 const emptySettings = {
   session_ttl_ms: { value: 86_400_000, source: "default" as const },
@@ -78,6 +84,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe("Settings panels delayed loading", () => {
@@ -205,6 +212,7 @@ describe("SecurityPanel operator errors", () => {
 describe("AuditLogPanel operator errors", () => {
   it("shows operator-safe load failure", async () => {
     vi.mocked(fetchAuditLog).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([]);
     renderWithToast(<AuditLogPanel />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();

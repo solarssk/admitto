@@ -4043,6 +4043,25 @@ output.mail-field-hint {
 }
 
 /* Audit log panel (Settings) */
+/* .seg-control's shared margin-bottom (below) is meant for its other usage on the Mail tab,
+   where the toggle sits above unrelated content — inline in a Card header's actions row that
+   margin just inflates the header past the shared standard height. .seg-btn's own
+   padding/line-height (matching the mockup's Mail-tab sizing) is also taller than the
+   --control-h-sm other header buttons use, so this variant fixes the control to that height
+   and centers each button's label the same way .at-btn--sm does (flex-centered, line-height 1,
+   no vertical padding) instead of relying on line-height + padding to reach a height. */
+.seg-control.audit-log-view-toggle {
+  margin-bottom: 0;
+  height: var(--control-h-sm);
+}
+
+.seg-control.audit-log-view-toggle .seg-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  line-height: 1;
+}
+
 .audit-log-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -4051,16 +4070,136 @@ output.mail-field-hint {
   margin-bottom: var(--space-4);
 }
 
+/* Mobile only (see AuditLogPanel.tsx) - Clear filters/Export CSV move down from the Card
+   header into this row. flex: 1 1 100% always claims a full row of its own (never shares
+   the line with Search/Filters above), with Export pushed to the right - the header-actions
+   convention these two follow everywhere else in the app. */
+.audit-log-toolbar-actions {
+  display: flex;
+  justify-content: space-between;
+  flex: 1 1 100%;
+}
+
 .audit-log-filter {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  min-width: 10rem;
+  flex: 1 1 12rem;
+}
+
+.audit-log-filter--search {
+  position: relative;
+  flex: 1 1 18rem;
+}
+
+/* Below the same 768px breakpoint useIsDesktop() switches on (From/To move into Filters,
+   Clear filters/Export CSV move into this row too) - search's desktop-sized 18rem basis left
+   no room for Filters to share the line, forcing it onto its own row. Shrinking instead of
+   stretching lets Filters (and, wrapping below if needed, Clear filters/Export CSV) sit
+   alongside it on the same row. */
+@media (max-width: 767px) {
+  .audit-log-filter--search {
+    /* flex-basis: auto still sizes off content, and content here is a width:100% input, whose
+       intrinsic size resolves large enough to claim the whole row by itself - a 0% basis
+       sidesteps that entirely and lets flex-grow alone decide the final width. */
+    flex: 1 1 0%;
+    min-width: 0;
+  }
+}
+
+/* A date always renders as the same fixed-width dd/mm/yyyy - no need to stretch it as wide
+   as the search box; search gets the freed-up room instead (flex-grow on --search alone). */
+.audit-log-filter--date {
+  flex: 0 1 9rem;
+}
+
+.audit-log-search-clear {
+  position: absolute;
+  top: 50%;
+  right: var(--space-2);
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.audit-log-search-clear:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.audit-log-search-clear:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--border-focus);
 }
 
 .audit-log-filter__label {
   font-size: var(--fs-sm);
   color: var(--text-secondary);
+}
+
+.audit-log-filters-menu {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-self: flex-end;
+}
+
+.audit-log-filters-menu__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  margin-left: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+  color: var(--text-on-primary);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.audit-log-filters-menu__panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  /* Filters is the last (rightmost) toolbar item - right:0 keeps the panel inside the card
+     instead of extending past the page edge, matching how the trigger itself sits flush right. */
+  right: 0;
+  left: auto;
+  z-index: var(--z-dropdown);
+  width: 260px;
+  /* A <fieldset> ignores an explicit `width` once its content's min-content exceeds it (a
+     long-standing browser default: fieldsets get an automatic `min-width: min-content`) -
+     without this the two side-by-side date fields (mobile only) blew the panel out past
+     260px and off the left edge of the screen. */
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-3);
+  margin: 0;
+}
+
+.audit-log-filters-menu__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.audit-log-filters-menu__field .at-select {
+  width: 100%;
 }
 
 .audit-log-skeleton {
@@ -4091,23 +4230,13 @@ output.mail-field-hint {
   }
 }
 
-.audit-log-empty {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-}
-
-.audit-log-error {
-  margin: 0;
-  color: var(--status-error-fg, #b42318);
-  font-size: var(--fs-sm);
-}
-
 /* Details popover — absolutely positioned so opening it never changes the
    table row's height or pushes other rows around (unlike the old <details>). */
 .audit-log-details {
   position: relative;
   display: inline-block;
+  /* Fixed reserve so "View" vs. "—" never shifts the copy button's own position. */
+  min-width: 2.5rem;
 }
 
 .audit-log-details__trigger {
@@ -4117,6 +4246,37 @@ output.mail-field-hint {
   background: none;
   border: 0;
   padding: 0;
+}
+
+.audit-log-details-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.audit-log-row-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.audit-log-row-copy:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.audit-log-row-copy:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--border-focus);
 }
 
 .audit-log-details__panel {
@@ -4131,30 +4291,185 @@ output.mail-field-hint {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-md);
-  white-space: pre-wrap;
   overflow-wrap: break-word;
   z-index: calc(var(--z-dropdown) + 1);
 }
 
+.audit-log-details__list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.audit-log-details__row dt {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.audit-log-details__row dd {
+  margin: 0;
+}
+
+.audit-log-scope-header {
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* --fs-mono (13px) matches the table's own 13px body text numerically, but a monospace
+   typeface's glyphs read visually larger than a proportional one at the same size - --fs-xs
+   (12px, the same size already used for badges/table captions) is what actually looks the
+   same size as the rest of the row. */
+.audit-log-time {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.audit-log-time .sessions-subdued {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+/* Re-fetching with existing rows still on screen (filter/page change) — dim them
+   instead of blanking the table out while the new page loads (matches AttendeesTable). */
+.audit-log-table-wrap--loading {
+  opacity: 0.5;
+  transition: opacity var(--dur-fast);
+  pointer-events: none;
+}
+
+/* Mobile card list (< 768px) — same data as the table, one entry per card instead of a
+   horizontally-scrolling row. Rendered instead of the table (AuditLogPanel picks one or the
+   other via useIsDesktop, same convention as AttendeesTable/ReportsPage's own admission log). */
+.audit-log-cards {
+  display: flex;
+  flex-direction: column;
+}
+
+.audit-log-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.audit-log-card:last-child {
+  border-bottom: 0;
+}
+
+.audit-log-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.audit-log-card__time {
+  /* Was flex: none - fine while the secondary line was just a short city name, but the
+     actor-local line now also carries a tz abbreviation and country ("GMT+2 for actor
+     (Warsaw, Poland)"), long enough that a fixed-width sibling next to the action badge
+     pushed the card wider than the viewport instead of wrapping. */
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: right;
+}
+
+.audit-log-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.audit-log-card__meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.audit-log-card__meta-item i {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.audit-log-card__email {
+  width: 100%;
+}
+
+.audit-log-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+/* The header's shared .at-card__header is nowrap by design (a fixed, consistent height is
+   the standard across every Settings card) - but three actions (System/Audit, Clear filters,
+   Export CSV) alongside the "Audit log" title genuinely don't fit in one line under ~480px.
+   Wrapping to a second line there is the lesser evil vs. clipping a button off-screen; every
+   other Settings card only carries one or two header actions and isn't affected. */
+@media (max-width: 480px) {
+  .audit-log-header-card .at-card__header {
+    flex-wrap: wrap;
+    height: auto;
+  }
+}
+
+/* Matches .attendees-table-foot exactly (attendees.css) - same summary-text-left,
+   pager-right layout, same colors, same stack-below-~600px breakpoint. */
 .audit-log-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  flex-wrap: wrap;
   margin-top: var(--space-4);
   padding-top: var(--space-3);
   border-top: 1px solid var(--border);
-}
-
-.audit-log-footer__info {
   font-size: var(--fs-sm);
-  color: var(--text-secondary);
+  color: var(--text-muted);
 }
 
-.audit-log-footer__buttons {
+.audit-log-footer__pager {
   display: flex;
+  align-items: center;
   gap: var(--space-2);
+}
+
+@media (max-width: 600px) {
+  .audit-log-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+  }
+
+  .audit-log-footer__pager {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+}
+
+.audit-log-pagesize {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-sm);
+  color: var(--text-muted, var(--text-secondary));
+  white-space: nowrap;
+}
+
+.at-select.audit-log-pagesize-select {
+  height: var(--control-h-sm);
+  width: auto;
+  padding: 0 1.4rem 0 var(--space-2);
+  background-position: right 0.4rem center;
+  background-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 /* Native select styled to match Input component */
@@ -5432,7 +5747,7 @@ output.mail-field-hint {
   display: flex;
   align-items: stretch;
   width: 100%;
-  min-height: 2.5rem;
+  height: var(--control-h);
   border: 1px solid var(--border);
   border-radius: var(--radius-md, 0.5rem);
   background: var(--surface-card, #fff);
@@ -5454,7 +5769,7 @@ output.mail-field-hint {
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 2.5rem;
+  width: var(--control-h);
   border: none;
   border-right: 1px solid var(--border);
   background: var(--surface-page, #f8fafc);
@@ -5484,7 +5799,7 @@ output.mail-field-hint {
   background: transparent;
   color: var(--text-primary);
   font: inherit;
-  padding: 0.5rem 0.75rem;
+  padding: 0 0.75rem;
 }
 
 .date-picker__input:focus {
@@ -5516,7 +5831,10 @@ output.mail-field-hint {
   max-height: none;
   height: auto;
   color: inherit;
-  width: min(100%, 18.5rem);
+  /* Fixed, not min(100%, ...) - a comfortable calendar shouldn't be squeezed down to a
+     compact filter field's own (much narrower) width; it's a floating popover, free to be
+     wider than the control it opens from. */
+  width: 18.5rem;
   padding: 0.75rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-md, 0.5rem);
@@ -5524,9 +5842,26 @@ output.mail-field-hint {
   box-shadow: var(--shadow-md, 0 8px 24px rgba(15, 23, 42, 0.12));
 }
 
+/* Below the same 768px breakpoint useIsDesktop() switches on, a DatePicker can render inside
+   a narrower host than its own field would suggest (e.g. AuditLogPanel's mobile Filters
+   dropdown, ~236px of content width) - the panel positions relative to the field itself, not
+   whichever container it's actually nested in, so the fixed 18.5rem (296px) width would bleed
+   past that host's edge instead of being clipped. Narrower here fits every mobile host without
+   needing per-page overrides, and a calendar this size is still perfectly comfortable to use. */
+@media (max-width: 767px) {
+  .date-picker__panel {
+    width: 14rem;
+  }
+}
+
 .date-picker__panel--above {
   top: auto;
   bottom: calc(100% + 0.35rem);
+}
+
+.date-picker__panel--right {
+  left: auto;
+  right: 0;
 }
 
 .date-picker__header {

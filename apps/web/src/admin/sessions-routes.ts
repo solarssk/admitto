@@ -97,6 +97,7 @@ export async function handleRevokeSession(c: Context, db: PrismaClient): Promise
       actorUserId: audit.operator ?? c.get("auth").userId,
       sessionId: audit.sessionId,
       ip: audit.ip,
+      timezone: audit.timezone,
       actionType: "session_revoked",
       metadata: { session_id: id, target_user_id: row.user_id },
     });
@@ -127,6 +128,7 @@ export async function handleRevokeAllOperatorSessions(
     actorUserId: audit.operator ?? c.get("auth").userId,
     sessionId: audit.sessionId,
     ip: audit.ip,
+    timezone: audit.timezone,
     actionType: "operator_sessions_bulk_revoked",
     metadata: { eventId, revokedCount },
   });

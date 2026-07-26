@@ -178,6 +178,7 @@ export async function handlePatchSystemSettings(c: Context, db: PrismaClient): P
       actorUserId: audit.operator ?? c.get("auth").userId,
       sessionId: audit.sessionId,
       ip: audit.ip,
+      timezone: audit.timezone,
       actionType: "system_settings_updated",
       metadata: { fields: presentKeys },
     });

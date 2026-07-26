@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { resetSystemStatusCache, SystemStatus } from "../../src/components/SystemStatus.js";
 import { UserMenu } from "../../src/components/UserMenu.js";
 import type { AuthUser, RoleAssignment } from "../../src/api/types.js";
@@ -27,6 +27,11 @@ const OK_CHECKS = {
   base_url: { ok: true, detail: "https://tickets.example.com" },
 };
 
+function SettingsPageProbe() {
+  const loc = useLocation();
+  return <div data-testid="settings-page">{loc.search}</div>;
+}
+
 function renderStatus(
   assignments: RoleAssignment[],
   mailerStatus: { configured: boolean; provider: string | null } | null = { configured: true, provider: "smtp" },
@@ -39,7 +44,7 @@ function renderStatus(
           path="/"
           element={<SystemStatus assignments={assignments} mailerStatus={mailerStatus} eventId={eventId} />}
         />
-        <Route path="/admin/settings" element={<div>settings-page</div>} />
+        <Route path="/admin/settings" element={<SettingsPageProbe />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -380,7 +385,7 @@ describe("SystemStatus", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  it("navigates to Settings → Security when 'View system logs' is clicked", async () => {
+  it("navigates to Settings → Logs & audit when 'View system logs' is clicked", async () => {
     fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
 
     renderStatus(SUPERADMIN);
@@ -389,7 +394,7 @@ describe("SystemStatus", () => {
     openMenu();
     fireEvent.click(screen.getByRole("menuitem", { name: /View system logs/ }));
 
-    expect(screen.getByText("settings-page")).toBeTruthy();
+    expect(screen.getByTestId("settings-page").textContent).toContain("tab=logs");
   });
 
   it("closes when the user tabs to the adjacent UserMenu trigger, instead of leaving both dropdowns open", () => {
