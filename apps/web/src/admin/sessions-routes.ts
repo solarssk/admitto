@@ -7,7 +7,12 @@ import {
   runInTransaction,
 } from "@admitto/auth";
 import { writeAdminAuditLog } from "@admitto/tickets";
-import { adminAuditFromContext, assertEventManageAccess } from "./admin-helpers.js";
+import { emitSystemLog } from "@admitto/shared/system-log";
+import {
+  adminAuditFromContext,
+  assertEventManageAccess,
+  resolveActorEmailForLog,
+} from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 
 async function requireSuperadmin(c: Context, db: PrismaClient): Promise<Response | null> {
@@ -81,27 +86,46 @@ export async function handleRevokeSession(c: Context, db: PrismaClient): Promise
     return c.json({ code: "cannot_revoke_own_session" }, 403);
   }
 
-  const row = await db.session.findUnique({ where: { id }, select: { user_id: true } });
+  const row = await db.session.findUnique({
+    where: { id },
+    select: { user_id: true, user: { select: { email: true } } },
+  });
   if (!row) return c.json({}, 200);
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
-  await runInTransaction(db, async (tx) => {
+  const actorUserId = audit.operator ?? c.get("auth").userId;
+  const revoked = await runInTransaction(db, async (tx) => {
     // Re-check inside the transaction: two concurrent revoke calls (or a retry after the
     // first already succeeded) can both reach here before either commits. Only the one that
     // actually revoked the session gets audited.
-    const revoked = await revokeSession(tx, id);
-    if (!revoked) return;
+    const wasRevoked = await revokeSession(tx, id);
+    if (!wasRevoked) return false;
     await writeAdminAuditLog(tx, {
       organizationId: orgId,
-      actorUserId: audit.operator ?? c.get("auth").userId,
+      actorUserId,
       sessionId: audit.sessionId,
       ip: audit.ip,
       timezone: audit.timezone,
       actionType: "session_revoked",
       metadata: { session_id: id, target_user_id: row.user_id },
     });
+    return true;
   });
+
+  // Emitted after the transaction has committed (CodeRabbit review) - emitSystemLog is not
+  // transactional, so logging it from inside the callback above would record a revoke the
+  // transaction could still roll back on a later statement/commit failure.
+  if (revoked) {
+    emitSystemLog("security", "info", "session_revoked", {
+      sessionId: id,
+      targetUserId: row.user_id,
+      targetEmail: row.user.email,
+      actorUserId,
+      actorEmail: await resolveActorEmailForLog(db, actorUserId),
+      ip: audit.ip,
+    });
+  }
 
   return c.json({}, 200);
 }
@@ -123,14 +147,24 @@ export async function handleRevokeAllOperatorSessions(
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
+  const actorUserId = audit.operator ?? c.get("auth").userId;
+  const event = await db.event.findUnique({ where: { id: eventId }, select: { title: true } });
   await writeAdminAuditLog(db, {
     organizationId: orgId,
-    actorUserId: audit.operator ?? c.get("auth").userId,
+    actorUserId,
     sessionId: audit.sessionId,
     ip: audit.ip,
     timezone: audit.timezone,
     actionType: "operator_sessions_bulk_revoked",
     metadata: { eventId, revokedCount },
+  });
+  emitSystemLog("security", "info", "operator_sessions_bulk_revoked", {
+    eventId,
+    eventTitle: event?.title ?? null,
+    revokedCount,
+    actorUserId,
+    actorEmail: await resolveActorEmailForLog(db, actorUserId),
+    ip: audit.ip,
   });
 
   return c.json({ revokedCount });

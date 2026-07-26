@@ -9,6 +9,7 @@ import type { Context } from "hono";
 import type { ConfigDescriptor, FieldDescriptor, FieldSource, MailSettingsInput } from "@admitto/mailer-config";
 import { isSendSuccess, type MailerProvider, type SendResult } from "@admitto/mailer";
 import { transportTestErrorForAdmin } from "@admitto/mail-delivery";
+import { emitSystemLog } from "@admitto/shared/system-log";
 
 /** Max JSON body for mail-settings PUT routes (includes secret fields). */
 export const MAX_MAIL_SETTINGS_BODY_BYTES = 65_536;
@@ -220,11 +221,23 @@ export async function runTransportTest(
       }
       errorMessage = transportTestErrorForAdmin(result.error);
       resultRetryable = result.retryable;
+      // errorMessage is already the sanitized, operator-safe text above — safe to surface
+      // in the live System logs tail too, unlike the raw result.error.
+      emitSystemLog("mail", "error", "mail_test_failed", {
+        context: logPrefix,
+        provider: result.provider,
+        error: errorMessage,
+      });
     } else {
       resultStatus = "sent";
       resultProviderMessageId = result.providerMessageId;
     }
   } catch (err) {
+    // A thrown error here means send() never returned a result at all — most often
+    // SmtpAdapter.create()'s DNS/SSRF-guard check on the configured host failing before any
+    // adapter instance exists, so SmtpAdapter.send()'s own emitSystemLog calls are never
+    // reached for this failure mode. Logging it here is the only place this class of
+    // misconfiguration (bad host, unresolvable hostname) becomes visible in System logs.
     const message = err instanceof Error ? err.message : undefined;
     if (message) {
       console.error(`${logPrefix} failed`);
@@ -234,6 +247,7 @@ export async function runTransportTest(
     } else {
       errorMessage = transportTestErrorForAdmin(message);
     }
+    emitSystemLog("mail", "error", "mail_test_failed", { context: logPrefix, error: errorMessage });
   }
 
   return { resultStatus, errorMessage, resultProvider, resultProviderMessageId, resultRetryable };

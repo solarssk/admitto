@@ -2,12 +2,14 @@ import type { LookupAddress } from "node:dns";
 import { Agent, fetch as undiciFetch } from "undici";
 import type { PowerAutomateConfig } from "../config.js";
 import { POWER_AUTOMATE_CAPABILITIES } from "../capabilities.js";
-import { mapHttpStatus, mapNetworkError } from "../errorMapping.js";
-import { rejectedSendResult } from "../adapterUtils.js";
+import { mapHttpStatus, mapNetworkError, sanitizeProviderErrorForLog } from "../errorMapping.js";
+import { logMailSent, rejectedSendResult } from "../adapterUtils.js";
 import { resolveReplyTo } from "../senderUtils.js";
 import { validateMailMessage } from "../validation.js";
 import { resolveSafeMailDestination } from "../ssrfGuard.js";
-import type { FetchFn, MailMessage, MailerAdapter, SendResult } from "../types.js";
+import { isSendSuccess, type FetchFn, type MailMessage, type MailerAdapter, type SendResult } from "../types.js";
+import { emitSystemLog } from "@admitto/shared/system-log";
+import { redactEmail } from "@admitto/shared";
 
 /**
  * Pin the outbound connection to an already-validated address (see ssrfGuard.ts) while
@@ -83,11 +85,14 @@ export class PowerAutomateAdapter implements MailerAdapter {
     try {
       records = await resolveSafeMailDestination(hostname);
     } catch (e) {
-      return rejectedSendResult(
-        this.provider,
-        e instanceof Error ? e.message : "mail transport destination is not permitted",
-        message.idempotencyKey,
-      );
+      const error = e instanceof Error ? e.message : "mail transport destination is not permitted";
+      // Fixed category, not `error` - see the same note in smtp.ts. The real message
+      // still reaches the caller via the return value below.
+      emitSystemLog("security", "warn", "mail_destination_blocked", {
+        provider: this.provider,
+        error: "destination blocked or unresolvable",
+      });
+      return rejectedSendResult(this.provider, error, message.idempotencyKey);
     }
 
     const base: SendResult = {
@@ -148,14 +153,28 @@ export class PowerAutomateAdapter implements MailerAdapter {
             { method: "POST", headers, body },
             processResponse,
           );
+      if (isSendSuccess(result.status)) {
+        logMailSent(this.provider, redactEmail(message.to));
+      } else {
+        // Drop the response-body suffix - `processResponse` includes up to 200 raw chars
+        // of the flow's HTTP response, which could echo the message we just posted
+        // (recipient, subject) if the flow reflects request content back on error. The
+        // full error (with suffix) still reaches the caller via SendResult.error.
+        emitSystemLog("mail", "error", "mail_send_failed", {
+          provider: this.provider,
+          error: sanitizeProviderErrorForLog(result.error ?? "Power Automate send failed"),
+        });
+      }
       return result;
     } catch (e) {
       const mapped = mapNetworkError();
+      const error = e instanceof Error ? e.message : String(e);
+      emitSystemLog("mail", "error", "mail_send_failed", { provider: this.provider, error });
       return {
         ...base,
         status: mapped.status,
         retryable: mapped.retryable,
-        error: e instanceof Error ? e.message : String(e),
+        error,
       };
     }
   }

@@ -220,6 +220,7 @@ import {
   handleRevokeAllOperatorSessions,
 } from "./admin/sessions-routes.js";
 import { handleExportAuditLog, handleGetAuditLog } from "./admin/audit-routes.js";
+import { handleGetSystemLogs } from "./admin/system-log-routes.js";
 import {
   handleGetOrganizations,
   handleGetUsers,
@@ -908,6 +909,7 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.get("/api/admin/audit-log", staffAdminGate, (c) => handleGetAuditLog(c, db));
   app.get("/api/admin/audit-log/export", staffAdminGate, (c) => handleExportAuditLog(c, db));
+  app.get("/api/admin/system-logs", staffAdminGate, (c) => handleGetSystemLogs(c, db));
   app.get("/api/admin/sessions", staffAdminGate, (c) => handleGetSessions(c, db));
   app.post("/api/admin/sessions/:id/revoke", jsonPostCsrf, staffAdminGate, (c) =>
     handleRevokeSession(c, db),

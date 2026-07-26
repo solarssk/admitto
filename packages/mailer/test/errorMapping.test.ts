@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapHttpStatus, mapNetworkError, mapSmtpError } from "../src/errorMapping.js";
+import { extractSmtpCode, mapHttpStatus, mapNetworkError, mapSmtpError, sanitizeProviderErrorForLog } from "../src/errorMapping.js";
 
 describe("mapHttpStatus", () => {
   it("maps 429 and 5xx to failed+retryable", () => {
@@ -89,5 +89,27 @@ describe("mapSmtpError", () => {
 describe("mapNetworkError", () => {
   it("returns failed+retryable", () => {
     expect(mapNetworkError()).toEqual({ status: "failed", retryable: true });
+  });
+});
+
+describe("extractSmtpCode", () => {
+  it("returns undefined for a message with no SMTP code at all", () => {
+    expect(extractSmtpCode(new Error("connect ECONNREFUSED"))).toBeUndefined();
+  });
+
+  it("returns undefined for a non-Error value", () => {
+    expect(extractSmtpCode("plain string, no code")).toBeUndefined();
+  });
+});
+
+describe("sanitizeProviderErrorForLog", () => {
+  it("returns the message unchanged when there is no ' — ' separator", () => {
+    expect(sanitizeProviderErrorForLog("Power Automate: HTTP 500")).toBe("Power Automate: HTTP 500");
+  });
+
+  it("drops everything after the ' — ' separator", () => {
+    expect(sanitizeProviderErrorForLog("Graph sendMail: ErrorAccessDenied — no send-as permission for bob@example.com")).toBe(
+      "Graph sendMail: ErrorAccessDenied",
+    );
   });
 });

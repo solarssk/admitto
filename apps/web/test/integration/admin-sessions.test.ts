@@ -6,6 +6,7 @@ import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -136,6 +137,7 @@ afterEach(async () => {
       id: { notIn: [superSessionId, adminSessionId] },
     },
   });
+  resetSystemLogBufferForTest();
 });
 
 afterAll(async () => {
@@ -259,6 +261,13 @@ describe("POST /api/admin/sessions/:id/revoke", () => {
     expect(log).not.toBeNull();
     expect((log?.metadata as Record<string, unknown>)?.session_id).toBe(target.session.id);
     expect((log?.metadata as Record<string, unknown>)?.target_user_id).toBe(operatorId);
+
+    const securityLogs = querySystemLogs({ source: "security" });
+    expect(
+      securityLogs.some(
+        (entry) => entry.message === "session_revoked" && entry.fields?.sessionId === target.session.id,
+      ),
+    ).toBe(true);
   });
 
   it("blocks self-revoke with 403", async () => {
@@ -292,6 +301,14 @@ describe("POST /api/admin/sessions/:id/revoke", () => {
       where: { organization_id: ORG_SESSIONS, action_type: "session_revoked" },
     });
     expect(auditCountAfter).toBe(auditCountBefore);
+  });
+
+  it("returns 200 for a session id that doesn't exist at all (idempotent no-op)", async () => {
+    const res = await app.request("/api/admin/sessions/does-not-exist/revoke", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(200);
   });
 
   it("rejects missing CSRF header", async () => {
@@ -355,6 +372,11 @@ describe("POST /api/admin/events/:eventId/revoke-all-operator-sessions", () => {
     const meta = log?.metadata as Record<string, unknown>;
     expect(meta?.eventId).toBe(eventId);
     expect(typeof meta?.revokedCount).toBe("number");
+
+    const securityLogs = querySystemLogs({ source: "security" });
+    expect(
+      securityLogs.some((entry) => entry.message === "operator_sessions_bulk_revoked" && entry.fields?.eventId === eventId),
+    ).toBe(true);
   });
 
   it("rejects non-admin (operator) with 403", async () => {

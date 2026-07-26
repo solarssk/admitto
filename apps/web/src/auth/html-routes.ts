@@ -104,17 +104,13 @@ export async function handlePostLogin(
     return htmlResponse(c, renderLoginForm(scriptNonce, LOGIN_ERROR, next, sso), scriptNonce, 401);
   }
 
-  const result = await login(
-    db,
-    {
-      email,
-      password,
-      ip: resolveClientIp(c),
-      userAgent: c.req.header("user-agent"),
-      trustedDeviceToken: getCookie(c, TRUSTED_DEVICE_COOKIE_NAME),
-    },
-    { email },
-  );
+  const result = await login(db, {
+    email,
+    password,
+    ip: resolveClientIp(c),
+    userAgent: c.req.header("user-agent"),
+    trustedDeviceToken: getCookie(c, TRUSTED_DEVICE_COOKIE_NAME),
+  });
 
   if (!result.ok) {
     if (!(await checkLoginEmailRateLimit(rateLimitStore, email, resolveClientIp(c)))) {

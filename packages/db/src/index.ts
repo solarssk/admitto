@@ -1,8 +1,32 @@
 import { PrismaClient } from '@prisma/client';
+import { emitSystemLog } from '@admitto/shared/system-log';
+import { formatSlowQueryMessage, isSlowQuery } from './queryLogging.js';
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 
-export const prisma = globalForPrisma.prisma ?? new PrismaClient();
+function createPrismaClient() {
+  const client = new PrismaClient({
+    log: [
+      { emit: 'event', level: 'query' },
+      { emit: 'event', level: 'warn' },
+      { emit: 'event', level: 'error' },
+    ],
+  });
+  client.$on('query', (e) => {
+    if (isSlowQuery(e.duration)) {
+      emitSystemLog('db', 'info', formatSlowQueryMessage(e.query, e.duration), { durationMs: e.duration });
+    }
+  });
+  client.$on('warn', (e) => {
+    emitSystemLog('db', 'warn', e.message);
+  });
+  client.$on('error', (e) => {
+    emitSystemLog('db', 'error', e.message);
+  });
+  return client;
+}
+
+export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 
 if (process.env['NODE_ENV'] !== 'production') globalForPrisma.prisma = prisma;
 

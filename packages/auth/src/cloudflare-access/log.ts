@@ -1,8 +1,9 @@
-import { emitAuditEvent, fingerprint, redactEmail } from "../audit.js";
+import { emitAuditEvent, fingerprint } from "../audit.js";
 
 export type CfAccessLogOutcome = "success" | "failure";
 
-/** Structured CF Access auth log — never includes raw JWT or full claims. */
+/** Structured CF Access auth log — never includes raw JWT or full claims. Full email (not
+ * redacted): staff sign-in, matching logLoginSuccess/logLoginFailure's own convention. */
 export function logCfAccessAuth(input: {
   outcome: CfAccessLogOutcome;
   reason?: string;
@@ -14,7 +15,7 @@ export function logCfAccessAuth(input: {
     outcome: input.outcome,
     provider: "cloudflare-access",
     reason: input.reason ?? null,
-    email: input.email ? redactEmail(input.email) : null,
+    email: input.email ?? null,
     subject_fingerprint: input.subject ? fingerprint(input.subject) : null,
     path: input.path,
   });

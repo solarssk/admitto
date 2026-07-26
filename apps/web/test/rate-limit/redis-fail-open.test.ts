@@ -1,11 +1,16 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RedisRateLimitStore } from "../../src/rate-limit/redis.js";
 import { createRateLimitStore } from "../../src/rate-limit/factory.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
 const unreachableRedis = { connectTimeoutMs: 200 };
 
 describe("RedisRateLimitStore fail-open", () => {
+  beforeEach(() => {
+    resetSystemLogBufferForTest();
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -18,6 +23,11 @@ describe("RedisRateLimitStore fail-open", () => {
     expect(result.allowed).toBe(true);
     expect(result.remaining).toBe(60);
     expect(warnSpy).toHaveBeenCalledWith("Rate limit Redis unavailable; failing open");
+
+    const entries = querySystemLogs({ source: "cache" });
+    expect(
+      entries.some((entry) => entry.message === "Rate limit Redis unavailable; failing open"),
+    ).toBe(true);
 
     await store.disconnect();
   });

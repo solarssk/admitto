@@ -1,9 +1,10 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 
@@ -187,6 +188,10 @@ beforeAll(async () => {
     ip: "127.0.0.1",
   });
   superCookie = `admitto_session=${superSession.rawToken}`;
+});
+
+beforeEach(() => {
+  resetSystemLogBufferForTest();
 });
 
 afterAll(async () => {
@@ -479,6 +484,9 @@ describe("GET /api/admin/audit-log/export", () => {
     });
     const afterTotal = ((await after.json()) as { total: number }).total;
     expect(afterTotal).toBe(beforeTotal + 1);
+
+    const logs = querySystemLogs({ source: "admin" });
+    expect(logs.some((entry) => entry.message === "audit_log_exported")).toBe(true);
   });
 
   it("filters the export by event_id, matching the eventId metadata key", async () => {
