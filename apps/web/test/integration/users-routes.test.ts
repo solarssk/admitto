@@ -11,6 +11,7 @@ import {
   LastSuperadminError,
 } from "../../src/admin/users-lockout-guards.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -529,6 +530,118 @@ describe("POST /api/admin/users/:id/reset-password", () => {
 
     const revoked = await prisma.session.findUnique({ where: { id: session.session.id } });
     expect(revoked?.revoked_at).not.toBeNull();
+  });
+});
+
+describe("staff-accountability System logs", () => {
+  it("records account and role actions with verified actor and target email only", async () => {
+    resetSystemLogBufferForTest();
+    const createdEmail = "system-log-created-staff@example.com";
+    let createdId = "";
+
+    try {
+      const create = await app.request("/api/admin/users", {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ email: createdEmail, password: "created-staff-pass-1" }),
+      });
+      expect(create.status).toBe(201);
+      const createBody = (await create.json()) as { user: { id: string } };
+      createdId = createBody.user.id;
+
+      const grant = await app.request(`/api/admin/users/${createdId}/roles`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "operator", scope_type: "event", scope_id: eventId }),
+      });
+      expect(grant.status).toBe(201);
+      const grantBody = (await grant.json()) as { assignment: { id: string } };
+
+      const revoke = await app.request(
+        `/api/admin/users/${createdId}/roles/${grantBody.assignment.id}`,
+        { method: "DELETE", headers: { Cookie: superCookie, ...sameOrigin } },
+      );
+      expect(revoke.status).toBe(204);
+
+      const mfa = await app.request(`/api/admin/users/${targetId}/reset-2fa`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin },
+      });
+      expect(mfa.status).toBe(200);
+
+      const password = await app.request(`/api/admin/users/${targetId}/reset-password`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ new_password: NEW_PASSWORD }),
+      });
+      expect(password.status).toBe(200);
+
+      const deactivate = await app.request(`/api/admin/users/${targetId}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ is_active: false }),
+      });
+      expect(deactivate.status).toBe(200);
+
+      const reactivate = await app.request(`/api/admin/users/${targetId}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ is_active: true }),
+      });
+      expect(reactivate.status).toBe(200);
+
+      const sessions = await app.request(`/api/admin/users/${targetId}/revoke-sessions`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin },
+      });
+      expect(sessions.status).toBe(200);
+
+      const byMessage = new Map(querySystemLogs().map((entry) => [entry.message, entry]));
+      expect(byMessage.get("user_created")).toMatchObject({
+        level: "info",
+        source: "security",
+        fields: {
+          targetUserId: createdId,
+          targetEmail: createdEmail,
+          actorUserId: superId,
+          actorEmail: EMAIL_SUPER,
+        },
+      });
+      expect(byMessage.get("role_granted")).toMatchObject({
+        fields: { targetUserId: createdId, targetEmail: createdEmail, role: "operator" },
+      });
+      expect(byMessage.get("role_revoked")).toMatchObject({
+        fields: { targetUserId: createdId, targetEmail: createdEmail, role: "operator" },
+      });
+      for (const message of [
+        "user_mfa_reset",
+        "user_password_reset",
+        "user_deactivated",
+        "user_reactivated",
+        "user_sessions_revoked",
+      ]) {
+        expect(byMessage.get(message)).toMatchObject({
+          level: "info",
+          source: "security",
+          fields: {
+            targetUserId: targetId,
+            targetEmail: EMAIL_TARGET,
+            actorUserId: superId,
+            actorEmail: EMAIL_SUPER,
+          },
+        });
+      }
+      expect(JSON.stringify([...byMessage.values()])).not.toContain(NEW_PASSWORD);
+    } finally {
+      if (createdId) {
+        await prisma.roleAssignment.deleteMany({ where: { user_id: createdId } });
+        await prisma.user.deleteMany({ where: { id: createdId } });
+      }
+      await prisma.user.update({
+        where: { id: targetId },
+        data: { password_hash: await hashPassword(PASSWORD), must_change_password: false, is_active: true },
+      });
+    }
   });
 });
 

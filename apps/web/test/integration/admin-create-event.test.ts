@@ -1,11 +1,12 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -152,6 +153,7 @@ beforeEach(async () => {
 
 describe("POST /api/admin/events", () => {
   it("creates event as superadmin with audit log", async () => {
+    resetSystemLogBufferForTest();
     const beforeAudit = await prisma.adminAuditLog.count({
       where: { organization_id: ORG_CREATE, action_type: "event_created" },
     });
@@ -184,6 +186,40 @@ describe("POST /api/admin/events", () => {
       where: { organization_id: ORG_CREATE, action_type: "event_created" },
     });
     expect(afterAudit).toBe(beforeAudit + 1);
+
+    const [entry] = querySystemLogs({ source: "admin", search: "event_created" });
+    expect(entry).toMatchObject({
+      level: "info",
+      source: "admin",
+      message: "event_created",
+      fields: { eventId: body.event.id, orgId: ORG_CREATE, actorUserId: superId, actorEmail: EMAIL_SUPER },
+    });
+    expect(JSON.stringify(entry)).not.toContain("Autumn Summit 2026");
+  });
+
+  it("records a safe System-log category when the create transaction fails", async () => {
+    resetSystemLogBufferForTest();
+    const spy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("database secret"));
+    try {
+      const res = await postCreateEvent(superCookie, {
+        title: "Private event title",
+        slug: "failing-event",
+        date: "2026-09-29",
+        timezone: "UTC",
+      });
+      expect(res.status).toBe(500);
+      const [entry] = querySystemLogs({ source: "admin", search: "event_created_failed" });
+      expect(entry).toMatchObject({
+        level: "error",
+        source: "admin",
+        message: "event_created_failed",
+        fields: { orgId: ORG_CREATE, actorUserId: superId, errorKind: "transaction" },
+      });
+      expect(JSON.stringify(entry)).not.toContain("database secret");
+      expect(JSON.stringify(entry)).not.toContain("Private event title");
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("creates event with only the default badge item", async () => {

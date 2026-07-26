@@ -2,6 +2,8 @@ import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { canManageInstance } from "@admitto/auth";
 import { setBranding, InvalidHttpUrlError } from "@admitto/mail-templates";
+import { emitSystemLog } from "@admitto/shared/system-log";
+import { resolveActorEmailForLog } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 
 export type SetupOrgBrandingDto = {
@@ -91,6 +93,13 @@ export async function handlePatchSetupOrgBranding(c: Context, db: PrismaClient):
       throw err;
     }
   }
+
+  emitSystemLog("admin", "info", "org_branding_updated", {
+    orgId,
+    fields: Object.keys(patch),
+    actorUserId: auth.userId,
+    actorEmail: await resolveActorEmailForLog(db, auth.userId),
+  });
 
   return handleGetSetupOrgBranding(c, db);
 }

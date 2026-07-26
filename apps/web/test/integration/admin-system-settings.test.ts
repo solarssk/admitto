@@ -6,6 +6,7 @@ import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -159,6 +160,7 @@ describe("GET /api/admin/system-settings", () => {
 
 describe("PATCH /api/admin/system-settings", () => {
   it("updates session_ttl_ms and source becomes db", async () => {
+    resetSystemLogBufferForTest();
     const newTtl = 7_200_000; // 2h
     const res = await app.request("/api/admin/system-settings", {
       method: "PATCH",
@@ -173,6 +175,15 @@ describe("PATCH /api/admin/system-settings", () => {
     const body = (await res.json()) as SecurityDto;
     expect(body.session_ttl_ms.value).toBe(newTtl);
     expect(body.session_ttl_ms.source).toBe("db");
+
+    const [entry] = querySystemLogs({ source: "security", search: "system_settings_updated" });
+    expect(entry).toMatchObject({
+      level: "info",
+      source: "security",
+      message: "system_settings_updated",
+      fields: { fields: ["session_ttl_ms"], actorUserId: superId, actorEmail: EMAIL_SUPER },
+    });
+    expect(JSON.stringify(entry)).not.toContain(String(newTtl));
   });
 
   it("writes AdminAuditLog with fields list when changing a value", async () => {

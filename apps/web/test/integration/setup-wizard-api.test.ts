@@ -13,6 +13,7 @@ import {
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import * as migrationsCheck from "../../src/ops/migrations-check.js";
 import { WEB_TEST_DATABASE_URL } from "../testEnv.js";
 
@@ -343,6 +344,7 @@ describe("setup org-branding", () => {
   });
 
   it("PATCH updates org name", async () => {
+    resetSystemLogBufferForTest();
     const res = await app.request("/api/admin/setup/org-branding", {
       method: "PATCH",
       headers: {
@@ -355,6 +357,15 @@ describe("setup org-branding", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { org_name: string };
     expect(body.org_name).toBe("Wizard Org");
+
+    const [entry] = querySystemLogs({ source: "admin", search: "org_branding_updated" });
+    expect(entry).toMatchObject({
+      level: "info",
+      source: "admin",
+      message: "org_branding_updated",
+      fields: { fields: ["org_name"], actorUserId: superId, actorEmail: EMAIL_SUPER },
+    });
+    expect(JSON.stringify(entry)).not.toContain("Wizard Org");
   });
 
   it("returns 403 for non-superadmin PATCH", async () => {

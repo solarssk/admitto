@@ -8,6 +8,7 @@ import { encryptToString } from "@admitto/crypto";
 import { generateToken, hashToken } from "@admitto/tickets";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -495,6 +496,7 @@ describe("PATCH /api/admin/events/:eventId", () => {
   });
 
   it("updates title and writes AdminAuditLog", async () => {
+    resetSystemLogBufferForTest();
     const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
@@ -523,6 +525,44 @@ describe("PATCH /api/admin/events/:eventId", () => {
     const meta = audit!.metadata as { eventId?: string; fields?: string[] };
     expect(meta.eventId).toBe(EVENT_SET);
     expect(meta.fields).toContain("title");
+
+    const [entry] = querySystemLogs({ source: "admin", search: "event_updated" });
+    expect(entry).toMatchObject({
+      level: "info",
+      source: "admin",
+      message: "event_updated",
+      fields: { eventId: EVENT_SET, fields: ["title"], actorUserId: adminId, actorEmail: EMAIL_ADMIN },
+    });
+    expect(JSON.stringify(entry)).not.toContain("Renamed Event");
+  });
+
+  it("records a safe System-log category when the update transaction fails", async () => {
+    resetSystemLogBufferForTest();
+    const spy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("database secret"));
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Private event title" }),
+      });
+      expect(res.status).toBe(500);
+      const [entry] = querySystemLogs({ source: "admin", search: "event_updated_failed" });
+      expect(entry).toMatchObject({
+        level: "error",
+        source: "admin",
+        message: "event_updated_failed",
+        fields: {
+          eventId: EVENT_SET,
+          fields: ["title"],
+          actorUserId: adminId,
+          errorKind: "transaction",
+        },
+      });
+      expect(JSON.stringify(entry)).not.toContain("database secret");
+      expect(JSON.stringify(entry)).not.toContain("Private event title");
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("updates timezone", async () => {

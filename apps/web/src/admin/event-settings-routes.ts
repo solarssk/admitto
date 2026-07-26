@@ -6,8 +6,14 @@ import type { PrismaClient } from "@prisma/client";
 import { canManageInstance } from "@admitto/auth";
 import { ADMITTABLE_STATUS_LIST, REVOCABLE_ITEM_STATES, writeAdminAuditLog } from "@admitto/tickets";
 import { InvalidHttpUrlError, resolveBrandingFromEvent, validateBrandingUrl } from "@admitto/mail-templates";
+import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { z } from "zod";
-import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
+import {
+  adminAuditFromContext,
+  assertEventManageAccess,
+  requireEventId,
+  resolveActorEmailForLog,
+} from "./admin-helpers.js";
 import { quoteCsvCell, sanitizeCsvCell } from "./csv-sanitize.js";
 import { timezoneField } from "./timezone.js";
 import { countEventActivitySignals, isEventDeletable } from "./event-deletion.js";
@@ -297,6 +303,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
   if (!existing) return c.json({ error: "not_found" }, 404);
 
   const audit = adminAuditFromContext(c);
+  const actorUserId = audit.operator ?? c.get("auth").userId;
 
   const data: {
     title?: string;
@@ -323,7 +330,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
 
       await writeAdminAuditLog(tx, {
         organizationId: row.organization_id,
-        actorUserId: audit.operator!,
+        actorUserId,
         sessionId: audit.sessionId,
         ip: audit.ip,
         timezone: audit.timezone,
@@ -334,11 +341,24 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
       return row;
     });
 
+    emitSystemLog("admin", "info", "event_updated", {
+      eventId,
+      fields: changedFields,
+      actorUserId,
+      actorEmail: await resolveActorEmailForLog(db, actorUserId),
+    });
+
     const deletability = await loadDeletability(db, eventId, updated);
     const revokeCounts = await loadRevokeCounts(db, eventId);
     return c.json({ event: serializeEventSettings(updated, deletability, revokeCounts) });
   } catch (err) {
     console.error("[audit] event_updated transaction failed", err);
+    recordSystemLog({
+      level: "error",
+      source: "admin",
+      message: "event_updated_failed",
+      fields: { eventId, fields: changedFields, actorUserId, errorKind: "transaction" },
+    });
     return c.json({ error: "audit_failed" }, 500);
   }
 }

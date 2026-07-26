@@ -13,7 +13,12 @@ import {
 } from "@admitto/auth";
 import { hasScope, ROLES, SCOPE_TYPES, type Role, type ScopeType } from "@admitto/db";
 import { writeAdminAuditLog, type OpsAuditContext } from "@admitto/tickets";
-import { adminAuditFromContext, positiveIntQuery } from "./admin-helpers.js";
+import { emitSystemLog } from "@admitto/shared/system-log";
+import {
+  adminAuditFromContext,
+  positiveIntQuery,
+  resolveActorEmailForLog,
+} from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import {
   assertLastSuperadminDeactivationAllowed,
@@ -313,6 +318,13 @@ export async function handlePostUser(c: Context, db: PrismaClient): Promise<Resp
   const user = await loadUser(db, created.id);
   if (!user) return c.json({ error: "not_found" }, 404);
 
+  emitSystemLog("security", "info", "user_created", {
+    targetUserId: created.id,
+    targetEmail: created.email,
+    actorUserId,
+    actorEmail: await resolveActorEmailForLog(db, actorUserId),
+  });
+
   return c.json({ user: await serializeUser(db, user) }, 201);
 }
 
@@ -395,7 +407,7 @@ export async function handlePatchUser(c: Context, db: PrismaClient): Promise<Res
 
   if (Object.keys(data).length === 0) return c.json({ error: "invalid_request" }, 400);
 
-  const before = await db.user.findUnique({ where: { id }, select: { is_active: true } });
+  const before = await db.user.findUnique({ where: { id }, select: { is_active: true, email: true } });
   if (!before) return c.json({ error: "not_found" }, 404);
 
   const orgId = await resolveInstanceOrganizationId(db);
@@ -424,6 +436,15 @@ export async function handlePatchUser(c: Context, db: PrismaClient): Promise<Res
     throw err;
   }
 
+  if (actionType === "user_deactivated" || actionType === "user_reactivated") {
+    emitSystemLog("security", "info", actionType, {
+      targetUserId: id,
+      targetEmail: before.email,
+      actorUserId: actorId,
+      actorEmail: await resolveActorEmailForLog(db, actorId),
+    });
+  }
+
   const user = await loadUser(db, id);
   if (!user) return c.json({ error: "not_found" }, 404);
 
@@ -450,7 +471,7 @@ export async function handlePostUserRole(c: Context, db: PrismaClient): Promise<
   );
   if (grantDenied) return grantDenied;
 
-  const target = await db.user.findUnique({ where: { id }, select: { id: true } });
+  const target = await db.user.findUnique({ where: { id }, select: { id: true, email: true } });
   if (!target) return c.json({ error: "not_found" }, 404);
 
   const existing = await db.roleAssignment.findFirst({
@@ -500,6 +521,16 @@ export async function handlePostUserRole(c: Context, db: PrismaClient): Promise<
     throw err;
   }
 
+  emitSystemLog("security", "info", "role_granted", {
+    targetUserId: target.id,
+    targetEmail: target.email,
+    role: assignment.role,
+    scopeType: assignment.scope_type,
+    scopeId: assignment.scope_id,
+    actorUserId: actorId,
+    actorEmail: await resolveActorEmailForLog(db, actorId),
+  });
+
   return c.json(
     {
       assignment: {
@@ -536,6 +567,9 @@ export async function handleDeleteUserRole(c: Context, db: PrismaClient): Promis
   if (assignment.oidc_role_grants.length > 0) {
     return c.json({ code: "managed_by_idp" }, 409);
   }
+
+  const target = await db.user.findUnique({ where: { id }, select: { email: true } });
+  if (!target) return c.json({ error: "not_found" }, 404);
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
@@ -587,6 +621,15 @@ export async function handleDeleteUserRole(c: Context, db: PrismaClient): Promis
     if (outcome === "managed_by_idp") {
       return c.json({ code: "managed_by_idp" }, 409);
     }
+    emitSystemLog("security", "info", "role_revoked", {
+      targetUserId: id,
+      targetEmail: target.email,
+      role: outcome.role,
+      scopeType: outcome.scope_type,
+      scopeId: outcome.scope_id,
+      actorUserId: actorId,
+      actorEmail: await resolveActorEmailForLog(db, actorId),
+    });
   } catch (err) {
     if (err instanceof LastSuperadminError) {
       return c.json({ code: "last_superadmin" }, 409);
@@ -605,23 +648,31 @@ export async function handlePostResetUserMfa(c: Context, db: PrismaClient): Prom
   const id = c.req.param("id") ?? "";
   if (!id) return c.json({ error: "user id required" }, 400);
 
-  const user = await db.user.findUnique({ where: { id }, select: { id: true } });
+  const user = await db.user.findUnique({ where: { id }, select: { id: true, email: true } });
   if (!user) return c.json({ error: "not_found" }, 404);
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
+  const actorUserId = audit.operator ?? c.get("auth").userId;
 
   await db.$transaction(async (tx) => {
     await resetUserMfa(tx, id);
     await writeAdminAuditLog(tx, {
       organizationId: orgId,
-      actorUserId: audit.operator ?? c.get("auth").userId,
+      actorUserId,
       sessionId: audit.sessionId,
       ip: audit.ip,
       timezone: audit.timezone,
       actionType: "user_mfa_reset",
       metadata: { userId: id },
     });
+  });
+
+  emitSystemLog("security", "info", "user_mfa_reset", {
+    targetUserId: user.id,
+    targetEmail: user.email,
+    actorUserId,
+    actorEmail: await resolveActorEmailForLog(db, actorUserId),
   });
 
   return c.json({ ok: true });
@@ -639,12 +690,13 @@ export async function handlePostResetUserPassword(c: Context, db: PrismaClient):
   const newPassword = typeof body?.new_password === "string" ? body.new_password : "";
   if (newPassword.length < PASSWORD_MIN_LENGTH) return c.json({ error: "invalid_request" }, 400);
 
-  const user = await db.user.findUnique({ where: { id }, select: { id: true } });
+  const user = await db.user.findUnique({ where: { id }, select: { id: true, email: true } });
   if (!user) return c.json({ error: "not_found" }, 404);
 
   const hash = await hashPassword(newPassword);
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
+  const actorUserId = audit.operator ?? c.get("auth").userId;
 
   await db.$transaction(async (tx) => {
     await tx.user.update({
@@ -658,13 +710,20 @@ export async function handlePostResetUserPassword(c: Context, db: PrismaClient):
     await revokeAllTrustedDevicesForUser(tx, id);
     await writeAdminAuditLog(tx, {
       organizationId: orgId,
-      actorUserId: audit.operator ?? c.get("auth").userId,
+      actorUserId,
       sessionId: audit.sessionId,
       ip: audit.ip,
       timezone: audit.timezone,
       actionType: "user_password_reset",
       metadata: { userId: id },
     });
+  });
+
+  emitSystemLog("security", "info", "user_password_reset", {
+    targetUserId: user.id,
+    targetEmail: user.email,
+    actorUserId,
+    actorEmail: await resolveActorEmailForLog(db, actorUserId),
   });
 
   return c.json({ ok: true });
@@ -678,17 +737,18 @@ export async function handlePostRevokeUserSessions(c: Context, db: PrismaClient)
   const id = c.req.param("id") ?? "";
   if (!id) return c.json({ error: "user id required" }, 400);
 
-  const user = await db.user.findUnique({ where: { id }, select: { id: true } });
+  const user = await db.user.findUnique({ where: { id }, select: { id: true, email: true } });
   if (!user) return c.json({ error: "not_found" }, 404);
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
+  const actorUserId = audit.operator ?? c.get("auth").userId;
 
   const { sessionsRevoked } = await db.$transaction(async (tx) => {
     const revoked = await revokeUserAuthState(tx, id);
     await writeAdminAuditLog(tx, {
       organizationId: orgId,
-      actorUserId: audit.operator ?? c.get("auth").userId,
+      actorUserId,
       sessionId: audit.sessionId,
       ip: audit.ip,
       timezone: audit.timezone,
@@ -696,6 +756,14 @@ export async function handlePostRevokeUserSessions(c: Context, db: PrismaClient)
       metadata: { userId: id, sessionsRevoked: revoked.sessionsRevoked },
     });
     return revoked;
+  });
+
+  emitSystemLog("security", "info", "user_sessions_revoked", {
+    targetUserId: user.id,
+    targetEmail: user.email,
+    sessionsRevoked,
+    actorUserId,
+    actorEmail: await resolveActorEmailForLog(db, actorUserId),
   });
 
   return c.json({ ok: true, sessionsRevoked });
