@@ -38,7 +38,8 @@ function oidcFailedRedirect(c: Context): Response {
 }
 
 function logOidcError(context: string, err: unknown): void {
-  console.error(`OIDC ${context} failed`);
+  const message = err instanceof Error ? err.message : "unknown";
+  console.error(`OIDC ${context}:`, message);
   const contextKey = context
     .toLowerCase()
     .replaceAll(/[^a-z0-9]+/g, "_")

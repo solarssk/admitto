@@ -422,6 +422,33 @@ describe("setup org-branding", () => {
     expect(querySystemLogs({ source: "admin", search: "org_branding_updated" })).toEqual([]);
   });
 
+  it("rejects a blank organization name without changing branding", async () => {
+    resetSystemLogBufferForTest();
+    const before = await prisma.organization.findUniqueOrThrow({
+      where: { id: "org_default" },
+      select: { name: true, logo_url: true },
+    });
+
+    const res = await app.request("/api/admin/setup/org-branding", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ org_name: "   " }),
+    });
+
+    expect(res.status).toBe(400);
+    await expect(
+      prisma.organization.findUniqueOrThrow({
+        where: { id: "org_default" },
+        select: { name: true, logo_url: true },
+      }),
+    ).resolves.toEqual(before);
+    expect(querySystemLogs({ source: "admin", search: "org_branding_updated" })).toEqual([]);
+  });
+
   it("does not emit a branding update when its transaction fails", async () => {
     resetSystemLogBufferForTest();
     const before = await prisma.organization.findUniqueOrThrow({

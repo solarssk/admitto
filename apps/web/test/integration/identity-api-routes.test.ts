@@ -711,9 +711,9 @@ describe("identity providers API — stable error codes", () => {
 
   it("create provider returns save_failed when DB throws (500)", async () => {
     resetSystemLogBufferForTest();
-    vi.mocked(createIdentityProviderWithMappings).mockRejectedValueOnce(
-      new Error("simulated DB constraint violation"),
-    );
+    const failure = new Error("simulated DB constraint violation");
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.mocked(createIdentityProviderWithMappings).mockRejectedValueOnce(failure);
     const res = await json("/api/admin/identity/providers", {
       method: "POST",
       body: JSON.stringify({
@@ -736,6 +736,8 @@ describe("identity providers API — stable error codes", () => {
     });
     expect(JSON.stringify(entry)).not.toContain("simulated DB constraint violation");
     expect(JSON.stringify(entry)).not.toContain("db-fail.example.com");
+    expect(errorSpy).toHaveBeenCalledWith("[identity] create provider failed:", failure);
+    errorSpy.mockRestore();
   });
 
   it("update provider returns save_failed when DB throws (500)", async () => {

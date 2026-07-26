@@ -247,8 +247,8 @@ export async function handleApiCreateProvider(c: Context, db: PrismaClient): Pro
       toProviderInput(body),
       (body.mappings ?? []).map(toMappingInput),
     );
-  } catch {
-    console.error("[identity] create provider failed");
+  } catch (err) {
+    console.error("[identity] create provider failed:", err);
     recordIdentityFailure(c, "oidc_provider_save_failed", { operation: "create" });
     return c.json({ error: "save_failed" }, 500);
   }
@@ -283,8 +283,8 @@ export async function handleApiUpdateProvider(c: Context, db: PrismaClient): Pro
   let updated;
   try {
     updated = await updateIdentityProviderWithMappings(db, id, toProviderInput(body), body.mappings.map(toMappingInput));
-  } catch {
-    console.error("[identity] update provider failed");
+  } catch (err) {
+    console.error("[identity] update provider failed:", err);
     recordIdentityFailure(c, "oidc_provider_save_failed", { providerId: id, operation: "update" });
     return c.json({ error: "save_failed" }, 500);
   }
@@ -333,8 +333,8 @@ export async function handleApiDiscoverProvider(c: Context, db: PrismaClient): P
   let discovery;
   try {
     discovery = await fetchOidcDiscovery(provider.issuer);
-  } catch {
-    console.warn("[identity] OIDC discovery failed");
+  } catch (err) {
+    console.warn("[identity] OIDC discovery failed:", err);
     recordIdentityFailure(c, "oidc_provider_discover_failed", { providerId: id });
     return c.json({ ok: false, error: "discovery_failed" }, 400);
   }
@@ -351,8 +351,8 @@ export async function handleApiDiscoverProvider(c: Context, db: PrismaClient): P
       userinfo_endpoint: discovery.userinfo_endpoint ?? undefined,
       enabled: provider.enabled,
     });
-  } catch {
-    console.error("[identity] persist discovery failed");
+  } catch (err) {
+    console.error("[identity] persist discovery failed:", err);
     recordIdentityFailure(c, "oidc_provider_discover_failed", { providerId: id });
     return c.json({ ok: false, error: "save_failed" }, 500);
   }
@@ -428,8 +428,8 @@ export async function handleApiDiscoverProviderPreview(c: Context): Promise<Resp
         userinfo_endpoint: discovery.userinfo_endpoint ?? null,
       },
     });
-  } catch {
-    console.warn("[identity] discovery preview failed");
+  } catch (err) {
+    console.warn("[identity] discovery preview failed:", err);
     recordIdentityFailure(c, "oidc_provider_discover_failed", { flow: "draft" });
     return c.json({ ok: false, error: "discovery_failed" }, 400);
   }
@@ -538,8 +538,8 @@ export async function handleApiUpdateCfAccess(c: Context, db: PrismaClient): Pro
       }
       await ensureCloudflareAccessProvider(tx, resolved);
     });
-  } catch {
-    console.error("[identity] CF Access save failed");
+  } catch (err) {
+    console.error("[identity] CF Access save failed:", err);
     recordIdentityFailure(c, "cf_access_save_failed");
     return c.json({ error: "save_failed" }, 500);
   }

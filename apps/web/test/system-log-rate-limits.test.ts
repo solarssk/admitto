@@ -9,15 +9,17 @@ const blockedStore: RateLimitStore = {
   health: async () => ({ ok: true, latencyMs: null }),
 };
 
-function createRateLimitedApp(store: RateLimitStore) {
+function createRateLimitedApp(store: RateLimitStore, checkinAuth: "bearer" | "session" = "session") {
   const app = new Hono();
   app.use("/admin/*", async (c, next) => {
     c.set("auth", { userId: "verified-staff-user" });
     await next();
   });
   app.use("/checkin/*", async (c, next) => {
-    c.set("checkinAuth", "session");
-    c.set("operatorUserId", "verified-staff-operator");
+    c.set("checkinAuth", checkinAuth);
+    if (checkinAuth === "session") {
+      c.set("operatorUserId", "verified-staff-operator");
+    }
     await next();
   });
 
@@ -82,6 +84,28 @@ describe("System logs rate-limit coverage", () => {
     expect(JSON.stringify(entries)).not.toContain("verified-staff-user");
     expect(JSON.stringify(entries)).not.toContain("verified-staff-operator");
     expect(JSON.stringify(entries)).not.toContain("attendee-1");
+  });
+
+  it("labels bearer check-in limits as IP buckets", async () => {
+    resetSystemLogBufferForTest();
+    const app = createRateLimitedApp(blockedStore, "bearer");
+
+    const responses = await Promise.all([
+      app.request("/checkin/event-1/scan", { method: "POST" }),
+      app.request("/checkin/event-1/history"),
+      app.request("/checkin/event-1/stream"),
+    ]);
+    expect(responses.map((response) => response.status)).toEqual([429, 429, 429]);
+
+    const entries = querySystemLogs({ source: "security" }).filter(
+      (entry) => entry.message === "auth.rate_limit.exceeded",
+    );
+    expect(Object.fromEntries(entries.map((entry) => [entry.fields?.scope, entry.fields?.key_hint]))).toEqual({
+      checkin_history: "ip",
+      checkin_scan: "ip",
+      checkin_stream: "ip",
+    });
+    expect(JSON.stringify(entries)).not.toContain("verified-staff-operator");
   });
 
   it("records the authenticated resend global-limit branch without its user ID", async () => {
