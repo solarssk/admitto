@@ -7,6 +7,7 @@ import { beginOidcAuthorizationRedirect } from "../../src/auth/oidc-flow.js";
 import { createRateLimitStore, type InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 import { startMockOidcIdp, stopMockOidcIdp, type MockOidcIdp } from "../helpers/mock-oidc-idp.js";
 import { encryptClientSecret } from "@admitto/auth";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
 const PROVIDER_ID = "web-oidc-flow-provider";
 const BASE = "http://localhost";
@@ -219,11 +220,19 @@ describe("oidc routes", () => {
   });
 
   it("callback requires both an authorization code and a state", async () => {
+    resetSystemLogBufferForTest();
     const res = await app.request(`/api/auth/oidc/${PROVIDER_ID}/callback?code=x`, {
       redirect: "manual",
     });
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/login?error=oidc_failed");
+    const [entry] = querySystemLogs({ source: "security" });
+    expect(entry).toMatchObject({
+      level: "warn",
+      message: "oidc_callback_failed",
+      fields: { errorKind: "non_error" },
+    });
+    expect(JSON.stringify(entry)).not.toContain("code=x");
   });
 
   it("callback rejects a mismatched OIDC flow cookie", async () => {

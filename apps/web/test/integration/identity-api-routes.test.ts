@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import {
   hashPassword,
@@ -9,9 +9,11 @@ import {
   updateIdentityProviderWithMappings,
   fetchOidcDiscovery,
   updateIdentityProvider,
+  testOidcConnection,
+  testCfAccessConnection,
 } from "@admitto/auth";
 
-// Wrap the four functions we need to override in error-path tests so vi.mocked()
+// Wrap the functions we need to override in error-path tests so vi.mocked()
 // can queue one-time rejections/resolutions without breaking the happy-path tests.
 vi.mock("@admitto/auth", async (importOriginal) => {
   const orig = await importOriginal<typeof import("@admitto/auth")>();
@@ -21,11 +23,14 @@ vi.mock("@admitto/auth", async (importOriginal) => {
     updateIdentityProviderWithMappings: vi.fn(orig.updateIdentityProviderWithMappings),
     fetchOidcDiscovery: vi.fn(orig.fetchOidcDiscovery),
     updateIdentityProvider: vi.fn(orig.updateIdentityProvider),
+    testOidcConnection: vi.fn(orig.testOidcConnection),
+    testCfAccessConnection: vi.fn(orig.testCfAccessConnection),
   };
 });
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { createApp } from "../../src/app.js";
-import { createRateLimitStore } from "../../src/rate-limit/index.js";
+import { createRateLimitStore, type InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
 const PROVIDER_ID = "web-idp-api-provider";
 const SUPER_ID = "web-idp-api-super";
@@ -38,6 +43,7 @@ const sameOrigin = { Origin: "http://localhost" };
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
+let rateLimitStore: InMemoryRateLimitStore;
 let superCookie: string;
 let operatorCookie: string;
 let adminCookie: string;
@@ -114,14 +120,17 @@ beforeAll(async () => {
     },
   });
 
+  rateLimitStore = createRateLimitStore() as InMemoryRateLimitStore;
   app = createApp({
     prisma,
     skipCheckinBootValidation: true,
-    rateLimitStore: createRateLimitStore(),
+    rateLimitStore,
     allowCheckinBearer: false,
     checkinToken: "test-checkin-token-for-vitest-32chars!",
   });
 });
+
+beforeEach(() => rateLimitStore.reset());
 
 afterAll(async () => {
   await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: PROVIDER_ID } });
@@ -646,6 +655,7 @@ describe("cloudflare access API", () => {
 describe("identity providers API — stable error codes", () => {
   afterEach(() => {
     vi.clearAllMocks();
+    resetSystemLogBufferForTest();
   });
 
   // --- Naturally-triggerable paths (no mocking needed) ---
@@ -700,6 +710,7 @@ describe("identity providers API — stable error codes", () => {
   // --- DB / infrastructure failure paths (vi.mock factory wraps auth fns as vi.fn) ---
 
   it("create provider returns save_failed when DB throws (500)", async () => {
+    resetSystemLogBufferForTest();
     vi.mocked(createIdentityProviderWithMappings).mockRejectedValueOnce(
       new Error("simulated DB constraint violation"),
     );
@@ -717,9 +728,18 @@ describe("identity providers API — stable error codes", () => {
     });
     expect(res.status).toBe(500);
     expect(await jsonAs<{ error: string }>(res)).toEqual({ error: "save_failed" });
+    const [entry] = querySystemLogs({ source: "security" });
+    expect(entry).toMatchObject({
+      level: "warn",
+      message: "oidc_provider_save_failed",
+      fields: { actorUserId: SUPER_ID, errorKind: "unexpected", operation: "create" },
+    });
+    expect(JSON.stringify(entry)).not.toContain("simulated DB constraint violation");
+    expect(JSON.stringify(entry)).not.toContain("db-fail.example.com");
   });
 
   it("update provider returns save_failed when DB throws (500)", async () => {
+    resetSystemLogBufferForTest();
     vi.mocked(updateIdentityProviderWithMappings).mockRejectedValueOnce(
       new Error("simulated DB failure"),
     );
@@ -734,9 +754,22 @@ describe("identity providers API — stable error codes", () => {
     });
     expect(res.status).toBe(500);
     expect(await jsonAs<{ error: string }>(res)).toEqual({ error: "save_failed" });
+    const [entry] = querySystemLogs({ source: "security" });
+    expect(entry).toMatchObject({
+      level: "warn",
+      message: "oidc_provider_save_failed",
+      fields: {
+        actorUserId: SUPER_ID,
+        errorKind: "unexpected",
+        providerId: PROVIDER_ID,
+        operation: "update",
+      },
+    });
+    expect(JSON.stringify(entry)).not.toContain("simulated DB failure");
   });
 
   it("discover returns save_failed when DB update fails after successful discovery (500)", async () => {
+    resetSystemLogBufferForTest();
     vi.mocked(fetchOidcDiscovery).mockResolvedValueOnce({
       issuer: "https://idp-api-test.example.com/",
       authorization_endpoint: "https://idp-api-test.example.com/a",
@@ -749,9 +782,17 @@ describe("identity providers API — stable error codes", () => {
     });
     expect(res.status).toBe(500);
     expect(await jsonAs<TestResult>(res)).toMatchObject({ ok: false, error: "save_failed" });
+    const [entry] = querySystemLogs({ source: "security" });
+    expect(entry).toMatchObject({
+      level: "warn",
+      message: "oidc_provider_discover_failed",
+      fields: { actorUserId: SUPER_ID, errorKind: "unexpected", providerId: PROVIDER_ID },
+    });
+    expect(JSON.stringify(entry)).not.toContain("simulated DB failure");
   });
 
   it("CF Access save returns save_failed when DB transaction throws (500)", async () => {
+    resetSystemLogBufferForTest();
     vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("simulated DB failure"));
     const res = await json("/api/admin/identity/cf-access", {
       method: "PUT",
@@ -759,5 +800,59 @@ describe("identity providers API — stable error codes", () => {
     });
     expect(res.status).toBe(500);
     expect(await jsonAs<{ error: string }>(res)).toEqual({ error: "save_failed" });
+    const [entry] = querySystemLogs({ source: "security" });
+    expect(entry).toMatchObject({
+      level: "warn",
+      message: "cf_access_save_failed",
+      fields: { actorUserId: SUPER_ID, errorKind: "unexpected" },
+    });
+    expect(JSON.stringify(entry)).not.toContain("simulated DB failure");
+  });
+
+  it("draft OIDC connection failure logs only its safe category (200)", async () => {
+    resetSystemLogBufferForTest();
+    vi.mocked(testOidcConnection).mockResolvedValueOnce({
+      ok: false,
+      error: "untrusted OIDC response containing person@example.com",
+    });
+    const res = await json("/api/admin/identity/providers/test", {
+      method: "POST",
+      body: JSON.stringify({
+        issuer: "https://idp-test.example.com/",
+        authorization_endpoint: "https://idp-test.example.com/authorize",
+        token_endpoint: "https://idp-test.example.com/token",
+        jwks_uri: "https://idp-test.example.com/jwks",
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(await jsonAs<TestResult>(res)).toMatchObject({ ok: false });
+    const [entry] = querySystemLogs({ source: "security" });
+    expect(entry).toMatchObject({
+      level: "warn",
+      message: "oidc_test_connection_failed",
+      fields: { actorUserId: SUPER_ID, errorKind: "unexpected", flow: "draft" },
+    });
+    expect(JSON.stringify(entry)).not.toContain("person@example.com");
+  });
+
+  it("CF Access connection failure logs only its safe category (400)", async () => {
+    resetSystemLogBufferForTest();
+    vi.mocked(testCfAccessConnection).mockResolvedValueOnce({
+      ok: false,
+      error: "untrusted CF response containing person@example.com",
+    });
+    const res = await json("/api/admin/identity/cf-access/test", {
+      method: "POST",
+      body: JSON.stringify({ teamDomain: "https://test.cloudflareaccess.com" }),
+    });
+    expect(res.status).toBe(400);
+    expect(await jsonAs<TestResult>(res)).toMatchObject({ ok: false });
+    const [entry] = querySystemLogs({ source: "security" });
+    expect(entry).toMatchObject({
+      level: "warn",
+      message: "cf_access_test_failed",
+      fields: { actorUserId: SUPER_ID, errorKind: "unexpected" },
+    });
+    expect(JSON.stringify(entry)).not.toContain("person@example.com");
   });
 });

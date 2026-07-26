@@ -21,6 +21,7 @@ import {
   type ConsumedOidcAuthState,
   type ExternalIdentityClaims,
 } from "@admitto/auth";
+import { recordSystemLog } from "@admitto/shared/system-log";
 import { getCookie } from "hono/cookie";
 import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
 import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
@@ -37,8 +38,17 @@ function oidcFailedRedirect(c: Context): Response {
 }
 
 function logOidcError(context: string, err: unknown): void {
-  const message = err instanceof Error ? err.message : "unknown";
-  console.error(`OIDC ${context}:`, message);
+  console.error(`OIDC ${context} failed`);
+  const contextKey = context
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9]+/g, "_")
+    .replaceAll(/^_+|_+$/g, "");
+  recordSystemLog({
+    level: "warn",
+    source: "security",
+    message: `oidc_${contextKey}_failed`,
+    fields: { errorKind: err instanceof Error ? "error" : "non_error" },
+  });
 }
 
 /** GET /api/auth/oidc/:providerId/start */
