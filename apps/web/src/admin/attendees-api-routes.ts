@@ -69,6 +69,7 @@ import {
   itemTransitionErrorResponse,
   positiveIntQuery,
   requireEventId,
+  resolveActorEmailForLog,
   resolveClientTimezone,
   resolveMailInstanceBaseUrl,
 } from "./admin-helpers.js";
@@ -1986,12 +1987,7 @@ export async function handleBulkRsvpEventAttendees(
   } catch (err) {
     if (err instanceof Response) return err;
     console.error("handleBulkRsvpEventAttendees failed:", err);
-    recordSystemLog({
-      level: "error",
-      source: "admin",
-      message: "bulk_rsvp_failed",
-      fields: { eventId, attendeeCount: attendeeIds.length, errorKind: "unexpected" },
-    });
+    await recordBulkAttendeeActionFailure(c, db, eventId, "rsvp", { attendeeCount: attendeeIds.length });
     return c.json({ error: "server error" }, 500);
   }
 }
@@ -2012,6 +2008,34 @@ const bulkCheckInAttendeesBodySchema = z
  * BULK_REVOKE_CONCURRENCY for the same shape of per-attendee transaction fan-out.
  */
 const BULK_CHECKIN_CONCURRENCY = 10;
+
+type BulkAttendeeAction = "rsvp" | "checkin" | "revoke_checkin" | "revoke_items" | "revoke_pass";
+type BulkFailureTarget = { attendeeId: string } | { attendeeCount: number };
+
+/** Record a bounded failure signal for a staff-triggered bulk operation. The selected attendee
+ * remains referable by its internal id, but arbitrary exception text and attendee PII do not. */
+async function recordBulkAttendeeActionFailure(
+  c: Context,
+  db: PrismaClient,
+  eventId: string,
+  action: BulkAttendeeAction,
+  target: BulkFailureTarget,
+): Promise<void> {
+  const actorUserId = c.get("auth").userId;
+  recordSystemLog({
+    level: "error",
+    source: "admin",
+    message: action === "rsvp" ? "bulk_rsvp_failed" : "bulk_attendee_action_failed",
+    fields: {
+      eventId,
+      ...target,
+      action,
+      errorKind: "unexpected",
+      actorUserId,
+      actorEmail: await resolveActorEmailForLog(db, actorUserId),
+    },
+  });
+}
 
 /** Split an array into fixed-size chunks (last chunk may be smaller) — same helper as
  * `packages/tickets/src/bulk-revoke.ts`'s local `chunk`, duplicated here rather than shared
@@ -2084,16 +2108,8 @@ export async function handleBulkCheckInEventAttendees(c: Context, db: PrismaClie
     for (const [index, outcome] of settled.entries()) {
       if (outcome.status === "rejected") {
         console.error("bulk check-in: admitAttendee failed:", outcome.reason);
-        recordSystemLog({
-          level: "error",
-          source: "admin",
-          message: "bulk_attendee_action_failed",
-          fields: {
-            eventId,
-            attendeeId: batch[index]!.id,
-            action: "checkin",
-            errorKind: "unexpected",
-          },
+        await recordBulkAttendeeActionFailure(c, db, eventId, "checkin", {
+          attendeeId: batch[index]!.id,
         });
         counts.errored += 1;
         continue;
@@ -2175,16 +2191,8 @@ export async function handleBulkRevokeCheckInEventAttendees(c: Context, db: Pris
         counts.blocked += 1;
       } else {
         console.error("bulk revoke check-in: revokeCheckInMutation failed:", outcome.reason);
-        recordSystemLog({
-          level: "error",
-          source: "admin",
-          message: "bulk_attendee_action_failed",
-          fields: {
-            eventId,
-            attendeeId: batch[index]!.id,
-            action: "revoke_checkin",
-            errorKind: "unexpected",
-          },
+        await recordBulkAttendeeActionFailure(c, db, eventId, "revoke_checkin", {
+          attendeeId: batch[index]!.id,
         });
         counts.errored += 1;
       }
@@ -2235,16 +2243,8 @@ export async function handleBulkRevokeAttendeeItems(c: Context, db: PrismaClient
     return c.json({ revokedCount });
   } catch (err) {
     console.error("bulk revoke items: revokeItemsForAttendees failed:", err);
-    recordSystemLog({
-      level: "error",
-      source: "admin",
-      message: "bulk_attendee_action_failed",
-      fields: {
-        eventId,
-        attendeeCount: parsed.data.attendeeIds.length,
-        action: "revoke_items",
-        errorKind: "unexpected",
-      },
+    await recordBulkAttendeeActionFailure(c, db, eventId, "revoke_items", {
+      attendeeCount: parsed.data.attendeeIds.length,
     });
     return c.json({ error: "server error" }, 500);
   }
@@ -2341,16 +2341,8 @@ export async function handleBulkRevokeAttendeePass(c: Context, db: PrismaClient)
     for (const [index, outcome] of settled.entries()) {
       if (outcome.status === "rejected") {
         console.error("bulk revoke pass: revokeOneAttendeePass failed:", outcome.reason);
-        recordSystemLog({
-          level: "error",
-          source: "admin",
-          message: "bulk_attendee_action_failed",
-          fields: {
-            eventId,
-            attendeeId: batch[index]!.id,
-            action: "revoke_pass",
-            errorKind: "unexpected",
-          },
+        await recordBulkAttendeeActionFailure(c, db, eventId, "revoke_pass", {
+          attendeeId: batch[index]!.id,
         });
         counts.errored += 1;
         continue;

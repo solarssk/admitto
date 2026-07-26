@@ -7,6 +7,7 @@ import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
 import { setMailSettings } from "@admitto/mailer-config";
 import { generateToken, getAttendeeCard, hashToken } from "@admitto/tickets";
+import * as ticketOperations from "@admitto/tickets";
 import * as mailDelivery from "@admitto/mail-delivery";
 import type { ExportPayload } from "@admitto/mailer";
 import { createApp } from "../../src/app.js";
@@ -944,6 +945,43 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-checkin", () => {
     expect(checkIns).toHaveLength(2);
   });
 
+  it("records an unexpected per-attendee failure with staff accountability and no PII", async () => {
+    const id = "att-bulk-checkin-log-failure";
+    await seedCheckable([id]);
+    resetSystemLogBufferForTest();
+    const spy = vi.spyOn(ticketOperations, "admitAttendee").mockRejectedValueOnce(
+      new Error("database failed for attendee@example.com"),
+    );
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-checkin`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ attendeeIds: [id] }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ checkedIn: 0, alreadyCheckedIn: 0, revoked: 0, invalid: 0, errored: 1 });
+      const [entry] = querySystemLogs({ source: "admin", search: "bulk_attendee_action_failed" });
+      expect(entry).toMatchObject({
+        level: "error",
+        source: "admin",
+        message: "bulk_attendee_action_failed",
+        fields: {
+          eventId: EVENT_A,
+          attendeeId: id,
+          action: "checkin",
+          errorKind: "unexpected",
+          actorUserId: adminId,
+          actorEmail: EMAIL_ADMIN,
+        },
+      });
+      expect(JSON.stringify(entry)).not.toContain("database failed");
+      expect(JSON.stringify(entry)).not.toContain(`${id}@example.com`);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("spans more than one bounded-concurrency chunk and sums counts correctly across chunks", async () => {
     // BULK_CHECKIN_CONCURRENCY is 10 - 12 ids force exactly two chunks (10 + 2), exercising the
     // outer `for (const batch of chunk(...))` accumulation that every other test in this block
@@ -1135,6 +1173,37 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-revoke-checkin", () => 
     expect(logs).toHaveLength(2);
   });
 
+  it("records an unexpected revoke-checkin failure without the exception or attendee email", async () => {
+    const id = "att-bulk-revoke-checkin-log-failure";
+    await seedAdmitted([id]);
+    resetSystemLogBufferForTest();
+    const spy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("database failed for attendee@example.com"));
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-revoke-checkin`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ attendeeIds: [id] }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ revoked: 0, notAdmitted: 0, blocked: 0, errored: 1 });
+      const [entry] = querySystemLogs({ source: "admin", search: "bulk_attendee_action_failed" });
+      expect(entry).toMatchObject({
+        fields: {
+          eventId: EVENT_A,
+          attendeeId: id,
+          action: "revoke_checkin",
+          actorUserId: adminId,
+          actorEmail: EMAIL_ADMIN,
+        },
+      });
+      expect(JSON.stringify(entry)).not.toContain("database failed");
+      expect(JSON.stringify(entry)).not.toContain(`${id}@example.com`);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("counts an attendee who wasn't checked in as notAdmitted instead of failing the request", async () => {
     const admittedId = "att-bulk-revoke-checkin-mixed-admitted";
     const freshId = "att-bulk-revoke-checkin-mixed-fresh";
@@ -1313,6 +1382,39 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-revoke-items", () => {
       where: { attendee_id: { in: ids }, event_item: { key: "giftbag" } },
     });
     expect(states.every((s) => s.state === "pending")).toBe(true);
+  });
+
+  it("returns a generic 500 and records a failed bulk item revoke", async () => {
+    const id = "att-bulk-revoke-items-log-failure";
+    await seedWithIssuedGiftbag(id);
+    resetSystemLogBufferForTest();
+    const spy = vi.spyOn(ticketOperations, "revokeItemsForAttendees").mockRejectedValueOnce(
+      new Error("database failed for attendee@example.com"),
+    );
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-revoke-items`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ attendeeIds: [id] }),
+      });
+
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: "server error" });
+      const [entry] = querySystemLogs({ source: "admin", search: "bulk_attendee_action_failed" });
+      expect(entry).toMatchObject({
+        fields: {
+          eventId: EVENT_A,
+          attendeeCount: 1,
+          action: "revoke_items",
+          actorUserId: adminId,
+          actorEmail: EMAIL_ADMIN,
+        },
+      });
+      expect(JSON.stringify(entry)).not.toContain("database failed");
+      expect(JSON.stringify(entry)).not.toContain(`${id}@example.com`);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("only resets items for the selected attendees, leaving an unselected attendee's issued item untouched", async () => {
@@ -1500,6 +1602,37 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-revoke-pass", () => {
       where: { attendee_id: { in: ids }, action_type: "pass_revoked" },
     });
     expect(logs).toHaveLength(2);
+  });
+
+  it("records an unexpected pass-revoke failure without raw error data", async () => {
+    const id = "att-bulk-revoke-pass-log-failure";
+    await seedRegistered([id]);
+    resetSystemLogBufferForTest();
+    const spy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("database failed for attendee@example.com"));
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-revoke-pass`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ attendeeIds: [id] }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ revoked: 0, skipped: 0, errored: 1 });
+      const [entry] = querySystemLogs({ source: "admin", search: "bulk_attendee_action_failed" });
+      expect(entry).toMatchObject({
+        fields: {
+          eventId: EVENT_A,
+          attendeeId: id,
+          action: "revoke_pass",
+          actorUserId: adminId,
+          actorEmail: EMAIL_ADMIN,
+        },
+      });
+      expect(JSON.stringify(entry)).not.toContain("database failed");
+      expect(JSON.stringify(entry)).not.toContain(`${id}@example.com`);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("clears a stale admission when revoking the pass of a currently-admitted attendee, but leaves issued items alone", async () => {
@@ -3889,7 +4022,14 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-rsvp", () => {
         level: "error",
         source: "admin",
         message: "bulk_rsvp_failed",
-        fields: { eventId: EVENT_A, attendeeCount: 1, errorKind: "unexpected" },
+        fields: {
+          eventId: EVENT_A,
+          attendeeCount: 1,
+          action: "rsvp",
+          errorKind: "unexpected",
+          actorUserId: adminId,
+          actorEmail: EMAIL_ADMIN,
+        },
       });
       expect(JSON.stringify(entry)).not.toContain("db exploded");
       expect(JSON.stringify(entry)).not.toContain(`${id}@example.com`);

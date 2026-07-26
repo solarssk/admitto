@@ -1,8 +1,9 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword, createSession, SESSION_STAGE } from "@admitto/auth";
 import { generateToken, hashToken } from "@admitto/tickets";
+import * as ticketOperations from "@admitto/tickets";
 import {
   createCheckinPreAuth,
   createCheckinSessionCsrfGuard,
@@ -105,10 +106,10 @@ async function seedFixture(client: PrismaClient): Promise<void> {
   attendeeIdB = attB.id;
 }
 
-function buildMutatingApp() {
+function buildMutatingApp(config = { allowBearer: false, operatorToken: null as string | null }) {
   const deps = {
     prisma,
-    config: { allowBearer: false, operatorToken: null },
+    config,
   };
   const app = new Hono();
   const chain = [
@@ -153,6 +154,17 @@ function post(path: string, body: Record<string, unknown>) {
       Cookie: sessionCookie,
       "Content-Type": "application/json",
       ...sameOrigin,
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+function postBearer(path: string, body: Record<string, unknown>) {
+  return buildMutatingApp({ allowBearer: true, operatorToken: "emergency-checkin-token" }).request(path, {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer emergency-checkin-token",
+      "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
   });
@@ -249,6 +261,121 @@ describe("POST /api/checkin/admit — session_id audit (Lock #5)", () => {
     expect(JSON.stringify(entry)).not.toContain("unrecognized-test-ticket");
     expect(JSON.stringify(entry)).not.toContain("jan@firma.pl");
   });
+
+  it("records a rejected bearer scan with its device but no staff identity", async () => {
+    const res = await postBearer("/api/checkin/scan", {
+      eventId: EVENT_A,
+      scanned: "unrecognized-bearer-ticket",
+      deviceId: "emergency-kiosk-2",
+    });
+
+    expect(res.status).toBe(200);
+    const withoutDevice = await postBearer("/api/checkin/scan", {
+      eventId: EVENT_A,
+      scanned: "unrecognized-bearer-ticket-without-device",
+    });
+    expect(withoutDevice.status).toBe(200);
+
+    const entries = querySystemLogs({ source: "security", search: "checkin_rejected" });
+    expect(entries).toEqual(expect.arrayContaining([expect.objectContaining({
+      fields: { eventId: EVENT_A, status: "INVALID", deviceId: "emergency-kiosk-2" },
+    }), expect.objectContaining({
+      fields: { eventId: EVENT_A, status: "INVALID", deviceId: null },
+    })]));
+    for (const entry of entries) {
+      expect(entry.fields).not.toHaveProperty("actorUserId");
+      expect(entry.fields).not.toHaveProperty("actorEmail");
+    }
+    expect(JSON.stringify(entries)).not.toContain("unrecognized-bearer-ticket");
+  });
+
+  it("records every rejected status without the scanned ticket", async () => {
+    const spy = vi.spyOn(ticketOperations, "checkInScan");
+    try {
+      for (const status of ["REVOKED", "ALREADY_CHECKED_IN"] as const) {
+        spy.mockResolvedValueOnce({ status } as never);
+        const res = await post("/api/checkin/scan", {
+          eventId: EVENT_A,
+          scanned: `private-${status}-ticket`,
+          deviceId: "spoofed-tablet",
+        });
+        expect(res.status).toBe(200);
+      }
+
+      const entries = querySystemLogs({ source: "security", search: "checkin_rejected" });
+      expect(entries).toEqual(expect.arrayContaining([
+        expect.objectContaining({ fields: expect.objectContaining({ status: "REVOKED" }) }),
+        expect.objectContaining({ fields: expect.objectContaining({ status: "ALREADY_CHECKED_IN" }) }),
+      ]));
+      expect(JSON.stringify(entries)).not.toContain("private-REVOKED-ticket");
+      expect(JSON.stringify(entries)).not.toContain("private-ALREADY_CHECKED_IN-ticket");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("records a session scan failure with the verified operator and no raw scan data", async () => {
+    const spy = vi.spyOn(ticketOperations, "checkInScan").mockRejectedValueOnce(
+      new Error("database failed for jan@firma.pl"),
+    );
+    try {
+      const res = await post("/api/checkin/scan", {
+        eventId: EVENT_A,
+        scanned: "private-session-ticket",
+        deviceId: "spoofed-tablet",
+      });
+
+      expect(res.status).toBe(500);
+      const [entry] = querySystemLogs({ source: "api", search: "checkin_scan_failed" });
+      expect(entry).toMatchObject({
+        level: "error",
+        source: "api",
+        message: "checkin_scan_failed",
+        fields: { eventId: EVENT_A, actorUserId: USER_OP_A, actorEmail: "op-routes@example.com" },
+      });
+      expect(JSON.stringify(entry)).not.toContain("database failed");
+      expect(JSON.stringify(entry)).not.toContain("private-session-ticket");
+      expect(JSON.stringify(entry)).not.toContain("jan@firma.pl");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("records a bearer admit failure with only the safe device context", async () => {
+    const spy = vi.spyOn(ticketOperations, "admitAttendee")
+      .mockRejectedValueOnce(new Error("database failed for jan@firma.pl"))
+      .mockRejectedValueOnce(new Error("database failed without a device id"));
+    try {
+      const res = await postBearer("/api/checkin/admit", {
+        eventId: EVENT_A,
+        attendeeId,
+        deviceId: "emergency-kiosk-2",
+        method: "manual",
+      });
+
+      expect(res.status).toBe(500);
+      const [entry] = querySystemLogs({ source: "api", search: "checkin_admit_failed" });
+      expect(entry).toMatchObject({
+        fields: { eventId: EVENT_A, deviceId: "emergency-kiosk-2" },
+      });
+      expect(entry?.fields).not.toHaveProperty("actorUserId");
+      expect(entry?.fields).not.toHaveProperty("actorEmail");
+      expect(JSON.stringify(entry)).not.toContain("database failed");
+      expect(JSON.stringify(entry)).not.toContain("jan@firma.pl");
+
+      const withoutDevice = await postBearer("/api/checkin/admit", {
+        eventId: EVENT_A,
+        attendeeId,
+        method: "manual",
+      });
+      expect(withoutDevice.status).toBe(500);
+      expect(querySystemLogs({ source: "api", search: "checkin_admit_failed" })).toEqual(
+        expect.arrayContaining([expect.objectContaining({ fields: { eventId: EVENT_A, deviceId: null } })]),
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });
 
 describe("POST /api/checkin/undo — session device binding", () => {
@@ -328,5 +455,49 @@ describe("POST /api/checkin/notes (Lock #8)", () => {
     });
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "not found" });
+  });
+
+  it("records unexpected note failures without its content or attendee PII", async () => {
+    const spy = vi.spyOn(ticketOperations, "addAttendeeNote").mockRejectedValueOnce(
+      new Error("database failed for jan@firma.pl"),
+    );
+    try {
+      const res = await post("/api/checkin/notes", {
+        eventId: EVENT_A,
+        attendeeId,
+        body: "private note that must not reach System logs",
+        deviceId: "spoofed-tablet",
+      });
+
+      expect(res.status).toBe(500);
+      const [entry] = querySystemLogs({ source: "api", search: "checkin_note_failed" });
+      expect(entry).toMatchObject({
+        fields: { eventId: EVENT_A, actorUserId: USER_OP_A, actorEmail: "op-routes@example.com" },
+      });
+      expect(JSON.stringify(entry)).not.toContain("database failed");
+      expect(JSON.stringify(entry)).not.toContain("private note");
+      expect(JSON.stringify(entry)).not.toContain("jan@firma.pl");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("records unexpected undo failures without raw exception data", async () => {
+    const spy = vi.spyOn(ticketOperations, "undoLastCheckIn").mockRejectedValueOnce(
+      new Error("database failed for jan@firma.pl"),
+    );
+    try {
+      const res = await post("/api/checkin/undo", { eventId: EVENT_A, deviceId: "spoofed-tablet" });
+
+      expect(res.status).toBe(500);
+      const [entry] = querySystemLogs({ source: "api", search: "checkin_undo_failed" });
+      expect(entry).toMatchObject({
+        fields: { eventId: EVENT_A, actorUserId: USER_OP_A, actorEmail: "op-routes@example.com" },
+      });
+      expect(JSON.stringify(entry)).not.toContain("database failed");
+      expect(JSON.stringify(entry)).not.toContain("jan@firma.pl");
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

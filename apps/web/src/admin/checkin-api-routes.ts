@@ -116,6 +116,35 @@ async function emitRejectedCheckinLog(
   });
 }
 
+type CheckinOperation = "scan" | "admit" | "note" | "undo";
+
+/** Record a bounded failure signal. A staff session provides accountable identity; the emergency
+ * bearer path has no staff identity, so it retains only its device context. */
+async function recordCheckinOperationFailure(
+  c: Context,
+  db: PrismaClient,
+  eventId: string,
+  operation: CheckinOperation,
+  bodyDeviceId: unknown,
+): Promise<void> {
+  const actorUserId = c.get("operatorUserId") as string | undefined;
+  const context = actorUserId
+    ? {
+        actorUserId,
+        actorEmail: await resolveActorEmailForLog(db, actorUserId),
+      }
+    : {
+        deviceId: typeof bodyDeviceId === "string" ? bodyDeviceId : null,
+      };
+
+  recordSystemLog({
+    level: "error",
+    source: "api",
+    message: `checkin_${operation}_failed`,
+    fields: { eventId, ...context },
+  });
+}
+
 /** Resolve company/department for history rows (custom_data with legacy column fallback). */
 function historyCompany(attendee: {
   custom_data?: unknown;
@@ -158,12 +187,7 @@ export async function handleCheckinScan(c: Context, db: PrismaClient): Promise<R
     return c.json(serializeScanResult(result), 200);
   } catch (err) {
     console.error("checkInScan failed:", err);
-    recordSystemLog({
-      level: "error",
-      source: "api",
-      message: "checkin_scan_failed",
-      fields: { eventId },
-    });
+    await recordCheckinOperationFailure(c, db, eventId, "scan", deviceId);
     return c.json({ error: "server error" }, 500);
   }
 }
@@ -239,12 +263,7 @@ export async function handleCheckinAdmit(c: Context, db: PrismaClient): Promise<
     return c.json(serializeScanResult(result), 200);
   } catch (err) {
     console.error("admitAttendee failed:", err);
-    recordSystemLog({
-      level: "error",
-      source: "api",
-      message: "checkin_admit_failed",
-      fields: { eventId },
-    });
+    await recordCheckinOperationFailure(c, db, eventId, "admit", deviceId);
     return c.json({ error: "server error" }, 500);
   }
 }
@@ -315,12 +334,7 @@ export async function handleCheckinNote(c: Context, db: PrismaClient): Promise<R
       return c.json({ error: "not found" }, 404);
     }
     console.error("addAttendeeNote failed:", err);
-    recordSystemLog({
-      level: "error",
-      source: "api",
-      message: "checkin_note_failed",
-      fields: { eventId },
-    });
+    await recordCheckinOperationFailure(c, db, eventId, "note", deviceId);
     return c.json({ error: "server error" }, 500);
   }
 }
@@ -345,12 +359,7 @@ export async function handleCheckinUndo(c: Context, db: PrismaClient): Promise<R
       return c.json({ error: err.message }, 409);
     }
     console.error("undoLastCheckIn failed:", err);
-    recordSystemLog({
-      level: "error",
-      source: "api",
-      message: "checkin_undo_failed",
-      fields: { eventId },
-    });
+    await recordCheckinOperationFailure(c, db, eventId, "undo", deviceId);
     return c.json({ error: "server error" }, 500);
   }
 }
