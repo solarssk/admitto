@@ -555,7 +555,10 @@ export async function handleDeleteUserRole(c: Context, db: PrismaClient): Promis
 
   const assignment = await db.roleAssignment.findFirst({
     where: { id: assignmentId, user_id: id },
-    include: { oidc_role_grants: { select: { id: true } } },
+    include: {
+      oidc_role_grants: { select: { id: true } },
+      user: { select: { email: true } },
+    },
   });
   if (!assignment) {
     return respondRoleDeleteGone(c, db, id, assignmentId, actorIsSuperadmin);
@@ -567,9 +570,6 @@ export async function handleDeleteUserRole(c: Context, db: PrismaClient): Promis
   if (assignment.oidc_role_grants.length > 0) {
     return c.json({ code: "managed_by_idp" }, 409);
   }
-
-  const target = await db.user.findUnique({ where: { id }, select: { email: true } });
-  if (!target) return c.json({ error: "not_found" }, 404);
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
@@ -623,7 +623,7 @@ export async function handleDeleteUserRole(c: Context, db: PrismaClient): Promis
     }
     emitSystemLog("security", "info", "role_revoked", {
       targetUserId: id,
-      targetEmail: target.email,
+      targetEmail: assignment.user.email,
       role: outcome.role,
       scopeType: outcome.scope_type,
       scopeId: outcome.scope_id,
