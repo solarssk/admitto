@@ -56,8 +56,10 @@ function parseIpv6GroupList(part: string): number[] {
   if (!hasDottedSuffix) return groups;
   // extractIpv4FromMappedIpv6 calls this only after Node's isIPv6() has validated the address.
   const ipv4 = parseIpv4(dotted)!;
-  groups.push((ipv4.at(0)! << 8) | ipv4.at(1)!);
-  groups.push((ipv4.at(2)! << 8) | ipv4.at(3)!);
+  groups.push(
+    (ipv4.at(0)! << 8) | ipv4.at(1)!,
+    (ipv4.at(2)! << 8) | ipv4.at(3)!,
+  );
   return groups;
 }
 

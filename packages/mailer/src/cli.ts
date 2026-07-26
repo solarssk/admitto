@@ -15,7 +15,7 @@ import { isSendSuccess } from "./types.js";
 import { splitCsvLine } from "./csvUtils.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const ENV_KEY_RE = /^[A-Za-z_]\w*$/;
 
 function loadDotEnv() {
   const envPath = path.join(__dirname, "..", ".env");

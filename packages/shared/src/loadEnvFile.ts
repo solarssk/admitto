@@ -1,6 +1,6 @@
 import fs from "node:fs";
 
-const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const ENV_KEY_RE = /^[A-Za-z_]\w*$/;
 
 /** Parse a single .env value, stripping quotes and unquoted inline comments. */
 export function parseEnvValue(raw: string): string {
