@@ -4500,6 +4500,126 @@ output.mail-field-hint {
   cursor: not-allowed;
 }
 
+/* System logs panel (Logs & audit > System toggle) */
+.system-log-panel__hint {
+  margin: 0 0 var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+
+.system-log-panel__toolbar {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.system-log-panel__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 9rem;
+}
+
+.system-log-panel__field .at-select,
+.system-log-panel__field .at-input {
+  max-width: none;
+}
+
+.system-log-panel__field--search {
+  flex: 1 1 14rem;
+}
+
+.system-log-panel__live {
+  margin-left: auto;
+}
+
+.system-log-panel__console {
+  height: 22rem;
+  overflow-y: auto;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--surface-inverse);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  line-height: var(--lh-normal);
+}
+
+.system-log-panel__line {
+  display: flex;
+  gap: var(--space-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--at-gray-300);
+}
+
+.system-log-panel__time {
+  flex: none;
+  color: var(--at-gray-500);
+}
+
+.system-log-panel__level {
+  flex: none;
+  width: 3.5rem;
+  font-weight: 600;
+}
+
+.system-log-panel__line--info .system-log-panel__level {
+  color: var(--at-azure);
+}
+
+.system-log-panel__line--warn .system-log-panel__level {
+  color: var(--at-yellow);
+}
+
+.system-log-panel__line--error .system-log-panel__level {
+  color: var(--at-red);
+}
+
+.system-log-panel__source {
+  flex: none;
+  width: 4.5rem;
+  color: var(--at-gray-400);
+}
+
+.system-log-panel__message {
+  flex: 1 1 auto;
+  color: #fff;
+}
+
+.system-log-panel__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.system-log-panel__footer-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+@media (max-width: 600px) {
+  .system-log-panel__toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .system-log-panel__live {
+    margin-left: 0;
+  }
+
+  .system-log-panel__footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+  }
+}
+
 /* Event archiving panel */
 .archiving-hint {
   margin: 0 0 var(--space-2);

@@ -907,6 +907,23 @@ export interface AuditLogResponse {
   pageSize: number;
 }
 
+/** One row from GET /api/admin/system-logs. */
+export interface SystemLogEntryDto {
+  id: number;
+  ts: string;
+  level: "info" | "warn" | "error";
+  source: "api" | "db" | "cache" | "mail" | "admin";
+  message: string;
+  fields?: Record<string, unknown>;
+}
+
+/** Live-tail response for the System logs panel - not paginated like the audit log; `cursor`
+ * is the buffer's high-water mark, pass it back as `since` on the next poll. */
+export interface SystemLogResponse {
+  entries: SystemLogEntryDto[];
+  cursor: number;
+}
+
 export interface AccountRoleDto {
   id: string;
   role: string;

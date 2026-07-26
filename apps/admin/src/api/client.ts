@@ -61,6 +61,7 @@ import type {
   SetupOrgBrandingDto,
   PatchSetupOrgBrandingBody,
   AuditLogResponse,
+  SystemLogResponse,
   EventOverviewDto,
   EventContactDto,
   EventResourceDto,
@@ -1617,6 +1618,32 @@ export async function exportAuditLog(params: AuditLogFilterParams, signal?: Abor
     signal,
   });
   await downloadExportResponse(res, "audit-log.csv");
+}
+
+export type SystemLogFilterParams = {
+  since?: number;
+  level?: string;
+  source?: string;
+  search?: string;
+};
+
+/** Live-tail query against the in-memory system-log buffer (superadmin). Pass the previous
+ * response's `cursor` back as `since` to fetch only newer entries. */
+export async function fetchSystemLogs(
+  params: SystemLogFilterParams,
+  signal?: AbortSignal,
+): Promise<SystemLogResponse> {
+  const q = new URLSearchParams();
+  if (params.since != null) q.set("since", String(params.since));
+  if (params.level) q.set("level", params.level);
+  if (params.source) q.set("source", params.source);
+  if (params.search) q.set("search", params.search);
+  const qs = q.toString();
+  const res = await fetch(`/api/admin/system-logs${qs ? `?${qs}` : ""}`, {
+    credentials: "same-origin",
+    signal,
+  });
+  return parseJson<SystemLogResponse>(res);
 }
 
 export async function fetchAccount(signal?: AbortSignal): Promise<AccountDto> {

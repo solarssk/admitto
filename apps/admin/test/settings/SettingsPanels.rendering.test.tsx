@@ -1,8 +1,21 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AuditLogEntryDto, AuditLogResponse, EventDto, SessionListDto } from "../../src/api/types.js";
-import { ApiError, exportAuditLog, fetchAdminEvents, fetchAuditLog, fetchSessions } from "../../src/api/client.js";
+import type {
+  AuditLogEntryDto,
+  AuditLogResponse,
+  EventDto,
+  SessionListDto,
+  SystemLogResponse,
+} from "../../src/api/types.js";
+import {
+  ApiError,
+  exportAuditLog,
+  fetchAdminEvents,
+  fetchAuditLog,
+  fetchSessions,
+  fetchSystemLogs,
+} from "../../src/api/client.js";
 import { AuditLogPanel } from "../../src/settings/AuditLogPanel.js";
 import { SessionsPanel } from "../../src/settings/SessionsPanel.js";
 import { mockMatchMedia, renderWithToast } from "../test-utils.js";
@@ -15,8 +28,13 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchAuditLog: vi.fn(),
     exportAuditLog: vi.fn(),
     fetchSessions: vi.fn(),
+    fetchSystemLogs: vi.fn(),
   };
 });
+
+function emptySystemLog(cursor = 0): SystemLogResponse {
+  return { entries: [], cursor };
+}
 
 function emptyAuditLog(total = 0): AuditLogResponse {
   return { entries: [], total, page: 1, pageSize: 25 };
@@ -73,6 +91,7 @@ function makeSession(overrides: Partial<SessionListDto> = {}): SessionListDto {
 
 beforeEach(() => {
   vi.mocked(fetchAdminEvents).mockResolvedValue([]);
+  vi.mocked(fetchSystemLogs).mockResolvedValue(emptySystemLog());
   // jsdom does not implement scrollIntoView.
   Element.prototype.scrollIntoView = vi.fn();
   // AuditLogPanel picks table vs. mobile cards via useIsDesktop() - default to desktop so
@@ -877,7 +896,7 @@ describe("AuditLogPanel rendering", () => {
     expect(await screen.findByText(/Failed to export audit log/)).toBeTruthy();
   });
 
-  it("shows a System/Audit toggle in the header with System not yet selectable", async () => {
+  it("shows a System/Audit toggle in the header, defaulting to Audit", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
 
     renderWithToast(<AuditLogPanel />);
@@ -886,8 +905,27 @@ describe("AuditLogPanel rendering", () => {
     const audit = screen.getByRole("radio", { name: "Audit" });
     const system = screen.getByRole("radio", { name: "System" });
     expect(audit.getAttribute("aria-checked")).toBe("true");
-    expect(system).property("disabled", true);
+    expect(system.getAttribute("aria-checked")).toBe("false");
     expect(audit).property("disabled", false);
+    expect(system).property("disabled", false);
+  });
+
+  it("switches to the System logs view, hiding the Audit toolbar/table, and back again", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByText("No audit log entries yet");
+
+    fireEvent.click(screen.getByRole("radio", { name: "System" }));
+
+    expect(await screen.findByText("No log activity yet")).toBeTruthy();
+    expect(screen.queryByPlaceholderText("Search actor or event…")).toBeNull();
+    expect(screen.getByText("System logs")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Audit" }));
+
+    expect(await screen.findByText("No audit log entries yet")).toBeTruthy();
+    expect(screen.getByText("Audit log")).toBeTruthy();
   });
 
   it("changes rows per page and reloads from page 1", async () => {
@@ -913,6 +951,95 @@ describe("AuditLogPanel rendering", () => {
     );
     expect(await screen.findByText("Page 1 of 2")).toBeTruthy();
   });
+});
+
+describe("SystemLogsPanel rendering", () => {
+  function openSystemLogsView() {
+    fireEvent.click(screen.getByRole("radio", { name: "System" }));
+  }
+
+  it("fetches with no since on mount and renders returned entries", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+    vi.mocked(fetchSystemLogs).mockResolvedValueOnce({
+      entries: [{ id: 1, ts: "2026-01-01T12:00:00.000Z", level: "info", source: "api", message: "http_request" }],
+      cursor: 1,
+    });
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByText("No audit log entries yet");
+    openSystemLogsView();
+
+    expect(await screen.findByText("http_request")).toBeTruthy();
+    expect(fetchSystemLogs).toHaveBeenCalledWith(
+      { level: undefined, source: undefined, search: undefined },
+      expect.anything(),
+    );
+    expect(screen.getByText("Showing 1 line")).toBeTruthy();
+  });
+
+  it("refetches when the source filter changes", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+    vi.mocked(fetchSystemLogs).mockResolvedValue(emptySystemLog());
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByText("No audit log entries yet");
+    openSystemLogsView();
+    await screen.findByText("No log activity yet");
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Source" }), { target: { value: "mail" } });
+
+    await waitFor(() =>
+      expect(fetchSystemLogs).toHaveBeenLastCalledWith(
+        { level: undefined, source: "mail", search: undefined },
+        expect.anything(),
+      ),
+    );
+  });
+
+  it("polls with the last cursor as since, appending new lines without resetting existing ones", async () => {
+    // Real timers throughout - the poll interval is created at real mount time, so faking
+    // timers only around the wait (as elsewhere in this file) wouldn't control it; this is a
+    // genuine ~2s real-time wait, not a fake-timer fast-forward.
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+    vi.mocked(fetchSystemLogs)
+      .mockResolvedValueOnce({
+        entries: [{ id: 1, ts: "2026-01-01T12:00:00.000Z", level: "info", source: "api", message: "first" }],
+        cursor: 1,
+      })
+      .mockResolvedValueOnce({
+        entries: [{ id: 2, ts: "2026-01-01T12:00:01.000Z", level: "info", source: "api", message: "second" }],
+        cursor: 2,
+      });
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByText("No audit log entries yet");
+    openSystemLogsView();
+    await screen.findByText("first");
+
+    expect(await screen.findByText("second", {}, { timeout: 3000 })).toBeTruthy();
+    expect(screen.getByText("first")).toBeTruthy();
+    expect(fetchSystemLogs).toHaveBeenLastCalledWith(
+      { since: 1, level: undefined, source: undefined, search: undefined },
+      expect.anything(),
+    );
+  }, 10000);
+
+  it("stops polling once Live is turned off", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+    vi.mocked(fetchSystemLogs).mockResolvedValue(emptySystemLog());
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByText("No audit log entries yet");
+    openSystemLogsView();
+    await screen.findByText("No log activity yet");
+
+    fireEvent.click(screen.getByRole("switch", { name: /Live/ }));
+    const callsAfterPause = vi.mocked(fetchSystemLogs).mock.calls.length;
+
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+
+    expect(vi.mocked(fetchSystemLogs).mock.calls.length).toBe(callsAfterPause);
+  }, 10000);
 });
 
 describe("SessionsPanel rendering", () => {
