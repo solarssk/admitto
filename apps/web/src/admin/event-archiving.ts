@@ -32,6 +32,82 @@ export type UnarchiveDomainResult =
 
 type ArchiveActor = { userId: string };
 
+/** Shared shape of archiveEvent/unarchiveEvent (SonarCloud S4144: the two were a byte-for-byte
+ * duplicate transaction+log skeleton save for the update clause, action name, and the code
+ * returned when there's nothing to transition). `NoTransitionCode` is generic so each caller's
+ * own return type stays precise (e.g. archiveEvent can never actually return "not_archived")
+ * without an unsafe cast. */
+async function setEventArchivedState<NoTransitionCode extends string>(
+  db: PrismaClient,
+  eventId: string,
+  actor: ArchiveActor,
+  ip: string | null | undefined,
+  sessionId: string | null | undefined,
+  timezone: string | null | undefined,
+  opts: { archiving: boolean; actionType: "event_archived" | "event_unarchived"; noTransitionCode: NoTransitionCode },
+): Promise<{ ok: true } | { code: "not_found" | "audit_failed" | NoTransitionCode }> {
+  const { archiving, actionType, noTransitionCode } = opts;
+  try {
+    const outcome = await db.$transaction(async (tx) => {
+      const updated = archiving
+        ? await tx.event.updateMany({ where: { id: eventId, archived_at: null }, data: { archived_at: new Date() } })
+        : await tx.event.updateMany({
+            where: { id: eventId, archived_at: { not: null } },
+            data: { archived_at: null },
+          });
+      if (updated.count !== 1) return { kind: "no_transition" as const };
+
+      const event = await tx.event.findUnique({
+        where: { id: eventId },
+        select: { organization_id: true, title: true },
+      });
+      if (!event) throw new Error(`event missing after ${actionType} update`);
+
+      await writeAdminAuditLog(tx, {
+        organizationId: event.organization_id,
+        actorUserId: actor.userId,
+        sessionId,
+        ip,
+        timezone,
+        actionType,
+        metadata: { eventId },
+      });
+      return { kind: "ok" as const, eventTitle: event.title };
+    });
+
+    if (outcome.kind === "no_transition") {
+      const exists = await db.event.findUnique({ where: { id: eventId }, select: { id: true } });
+      if (!exists) return { code: "not_found" };
+      return { code: noTransitionCode };
+    }
+    // Best-effort: the transition itself already committed above, so a failure enriching the
+    // System-logs entry (e.g. a transient DB error resolving the actor's email) must not
+    // report this as a failed archive/unarchive (CodeRabbit review) - own try/catch, outside
+    // the one that guards the actual transaction.
+    try {
+      emitSystemLog("admin", "info", actionType, {
+        eventId,
+        eventTitle: outcome.eventTitle,
+        actorUserId: actor.userId,
+        actorEmail: await resolveActorEmailForLog(db, actor.userId),
+        ip,
+      });
+    } catch (logErr) {
+      console.error(`[audit] ${actionType} log enrichment failed`, logErr);
+    }
+    return { ok: true };
+  } catch (err) {
+    console.error(`[audit] ${actionType} transaction failed`, err);
+    recordSystemLog({
+      level: "error",
+      source: "admin",
+      message: `${actionType} transaction failed`,
+      fields: { eventId, actorUserId: actor.userId, ip },
+    });
+    return { code: "audit_failed" };
+  }
+}
+
 /** Set archived_at on an active event; state change and audit log are one transaction. */
 export async function archiveEvent(
   db: PrismaClient,
@@ -41,63 +117,11 @@ export async function archiveEvent(
   sessionId: string | null | undefined,
   timezone?: string | null,
 ): Promise<ArchiveDomainResult> {
-  try {
-    const outcome = await db.$transaction(async (tx) => {
-      const updated = await tx.event.updateMany({
-        where: { id: eventId, archived_at: null },
-        data: { archived_at: new Date() },
-      });
-      if (updated.count !== 1) return { kind: "no_transition" as const };
-
-      const event = await tx.event.findUnique({
-        where: { id: eventId },
-        select: { organization_id: true, title: true },
-      });
-      if (!event) throw new Error("event missing after archive update");
-
-      await writeAdminAuditLog(tx, {
-        organizationId: event.organization_id,
-        actorUserId: actor.userId,
-        sessionId,
-        ip,
-        timezone,
-        actionType: "event_archived",
-        metadata: { eventId },
-      });
-      return { kind: "ok" as const, eventTitle: event.title };
-    });
-
-    if (outcome.kind === "no_transition") {
-      const exists = await db.event.findUnique({ where: { id: eventId }, select: { id: true } });
-      if (!exists) return { code: "not_found" };
-      return { code: "already_archived" };
-    }
-    // Best-effort: the archive itself already committed above, so a failure enriching the
-    // System-logs entry (e.g. a transient DB error resolving the actor's email) must not
-    // report this as a failed archive (CodeRabbit review) - own try/catch, outside the one
-    // that guards the actual transaction.
-    try {
-      emitSystemLog("admin", "info", "event_archived", {
-        eventId,
-        eventTitle: outcome.eventTitle,
-        actorUserId: actor.userId,
-        actorEmail: await resolveActorEmailForLog(db, actor.userId),
-        ip,
-      });
-    } catch (logErr) {
-      console.error("[audit] event_archived log enrichment failed", logErr);
-    }
-    return { ok: true };
-  } catch (err) {
-    console.error("[audit] event_archived transaction failed", err);
-    recordSystemLog({
-      level: "error",
-      source: "admin",
-      message: "event_archived transaction failed",
-      fields: { eventId, actorUserId: actor.userId, ip },
-    });
-    return { code: "audit_failed" };
-  }
+  return setEventArchivedState(db, eventId, actor, ip, sessionId, timezone, {
+    archiving: true,
+    actionType: "event_archived",
+    noTransitionCode: "already_archived",
+  });
 }
 
 /** Clear archived_at when currently archived; state change and audit log are one transaction. */
@@ -109,60 +133,11 @@ export async function unarchiveEvent(
   sessionId: string | null | undefined,
   timezone?: string | null,
 ): Promise<UnarchiveDomainResult> {
-  try {
-    const outcome = await db.$transaction(async (tx) => {
-      const updated = await tx.event.updateMany({
-        where: { id: eventId, archived_at: { not: null } },
-        data: { archived_at: null },
-      });
-      if (updated.count !== 1) return { kind: "no_transition" as const };
-
-      const event = await tx.event.findUnique({
-        where: { id: eventId },
-        select: { organization_id: true, title: true },
-      });
-      if (!event) throw new Error("event missing after unarchive update");
-
-      await writeAdminAuditLog(tx, {
-        organizationId: event.organization_id,
-        actorUserId: actor.userId,
-        sessionId,
-        ip,
-        timezone,
-        actionType: "event_unarchived",
-        metadata: { eventId },
-      });
-      return { kind: "ok" as const, eventTitle: event.title };
-    });
-
-    if (outcome.kind === "no_transition") {
-      const exists = await db.event.findUnique({ where: { id: eventId }, select: { id: true } });
-      if (!exists) return { code: "not_found" };
-      return { code: "not_archived" };
-    }
-    // Best-effort - see the matching comment in archiveEvent above.
-    try {
-      emitSystemLog("admin", "info", "event_unarchived", {
-        eventId,
-        eventTitle: outcome.eventTitle,
-        actorUserId: actor.userId,
-        actorEmail: await resolveActorEmailForLog(db, actor.userId),
-        ip,
-      });
-    } catch (logErr) {
-      console.error("[audit] event_unarchived log enrichment failed", logErr);
-    }
-    return { ok: true };
-  } catch (err) {
-    console.error("[audit] event_unarchived transaction failed", err);
-    recordSystemLog({
-      level: "error",
-      source: "admin",
-      message: "event_unarchived transaction failed",
-      fields: { eventId, actorUserId: actor.userId, ip },
-    });
-    return { code: "audit_failed" };
-  }
+  return setEventArchivedState(db, eventId, actor, ip, sessionId, timezone, {
+    archiving: false,
+    actionType: "event_unarchived",
+    noTransitionCode: "not_archived",
+  });
 }
 
 /** Return 403 when the event is archived; otherwise null. Caller must run manage-access first. */

@@ -1639,7 +1639,8 @@ export async function fetchSystemLogs(
   if (params.source) q.set("source", params.source);
   if (params.search) q.set("search", params.search);
   const qs = q.toString();
-  const res = await fetch(`/api/admin/system-logs${qs ? `?${qs}` : ""}`, {
+  const queryPart = qs ? `?${qs}` : "";
+  const res = await fetch(`/api/admin/system-logs${queryPart}`, {
     credentials: "same-origin",
     signal,
   });

@@ -1,8 +1,7 @@
 import { createHash } from "node:crypto";
-import { redactEmail } from "@admitto/shared";
 import { recordSystemLog } from "@admitto/shared/system-log";
 
-export { redactEmail };
+export { redactEmail } from "@admitto/shared";
 
 /** Short SHA-256 fingerprint for IDs in audit logs (no raw UUIDs). */
 export function fingerprint(value: string): string {

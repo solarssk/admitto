@@ -1133,7 +1133,7 @@ describe("SystemLogsPanel rendering", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 2500));
 
-    expect(vi.mocked(fetchSystemLogs).mock.calls.length).toBe(callsAfterPause);
+    expect(vi.mocked(fetchSystemLogs).mock.calls).toHaveLength(callsAfterPause);
   }, 10000);
 
   it("spells out the database source instead of abbreviating it", async () => {

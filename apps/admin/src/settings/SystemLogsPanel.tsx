@@ -46,6 +46,51 @@ function formatLogLine(entry: SystemLogEntryDto): string {
   return entry.fields && Object.keys(entry.fields).length > 0 ? `${base}  ${JSON.stringify(entry.fields)}` : base;
 }
 
+/** Extracted from the console's render (SonarCloud S3358: nested ternary) - a plain
+ * if/return chain reads clearer than 3 chained ternaries for the same
+ * loading/error/empty/lines states, with identical output. */
+function renderConsoleBody(
+  showLoadingState: boolean,
+  error: string | null,
+  entries: SystemLogEntryDto[],
+  onRetry: () => void,
+): ReactNode {
+  if (showLoadingState && entries.length === 0) {
+    return <div className="system-log-panel__console-empty">Loading system logs…</div>;
+  }
+  if (error) {
+    return (
+      <div className="system-log-panel__console-empty system-log-panel__console-empty--error">
+        <p>Could not load system logs: {error}</p>
+        <Button type="button" variant="secondary" size="sm" onClick={onRetry}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+  if (entries.length === 0) {
+    return (
+      <div className="system-log-panel__console-empty">
+        <p className="system-log-panel__console-empty-title">No log activity yet</p>
+        <p className="system-log-panel__console-empty-desc">
+          Activity across the API, database, cache, mail transport, and admin actions will appear here as it happens.
+        </p>
+      </div>
+    );
+  }
+  return entries.map((entry) => (
+    <div key={entry.id} className={`system-log-panel__line system-log-panel__line--${entry.level}`}>
+      <span className="system-log-panel__time">{formatLogTime(entry.ts)}</span>
+      <span className="system-log-panel__level">{LEVEL_LABELS[entry.level].toUpperCase()}</span>
+      <span className="system-log-panel__source">{SOURCE_LABELS[entry.source]}</span>
+      <span className="system-log-panel__message">{entry.message}</span>
+      {entry.fields && Object.keys(entry.fields).length > 0 && (
+        <span className="system-log-panel__fields">{JSON.stringify(entry.fields)}</span>
+      )}
+    </div>
+  ));
+}
+
 function downloadTextFile(filename: string, content: string): void {
   const blob = new Blob([content], { type: "text/plain" });
   const url = URL.createObjectURL(blob);
@@ -338,36 +383,7 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
           plain light EmptyState card at a different height, which read as the panel itself
           breaking rather than a deliberately cleared terminal. */}
       <div ref={consoleRef} className="system-log-panel__console" role="log" aria-live="off">
-        {showLoadingState && entries.length === 0 ? (
-          <div className="system-log-panel__console-empty">Loading system logs…</div>
-        ) : error ? (
-          <div className="system-log-panel__console-empty system-log-panel__console-empty--error">
-            <p>Could not load system logs: {error}</p>
-            <Button type="button" variant="secondary" size="sm" onClick={() => setRetryTick((t) => t + 1)}>
-              Retry
-            </Button>
-          </div>
-        ) : entries.length === 0 ? (
-          <div className="system-log-panel__console-empty">
-            <p className="system-log-panel__console-empty-title">No log activity yet</p>
-            <p className="system-log-panel__console-empty-desc">
-              Activity across the API, database, cache, mail transport, and admin actions will appear here as it
-              happens.
-            </p>
-          </div>
-        ) : (
-          entries.map((entry) => (
-            <div key={entry.id} className={`system-log-panel__line system-log-panel__line--${entry.level}`}>
-              <span className="system-log-panel__time">{formatLogTime(entry.ts)}</span>
-              <span className="system-log-panel__level">{LEVEL_LABELS[entry.level].toUpperCase()}</span>
-              <span className="system-log-panel__source">{SOURCE_LABELS[entry.source]}</span>
-              <span className="system-log-panel__message">{entry.message}</span>
-              {entry.fields && Object.keys(entry.fields).length > 0 && (
-                <span className="system-log-panel__fields">{JSON.stringify(entry.fields)}</span>
-              )}
-            </div>
-          ))
-        )}
+        {renderConsoleBody(showLoadingState, error, entries, () => setRetryTick((t) => t + 1))}
       </div>
 
       <div className="system-log-panel__footer">
