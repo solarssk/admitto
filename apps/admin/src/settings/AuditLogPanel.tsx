@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getCountryForTimezone } from "countries-and-timezones";
 import { Badge, Button, Card, EmptyState, Input, Tooltip, useToast, type BadgeVariant } from "@admitto/ui";
 import { exportAuditLog, fetchAdminEvents, fetchAuditLog } from "../api/client.js";
@@ -340,7 +340,7 @@ interface AuditLogRowsProps {
   entries: AuditLogEntryDto[];
   loading: boolean;
   eventTitleById: Map<string, string>;
-  onCopyRow: (entry: AuditLogEntryDto) => void;
+  onCopyRow: (entry: AuditLogEntryDto) => Promise<void>;
 }
 
 /** Desktop row list - extracted from AuditLogPanel to keep that component's own cognitive
@@ -451,6 +451,98 @@ function AuditLogCards({ entries, loading, eventTitleById, onCopyRow }: Readonly
       ))}
     </div>
   );
+}
+
+interface AuditLogListContentProps extends AuditLogRowsProps {
+  isInitialLoad: boolean;
+  showLoadingSkeleton: boolean;
+  error: string | null;
+  onRetry: () => void;
+  total: number;
+  hasActiveFilters: boolean;
+  isDesktop: boolean;
+}
+
+/** Picks the loading skeleton / error / empty-state / table-or-cards branch - extracted
+ * alongside AuditLogTable/AuditLogCards for the same cognitive-complexity reason; this whole
+ * if-chain used to live directly inside AuditLogPanel. */
+function AuditLogListContent({
+  isInitialLoad,
+  showLoadingSkeleton,
+  error,
+  onRetry,
+  entries,
+  total,
+  hasActiveFilters,
+  isDesktop,
+  loading,
+  eventTitleById,
+  onCopyRow,
+}: Readonly<AuditLogListContentProps>) {
+  if (isInitialLoad) {
+    // Reserve the skeleton's own height from the very first paint - navigating here from a
+    // separate route (e.g. Identity, which unmounts this whole panel) re-triggers a genuine
+    // first load, and rendering nothing at all while entries === [] let the card visibly
+    // collapse then snap back once data arrived, reading as a flicker even on a fast fetch.
+    // A fetch that resolves near-instantly (localhost, a warm cache) still shouldn't flash a
+    // visible skeleton on and off - `visibility` (not conditional rendering) keeps the space
+    // reserved throughout while only revealing it once loading has genuinely taken a moment.
+    return (
+      <div
+        className="audit-log-skeleton"
+        aria-busy={showLoadingSkeleton || undefined}
+        aria-label="Loading audit log"
+        style={{ visibility: showLoadingSkeleton ? "visible" : "hidden" }}
+      >
+        {Array.from({ length: 5 }, (_, i) => (
+          <div key={i} className="audit-log-skeleton__row" />
+        ))}
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <EmptyState
+        title="Could not load audit log"
+        description={error}
+        action={
+          <Button type="button" variant="secondary" onClick={onRetry}>
+            Retry
+          </Button>
+        }
+      />
+    );
+  }
+  if (entries.length === 0 && total > 0) {
+    return <EmptyState title="No entries on this page." description="Try Previous, or adjust the filters." />;
+  }
+  if (entries.length === 0 && hasActiveFilters) {
+    return (
+      <EmptyState
+        icon={<i className="ti ti-filter-off" aria-hidden="true" />}
+        title="No matches"
+        description="Try different filters, or clear them to see everything."
+      />
+    );
+  }
+  if (entries.length === 0) {
+    return (
+      <EmptyState
+        icon={<i className="ti ti-history" aria-hidden="true" />}
+        title="No audit log entries yet"
+        description="Actions taken across Settings will appear here."
+      />
+    );
+  }
+  if (isDesktop) {
+    return (
+      <AuditLogTable entries={entries} loading={loading} eventTitleById={eventTitleById} onCopyRow={onCopyRow} />
+    );
+  }
+  // Mobile: one card per entry instead of a horizontally-scrolling table, mirroring
+  // AttendeesTable's/ReportsPage's own desktop-table/mobile-card split at the same
+  // useIsDesktop() breakpoint.
+  return <AuditLogCards entries={entries} loading={loading} eventTitleById={eventTitleById} onCopyRow={onCopyRow} />;
 }
 
 type LogsView = "system" | "audit";
@@ -666,69 +758,21 @@ export function AuditLogPanel() {
   // table below instead of blanking it out from under the user (matches AttendeesTable).
   const isInitialLoad = loading && entries.length === 0;
 
-  let listContent: ReactNode;
-  if (isInitialLoad) {
-    // Reserve the skeleton's own height from the very first paint - navigating here from a
-    // separate route (e.g. Identity, which unmounts this whole panel) re-triggers a genuine
-    // first load, and rendering nothing at all while entries === [] let the card visibly
-    // collapse then snap back once data arrived, reading as a flicker even on a fast fetch.
-    // A fetch that resolves near-instantly (localhost, a warm cache) still shouldn't flash a
-    // visible skeleton on and off - `visibility` (not conditional rendering) keeps the space
-    // reserved throughout while only revealing it once loading has genuinely taken a moment.
-    listContent = (
-      <div
-        className="audit-log-skeleton"
-        aria-busy={showLoadingSkeleton || undefined}
-        aria-label="Loading audit log"
-        style={{ visibility: showLoadingSkeleton ? "visible" : "hidden" }}
-      >
-        {Array.from({ length: 5 }, (_, i) => (
-          <div key={i} className="audit-log-skeleton__row" />
-        ))}
-      </div>
-    );
-  } else if (error) {
-    listContent = (
-      <EmptyState
-        title="Could not load audit log"
-        description={error}
-        action={
-          <Button type="button" variant="secondary" onClick={() => void load()}>
-            Retry
-          </Button>
-        }
-      />
-    );
-  } else if (entries.length === 0 && total > 0) {
-    listContent = <EmptyState title="No entries on this page." description="Try Previous, or adjust the filters." />;
-  } else if (entries.length === 0 && hasActiveFilters) {
-    listContent = (
-      <EmptyState
-        icon={<i className="ti ti-filter-off" aria-hidden="true" />}
-        title="No matches"
-        description="Try different filters, or clear them to see everything."
-      />
-    );
-  } else if (entries.length === 0) {
-    listContent = (
-      <EmptyState
-        icon={<i className="ti ti-history" aria-hidden="true" />}
-        title="No audit log entries yet"
-        description="Actions taken across Settings will appear here."
-      />
-    );
-  } else if (isDesktop) {
-    listContent = (
-      <AuditLogTable entries={entries} loading={loading} eventTitleById={eventTitleById} onCopyRow={handleCopyRow} />
-    );
-  } else {
-    // Mobile: one card per entry instead of a horizontally-scrolling table, mirroring
-    // AttendeesTable's/ReportsPage's own desktop-table/mobile-card split at the same
-    // useIsDesktop() breakpoint.
-    listContent = (
-      <AuditLogCards entries={entries} loading={loading} eventTitleById={eventTitleById} onCopyRow={handleCopyRow} />
-    );
-  }
+  const listContent = (
+    <AuditLogListContent
+      isInitialLoad={isInitialLoad}
+      showLoadingSkeleton={showLoadingSkeleton}
+      error={error}
+      onRetry={() => void load()}
+      entries={entries}
+      total={total}
+      hasActiveFilters={hasActiveFilters}
+      isDesktop={isDesktop}
+      loading={loading}
+      eventTitleById={eventTitleById}
+      onCopyRow={handleCopyRow}
+    />
+  );
 
   return (
     <Card
