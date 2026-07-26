@@ -206,7 +206,10 @@ function formatMetadataValue(key: string, value: unknown): string {
       .map((item) => {
         if (item && typeof item === "object") {
           const obj = item as Record<string, unknown>;
-          return String(obj.name ?? obj.email ?? obj.id ?? JSON.stringify(item));
+          const identifier = [obj.name, obj.email, obj.id].find(
+            (v): v is string | number => typeof v === "string" || typeof v === "number",
+          );
+          return identifier === undefined ? JSON.stringify(item) : String(identifier);
         }
         if (humanizeItems && typeof item === "string") return humanizeMetadataKey(item);
         return String(item);
@@ -231,11 +234,13 @@ function hasVisibleMetadata(metadata: Record<string, unknown> | null): boolean {
  * shouldn't have to screenshot a table). */
 function buildRowSummary(entry: AuditLogEntryDto, eventTitleById: Map<string, string>): string {
   const localTime = actorLocalTime(entry);
+  const localTimeSuffix = localTime ? ` (${localTime})` : "";
+  const actorEmailSuffix = entry.actor_display_name && entry.actor_email ? ` (${entry.actor_email})` : "";
   const lines = [
-    `Time: ${formatAuditPrimaryTime(entry.created_at)} UTC${localTime ? ` (${localTime})` : ""}`,
+    `Time: ${formatAuditPrimaryTime(entry.created_at)} UTC${localTimeSuffix}`,
     `Action: ${actionLabel(entry.action_type)}`,
     `Scope: ${scopeLabel(entry, eventTitleById)}`,
-    `Actor: ${actorDisplay(entry)}${entry.actor_display_name && entry.actor_email ? ` (${entry.actor_email})` : ""}`,
+    `Actor: ${actorDisplay(entry)}${actorEmailSuffix}`,
     `IP: ${entry.ip ?? "—"}`,
   ];
   if (hasVisibleMetadata(entry.metadata)) {
@@ -327,6 +332,123 @@ function DetailsCell({ metadata }: Readonly<{ metadata: Record<string, unknown> 
           ))}
         </dl>
       )}
+    </div>
+  );
+}
+
+interface AuditLogRowsProps {
+  entries: AuditLogEntryDto[];
+  loading: boolean;
+  eventTitleById: Map<string, string>;
+  onCopyRow: (entry: AuditLogEntryDto) => void;
+}
+
+/** Desktop row list - extracted from AuditLogPanel to keep that component's own cognitive
+ * complexity within the shared lint budget; pure presentational, no state of its own. */
+function AuditLogTable({ entries, loading, eventTitleById, onCopyRow }: Readonly<AuditLogRowsProps>) {
+  return (
+    <div className={`sessions-table-wrap${loading ? " audit-log-table-wrap--loading" : ""}`}>
+      <table className="table audit-log-table">
+        <thead>
+          <tr>
+            <th scope="col">
+              <Tooltip content={TIME_HINT} className="audit-log-scope-header">
+                Time <i className="ti ti-info-circle" aria-hidden="true" />
+              </Tooltip>
+            </th>
+            <th scope="col">Action</th>
+            <th scope="col">
+              <Tooltip content={SCOPE_HINT} className="audit-log-scope-header">
+                Scope <i className="ti ti-info-circle" aria-hidden="true" />
+              </Tooltip>
+            </th>
+            <th scope="col">Actor</th>
+            <th scope="col">IP</th>
+            <th scope="col">Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((entry) => (
+            <tr key={entry.id}>
+              <td className="audit-log-time">
+                {formatAuditPrimaryTime(entry.created_at)}
+                {actorLocalTime(entry) && <div className="sessions-subdued">{actorLocalTime(entry)}</div>}
+              </td>
+              <td>
+                <Badge variant={actionTone(entry.action_type)}>{actionLabel(entry.action_type)}</Badge>
+              </td>
+              <td>{scopeLabel(entry, eventTitleById)}</td>
+              <td title={actorTitle(entry)}>
+                {actorDisplay(entry)}
+                {entry.actor_display_name && entry.actor_email && (
+                  <div className="sessions-subdued">{entry.actor_email}</div>
+                )}
+              </td>
+              <td>{entry.ip ?? "—"}</td>
+              <td>
+                <div className="audit-log-details-cell">
+                  <DetailsCell metadata={entry.metadata} />
+                  <button
+                    type="button"
+                    className="audit-log-row-copy"
+                    aria-label="Copy row"
+                    onClick={() => void onCopyRow(entry)}
+                  >
+                    <i className="ti ti-copy" aria-hidden="true" />
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Mobile one-card-per-entry list - extracted alongside AuditLogTable for the same reason;
+ * mirrors AttendeesTable's/ReportsPage's own desktop-table/mobile-card split. */
+function AuditLogCards({ entries, loading, eventTitleById, onCopyRow }: Readonly<AuditLogRowsProps>) {
+  return (
+    <div className={`audit-log-cards${loading ? " audit-log-table-wrap--loading" : ""}`}>
+      {entries.map((entry) => (
+        <div key={entry.id} className="audit-log-card">
+          <div className="audit-log-card__top">
+            <Badge variant={actionTone(entry.action_type)}>{actionLabel(entry.action_type)}</Badge>
+            <div className="audit-log-time audit-log-card__time">
+              {formatAuditPrimaryTime(entry.created_at)}
+              {actorLocalTime(entry) && <div className="sessions-subdued">{actorLocalTime(entry)}</div>}
+            </div>
+          </div>
+          <div className="audit-log-card__meta">
+            <span className="audit-log-card__meta-item">
+              <i className="ti ti-calendar-event" aria-hidden="true" />
+              {scopeLabel(entry, eventTitleById)}
+            </span>
+            <span className="audit-log-card__meta-item" title={actorTitle(entry)}>
+              <i className="ti ti-user" aria-hidden="true" />
+              {actorDisplay(entry)}
+            </span>
+            {entry.actor_display_name && entry.actor_email && (
+              <div className="sessions-subdued audit-log-card__email">{entry.actor_email}</div>
+            )}
+          </div>
+          <div className="audit-log-card__foot">
+            <span>{entry.ip ?? "—"}</span>
+            <div className="audit-log-details-cell">
+              <DetailsCell metadata={entry.metadata} />
+              <button
+                type="button"
+                className="audit-log-row-copy"
+                aria-label="Copy row"
+                onClick={() => void onCopyRow(entry)}
+              >
+                <i className="ti ti-copy" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -490,10 +612,9 @@ export function AuditLogPanel() {
   // On mobile the date fields move into this same panel (see the toolbar JSX below), so an
   // active From/To should count toward the badge there too - on desktop they stay in the main
   // toolbar, always visible, so they'd double-count if included here as well.
+  const activeDateCount = (filters.start ? 1 : 0) + (filters.end ? 1 : 0);
   const actionScopeActiveCount =
-    (filters.actionType ? 1 : 0) +
-    (filters.eventId ? 1 : 0) +
-    (isDesktop ? 0 : (filters.start ? 1 : 0) + (filters.end ? 1 : 0));
+    (filters.actionType ? 1 : 0) + (filters.eventId ? 1 : 0) + (isDesktop ? 0 : activeDateCount);
 
   const handleExport = useCallback(async () => {
     setExporting(true);
@@ -578,131 +699,34 @@ export function AuditLogPanel() {
         }
       />
     );
+  } else if (entries.length === 0 && total > 0) {
+    listContent = <EmptyState title="No entries on this page." description="Try Previous, or adjust the filters." />;
+  } else if (entries.length === 0 && hasActiveFilters) {
+    listContent = (
+      <EmptyState
+        icon={<i className="ti ti-filter-off" aria-hidden="true" />}
+        title="No matches"
+        description="Try different filters, or clear them to see everything."
+      />
+    );
   } else if (entries.length === 0) {
-    listContent =
-      total > 0 ? (
-        <EmptyState title="No entries on this page." description="Try Previous, or adjust the filters." />
-      ) : hasActiveFilters ? (
-        <EmptyState
-          icon={<i className="ti ti-filter-off" aria-hidden="true" />}
-          title="No matches"
-          description="Try different filters, or clear them to see everything."
-        />
-      ) : (
-        <EmptyState
-          icon={<i className="ti ti-history" aria-hidden="true" />}
-          title="No audit log entries yet"
-          description="Actions taken across Settings will appear here."
-        />
-      );
+    listContent = (
+      <EmptyState
+        icon={<i className="ti ti-history" aria-hidden="true" />}
+        title="No audit log entries yet"
+        description="Actions taken across Settings will appear here."
+      />
+    );
   } else if (isDesktop) {
     listContent = (
-      <div className={`sessions-table-wrap${loading ? " audit-log-table-wrap--loading" : ""}`}>
-        <table className="table audit-log-table">
-          <thead>
-            <tr>
-              <th scope="col">
-                <Tooltip content={TIME_HINT} className="audit-log-scope-header">
-                  Time <i className="ti ti-info-circle" aria-hidden="true" />
-                </Tooltip>
-              </th>
-              <th scope="col">Action</th>
-              <th scope="col">
-                <Tooltip content={SCOPE_HINT} className="audit-log-scope-header">
-                  Scope <i className="ti ti-info-circle" aria-hidden="true" />
-                </Tooltip>
-              </th>
-              <th scope="col">Actor</th>
-              <th scope="col">IP</th>
-              <th scope="col">Details</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map((entry) => (
-              <tr key={entry.id}>
-                <td className="audit-log-time">
-                  {formatAuditPrimaryTime(entry.created_at)}
-                  {actorLocalTime(entry) && (
-                    <div className="sessions-subdued">{actorLocalTime(entry)}</div>
-                  )}
-                </td>
-                <td>
-                  <Badge variant={actionTone(entry.action_type)}>{actionLabel(entry.action_type)}</Badge>
-                </td>
-                <td>{scopeLabel(entry, eventTitleById)}</td>
-                <td title={actorTitle(entry)}>
-                  {actorDisplay(entry)}
-                  {entry.actor_display_name && entry.actor_email && (
-                    <div className="sessions-subdued">{entry.actor_email}</div>
-                  )}
-                </td>
-                <td>{entry.ip ?? "—"}</td>
-                <td>
-                  <div className="audit-log-details-cell">
-                    <DetailsCell metadata={entry.metadata} />
-                    <button
-                      type="button"
-                      className="audit-log-row-copy"
-                      aria-label="Copy row"
-                      onClick={() => void handleCopyRow(entry)}
-                    >
-                      <i className="ti ti-copy" aria-hidden="true" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <AuditLogTable entries={entries} loading={loading} eventTitleById={eventTitleById} onCopyRow={handleCopyRow} />
     );
   } else {
     // Mobile: one card per entry instead of a horizontally-scrolling table, mirroring
     // AttendeesTable's/ReportsPage's own desktop-table/mobile-card split at the same
     // useIsDesktop() breakpoint.
     listContent = (
-      <div className={`audit-log-cards${loading ? " audit-log-table-wrap--loading" : ""}`}>
-        {entries.map((entry) => (
-          <div key={entry.id} className="audit-log-card">
-            <div className="audit-log-card__top">
-              <Badge variant={actionTone(entry.action_type)}>{actionLabel(entry.action_type)}</Badge>
-              <div className="audit-log-time audit-log-card__time">
-                {formatAuditPrimaryTime(entry.created_at)}
-                {actorLocalTime(entry) && (
-                  <div className="sessions-subdued">{actorLocalTime(entry)}</div>
-                )}
-              </div>
-            </div>
-            <div className="audit-log-card__meta">
-              <span className="audit-log-card__meta-item">
-                <i className="ti ti-calendar-event" aria-hidden="true" />
-                {scopeLabel(entry, eventTitleById)}
-              </span>
-              <span className="audit-log-card__meta-item" title={actorTitle(entry)}>
-                <i className="ti ti-user" aria-hidden="true" />
-                {actorDisplay(entry)}
-              </span>
-              {entry.actor_display_name && entry.actor_email && (
-                <div className="sessions-subdued audit-log-card__email">{entry.actor_email}</div>
-              )}
-            </div>
-            <div className="audit-log-card__foot">
-              <span>{entry.ip ?? "—"}</span>
-              <div className="audit-log-details-cell">
-                <DetailsCell metadata={entry.metadata} />
-                <button
-                  type="button"
-                  className="audit-log-row-copy"
-                  aria-label="Copy row"
-                  onClick={() => void handleCopyRow(entry)}
-                >
-                  <i className="ti ti-copy" aria-hidden="true" />
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+      <AuditLogCards entries={entries} loading={loading} eventTitleById={eventTitleById} onCopyRow={handleCopyRow} />
     );
   }
 

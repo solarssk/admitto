@@ -1596,7 +1596,8 @@ export async function fetchAuditLog(
   if (params.page != null) q.set("page", String(params.page));
   if (params.pageSize != null) q.set("pageSize", String(params.pageSize));
   const qs = q.toString();
-  const res = await fetch(`/api/admin/audit-log${qs ? `?${qs}` : ""}`, {
+  const queryPart = qs ? `?${qs}` : "";
+  const res = await fetch(`/api/admin/audit-log${queryPart}`, {
     credentials: "same-origin",
     signal,
   });

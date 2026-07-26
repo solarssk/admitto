@@ -267,6 +267,7 @@ export function DatePicker({
   const displayError = error ?? parseError;
   const isInvalid = Boolean(displayError);
   const hintContent = hint ? <span className="at-hint">{hint}</span> : null;
+  const calendarToggleLabel = open ? "Close calendar" : "Open calendar";
 
   return (
     <div className="at-field date-picker" ref={containerRef}>
@@ -292,13 +293,7 @@ export function DatePicker({
           type="button"
           className="date-picker__calendar-btn"
           disabled={disabled}
-          aria-label={
-            ariaLabel
-              ? `${ariaLabel}: ${open ? "Close calendar" : "Open calendar"}`
-              : open
-                ? "Close calendar"
-                : "Open calendar"
-          }
+          aria-label={ariaLabel ? `${ariaLabel}: ${calendarToggleLabel}` : calendarToggleLabel}
           aria-expanded={open}
           aria-controls={`${controlId}-panel`}
           onClick={() => {
