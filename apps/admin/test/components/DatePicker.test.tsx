@@ -5,7 +5,42 @@ import { useState } from "react";
 import { DatePicker } from "../../src/components/DatePicker.js";
 import * as eventDates from "../../src/utils/event-dates.js";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
+
+function mockOpenCalendarBasics() {
+  vi.spyOn(eventDates, "todayIsoDate").mockReturnValue("2026-07-02");
+  vi.spyOn(eventDates, "formatCalendarMonth").mockReturnValue("July 2026");
+  vi.spyOn(eventDates, "getWeekdayLabelsShort").mockReturnValue([
+    "Mon",
+    "Tue",
+    "Wed",
+    "Thu",
+    "Fri",
+    "Sat",
+    "Sun",
+  ]);
+  vi.spyOn(eventDates, "formatIsoCalendarDate").mockImplementation((iso) => iso);
+  vi.spyOn(eventDates, "localeDateInputPattern").mockReturnValue("dd.mm.yyyy");
+}
+
+/** Stubs the layout reads DatePicker's placement effect uses - jsdom has no real layout engine,
+ * so getBoundingClientRect/scrollHeight/offsetWidth/innerWidth/innerHeight all default to 0. */
+function mockPlacementLayout(opts: {
+  rect: { top: number; bottom: number; left: number };
+  panelHeight: number;
+  panelWidth: number;
+  innerWidth: number;
+  innerHeight: number;
+}) {
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(opts.rect as DOMRect);
+  vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(opts.panelHeight);
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(opts.panelWidth);
+  vi.spyOn(window, "innerWidth", "get").mockReturnValue(opts.innerWidth);
+  vi.spyOn(window, "innerHeight", "get").mockReturnValue(opts.innerHeight);
+}
 
 describe("DatePicker", () => {
   it("shows placeholder when empty", () => {
@@ -271,5 +306,82 @@ describe("DatePicker", () => {
 
     fireEvent.click(screen.getByRole("gridcell", { name: "2026-08-20" }));
     expect(onChange).toHaveBeenCalledWith("2026-08-20");
+  });
+
+  it("threads ariaLabel to both the input and the calendar toggle button when there's no visible label", () => {
+    vi.spyOn(eventDates, "localeDateInputPattern").mockReturnValue("dd.mm.yyyy");
+    render(<DatePicker value="" onChange={() => {}} ariaLabel="From" placeholder="From (dd/mm/yyyy)" />);
+
+    expect(screen.getByLabelText("From")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "From: Open calendar" })).toBeTruthy();
+  });
+
+  it("right-aligns the calendar panel when the field sits close to the viewport's right edge", async () => {
+    mockOpenCalendarBasics();
+    mockPlacementLayout({
+      rect: { top: 100, bottom: 140, left: 900 },
+      panelHeight: 300,
+      panelWidth: 296,
+      innerWidth: 1024,
+      innerHeight: 768,
+    });
+
+    render(<DatePicker value="" onChange={() => {}} label="Date" />);
+    fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Choose date" });
+    expect(dialog.className).toContain("date-picker__panel--right");
+  });
+
+  it("does not right-align when there's room to the field's right", async () => {
+    mockOpenCalendarBasics();
+    mockPlacementLayout({
+      rect: { top: 100, bottom: 140, left: 50 },
+      panelHeight: 300,
+      panelWidth: 296,
+      innerWidth: 1024,
+      innerHeight: 768,
+    });
+
+    render(<DatePicker value="" onChange={() => {}} label="Date" />);
+    fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Choose date" });
+    expect(dialog.className).not.toContain("date-picker__panel--right");
+  });
+
+  it("clamps the calendar panel's height when neither above nor below has room for it", async () => {
+    mockOpenCalendarBasics();
+    mockPlacementLayout({
+      rect: { top: 50, bottom: 90, left: 50 },
+      panelHeight: 500,
+      panelWidth: 296,
+      innerWidth: 1024,
+      innerHeight: 200,
+    });
+
+    render(<DatePicker value="" onChange={() => {}} label="Date" />);
+    fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Choose date" });
+    expect(dialog.style.maxHeight).toBe("160px");
+    expect(dialog.style.overflowY).toBe("auto");
+  });
+
+  it("does not clamp the panel's height when it fits in the available space", async () => {
+    mockOpenCalendarBasics();
+    mockPlacementLayout({
+      rect: { top: 100, bottom: 140, left: 50 },
+      panelHeight: 300,
+      panelWidth: 296,
+      innerWidth: 1024,
+      innerHeight: 768,
+    });
+
+    render(<DatePicker value="" onChange={() => {}} label="Date" />);
+    fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Choose date" });
+    expect(dialog.style.maxHeight).toBe("");
   });
 });

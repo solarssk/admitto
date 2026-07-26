@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { exportAuditLog, fetchAuditLog } from "../../src/api/client.js";
+import { ApiError, exportAuditLog, fetchAuditLog } from "../../src/api/client.js";
 
 describe("fetchAuditLog (client) — query string building", () => {
   afterEach(() => {
@@ -70,5 +70,35 @@ describe("exportAuditLog (client)", () => {
     const [url] = fetchMock.mock.calls[0]!;
     expect(url).toBe("/api/admin/audit-log/export?action_type=event_created&event_id=evt-1&format=csv");
     expect(clickSpy).toHaveBeenCalledOnce();
+  });
+
+  it("falls back to audit-log.csv when the response has no Content-Disposition header", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      blob: async () => new Blob(["a,b\n1,2"], { type: "text/csv" }),
+      headers: new Headers(),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("URL", { createObjectURL: vi.fn(() => "blob:mock"), revokeObjectURL: vi.fn() });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    let downloadedFilename = "";
+    vi.spyOn(HTMLAnchorElement.prototype, "download", "set").mockImplementation(function (this: unknown, value: string) {
+      downloadedFilename = value;
+    });
+
+    await exportAuditLog({});
+
+    expect(downloadedFilename).toBe("audit-log.csv");
+  });
+
+  it("throws an ApiError with the server message when the export request fails", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 403,
+      json: async () => ({ error: "forbidden" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(exportAuditLog({})).rejects.toBeInstanceOf(ApiError);
   });
 });

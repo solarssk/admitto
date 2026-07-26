@@ -222,6 +222,283 @@ describe("AuditLogPanel rendering", () => {
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
   });
 
+  it("keeps the audit log usable when the background event-list fetch fails", async () => {
+    vi.mocked(fetchAdminEvents).mockRejectedValueOnce(new Error("network error"));
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [makeAuditEntry()],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderWithToast(<AuditLogPanel />);
+
+    const table = await screen.findByRole("table");
+    // Scope can't resolve evt-1's title without the event list, so it falls back the same
+    // way it would for a genuinely deleted event.
+    expect(within(table).getByText("Deleted event")).toBeTruthy();
+  });
+
+  it("renders the actor's own local time as a secondary line under the UTC timestamp", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [makeAuditEntry({ actor_timezone: "Europe/Warsaw", created_at: "2026-06-15T12:00:00.000Z" })],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderWithToast(<AuditLogPanel />);
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("2026-06-15 12:00:00")).toBeTruthy();
+    expect(within(table).getByText(/Warsaw, Poland/)).toBeTruthy();
+  });
+
+  it("humanizes the mail provider metadata value instead of showing the raw enum", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [makeAuditEntry({ action_type: "mail_settings_updated", metadata: { provider: "export_only" } })],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderWithToast(<AuditLogPanel />);
+
+    const table = await screen.findByRole("table");
+    fireEvent.click(within(table).getByText("View"));
+    expect(within(table).getByText("Provider")).toBeTruthy();
+    expect(within(table).getByText("Export only")).toBeTruthy();
+  });
+
+  it("reduces an array of metadata objects to a recognizable identifier per item, falling back to JSON", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [
+        makeAuditEntry({
+          metadata: { event_id: "evt-1", affected: [{ name: "Jane Doe" }, { nothing: "recognizable" }] },
+        }),
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderWithToast(<AuditLogPanel />);
+
+    const table = await screen.findByRole("table");
+    fireEvent.click(within(table).getByText("View"));
+    expect(within(table).getByText('Jane Doe, {"nothing":"recognizable"}')).toBeTruthy();
+  });
+
+  it("formats the remaining metadata value shapes: null, empty array, humanized array items, plain array items, and nested objects", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [
+        makeAuditEntry({
+          metadata: {
+            event_id: "evt-1",
+            note: null,
+            fields_changed: ["fromAddress"],
+            removed_ids: [1, 2],
+            cleared: [],
+            config: { nested: true },
+          },
+        }),
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderWithToast(<AuditLogPanel />);
+
+    const table = await screen.findByRole("table");
+    fireEvent.click(within(table).getByText("View"));
+    expect(within(table).getByText("Note")).toBeTruthy();
+    expect(within(table).getByText("—")).toBeTruthy();
+    expect(within(table).getByText("Fields changed")).toBeTruthy();
+    expect(within(table).getByText("From address")).toBeTruthy();
+    expect(within(table).getByText("Removed ids")).toBeTruthy();
+    expect(within(table).getByText("1, 2")).toBeTruthy();
+    expect(within(table).getByText("Cleared")).toBeTruthy();
+    expect(within(table).getByText("None")).toBeTruthy();
+    expect(within(table).getByText("Config")).toBeTruthy();
+    expect(within(table).getByText('{"nested":true}')).toBeTruthy();
+  });
+
+  it("copies a plain-text row summary (with local time and Details) to the clipboard and toasts on success", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [
+        makeAuditEntry({ actor_timezone: "Europe/Warsaw", metadata: { event_id: "evt-1", note: "hello" } }),
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+    const originalClipboard = navigator.clipboard;
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    try {
+      renderWithToast(<AuditLogPanel />);
+      const table = await screen.findByRole("table");
+      fireEvent.click(within(table).getByRole("button", { name: "Copy row" }));
+
+      expect(writeText).toHaveBeenCalledTimes(1);
+      const [summary] = writeText.mock.calls[0]!;
+      expect(summary).toContain("Action: Event created");
+      expect(summary).toContain("Actor: Alice Admin (alice@example.com)");
+      expect(summary).toMatch(/Time: 2026-01-01 12:00:00 UTC \(.*Warsaw, Poland.*\)/);
+      expect(summary).toContain("Details:");
+      expect(summary).toContain("Note: hello");
+      expect(await screen.findByText("Row copied to clipboard")).toBeTruthy();
+    } finally {
+      Object.assign(navigator, { clipboard: originalClipboard });
+    }
+  });
+
+  it("toasts an error when copying a row fails", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [
+        makeAuditEntry({ actor_display_name: null, actor_email: null, ip: null }),
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+    const originalClipboard = navigator.clipboard;
+    const writeText = vi.fn().mockRejectedValue(new Error("denied"));
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    try {
+      renderWithToast(<AuditLogPanel />);
+      const table = await screen.findByRole("table");
+      fireEvent.click(within(table).getByRole("button", { name: "Copy row" }));
+
+      expect(await screen.findByText("Could not copy — clipboard access was blocked.")).toBeTruthy();
+    } finally {
+      Object.assign(navigator, { clipboard: originalClipboard });
+    }
+  });
+
+  it("renders one card per entry on mobile instead of a table, with a working copy-row action", async () => {
+    mockMatchMedia(false);
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [
+        makeAuditEntry({ actor_timezone: "Europe/Warsaw" }),
+        makeAuditEntry({ id: "audit-2", actor_display_name: null, actor_email: null, ip: null }),
+      ],
+      total: 2,
+      page: 1,
+      pageSize: 25,
+    });
+    const originalClipboard = navigator.clipboard;
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    try {
+      renderWithToast(<AuditLogPanel />);
+
+      await screen.findAllByText("Event created");
+      expect(screen.queryByRole("table")).toBeNull();
+      const cards = document.querySelectorAll(".audit-log-card");
+      expect(cards).toHaveLength(2);
+      const firstCard = cards[0] as HTMLElement;
+      expect(within(firstCard).getByText("Alice Admin")).toBeTruthy();
+      expect(within(firstCard).getByText(/Warsaw, Poland/)).toBeTruthy();
+      expect(within(firstCard).getByText("alice@example.com")).toBeTruthy();
+      const secondCard = cards[1] as HTMLElement;
+      expect(within(secondCard).getByText("Deleted user")).toBeTruthy();
+
+      fireEvent.click(within(firstCard).getByRole("button", { name: "Copy row" }));
+      expect(writeText).toHaveBeenCalledTimes(1);
+    } finally {
+      Object.assign(navigator, { clipboard: originalClipboard });
+    }
+  });
+
+  it("debounces the search box before refetching with the trimmed term", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByText("No audit log entries yet");
+
+    vi.useFakeTimers();
+    fireEvent.change(screen.getByPlaceholderText("Search actor or event…"), { target: { value: "jane" } });
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    vi.useRealTimers();
+
+    await waitFor(() =>
+      expect(fetchAuditLog).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: "jane" }),
+        expect.anything(),
+      ),
+    );
+  });
+
+  it("clears the search box and refocuses it via the Clear search button", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByText("No audit log entries yet");
+
+    const searchInput = screen.getByPlaceholderText("Search actor or event…") as HTMLInputElement;
+    fireEvent.change(searchInput, { target: { value: "jane" } });
+    expect(searchInput.value).toBe("jane");
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+
+    expect(searchInput.value).toBe("");
+    expect(document.activeElement).toBe(searchInput);
+  });
+
+  it("sorts the Event filter dropdown alphabetically regardless of fetch order", async () => {
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([
+      makeEvent({ id: "evt-z", title: "Zebra Kickoff" }),
+      makeEvent({ id: "evt-a", title: "Alpha Summit" }),
+    ]);
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByText("No audit log entries yet");
+
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    const scopeSelect = await screen.findByRole("combobox", { name: "Event" });
+    const optionLabels = within(scopeSelect)
+      .getAllByRole("option")
+      .map((option) => option.textContent);
+    expect(optionLabels).toEqual(["All events", "Alpha Summit", "Zebra Kickoff"]);
+  });
+
+  it("flips the Details popover above the trigger when there's no room below", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [makeAuditEntry({ metadata: { event_id: "evt-1", note: "hello" } })],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue({ top: 700, bottom: 720, right: 300, left: 260, width: 40, height: 20 } as DOMRect);
+    const innerHeightSpy = vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
+    const innerWidthSpy = vi.spyOn(window, "innerWidth", "get").mockReturnValue(1024);
+
+    try {
+      renderWithToast(<AuditLogPanel />);
+      const table = await screen.findByRole("table");
+      fireEvent.click(within(table).getByText("View"));
+
+      const panel = document.querySelector(".audit-log-details__panel") as HTMLElement;
+      expect(panel.style.bottom).not.toBe("");
+      expect(panel.style.top).toBe("");
+    } finally {
+      rectSpy.mockRestore();
+      innerHeightSpy.mockRestore();
+      innerWidthSpy.mockRestore();
+    }
+  });
+
   it("shows an explanatory tooltip on the Scope column header", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue({
       entries: [makeAuditEntry()],
@@ -562,10 +839,25 @@ describe("AuditLogPanel rendering", () => {
 
   it("exports the current filters as CSV and toasts on failure", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
-    vi.mocked(exportAuditLog).mockResolvedValueOnce(undefined).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    vi.mocked(exportAuditLog)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new ApiError(500, "secret_internal"));
 
     renderWithToast(<AuditLogPanel />);
     await screen.findByText("No audit log entries yet");
+
+    // With no filters active yet, every optional export param is omitted.
+    fireEvent.click(screen.getByRole("button", { name: "Export CSV" }));
+    await waitFor(() =>
+      expect(exportAuditLog).toHaveBeenNthCalledWith(1, {
+        actionType: undefined,
+        eventId: undefined,
+        search: undefined,
+        start: undefined,
+        end: undefined,
+      }),
+    );
 
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
     fireEvent.change(screen.getByRole("combobox", { name: "Action" }), {

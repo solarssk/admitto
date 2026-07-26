@@ -312,6 +312,36 @@ describe("GET /api/admin/audit-log", () => {
     expect(types).toEqual(["mail_settings_updated", "system_settings_updated"]);
   });
 
+  it("filters by start alone (no end bound)", async () => {
+    const res = await app.request("/api/admin/audit-log?start=2026-07-01", {
+      headers: { Cookie: superCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { entries: { action_type: string }[]; total: number };
+    const types = body.entries.map((e) => e.action_type).sort();
+    expect(types).toEqual(["event_archived", "event_created", "event_updated"]);
+  });
+
+  it("ignores an unparseable date bound", async () => {
+    const res = await app.request("/api/admin/audit-log?start=not-a-real-date", {
+      headers: { Cookie: superCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { total: number };
+    expect(body.total).toBe(6);
+  });
+
+  it("accepts a full ISO instant (with time) as a date bound, used as-is", async () => {
+    const res = await app.request(
+      "/api/admin/audit-log?start=2026-06-15T12:00:00.000Z&end=2026-06-15T12:00:00.000Z",
+      { headers: { Cookie: superCookie } },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { entries: { action_type: string }[]; total: number };
+    expect(body.total).toBe(1);
+    expect(body.entries[0]?.action_type).toBe("session_revoked");
+  });
+
   it("includes midday entry when end equals that calendar day", async () => {
     const res = await app.request("/api/admin/audit-log?end=2026-06-20", {
       headers: { Cookie: superCookie },
@@ -381,6 +411,15 @@ describe("GET /api/admin/audit-log", () => {
 
   it("ignores invalid calendar date filters", async () => {
     const res = await app.request("/api/admin/audit-log?start=2026-02-30&end=2026-02-30", {
+      headers: { Cookie: superCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { total: number };
+    expect(body.total).toBe(6);
+  });
+
+  it("ignores a date filter with a zero calendar component (e.g. month 00)", async () => {
+    const res = await app.request("/api/admin/audit-log?start=2026-00-15", {
       headers: { Cookie: superCookie },
     });
     expect(res.status).toBe(200);
@@ -466,5 +505,41 @@ describe("GET /api/admin/audit-log/export", () => {
     expect(lines).toHaveLength(2);
     expect(lines[1]).toContain('"event_updated"');
     expect(lines[1]).toContain('"evt-2"');
+  });
+
+  it("exports a deleted actor's raw id and an empty details cell for null metadata", async () => {
+    const ghostId = "ghost-actor-export-test";
+    await prisma.user.create({
+      data: { id: ghostId, email: "ghost-export@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    await prisma.adminAuditLog.create({
+      data: {
+        organization_id: ORG_AUDIT,
+        actor_user_id: ghostId,
+        action_type: "emergency_session_purge",
+        ip: "1.2.3.9",
+        metadata: undefined,
+      },
+    });
+    await prisma.user.delete({ where: { id: ghostId } });
+
+    const res = await app.request("/api/admin/audit-log/export?format=csv&action_type=emergency_session_purge", {
+      headers: { Cookie: superCookie },
+    });
+    expect(res.status).toBe(200);
+    const lines = (await res.text()).split("\r\n");
+    expect(lines).toHaveLength(2);
+    // Row is [time, action, scope, actor, ip, details]; time is a fresh, non-deterministic
+    // timestamp, so compare everything else positionally instead of the whole line.
+    const cells = lines[1]!.split(",");
+    expect(cells[1]).toBe('"emergency_session_purge"');
+    expect(cells[2]).toBe('"Instance"');
+    expect(cells[3]).toBe(`"${ghostId}"`);
+    expect(cells[4]).toBe('"1.2.3.9"');
+    expect(cells[5]).toBe('""');
+
+    await prisma.adminAuditLog.deleteMany({
+      where: { actor_user_id: ghostId, organization_id: ORG_AUDIT },
+    });
   });
 });
