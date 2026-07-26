@@ -990,6 +990,32 @@ describe("SystemLogsPanel rendering", () => {
     expect(screen.getByText("Showing 1 line")).toBeTruthy();
   });
 
+  it("renders an entry's fields alongside its message, for entries that have them", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+    vi.mocked(fetchSystemLogs).mockResolvedValueOnce({
+      entries: [
+        {
+          id: 1,
+          ts: "2026-01-01T12:00:00.000Z",
+          level: "info",
+          source: "admin",
+          message: "event_archived",
+          fields: { eventId: "evt-1", actorUserId: "user-1", ip: "1.2.3.4" },
+        },
+      ],
+      cursor: 1,
+    });
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByText("No audit log entries yet");
+    openSystemLogsView();
+
+    await screen.findByText("event_archived");
+    expect(
+      screen.getByText((_, node) => node?.textContent === '{"eventId":"evt-1","actorUserId":"user-1","ip":"1.2.3.4"}'),
+    ).toBeTruthy();
+  });
+
   it("hosts Live/Download in the Card header, next to the System/Audit toggle", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
     vi.mocked(fetchSystemLogs).mockResolvedValueOnce({

@@ -3,7 +3,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { canManageInstance } from "@admitto/auth";
 import { EXPORT_ROW_CAP, quoteCsvCell, sanitizeCsvCell, writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog } from "@admitto/shared/system-log";
-import { adminAuditFromContext, positiveIntQuery } from "./admin-helpers.js";
+import { adminAuditFromContext, positiveIntQuery, resolveActorEmailForLog } from "./admin-helpers.js";
 import { attachmentContentDisposition } from "./content-disposition.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 
@@ -234,16 +234,22 @@ export async function handleExportAuditLog(c: Context, db: PrismaClient): Promis
   const csv = buildAuditLogCsv(rows, actorMap);
 
   const audit = adminAuditFromContext(c);
+  const actorUserId = audit.operator ?? c.get("auth").userId;
   await writeAdminAuditLog(db, {
     organizationId: orgId,
-    actorUserId: audit.operator ?? c.get("auth").userId,
+    actorUserId,
     sessionId: audit.sessionId,
     ip: audit.ip,
     timezone: audit.timezone,
     actionType: "audit_log_exported",
     metadata: { rowCount: rows.length },
   });
-  emitSystemLog("admin", "info", "audit_log_exported", { rowCount: rows.length });
+  emitSystemLog("admin", "info", "audit_log_exported", {
+    rowCount: rows.length,
+    actorUserId,
+    actorEmail: await resolveActorEmailForLog(db, actorUserId),
+    ip: audit.ip,
+  });
 
   const timestamp = new Date().toISOString().slice(0, 10);
   // BOM so Excel detects UTF-8 - actor display names and JSON `details` values can carry

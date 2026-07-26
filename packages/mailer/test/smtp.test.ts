@@ -181,6 +181,17 @@ describe("SmtpAdapter", () => {
     expect(res.retryable).toBe(false);
     expect(res.error).toMatch(/private, loopback, or link-local/);
     expect(sendMail).not.toHaveBeenCalled();
+
+    const logs = querySystemLogs({ source: "security" });
+    expect(
+      logs.some(
+        (entry) =>
+          entry.message === "mail_destination_blocked" &&
+          entry.level === "warn" &&
+          typeof entry.fields?.error === "string" &&
+          (entry.fields.error as string).match(/private, loopback, or link-local/),
+      ),
+    ).toBe(true);
   });
 
   it("falls back to a generic message when the destination guard throws a non-Error", async () => {

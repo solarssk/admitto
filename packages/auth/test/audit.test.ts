@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, afterEach } from "vitest";
+import { describe, expect, it, vi, afterEach, beforeEach } from "vitest";
 import {
   emitAuditEvent,
   fingerprint,
@@ -7,10 +7,33 @@ import {
   logRateLimitExceeded,
   redactEmail,
 } from "../src/audit.js";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
 describe("audit", () => {
+  beforeEach(() => {
+    resetSystemLogBufferForTest();
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("also records into the System logs buffer under the security source", () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    logRateLimitExceeded({ scope: "login_ip", ip: "10.0.0.1" });
+    const entries = querySystemLogs({ source: "security" });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.message).toBe("auth.rate_limit.exceeded");
+    expect(entries[0]?.level).toBe("warn");
+    expect(entries[0]?.fields).toMatchObject({ scope: "login_ip", ip: "10.0.0.1" });
+  });
+
+  it("records a successful event at info level", () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    logLoginSuccess({ email: "bob@example.com", ip: "1.2.3.4" });
+    const entries = querySystemLogs({ source: "security" });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.level).toBe("info");
   });
 
   it("redacts email local part", () => {

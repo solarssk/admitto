@@ -9,7 +9,7 @@
  */
 
 export type SystemLogLevel = "info" | "warn" | "error";
-export type SystemLogSource = "api" | "db" | "cache" | "mail" | "admin";
+export type SystemLogSource = "api" | "db" | "cache" | "mail" | "admin" | "security";
 
 export interface SystemLogEntry {
   id: number;

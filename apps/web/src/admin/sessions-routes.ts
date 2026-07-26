@@ -7,7 +7,13 @@ import {
   runInTransaction,
 } from "@admitto/auth";
 import { writeAdminAuditLog } from "@admitto/tickets";
-import { adminAuditFromContext, assertEventManageAccess } from "./admin-helpers.js";
+import { emitSystemLog } from "@admitto/shared/system-log";
+import { redactEmail } from "@admitto/shared";
+import {
+  adminAuditFromContext,
+  assertEventManageAccess,
+  resolveActorEmailForLog,
+} from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 
 async function requireSuperadmin(c: Context, db: PrismaClient): Promise<Response | null> {
@@ -81,11 +87,15 @@ export async function handleRevokeSession(c: Context, db: PrismaClient): Promise
     return c.json({ code: "cannot_revoke_own_session" }, 403);
   }
 
-  const row = await db.session.findUnique({ where: { id }, select: { user_id: true } });
+  const row = await db.session.findUnique({
+    where: { id },
+    select: { user_id: true, user: { select: { email: true } } },
+  });
   if (!row) return c.json({}, 200);
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
+  const actorUserId = audit.operator ?? c.get("auth").userId;
   await runInTransaction(db, async (tx) => {
     // Re-check inside the transaction: two concurrent revoke calls (or a retry after the
     // first already succeeded) can both reach here before either commits. Only the one that
@@ -94,12 +104,20 @@ export async function handleRevokeSession(c: Context, db: PrismaClient): Promise
     if (!revoked) return;
     await writeAdminAuditLog(tx, {
       organizationId: orgId,
-      actorUserId: audit.operator ?? c.get("auth").userId,
+      actorUserId,
       sessionId: audit.sessionId,
       ip: audit.ip,
       timezone: audit.timezone,
       actionType: "session_revoked",
       metadata: { session_id: id, target_user_id: row.user_id },
+    });
+    emitSystemLog("security", "info", "session_revoked", {
+      sessionId: id,
+      targetUserId: row.user_id,
+      targetEmail: redactEmail(row.user.email),
+      actorUserId,
+      actorEmail: await resolveActorEmailForLog(tx, actorUserId),
+      ip: audit.ip,
     });
   });
 
@@ -123,14 +141,24 @@ export async function handleRevokeAllOperatorSessions(
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
+  const actorUserId = audit.operator ?? c.get("auth").userId;
+  const event = await db.event.findUnique({ where: { id: eventId }, select: { title: true } });
   await writeAdminAuditLog(db, {
     organizationId: orgId,
-    actorUserId: audit.operator ?? c.get("auth").userId,
+    actorUserId,
     sessionId: audit.sessionId,
     ip: audit.ip,
     timezone: audit.timezone,
     actionType: "operator_sessions_bulk_revoked",
     metadata: { eventId, revokedCount },
+  });
+  emitSystemLog("security", "info", "operator_sessions_bulk_revoked", {
+    eventId,
+    eventTitle: event?.title ?? null,
+    revokedCount,
+    actorUserId,
+    actorEmail: await resolveActorEmailForLog(db, actorUserId),
+    ip: audit.ip,
   });
 
   return c.json({ revokedCount });

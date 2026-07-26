@@ -10,6 +10,8 @@ import {
 import { rejectedSendResult } from "../adapterUtils.js";
 import { validateMailMessage } from "../validation.js";
 import type { FetchFn, MailMessage, MailerAdapter, SendResult } from "../types.js";
+import { emitSystemLog } from "@admitto/shared/system-log";
+import { redactEmail } from "@admitto/shared";
 
 /**
  * Microsoft Graph — app-only send (client credentials flow).
@@ -111,6 +113,7 @@ export class GraphAdapter implements MailerAdapter {
 
     const tokenResult = await this.acquireToken(base);
     if (!tokenResult.ok) {
+      emitSystemLog("mail", "error", "mail_send_failed", { provider: this.provider, error: tokenResult.result.error });
       return tokenResult.result;
     }
 
@@ -134,6 +137,7 @@ export class GraphAdapter implements MailerAdapter {
 
       if (res.status === 202) {
         const requestId = res.headers.get("request-id") ?? undefined;
+        emitSystemLog("mail", "info", "mail_sent", { provider: this.provider, to: redactEmail(message.to) });
         return {
           status: "accepted",
           provider: this.provider,
@@ -142,14 +146,18 @@ export class GraphAdapter implements MailerAdapter {
         };
       }
 
-      return await this.buildSendErrorResult(base, res);
+      const errorResult = await this.buildSendErrorResult(base, res);
+      emitSystemLog("mail", "error", "mail_send_failed", { provider: this.provider, error: errorResult.error });
+      return errorResult;
     } catch (e) {
       const mapped = mapNetworkError();
+      const error = e instanceof Error ? e.message : String(e);
+      emitSystemLog("mail", "error", "mail_send_failed", { provider: this.provider, error });
       return {
         ...base,
         status: mapped.status,
         retryable: mapped.retryable,
-        error: e instanceof Error ? e.message : String(e),
+        error,
       };
     }
   }

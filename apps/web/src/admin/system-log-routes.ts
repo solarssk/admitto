@@ -9,7 +9,7 @@ import {
 import { positiveIntQuery, requireSuperadmin } from "./admin-helpers.js";
 
 const VALID_LEVELS = new Set<SystemLogLevel>(["info", "warn", "error"]);
-const VALID_SOURCES = new Set<SystemLogSource>(["api", "db", "cache", "mail", "admin"]);
+const VALID_SOURCES = new Set<SystemLogSource>(["api", "db", "cache", "mail", "admin", "security"]);
 
 /**
  * GET /api/admin/system-logs — live tail of the in-memory system-log buffer (see

@@ -34,6 +34,7 @@ import {
   requireAuditActor,
   requireEventId,
   requireSuperadmin,
+  resolveActorEmailForLog,
 } from "./admin-helpers.js";
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
@@ -133,7 +134,7 @@ export async function deleteEvent(
 
       const event = await tx.event.findUnique({
         where: { id: eventId },
-        select: { archived_at: true, pinned_note: true, organization_id: true },
+        select: { archived_at: true, pinned_note: true, organization_id: true, title: true },
       });
       if (!event) return { code: "not_found" };
 
@@ -163,7 +164,13 @@ export async function deleteEvent(
         actionType: "event_deleted",
         metadata: { eventId },
       });
-      emitSystemLog("admin", "info", "event_deleted", { eventId });
+      emitSystemLog("admin", "info", "event_deleted", {
+        eventId,
+        eventTitle: event.title,
+        actorUserId: actor.userId,
+        actorEmail: await resolveActorEmailForLog(tx, actor.userId),
+        ip,
+      });
       return { ok: true };
     });
   } catch (err) {
@@ -179,7 +186,7 @@ export async function deleteEvent(
       level: "error",
       source: "admin",
       message: "event_deleted transaction failed",
-      fields: { eventId },
+      fields: { eventId, actorUserId: actor.userId, ip },
     });
     return { code: "audit_failed" };
   }

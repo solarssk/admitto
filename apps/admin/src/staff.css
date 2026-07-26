@@ -4603,7 +4603,10 @@ select.system-log-panel__field {
 }
 
 .system-log-panel__console {
-  height: 22rem;
+  /* Scales with the viewport instead of a fixed 22rem - stayed a fixed size regardless of
+     screen height, leaving a lot of empty space below on a tall monitor and feeling cramped
+     on a short one. Bounded on both ends so it's never unusably small or absurdly tall. */
+  height: clamp(20rem, 60vh, 42rem);
   overflow-y: auto;
   padding: var(--space-3);
   border-radius: var(--radius-md);
@@ -4613,12 +4616,46 @@ select.system-log-panel__field {
   line-height: var(--lh-normal);
 }
 
+/* Loading/error/no-activity states render inside this same dark shell (not a separate light
+   EmptyState card) so the console's background and height stay constant no matter what it's
+   showing - Clear view in particular used to swap the whole console out for a differently-sized
+   light card, which read as the panel breaking rather than a deliberately cleared terminal. */
+.system-log-panel__console-empty {
+  padding-top: var(--space-6, 3rem);
+  color: var(--at-gray-500);
+  text-align: center;
+}
+
+.system-log-panel__console-empty--error {
+  color: var(--at-red);
+}
+
 .system-log-panel__line {
   display: flex;
-  gap: var(--space-2);
+  flex-wrap: wrap;
+  /* row-gap (message -> wrapped fields, within one entry) is 0 - the header row and the fields
+     row should read as one continuous block, wrapping the same way plain paragraph text would,
+     with no deliberate gap of its own. Entry -> next entry separation comes entirely from
+     padding-block below. column-gap (time/level/source/message, same row) is unaffected. */
+  column-gap: var(--space-2);
+  row-gap: 0;
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--at-gray-300);
+  /* Tighter than --space-2 - with row-gap now 0 inside an entry, an 8px top+8px bottom (16px
+     total between entries) read as too wide a jump relative to the now-flush header/fields
+     rows. 4px+4px (8px total) still reads as a clear break, just not an oversized one. */
+  padding-block: var(--space-1);
+}
+
+/* Alternating row background separates entries without a hard rule across the console - the
+   time column and the previous entry's fields line are both a similar muted gray, so on a
+   multi-line entry (message + wrapped fields) it was hard to tell where one entry ended and the
+   next began without some separation, on mobile and desktop alike. A border-top divider was
+   tried first and looked too much like a grid of rules; a soft stripe reads as a terminal/log
+   viewer instead. */
+.system-log-panel__line:nth-child(even) {
+  background: rgb(255 255 255 / 4%);
 }
 
 .system-log-panel__time {
@@ -4653,6 +4690,25 @@ select.system-log-panel__field {
 .system-log-panel__message {
   flex: 1 1 auto;
   color: #fff;
+}
+
+/* Always its own full-width line (flex-basis 100% forces a wrap onto the next flex row)
+   regardless of how long the message text is - previously this only wrapped once the combined
+   message+fields text overflowed the line, so where the JSON started depended on the message's
+   own length and looked inconsistent from one entry to the next. */
+.system-log-panel__fields {
+  flex: 1 1 100%;
+  color: var(--at-gray-500);
+}
+
+@media (max-width: 767px) {
+  /* On a narrow viewport the fixed-width time/level/source columns leave almost no room for the
+     message - word-break then breaks it into unreadable 1-2 character fragments. Forcing the
+     message onto its own full-width line (fields already do this) gives it the whole viewport
+     width to wrap normally instead. */
+  .system-log-panel__message {
+    flex: 1 1 100%;
+  }
 }
 
 .system-log-panel__footer {

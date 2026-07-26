@@ -7,7 +7,9 @@ import { rejectedSendResult } from "../adapterUtils.js";
 import { resolveReplyTo } from "../senderUtils.js";
 import { validateMailMessage } from "../validation.js";
 import { resolveSafeMailDestination } from "../ssrfGuard.js";
-import type { FetchFn, MailMessage, MailerAdapter, SendResult } from "../types.js";
+import { isSendSuccess, type FetchFn, type MailMessage, type MailerAdapter, type SendResult } from "../types.js";
+import { emitSystemLog } from "@admitto/shared/system-log";
+import { redactEmail } from "@admitto/shared";
 
 /**
  * Pin the outbound connection to an already-validated address (see ssrfGuard.ts) while
@@ -83,11 +85,9 @@ export class PowerAutomateAdapter implements MailerAdapter {
     try {
       records = await resolveSafeMailDestination(hostname);
     } catch (e) {
-      return rejectedSendResult(
-        this.provider,
-        e instanceof Error ? e.message : "mail transport destination is not permitted",
-        message.idempotencyKey,
-      );
+      const error = e instanceof Error ? e.message : "mail transport destination is not permitted";
+      emitSystemLog("security", "warn", "mail_destination_blocked", { provider: this.provider, error });
+      return rejectedSendResult(this.provider, error, message.idempotencyKey);
     }
 
     const base: SendResult = {
@@ -148,14 +148,21 @@ export class PowerAutomateAdapter implements MailerAdapter {
             { method: "POST", headers, body },
             processResponse,
           );
+      if (isSendSuccess(result.status)) {
+        emitSystemLog("mail", "info", "mail_sent", { provider: this.provider, to: redactEmail(message.to) });
+      } else {
+        emitSystemLog("mail", "error", "mail_send_failed", { provider: this.provider, error: result.error });
+      }
       return result;
     } catch (e) {
       const mapped = mapNetworkError();
+      const error = e instanceof Error ? e.message : String(e);
+      emitSystemLog("mail", "error", "mail_send_failed", { provider: this.provider, error });
       return {
         ...base,
         status: mapped.status,
         retryable: mapped.retryable,
-        error: e instanceof Error ? e.message : String(e),
+        error,
       };
     }
   }

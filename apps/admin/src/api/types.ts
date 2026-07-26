@@ -912,7 +912,7 @@ export interface SystemLogEntryDto {
   id: number;
   ts: string;
   level: "info" | "warn" | "error";
-  source: "api" | "db" | "cache" | "mail" | "admin";
+  source: "api" | "db" | "cache" | "mail" | "admin" | "security";
   message: string;
   fields?: Record<string, unknown>;
 }

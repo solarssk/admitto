@@ -85,9 +85,11 @@ export class SmtpAdapter implements MailerAdapter {
     try {
       await assertSafeMailDestination(this.config.host);
     } catch (e) {
+      const error = e instanceof Error ? e.message : "mail transport destination is not permitted";
+      emitSystemLog("security", "warn", "mail_destination_blocked", { provider: this.provider, error });
       return rejectedSendResult(
         this.provider,
-        e instanceof Error ? e.message : "mail transport destination is not permitted",
+        error,
         message.idempotencyKey,
       );
     }

@@ -17,6 +17,7 @@ import {
   requireAuditActor,
   requireEventId,
   requireSuperadmin,
+  resolveActorEmailForLog,
 } from "./admin-helpers.js";
 
 /** Result of attempting to archive an event (domain layer, no HTTP). */
@@ -50,7 +51,7 @@ export async function archiveEvent(
 
       const event = await tx.event.findUnique({
         where: { id: eventId },
-        select: { organization_id: true },
+        select: { organization_id: true, title: true },
       });
       if (!event) throw new Error("event missing after archive update");
 
@@ -63,7 +64,7 @@ export async function archiveEvent(
         actionType: "event_archived",
         metadata: { eventId },
       });
-      return { kind: "ok" as const };
+      return { kind: "ok" as const, eventTitle: event.title };
     });
 
     if (outcome.kind === "no_transition") {
@@ -71,7 +72,13 @@ export async function archiveEvent(
       if (!exists) return { code: "not_found" };
       return { code: "already_archived" };
     }
-    emitSystemLog("admin", "info", "event_archived", { eventId });
+    emitSystemLog("admin", "info", "event_archived", {
+      eventId,
+      eventTitle: outcome.eventTitle,
+      actorUserId: actor.userId,
+      actorEmail: await resolveActorEmailForLog(db, actor.userId),
+      ip,
+    });
     return { ok: true };
   } catch (err) {
     console.error("[audit] event_archived transaction failed", err);
@@ -79,7 +86,7 @@ export async function archiveEvent(
       level: "error",
       source: "admin",
       message: "event_archived transaction failed",
-      fields: { eventId },
+      fields: { eventId, actorUserId: actor.userId, ip },
     });
     return { code: "audit_failed" };
   }
@@ -104,7 +111,7 @@ export async function unarchiveEvent(
 
       const event = await tx.event.findUnique({
         where: { id: eventId },
-        select: { organization_id: true },
+        select: { organization_id: true, title: true },
       });
       if (!event) throw new Error("event missing after unarchive update");
 
@@ -117,7 +124,7 @@ export async function unarchiveEvent(
         actionType: "event_unarchived",
         metadata: { eventId },
       });
-      return { kind: "ok" as const };
+      return { kind: "ok" as const, eventTitle: event.title };
     });
 
     if (outcome.kind === "no_transition") {
@@ -125,7 +132,13 @@ export async function unarchiveEvent(
       if (!exists) return { code: "not_found" };
       return { code: "not_archived" };
     }
-    emitSystemLog("admin", "info", "event_unarchived", { eventId });
+    emitSystemLog("admin", "info", "event_unarchived", {
+      eventId,
+      eventTitle: outcome.eventTitle,
+      actorUserId: actor.userId,
+      actorEmail: await resolveActorEmailForLog(db, actor.userId),
+      ip,
+    });
     return { ok: true };
   } catch (err) {
     console.error("[audit] event_unarchived transaction failed", err);
@@ -133,7 +146,7 @@ export async function unarchiveEvent(
       level: "error",
       source: "admin",
       message: "event_unarchived transaction failed",
-      fields: { eventId },
+      fields: { eventId, actorUserId: actor.userId, ip },
     });
     return { code: "audit_failed" };
   }

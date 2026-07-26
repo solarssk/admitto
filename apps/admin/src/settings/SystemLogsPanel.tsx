@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
-import { Button, EmptyState, useToast } from "@admitto/ui";
+import { Button, useToast } from "@admitto/ui";
 import { fetchSystemLogs } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { SystemLogEntryDto } from "../api/types.js";
@@ -19,6 +19,7 @@ const SOURCE_LABELS: Record<SystemLogEntryDto["source"], string> = {
   cache: "Cache",
   mail: "Mail",
   admin: "Admin",
+  security: "Security",
 };
 
 // No "Debug" option - nothing in this app ever logs at that level, so a filter option for it
@@ -29,16 +30,20 @@ const LEVEL_LABELS: Record<SystemLogEntryDto["level"], string> = {
   error: "Error",
 };
 
-/** "14:02:11.402" in the viewer's own local time - a live tail is read in the moment, unlike
- * the audit log's UTC-primary convention for a durable historical record. */
+/** "14:02:11.402 UTC" - UTC, not the viewer's local time, so a line means the same instant no
+ * matter who's looking or where the server runs (an operator in India, a server in Poland, a
+ * viewer in the US would otherwise each see a different clock for the same event). Also matches
+ * the ISO timestamp already written to stdout and the Audit log's own UTC-primary convention, so
+ * a live-tail line can be correlated with `docker logs` without a timezone conversion. */
 function formatLogTime(iso: string): string {
   const d = new Date(iso);
   const pad = (n: number, len = 2) => String(n).padStart(len, "0");
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
+  return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}.${pad(d.getUTCMilliseconds(), 3)} UTC`;
 }
 
 function formatLogLine(entry: SystemLogEntryDto): string {
-  return `${formatLogTime(entry.ts)}  ${LEVEL_LABELS[entry.level].toUpperCase()}  ${SOURCE_LABELS[entry.source]}  ${entry.message}`;
+  const base = `${formatLogTime(entry.ts)}  ${LEVEL_LABELS[entry.level].toUpperCase()}  ${SOURCE_LABELS[entry.source]}  ${entry.message}`;
+  return entry.fields && Object.keys(entry.fields).length > 0 ? `${base}  ${JSON.stringify(entry.fields)}` : base;
 }
 
 function downloadTextFile(filename: string, content: string): void {
@@ -312,28 +317,39 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
         )}
       </div>
 
-      {showLoadingState && entries.length === 0 ? (
-        <EmptyState title="Loading system logs…" />
-      ) : error ? (
-        <EmptyState title="Could not load system logs" description={error} />
-      ) : entries.length === 0 ? (
-        <EmptyState
-          icon={<i className="ti ti-terminal-2" aria-hidden="true" />}
-          title="No log activity yet"
-          description="Activity across the API, database, cache, mail transport, and admin actions will appear here as it happens."
-        />
-      ) : (
-        <div ref={consoleRef} className="system-log-panel__console" role="log" aria-live="off">
-          {entries.map((entry) => (
+      {/* Always renders this same dark shell, at the same height, regardless of content -
+          Clear view (which empties `entries`) used to swap the whole console out for a
+          plain light EmptyState card at a different height, which read as the panel itself
+          breaking rather than a deliberately cleared terminal. */}
+      <div ref={consoleRef} className="system-log-panel__console" role="log" aria-live="off">
+        {showLoadingState && entries.length === 0 ? (
+          <div className="system-log-panel__console-empty">Loading system logs…</div>
+        ) : error ? (
+          <div className="system-log-panel__console-empty system-log-panel__console-empty--error">
+            Could not load system logs: {error}
+          </div>
+        ) : entries.length === 0 ? (
+          <div className="system-log-panel__console-empty">
+            <p className="system-log-panel__console-empty-title">No log activity yet</p>
+            <p className="system-log-panel__console-empty-desc">
+              Activity across the API, database, cache, mail transport, and admin actions will appear here as it
+              happens.
+            </p>
+          </div>
+        ) : (
+          entries.map((entry) => (
             <div key={entry.id} className={`system-log-panel__line system-log-panel__line--${entry.level}`}>
               <span className="system-log-panel__time">{formatLogTime(entry.ts)}</span>
               <span className="system-log-panel__level">{LEVEL_LABELS[entry.level].toUpperCase()}</span>
               <span className="system-log-panel__source">{SOURCE_LABELS[entry.source]}</span>
               <span className="system-log-panel__message">{entry.message}</span>
+              {entry.fields && Object.keys(entry.fields).length > 0 && (
+                <span className="system-log-panel__fields">{JSON.stringify(entry.fields)}</span>
+              )}
             </div>
-          ))}
-        </div>
-      )}
+          ))
+        )}
+      </div>
 
       <div className="system-log-panel__footer">
         <span className="system-log-panel__count">{`Showing ${entries.length} line${entries.length === 1 ? "" : "s"}`}</span>
