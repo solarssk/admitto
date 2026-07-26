@@ -322,15 +322,6 @@ describe("GET /api/admin/audit-log", () => {
     expect(types).toEqual(["event_archived", "event_created", "event_updated"]);
   });
 
-  it("ignores an unparseable date bound", async () => {
-    const res = await app.request("/api/admin/audit-log?start=not-a-real-date", {
-      headers: { Cookie: superCookie },
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { total: number };
-    expect(body.total).toBe(6);
-  });
-
   it("accepts a full ISO instant (with time) as a date bound, used as-is", async () => {
     const res = await app.request(
       "/api/admin/audit-log?start=2026-06-15T12:00:00.000Z&end=2026-06-15T12:00:00.000Z",
@@ -409,17 +400,12 @@ describe("GET /api/admin/audit-log", () => {
     expect(body.pageSize).toBe(100);
   });
 
-  it("ignores invalid calendar date filters", async () => {
-    const res = await app.request("/api/admin/audit-log?start=2026-02-30&end=2026-02-30", {
-      headers: { Cookie: superCookie },
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { total: number };
-    expect(body.total).toBe(6);
-  });
-
-  it("ignores a date filter with a zero calendar component (e.g. month 00)", async () => {
-    const res = await app.request("/api/admin/audit-log?start=2026-00-15", {
+  it.each([
+    ["ignores an unparseable date bound", "start=not-a-real-date"],
+    ["ignores invalid calendar date filters", "start=2026-02-30&end=2026-02-30"],
+    ["ignores a date filter with a zero calendar component (e.g. month 00)", "start=2026-00-15"],
+  ])("%s", async (_label, query) => {
+    const res = await app.request(`/api/admin/audit-log?${query}`, {
       headers: { Cookie: superCookie },
     });
     expect(res.status).toBe(200);
