@@ -404,12 +404,12 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
       </div>
 
       {live && pollDegraded && (
-        <div className="system-log-panel__poll-warning" role="status">
+        <output className="system-log-panel__poll-warning">
           Live updates stopped coming through - the lines below may be out of date.{" "}
           <button type="button" className="system-log-panel__poll-warning-retry" onClick={() => setRetryTick((t) => t + 1)}>
             Retry now
           </button>
-        </div>
+        </output>
       )}
 
       {/* Always renders this same dark shell, at the same height, regardless of content -
