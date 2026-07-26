@@ -6,6 +6,7 @@ import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -128,6 +129,7 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
+  resetSystemLogBufferForTest();
   await prisma.adminAuditLog.deleteMany({ where: { organization_id: ORG_REVOKE } });
   await prisma.attendeeActionLog.deleteMany({ where: { event_id: EVENT_REVOKE } });
   await prisma.attendeeItemState.deleteMany({ where: { event_item: { event_id: EVENT_REVOKE } } });
@@ -176,6 +178,20 @@ describe("POST /api/admin/events/:eventId/revoke-all-checkins", () => {
     ]);
     expect(refetchedA?.admitted_at).toBeNull();
     expect(refetchedB?.admitted_at).toBeNull();
+
+    const [entry] = querySystemLogs({ source: "admin", search: "event_checkins_bulk_revoked" });
+    expect(entry).toMatchObject({
+      level: "info",
+      source: "admin",
+      message: "event_checkins_bulk_revoked",
+      fields: {
+        eventId: EVENT_REVOKE,
+        revokedCount: 2,
+        actorUserId: superId,
+        actorEmail: EMAIL_SUPER,
+      },
+    });
+    expect(JSON.stringify(entry)).not.toContain("revoke-checkin-a@example.com");
   });
 
   it("writes audit log with eventId and revokedCount", async () => {
@@ -265,6 +281,20 @@ describe("POST /api/admin/events/:eventId/revoke-all-items", () => {
     ]);
     expect(stateC?.state).toBe("pending");
     expect(stateD?.state).toBe("pending");
+
+    const [entry] = querySystemLogs({ source: "admin", search: "event_items_bulk_revoked" });
+    expect(entry).toMatchObject({
+      level: "info",
+      source: "admin",
+      message: "event_items_bulk_revoked",
+      fields: {
+        eventId: EVENT_REVOKE,
+        revokedCount: 2,
+        actorUserId: superId,
+        actorEmail: EMAIL_SUPER,
+      },
+    });
+    expect(JSON.stringify(entry)).not.toContain("revoke-item-c@example.com");
   });
 
   it("writes audit log with eventId and revokedCount", async () => {

@@ -12,6 +12,7 @@ import type { ExportPayload } from "@admitto/mailer";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore, InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 import { CAPACITY_EXCLUDED_STATUSES } from "../../src/admin/event-capacity.js";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -3876,12 +3877,22 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-rsvp", () => {
   it("returns a generic 500 without leaking the underlying error for an unexpected failure", async () => {
     const id = "att-bulk-rsvp-transaction-fails";
     await seedRsvp([id], "none");
+    resetSystemLogBufferForTest();
     const spy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("db exploded"));
     try {
       const res = await postBulkRsvp(EVENT_A, { attendeeIds: [id], rsvp_status: "confirmed" });
       expect(res.status).toBe(500);
       const body = (await res.json()) as { error: string };
       expect(body.error).toBe("server error");
+      const [entry] = querySystemLogs({ source: "admin", search: "bulk_rsvp_failed" });
+      expect(entry).toMatchObject({
+        level: "error",
+        source: "admin",
+        message: "bulk_rsvp_failed",
+        fields: { eventId: EVENT_A, attendeeCount: 1, errorKind: "unexpected" },
+      });
+      expect(JSON.stringify(entry)).not.toContain("db exploded");
+      expect(JSON.stringify(entry)).not.toContain(`${id}@example.com`);
     } finally {
       spy.mockRestore();
     }

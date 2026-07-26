@@ -22,7 +22,12 @@ import {
 } from "@admitto/tickets";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import { publishCheckinIfValid } from "./checkin-sse-publish.js";
-import { itemTransitionErrorResponse, resolveClientTimezone } from "./admin-helpers.js";
+import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
+import {
+  itemTransitionErrorResponse,
+  resolveActorEmailForLog,
+  resolveClientTimezone,
+} from "./admin-helpers.js";
 
 /** GET /api/checkin/events — session-only capability list (P4). */
 export async function handleGetCheckinEvents(c: Context, db: PrismaClient): Promise<Response> {
@@ -80,6 +85,37 @@ function serializeScanResult(result: CheckInScanResult): unknown {
   return result;
 }
 
+/** Emit a safe security signal for a rejected admission attempt. Staff identity is included only
+ * for the authenticated session flow; emergency bearer requests keep the device context only. */
+async function emitRejectedCheckinLog(
+  db: PrismaClient,
+  eventId: string,
+  result: CheckInScanResult,
+  audit: OpsAuditContext,
+): Promise<void> {
+  if (
+    result.status !== "INVALID" &&
+    result.status !== "REVOKED" &&
+    result.status !== "ALREADY_CHECKED_IN"
+  ) {
+    return;
+  }
+
+  const actorFields = audit.operator
+    ? {
+        actorUserId: audit.operator,
+        actorEmail: await resolveActorEmailForLog(db, audit.operator),
+      }
+    : {};
+
+  emitSystemLog("security", "warn", "checkin_rejected", {
+    eventId,
+    status: result.status,
+    deviceId: audit.deviceId ?? null,
+    ...actorFields,
+  });
+}
+
 /** Resolve company/department for history rows (custom_data with legacy column fallback). */
 function historyCompany(attendee: {
   custom_data?: unknown;
@@ -118,9 +154,16 @@ export async function handleCheckinScan(c: Context, db: PrismaClient): Promise<R
     if (result.status === "VALID") {
       publishCheckinIfValid(c, eventId, result, audit.deviceId ?? null);
     }
+    await emitRejectedCheckinLog(db, eventId, result, audit);
     return c.json(serializeScanResult(result), 200);
   } catch (err) {
     console.error("checkInScan failed:", err);
+    recordSystemLog({
+      level: "error",
+      source: "api",
+      message: "checkin_scan_failed",
+      fields: { eventId },
+    });
     return c.json({ error: "server error" }, 500);
   }
 }
@@ -192,9 +235,16 @@ export async function handleCheckinAdmit(c: Context, db: PrismaClient): Promise<
     if (result.status === "VALID") {
       publishCheckinIfValid(c, eventId, result, audit.deviceId ?? null);
     }
+    await emitRejectedCheckinLog(db, eventId, result, audit);
     return c.json(serializeScanResult(result), 200);
   } catch (err) {
     console.error("admitAttendee failed:", err);
+    recordSystemLog({
+      level: "error",
+      source: "api",
+      message: "checkin_admit_failed",
+      fields: { eventId },
+    });
     return c.json({ error: "server error" }, 500);
   }
 }
@@ -265,6 +315,12 @@ export async function handleCheckinNote(c: Context, db: PrismaClient): Promise<R
       return c.json({ error: "not found" }, 404);
     }
     console.error("addAttendeeNote failed:", err);
+    recordSystemLog({
+      level: "error",
+      source: "api",
+      message: "checkin_note_failed",
+      fields: { eventId },
+    });
     return c.json({ error: "server error" }, 500);
   }
 }
@@ -289,6 +345,12 @@ export async function handleCheckinUndo(c: Context, db: PrismaClient): Promise<R
       return c.json({ error: err.message }, 409);
     }
     console.error("undoLastCheckIn failed:", err);
+    recordSystemLog({
+      level: "error",
+      source: "api",
+      message: "checkin_undo_failed",
+      fields: { eventId },
+    });
     return c.json({ error: "server error" }, 500);
   }
 }

@@ -3,6 +3,7 @@ import type { Context } from "hono";
 import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
+import { recordSystemLog } from "@admitto/shared/system-log";
 import {
   listDeliveries,
   resendTicketEmail,
@@ -1985,6 +1986,12 @@ export async function handleBulkRsvpEventAttendees(
   } catch (err) {
     if (err instanceof Response) return err;
     console.error("handleBulkRsvpEventAttendees failed:", err);
+    recordSystemLog({
+      level: "error",
+      source: "admin",
+      message: "bulk_rsvp_failed",
+      fields: { eventId, attendeeCount: attendeeIds.length, errorKind: "unexpected" },
+    });
     return c.json({ error: "server error" }, 500);
   }
 }
@@ -2074,9 +2081,20 @@ export async function handleBulkCheckInEventAttendees(c: Context, db: PrismaClie
     const settled = await Promise.allSettled(
       batch.map(({ id }) => admitAttendee({ attendeeId: id, eventId, method: "manual", audit }, db)),
     );
-    for (const outcome of settled) {
+    for (const [index, outcome] of settled.entries()) {
       if (outcome.status === "rejected") {
         console.error("bulk check-in: admitAttendee failed:", outcome.reason);
+        recordSystemLog({
+          level: "error",
+          source: "admin",
+          message: "bulk_attendee_action_failed",
+          fields: {
+            eventId,
+            attendeeId: batch[index]!.id,
+            action: "checkin",
+            errorKind: "unexpected",
+          },
+        });
         counts.errored += 1;
         continue;
       }
@@ -2146,7 +2164,7 @@ export async function handleBulkRevokeCheckInEventAttendees(c: Context, db: Pris
         ),
       ),
     );
-    for (const outcome of settled) {
+    for (const [index, outcome] of settled.entries()) {
       if (outcome.status === "fulfilled") {
         counts.revoked += 1;
         continue;
@@ -2157,6 +2175,17 @@ export async function handleBulkRevokeCheckInEventAttendees(c: Context, db: Pris
         counts.blocked += 1;
       } else {
         console.error("bulk revoke check-in: revokeCheckInMutation failed:", outcome.reason);
+        recordSystemLog({
+          level: "error",
+          source: "admin",
+          message: "bulk_attendee_action_failed",
+          fields: {
+            eventId,
+            attendeeId: batch[index]!.id,
+            action: "revoke_checkin",
+            errorKind: "unexpected",
+          },
+        });
         counts.errored += 1;
       }
     }
@@ -2196,14 +2225,29 @@ export async function handleBulkRevokeAttendeeItems(c: Context, db: PrismaClient
   const parsed = bulkRevokeItemsAttendeesBodySchema.safeParse(body);
   if (!parsed.success) return c.json({ error: "validation_failed" }, 400);
 
-  const audit = adminAuditFromContext(c);
-  const revokedCount = await revokeItemsForAttendees(db, {
-    eventId,
-    attendeeIds: parsed.data.attendeeIds,
-    audit,
-  });
+  try {
+    const revokedCount = await revokeItemsForAttendees(db, {
+      eventId,
+      attendeeIds: parsed.data.attendeeIds,
+      audit: adminAuditFromContext(c),
+    });
 
-  return c.json({ revokedCount });
+    return c.json({ revokedCount });
+  } catch (err) {
+    console.error("bulk revoke items: revokeItemsForAttendees failed:", err);
+    recordSystemLog({
+      level: "error",
+      source: "admin",
+      message: "bulk_attendee_action_failed",
+      fields: {
+        eventId,
+        attendeeCount: parsed.data.attendeeIds.length,
+        action: "revoke_items",
+        errorKind: "unexpected",
+      },
+    });
+    return c.json({ error: "server error" }, 500);
+  }
 }
 
 /** Revokes a single attendee's pass (status -> revoked), same effect as the single-attendee
@@ -2294,9 +2338,20 @@ export async function handleBulkRevokeAttendeePass(c: Context, db: PrismaClient)
         revokeOneAttendeePass(eventId, a.id, a.status as AttendeeStatus, audit, db),
       ),
     );
-    for (const outcome of settled) {
+    for (const [index, outcome] of settled.entries()) {
       if (outcome.status === "rejected") {
         console.error("bulk revoke pass: revokeOneAttendeePass failed:", outcome.reason);
+        recordSystemLog({
+          level: "error",
+          source: "admin",
+          message: "bulk_attendee_action_failed",
+          fields: {
+            eventId,
+            attendeeId: batch[index]!.id,
+            action: "revoke_pass",
+            errorKind: "unexpected",
+          },
+        });
         counts.errored += 1;
         continue;
       }

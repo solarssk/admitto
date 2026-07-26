@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { canManageEvent, canManageInstance } from "@admitto/auth";
 import { IllegalItemTransitionError, type OpsAuditContext } from "@admitto/tickets";
+import { recordSystemLog } from "@admitto/shared/system-log";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import { isValidIanaTimezone } from "./timezone.js";
 import {
@@ -135,5 +136,10 @@ export function itemTransitionErrorResponse(c: Context, err: unknown, logLabel: 
     return c.json({ error: err.message }, 409);
   }
   console.error(`${logLabel} failed:`, err);
+  recordSystemLog({
+    level: "error",
+    source: "api",
+    message: `${logLabel}_failed`,
+  });
   return c.json({ error: "server error" }, 500);
 }

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { Hono } from "hono";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword, createSession, SESSION_STAGE } from "@admitto/auth";
@@ -11,11 +11,13 @@ import {
 } from "../../src/checkin-gate.js";
 import {
   handleCheckinLookup,
+  handleCheckinScan,
   handleCheckinAdmit,
   handleCheckinNote,
   handleCheckinUndo,
   eventIdFromCheckinBody,
 } from "../../src/admin/checkin-api-routes.js";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
 const ORG_A = "org-op-routes-a";
 const ORG_B = "org-op-routes-b";
@@ -117,6 +119,7 @@ function buildMutatingApp() {
   ] as const;
 
   app.post("/api/checkin/lookup", ...chain, (c) => handleCheckinLookup(c, prisma));
+  app.post("/api/checkin/scan", ...chain, (c) => handleCheckinScan(c, prisma));
   app.post("/api/checkin/admit", ...chain, (c) => handleCheckinAdmit(c, prisma));
   app.post("/api/checkin/notes", ...chain, (c) => handleCheckinNote(c, prisma));
   app.post("/api/checkin/undo", ...chain, (c) => handleCheckinUndo(c, prisma));
@@ -133,6 +136,10 @@ beforeAll(async () => {
   });
   sessionCookie = `admitto_session=${rawToken}`;
   sessionId = session.id;
+});
+
+beforeEach(() => {
+  resetSystemLogBufferForTest();
 });
 
 afterAll(async () => {
@@ -214,6 +221,33 @@ describe("POST /api/checkin/admit — session_id audit (Lock #5)", () => {
       orderBy: { checked_in_at: "desc" },
     });
     expect(checkIn?.device_id).toBe(SESSION_DEVICE);
+  });
+
+  it("records a rejected scan with the verified operator, without scan data or attendee PII", async () => {
+    const res = await post("/api/checkin/scan", {
+      eventId: EVENT_A,
+      scanned: "unrecognized-test-ticket",
+      deviceId: "spoofed-tablet",
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ status: "INVALID" });
+
+    const [entry] = querySystemLogs({ source: "security", search: "checkin_rejected" });
+    expect(entry).toMatchObject({
+      level: "warn",
+      source: "security",
+      message: "checkin_rejected",
+      fields: {
+        eventId: EVENT_A,
+        status: "INVALID",
+        deviceId: SESSION_DEVICE,
+        actorUserId: USER_OP_A,
+        actorEmail: "op-routes@example.com",
+      },
+    });
+    expect(JSON.stringify(entry)).not.toContain("unrecognized-test-ticket");
+    expect(JSON.stringify(entry)).not.toContain("jan@firma.pl");
   });
 });
 
