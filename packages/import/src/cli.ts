@@ -72,6 +72,8 @@ export async function runImport(options: RunImportOptions): Promise<RunImportRes
   const event = await prisma.event.findUnique({ where: { id: eventId } });
   if (!event) throw new Error(`Event not found: "${eventId}"`);
 
+  // `filePath` is the local operator's explicit --file selection; this CLI never accepts it over HTTP.
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- local operator-selected import file
   const csv = fs.readFileSync(filePath, "utf8");
   const ticketTypes = await loadImportTicketTypes(prisma, eventId);
   const parsed = parseAttendees(csv, { ticketTypes });

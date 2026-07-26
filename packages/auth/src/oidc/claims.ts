@@ -8,7 +8,7 @@ export interface ExternalIdentityClaims {
 }
 
 function claimValue(payload: JWTPayload, claimName: string): unknown {
-  return payload[claimName];
+  return Object.getOwnPropertyDescriptor(payload, claimName)?.value;
 }
 
 function asString(value: unknown): string | undefined {

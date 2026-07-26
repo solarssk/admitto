@@ -21,11 +21,11 @@ function parseEnvValue(raw: string, fallback: unknown): unknown {
 }
 
 function envOverride(key: string): unknown {
-  const envName = SETTING_ENV_LOCKS[key];
+  const envName = SETTING_ENV_LOCKS.get(key);
   if (!envName) return undefined;
-  const raw = process.env[envName];
+  const raw = Object.getOwnPropertyDescriptor(process.env, envName)?.value;
   if (raw === undefined || raw.trim() === "") return undefined;
-  return parseEnvValue(raw, SETTING_DEFAULTS[key]);
+  return parseEnvValue(raw, SETTING_DEFAULTS.get(key));
 }
 
 /** True when an env lock is set for this setting (UI field should be read-only). */
@@ -79,7 +79,7 @@ export async function getSetting<T = unknown>(
     }
   }
 
-  return SETTING_DEFAULTS[key] as T;
+  return SETTING_DEFAULTS.get(key) as T;
 }
 
 /** Admin/superadmin session TTL in ms from SystemSettings (`session_ttl`). */
@@ -87,7 +87,7 @@ export async function getSessionTtlAdminMs(
   prisma: PrismaClient | Prisma.TransactionClient,
 ): Promise<number> {
   const v = await getSetting<number>(prisma, "session_ttl");
-  return typeof v === "number" && v > 0 ? v : (SETTING_DEFAULTS["session_ttl"] as number);
+  return typeof v === "number" && v > 0 ? v : (SETTING_DEFAULTS.get("session_ttl") as number);
 }
 
 /** Operator session TTL in ms from SystemSettings (`operator_session_ttl`). */
@@ -95,7 +95,9 @@ export async function getSessionTtlOperatorMs(
   prisma: PrismaClient | Prisma.TransactionClient,
 ): Promise<number> {
   const v = await getSetting<number>(prisma, "operator_session_ttl");
-  return typeof v === "number" && v > 0 ? v : (SETTING_DEFAULTS["operator_session_ttl"] as number);
+  return typeof v === "number" && v > 0
+    ? v
+    : (SETTING_DEFAULTS.get("operator_session_ttl") as number);
 }
 
 /** Trusted-device cookie lifetime in days from SystemSettings (`trusted_device_days`). */
@@ -103,7 +105,9 @@ export async function getTrustedDeviceDays(
   prisma: PrismaClient | Prisma.TransactionClient,
 ): Promise<number> {
   const v = await getSetting<number>(prisma, "trusted_device_days");
-  return typeof v === "number" && v >= 0 ? v : (SETTING_DEFAULTS["trusted_device_days"] as number);
+  return typeof v === "number" && v >= 0
+    ? v
+    : (SETTING_DEFAULTS.get("trusted_device_days") as number);
 }
 
 /** Role names that require MFA (from SystemSettings `mfa_required_roles`, JSON array or CSV). */
@@ -115,7 +119,7 @@ export async function getMfaRequiredRoles(
     return v.map((r) => String(r).trim()).filter(Boolean);
   }
   const csv =
-    typeof v === "string" ? v : (SETTING_DEFAULTS["mfa_required_roles"] as string);
+    typeof v === "string" ? v : (SETTING_DEFAULTS.get("mfa_required_roles") as string);
   return csv
     .split(",")
     .map((r) => r.trim())

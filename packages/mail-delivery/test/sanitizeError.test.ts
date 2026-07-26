@@ -168,4 +168,9 @@ describe("sanitizeDeliveryError", () => {
     expect(out).not.toContain("user@");
     expect(out).toBe("Delivery failed for [redacted]");
   });
+
+  it("redacts an email before trailing provider punctuation", () => {
+    const out = sanitizeDeliveryError("Delivery failed for admin+eu@relay.example.co.uk.");
+    expect(out).toBe("Delivery failed for [redacted].");
+  });
 });

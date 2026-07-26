@@ -17,7 +17,7 @@ const TEMPLATE_FIELD_LABELS: Record<string, string> = {
 
 function fieldLabel(field: string, context: UrlValidationContext): string {
   const labels = context === "branding" ? BRANDING_FIELD_LABELS : TEMPLATE_FIELD_LABELS;
-  return labels[field] ?? field;
+  return Object.getOwnPropertyDescriptor(labels, field)?.value ?? field;
 }
 
 /** Human-readable URL validation message — shared by branding save and template render. */
@@ -58,7 +58,7 @@ const HTML_ATTR_ESCAPE: Record<string, string> = {
 };
 
 function escapeWithMap(value: string, map: Record<string, string>): string {
-  return value.replace(/[&<>"']/g, (ch) => map[ch] ?? ch);
+  return value.replace(/[&<>"']/g, (ch) => Object.getOwnPropertyDescriptor(map, ch)?.value ?? ch);
 }
 
 /** Escape for HTML text nodes. */
@@ -71,15 +71,51 @@ export function escapeHtmlAttribute(value: string): string {
   return escapeWithMap(value, HTML_ATTR_ESCAPE);
 }
 
-const BRANDING_UPLOAD_PATH =
-  /^\/uploads\/[a-z0-9][a-z0-9_-]{0,63}(\/events\/[a-z0-9][a-z0-9_-]{0,127})?\/[^/]+\.(png|jpe?g|webp)$/i;
+function isBrandingPathSlug(value: string, maxLength: number): boolean {
+  if (value.length === 0 || value.length > maxLength) return false;
+  for (const [index, char] of Array.from(value).entries()) {
+    const lower = char.toLowerCase();
+    const isLetter = lower >= "a" && lower <= "z";
+    const isDigit = char >= "0" && char <= "9";
+    if (index === 0 && !(isLetter || isDigit)) return false;
+    if (!isLetter && !isDigit && char !== "_" && char !== "-") return false;
+  }
+  return true;
+}
+
+function hasBrandingImageExtension(fileName: string): boolean {
+  const lower = fileName.toLowerCase();
+  return lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".webp");
+}
+
+function isBrandingUploadPath(value: string): boolean {
+  const segments = value.split("/");
+  if (segments.at(0) !== "" || segments.at(1) !== "uploads") return false;
+
+  const organization = segments.at(2);
+  if (!organization || !isBrandingPathSlug(organization, 64)) return false;
+
+  const eventSegment = segments.at(3);
+  const isEventAsset = eventSegment === "events";
+  const event = isEventAsset ? segments.at(4) : undefined;
+  const fileName = isEventAsset ? segments.at(5) : eventSegment;
+  const expectedLength = isEventAsset ? 6 : 4;
+  return (
+    segments.length === expectedLength &&
+    (!isEventAsset || (event !== undefined && isBrandingPathSlug(event, 128))) &&
+    fileName !== undefined &&
+    fileName.length > 0 &&
+    !fileName.includes("..") &&
+    hasBrandingImageExtension(fileName)
+  );
+}
 
 /** Validate http(s) URL or local branding upload path; throws InvalidHttpUrlError when invalid. */
 export function validateBrandingUrl(field: string, value: string): string {
   if (value === "") return "";
   const trimmed = value.trim();
   if (trimmed.startsWith("/uploads/")) {
-    if (trimmed.includes("..") || !BRANDING_UPLOAD_PATH.test(trimmed)) {
+    if (!isBrandingUploadPath(trimmed)) {
       throw new InvalidHttpUrlError(field, value, "branding");
     }
     return trimmed;

@@ -31,6 +31,14 @@ describe("StatusBadge", () => {
     render(<StatusBadge status="custom_unknown" />);
     expect(screen.getByText("custom_unknown")).toBeTruthy();
   });
+
+  it("does not resolve inherited object properties as statuses", () => {
+    expect(resolveStatusMeta("toString")).toEqual({
+      variant: "neutral",
+      label: "toString",
+      dot: true,
+    });
+  });
 });
 
 describe("STATUS_MAP", () => {

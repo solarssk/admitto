@@ -277,7 +277,7 @@ async function deliverPendingBatch(
 
     await Promise.all(
       batchResult.results.map((result, index) => {
-        const item = pending[index];
+        const item = pending.at(index);
         if (!item) return Promise.resolve();
         const update = mapSendResultToDelivery(result);
         return prisma.emailDelivery.update({

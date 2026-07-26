@@ -22,11 +22,16 @@ export const ATTENDEE_MAIL_STATUS_FILTERS = ["not_sent", "sent", "pending", "fai
 
 export type AttendeeMailStatusFilter = (typeof ATTENDEE_MAIL_STATUS_FILTERS)[number];
 
-const MAIL_FILTER_STATUS_SETS: Record<Exclude<AttendeeMailStatusFilter, "not_sent">, readonly string[]> = {
-  sent: EMAIL_DELIVERY_SUCCESS_STATUSES,
-  pending: ["queued"],
-  failed: ["failed", "bounced", "rejected"],
-};
+function mailFilterStatuses(filter: Exclude<AttendeeMailStatusFilter, "not_sent">): readonly string[] {
+  switch (filter) {
+    case "sent":
+      return EMAIL_DELIVERY_SUCCESS_STATUSES;
+    case "pending":
+      return ["queued"];
+    case "failed":
+      return ["failed", "bounced", "rejected"];
+  }
+}
 
 export type AttendeeListFilterParams = {
   q?: string;
@@ -164,7 +169,7 @@ function attendeeMailStatusSql(mail_status?: AttendeeMailStatusFilter) {
   if (mail_status === "not_sent") {
     return Prisma.sql`AND NOT EXISTS (SELECT 1 FROM "EmailDelivery" ed WHERE ed.attendee_id = a.id)`;
   }
-  const statuses = MAIL_FILTER_STATUS_SETS[mail_status];
+  const statuses = mailFilterStatuses(mail_status);
   return Prisma.sql`AND (
     SELECT ed.status FROM "EmailDelivery" ed
     WHERE ed.attendee_id = a.id

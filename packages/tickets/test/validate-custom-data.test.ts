@@ -62,6 +62,16 @@ describe("buildCustomDataFromInput", () => {
   it("returns undefined when no custom_data values are provided", () => {
     expect(buildCustomDataFromInput([noteField], {})).toBeUndefined();
   });
+
+  it("stores a prototype-named configured field as an own data property", () => {
+    const field = { ...noteField, source_field: "__proto__" };
+    const input = Object.create(null) as Record<string, unknown>;
+    Object.defineProperty(input, "__proto__", { value: "safe value", enumerable: true });
+    const values = buildCustomDataFromInput([field], input);
+
+    expect(Object.getPrototypeOf(values)).toBe(Object.prototype);
+    expect(Object.getOwnPropertyDescriptor(values!, "__proto__")?.value).toBe("safe value");
+  });
 });
 
 describe("assertCustomDataMeetsRequirements", () => {

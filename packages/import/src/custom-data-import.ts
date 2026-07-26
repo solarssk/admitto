@@ -10,6 +10,14 @@ function normalizedLabelKey(label: string): string {
   return label.trim().toLowerCase();
 }
 
+function ownStringValue(record: Record<string, string>, key: string): string | undefined {
+  return Object.getOwnPropertyDescriptor(record, key)?.value;
+}
+
+function setOwnStringValue(record: Record<string, string>, key: string, value: string): void {
+  Object.defineProperty(record, key, { value, enumerable: true, configurable: true, writable: true });
+}
+
 function exportStyleLabel(field: ImportAttributeField, duplicateLabels: Set<string>): string {
   return duplicateLabels.has(normalizedLabelKey(field.label))
     ? `${field.label} (${field.source_field})`
@@ -42,11 +50,11 @@ function readAttributeCell(
   field: ImportAttributeField,
   duplicateLabels: Set<string>,
 ): string {
-  const direct = raw[field.source_field];
+  const direct = ownStringValue(raw, field.source_field);
   if (direct !== undefined) return direct.trim();
   const labelKey = exportStyleLabel(field, duplicateLabels).trim().toLowerCase();
   if (isReservedCustomDataSourceField(labelKey)) return "";
-  return (raw[labelKey] ?? "").trim();
+  return (ownStringValue(raw, labelKey) ?? "").trim();
 }
 
 /** Validate and normalize only attribute cells present in the CSV row (no required-field check). */
@@ -61,7 +69,7 @@ function buildPartialCustomDataFromInput(
     const field = fieldByKey.get(key);
     if (!field) throw new Error(`unknown_custom_data_field:${key}`);
     const normalized = normalizeCustomDataFieldValue(field, value);
-    if (normalized) out[key] = normalized;
+    if (normalized) setOwnStringValue(out, key, normalized);
   }
 
   return Object.keys(out).length > 0 ? out : undefined;
@@ -148,7 +156,7 @@ export function extractCustomDataFromRow(
   const input: Record<string, string> = {};
   for (const field of fields) {
     const value = readAttributeCell(raw, field, duplicateLabels);
-    if (value) input[field.source_field] = value;
+    if (value) setOwnStringValue(input, field.source_field, value);
   }
 
   try {

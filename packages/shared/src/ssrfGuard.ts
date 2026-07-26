@@ -47,13 +47,18 @@ function extractIpv4FromMappedIpv6(host: string): string | null {
   const lower = host.toLowerCase();
   if (!isIPv6(lower)) return null;
 
-  const dotted = /(?:^|:)ffff:((?:\d{1,3}\.){3}\d{1,3})$/.exec(lower);
-  if (dotted) return dotted[1] ?? null;
+  const dottedMarker = ":ffff:";
+  const dottedStart = lower.lastIndexOf(dottedMarker);
+  if (dottedStart !== -1) {
+    const dotted = lower.slice(dottedStart + dottedMarker.length);
+    const parsed = parseIpv4(dotted);
+    if (parsed) return parsed.join(".");
+  }
 
-  const hex = /(?:^|:)ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(lower);
-  if (!hex) return null;
-  const hi = Number.parseInt(hex[1]!, 16);
-  const lo = Number.parseInt(hex[2]!, 16);
+  const segments = lower.split(":").filter(Boolean);
+  if (segments.at(-3) !== "ffff") return null;
+  const hi = Number.parseInt(segments.at(-2)!, 16);
+  const lo = Number.parseInt(segments.at(-1)!, 16);
   if (!Number.isFinite(hi) || !Number.isFinite(lo)) return null;
   return `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
 }

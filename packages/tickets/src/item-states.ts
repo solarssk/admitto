@@ -8,10 +8,11 @@ import type { EventItemConfig } from "./types.js";
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
 
-const OPERATOR_TRANSITIONS: Record<string, string[]> = {
-  pending: ["issued"],
-  issued: ["returned"],
-};
+function operatorTransitionsFor(state: string): string[] {
+  if (state === "pending") return ["issued"];
+  if (state === "issued") return ["returned"];
+  return [];
+}
 
 /**
  * States a hand-out is actually revocable from. Excludes not just "pending"
@@ -58,7 +59,7 @@ export async function ensureAttendeeItemStates(
 }
 
 function allowedTarget(current: string, target: string): boolean {
-  return OPERATOR_TRANSITIONS[current]?.includes(target) ?? false;
+  return operatorTransitionsFor(current).includes(target);
 }
 
 /** Shared attendee lookup for both item-transition paths below — throws the same error either way. */
@@ -82,7 +83,7 @@ export function operatorItemActions(
   state: string,
   config?: EventItemConfig | null,
 ): string[] {
-  const actions = OPERATOR_TRANSITIONS[state] ?? [];
+  const actions = operatorTransitionsFor(state);
   if (state === "issued" && config?.requires_return === false) {
     return actions.filter((action) => action !== "returned");
   }

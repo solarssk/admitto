@@ -6,10 +6,12 @@ export const CF_ACCESS_COOKIE = "CF_Authorization";
 export function extractAccessTokenFromHeaders(
   headers: Record<string, string | undefined>,
 ): string | null {
+  const getHeader = (name: string): string | undefined =>
+    Object.getOwnPropertyDescriptor(headers, name)?.value;
   const header =
-    headers[CF_ACCESS_HEADER] ??
-    headers[CF_ACCESS_HEADER.toLowerCase()] ??
-    headers["cf-access-jwt-assertion"];
+    getHeader(CF_ACCESS_HEADER) ??
+    getHeader(CF_ACCESS_HEADER.toLowerCase()) ??
+    getHeader("cf-access-jwt-assertion");
   if (header?.trim()) return header.trim();
   return null;
 }

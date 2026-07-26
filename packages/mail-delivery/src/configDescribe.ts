@@ -43,12 +43,12 @@ export function serializeConfigDescriptionForCli(desc: ConfigDescriptor): string
   const out: Record<string, FieldDescriptor | SecretPresenceField> = {};
 
   for (const key of Object.keys(desc) as (keyof ConfigDescriptor)[]) {
-    const field = desc[key];
-    if ((SECRET_FIELD_KEYS as readonly string[]).includes(key as string)) {
-      out[key as string] = secretPresenceField(field as FieldDescriptor<"••••" | null>);
-    } else {
-      out[key as string] = field as FieldDescriptor;
-    }
+    const field = Object.getOwnPropertyDescriptor(desc, key)?.value;
+    if (!field) continue;
+    const value = (SECRET_FIELD_KEYS as readonly string[]).includes(key as string)
+      ? secretPresenceField(field as FieldDescriptor<"••••" | null>)
+      : (field as FieldDescriptor);
+    Object.defineProperty(out, key, { value, enumerable: true, configurable: true, writable: true });
   }
 
   return JSON.stringify(out, null, 2);

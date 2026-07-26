@@ -636,7 +636,8 @@ export function EventSettingsPage() {
 
   useEffect(() => {
     loadTicketTypes().catch(() => {});
-    return () => ticketTypesAbortRef.current?.abort();
+    const ticketTypesAbortController = ticketTypesAbortRef.current;
+    return () => ticketTypesAbortController?.abort();
   }, [loadTicketTypes]);
 
   useEffect(() => {

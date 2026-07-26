@@ -84,10 +84,9 @@ function formatPlaceholderValue(
 
 /** Remove empty URL-bearing attributes produced when optional URL placeholders resolve to "". */
 export function stripEmptyUrlAttributes(html: string): string {
-  const attrs = "src|href|action|background";
   return html
-    .replace(new RegExp(String.raw`\s(${attrs})=["']\s*["']`, "gi"), "")
-    .replace(new RegExp(String.raw`\s(${attrs})=(?:""|'')`, "gi"), "");
+    .replace(/\s(src|href|action|background)=["']\s*["']/gi, "")
+    .replace(/\s(src|href|action|background)=(?:""|'')/gi, "");
 }
 
 function formatSubjectPlaceholderValue(

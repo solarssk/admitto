@@ -61,7 +61,10 @@ export function emitSystemLog(
   message: string,
   fields?: Record<string, unknown>,
 ): void {
-  console[level](JSON.stringify({ level, msg: message, ts: new Date().toISOString(), ...fields }));
+  const line = JSON.stringify({ level, msg: message, ts: new Date().toISOString(), ...fields });
+  if (level === "info") console.info(line);
+  else if (level === "warn") console.warn(line);
+  else console.error(line);
   recordSystemLog({ level, source, message, fields });
 }
 

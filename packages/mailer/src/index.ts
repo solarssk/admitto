@@ -87,9 +87,9 @@ export async function sendBatch(
     while (true) {
       const index = next++;
       if (index >= messages.length) return;
-      const message = messages[index]!;
+      const message = messages.at(index)!;
       const result = await adapter.send(message);
-      results[index] = result;
+      results.splice(index, 1, result);
       options.onResult?.(result, message, index);
     }
   }

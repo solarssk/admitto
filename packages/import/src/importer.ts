@@ -50,7 +50,12 @@ function cloneCustomData(raw: unknown): Record<string, unknown> {
 function mergeCustomData(existing: unknown, incoming: Record<string, string>): Prisma.InputJsonValue {
   const merged = cloneCustomData(existing);
   for (const [key, value] of Object.entries(incoming)) {
-    merged[key] = value;
+    Object.defineProperty(merged, key, {
+      value,
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
   }
   return merged as Prisma.InputJsonValue;
 }

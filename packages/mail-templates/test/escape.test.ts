@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatInvalidUrlMessage,
+  validateBrandingUrl,
   validateHttpUrl,
   InvalidHttpUrlError,
 } from "../src/escape.js";
@@ -50,5 +51,16 @@ describe("validateHttpUrl", () => {
       );
       expect((err as InvalidHttpUrlError).context).toBe("template");
     }
+  });
+});
+
+describe("validateBrandingUrl", () => {
+  it("accepts the existing case-insensitive upload path format but rejects traversal", () => {
+    expect(validateBrandingUrl("logo_url", "/uploads/Org_A/events/Event-1/logo.JPEG")).toBe(
+      "/uploads/Org_A/events/Event-1/logo.JPEG",
+    );
+    expect(() => validateBrandingUrl("logo_url", "/uploads/org/../secret.png")).toThrow(
+      InvalidHttpUrlError,
+    );
   });
 });

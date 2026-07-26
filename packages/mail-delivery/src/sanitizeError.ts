@@ -1,14 +1,57 @@
 /** Strip token-like and email-like fragments from provider errors before persisting. */
+const EMAIL_LOCAL_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._%+-";
+const EMAIL_DOMAIN_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.-";
+
+function hasEmailDomainShape(value: string): boolean {
+  const labels = value.split(".");
+  return labels.length >= 2 && labels.every((label) => label.length > 0 && label.length <= 63);
+}
+
+/** Linear email-like fragment redactor. Avoids a nested quantified regex on provider-controlled text. */
+function redactEmailLikeFragments(value: string): string {
+  let redacted = "";
+  let cursor = 0;
+
+  while (cursor < value.length) {
+    const at = value.indexOf("@", cursor);
+    if (at === -1) return redacted + value.slice(cursor);
+
+    let localStart = at;
+    while (localStart > cursor && EMAIL_LOCAL_CHARS.includes(value.charAt(localStart - 1))) {
+      localStart--;
+    }
+
+    let domainEnd = at + 1;
+    while (domainEnd < value.length && EMAIL_DOMAIN_CHARS.includes(value.charAt(domainEnd))) {
+      domainEnd++;
+    }
+    let candidateEnd = domainEnd;
+    while (candidateEnd > at + 1 && value.charAt(candidateEnd - 1) === ".") candidateEnd--;
+
+    const local = value.slice(localStart, at);
+    const domain = value.slice(at + 1, candidateEnd);
+    if (local.length > 0 && local.length <= 64 && hasEmailDomainShape(domain)) {
+      redacted += `${value.slice(cursor, localStart)}[redacted]`;
+      cursor = candidateEnd;
+    } else {
+      redacted += value.slice(cursor, at + 1);
+      cursor = at + 1;
+    }
+  }
+
+  return redacted;
+}
+
 export function sanitizeDeliveryError(message: string | undefined): string | undefined {
   if (!message) return undefined;
-  let s = message;
+  let s = message.slice(0, 2000);
   // base64url ticket tokens (~43 chars)
   s = s.replace(/[A-Za-z0-9_-]{40,60}/g, "[redacted]");
   // emails
-  s = s.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+/g, "[redacted]");
+  s = redactEmailLikeFragments(s);
   // URLs (e.g. Power Automate webhook in provider errors)
   s = s.replace(/https?:\/\/\S+/gi, "[redacted]");
-  return s.slice(0, 2000);
+  return s;
 }
 
 /** Admin API-safe send error text — no provider internals or long opaque messages. */
