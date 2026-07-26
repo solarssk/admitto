@@ -75,4 +75,11 @@ describe("serializeConfigDescriptionForCli", () => {
     });
     expect(parsed.smtpPassword).not.toHaveProperty("value");
   });
+
+  it("ignores unexpected enumerable fields without a field descriptor", async () => {
+    const desc = await getMailConfigDescription("evt-cfg-desc", prisma, {});
+    Object.defineProperty(desc, "unexpected", { value: undefined, enumerable: true });
+
+    expect(JSON.parse(serializeConfigDescriptionForCli(desc))).not.toHaveProperty("unexpected");
+  });
 });

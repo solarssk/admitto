@@ -18,6 +18,10 @@
     "./system-log": {
       "types": "./dist/systemLog.d.ts",
       "default": "./dist/systemLog.js"
+    },
+    "./load-env-file": {
+      "types": "./dist/loadEnvFile.d.ts",
+      "default": "./dist/loadEnvFile.js"
     }
   },
   "scripts": {

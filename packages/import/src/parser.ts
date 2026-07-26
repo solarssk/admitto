@@ -27,16 +27,13 @@ function buildRow(
   cells: string[],
 ): Record<string, string> {
   const record: Record<string, string> = {};
-  for (let i = 0; i < headers.length; i++) {
-    const key = headers.at(i);
-    if (key !== undefined && !Object.hasOwn(record, key)) {
-      Object.defineProperty(record, key, {
-        value: (cells.at(i) ?? "").trim(),
-        enumerable: true,
-        configurable: true,
-        writable: true,
-      });
-    }
+  for (const [index, key] of headers.entries()) {
+    Object.defineProperty(record, key, {
+      value: (cells.at(index) ?? "").trim(),
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
   }
   return record;
 }
@@ -51,7 +48,7 @@ function parseHeaderLine(
 
   const dupHeaders = [...new Set(rawHeaders.filter((h, i) => rawHeaders.indexOf(h) !== i))];
   if (dupHeaders.length > 0) {
-    warnings.push(`Duplicate column(s) detected (first value used): ${dupHeaders.join(", ")}`);
+    warnings.push(`Duplicate column(s) detected (last value used): ${dupHeaders.join(", ")}`);
   }
 
   for (const h of rawHeaders) {

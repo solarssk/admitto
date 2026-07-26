@@ -17,7 +17,7 @@ import { verifyPassword } from "./password.js";
 import { resetUserMfa } from "./mfa/enrollment.js";
 import { generateEmergencyRecoveryCode } from "./mfa/emergency-recovery.js";
 import { logMfaBreakGlass } from "./audit.js";
-import { loadEnvFile } from "./loadDotEnv.js";
+import { loadEnvFile } from "@admitto/shared/load-env-file";
 import { assertNoPasswordArgv, CliError, readPasswordFromStdin } from "./cli-helpers.js";
 import { purgeAuthRetention } from "./retention.js";
 

@@ -21,7 +21,7 @@ import {
   getMailConfigDescription,
   serializeConfigDescriptionForCli,
 } from "./configDescribe.js";
-import { loadEnvFile } from "./loadDotEnv.js";
+import { loadEnvFile } from "@admitto/shared/load-env-file";
 import { listDeliveries } from "./listDeliveries.js";
 import { sendTestEmail } from "./testSend.js";
 import {

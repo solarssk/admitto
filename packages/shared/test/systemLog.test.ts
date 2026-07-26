@@ -106,4 +106,18 @@ describe("emitSystemLog", () => {
       fields: { retries: 3 },
     });
   });
+
+  it.each([
+    ["info", "info"],
+    ["error", "error"],
+  ] as const)("writes %s entries to console.%s", (level, consoleMethod) => {
+    const spy = vi.spyOn(console, consoleMethod).mockImplementation(() => {});
+
+    emitSystemLog("api", level, `${level} message`);
+
+    expect(spy).toHaveBeenCalledOnce();
+    expect(querySystemLogs()).toEqual([
+      expect.objectContaining({ level, source: "api", message: `${level} message` }),
+    ]);
+  });
 });

@@ -86,10 +86,20 @@ export function findUnquotedAttributePlaceholders(html: string): string[] {
 /** Returns inner text of every {{...}} token in the string. */
 export function extractPlaceholderTokens(text: string): string[] {
   const tokens: string[] = [];
-  let match: RegExpExecArray | null;
-  const re = /\{\{([^}]*)\}\}/g;
-  while ((match = re.exec(text)) !== null) {
-    tokens.push(match[1]!);
+  let cursor = 0;
+  while (cursor < text.length) {
+    const start = text.indexOf("{{", cursor);
+    if (start === -1) break;
+
+    const firstClosingBrace = text.indexOf("}", start + 2);
+    if (firstClosingBrace === -1) break;
+    if (text.charAt(firstClosingBrace + 1) !== "}") {
+      cursor = firstClosingBrace + 1;
+      continue;
+    }
+
+    tokens.push(text.slice(start + 2, firstClosingBrace));
+    cursor = firstClosingBrace + 2;
   }
   return tokens;
 }

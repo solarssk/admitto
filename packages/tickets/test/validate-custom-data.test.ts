@@ -63,6 +63,10 @@ describe("buildCustomDataFromInput", () => {
     expect(buildCustomDataFromInput([noteField], {})).toBeUndefined();
   });
 
+  it("omits optional whitespace-only values", () => {
+    expect(buildCustomDataFromInput([noteField], { note: "   " })).toBeUndefined();
+  });
+
   it("stores a prototype-named configured field as an own data property", () => {
     const field = { ...noteField, source_field: "__proto__" };
     const input = Object.create(null) as Record<string, unknown>;

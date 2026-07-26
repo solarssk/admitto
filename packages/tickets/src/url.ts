@@ -9,13 +9,13 @@ export function buildTicketUrl(baseUrl: string, token: string): string {
  */
 export function extractTokenFromUrl(scanned: string): string | null {
   const trimmed = scanned.trim();
+  const suffixStart = trimmed.search(/[?#]/);
+  const urlPath = suffixStart === -1 ? trimmed : trimmed.slice(0, suffixStart);
   const marker = "/t/";
-  const start = trimmed.lastIndexOf(marker);
+  const start = urlPath.lastIndexOf(marker);
   if (start === -1) return null;
 
-  const tokenAndSuffix = trimmed.slice(start + marker.length);
-  const queryStart = tokenAndSuffix.search(/[?#]/);
-  const path = queryStart === -1 ? tokenAndSuffix : tokenAndSuffix.slice(0, queryStart);
+  const path = urlPath.slice(start + marker.length);
   const token = path.endsWith("/") ? path.slice(0, -1) : path;
   return looksLikeInternalToken(token) ? token : null;
 }

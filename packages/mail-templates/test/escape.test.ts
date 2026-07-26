@@ -63,4 +63,16 @@ describe("validateBrandingUrl", () => {
       InvalidHttpUrlError,
     );
   });
+
+  it.each([
+    "/uploads//logo.png",
+    "/uploads/_org/logo.png",
+    "/uploads/org!/logo.png",
+    "/uploads/org/logo.gif",
+    "/uploads/org/events/_event/logo.png",
+    "/uploads/org/events/event/logo.png/extra",
+    `/uploads/${"a".repeat(65)}/logo.png`,
+  ])("rejects an invalid local upload path: %s", (value) => {
+    expect(() => validateBrandingUrl("logo_url", value)).toThrow(InvalidHttpUrlError);
+  });
 });

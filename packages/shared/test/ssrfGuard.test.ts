@@ -82,6 +82,11 @@ describe("isBlockedPrivateOrMetadataHost", () => {
     expect(isBlockedPrivateOrMetadataHost("::ffff:7f00:1")).toBe(true);
   });
 
+  it("recognizes expanded IPv4-mapped IPv6 but not an unrelated public IPv6 suffix", () => {
+    expect(isBlockedPrivateOrMetadataHost("0:0:0:0:0:ffff:7f00:1")).toBe(true);
+    expect(isBlockedPrivateOrMetadataHost("2001:db8::ffff:10.0.0.1")).toBe(false);
+  });
+
   it("allows a public hostname/IP", () => {
     expect(isBlockedPrivateOrMetadataHost("example.com")).toBe(false);
     expect(isBlockedPrivateOrMetadataHost("93.184.216.34")).toBe(false);

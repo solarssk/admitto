@@ -173,4 +173,19 @@ describe("sanitizeDeliveryError", () => {
     const out = sanitizeDeliveryError("Delivery failed for admin+eu@relay.example.co.uk.");
     expect(out).toBe("Delivery failed for [redacted].");
   });
+
+  it("preserves an invalid email-like fragment", () => {
+    expect(sanitizeDeliveryError("Delivery failed for user@localhost")).toBe(
+      "Delivery failed for user@localhost",
+    );
+  });
+
+  it("redacts an email that crosses the persisted-error boundary before truncating", () => {
+    const out = sanitizeDeliveryError(`${"#".repeat(1990)}person@example.com`);
+
+    expect(out).toHaveLength(2000);
+    expect(out).toMatch(/\[redacted\]$/);
+    expect(out).not.toContain("person");
+    expect(out).not.toContain("example.com");
+  });
 });

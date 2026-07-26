@@ -80,7 +80,7 @@ export async function sendBatch(
   options: BatchOptions = {},
 ): Promise<BatchSummary> {
   const concurrency = Math.min(MAX_BATCH_CONCURRENCY, Math.max(1, options.concurrency ?? 3));
-  const results: SendResult[] = new Array(messages.length);
+  const pendingResults = new Map<number, SendResult>();
   let next = 0;
 
   async function worker() {
@@ -89,7 +89,7 @@ export async function sendBatch(
       if (index >= messages.length) return;
       const message = messages.at(index)!;
       const result = await adapter.send(message);
-      results.splice(index, 1, result);
+      pendingResults.set(index, result);
       options.onResult?.(result, message, index);
     }
   }
@@ -97,6 +97,7 @@ export async function sendBatch(
   const workers = Array.from({ length: Math.min(concurrency, messages.length) }, () => worker());
   await Promise.all(workers);
 
+  const results = Array.from({ length: messages.length }, (_, index) => pendingResults.get(index)!);
   const sent = results.filter((r) => isSendSuccess(r.status)).length;
   return { total: messages.length, sent, failed: messages.length - sent, results };
 }

@@ -139,13 +139,13 @@ export async function issueTicketsForEvent(
 
   const attendees = await prisma.attendee.findMany({ where: { event_id: eventId } });
 
-  const results = new Array<IssuedTicketResult>(attendees.length);
+  const resultsByIndex = new Map<number, IssuedTicketResult>();
   const pendingInternal: Array<{ index: number; attendeeId: string }> = [];
 
   for (const [index, attendee] of attendees.entries()) {
     const classified = classifyAttendeeUpfront(attendee, attendee.id);
     if (classified) {
-      results.splice(index, 1, classified);
+      resultsByIndex.set(index, classified);
       continue;
     }
     pendingInternal.push({ index, attendeeId: attendee.id });
@@ -154,15 +154,18 @@ export async function issueTicketsForEvent(
   if (pendingInternal.length > 0) {
     await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       for (const pending of pendingInternal) {
-        results.splice(
+        resultsByIndex.set(
           pending.index,
-          1,
           await issuePendingTicketInTransaction(tx, pending, baseUrl),
         );
       }
     });
   }
 
+  const results = Array.from(
+    { length: attendees.length },
+    (_, index) => resultsByIndex.get(index)!,
+  );
   return { results, ...summarizeIssuedResults(results) };
 }
 
