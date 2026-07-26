@@ -14,14 +14,31 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { revokeAllCheckInsForEvent, revokeAllItemsForEvent, writeAdminAuditLog } from "@admitto/tickets";
+import { emitSystemLog } from "@admitto/shared/system-log";
 import {
   adminAuditFromContext,
   assertEventManageAccess,
   requireEventId,
   requireSuperadmin,
+  resolveActorEmailForLog,
 } from "./admin-helpers.js";
 import { assertEventNotArchived } from "./event-archiving.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
+
+async function emitEventBulkRevokeLog(
+  db: PrismaClient,
+  eventId: string,
+  revokedCount: number,
+  actorUserId: string,
+  message: "event_checkins_bulk_revoked" | "event_items_bulk_revoked",
+): Promise<void> {
+  emitSystemLog("admin", "info", message, {
+    eventId,
+    revokedCount,
+    actorUserId,
+    actorEmail: await resolveActorEmailForLog(db, actorUserId),
+  });
+}
 
 /** POST /api/admin/events/:eventId/revoke-all-checkins — bulk-revoke every currently-admitted attendee's check-in. Superadmin only, blocked on archived events. */
 export async function handleRevokeAllCheckIns(c: Context, db: PrismaClient): Promise<Response> {
@@ -42,15 +59,17 @@ export async function handleRevokeAllCheckIns(c: Context, db: PrismaClient): Pro
   const revokedCount = await revokeAllCheckInsForEvent(db, { eventId, audit });
 
   const orgId = await resolveInstanceOrganizationId(db);
+  const actorUserId = c.get("auth").userId;
   await writeAdminAuditLog(db, {
     organizationId: orgId,
-    actorUserId: audit.operator ?? c.get("auth").userId,
+    actorUserId,
     sessionId: audit.sessionId,
     ip: audit.ip,
     timezone: audit.timezone,
     actionType: "event_checkins_bulk_revoked",
     metadata: { eventId, revokedCount },
   });
+  await emitEventBulkRevokeLog(db, eventId, revokedCount, actorUserId, "event_checkins_bulk_revoked");
 
   return c.json({ revokedCount });
 }
@@ -74,15 +93,17 @@ export async function handleRevokeAllItems(c: Context, db: PrismaClient): Promis
   const revokedCount = await revokeAllItemsForEvent(db, { eventId, audit });
 
   const orgId = await resolveInstanceOrganizationId(db);
+  const actorUserId = c.get("auth").userId;
   await writeAdminAuditLog(db, {
     organizationId: orgId,
-    actorUserId: audit.operator ?? c.get("auth").userId,
+    actorUserId,
     sessionId: audit.sessionId,
     ip: audit.ip,
     timezone: audit.timezone,
     actionType: "event_items_bulk_revoked",
     metadata: { eventId, revokedCount },
   });
+  await emitEventBulkRevokeLog(db, eventId, revokedCount, actorUserId, "event_items_bulk_revoked");
 
   return c.json({ revokedCount });
 }

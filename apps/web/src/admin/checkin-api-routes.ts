@@ -22,7 +22,11 @@ import {
 } from "@admitto/tickets";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import { publishCheckinIfValid } from "./checkin-sse-publish.js";
-import { itemTransitionErrorResponse, resolveClientTimezone } from "./admin-helpers.js";
+import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
+import {
+  itemTransitionErrorResponse,
+  resolveClientTimezone,
+} from "./admin-helpers.js";
 
 /** GET /api/checkin/events — session-only capability list (P4). */
 export async function handleGetCheckinEvents(c: Context, db: PrismaClient): Promise<Response> {
@@ -45,30 +49,40 @@ export async function handleGetCheckinEvents(c: Context, db: PrismaClient): Prom
 /** Build audit context for mutating check-in routes.
  *  Session auth: `deviceId` from `Session.device_label` (body value ignored).
  *  Bearer emergency: `deviceId` from request body. */
+type CheckinRequestAudit = {
+  audit: OpsAuditContext;
+  actorEmail?: string;
+};
+
 async function opsAuditFromBody(
   c: Context,
   db: PrismaClient,
   bodyDeviceId: unknown,
-): Promise<OpsAuditContext> {
+): Promise<CheckinRequestAudit> {
   const sessionId = c.get("checkinSessionId") as string | undefined;
   let deviceId: string | undefined;
+  let actorEmail: string | undefined;
 
   if (c.get("checkinAuth") === "bearer") {
     deviceId = typeof bodyDeviceId === "string" ? bodyDeviceId : undefined;
   } else if (sessionId) {
     const session = await db.session.findUnique({
       where: { id: sessionId },
-      select: { device_label: true },
+      select: { device_label: true, user: { select: { email: true } } },
     });
     deviceId = session?.device_label ?? undefined;
+    actorEmail = session?.user.email ?? undefined;
   }
 
   return {
-    operator: c.get("operatorUserId") as string | undefined,
-    sessionId,
-    deviceId,
-    ip: resolveClientIp(c),
-    timezone: resolveClientTimezone(c) ?? undefined,
+    audit: {
+      operator: c.get("operatorUserId") as string | undefined,
+      sessionId,
+      deviceId,
+      ip: resolveClientIp(c),
+      timezone: resolveClientTimezone(c) ?? undefined,
+    },
+    ...(actorEmail ? { actorEmail } : {}),
   };
 }
 
@@ -78,6 +92,82 @@ function serializeScanResult(result: CheckInScanResult): unknown {
     return { ...result, admittedAt: result.admittedAt.toISOString() };
   }
   return result;
+}
+
+/** Emit a safe security signal for a rejected admission attempt. Staff identity is included only
+ * for the authenticated session flow; emergency bearer requests keep the device context only. */
+async function emitRejectedCheckinLog(
+  eventId: string,
+  result: CheckInScanResult,
+  audit: OpsAuditContext,
+  actorEmail?: string,
+): Promise<void> {
+  if (
+    result.status !== "INVALID" &&
+    result.status !== "REVOKED" &&
+    result.status !== "ALREADY_CHECKED_IN"
+  ) {
+    return;
+  }
+
+  const actorFields = audit.operator
+    ? {
+        actorUserId: audit.operator,
+        ...(actorEmail ? { actorEmail } : {}),
+      }
+    : {};
+
+  emitSystemLog("security", "warn", "checkin_rejected", {
+    eventId,
+    status: result.status,
+    deviceId: audit.deviceId ?? null,
+    ...actorFields,
+  });
+}
+
+type CheckinOperation = "scan" | "admit" | "note" | "undo";
+
+/** Record a bounded failure signal. A staff session provides accountable identity; the emergency
+ * bearer path has no staff identity, so it retains only its device context. */
+function recordCheckinOperationFailure(
+  c: Context,
+  eventId: string,
+  operation: CheckinOperation,
+  bodyDeviceId: unknown,
+  actorEmail?: string,
+): void {
+  const actorUserId = c.get("operatorUserId") as string | undefined;
+  const context = actorUserId
+    ? {
+        actorUserId,
+        ...(actorEmail ? { actorEmail } : {}),
+      }
+    : {
+        deviceId: typeof bodyDeviceId === "string" ? bodyDeviceId : null,
+      };
+
+  recordSystemLog({
+    level: "error",
+    source: "api",
+    message: `checkin_${operation}_failed`,
+    fields: { eventId, ...context },
+  });
+}
+
+/** Finish a scan/manual-admission response with the shared success-side effects. Kept inside the
+ * caller's `try` so an unexpected emit failure follows its existing operation-specific catch. */
+async function respondToCheckinResult(
+  c: Context,
+  eventId: string,
+  result: CheckInScanResult,
+  audit: OpsAuditContext,
+  actorEmail?: string,
+): Promise<Response> {
+  if (result.status === "VALID") {
+    publishCheckinIfValid(c, eventId, result, audit.deviceId);
+  }
+  await emitRejectedCheckinLog(eventId, result, audit, actorEmail);
+  return c.json(serializeScanResult(result), 200);
 }
 
 /** Resolve company/department for history rows (custom_data with legacy column fallback). */
@@ -101,8 +191,10 @@ export async function handleCheckinScan(c: Context, db: PrismaClient): Promise<R
   if (!scanned) return c.json({ error: "scanned required" }, 400);
   if (typeof eventId !== "string" || !eventId) return c.json({ error: "eventId required" }, 400);
 
+  let requestAudit: CheckinRequestAudit | undefined;
   try {
-    const audit = await opsAuditFromBody(c, db, deviceId);
+    requestAudit = await opsAuditFromBody(c, db, deviceId);
+    const { audit } = requestAudit;
     const result = await checkInScan(
       {
         scanned,
@@ -115,12 +207,10 @@ export async function handleCheckinScan(c: Context, db: PrismaClient): Promise<R
       },
       db,
     );
-    if (result.status === "VALID") {
-      publishCheckinIfValid(c, eventId, result, audit.deviceId ?? null);
-    }
-    return c.json(serializeScanResult(result), 200);
+    return await respondToCheckinResult(c, eventId, result, audit, requestAudit.actorEmail);
   } catch (err) {
     console.error("checkInScan failed:", err);
+    recordCheckinOperationFailure(c, eventId, "scan", deviceId, requestAudit?.actorEmail);
     return c.json({ error: "server error" }, 500);
   }
 }
@@ -177,8 +267,10 @@ export async function handleCheckinAdmit(c: Context, db: PrismaClient): Promise<
 
   const admitMethod = method === "scan" ? "scan" : "manual";
 
+  let requestAudit: CheckinRequestAudit | undefined;
   try {
-    const audit = await opsAuditFromBody(c, db, deviceId);
+    requestAudit = await opsAuditFromBody(c, db, deviceId);
+    const { audit } = requestAudit;
     const result = await admitAttendee(
       {
         attendeeId,
@@ -189,12 +281,10 @@ export async function handleCheckinAdmit(c: Context, db: PrismaClient): Promise<
       },
       db,
     );
-    if (result.status === "VALID") {
-      publishCheckinIfValid(c, eventId, result, audit.deviceId ?? null);
-    }
-    return c.json(serializeScanResult(result), 200);
+    return await respondToCheckinResult(c, eventId, result, audit, requestAudit.actorEmail);
   } catch (err) {
     console.error("admitAttendee failed:", err);
+    recordCheckinOperationFailure(c, eventId, "admit", deviceId, requestAudit?.actorEmail);
     return c.json({ error: "server error" }, 500);
   }
 }
@@ -220,7 +310,7 @@ export async function handleCheckinItemAction(c: Context, db: PrismaClient): Pro
         eventId,
         itemKey,
         targetState,
-        audit: await opsAuditFromBody(c, db, deviceId),
+        audit: (await opsAuditFromBody(c, db, deviceId)).audit,
       },
       db,
     );
@@ -244,8 +334,10 @@ export async function handleCheckinNote(c: Context, db: PrismaClient): Promise<R
   if (typeof noteBody !== "string") return c.json({ error: "body required" }, 400);
   if (!noteBody.trim()) return c.json({ error: "body required" }, 400);
 
+  let requestAudit: CheckinRequestAudit | undefined;
   try {
-    const audit = await opsAuditFromBody(c, db, deviceId);
+    requestAudit = await opsAuditFromBody(c, db, deviceId);
+    const { audit } = requestAudit;
     if (!audit.operator) return c.json({ error: "unauthorized" }, 401);
 
     const note = await addAttendeeNote(
@@ -265,6 +357,7 @@ export async function handleCheckinNote(c: Context, db: PrismaClient): Promise<R
       return c.json({ error: "not found" }, 404);
     }
     console.error("addAttendeeNote failed:", err);
+    recordCheckinOperationFailure(c, eventId, "note", deviceId, requestAudit?.actorEmail);
     return c.json({ error: "server error" }, 500);
   }
 }
@@ -277,8 +370,10 @@ export async function handleCheckinUndo(c: Context, db: PrismaClient): Promise<R
 
   if (typeof eventId !== "string" || !eventId) return c.json({ error: "eventId required" }, 400);
 
+  let requestAudit: CheckinRequestAudit | undefined;
   try {
-    const audit = await opsAuditFromBody(c, db, deviceId);
+    requestAudit = await opsAuditFromBody(c, db, deviceId);
+    const { audit } = requestAudit;
     const result = await undoLastCheckIn(
       { eventId, audit },
       db,
@@ -289,6 +384,7 @@ export async function handleCheckinUndo(c: Context, db: PrismaClient): Promise<R
       return c.json({ error: err.message }, 409);
     }
     console.error("undoLastCheckIn failed:", err);
+    recordCheckinOperationFailure(c, eventId, "undo", deviceId, requestAudit?.actorEmail);
     return c.json({ error: "server error" }, 500);
   }
 }
