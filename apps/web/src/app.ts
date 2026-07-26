@@ -271,7 +271,7 @@ import {
   handleApiTestCfAccess,
 } from "./admin/identity-api-routes.js";
 import { applyBaselineSecurityHeaders } from "./security-headers.js";
-import { createRequestLogMiddleware, redactRequestPath, resolveLogHttpRequests } from "./request-log.js";
+import { createRequestLogMiddleware, resolveLogHttpRequests } from "./request-log.js";
 import { resolvePostLoginRedirectForUser } from "./auth/post-login-redirect.js";
 import { handleReadyz } from "./ops/readyz.js";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
