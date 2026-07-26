@@ -977,6 +977,43 @@ describe("SystemLogsPanel rendering", () => {
     expect(screen.getByText("Showing 1 line")).toBeTruthy();
   });
 
+  it("hosts Live/Download in the Card header, next to the System/Audit toggle", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+    vi.mocked(fetchSystemLogs).mockResolvedValueOnce({
+      entries: [{ id: 1, ts: "2026-01-01T12:00:00.000Z", level: "info", source: "api", message: "http_request" }],
+      cursor: 1,
+    });
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByText("No audit log entries yet");
+    openSystemLogsView();
+    await screen.findByText("http_request");
+
+    // onHasEntriesChange fires from a useEffect one tick after the entries themselves render,
+    // so the header button's disabled state can lag the text by a render - wait for it rather
+    // than asserting synchronously.
+    await waitFor(() => expect(screen.getByRole("button", { name: "Download .log" })).property("disabled", false));
+
+    const liveButton = screen.getByRole("button", { name: "Live" });
+    fireEvent.click(liveButton);
+    expect(screen.getByRole("button", { name: "Paused" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Paused" }));
+    expect(screen.getByRole("button", { name: "Live" })).toBeTruthy();
+  });
+
+  it("disables the header Download button until there's something to download", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+    vi.mocked(fetchSystemLogs).mockResolvedValue(emptySystemLog());
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByText("No audit log entries yet");
+    openSystemLogsView();
+    await screen.findByText("No log activity yet");
+
+    expect(screen.getByRole("button", { name: "Download .log" })).property("disabled", true);
+  });
+
   it("refetches when the source filter changes", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
     vi.mocked(fetchSystemLogs).mockResolvedValue(emptySystemLog());
@@ -1033,7 +1070,7 @@ describe("SystemLogsPanel rendering", () => {
     openSystemLogsView();
     await screen.findByText("No log activity yet");
 
-    fireEvent.click(screen.getByRole("switch", { name: /Live/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Live" }));
     const callsAfterPause = vi.mocked(fetchSystemLogs).mock.calls.length;
 
     await new Promise((resolve) => setTimeout(resolve, 2500));

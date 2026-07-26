@@ -4500,39 +4500,27 @@ output.mail-field-hint {
   cursor: not-allowed;
 }
 
-/* System logs panel (Logs & audit > System toggle) */
-.system-log-panel__hint {
-  margin: 0 0 var(--space-3);
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-}
-
+/* System logs panel (Logs & audit > System toggle) - toolbar sits at the same level as the
+   Audit log toolbar (no intro paragraph pushing it down, no labels above each field - "All
+   sources"/"All levels" already say what the select does). */
 .system-log-panel__toolbar {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   flex-wrap: wrap;
   gap: var(--space-3);
   margin-bottom: var(--space-3);
 }
 
 .system-log-panel__field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
   min-width: 9rem;
-}
-
-.system-log-panel__field .at-select,
-.system-log-panel__field .at-input {
-  max-width: none;
 }
 
 .system-log-panel__field--search {
   flex: 1 1 14rem;
 }
 
-.system-log-panel__live {
-  margin-left: auto;
+.system-log-panel__field--search .at-input {
+  max-width: none;
 }
 
 .system-log-panel__console {
@@ -4607,10 +4595,6 @@ output.mail-field-hint {
   .system-log-panel__toolbar {
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .system-log-panel__live {
-    margin-left: 0;
   }
 
   .system-log-panel__footer {

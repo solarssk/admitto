@@ -24,7 +24,7 @@ import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { localeDateInputPattern, utcDayEndIso, utcDayStartIso } from "../utils/event-dates.js";
 import { getPreferredLocale } from "../utils/locale-store.js";
 import { MAIL_PROVIDER_LABELS } from "./mailProviderOptions.js";
-import { SystemLogsPanel } from "./SystemLogsPanel.js";
+import { SystemLogsPanel, type SystemLogsPanelHandle } from "./SystemLogsPanel.js";
 
 /** Human-readable labels for `AdminAuditLog.action_type` (current + planned IAM types). */
 const ACTION_LABELS: Record<string, string> = {
@@ -777,6 +777,12 @@ const LOGS_VIEW_OPTIONS: ReadonlyArray<SegmentedOption<LogsView>> = [
 /** Superadmin audit log viewer — read-only paginated table with action and date filters. */
 export function AuditLogPanel() {
   const [view, setView] = useState<LogsView>("audit");
+  // Mirrored up from SystemLogsPanel purely so the header's Live/Download buttons (which live
+  // here, next to the System/Audit toggle, rather than being duplicated inside the panel) can
+  // reflect its state - SystemLogsPanel itself remains the source of truth for both.
+  const [systemLive, setSystemLive] = useState(true);
+  const [systemHasEntries, setSystemHasEntries] = useState(false);
+  const systemLogsRef = useRef<SystemLogsPanelHandle>(null);
   const [entries, setEntries] = useState<AuditLogEntryDto[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -1017,6 +1023,27 @@ export function AuditLogPanel() {
               {exportButton}
             </>
           )}
+          {view === "system" && (
+            <>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={!systemHasEntries}
+                onClick={() => systemLogsRef.current?.download()}
+              >
+                Download .log
+              </Button>
+              <Button
+                type="button"
+                variant={systemLive ? "success" : "secondary"}
+                size="sm"
+                onClick={() => systemLogsRef.current?.toggleLive()}
+              >
+                {systemLive ? "Live" : "Paused"}
+              </Button>
+            </>
+          )}
           {/* Always last: with the actions row right-anchored, a trailing item's own edge
               stays flush against the card's right edge no matter how many of the preceding,
               view-dependent buttons are present - the one placement that's genuinely fixed. */}
@@ -1031,7 +1058,7 @@ export function AuditLogPanel() {
       }
     >
       {view === "system" ? (
-        <SystemLogsPanel />
+        <SystemLogsPanel ref={systemLogsRef} onLiveChange={setSystemLive} onHasEntriesChange={setSystemHasEntries} />
       ) : (
         <AuditLogView
           isDesktop={isDesktop}

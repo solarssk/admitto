@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, EmptyState, Switch, useToast } from "@admitto/ui";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { Button, EmptyState, useToast } from "@admitto/ui";
 import { fetchSystemLogs } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { SystemLogEntryDto } from "../api/types.js";
@@ -51,13 +51,32 @@ function downloadTextFile(filename: string, content: string): void {
   URL.revokeObjectURL(url);
 }
 
+/** Imperative controls exposed to AuditLogPanel, which hosts the Live/Download buttons in the
+ * shared Card header (next to the System/Audit toggle) rather than duplicating that header. */
+export interface SystemLogsPanelHandle {
+  toggleLive: () => void;
+  download: () => void;
+}
+
+interface SystemLogsPanelProps {
+  /** Mirrors this panel's own `live` state up so the header's Live/Paused button can reflect it -
+   * display only, the panel itself remains the source of truth. */
+  onLiveChange?: (live: boolean) => void;
+  /** Mirrors whether there's anything to copy/download, so the header's Download button can
+   * disable itself the same way the footer's Copy/Clear view buttons already do. */
+  onHasEntriesChange?: (hasEntries: boolean) => void;
+}
+
 /**
  * Live tail of the in-memory system-log buffer (see @admitto/shared/system-log) - raw
  * API/DB/Cache/Mail/Admin activity for diagnosing issues, not a durable audit trail (that's the
  * Audit log side of this same toggle). Everything shown here is also written to the container's
  * stdout independent of this view, so nothing is lost if the buffer resets or the UI is down.
  */
-export function SystemLogsPanel() {
+export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanelProps>(function SystemLogsPanel(
+  { onLiveChange, onHasEntriesChange },
+  ref,
+) {
   const [entries, setEntries] = useState<SystemLogEntryDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +93,14 @@ export function SystemLogsPanel() {
   useEffect(() => {
     filtersRef.current = { level, source, search };
   }, [level, source, search]);
+
+  useEffect(() => {
+    onLiveChange?.(live);
+  }, [live, onLiveChange]);
+
+  useEffect(() => {
+    onHasEntriesChange?.(entries.length > 0);
+  }, [entries.length, onHasEntriesChange]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setSearch(searchInput.trim()), SEARCH_DEBOUNCE_MS);
@@ -162,77 +189,65 @@ export function SystemLogsPanel() {
     }
   };
 
-  const handleDownload = () => {
-    downloadTextFile(`system-logs-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.log`, lines.join("\n"));
-  };
+  useImperativeHandle(
+    ref,
+    () => ({
+      toggleLive: () => setLive((v) => !v),
+      download: () => {
+        downloadTextFile(
+          `system-logs-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.log`,
+          lines.join("\n"),
+        );
+      },
+    }),
+    [lines],
+  );
 
   return (
     <div className="system-log-panel">
-      <p className="system-log-panel__hint">
-        Raw output from the API, database, cache, mail transport, and admin actions — for
-        diagnosing issues, not for audit history. Retention-purge activity at container startup
-        runs as a separate process and won't appear here live, though it's still in the
-        container's own logs.
-      </p>
       <div className="system-log-panel__toolbar">
-        <div className="system-log-panel__field">
-          <label className="audit-log-filter__label" htmlFor="system-log-filter-source">
-            Source
-          </label>
-          <select
-            id="system-log-filter-source"
-            name="system-log-filter-source"
-            className="at-select"
-            value={source}
-            onChange={(e) => setSource(e.target.value as SourceFilter)}
-          >
-            <option value="">All sources</option>
-            {(Object.keys(SOURCE_LABELS) as SystemLogEntryDto["source"][]).map((key) => (
-              <option key={key} value={key}>
-                {SOURCE_LABELS[key]}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="system-log-panel__field">
-          <label className="audit-log-filter__label" htmlFor="system-log-filter-level">
-            Level
-          </label>
-          <select
-            id="system-log-filter-level"
-            name="system-log-filter-level"
-            className="at-select"
-            value={level}
-            onChange={(e) => setLevel(e.target.value as LevelFilter)}
-          >
-            <option value="">All levels</option>
-            {(Object.keys(LEVEL_LABELS) as SystemLogEntryDto["level"][]).map((key) => (
-              <option key={key} value={key}>
-                {LEVEL_LABELS[key]}
-              </option>
-            ))}
-          </select>
-        </div>
         <div className="system-log-panel__field system-log-panel__field--search">
-          <label className="audit-log-filter__label" htmlFor="system-log-search">
-            Search
-          </label>
           <input
             id="system-log-search"
             name="system-log-search"
             type="text"
             className="at-input"
+            aria-label="Search message text"
             placeholder="Search message text…"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
           />
         </div>
-        <Switch
-          label={live ? "Live" : "Paused"}
-          checked={live}
-          onChange={(e) => setLive(e.target.checked)}
-          className="system-log-panel__live"
-        />
+        <select
+          id="system-log-filter-source"
+          name="system-log-filter-source"
+          className="at-select system-log-panel__field"
+          aria-label="Source"
+          value={source}
+          onChange={(e) => setSource(e.target.value as SourceFilter)}
+        >
+          <option value="">All sources</option>
+          {(Object.keys(SOURCE_LABELS) as SystemLogEntryDto["source"][]).map((key) => (
+            <option key={key} value={key}>
+              {SOURCE_LABELS[key]}
+            </option>
+          ))}
+        </select>
+        <select
+          id="system-log-filter-level"
+          name="system-log-filter-level"
+          className="at-select system-log-panel__field"
+          aria-label="Level"
+          value={level}
+          onChange={(e) => setLevel(e.target.value as LevelFilter)}
+        >
+          <option value="">All levels</option>
+          {(Object.keys(LEVEL_LABELS) as SystemLogEntryDto["level"][]).map((key) => (
+            <option key={key} value={key}>
+              {LEVEL_LABELS[key]}
+            </option>
+          ))}
+        </select>
       </div>
 
       {loading && entries.length === 0 ? (
@@ -267,11 +282,8 @@ export function SystemLogsPanel() {
           <Button type="button" variant="secondary" size="sm" disabled={entries.length === 0} onClick={() => setEntries([])}>
             Clear view
           </Button>
-          <Button type="button" variant="secondary" size="sm" disabled={lines.length === 0} onClick={handleDownload}>
-            Download .log
-          </Button>
         </div>
       </div>
     </div>
   );
-}
+});
