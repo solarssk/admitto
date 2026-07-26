@@ -38,11 +38,40 @@ contains only a random, unguessable identifier — no name, email, or other PII.
 
 ## Logs
 
-- Design goal: no full email addresses or names in **routine application log lines** — stdout/
-  stderr, error traces, and anything that could reach a third-party log aggregator.
-- No secrets or tokens in logs.
-- This does **not** apply to the admin audit trail (`AttendeeActionLog`), which is a first-class,
-  access-controlled product feature, not an operational log line — see below.
+Design goal: no attendee names or email addresses in **routine application log lines** — stdout/
+stderr, error traces, and anything that could reach a third-party log aggregator. No secrets or
+tokens in logs, ever.
+
+**Exception, by design:** a small, fixed set of staff/operator accountability events *do* log the
+acting staff member's own full email address — a successful staff login, a Cloudflare Access
+sign-in, MFA break-glass use, and admin actions such as archiving, deleting, or exporting an event.
+This identifies **who did an action**, for internal accountability — the same legitimate-interest
+basis already used for the admin audit trail below, not a new one. It only applies to a **verified**
+identity: a **failed** login attempt is unauthenticated user input (it could be anyone typing an
+address, including an attacker), so its email is still shown redacted (e.g. `a***@example.com`).
+Attendee-facing data — a ticket email's recipient address, import file content — always stays
+redacted or minimised in these logs, and database query logs never include the actual query values,
+only the query shape and how long it took.
+
+This does **not** apply to the admin audit trail (`AttendeeActionLog`, `AdminAuditLog`), which is a
+first-class, access-controlled product feature, not an operational log line — see below.
+
+## System logs (live tail)
+
+A superadmin-only screen (Settings → **Logs & audit** → **System**) shows a short live tail of
+recent activity: API requests, database queries, cache and rate-limit events, mail sends, and the
+admin actions mentioned above. It is a **diagnostic convenience view, not a durability or
+compliance record**:
+
+- It is **in-memory only**, holds at most the last 1000 entries per running server process, and is
+  emptied whenever that process restarts.
+- Everything shown here is also written to the container's own standard output at the same time —
+  that is where long-term retention or forwarding to an external log system happens (see
+  [docs/SECURITY-CONTROLS.md](docs/SECURITY-CONTROLS.md)'s "Known scope limits" — Admitto has no
+  built-in SIEM or central log platform).
+- It follows the same redaction rules described in **Logs** above: attendee-facing data is never
+  shown in full, and a staff member's email is shown in full only for the specific accountability
+  events listed there.
 
 ## Admin audit trail (`AttendeeActionLog`)
 
@@ -127,6 +156,7 @@ periods for different categories are intentional — not an inconsistency.
 | Login sessions, trusted devices | Product — automatic | Best-effort purge at container startup when expired/revoked |
 | Email bodies (`rendered_html`, `rendered_subject`) | Product — automatic | Nullified **60 days** after terminal delivery (`EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`) |
 | IP addresses in admin audit log and check-in history | Operator | **30 days or your corporate log retention policy** (whichever applies); product does not auto-purge |
+| System logs live tail (in-memory only) | Product — automatic | Not persisted anywhere by the product; the last 1000 entries are kept in server memory and gone on the next restart. Long-term retention, if you need it, is whatever your container log driver already does with stdout |
 | Event attendee list (PII) | Operator | Export via admin UI; erasure via **Attendees → attendee detail → More actions → Delete attendee** (single) or the Attendees list's row-selection bulk bar (multiple at once), or the `DELETE` API directly — see [DSAR-PROCEDURE.md](docs/DSAR-PROCEDURE.md) |
 
 Automated post-event attendee purge is planned for **v1.0**. Until then, use **Attendees → Export**,
