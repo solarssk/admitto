@@ -189,7 +189,7 @@ function buildAuditLogCsv(
   }[],
   actorMap: Record<string, ActorRow>,
 ): string {
-  const header = CSV_COLUMNS.map(quoteCsvCell).join(",");
+  const header = CSV_COLUMNS.map((col) => quoteCsvCell(col)).join(",");
   const csvRows = rows.map((r) => {
     const actor = actorMap[r.actor_user_id];
     const meta = r.metadata as Record<string, unknown> | null;
@@ -202,7 +202,7 @@ function buildAuditLogCsv(
       sanitizeCsvCell(r.ip),
       sanitizeCsvCell(meta ? JSON.stringify(meta) : ""),
     ]
-      .map(quoteCsvCell)
+      .map((cell) => quoteCsvCell(cell))
       .join(",");
   });
   return [header, ...csvRows].join("\r\n");
