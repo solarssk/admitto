@@ -63,6 +63,8 @@ export interface DatePickerProps {
   value: string;
   onChange: (value: string) => void;
   label?: string;
+  /** Accessible name for the input when there's no visible `label` (e.g. a toolbar filter). */
+  ariaLabel?: string;
   id?: string;
   disabled?: boolean;
   required?: boolean;
@@ -75,6 +77,7 @@ export function DatePicker({
   value,
   onChange,
   label,
+  ariaLabel,
   id,
   disabled,
   required,
@@ -92,6 +95,14 @@ export function DatePicker({
 
   const [open, setOpen] = useState(false);
   const [panelAbove, setPanelAbove] = useState(false);
+  // The panel normally left-aligns with the field (extending right) - for a field near the
+  // viewport's right edge (e.g. the last of several filters in a row), that would push it past
+  // the edge. The page body clips overflow-x, so that's not just untidy, it's invisible.
+  const [panelRightAligned, setPanelRightAligned] = useState(false);
+  // Set only when neither side of the field has room for the panel at its natural height (a
+  // field mid-page in a short viewport) - caps it to whichever side was chosen instead of
+  // letting it run off-screen, with its own scrollbar so the calendar stays reachable.
+  const [panelMaxHeight, setPanelMaxHeight] = useState<number | undefined>(undefined);
   const [text, setText] = useState(() => (value ? formatIsoCalendarDate(value) : ""));
   const [typing, setTyping] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
@@ -150,9 +161,14 @@ export function DatePicker({
     const updatePlacement = () => {
       const rect = containerRef.current!.getBoundingClientRect();
       const panelHeight = panelRef.current!.offsetHeight;
+      const panelWidth = panelRef.current!.offsetWidth;
       const spaceBelow = window.innerHeight - rect.bottom;
       const spaceAbove = rect.top;
-      setPanelAbove(spaceBelow < panelHeight + 8 && spaceAbove > spaceBelow);
+      const above = spaceBelow < panelHeight + 8 && spaceAbove > spaceBelow;
+      setPanelAbove(above);
+      const available = (above ? spaceAbove : spaceBelow) - 8;
+      setPanelMaxHeight(panelHeight > available ? Math.max(160, available) : undefined);
+      setPanelRightAligned(window.innerWidth - rect.left < panelWidth);
     };
     updatePlacement();
     window.addEventListener("resize", updatePlacement);
@@ -276,7 +292,13 @@ export function DatePicker({
           type="button"
           className="date-picker__calendar-btn"
           disabled={disabled}
-          aria-label={open ? "Close calendar" : "Open calendar"}
+          aria-label={
+            ariaLabel
+              ? `${ariaLabel}: ${open ? "Close calendar" : "Open calendar"}`
+              : open
+                ? "Close calendar"
+                : "Open calendar"
+          }
           aria-expanded={open}
           aria-controls={`${controlId}-panel`}
           onClick={() => {
@@ -293,6 +315,7 @@ export function DatePicker({
           inputMode="numeric"
           autoComplete="off"
           disabled={disabled}
+          aria-label={label ? undefined : ariaLabel}
           aria-invalid={isInvalid || undefined}
           aria-required={required || undefined}
           placeholder={resolvedPlaceholder}
@@ -324,9 +347,15 @@ export function DatePicker({
           className={[
             "date-picker__panel",
             panelAbove && "date-picker__panel--above",
+            panelRightAligned && "date-picker__panel--right",
           ]
             .filter(Boolean)
             .join(" ")}
+          style={
+            panelMaxHeight
+              ? { maxHeight: `${panelMaxHeight}px`, overflowY: "auto" }
+              : undefined
+          }
           open
           aria-label="Choose date"
           aria-modal="true"

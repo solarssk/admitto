@@ -5,7 +5,7 @@ import type { AuditLogEntryDto, AuditLogResponse, EventDto, SessionListDto } fro
 import { ApiError, exportAuditLog, fetchAdminEvents, fetchAuditLog, fetchSessions } from "../../src/api/client.js";
 import { AuditLogPanel } from "../../src/settings/AuditLogPanel.js";
 import { SessionsPanel } from "../../src/settings/SessionsPanel.js";
-import { renderWithToast } from "../test-utils.js";
+import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -75,12 +75,16 @@ beforeEach(() => {
   vi.mocked(fetchAdminEvents).mockResolvedValue([]);
   // jsdom does not implement scrollIntoView.
   Element.prototype.scrollIntoView = vi.fn();
+  // AuditLogPanel picks table vs. mobile cards via useIsDesktop() - default to desktop so
+  // these tests exercise the <table> markup they assert against.
+  mockMatchMedia(true);
 });
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe("AuditLogPanel rendering", () => {
@@ -130,6 +134,7 @@ describe("AuditLogPanel rendering", () => {
     renderWithToast(<AuditLogPanel />);
 
     expect(await screen.findByText("No audit log entries yet")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
     fireEvent.change(screen.getByRole("combobox", { name: "Action" }), {
       target: { value: "event_created" },
     });
@@ -265,7 +270,7 @@ describe("AuditLogPanel rendering", () => {
     fireEvent.click(retry);
 
     await waitFor(() => {
-      expect(screen.getByText("Page 1 of 1 (5 total)")).toBeTruthy();
+      expect(screen.getByText("Page 1 of 1")).toBeTruthy();
     });
   });
 
@@ -346,7 +351,7 @@ describe("AuditLogPanel rendering", () => {
     consoleErrorSpy.mockRestore();
   });
 
-  it("always labels the Time column as UTC (no viewer-timezone toggle)", async () => {
+  it("always shows Time as UTC first, actor-local second (no viewer-timezone toggle)", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue({
       entries: [makeAuditEntry()],
       total: 1,
@@ -355,8 +360,9 @@ describe("AuditLogPanel rendering", () => {
     });
 
     renderWithToast(<AuditLogPanel />);
-    await screen.findByRole("table");
-    expect(screen.getByText("Time (UTC)")).toBeTruthy();
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Time")).toBeTruthy();
+    expect(within(table).getByText("2026-01-01 12:00:00")).toBeTruthy();
     expect(screen.queryByRole("radio", { name: "Local" })).toBeNull();
   });
 
@@ -372,20 +378,20 @@ describe("AuditLogPanel rendering", () => {
     await screen.findByRole("table");
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    expect(await screen.findByText("Page 2 of 2 (50 total)")).toBeTruthy();
+    expect(await screen.findByText("Page 2 of 2")).toBeTruthy();
 
     const fromInput = screen.getByLabelText("From");
     fireEvent.change(fromInput, { target: { value: "2026-01-01" } });
     fireEvent.blur(fromInput);
-    expect(await screen.findByText("Page 1 of 2 (50 total)")).toBeTruthy();
+    expect(await screen.findByText("Page 1 of 2")).toBeTruthy();
     expect(vi.mocked(fetchAuditLog).mock.calls.at(-1)![0]).toMatchObject({ page: 1, start: "2026-01-01T00:00:00.000Z" });
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    await screen.findByText("Page 2 of 2 (50 total)");
+    await screen.findByText("Page 2 of 2");
     const toInput = screen.getByLabelText("To");
     fireEvent.change(toInput, { target: { value: "2026-01-31" } });
     fireEvent.blur(toInput);
-    expect(await screen.findByText("Page 1 of 2 (50 total)")).toBeTruthy();
+    expect(await screen.findByText("Page 1 of 2")).toBeTruthy();
     expect(vi.mocked(fetchAuditLog).mock.calls.at(-1)![0]).toMatchObject({ page: 1, end: "2026-01-31T23:59:59.999Z" });
   });
 
@@ -395,6 +401,7 @@ describe("AuditLogPanel rendering", () => {
     renderWithToast(<AuditLogPanel />);
     await screen.findByText("No audit log entries yet");
 
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
     fireEvent.change(screen.getByRole("combobox", { name: "Action" }), {
       target: { value: "event_created" },
     });
@@ -414,16 +421,16 @@ describe("AuditLogPanel rendering", () => {
     });
 
     renderWithToast(<AuditLogPanel />);
-    expect(await screen.findByText("Page 1 of 2 (50 total)")).toBeTruthy();
+    expect(await screen.findByText("Page 1 of 2")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Previous" })).property("disabled", true);
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    expect(await screen.findByText("Page 2 of 2 (50 total)")).toBeTruthy();
+    expect(await screen.findByText("Page 2 of 2")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Next" })).property("disabled", true);
     expect(vi.mocked(fetchAuditLog).mock.calls.at(-1)![0]).toMatchObject({ page: 2 });
 
     fireEvent.click(screen.getByRole("button", { name: "Previous" }));
-    expect(await screen.findByText("Page 1 of 2 (50 total)")).toBeTruthy();
+    expect(await screen.findByText("Page 1 of 2")).toBeTruthy();
     expect(vi.mocked(fetchAuditLog).mock.calls.at(-1)![0]).toMatchObject({ page: 1 });
   });
 
@@ -433,10 +440,10 @@ describe("AuditLogPanel rendering", () => {
       .mockResolvedValueOnce({ entries: [makeAuditEntry()], total: 50, page: 2, pageSize: 25 });
 
     renderWithToast(<AuditLogPanel />);
-    await screen.findByText("Page 1 of 2 (50 total)");
+    await screen.findByText("Page 1 of 2");
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    await screen.findByText("Page 2 of 2 (50 total)");
+    await screen.findByText("Page 2 of 2");
 
     expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
   });
@@ -454,11 +461,12 @@ describe("AuditLogPanel rendering", () => {
 
     renderWithToast(<AuditLogPanel />);
     resolveInitial({ entries: [makeAuditEntry()], total: 50, page: 1, pageSize: 25 });
-    await screen.findByText("Page 1 of 2 (50 total)");
+    await screen.findByText("Page 1 of 2");
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await act(async () => {});
 
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
     fireEvent.change(screen.getByRole("combobox", { name: "Action" }), {
       target: { value: "event_created" },
     });
@@ -531,14 +539,15 @@ describe("AuditLogPanel rendering", () => {
     expect(within(rows[2]!).getByText("Deleted event")).toBeTruthy();
   });
 
-  it("filters by event via the Scope dropdown, resetting to page 1", async () => {
+  it("filters by event via the Filters panel's Event dropdown, resetting to page 1", async () => {
     vi.mocked(fetchAdminEvents).mockResolvedValueOnce([makeEvent({ id: "evt-1", title: "Spring Summit" })]);
     vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
 
     renderWithToast(<AuditLogPanel />);
     await screen.findByText("No audit log entries yet");
 
-    const scopeSelect = await screen.findByRole("combobox", { name: "Scope" });
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    const scopeSelect = await screen.findByRole("combobox", { name: "Event" });
     expect(within(scopeSelect).getByText("Spring Summit")).toBeTruthy();
 
     fireEvent.change(scopeSelect, { target: { value: "evt-1" } });
@@ -558,6 +567,7 @@ describe("AuditLogPanel rendering", () => {
     renderWithToast(<AuditLogPanel />);
     await screen.findByText("No audit log entries yet");
 
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
     fireEvent.change(screen.getByRole("combobox", { name: "Action" }), {
       target: { value: "event_created" },
     });
@@ -566,12 +576,12 @@ describe("AuditLogPanel rendering", () => {
       expect.anything(),
     ));
 
-    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export CSV" }));
     await waitFor(() => expect(exportAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({ actionType: "event_created" }),
     ));
 
-    fireEvent.click(await screen.findByRole("button", { name: "Export" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Export CSV" }));
     expect(await screen.findByText(/Failed to export audit log/)).toBeTruthy();
   });
 
@@ -597,10 +607,10 @@ describe("AuditLogPanel rendering", () => {
     });
 
     renderWithToast(<AuditLogPanel />);
-    await screen.findByText("Page 1 of 5 (120 total)");
+    await screen.findByText("Page 1 of 5");
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    await screen.findByText("Page 2 of 5 (120 total)");
+    await screen.findByText("Page 2 of 5");
 
     fireEvent.change(screen.getByRole("combobox", { name: "Rows per page" }), {
       target: { value: "100" },
@@ -609,7 +619,7 @@ describe("AuditLogPanel rendering", () => {
     await waitFor(() =>
       expect(vi.mocked(fetchAuditLog).mock.calls.at(-1)![0]).toMatchObject({ page: 1, pageSize: 100 }),
     );
-    expect(await screen.findByText("Page 1 of 2 (120 total)")).toBeTruthy();
+    expect(await screen.findByText("Page 1 of 2")).toBeTruthy();
   });
 });
 

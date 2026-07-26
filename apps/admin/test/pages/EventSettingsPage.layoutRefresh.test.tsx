@@ -59,6 +59,10 @@ const activeEvent = {
   active_items: [] as Array<{ id: string; name: string; enabled: boolean }>,
 };
 
+// ScrollFadeTabs (wrapping this page's own tab strip) scrolls its active tab into view on
+// mount/change - jsdom does not implement scrollIntoView.
+Element.prototype.scrollIntoView = vi.fn();
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();

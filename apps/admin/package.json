@@ -21,6 +21,7 @@
     "@admitto/ui": "*",
     "@tabler/icons-webfont": "3.45.0",
     "@zxing/browser": "^0.2.0",
+    "countries-and-timezones": "^3.9.0",
     "qrcode": "^1.5.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

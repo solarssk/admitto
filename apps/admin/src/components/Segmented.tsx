@@ -12,16 +12,22 @@ export function Segmented<T extends string>({
   value,
   ariaLabel,
   disabled,
+  className,
   onChange,
 }: Readonly<{
   options: ReadonlyArray<SegmentedOption<T>>;
   value: T;
   ariaLabel: string;
   disabled?: boolean;
+  className?: string;
   onChange: (value: T) => void;
 }>) {
   return (
-    <div className="seg-control" role="radiogroup" aria-label={ariaLabel}>
+    <div
+      className={className ? `seg-control ${className}` : "seg-control"}
+      role="radiogroup"
+      aria-label={ariaLabel}
+    >
       {options.map((opt) => {
         const active = opt.value === value;
         return (

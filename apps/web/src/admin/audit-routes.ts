@@ -49,27 +49,63 @@ function parseDateBound(raw: string | undefined, bound: "start" | "end"): Date |
   return parsed;
 }
 
+/** An event_id metadata match - writers split between an `eventId` and a legacy `event_id` key,
+ * so both are checked rather than picking one and silently missing the other's rows. */
+function eventScopeMatch(eventId: string): Prisma.AdminAuditLogWhereInput[] {
+  return [
+    { metadata: { path: ["eventId"], equals: eventId } },
+    { metadata: { path: ["event_id"], equals: eventId } },
+  ];
+}
+
+/** Free-text search over actor (email/display name) and event title - resolved to concrete ids
+ * up front since neither lives directly queryable on AdminAuditLog itself (actor needs a User
+ * join, event scope only lives in metadata). Superadmin-only route, org-scoped table, and this
+ * runs at settings-page volume, so two small lookups per request is an acceptable cost. */
+async function resolveSearchMatch(
+  db: PrismaClient,
+  orgId: string,
+  search: string,
+): Promise<Prisma.AdminAuditLogWhereInput> {
+  const [actors, events] = await Promise.all([
+    db.user.findMany({
+      where: {
+        OR: [
+          { email: { contains: search, mode: "insensitive" } },
+          { display_name: { contains: search, mode: "insensitive" } },
+        ],
+      },
+      select: { id: true },
+    }),
+    db.event.findMany({
+      where: { organization_id: orgId, title: { contains: search, mode: "insensitive" } },
+      select: { id: true },
+    }),
+  ]);
+  return {
+    OR: [
+      { actor_user_id: { in: actors.map((a) => a.id) } },
+      ...events.flatMap((e) => eventScopeMatch(e.id)),
+    ],
+  };
+}
+
 /** Shared by the list (paginated) and export (all-matching) handlers. */
-function buildAuditLogWhere(c: Context, orgId: string): Prisma.AdminAuditLogWhereInput {
+async function buildAuditLogWhere(c: Context, db: PrismaClient, orgId: string): Promise<Prisma.AdminAuditLogWhereInput> {
   const actionType = c.req.query("action_type")?.trim() || undefined;
   const eventId = c.req.query("event_id")?.trim() || undefined;
+  const search = c.req.query("search")?.trim() || undefined;
   const start = parseDateBound(c.req.query("start"), "start");
   const end = parseDateBound(c.req.query("end"), "end");
+
+  const and: Prisma.AdminAuditLogWhereInput[] = [];
+  if (eventId) and.push({ OR: eventScopeMatch(eventId) });
+  if (search) and.push(await resolveSearchMatch(db, orgId, search));
 
   return {
     organization_id: orgId,
     ...(actionType ? { action_type: actionType } : {}),
-    // Event scope lives only in metadata (no event_id column on this instance-wide table) -
-    // writers are split between an `eventId` and a legacy `event_id` metadata key, so both are
-    // matched here rather than picking one and silently missing the other's rows.
-    ...(eventId
-      ? {
-          OR: [
-            { metadata: { path: ["eventId"], equals: eventId } },
-            { metadata: { path: ["event_id"], equals: eventId } },
-          ],
-        }
-      : {}),
+    ...(and.length ? { AND: and } : {}),
     ...(start || end
       ? {
           created_at: {
@@ -111,7 +147,7 @@ export async function handleGetAuditLog(c: Context, db: PrismaClient): Promise<R
   const orgId = await resolveInstanceOrganizationId(db, process.env);
   const page = positiveIntQuery(c.req.query("page"), 1);
   const pageSize = positiveIntQuery(c.req.query("pageSize"), 25, 100);
-  const where = buildAuditLogWhere(c, orgId);
+  const where = await buildAuditLogWhere(c, db, orgId);
 
   const [rows, total] = await Promise.all([
     db.adminAuditLog.findMany({
@@ -188,7 +224,7 @@ export async function handleExportAuditLog(c: Context, db: PrismaClient): Promis
   }
 
   const orgId = await resolveInstanceOrganizationId(db, process.env);
-  const where = buildAuditLogWhere(c, orgId);
+  const where = await buildAuditLogWhere(c, db, orgId);
 
   const total = await db.adminAuditLog.count({ where });
   if (total > EXPORT_ROW_CAP) {

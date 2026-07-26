@@ -38,6 +38,10 @@ function assertNoPiiKeys(metadata: Record<string, unknown> | null): void {
 
 /** Seed orgs, users, and AdminAuditLog fixtures for audit-log route tests. */
 async function seed(client: PrismaClient) {
+  // Event has onDelete: Restrict against Organization - must go before organization.deleteMany.
+  await client.event.deleteMany({
+    where: { organization_id: { in: [ORG_AUDIT, ORG_OTHER] } },
+  });
   await client.adminAuditLog.deleteMany({
     where: { organization_id: { in: [ORG_AUDIT, ORG_OTHER] } },
   });
@@ -68,6 +72,16 @@ async function seed(client: PrismaClient) {
   const adminUser = await client.user.create({ data: { email: EMAIL_ADMIN, password_hash } });
   superId = superUser.id;
   adminId = adminUser.id;
+
+  await client.event.create({
+    data: {
+      id: "evt-searchable",
+      organization_id: ORG_AUDIT,
+      title: "Searchable Summit",
+      slug: "audit-route-test-searchable-summit",
+      date: new Date("2026-09-01T09:00:00.000Z"),
+    },
+  });
 
   await client.roleAssignment.createMany({
     data: [
@@ -129,6 +143,14 @@ async function seed(client: PrismaClient) {
         metadata: { eventId: "evt-2" },
         actor_timezone: "Europe/Warsaw",
         created_at: new Date("2026-07-02T09:00:00.000Z"),
+      },
+      {
+        organization_id: ORG_AUDIT,
+        actor_user_id: superId,
+        action_type: "event_created",
+        ip: "1.2.3.8",
+        metadata: { eventId: "evt-searchable" },
+        created_at: new Date("2026-07-03T09:00:00.000Z"),
       },
       {
         organization_id: ORG_OTHER,
@@ -211,8 +233,8 @@ describe("GET /api/admin/audit-log", () => {
     };
     expect(body.page).toBe(1);
     expect(body.pageSize).toBe(25);
-    expect(body.total).toBe(5);
-    expect(body.entries).toHaveLength(5);
+    expect(body.total).toBe(6);
+    expect(body.entries).toHaveLength(6);
     expect(body.entries[0]?.actor_email).toBe(EMAIL_SUPER);
     for (const entry of body.entries) {
       assertNoPiiKeys(entry.metadata);
@@ -244,6 +266,28 @@ describe("GET /api/admin/audit-log", () => {
     });
     const unknownBody = (await unknownRes.json()) as { total: number };
     expect(unknownBody.total).toBe(0);
+  });
+
+  it("filters by search, matching actor email or event title", async () => {
+    const actorRes = await app.request("/api/admin/audit-log?search=audit-super", {
+      headers: { Cookie: superCookie },
+    });
+    expect(actorRes.status).toBe(200);
+    const actorBody = (await actorRes.json()) as { total: number };
+    expect(actorBody.total).toBe(6); // every ORG_AUDIT row is actor=superId
+
+    const eventRes = await app.request("/api/admin/audit-log?search=Searchable", {
+      headers: { Cookie: superCookie },
+    });
+    const eventBody = (await eventRes.json()) as { entries: { action_type: string }[]; total: number };
+    expect(eventBody.total).toBe(1);
+    expect(eventBody.entries[0]?.action_type).toBe("event_created");
+
+    const noMatchRes = await app.request("/api/admin/audit-log?search=no-such-actor-or-event", {
+      headers: { Cookie: superCookie },
+    });
+    const noMatchBody = (await noMatchRes.json()) as { total: number };
+    expect(noMatchBody.total).toBe(0);
   });
 
   it("filters by action_type", async () => {
@@ -341,7 +385,7 @@ describe("GET /api/admin/audit-log", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { total: number };
-    expect(body.total).toBe(5);
+    expect(body.total).toBe(6);
   });
 
   it("returns empty list for unknown action_type filter", async () => {

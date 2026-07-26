@@ -1572,6 +1572,7 @@ export async function completeSetup(): Promise<{ setup_complete: boolean }> {
 type AuditLogFilterParams = {
   actionType?: string;
   eventId?: string;
+  search?: string;
   start?: string;
   end?: string;
 };
@@ -1580,6 +1581,7 @@ function auditLogQuery(params: AuditLogFilterParams): URLSearchParams {
   const q = new URLSearchParams();
   if (params.actionType) q.set("action_type", params.actionType);
   if (params.eventId) q.set("event_id", params.eventId);
+  if (params.search) q.set("search", params.search);
   if (params.start) q.set("start", params.start);
   if (params.end) q.set("end", params.end);
   return q;
@@ -1602,12 +1604,15 @@ export async function fetchAuditLog(
 }
 
 /** Export the (filtered) instance admin audit log as CSV — same filters as fetchAuditLog, but
- * every matching row, not just the current page. */
+ * every matching row, not just the current page. A GET request, so it needs its own
+ * X-Client-Timezone header (the shared jsonPostInit-style helpers only cover mutation verbs) -
+ * this endpoint self-audits a write and that row should show the operator's local time too. */
 export async function exportAuditLog(params: AuditLogFilterParams, signal?: AbortSignal): Promise<void> {
   const q = auditLogQuery(params);
   q.set("format", "csv");
   const res = await fetch(`/api/admin/audit-log/export?${q.toString()}`, {
     credentials: "same-origin",
+    headers: { "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone },
     signal,
   });
   await downloadExportResponse(res, "audit-log.csv");

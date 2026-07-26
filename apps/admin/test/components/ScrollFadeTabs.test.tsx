@@ -1,11 +1,16 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ScrollFadeTabs } from "../../src/components/ScrollFadeTabs.js";
 
 afterEach(() => {
   cleanup();
+  vi.clearAllMocks();
 });
+
+// jsdom does not implement scrollIntoView/scrollBy.
+Element.prototype.scrollIntoView = vi.fn();
+Element.prototype.scrollBy = vi.fn();
 
 const TABS = [
   { id: "general", label: "General" },
@@ -95,5 +100,58 @@ describe("ScrollFadeTabs", () => {
     const wrapper = getWrapper(container);
     expect(wrapper.className).toContain("scroll-fade-tabs--at-start");
     expect(wrapper.className).toContain("scroll-fade-tabs--at-end");
+  });
+
+  it("only renders an arrow on the side there's actually more to scroll to", () => {
+    const { container } = render(<ScrollFadeTabs value="general" tabs={TABS} />);
+    const scrollEl = getScrollEl(container);
+    mockScrollMetrics(scrollEl, { scrollWidth: 500, clientWidth: 100, scrollLeft: 200 });
+    fireEvent.scroll(scrollEl);
+
+    expect(screen.getByRole("button", { name: "Scroll tabs left" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Scroll tabs right" })).toBeTruthy();
+  });
+
+  it("hides the left arrow at the start and the right arrow at the end", () => {
+    const { container } = render(<ScrollFadeTabs value="general" tabs={TABS} />);
+    const scrollEl = getScrollEl(container);
+    mockScrollMetrics(scrollEl, { scrollWidth: 500, clientWidth: 100, scrollLeft: 0 });
+    fireEvent.scroll(scrollEl);
+    expect(screen.queryByRole("button", { name: "Scroll tabs left" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Scroll tabs right" })).toBeTruthy();
+
+    mockScrollMetrics(scrollEl, { scrollWidth: 500, clientWidth: 100, scrollLeft: 400 });
+    fireEvent.scroll(scrollEl);
+    expect(screen.getByRole("button", { name: "Scroll tabs left" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Scroll tabs right" })).toBeNull();
+  });
+
+  it("scrolls the strip when an arrow is clicked", () => {
+    const { container } = render(<ScrollFadeTabs value="general" tabs={TABS} />);
+    const scrollEl = getScrollEl(container);
+    mockScrollMetrics(scrollEl, { scrollWidth: 500, clientWidth: 100, scrollLeft: 200 });
+    fireEvent.scroll(scrollEl);
+
+    fireEvent.click(screen.getByRole("button", { name: "Scroll tabs right" }));
+    expect(scrollEl.scrollBy).toHaveBeenCalledWith(
+      expect.objectContaining({ left: expect.any(Number) }),
+    );
+    const rightCall = vi.mocked(scrollEl.scrollBy).mock.calls[0]![0] as { left: number };
+    expect(rightCall.left).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Scroll tabs left" }));
+    const leftCall = vi.mocked(scrollEl.scrollBy).mock.calls[1]![0] as { left: number };
+    expect(leftCall.left).toBeLessThan(0);
+  });
+
+  it("scrolls the active tab into view when the active tab changes", () => {
+    const { rerender } = render(<ScrollFadeTabs value="general" tabs={TABS} />);
+    vi.mocked(Element.prototype.scrollIntoView).mockClear();
+
+    rerender(<ScrollFadeTabs value="danger" tabs={TABS} />);
+
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith(
+      expect.objectContaining({ block: "nearest", inline: "nearest" }),
+    );
   });
 });

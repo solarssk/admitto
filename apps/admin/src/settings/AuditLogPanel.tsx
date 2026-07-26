@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Badge, Button, Card, EmptyState, Tooltip, useToast, type BadgeVariant } from "@admitto/ui";
+import { getCountryForTimezone } from "countries-and-timezones";
+import { Badge, Button, Card, EmptyState, Input, Tooltip, useToast, type BadgeVariant } from "@admitto/ui";
 import { exportAuditLog, fetchAdminEvents, fetchAuditLog } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AuditLogEntryDto, EventDto } from "../api/types.js";
 import { DatePicker } from "../components/DatePicker.js";
+import { FiltersMenu } from "../components/FiltersMenu.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { useClickOutside } from "../components/useClickOutside.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
-import { formatEventDateTime, formatUtcDateTime, utcDayEndIso, utcDayStartIso } from "../utils/event-dates.js";
+import { useIsDesktop } from "../hooks/useIsDesktop.js";
+import { localeDateInputPattern, utcDayEndIso, utcDayStartIso } from "../utils/event-dates.js";
+import { getPreferredLocale } from "../utils/locale-store.js";
+import { MAIL_PROVIDER_LABELS } from "./mailProviderOptions.js";
 
 /** Human-readable labels for `AdminAuditLog.action_type` (current + planned IAM types). */
 const ACTION_LABELS: Record<string, string> = {
@@ -91,18 +96,45 @@ const ACTION_OPTIONS = Object.keys(ACTION_LABELS).sort((a, b) =>
 );
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
+const SEARCH_DEBOUNCE_MS = 300;
 
 /** Short label for an IANA timezone (e.g. "Warsaw" from "Europe/Warsaw"). */
 function tzShortLabel(tz: string): string {
   return tz.split("/").pop()?.replaceAll("_", " ") ?? tz;
 }
 
-/** Entry's own local time + short tz label, for rows written from a browser request (the
- * `X-Client-Timezone` header) - null for rows predating the column or written from a
- * non-browser path (CLI), which have no timezone to show. */
+/** "Warsaw, Poland" when the timezone resolves to a single country (almost always true for a
+ * real IANA zone), otherwise just the city - a bare city name alone doesn't tell a non-local
+ * reader which country it's in. */
+function tzPlaceLabel(tz: string): string {
+  const city = tzShortLabel(tz);
+  const country = getCountryForTimezone(tz)?.name;
+  return country ? `${city}, ${country}` : city;
+}
+
+/** UTC instant as "YYYY-MM-DD HH:MM:SS" - `created_at` is already an ISO string in UTC, so this
+ * is just trimming it, matching the mockup's compact monospace time format exactly. */
+function formatAuditPrimaryTime(iso: string): string {
+  return iso.slice(0, 19).replace("T", " ");
+}
+
+/** Entry's own local time, for rows written from a browser request (the `X-Client-Timezone`
+ * header) - null for rows predating the column or written from a non-browser path (CLI), which
+ * have no timezone to show. Same locale + `timeZoneName: "short"` as formatEventTime/
+ * formatEventDateTime (event-dates.ts) - the app has one standard for tz abbreviations
+ * (CEST/EST, not a raw GMT offset), and this should read the same way as everywhere else. */
 function actorLocalTime(entry: AuditLogEntryDto): string | null {
   if (!entry.actor_timezone) return null;
-  return `${formatEventDateTime(entry.created_at, entry.actor_timezone)} (${tzShortLabel(entry.actor_timezone)})`;
+  const parts = new Intl.DateTimeFormat(getPreferredLocale(), {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: entry.actor_timezone,
+    timeZoneName: "short",
+  }).formatToParts(new Date(entry.created_at));
+  const hhmm = `${parts.find((p) => p.type === "hour")?.value}:${parts.find((p) => p.type === "minute")?.value}`;
+  const abbr = parts.find((p) => p.type === "timeZoneName")?.value ?? entry.actor_timezone;
+  return `${hhmm} ${abbr} (${tzPlaceLabel(entry.actor_timezone)})`;
 }
 
 /** Primary actor label; deleted users show a readable fallback (id in cell title). */
@@ -137,6 +169,7 @@ function scopeLabel(entry: AuditLogEntryDto, eventTitleById: Map<string, string>
 }
 
 const SCOPE_HINT = "Which event this action affected, or “Instance” for account/organization-wide changes not tied to one event.";
+const TIME_HINT = "Top: when this happened, in UTC. Below: the same moment in the actor's own local time, when known.";
 
 /** camelCase or snake_case metadata key -> "Title case" label (e.g. "event_id"/"eventId" -> "Event id"). */
 function humanizeMetadataKey(key: string): string {
@@ -147,21 +180,35 @@ function humanizeMetadataKey(key: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
+// These specific keys (mail settings changes) carry arrays of raw form-field names
+// (e.g. "fromAddress") as their values, not display-ready text - humanize each item the same
+// way a metadata *key* would be, rather than showing the camelCase identifier as-is.
+const ARRAY_ITEMS_ARE_FIELD_NAMES = new Set(["fields_changed", "secrets_rotated", "secrets_cleared"]);
+
 /** Best-effort readable rendering of one metadata value - primitives as-is, arrays of objects
  * reduced to whichever field a human would recognize (name/email/id), everything else falls
  * back to compact JSON rather than guessing at a structure this can't know about. */
-function formatMetadataValue(value: unknown): string {
+function formatMetadataValue(key: string, value: unknown): string {
   if (value === null || value === undefined) return "—";
+  // "provider" here is always the mail transport enum (mail_settings_updated/
+  // event_mail_settings_updated) - show the same label the Mail settings picker itself uses
+  // (e.g. "export_only" -> "Export only") instead of the raw config value.
+  if (key === "provider" && typeof value === "string" && value in MAIL_PROVIDER_LABELS) {
+    return MAIL_PROVIDER_LABELS[value as keyof typeof MAIL_PROVIDER_LABELS];
+  }
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return String(value);
   }
   if (Array.isArray(value)) {
+    if (value.length === 0) return "None";
+    const humanizeItems = ARRAY_ITEMS_ARE_FIELD_NAMES.has(key);
     return value
       .map((item) => {
         if (item && typeof item === "object") {
           const obj = item as Record<string, unknown>;
           return String(obj.name ?? obj.email ?? obj.id ?? JSON.stringify(item));
         }
+        if (humanizeItems && typeof item === "string") return humanizeMetadataKey(item);
         return String(item);
       })
       .join(", ");
@@ -179,10 +226,39 @@ function hasVisibleMetadata(metadata: Record<string, unknown> | null): boolean {
   return Object.keys(metadata).some((key) => !METADATA_KEYS_SHOWN_ELSEWHERE.has(key));
 }
 
+/** Plain-text rendering of one full row - Time/Action/Scope/Actor/IP plus any visible Details,
+ * for the row-level "copy" affordance (a non-technical operator sharing one entry over chat
+ * shouldn't have to screenshot a table). */
+function buildRowSummary(entry: AuditLogEntryDto, eventTitleById: Map<string, string>): string {
+  const localTime = actorLocalTime(entry);
+  const lines = [
+    `Time: ${formatAuditPrimaryTime(entry.created_at)} UTC${localTime ? ` (${localTime})` : ""}`,
+    `Action: ${actionLabel(entry.action_type)}`,
+    `Scope: ${scopeLabel(entry, eventTitleById)}`,
+    `Actor: ${actorDisplay(entry)}${entry.actor_display_name && entry.actor_email ? ` (${entry.actor_email})` : ""}`,
+    `IP: ${entry.ip ?? "—"}`,
+  ];
+  if (hasVisibleMetadata(entry.metadata)) {
+    lines.push("Details:");
+    for (const [key, value] of Object.entries(entry.metadata!)) {
+      if (METADATA_KEYS_SHOWN_ELSEWHERE.has(key)) continue;
+      lines.push(`  ${humanizeMetadataKey(key)}: ${formatMetadataValue(key, value)}`);
+    }
+  }
+  return lines.join("\n");
+}
+
 // Matches .audit-log-details__panel's max-height (12rem) and gap (--space-1) in
 // staff.css — used to decide above-vs-below placement before the panel exists to measure.
 const DETAILS_PANEL_MAX_HEIGHT_PX = 192;
 const DETAILS_PANEL_GAP_PX = 4;
+// Matches .audit-log-details__panel's max-width (22rem) - the panel is right-anchored from
+// the trigger, which works fine on a wide desktop row, but a mobile card's trigger sits close
+// to the left edge itself; using this as the worst-case width to clamp against guarantees the
+// panel's own left edge never goes past the viewport, even before the real (max-content, so
+// possibly narrower) width is known.
+const DETAILS_PANEL_MAX_WIDTH_PX = 352;
+const DETAILS_PANEL_EDGE_MARGIN_PX = 8;
 
 /**
  * Details cell — shows metadata as a humanized label/value list in a small popover instead of
@@ -206,7 +282,9 @@ function DetailsCell({ metadata }: Readonly<{ metadata: Record<string, unknown> 
     const updatePosition = () => {
       const rect = triggerRef.current?.getBoundingClientRect();
       if (!rect) return;
-      const right = window.innerWidth - rect.right;
+      const naturalRight = window.innerWidth - rect.right;
+      const maxRight = window.innerWidth - DETAILS_PANEL_MAX_WIDTH_PX - DETAILS_PANEL_EDGE_MARGIN_PX;
+      const right = Math.max(DETAILS_PANEL_EDGE_MARGIN_PX, Math.min(naturalRight, maxRight));
       const spaceBelow = window.innerHeight - rect.bottom;
       if (spaceBelow < DETAILS_PANEL_MAX_HEIGHT_PX && rect.top > spaceBelow) {
         setPos({ bottom: window.innerHeight - rect.top + DETAILS_PANEL_GAP_PX, right });
@@ -244,7 +322,7 @@ function DetailsCell({ metadata }: Readonly<{ metadata: Record<string, unknown> 
           {rows.map(([key, value]) => (
             <div key={key} className="audit-log-details__row">
               <dt>{humanizeMetadataKey(key)}</dt>
-              <dd>{formatMetadataValue(value)}</dd>
+              <dd>{formatMetadataValue(key, value)}</dd>
             </div>
           ))}
         </dl>
@@ -267,14 +345,17 @@ export function AuditLogPanel() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
-  const [filters, setFilters] = useState({ actionType: "", eventId: "", start: "", end: "" });
+  const [filters, setFilters] = useState({ actionType: "", eventId: "", search: "", start: "", end: "" });
+  const [searchInput, setSearchInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [events, setEvents] = useState<EventDto[]>([]);
   const [exporting, setExporting] = useState(false);
   const { addToast } = useToast();
+  const isDesktop = useIsDesktop();
   const loadAbortRef = useRef<AbortController | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   // Previous/Next can shrink the table (e.g. a shorter last page), which can
   // otherwise leave the card scrolled out of view — keep it in view once the
   // new page has actually rendered instead of letting Settings jump around.
@@ -283,6 +364,34 @@ export function AuditLogPanel() {
   // change, Clear filters, Retry) doesn't also trigger a scroll it never asked for.
   const loadSeqRef = useRef(0);
   const scrollRestoreSeqRef = useRef<number | null>(null);
+  // From/To no longer show a visible label above the field (PO: nothing above the date
+  // selector) - the locale date format is folded into the placeholder instead, so the
+  // dd/mm/yyyy-typing affordance survives without a separate label line pushing the row down.
+  const datePattern = localeDateInputPattern();
+  // Rendered in the main toolbar on desktop, or inside the Filters panel on mobile (see the
+  // toolbar JSX below) - defined once here so both call sites share the exact same fields.
+  const fromDatePicker = (
+    <DatePicker
+      ariaLabel="From"
+      placeholder={`From (${datePattern})`}
+      value={filters.start}
+      onChange={(next) => {
+        setFilters((f) => ({ ...f, start: next }));
+        setPage(1);
+      }}
+    />
+  );
+  const toDatePicker = (
+    <DatePicker
+      ariaLabel="To"
+      placeholder={`To (${datePattern})`}
+      value={filters.end}
+      onChange={(next) => {
+        setFilters((f) => ({ ...f, end: next }));
+        setPage(1);
+      }}
+    />
+  );
 
   // Loaded once, independent of the audit log's own pagination/filters - only used to resolve
   // an entry's eventId to a human title (Scope column, "All events" filter). Includes archived
@@ -298,6 +407,14 @@ export function AuditLogPanel() {
     return () => ac.abort();
   }, []);
   const eventTitleById = useMemo(() => new Map(events.map((e) => [e.id, e.title])), [events]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setFilters((f) => ({ ...f, search: searchInput.trim() }));
+      setPage(1);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
 
   const goToPage = useCallback((next: number) => {
     scrollRestoreSeqRef.current = loadSeqRef.current + 1;
@@ -329,6 +446,7 @@ export function AuditLogPanel() {
           pageSize,
           actionType: filters.actionType || undefined,
           eventId: filters.eventId || undefined,
+          search: filters.search || undefined,
           start: filters.start ? utcDayStartIso(filters.start) : undefined,
           end: filters.end ? utcDayEndIso(filters.end) : undefined,
         },
@@ -351,7 +469,7 @@ export function AuditLogPanel() {
     } finally {
       if (!ac.signal.aborted) setLoading(false);
     }
-  }, [page, pageSize, filters.actionType, filters.eventId, filters.start, filters.end]);
+  }, [page, pageSize, filters.actionType, filters.eventId, filters.search, filters.start, filters.end]);
 
   useEffect(() => {
     void load();
@@ -359,14 +477,23 @@ export function AuditLogPanel() {
   }, [load]);
 
   const clearFilters = () => {
-    setFilters({ actionType: "", eventId: "", start: "", end: "" });
+    setFilters({ actionType: "", eventId: "", search: "", start: "", end: "" });
+    setSearchInput("");
     setPage(1);
   };
 
   const hasActiveFilters = useMemo(
-    () => !!(filters.actionType || filters.eventId || filters.start || filters.end),
-    [filters.actionType, filters.eventId, filters.start, filters.end],
+    () => !!(filters.actionType || filters.eventId || filters.search || filters.start || filters.end),
+    [filters.actionType, filters.eventId, filters.search, filters.start, filters.end],
   );
+
+  // On mobile the date fields move into this same panel (see the toolbar JSX below), so an
+  // active From/To should count toward the badge there too - on desktop they stay in the main
+  // toolbar, always visible, so they'd double-count if included here as well.
+  const actionScopeActiveCount =
+    (filters.actionType ? 1 : 0) +
+    (filters.eventId ? 1 : 0) +
+    (isDesktop ? 0 : (filters.start ? 1 : 0) + (filters.end ? 1 : 0));
 
   const handleExport = useCallback(async () => {
     setExporting(true);
@@ -374,6 +501,7 @@ export function AuditLogPanel() {
       await exportAuditLog({
         actionType: filters.actionType || undefined,
         eventId: filters.eventId || undefined,
+        search: filters.search || undefined,
         start: filters.start ? utcDayStartIso(filters.start) : undefined,
         end: filters.end ? utcDayEndIso(filters.end) : undefined,
       });
@@ -382,22 +510,62 @@ export function AuditLogPanel() {
     } finally {
       setExporting(false);
     }
-  }, [filters.actionType, filters.eventId, filters.start, filters.end, addToast]);
+  }, [filters.actionType, filters.eventId, filters.search, filters.start, filters.end, addToast]);
+
+  // Rendered in the Card header on desktop, or in the toolbar (next to Filters) on mobile -
+  // on a narrow card the header can only fit the title and the always-present System/Audit
+  // toggle before wrapping to a second line, so these two move down into the toolbar instead.
+  const clearFiltersButton = (
+    <Button type="button" variant="secondary" size="sm" disabled={!hasActiveFilters} onClick={clearFilters}>
+      Clear filters
+    </Button>
+  );
+  const exportButton = (
+    <Button type="button" variant="secondary" size="sm" disabled={exporting} onClick={() => void handleExport()}>
+      {exporting ? "Exporting…" : "Export CSV"}
+    </Button>
+  );
+
+  const handleCopyRow = useCallback(
+    async (entry: AuditLogEntryDto) => {
+      try {
+        await navigator.clipboard.writeText(buildRowSummary(entry, eventTitleById));
+        addToast("Row copied to clipboard", "success");
+      } catch {
+        addToast("Could not copy — clipboard access was blocked.", "error");
+      }
+    },
+    [eventTitleById, addToast],
+  );
 
   const showLoadingSkeleton = useDelayedLoading(loading);
+  // A filter/page change re-fetches with the previous rows still on screen (never cleared at
+  // the start of load()) - only the true first load (nothing to show yet) has no rows to keep
+  // displaying, so only that case earns the skeleton; every later reload just dims the stale
+  // table below instead of blanking it out from under the user (matches AttendeesTable).
+  const isInitialLoad = loading && entries.length === 0;
 
   let listContent: ReactNode;
-  if (loading) {
-    // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
-    // this skeleton on and off faster than it can register as loading — show it only once
-    // the fetch has genuinely taken a moment.
-    listContent = showLoadingSkeleton ? (
-      <div className="audit-log-skeleton" aria-busy="true" aria-label="Loading audit log">
+  if (isInitialLoad) {
+    // Reserve the skeleton's own height from the very first paint - navigating here from a
+    // separate route (e.g. Identity, which unmounts this whole panel) re-triggers a genuine
+    // first load, and rendering nothing at all while entries === [] let the card visibly
+    // collapse then snap back once data arrived, reading as a flicker even on a fast fetch.
+    // A fetch that resolves near-instantly (localhost, a warm cache) still shouldn't flash a
+    // visible skeleton on and off - `visibility` (not conditional rendering) keeps the space
+    // reserved throughout while only revealing it once loading has genuinely taken a moment.
+    listContent = (
+      <div
+        className="audit-log-skeleton"
+        aria-busy={showLoadingSkeleton || undefined}
+        aria-label="Loading audit log"
+        style={{ visibility: showLoadingSkeleton ? "visible" : "hidden" }}
+      >
         {Array.from({ length: 5 }, (_, i) => (
           <div key={i} className="audit-log-skeleton__row" />
         ))}
       </div>
-    ) : null;
+    );
   } else if (error) {
     listContent = (
       <EmptyState
@@ -427,16 +595,20 @@ export function AuditLogPanel() {
           description="Actions taken across Settings will appear here."
         />
       );
-  } else {
+  } else if (isDesktop) {
     listContent = (
-      <div className="sessions-table-wrap">
+      <div className={`sessions-table-wrap${loading ? " audit-log-table-wrap--loading" : ""}`}>
         <table className="table audit-log-table">
           <thead>
             <tr>
-              <th scope="col">Time (UTC)</th>
+              <th scope="col">
+                <Tooltip content={TIME_HINT} className="audit-log-scope-header">
+                  Time <i className="ti ti-info-circle" aria-hidden="true" />
+                </Tooltip>
+              </th>
               <th scope="col">Action</th>
               <th scope="col">
-                <Tooltip content={SCOPE_HINT}>
+                <Tooltip content={SCOPE_HINT} className="audit-log-scope-header">
                   Scope <i className="ti ti-info-circle" aria-hidden="true" />
                 </Tooltip>
               </th>
@@ -448,8 +620,8 @@ export function AuditLogPanel() {
           <tbody>
             {entries.map((entry) => (
               <tr key={entry.id}>
-                <td>
-                  {formatUtcDateTime(entry.created_at)}
+                <td className="audit-log-time">
+                  {formatAuditPrimaryTime(entry.created_at)}
                   {actorLocalTime(entry) && (
                     <div className="sessions-subdued">{actorLocalTime(entry)}</div>
                   )}
@@ -466,7 +638,17 @@ export function AuditLogPanel() {
                 </td>
                 <td>{entry.ip ?? "—"}</td>
                 <td>
-                  <DetailsCell metadata={entry.metadata} />
+                  <div className="audit-log-details-cell">
+                    <DetailsCell metadata={entry.metadata} />
+                    <button
+                      type="button"
+                      className="audit-log-row-copy"
+                      aria-label="Copy row"
+                      onClick={() => void handleCopyRow(entry)}
+                    >
+                      <i className="ti ti-copy" aria-hidden="true" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -474,83 +656,178 @@ export function AuditLogPanel() {
         </table>
       </div>
     );
+  } else {
+    // Mobile: one card per entry instead of a horizontally-scrolling table, mirroring
+    // AttendeesTable's/ReportsPage's own desktop-table/mobile-card split at the same
+    // useIsDesktop() breakpoint.
+    listContent = (
+      <div className={`audit-log-cards${loading ? " audit-log-table-wrap--loading" : ""}`}>
+        {entries.map((entry) => (
+          <div key={entry.id} className="audit-log-card">
+            <div className="audit-log-card__top">
+              <Badge variant={actionTone(entry.action_type)}>{actionLabel(entry.action_type)}</Badge>
+              <div className="audit-log-time audit-log-card__time">
+                {formatAuditPrimaryTime(entry.created_at)}
+                {actorLocalTime(entry) && (
+                  <div className="sessions-subdued">{actorLocalTime(entry)}</div>
+                )}
+              </div>
+            </div>
+            <div className="audit-log-card__meta">
+              <span className="audit-log-card__meta-item">
+                <i className="ti ti-calendar-event" aria-hidden="true" />
+                {scopeLabel(entry, eventTitleById)}
+              </span>
+              <span className="audit-log-card__meta-item" title={actorTitle(entry)}>
+                <i className="ti ti-user" aria-hidden="true" />
+                {actorDisplay(entry)}
+              </span>
+              {entry.actor_display_name && entry.actor_email && (
+                <div className="sessions-subdued audit-log-card__email">{entry.actor_email}</div>
+              )}
+            </div>
+            <div className="audit-log-card__foot">
+              <span>{entry.ip ?? "—"}</span>
+              <div className="audit-log-details-cell">
+                <DetailsCell metadata={entry.metadata} />
+                <button
+                  type="button"
+                  className="audit-log-row-copy"
+                  aria-label="Copy row"
+                  onClick={() => void handleCopyRow(entry)}
+                >
+                  <i className="ti ti-copy" aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
   }
 
   return (
     <Card
       title="Audit log"
+      className="audit-log-header-card"
       actions={
         <>
-          <Segmented ariaLabel="Logs view" value={view} onChange={setView} options={LOGS_VIEW_OPTIONS} />
-          <Button type="button" variant="secondary" disabled={exporting} onClick={() => void handleExport()}>
-            {exporting ? "Exporting…" : "Export"}
-          </Button>
+          {/* On mobile these two move down into the toolbar instead (next to Filters) - a
+              narrow card header can only fit the title plus this always-present toggle before
+              wrapping onto a second line. */}
+          {isDesktop && (
+            <>
+              {clearFiltersButton}
+              {exportButton}
+            </>
+          )}
+          {/* Always last: with the actions row right-anchored, a trailing item's own edge
+              stays flush against the card's right edge no matter how many of the preceding,
+              view-dependent buttons are present - the one placement that's genuinely fixed. */}
+          <Segmented
+            ariaLabel="Logs view"
+            value={view}
+            onChange={setView}
+            options={LOGS_VIEW_OPTIONS}
+            className="audit-log-view-toggle"
+          />
         </>
       }
     >
       <div ref={rootRef} className="audit-log-toolbar">
-        <label className="audit-log-filter">
-          <span className="audit-log-filter__label">Action</span>
-          <select
-            className="at-select"
-            value={filters.actionType}
-            onChange={(e) => {
-              setFilters((f) => ({ ...f, actionType: e.target.value }));
-              setPage(1);
-            }}
-          >
-            <option value="">All actions</option>
-            {ACTION_OPTIONS.map((type) => (
-              <option key={type} value={type}>
-                {actionLabel(type)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="audit-log-filter">
-          <span className="audit-log-filter__label">Scope</span>
-          <select
-            className="at-select"
-            value={filters.eventId}
-            onChange={(e) => {
-              setFilters((f) => ({ ...f, eventId: e.target.value }));
-              setPage(1);
-            }}
-          >
-            <option value="">All events</option>
-            {[...events]
-              .sort((a, b) => a.title.localeCompare(b.title))
-              .map((event) => (
-                <option key={event.id} value={event.id}>
-                  {event.title}
+        <div className="audit-log-filter audit-log-filter--search">
+          <Input
+            ref={searchInputRef}
+            id="audit-log-search"
+            name="audit-log-search"
+            aria-label="Search actor or event"
+            placeholder="Search actor or event…"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            icon={<i className="ti ti-search" aria-hidden="true" />}
+          />
+          {searchInput.length > 0 && (
+            <button
+              type="button"
+              className="audit-log-search-clear"
+              onClick={() => {
+                setSearchInput("");
+                searchInputRef.current?.focus();
+              }}
+              aria-label="Clear search"
+            >
+              <i className="ti ti-x" aria-hidden="true" />
+            </button>
+          )}
+        </div>
+        {isDesktop && (
+          <>
+            <div className="audit-log-filter audit-log-filter--date">{fromDatePicker}</div>
+            <div className="audit-log-filter audit-log-filter--date">{toDatePicker}</div>
+          </>
+        )}
+        <FiltersMenu activeCount={actionScopeActiveCount} className="audit-log-filters-menu">
+          {!isDesktop && (
+            <>
+              {/* Full width, one per row (not side by side) - the panel is only ~236px wide,
+                  not enough room for both the "From (dd/mm/yyyy)" placeholder AND a sibling
+                  field without clipping the text. */}
+              <div className="audit-log-filters-menu__field">{fromDatePicker}</div>
+              <div className="audit-log-filters-menu__field">{toDatePicker}</div>
+            </>
+          )}
+          <div className="audit-log-filters-menu__field">
+            <label className="audit-log-filter__label" htmlFor="audit-log-filter-action">
+              Action
+            </label>
+            <select
+              id="audit-log-filter-action"
+              name="audit-log-filter-action"
+              className="at-select"
+              value={filters.actionType}
+              onChange={(e) => {
+                setFilters((f) => ({ ...f, actionType: e.target.value }));
+                setPage(1);
+              }}
+            >
+              <option value="">All actions</option>
+              {ACTION_OPTIONS.map((type) => (
+                <option key={type} value={type}>
+                  {actionLabel(type)}
                 </option>
               ))}
-          </select>
-        </label>
-        <div className="audit-log-filter">
-          <DatePicker
-            label="From"
-            value={filters.start}
-            onChange={(next) => {
-              setFilters((f) => ({ ...f, start: next }));
-              setPage(1);
-            }}
-          />
-        </div>
-        <div className="audit-log-filter">
-          <DatePicker
-            label="To"
-            value={filters.end}
-            onChange={(next) => {
-              setFilters((f) => ({ ...f, end: next }));
-              setPage(1);
-            }}
-          />
-        </div>
-        {hasActiveFilters && (
-          <Button type="button" variant="secondary" onClick={clearFilters}>
-            Clear filters
-          </Button>
+            </select>
+          </div>
+          <div className="audit-log-filters-menu__field">
+            <label className="audit-log-filter__label" htmlFor="audit-log-filter-scope">
+              Event
+            </label>
+            <select
+              id="audit-log-filter-scope"
+              name="audit-log-filter-scope"
+              className="at-select"
+              value={filters.eventId}
+              onChange={(e) => {
+                setFilters((f) => ({ ...f, eventId: e.target.value }));
+                setPage(1);
+              }}
+            >
+              <option value="">All events</option>
+              {[...events]
+                .sort((a, b) => a.title.localeCompare(b.title))
+                .map((event) => (
+                  <option key={event.id} value={event.id}>
+                    {event.title}
+                  </option>
+                ))}
+            </select>
+          </div>
+        </FiltersMenu>
+        {!isDesktop && (
+          <div className="audit-log-toolbar-actions">
+            {clearFiltersButton}
+            {exportButton}
+          </div>
         )}
       </div>
 
@@ -559,12 +836,14 @@ export function AuditLogPanel() {
       {!loading && !error && total > 0 && (
         <div className="audit-log-footer">
           <span className="audit-log-footer__info">
-            Page {page} of {totalPages} ({total} total)
+            {`Showing ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
           </span>
-          <div className="audit-log-footer__buttons">
-            <label className="audit-log-pagesize">
-              <span>Rows per page</span>
+          <div className="audit-log-footer__pager">
+            <div className="audit-log-pagesize">
+              <label htmlFor="audit-log-pagesize-select">Rows per page</label>
               <select
+                id="audit-log-pagesize-select"
+                name="audit-log-pagesize-select"
                 className="at-select audit-log-pagesize-select"
                 value={pageSize}
                 onChange={(e) => {
@@ -578,18 +857,23 @@ export function AuditLogPanel() {
                   </option>
                 ))}
               </select>
-            </label>
+            </div>
             <Button
               type="button"
               variant="secondary"
+              size="sm"
               disabled={page <= 1}
               onClick={() => goToPage(Math.max(1, page - 1))}
             >
               Previous
             </Button>
+            <span>
+              Page {page} of {totalPages}
+            </span>
             <Button
               type="button"
               variant="secondary"
+              size="sm"
               disabled={page >= totalPages}
               onClick={() => goToPage(page + 1)}
             >
