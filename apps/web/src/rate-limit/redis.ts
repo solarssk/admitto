@@ -1,6 +1,7 @@
 import { createClient } from "redis";
 import { redisKeyForHit, redisWindowStart } from "./redis-keys.js";
 import type { RateLimitHitResult, RateLimitStore } from "./types.js";
+import { recordSystemLog } from "@admitto/shared/system-log";
 
 const FAIL_OPEN_WARN = "Rate limit Redis unavailable; failing open";
 const FAIL_OPEN_LOG_INTERVAL_MS = 60_000;
@@ -101,6 +102,7 @@ export class RedisRateLimitStore implements RateLimitStore {
   private warnFailOpen(now: number): void {
     if (now - this.lastFailOpenWarnAt >= FAIL_OPEN_LOG_INTERVAL_MS) {
       console.warn(FAIL_OPEN_WARN);
+      recordSystemLog({ level: "warn", source: "cache", message: FAIL_OPEN_WARN });
       this.lastFailOpenWarnAt = now;
     }
   }

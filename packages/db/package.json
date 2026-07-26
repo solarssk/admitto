@@ -23,7 +23,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "pretest": "npm run build",
+    "pretest": "npm run build -w @admitto/shared && npm run build",
     "precoverage": "npm run pretest",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
@@ -43,6 +43,7 @@
   },
   "dependencies": {
     "@admitto/crypto": "*",
+    "@admitto/shared": "*",
     "@prisma/client": "^5.17.0"
   },
   "devDependencies": {
