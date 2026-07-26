@@ -4,7 +4,8 @@ import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { canManageInstance, listAdminEvents } from "@admitto/auth";
 import { ensureBadgeEventItem, ensureStandardTicketType, writeAdminAuditLog } from "@admitto/tickets";
-import { adminAuditFromContext } from "./admin-helpers.js";
+import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
+import { adminAuditFromContext, resolveActorEmailForLog } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { timezoneField } from "./timezone.js";
 
@@ -152,6 +153,7 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
   }
 
   const audit = adminAuditFromContext(c);
+  const actorUserId = auth.userId;
 
   try {
     const event = await db.$transaction(async (tx) => {
@@ -177,7 +179,7 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
 
       await writeAdminAuditLog(tx, {
         organizationId: orgId,
-        actorUserId: audit.operator ?? auth.userId,
+        actorUserId,
         sessionId: audit.sessionId,
         ip: audit.ip,
         timezone: audit.timezone,
@@ -188,12 +190,25 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
       return created;
     });
 
+    emitSystemLog("admin", "info", "event_created", {
+      eventId: event.id,
+      orgId,
+      actorUserId,
+      actorEmail: await resolveActorEmailForLog(db, actorUserId),
+    });
+
     return c.json({ event: serializeEventDto(event) }, 201);
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       return c.json({ code: "slug_taken", error: "Slug is already in use." }, 409);
     }
     console.error("[audit] event_created transaction failed", err);
+    recordSystemLog({
+      level: "error",
+      source: "admin",
+      message: "event_created_failed",
+      fields: { orgId, actorUserId, errorKind: "transaction" },
+    });
     return c.json({ code: "audit_failed" }, 500);
   }
 }

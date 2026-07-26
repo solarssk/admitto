@@ -2,6 +2,8 @@ import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { canManageInstance } from "@admitto/auth";
 import { setBranding, InvalidHttpUrlError } from "@admitto/mail-templates";
+import { emitSystemLog } from "@admitto/shared/system-log";
+import { resolveActorEmailForLog } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 
 export type SetupOrgBrandingDto = {
@@ -66,31 +68,41 @@ export async function handlePatchSetupOrgBranding(c: Context, db: PrismaClient):
 
   const orgId = await resolveInstanceOrganizationId(db, process.env);
 
-  if (patch.org_name !== undefined) {
-    const name = patch.org_name.trim();
-    if (!name) {
-      return c.json({ error: "org_name required" }, 400);
-    }
-    await db.organization.update({
-      where: { id: orgId },
-      data: { name },
-    });
+  const name = patch.org_name?.trim();
+  if (patch.org_name !== undefined && !name) {
+    return c.json({ error: "org_name required" }, 400);
   }
 
-  if (patch.logo_url !== undefined) {
-    try {
-      await setBranding(
-        { scopeType: "organization", scopeId: orgId },
-        { logoUrl: patch.logo_url },
-        db,
-      );
-    } catch (err) {
-      if (err instanceof InvalidHttpUrlError) {
-        return c.json({ error: err.message }, 400);
+  try {
+    await db.$transaction(async (tx) => {
+      if (name !== undefined) {
+        await tx.organization.update({
+          where: { id: orgId },
+          data: { name },
+        });
       }
-      throw err;
+
+      if (patch.logo_url !== undefined) {
+        await setBranding(
+          { scopeType: "organization", scopeId: orgId },
+          { logoUrl: patch.logo_url },
+          tx,
+        );
+      }
+    });
+  } catch (err) {
+    if (err instanceof InvalidHttpUrlError) {
+      return c.json({ error: err.message }, 400);
     }
+    throw err;
   }
+
+  emitSystemLog("admin", "info", "org_branding_updated", {
+    orgId,
+    fields: Object.keys(patch),
+    actorUserId: auth.userId,
+    actorEmail: await resolveActorEmailForLog(db, auth.userId),
+  });
 
   return handleGetSetupOrgBranding(c, db);
 }

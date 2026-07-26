@@ -72,7 +72,7 @@ function buildBrandingUpdateData(input: SetBrandingInput): BrandingUpdateData {
 export async function setBranding(
   scope: { scopeType: "organization" | "event"; scopeId: string },
   input: SetBrandingInput,
-  prisma: PrismaClient,
+  prisma: PrismaClient | Prisma.TransactionClient,
 ): Promise<void> {
   const data = buildBrandingUpdateData(input);
   if (Object.keys(data).length === 0) return;

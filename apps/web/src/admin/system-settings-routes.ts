@@ -17,7 +17,8 @@ import {
   SETTING_INSTANCE_URL,
 } from "@admitto/auth";
 import { writeAdminAuditLog } from "@admitto/tickets";
-import { adminAuditFromContext } from "./admin-helpers.js";
+import { emitSystemLog } from "@admitto/shared/system-log";
+import { adminAuditFromContext, resolveActorEmailForLog } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { normalizePersistedInstanceUrl } from "../instance-base-url.js";
 
@@ -158,6 +159,7 @@ export async function handlePatchSystemSettings(c: Context, db: PrismaClient): P
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
+  const actorUserId = c.get("auth").userId;
 
   await db.$transaction(async (tx) => {
     for (const bodyKey of presentKeys) {
@@ -175,13 +177,19 @@ export async function handlePatchSystemSettings(c: Context, db: PrismaClient): P
 
     await writeAdminAuditLog(tx, {
       organizationId: orgId,
-      actorUserId: audit.operator ?? c.get("auth").userId,
+      actorUserId,
       sessionId: audit.sessionId,
       ip: audit.ip,
       timezone: audit.timezone,
       actionType: "system_settings_updated",
       metadata: { fields: presentKeys },
     });
+  });
+
+  emitSystemLog("security", "info", "system_settings_updated", {
+    fields: presentKeys,
+    actorUserId,
+    actorEmail: await resolveActorEmailForLog(db, actorUserId),
   });
 
   return c.json(await buildSystemSettingsDto(db));
