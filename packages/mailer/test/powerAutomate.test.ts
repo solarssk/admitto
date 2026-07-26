@@ -4,6 +4,8 @@ import { Agent, fetch as undiciFetch } from "undici";
 import { PowerAutomateAdapter } from "../src/adapters/powerAutomate.js";
 import type { PowerAutomateConfig } from "../src/config.js";
 import * as ssrfGuard from "../src/ssrfGuard.js";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
+import { resetMailSentThrottleForTest } from "../src/adapterUtils.js";
 
 vi.mock("node:dns/promises", () => ({
   lookup: vi.fn(),
@@ -30,6 +32,8 @@ beforeEach(() => {
   >);
   mockedUndiciFetch.mockClear();
   MockedAgent.mockClear();
+  resetSystemLogBufferForTest();
+  resetMailSentThrottleForTest();
 });
 
 const config: PowerAutomateConfig = {
@@ -70,6 +74,11 @@ describe("PowerAutomateAdapter", () => {
       replyTo: "reply@example.com",
     });
     expect(adapter.capabilities.deliveryResultSemantics).toBe("accepted_only");
+
+    const logs = querySystemLogs({ source: "mail" });
+    expect(
+      logs.some((entry) => entry.message === "mail_sent" && entry.fields?.provider === "powerautomate"),
+    ).toBe(true);
   });
 
   it("omits key header when key is not configured", async () => {
@@ -98,6 +107,9 @@ describe("PowerAutomateAdapter", () => {
     expect(res.status).toBe("rejected");
     expect(res.retryable).toBe(false);
     expect(res.error).toContain("401");
+
+    const logs = querySystemLogs({ source: "mail" });
+    expect(logs.some((entry) => entry.message === "mail_send_failed" && entry.level === "error")).toBe(true);
   });
 
   it("catches network exception => failed+retryable", async () => {
@@ -122,6 +134,9 @@ describe("PowerAutomateAdapter", () => {
     expect(res.retryable).toBe(false);
     expect(res.error).toMatch(/private, loopback, or link-local/);
     expect(fetchFn).not.toHaveBeenCalled();
+
+    const logs = querySystemLogs({ source: "security" });
+    expect(logs.some((entry) => entry.message === "mail_destination_blocked" && entry.level === "warn")).toBe(true);
   });
 
   it("rejects a hostname that resolves to a private address at send-time (DNS rebinding)", async () => {

@@ -1,15 +1,17 @@
 import type { GraphConfig } from "../config.js";
 import { GRAPH_CAPABILITIES } from "../capabilities.js";
-import { mapHttpStatus, mapNetworkError } from "../errorMapping.js";
+import { mapHttpStatus, mapNetworkError, sanitizeProviderErrorForLog } from "../errorMapping.js";
 import {
   graphDisplayFromAddress,
   graphRecipients,
   resolveReplyTo,
   shouldSetGraphMessageFrom,
 } from "../senderUtils.js";
-import { rejectedSendResult } from "../adapterUtils.js";
+import { logMailSent, rejectedSendResult } from "../adapterUtils.js";
 import { validateMailMessage } from "../validation.js";
 import type { FetchFn, MailMessage, MailerAdapter, SendResult } from "../types.js";
+import { emitSystemLog } from "@admitto/shared/system-log";
+import { redactEmail } from "@admitto/shared";
 
 /**
  * Microsoft Graph — app-only send (client credentials flow).
@@ -111,6 +113,7 @@ export class GraphAdapter implements MailerAdapter {
 
     const tokenResult = await this.acquireToken(base);
     if (!tokenResult.ok) {
+      emitSystemLog("mail", "error", "mail_send_failed", { provider: this.provider, error: tokenResult.result.error });
       return tokenResult.result;
     }
 
@@ -134,6 +137,7 @@ export class GraphAdapter implements MailerAdapter {
 
       if (res.status === 202) {
         const requestId = res.headers.get("request-id") ?? undefined;
+        logMailSent(this.provider, redactEmail(message.to));
         return {
           status: "accepted",
           provider: this.provider,
@@ -142,14 +146,25 @@ export class GraphAdapter implements MailerAdapter {
         };
       }
 
-      return await this.buildSendErrorResult(base, res);
+      const errorResult = await this.buildSendErrorResult(base, res);
+      // Drop the response-body suffix - `buildSendErrorResult` falls back to up to 200 raw
+      // chars of Graph's response body when it isn't a structured {error} JSON payload,
+      // which could echo request content back. The full error still reaches the caller via
+      // SendResult.error.
+      emitSystemLog("mail", "error", "mail_send_failed", {
+        provider: this.provider,
+        error: sanitizeProviderErrorForLog(errorResult.error ?? "Graph sendMail failed"),
+      });
+      return errorResult;
     } catch (e) {
       const mapped = mapNetworkError();
+      const error = e instanceof Error ? e.message : String(e);
+      emitSystemLog("mail", "error", "mail_send_failed", { provider: this.provider, error });
       return {
         ...base,
         status: mapped.status,
         retryable: mapped.retryable,
-        error: e instanceof Error ? e.message : String(e),
+        error,
       };
     }
   }

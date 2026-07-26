@@ -1,4 +1,15 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type RefObject,
+  type SetStateAction,
+} from "react";
 import { getCountryForTimezone } from "countries-and-timezones";
 import { Badge, Button, Card, EmptyState, Input, Tooltip, useToast, type BadgeVariant } from "@admitto/ui";
 import { exportAuditLog, fetchAdminEvents, fetchAuditLog } from "../api/client.js";
@@ -13,6 +24,7 @@ import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { localeDateInputPattern, utcDayEndIso, utcDayStartIso } from "../utils/event-dates.js";
 import { getPreferredLocale } from "../utils/locale-store.js";
 import { MAIL_PROVIDER_LABELS } from "./mailProviderOptions.js";
+import { SystemLogsPanel, type SystemLogsPanelHandle } from "./SystemLogsPanel.js";
 
 /** Human-readable labels for `AdminAuditLog.action_type` (current + planned IAM types). */
 const ACTION_LABELS: Record<string, string> = {
@@ -545,21 +557,243 @@ function AuditLogListContent({
   return <AuditLogCards entries={entries} loading={loading} eventTitleById={eventTitleById} onCopyRow={onCopyRow} />;
 }
 
+type AuditLogFilters = { actionType: string; eventId: string; search: string; start: string; end: string };
+
+interface AuditLogViewProps {
+  isDesktop: boolean;
+  rootRef: RefObject<HTMLDivElement | null>;
+  searchInput: string;
+  setSearchInput: Dispatch<SetStateAction<string>>;
+  searchInputRef: RefObject<HTMLInputElement | null>;
+  fromDatePicker: ReactNode;
+  toDatePicker: ReactNode;
+  actionScopeActiveCount: number;
+  filters: AuditLogFilters;
+  setFilters: Dispatch<SetStateAction<AuditLogFilters>>;
+  setPage: Dispatch<SetStateAction<number>>;
+  events: EventDto[];
+  clearFiltersButton: ReactNode;
+  exportButton: ReactNode;
+  listContent: ReactNode;
+  loading: boolean;
+  error: string | null;
+  total: number;
+  page: number;
+  pageSize: number;
+  setPageSize: Dispatch<SetStateAction<number>>;
+  goToPage: (next: number) => void;
+  totalPages: number;
+}
+
+/** The audit-side toolbar + list + footer - extracted from AuditLogPanel so that component can
+ * stay a thin switch between this and SystemLogsPanel based on the System/Audit toggle. State
+ * stays in AuditLogPanel; only the JSX moved here. */
+function AuditLogView({
+  isDesktop,
+  rootRef,
+  searchInput,
+  setSearchInput,
+  searchInputRef,
+  fromDatePicker,
+  toDatePicker,
+  actionScopeActiveCount,
+  filters,
+  setFilters,
+  setPage,
+  events,
+  clearFiltersButton,
+  exportButton,
+  listContent,
+  loading,
+  error,
+  total,
+  page,
+  pageSize,
+  setPageSize,
+  goToPage,
+  totalPages,
+}: Readonly<AuditLogViewProps>) {
+  return (
+    <>
+      <div ref={rootRef} className="audit-log-toolbar">
+        <div className="audit-log-filter audit-log-filter--search">
+          <Input
+            ref={searchInputRef}
+            id="audit-log-search"
+            name="audit-log-search"
+            aria-label="Search actor or event"
+            placeholder="Search actor or event…"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            icon={<i className="ti ti-search" aria-hidden="true" />}
+          />
+          {searchInput.length > 0 && (
+            <button
+              type="button"
+              className="audit-log-search-clear"
+              onClick={() => {
+                setSearchInput("");
+                searchInputRef.current?.focus();
+              }}
+              aria-label="Clear search"
+            >
+              <i className="ti ti-x" aria-hidden="true" />
+            </button>
+          )}
+        </div>
+        {isDesktop && (
+          <>
+            <div className="audit-log-filter audit-log-filter--date">{fromDatePicker}</div>
+            <div className="audit-log-filter audit-log-filter--date">{toDatePicker}</div>
+          </>
+        )}
+        <FiltersMenu activeCount={actionScopeActiveCount} className="audit-log-filters-menu">
+          {!isDesktop && (
+            <>
+              {/* Full width, one per row (not side by side) - the panel is only ~236px wide,
+                  not enough room for both the "From (dd/mm/yyyy)" placeholder AND a sibling
+                  field without clipping the text. */}
+              <div className="audit-log-filters-menu__field">{fromDatePicker}</div>
+              <div className="audit-log-filters-menu__field">{toDatePicker}</div>
+            </>
+          )}
+          <div className="audit-log-filters-menu__field">
+            <label className="audit-log-filter__label" htmlFor="audit-log-filter-action">
+              Action
+            </label>
+            <select
+              id="audit-log-filter-action"
+              name="audit-log-filter-action"
+              className="at-select"
+              value={filters.actionType}
+              onChange={(e) => {
+                setFilters((f) => ({ ...f, actionType: e.target.value }));
+                setPage(1);
+              }}
+            >
+              <option value="">All actions</option>
+              {ACTION_OPTIONS.map((type) => (
+                <option key={type} value={type}>
+                  {actionLabel(type)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="audit-log-filters-menu__field">
+            <label className="audit-log-filter__label" htmlFor="audit-log-filter-scope">
+              Event
+            </label>
+            <select
+              id="audit-log-filter-scope"
+              name="audit-log-filter-scope"
+              className="at-select"
+              value={filters.eventId}
+              onChange={(e) => {
+                setFilters((f) => ({ ...f, eventId: e.target.value }));
+                setPage(1);
+              }}
+            >
+              <option value="">All events</option>
+              {[...events]
+                .sort((a, b) => a.title.localeCompare(b.title))
+                .map((event) => (
+                  <option key={event.id} value={event.id}>
+                    {event.title}
+                  </option>
+                ))}
+            </select>
+          </div>
+        </FiltersMenu>
+        {!isDesktop && (
+          <div className="audit-log-toolbar-actions">
+            {clearFiltersButton}
+            {exportButton}
+          </div>
+        )}
+      </div>
+
+      {listContent}
+
+      {!loading && !error && total > 0 && (
+        <div className="audit-log-footer">
+          <span className="audit-log-footer__info">
+            {`Showing ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
+          </span>
+          <div className="audit-log-footer__pager">
+            <div className="audit-log-pagesize">
+              <label htmlFor="audit-log-pagesize-select">Rows per page</label>
+              <select
+                id="audit-log-pagesize-select"
+                name="audit-log-pagesize-select"
+                className="at-select audit-log-pagesize-select"
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setPage(1);
+                }}
+              >
+                {PAGE_SIZE_OPTIONS.map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => goToPage(Math.max(1, page - 1))}
+            >
+              Previous
+            </Button>
+            <span>
+              Page {page} of {totalPages}
+            </span>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={page >= totalPages}
+              onClick={() => goToPage(page + 1)}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 type LogsView = "system" | "audit";
 
 const LOGS_VIEW_OPTIONS: ReadonlyArray<SegmentedOption<LogsView>> = [
-  { value: "system", label: "System", disabled: true },
+  { value: "system", label: "System" },
   { value: "audit", label: "Audit" },
 ];
 
 /** Superadmin audit log viewer — read-only paginated table with action and date filters. */
 export function AuditLogPanel() {
-  const [view, setView] = useState<LogsView>("audit");
+  const [view, setView] = useState<LogsView>("system");
+  // Mirrored up from SystemLogsPanel purely so the header's Live/Download buttons (which live
+  // here, next to the System/Audit toggle, rather than being duplicated inside the panel) can
+  // reflect its state - SystemLogsPanel itself remains the source of truth for both.
+  const [systemLive, setSystemLive] = useState(true);
+  const [systemHasEntries, setSystemHasEntries] = useState(false);
+  const systemLogsRef = useRef<SystemLogsPanelHandle>(null);
   const [entries, setEntries] = useState<AuditLogEntryDto[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
-  const [filters, setFilters] = useState({ actionType: "", eventId: "", search: "", start: "", end: "" });
+  const [filters, setFilters] = useState<AuditLogFilters>({
+    actionType: "",
+    eventId: "",
+    search: "",
+    start: "",
+    end: "",
+  });
   const [searchInput, setSearchInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -774,19 +1008,50 @@ export function AuditLogPanel() {
     />
   );
 
+  // Built once, rendered either in the Card header (desktop) or passed down into
+  // SystemLogsPanel's own toolbar (mobile, where the header only has room for the title and the
+  // System/Audit toggle) - mirrors clearFiltersButton/exportButton's own dual placement above.
+  const liveButton = (
+    <Button
+      type="button"
+      variant={systemLive ? "success" : "secondary"}
+      size="sm"
+      onClick={() => systemLogsRef.current?.toggleLive()}
+    >
+      {systemLive ? "Live" : "Paused"}
+    </Button>
+  );
+  const downloadButton = (
+    <Button
+      type="button"
+      variant="secondary"
+      size="sm"
+      disabled={!systemHasEntries}
+      onClick={() => systemLogsRef.current?.download()}
+    >
+      Download .log
+    </Button>
+  );
+
   return (
     <Card
-      title="Audit log"
+      title={view === "system" ? "System logs" : "Audit log"}
       className="audit-log-header-card"
       actions={
         <>
           {/* On mobile these two move down into the toolbar instead (next to Filters) - a
               narrow card header can only fit the title plus this always-present toggle before
               wrapping onto a second line. */}
-          {isDesktop && (
+          {isDesktop && view === "audit" && (
             <>
               {clearFiltersButton}
               {exportButton}
+            </>
+          )}
+          {isDesktop && view === "system" && (
+            <>
+              {liveButton}
+              {downloadButton}
             </>
           )}
           {/* Always last: with the actions row right-anchored, a trailing item's own edge
@@ -802,154 +1067,49 @@ export function AuditLogPanel() {
         </>
       }
     >
-      <div ref={rootRef} className="audit-log-toolbar">
-        <div className="audit-log-filter audit-log-filter--search">
-          <Input
-            ref={searchInputRef}
-            id="audit-log-search"
-            name="audit-log-search"
-            aria-label="Search actor or event"
-            placeholder="Search actor or event…"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            icon={<i className="ti ti-search" aria-hidden="true" />}
-          />
-          {searchInput.length > 0 && (
-            <button
-              type="button"
-              className="audit-log-search-clear"
-              onClick={() => {
-                setSearchInput("");
-                searchInputRef.current?.focus();
-              }}
-              aria-label="Clear search"
-            >
-              <i className="ti ti-x" aria-hidden="true" />
-            </button>
-          )}
-        </div>
-        {isDesktop && (
-          <>
-            <div className="audit-log-filter audit-log-filter--date">{fromDatePicker}</div>
-            <div className="audit-log-filter audit-log-filter--date">{toDatePicker}</div>
-          </>
-        )}
-        <FiltersMenu activeCount={actionScopeActiveCount} className="audit-log-filters-menu">
-          {!isDesktop && (
-            <>
-              {/* Full width, one per row (not side by side) - the panel is only ~236px wide,
-                  not enough room for both the "From (dd/mm/yyyy)" placeholder AND a sibling
-                  field without clipping the text. */}
-              <div className="audit-log-filters-menu__field">{fromDatePicker}</div>
-              <div className="audit-log-filters-menu__field">{toDatePicker}</div>
-            </>
-          )}
-          <div className="audit-log-filters-menu__field">
-            <label className="audit-log-filter__label" htmlFor="audit-log-filter-action">
-              Action
-            </label>
-            <select
-              id="audit-log-filter-action"
-              name="audit-log-filter-action"
-              className="at-select"
-              value={filters.actionType}
-              onChange={(e) => {
-                setFilters((f) => ({ ...f, actionType: e.target.value }));
-                setPage(1);
-              }}
-            >
-              <option value="">All actions</option>
-              {ACTION_OPTIONS.map((type) => (
-                <option key={type} value={type}>
-                  {actionLabel(type)}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="audit-log-filters-menu__field">
-            <label className="audit-log-filter__label" htmlFor="audit-log-filter-scope">
-              Event
-            </label>
-            <select
-              id="audit-log-filter-scope"
-              name="audit-log-filter-scope"
-              className="at-select"
-              value={filters.eventId}
-              onChange={(e) => {
-                setFilters((f) => ({ ...f, eventId: e.target.value }));
-                setPage(1);
-              }}
-            >
-              <option value="">All events</option>
-              {[...events]
-                .sort((a, b) => a.title.localeCompare(b.title))
-                .map((event) => (
-                  <option key={event.id} value={event.id}>
-                    {event.title}
-                  </option>
-                ))}
-            </select>
-          </div>
-        </FiltersMenu>
-        {!isDesktop && (
-          <div className="audit-log-toolbar-actions">
-            {clearFiltersButton}
-            {exportButton}
-          </div>
-        )}
+      {/* Both views stay mounted the whole time, toggled by visibility rather than by
+          conditional rendering - switching the toggle used to unmount/remount whichever side
+          you left, which meant losing all of System's polled state and re-fetching from
+          scratch on every return trip (a visible flash even on a fast local request). Neither
+          side's effects care that they're temporarily hidden - polling simply continues, so
+          flipping back shows already-current data instead of an empty/loading flash. */}
+      <div style={{ display: view === "system" ? undefined : "none" }}>
+        <SystemLogsPanel
+          ref={systemLogsRef}
+          isDesktop={isDesktop}
+          liveButton={!isDesktop ? liveButton : undefined}
+          downloadButton={!isDesktop ? downloadButton : undefined}
+          onLiveChange={setSystemLive}
+          onHasEntriesChange={setSystemHasEntries}
+        />
       </div>
-
-      {listContent}
-
-      {!loading && !error && total > 0 && (
-        <div className="audit-log-footer">
-          <span className="audit-log-footer__info">
-            {`Showing ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
-          </span>
-          <div className="audit-log-footer__pager">
-            <div className="audit-log-pagesize">
-              <label htmlFor="audit-log-pagesize-select">Rows per page</label>
-              <select
-                id="audit-log-pagesize-select"
-                name="audit-log-pagesize-select"
-                className="at-select audit-log-pagesize-select"
-                value={pageSize}
-                onChange={(e) => {
-                  setPageSize(Number(e.target.value));
-                  setPage(1);
-                }}
-              >
-                {PAGE_SIZE_OPTIONS.map((size) => (
-                  <option key={size} value={size}>
-                    {size}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => goToPage(Math.max(1, page - 1))}
-            >
-              Previous
-            </Button>
-            <span>
-              Page {page} of {totalPages}
-            </span>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => goToPage(page + 1)}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
-      )}
+      <div style={{ display: view === "audit" ? undefined : "none" }}>
+        <AuditLogView
+          isDesktop={isDesktop}
+          rootRef={rootRef}
+          searchInput={searchInput}
+          setSearchInput={setSearchInput}
+          searchInputRef={searchInputRef}
+          fromDatePicker={fromDatePicker}
+          toDatePicker={toDatePicker}
+          actionScopeActiveCount={actionScopeActiveCount}
+          filters={filters}
+          setFilters={setFilters}
+          setPage={setPage}
+          events={events}
+          clearFiltersButton={clearFiltersButton}
+          exportButton={exportButton}
+          listContent={listContent}
+          loading={loading}
+          error={error}
+          total={total}
+          page={page}
+          pageSize={pageSize}
+          setPageSize={setPageSize}
+          goToPage={goToPage}
+          totalPages={totalPages}
+        />
+      </div>
     </Card>
   );
 }

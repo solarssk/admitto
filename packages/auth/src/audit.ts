@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { redactEmail } from "@admitto/shared";
+import { recordSystemLog } from "@admitto/shared/system-log";
 
 export { redactEmail };
 
@@ -8,10 +9,27 @@ export function fingerprint(value: string): string {
   return createHash("sha256").update(value).digest("hex").slice(0, 12);
 }
 
-/** Emit a structured audit event to stdout (container log collectors add transport metadata). */
+// Events naming an outright failure, rejection, or blocked action get "warn" in the live
+// System logs tail; everything else (successful logins, logouts, routine settings changes)
+// is "info". auth.mfa.break_glass is a sensitive emergency-bypass action, not a substring
+// match below, so it's listed explicitly alongside the pattern-matched ones.
+const WARN_EVENTS = new Set(["auth.mfa.break_glass"]);
+function systemLogLevelFor(event: string): "info" | "warn" {
+  if (WARN_EVENTS.has(event) || /fail|denied|exceeded|blocked/.test(event)) return "warn";
+  return "info";
+}
+
+/**
+ * Emit a structured audit event to stdout (container log collectors add transport metadata),
+ * and record the same event into the System logs live-tail buffer under the "security" source
+ * — this is the single place every auth/security event in this module already flows through,
+ * so hooking in here covers logins, MFA, rate-limit blocks, and OIDC events without a separate
+ * call at each site.
+ */
 export function emitAuditEvent(event: string, fields: Record<string, unknown>): void {
   const { event: _ignoredEvent, ts: _ignoredTs, ...safeFields } = fields;
   console.info(JSON.stringify({ ...safeFields, ts: new Date().toISOString(), event }));
+  recordSystemLog({ level: systemLogLevelFor(event), source: "security", message: event, fields: safeFields });
 }
 
 /** Context for structured login audit events (email is redacted in logs). */
@@ -47,18 +65,27 @@ export type RateLimitScope =
   | "admin_import_commit"
   | "admin_template_preview"
   | "admin_oidc_provider_ops"
-  | "admin_attendees_search";
+  | "admin_attendees_search"
+  | "admin_mail_transport_test"
+  | "admin_event_mail_transport_test";
 
-/** Emit `auth.login.success` as JSON to stdout (no password/token fields). */
+/** Emit `auth.login.success` as JSON to stdout (no password/token fields). Full email, not
+ * redacted - staff/operator sign-in is exactly the internal accountability case this log
+ * exists for, matching the already-unredacted actor identification in the per-org Audit log
+ * (`AdminAuditLog`, resolved via `actor_email` in audit-routes.ts). */
 export function logLoginSuccess(ctx: LoginAuditContext): void {
   emitAuditEvent("auth.login.success", {
-    email: redactEmail(ctx.email),
+    email: ctx.email,
     ip: ctx.ip ?? null,
     userAgent: ctx.userAgent ?? null,
   });
 }
 
-/** Emit `auth.login.fail` as JSON to stdout (uniform shape for enumeration-safe failures). */
+/** Emit `auth.login.fail` as JSON to stdout (uniform shape for enumeration-safe failures).
+ * Redacted, unlike logLoginSuccess above: `ctx.email` here is unauthenticated form input - the
+ * login attempt failed, so this could be any real address someone typed in, not a verified
+ * staff identity (external review on PR #593). Full email on success is fine precisely because
+ * it's post-authentication; that reasoning doesn't extend to a failed attempt. */
 export function logLoginFailure(ctx: LoginAuditContext): void {
   emitAuditEvent("auth.login.fail", {
     email: redactEmail(ctx.email),
@@ -71,7 +98,7 @@ export function logLoginFailure(ctx: LoginAuditContext): void {
 export function logMfaBreakGlass(ctx: { action: string; email: string; ip?: string }): void {
   emitAuditEvent("auth.mfa.break_glass", {
     action: ctx.action,
-    email: redactEmail(ctx.email),
+    email: ctx.email,
     ip: ctx.ip ?? null,
   });
 }

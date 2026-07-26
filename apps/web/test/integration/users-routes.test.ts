@@ -444,8 +444,7 @@ describe("POST /api/admin/users functional", () => {
       where: { organization_id: ORG_USERS, action_type: "user_created" },
       orderBy: { created_at: "desc" },
     });
-    expect(audit?.metadata).toMatchObject({ userId: row!.id, email: "c***@example.com" });
-    expect(JSON.stringify(audit?.metadata)).not.toContain(email);
+    expect(audit?.metadata).toMatchObject({ userId: row!.id, email });
 
     await prisma.user.delete({ where: { email } });
   });

@@ -6,6 +6,7 @@ import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
 import { generateToken, hashToken } from "@admitto/tickets";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 
@@ -135,6 +136,10 @@ beforeAll(async () => {
   opCookie = `admitto_session=${opSession.rawToken}`;
 });
 
+beforeEach(() => {
+  resetSystemLogBufferForTest();
+});
+
 afterEach(async () => {
   await prisma.adminAuditLog.deleteMany({ where: { organization_id: ORG_ARCH } });
   await prisma.event.update({
@@ -173,6 +178,11 @@ describe("POST /api/admin/events/:eventId/archive", () => {
     expect(audit!.actor_user_id).toBe(superId);
     const meta = audit!.metadata as { eventId?: string };
     expect(meta.eventId).toBe(EVENT_ARCH);
+
+    const logs = querySystemLogs({ source: "admin" });
+    expect(
+      logs.some((entry) => entry.message === "event_archived" && entry.fields?.eventId === EVENT_ARCH),
+    ).toBe(true);
   });
 
   it("returns 409 when already archived", async () => {
@@ -213,6 +223,15 @@ describe("POST /api/admin/events/:eventId/archive", () => {
     });
     expect(res.status).toBe(403);
   });
+
+  it("returns 404 not_found for a nonexistent event", async () => {
+    const res = await app.request("/api/admin/events/does-not-exist/archive", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{}",
+    });
+    expect(res.status).toBe(404);
+  });
 });
 
 describe("POST /api/admin/events/:eventId/unarchive", () => {
@@ -239,6 +258,11 @@ describe("POST /api/admin/events/:eventId/unarchive", () => {
     expect(audit!.actor_user_id).toBe(superId);
     const meta = audit!.metadata as { eventId?: string };
     expect(meta.eventId).toBe(EVENT_ARCH);
+
+    const logs = querySystemLogs({ source: "admin" });
+    expect(
+      logs.some((entry) => entry.message === "event_unarchived" && entry.fields?.eventId === EVENT_ARCH),
+    ).toBe(true);
   });
 
   it("rejects org admin", async () => {
@@ -283,6 +307,15 @@ describe("POST /api/admin/events/:eventId/unarchive", () => {
       where: { organization_id: ORG_ARCH, action_type: "event_unarchived" },
     });
     expect(audit).toBeNull();
+  });
+
+  it("returns 404 not_found for a nonexistent event", async () => {
+    const res = await app.request("/api/admin/events/does-not-exist/unarchive", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{}",
+    });
+    expect(res.status).toBe(404);
   });
 });
 

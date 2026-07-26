@@ -94,6 +94,22 @@ describe("createRequestLogMiddleware", () => {
     expect(JSON.parse(lines[0]!)).toMatchObject({ path: "/readyz", status: 503 });
   });
 
+  it("skips successful polls of the System-logs live-tail endpoint but logs failures", async () => {
+    const lines = captureInfoLines();
+    const okApp = new Hono();
+    okApp.use("*", createRequestLogMiddleware());
+    okApp.get("/api/admin/system-logs", (c) => c.json({ entries: [] }));
+    await okApp.request("/api/admin/system-logs");
+    expect(lines).toHaveLength(0);
+
+    const failApp = new Hono();
+    failApp.use("*", createRequestLogMiddleware());
+    failApp.get("/api/admin/system-logs", (c) => c.json({ error: "forbidden" }, 403));
+    await failApp.request("/api/admin/system-logs");
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0]!)).toMatchObject({ path: "/api/admin/system-logs", status: 403 });
+  });
+
   it("logs 404s for unknown routes", async () => {
     const lines = captureInfoLines();
     await appWithLogging().request("/nope");

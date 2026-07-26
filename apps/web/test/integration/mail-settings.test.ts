@@ -15,6 +15,7 @@ import * as tickets from "@admitto/tickets";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 import { setMailSettings } from "@admitto/mailer-config";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -116,6 +117,7 @@ afterEach(async () => {
   await prisma.mailSettings.deleteMany({ where: { scope_id: ORG_MAIL } });
   exported.length = 0;
   failExport = false;
+  resetSystemLogBufferForTest();
   if (prevNodeEnv !== undefined) process.env.NODE_ENV = prevNodeEnv;
   else delete process.env.NODE_ENV;
 });
@@ -655,6 +657,11 @@ describe("POST /api/admin/mail-settings/test", () => {
     expect(body.error).toBe("mail transport not configured");
     // Provider is unknown here — resolution fails before a mailer is created.
     expect(body.provider).toBeUndefined();
+
+    const logs = querySystemLogs({ source: "mail" });
+    expect(
+      logs.some((entry) => entry.message === "mail_test_failed" && entry.fields?.error === body.error),
+    ).toBe(true);
   });
 
   it("includes provider on failure once the transport is resolved", async () => {
@@ -677,6 +684,11 @@ describe("POST /api/admin/mail-settings/test", () => {
     const body = (await res.json()) as { status: string; error?: string; provider?: string };
     expect(body.status).toBe("failed");
     expect(body.provider).toBe("export_only");
+
+    const logs = querySystemLogs({ source: "mail" });
+    expect(
+      logs.some((entry) => entry.message === "mail_test_failed" && entry.fields?.provider === "export_only"),
+    ).toBe(true);
   });
 
   it("rejects invalid email", async () => {
@@ -734,6 +746,9 @@ describe("POST /api/admin/mail-settings/test", () => {
     expect(limited.status).toBe(429);
     const body = (await limited.json()) as { error?: string };
     expect(body.error).toBe("too many requests");
+
+    const securityLogs = querySystemLogs({ source: "security" });
+    expect(securityLogs.some((entry) => entry.message === "auth.rate_limit.exceeded")).toBe(true);
   });
 });
 

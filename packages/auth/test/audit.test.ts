@@ -1,16 +1,40 @@
-import { describe, expect, it, vi, afterEach } from "vitest";
+import { describe, expect, it, vi, afterEach, beforeEach } from "vitest";
 import {
   emitAuditEvent,
   fingerprint,
+  logLoginFailure,
   logLoginSuccess,
   logMfaSuccess,
   logRateLimitExceeded,
   redactEmail,
 } from "../src/audit.js";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
 describe("audit", () => {
+  beforeEach(() => {
+    resetSystemLogBufferForTest();
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("also records into the System logs buffer under the security source", () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    logRateLimitExceeded({ scope: "login_ip", ip: "10.0.0.1" });
+    const entries = querySystemLogs({ source: "security" });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.message).toBe("auth.rate_limit.exceeded");
+    expect(entries[0]?.level).toBe("warn");
+    expect(entries[0]?.fields).toMatchObject({ scope: "login_ip", ip: "10.0.0.1" });
+  });
+
+  it("records a successful event at info level", () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    logLoginSuccess({ email: "bob@example.com", ip: "1.2.3.4" });
+    const entries = querySystemLogs({ source: "security" });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.level).toBe("info");
   });
 
   it("redacts email local part", () => {
@@ -45,14 +69,25 @@ describe("audit", () => {
     expect(payload.scope).toBe("login_ip");
   });
 
-  it("logLoginSuccess redacts email and includes ts", () => {
+  it("logLoginSuccess logs the full email and includes ts", () => {
     const spy = vi.spyOn(console, "info").mockImplementation(() => {});
     logLoginSuccess({ email: "bob@example.com", ip: "1.2.3.4" });
     const payload = JSON.parse(String(spy.mock.calls[0]?.[0]));
     expect(payload.event).toBe("auth.login.success");
-    expect(payload.email).toBe("b***@example.com");
+    expect(payload.email).toBe("bob@example.com");
     expect(payload.ip).toBe("1.2.3.4");
     expect(payload.ts).toBeDefined();
+  });
+
+  it("logLoginFailure redacts the email (unauthenticated input, unlike a successful login)", () => {
+    const spy = vi.spyOn(console, "info").mockImplementation(() => {});
+    logLoginFailure({ email: "bob@example.com", ip: "1.2.3.4" });
+    const payload = JSON.parse(String(spy.mock.calls[0]?.[0]));
+    expect(payload.event).toBe("auth.login.fail");
+    expect(payload.email).toBe("b***@example.com");
+
+    const entries = querySystemLogs({ source: "security" });
+    expect(entries.some((e) => e.message === "auth.login.fail" && e.fields?.email === "b***@example.com")).toBe(true);
   });
 
   it("logMfaSuccess fingerprints user id without raw uuid", () => {

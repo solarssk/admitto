@@ -1,12 +1,14 @@
 import nodemailer, { type Transporter } from "nodemailer";
 import type { SmtpConfig } from "../config.js";
 import { SMTP_CAPABILITIES } from "../capabilities.js";
-import { mapSmtpError } from "../errorMapping.js";
-import { rejectedSendResult } from "../adapterUtils.js";
+import { extractSmtpCode, mapSmtpError } from "../errorMapping.js";
+import { logMailSent, rejectedSendResult } from "../adapterUtils.js";
 import { formatFromHeader, parseAddressList, resolveReplyTo } from "../senderUtils.js";
 import { validateMailMessage } from "../validation.js";
 import { assertSafeMailDestination, resolveSafeMailDestination } from "../ssrfGuard.js";
 import type { MailMessage, MailerAdapter, SendResult } from "../types.js";
+import { emitSystemLog } from "@admitto/shared/system-log";
+import { redactEmail } from "@admitto/shared";
 
 /**
  * SMTP via nodemailer. Works with any standards-compliant mail server.
@@ -83,9 +85,18 @@ export class SmtpAdapter implements MailerAdapter {
     try {
       await assertSafeMailDestination(this.config.host);
     } catch (e) {
+      const error = e instanceof Error ? e.message : "mail transport destination is not permitted";
+      // Fixed category, not `error` - a DNS-lookup failure (as opposed to the SSRF guard's
+      // own fixed "private/loopback" message) can surface the configured hostname in
+      // Node's own error text; the real message still reaches the caller via the return
+      // value below, just not the System-logs buffer/stdout.
+      emitSystemLog("security", "warn", "mail_destination_blocked", {
+        provider: this.provider,
+        error: "destination blocked or unresolvable",
+      });
       return rejectedSendResult(
         this.provider,
-        e instanceof Error ? e.message : "mail transport destination is not permitted",
+        error,
         message.idempotencyKey,
       );
     }
@@ -108,6 +119,7 @@ export class SmtpAdapter implements MailerAdapter {
 
     try {
       const info = await this.transporter.sendMail(mail);
+      logMailSent(this.provider, redactEmail(message.to));
       return {
         status: "accepted",
         provider: this.provider,
@@ -116,6 +128,15 @@ export class SmtpAdapter implements MailerAdapter {
       };
     } catch (e) {
       const mapped = mapSmtpError(e);
+      const smtpCode = extractSmtpCode(e);
+      // Logged reason is the SMTP reply code only - the raw exception text (nodemailer's
+      // `e.message`/`response`) is the mail server's own reply, which commonly echoes the
+      // rejected recipient address back verbatim (e.g. "550 no such user <bob@example.com>").
+      // The full message still reaches the caller via SendResult.error below.
+      emitSystemLog("mail", "error", "mail_send_failed", {
+        provider: this.provider,
+        error: smtpCode !== undefined ? `SMTP ${smtpCode}` : "SMTP send failed",
+      });
       return {
         status: mapped.status,
         provider: this.provider,

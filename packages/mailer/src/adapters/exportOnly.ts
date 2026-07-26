@@ -1,9 +1,11 @@
 import type { ExportOnlyConfig } from "../config.js";
 import { EXPORT_ONLY_CAPABILITIES } from "../capabilities.js";
-import { rejectedSendResult } from "../adapterUtils.js";
+import { logMailSent, rejectedSendResult } from "../adapterUtils.js";
 import { toMailSender } from "../senderUtils.js";
 import { validateMailMessage } from "../validation.js";
 import type { ExportPayload, MailMessage, MailerAdapter, SendResult } from "../types.js";
+import { emitSystemLog } from "@admitto/shared/system-log";
+import { redactEmail } from "@admitto/shared";
 
 export type ExportSink = (payload: ExportPayload) => void | Promise<void>;
 
@@ -40,14 +42,17 @@ export class ExportOnlyAdapter implements MailerAdapter {
       try {
         await this.exportSink({ message, sender: toMailSender(this.config) });
       } catch (e) {
+        const error = e instanceof Error ? e.message : String(e);
+        emitSystemLog("mail", "error", "mail_send_failed", { provider: this.provider, error });
         return {
           ...base,
           retryable: false,
-          error: e instanceof Error ? e.message : String(e),
+          error,
         };
       }
     }
 
+    logMailSent(this.provider, redactEmail(message.to));
     return {
       status: "accepted",
       provider: this.provider,

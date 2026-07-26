@@ -1,6 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GraphAdapter } from "../src/adapters/graph.js";
 import type { GraphConfig } from "../src/config.js";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
+import { resetMailSentThrottleForTest } from "../src/adapterUtils.js";
+
+beforeEach(() => {
+  resetSystemLogBufferForTest();
+  resetMailSentThrottleForTest();
+});
 
 const config: GraphConfig = {
   provider: "graph",
@@ -70,6 +77,14 @@ describe("GraphAdapter", () => {
     ]);
     expect(body.message.replyTo).toEqual([{ emailAddress: { address: "events@example.com" } }]);
     expect(body.message.from).toBeUndefined();
+
+    const logs = querySystemLogs({ source: "mail" });
+    expect(
+      logs.some(
+        (entry) =>
+          entry.message === "mail_sent" && entry.fields?.provider === "graph" && entry.fields?.to === "j***@example.com",
+      ),
+    ).toBe(true);
   });
 
   it("parses RFC5322 cc with quoted commas into Graph recipients", async () => {
@@ -158,6 +173,17 @@ describe("GraphAdapter", () => {
     expect(res.status).toBe("rejected");
     expect(res.retryable).toBe(false);
     expect(res.error).toContain("ErrorAccessDenied");
+
+    const logs = querySystemLogs({ source: "mail" });
+    expect(
+      logs.some(
+        (entry) =>
+          entry.message === "mail_send_failed" &&
+          entry.level === "error" &&
+          typeof entry.fields?.error === "string" &&
+          (entry.fields.error as string).includes("ErrorAccessDenied"),
+      ),
+    ).toBe(true);
   });
 
   it("returns rejected when token fetch fails with 401", async () => {

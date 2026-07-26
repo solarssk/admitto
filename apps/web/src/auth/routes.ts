@@ -135,17 +135,13 @@ export async function handleLogin(
 
   const trustedDeviceToken = getCookie(c, TRUSTED_DEVICE_COOKIE_NAME);
 
-  const result = await login(
-    db,
-    {
-      email,
-      password,
-      ip: resolveClientIp(c),
-      userAgent: c.req.header("user-agent"),
-      trustedDeviceToken,
-    },
-    { email },
-  );
+  const result = await login(db, {
+    email,
+    password,
+    ip: resolveClientIp(c),
+    userAgent: c.req.header("user-agent"),
+    trustedDeviceToken,
+  });
 
   if (!result.ok) {
     if (!(await checkLoginEmailRateLimit(rateLimitStore, email, resolveClientIp(c)))) {

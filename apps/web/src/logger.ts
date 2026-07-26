@@ -1,10 +1,11 @@
+import { emitSystemLog } from "@admitto/shared/system-log";
+
 type LogLevel = "info" | "warn" | "error";
 
 type LogFields = Record<string, unknown>;
 
 function log(level: LogLevel, msg: string, fields: LogFields = {}) {
-  const entry = { level, msg, ts: new Date().toISOString(), ...fields };
-  console[level](JSON.stringify(entry));
+  emitSystemLog("api", level, msg, fields);
 }
 
 export const logger = {
