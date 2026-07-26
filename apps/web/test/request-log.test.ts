@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
 import type { PrismaClient } from "@prisma/client";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { createApp } from "../src/app.js";
@@ -157,7 +158,42 @@ describe("createApp logHttpRequests wiring", () => {
 });
 
 describe("createApp global error handler", () => {
-  it("records a bounded error entry without exception text", async () => {
+  it("records the matched route template without exception text", async () => {
+    const error = new Error("ticket-token-123 and attendee@example.com must not be logged");
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const app = createApp({
+      prisma: { $queryRaw: vi.fn(async () => [{ "?column?": 1 }]) } as unknown as PrismaClient,
+      baseUrl: "https://tickets.example.com",
+      skipCheckinBootValidation: true,
+      rateLimitStore: createRateLimitStore(),
+      logHttpRequests: false,
+    });
+    app.get("/__test/events/:eventId/attendees/:attendeeId", () => {
+      throw error;
+    });
+
+    const res = await app.request("/__test/events/event-secret/attendees/attendee-secret");
+
+    expect(res.status).toBe(500);
+    expect(await res.text()).toBe("Internal Server Error");
+    expect(querySystemLogs({ source: "api" })).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        message: "unhandled_exception",
+        fields: {
+          method: "GET",
+          path: "/__test/events/:eventId/attendees/:attendeeId",
+        },
+      }),
+    );
+    expect(errorSpy).toHaveBeenCalledWith("unhandled_exception:", error);
+    expect(JSON.stringify(querySystemLogs())).not.toContain("ticket-token-123");
+    expect(JSON.stringify(querySystemLogs())).not.toContain("attendee@example.com");
+    expect(JSON.stringify(querySystemLogs())).not.toContain("event-secret");
+    expect(JSON.stringify(querySystemLogs())).not.toContain("attendee-secret");
+  });
+
+  it("uses a constant route label if Hono has no matched route", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const app = createApp({
       prisma: { $queryRaw: vi.fn(async () => [{ "?column?": 1 }]) } as unknown as PrismaClient,
@@ -166,22 +202,40 @@ describe("createApp global error handler", () => {
       rateLimitStore: createRateLimitStore(),
       logHttpRequests: false,
     });
-    app.get("/__test/unhandled", () => {
-      throw new Error("ticket-token-123 and attendee@example.com must not be logged");
+    app.get("/__test/fallback/:attendeeId", (c) => {
+      Object.defineProperty(c.req, "routePath", { value: "" });
+      throw new Error("handler failed");
     });
 
-    const res = await app.request("/__test/unhandled");
+    const res = await app.request("/__test/fallback/attendee-secret");
 
     expect(res.status).toBe(500);
-    expect(await res.text()).toBe("Internal Server Error");
     expect(querySystemLogs({ source: "api" })).toContainEqual(
       expect.objectContaining({
-        level: "error",
         message: "unhandled_exception",
-        fields: { method: "GET", path: "/__test/unhandled", errorKind: "error" },
+        fields: { method: "GET", path: "/[unmatched]" },
       }),
     );
-    expect(JSON.stringify(querySystemLogs())).not.toContain("ticket-token-123");
-    expect(JSON.stringify(querySystemLogs())).not.toContain("attendee@example.com");
+    expect(JSON.stringify(querySystemLogs())).not.toContain("attendee-secret");
+  });
+
+  it("preserves Hono HTTPException responses without recording an error", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const app = createApp({
+      prisma: { $queryRaw: vi.fn(async () => [{ "?column?": 1 }]) } as unknown as PrismaClient,
+      baseUrl: "https://tickets.example.com",
+      skipCheckinBootValidation: true,
+      rateLimitStore: createRateLimitStore(),
+      logHttpRequests: false,
+    });
+    app.get("/__test/http-exception", () => {
+      throw new HTTPException(403, { message: "Forbidden" });
+    });
+
+    const res = await app.request("/__test/http-exception");
+
+    expect(res.status).toBe(403);
+    expect(await res.text()).toBe("Forbidden");
+    expect(querySystemLogs({ source: "api" })).toEqual([]);
   });
 });

@@ -121,6 +121,7 @@ describe("Mode B public routes — public_ref", () => {
   });
 
   it("records QR generation failures without copying the ticket token or error text", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.spyOn(tickets, "generateQrPng").mockRejectedValueOnce(
       new Error("attendee@example.com and secret payload must stay out of System logs"),
     );
@@ -134,6 +135,9 @@ describe("Mode B public routes — public_ref", () => {
         message: "qr_png_generation_failed",
         fields: { route: "/q/:filename" },
       }),
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"msg":"qr_png_generation_failed"'),
     );
     expect(JSON.stringify(querySystemLogs())).not.toContain(MODE_A_TOKEN);
     expect(JSON.stringify(querySystemLogs())).not.toContain("attendee@example.com");
@@ -159,6 +163,7 @@ describe("Mode B public routes — public_ref", () => {
   });
 
   it("records hosted agency QR generation failures", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.spyOn(tickets, "generateQrPng").mockRejectedValueOnce(
       new Error("attendee@example.com and agency payload must stay out of System logs"),
     );
@@ -172,6 +177,9 @@ describe("Mode B public routes — public_ref", () => {
         message: "qr_png_generation_failed",
         fields: { route: "/q/:eventSlug/a/:filename" },
       }),
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"msg":"qr_png_generation_failed"'),
     );
     expect(JSON.stringify(querySystemLogs())).not.toContain(PUBLIC_REF);
     expect(JSON.stringify(querySystemLogs())).not.toContain("attendee@example.com");

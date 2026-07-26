@@ -1,4 +1,5 @@
 import { Hono, type Context } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { bodyLimit } from "hono/body-limit";
@@ -352,13 +353,15 @@ export function createApp(options: CreateAppOptions = {}) {
   const mailDeliveryDeps = options.mailDeliveryDeps ?? {};
 
   const app = new Hono();
-  // Catch route errors once with enough request context to diagnose them, without putting
-  // token-bearing paths or arbitrary exception text into the live tail/stdout logs.
+  // Catch route errors once with enough request context in System logs. Keep raw exception
+  // diagnostics on stderr, but never put exception text or concrete request paths in the live tail.
   app.onError((err, c) => {
+    if (err instanceof HTTPException) return err.getResponse();
+
+    console.error("unhandled_exception:", err);
     emitSystemLog("api", "error", "unhandled_exception", {
       method: c.req.method,
-      path: redactRequestPath(new URL(c.req.url).pathname),
-      errorKind: "error",
+      path: c.req.routePath || "/[unmatched]",
     });
     return c.text("Internal Server Error", 500);
   });
@@ -1256,11 +1259,8 @@ export function createApp(options: CreateAppOptions = {}) {
       c.header("Cache-Control", "private, max-age=300");
       return c.body(new Uint8Array(png), 200);
     } catch {
-      recordSystemLog({
-        level: "error",
-        source: "api",
-        message: "qr_png_generation_failed",
-        fields: { route: "/q/:eventSlug/a/:filename" },
+      emitSystemLog("api", "error", "qr_png_generation_failed", {
+        route: "/q/:eventSlug/a/:filename",
       });
       return c.body(null, 500);
     }
@@ -1301,11 +1301,8 @@ export function createApp(options: CreateAppOptions = {}) {
       c.header("Cache-Control", "private, max-age=300");
       return c.body(new Uint8Array(png), 200);
     } catch {
-      recordSystemLog({
-        level: "error",
-        source: "api",
-        message: "qr_png_generation_failed",
-        fields: { route: "/q/:filename" },
+      emitSystemLog("api", "error", "qr_png_generation_failed", {
+        route: "/q/:filename",
       });
       return c.body(null, 500);
     }
