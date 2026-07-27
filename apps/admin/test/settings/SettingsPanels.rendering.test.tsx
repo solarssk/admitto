@@ -5,6 +5,8 @@ import type {
   AuditLogEntryDto,
   AuditLogResponse,
   EventDto,
+  SecurityAuditLogEntryDto,
+  SecurityAuditLogResponse,
   SessionListDto,
   SystemLogResponse,
 } from "../../src/api/types.js";
@@ -13,11 +15,13 @@ import {
   exportAuditLog,
   fetchAdminEvents,
   fetchAuditLog,
+  fetchSecurityAuditLog,
   fetchSessions,
   fetchSystemLogs,
 } from "../../src/api/client.js";
 import { AuditLogPanel } from "../../src/settings/AuditLogPanel.js";
 import { SessionsPanel } from "../../src/settings/SessionsPanel.js";
+import { POLL_INTERVAL_MS } from "../../src/settings/SystemLogsPanel.js";
 import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
@@ -26,6 +30,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     ...actual,
     fetchAdminEvents: vi.fn(),
     fetchAuditLog: vi.fn(),
+    fetchSecurityAuditLog: vi.fn(),
     exportAuditLog: vi.fn(),
     fetchSessions: vi.fn(),
     fetchSystemLogs: vi.fn(),
@@ -40,6 +45,10 @@ function emptyAuditLog(total = 0): AuditLogResponse {
   return { entries: [], total, page: 1, pageSize: 25 };
 }
 
+function emptySecurityLog(total = 0): SecurityAuditLogResponse {
+  return { entries: [], total, page: 1, pageSize: 25 };
+}
+
 function makeAuditEntry(overrides: Partial<AuditLogEntryDto> = {}): AuditLogEntryDto {
   return {
     id: "audit-1",
@@ -50,6 +59,20 @@ function makeAuditEntry(overrides: Partial<AuditLogEntryDto> = {}): AuditLogEntr
     actor_timezone: null,
     ip: "192.0.2.10",
     metadata: { event_id: "evt-1" },
+    created_at: "2026-01-01T12:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function makeSecurityEntry(overrides: Partial<SecurityAuditLogEntryDto> = {}): SecurityAuditLogEntryDto {
+  return {
+    id: "sec-1",
+    event_type: "auth.login.success",
+    user_id: "user-1",
+    user_email: "alice@example.com",
+    user_display_name: "Alice Admin",
+    ip: "192.0.2.10",
+    metadata: { email: "alice@example.com", userAgent: "curl/8.0" },
     created_at: "2026-01-01T12:00:00.000Z",
     ...overrides,
   };
@@ -92,6 +115,10 @@ function makeSession(overrides: Partial<SessionListDto> = {}): SessionListDto {
 beforeEach(() => {
   vi.mocked(fetchAdminEvents).mockResolvedValue([]);
   vi.mocked(fetchSystemLogs).mockResolvedValue(emptySystemLog());
+  // The Security view stays mounted (and fetches) alongside System/Audit even when a test only
+  // cares about one of the other two - give it a harmless default so it never leaks a real,
+  // unmocked network call into tests that don't override it themselves.
+  vi.mocked(fetchSecurityAuditLog).mockResolvedValue(emptySecurityLog());
   // jsdom does not implement scrollIntoView.
   Element.prototype.scrollIntoView = vi.fn();
   // AuditLogPanel picks table vs. mobile cards via useIsDesktop() - default to desktop so
@@ -174,6 +201,38 @@ describe("AuditLogPanel rendering", () => {
     renderAuditPanel();
 
     expect(await screen.findByText("No entries on this page.")).toBeTruthy();
+  });
+
+  it("does not flash the loading skeleton when a filter refetch still resolves to zero results", async () => {
+    // Regression test: isInitialLoad used to be `loading && entries.length === 0`, which is
+    // true again on every refetch that starts from an empty result - not just the very first
+    // load - so a filter change here used to swap "No audit log entries yet" out for the
+    // skeleton (then back) even though this is a completed load, not a first load.
+    vi.mocked(fetchAuditLog).mockResolvedValueOnce(emptyAuditLog());
+    renderAuditPanel();
+    expect(await screen.findByText("No audit log entries yet")).toBeTruthy();
+
+    let resolveFiltered: (response: AuditLogResponse) => void = () => {};
+    vi.mocked(fetchAuditLog).mockImplementationOnce(
+      () => new Promise<AuditLogResponse>((resolve) => {
+        resolveFiltered = resolve;
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Action" }), {
+      target: { value: "event_created" },
+    });
+
+    // hasActiveFilters flips synchronously with the filter change, so "No matches" replaces the
+    // unfiltered empty state right away, even though the new request is still in flight - the
+    // skeleton must never appear while it settles.
+    expect(screen.getByText("No matches")).toBeTruthy();
+    expect(screen.queryByLabelText("Loading audit log")).toBeNull();
+
+    resolveFiltered(emptyAuditLog());
+    expect(await screen.findByText("No matches")).toBeTruthy();
+    expect(fetchAuditLog).toHaveBeenCalledTimes(2);
   });
 
   it("renders audit rows, translated action text, actor details, and humanized metadata", async () => {
@@ -686,7 +745,11 @@ describe("AuditLogPanel rendering", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(await screen.findByText("Page 2 of 2")).toBeTruthy();
 
-    const fromInput = screen.getByLabelText("From");
+    // getByRole (not getByLabelText): the Security view's own From/To fields share the exact
+    // same aria-label, and testing-library's role query is the one that respects the sibling
+    // view's display:none hiding - getByLabelText doesn't filter on visibility at all, so it'd
+    // match both and throw "found multiple elements".
+    const fromInput = screen.getByRole("textbox", { name: "From" });
     fireEvent.change(fromInput, { target: { value: "2026-01-01" } });
     fireEvent.blur(fromInput);
     expect(await screen.findByText("Page 1 of 2")).toBeTruthy();
@@ -694,7 +757,7 @@ describe("AuditLogPanel rendering", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await screen.findByText("Page 2 of 2");
-    const toInput = screen.getByLabelText("To");
+    const toInput = screen.getByRole("textbox", { name: "To" });
     fireEvent.change(toInput, { target: { value: "2026-01-31" } });
     fireEvent.blur(toInput);
     expect(await screen.findByText("Page 1 of 2")).toBeTruthy();
@@ -906,7 +969,7 @@ describe("AuditLogPanel rendering", () => {
     expect(await screen.findByText(/Failed to export audit log/)).toBeTruthy();
   });
 
-  it("shows a System/Audit toggle in the header, defaulting to System", async () => {
+  it("shows a System/Audit/Security toggle in the header, defaulting to System", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
 
     renderWithToast(<AuditLogPanel />);
@@ -914,10 +977,13 @@ describe("AuditLogPanel rendering", () => {
 
     const audit = screen.getByRole("radio", { name: "Audit" });
     const system = screen.getByRole("radio", { name: "System" });
+    const security = screen.getByRole("radio", { name: "Security" });
     expect(system.getAttribute("aria-checked")).toBe("true");
     expect(audit.getAttribute("aria-checked")).toBe("false");
+    expect(security.getAttribute("aria-checked")).toBe("false");
     expect(audit).property("disabled", false);
     expect(system).property("disabled", false);
+    expect(security).property("disabled", false);
   });
 
   it("switches to the System logs view, hiding the Audit toolbar/table, and back again", async () => {
@@ -964,6 +1030,492 @@ describe("AuditLogPanel rendering", () => {
     );
     expect(await screen.findByText("Page 1 of 2")).toBeTruthy();
   });
+
+  it("silently re-fetches on a timer and shows newly arrived rows", async () => {
+    vi.mocked(fetchAuditLog)
+      .mockResolvedValueOnce({ entries: [makeAuditEntry()], total: 1, page: 1, pageSize: 25 })
+      .mockResolvedValueOnce({
+        entries: [makeAuditEntry({ id: "audit-2", actor_display_name: "Bob Admin" }), makeAuditEntry()],
+        total: 2,
+        page: 1,
+        pageSize: 25,
+      });
+
+    renderAuditPanel();
+    await screen.findByText("Alice Admin");
+
+    // The poll tick fires on its own, with no user action - this is what makes it "live".
+    expect(await screen.findByText("Bob Admin", {}, { timeout: 3000 })).toBeTruthy();
+    expect(fetchAuditLog).toHaveBeenCalledTimes(2);
+  }, 10000);
+
+  it("stops polling once Live is turned off, and resumes when clicked again", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+
+    renderAuditPanel();
+    await screen.findByText("No audit log entries yet");
+
+    fireEvent.click(screen.getByRole("button", { name: "Live" }));
+    expect(screen.getByRole("button", { name: "Paused" })).toBeTruthy();
+    const callsAfterPause = vi.mocked(fetchAuditLog).mock.calls.length;
+
+    // Long enough to cross at least one interval tick, proving it did NOT fire while paused.
+    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS + 750));
+    expect(vi.mocked(fetchAuditLog).mock.calls).toHaveLength(callsAfterPause);
+
+    fireEvent.click(screen.getByRole("button", { name: "Paused" }));
+    expect(screen.getByRole("button", { name: "Live" })).toBeTruthy();
+
+    await waitFor(() => expect(vi.mocked(fetchAuditLog).mock.calls.length).toBeGreaterThan(callsAfterPause), {
+      timeout: 3000,
+    });
+  }, 10000);
+
+  it("surfaces a banner after sustained live-poll failures, and clears it on the next success", async () => {
+    vi.mocked(fetchAuditLog)
+      .mockResolvedValueOnce(emptyAuditLog()) // initial load
+      .mockRejectedValueOnce(new Error("network error")) // poll 1
+      .mockRejectedValueOnce(new Error("network error")) // poll 2
+      .mockRejectedValueOnce(new Error("network error")) // poll 3
+      .mockRejectedValueOnce(new Error("network error")) // poll 4
+      .mockRejectedValueOnce(new Error("network error")) // poll 5 - crosses POLL_DEGRADED_THRESHOLD
+      .mockResolvedValueOnce(emptyAuditLog()); // poll 6 - recovers
+
+    renderAuditPanel();
+    await screen.findByText("No audit log entries yet");
+
+    expect(
+      await screen.findByText(/Live updates stopped coming through/, {}, { timeout: 12000 }),
+    ).toBeTruthy();
+
+    await waitFor(
+      () => expect(screen.queryByText(/Live updates stopped coming through/)).toBeNull(),
+      { timeout: 5000 },
+    );
+  }, 20000);
+});
+
+describe("AuditLogPanel Security view rendering", () => {
+  // All three views fetch on mount regardless of which is active (see the "System/Audit/Security
+  // toggle" comment in AuditLogPanel itself) - give Audit's own fetch a harmless default so these
+  // Security-focused tests don't each have to set it up too, mirroring the SystemLogsPanel
+  // rendering block below (which does the same per-test, since it predates this shared default).
+  beforeEach(() => {
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+  });
+
+  /** Mirrors renderAuditPanel() above - render then switch to the Security view. All three
+   * views stay mounted underneath (only display toggles), so this switch is synchronous. */
+  function renderSecurityPanel() {
+    const result = renderWithToast(<AuditLogPanel />);
+    fireEvent.click(screen.getByRole("radio", { name: "Security" }));
+    return result;
+  }
+
+  it("keeps the loading skeleton visible until the security request settles", async () => {
+    let resolveSecurityLog: (response: SecurityAuditLogResponse) => void = () => {};
+    vi.mocked(fetchSecurityAuditLog).mockImplementationOnce(
+      () => new Promise<SecurityAuditLogResponse>((resolve) => {
+        resolveSecurityLog = resolve;
+      }),
+    );
+
+    vi.useFakeTimers();
+    renderSecurityPanel();
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(screen.getByLabelText("Loading security audit log")).toBeTruthy();
+    vi.useRealTimers();
+
+    resolveSecurityLog(emptySecurityLog());
+    expect(await screen.findByText("No security events yet")).toBeTruthy();
+  });
+
+  it("shows an operator-safe error and can retry the security request", async () => {
+    vi.mocked(fetchSecurityAuditLog)
+      .mockRejectedValueOnce(new ApiError(500, "secret_internal"))
+      .mockResolvedValueOnce(emptySecurityLog());
+
+    renderSecurityPanel();
+
+    expect(await screen.findByText("Could not load security audit log")).toBeTruthy();
+    expect(screen.getByText(/Failed to load security audit log/)).toBeTruthy();
+    expect(screen.queryByText("secret_internal")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByText("No security events yet")).toBeTruthy();
+    expect(fetchSecurityAuditLog).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows the empty state when there are no security events yet", async () => {
+    renderSecurityPanel();
+
+    expect(await screen.findByText("No security events yet")).toBeTruthy();
+  });
+
+  it("renders the event badge, resolved user, IP, and time for a row", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
+      entries: [makeSecurityEntry()],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderSecurityPanel();
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Login succeeded")).toBeTruthy();
+    expect(within(table).getByText("Alice Admin")).toBeTruthy();
+    expect(within(table).getByText("192.0.2.10")).toBeTruthy();
+  });
+
+  it("falls back to email when display name is unset, to Unknown for a null user_id, and Unknown for a since-deleted user", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
+      entries: [
+        makeSecurityEntry({ id: "sec-2", user_display_name: null, user_email: "bob@example.com" }),
+        makeSecurityEntry({
+          id: "sec-3",
+          event_type: "auth.login.fail",
+          user_id: null,
+          user_email: null,
+          user_display_name: null,
+          ip: null,
+        }),
+        makeSecurityEntry({ id: "sec-4", user_id: "deleted-user", user_display_name: null, user_email: null }),
+      ],
+      total: 3,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderSecurityPanel();
+
+    const table = await screen.findByRole("table");
+    const rows = within(table).getAllByRole("row").slice(1);
+    expect(within(rows[0]!).getByText("bob@example.com")).toBeTruthy();
+    expect(within(rows[1]!).getByText("Unknown")).toBeTruthy();
+    expect(within(rows[1]!).getByText("Login failed")).toBeTruthy();
+    expect(within(rows[1]!).getByText("—")).toBeTruthy();
+    const deletedCell = within(rows[2]!).getByText("Unknown").closest("td");
+    expect(deletedCell?.getAttribute("title")).toBe("deleted-user");
+  });
+
+  it("shows metadata in a View popover, humanized, and hides the trigger when there's nothing to show", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
+      entries: [makeSecurityEntry({ metadata: { email: "alice@example.com", userAgent: "curl/8.0" } })],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderSecurityPanel();
+
+    const table = await screen.findByRole("table");
+    const trigger = within(table).getByText("View");
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(within(table).getByText("User agent")).toBeTruthy();
+    expect(within(table).getByText("curl/8.0")).toBeTruthy();
+  });
+
+  it("does not render a View trigger when metadata is empty", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
+      entries: [makeSecurityEntry({ metadata: {} })],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderSecurityPanel();
+
+    await screen.findByRole("table");
+    expect(screen.queryByText("View")).toBeNull();
+  });
+
+  it("renders one card per entry on mobile instead of a table, with a working copy-row action", async () => {
+    mockMatchMedia(false);
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
+      entries: [makeSecurityEntry(), makeSecurityEntry({ id: "sec-2", user_id: null, user_email: null, user_display_name: null })],
+      total: 2,
+      page: 1,
+      pageSize: 25,
+    });
+    const originalClipboard = navigator.clipboard;
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    try {
+      renderSecurityPanel();
+
+      await screen.findAllByText("Login succeeded");
+      expect(screen.queryByRole("table")).toBeNull();
+      const cards = document.querySelectorAll(".audit-log-card");
+      expect(cards).toHaveLength(2);
+      const firstCard = cards[0] as HTMLElement;
+      expect(within(firstCard).getByText("Alice Admin")).toBeTruthy();
+      const secondCard = cards[1] as HTMLElement;
+      expect(within(secondCard).getByText("Unknown")).toBeTruthy();
+
+      fireEvent.click(within(firstCard).getByRole("button", { name: "Copy row" }));
+      expect(writeText).toHaveBeenCalledTimes(1);
+    } finally {
+      Object.assign(navigator, { clipboard: originalClipboard });
+    }
+  });
+
+  it("copies a plain-text row summary to the clipboard and toasts on success", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
+      entries: [makeSecurityEntry({ metadata: { email: "alice@example.com", userAgent: "curl/8.0" } })],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+    const originalClipboard = navigator.clipboard;
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    try {
+      renderSecurityPanel();
+      const table = await screen.findByRole("table");
+      fireEvent.click(within(table).getByRole("button", { name: "Copy row" }));
+
+      expect(writeText).toHaveBeenCalledTimes(1);
+      const [summary] = writeText.mock.calls[0]!;
+      expect(summary).toContain("Event: Login succeeded");
+      expect(summary).toContain("User: Alice Admin");
+      expect(summary).toContain("Details:");
+      expect(summary).toContain("User agent: curl/8.0");
+      expect(await screen.findByText("Row copied to clipboard")).toBeTruthy();
+    } finally {
+      Object.assign(navigator, { clipboard: originalClipboard });
+    }
+  });
+
+  it("debounces the search box before refetching with the trimmed term", async () => {
+    renderSecurityPanel();
+    await screen.findByText("No security events yet");
+
+    vi.useFakeTimers();
+    fireEvent.change(screen.getByPlaceholderText("Search user…"), { target: { value: "alice" } });
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    vi.useRealTimers();
+
+    await waitFor(() =>
+      expect(fetchSecurityAuditLog).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: "alice" }),
+        expect.anything(),
+      ),
+    );
+  });
+
+  it("clears the search box and refocuses it via the Clear search button", async () => {
+    renderSecurityPanel();
+    await screen.findByText("No security events yet");
+
+    const searchInput = screen.getByPlaceholderText("Search user…") as HTMLInputElement;
+    fireEvent.change(searchInput, { target: { value: "alice" } });
+    expect(searchInput.value).toBe("alice");
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+
+    expect(searchInput.value).toBe("");
+    expect(document.activeElement).toBe(searchInput);
+  });
+
+  it("filters by event type via the Filters panel's Event dropdown, resetting to page 1", async () => {
+    renderSecurityPanel();
+    await waitFor(() => expect(fetchSecurityAuditLog).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Event" }), {
+      target: { value: "auth.access.denied" },
+    });
+
+    await waitFor(() =>
+      expect(fetchSecurityAuditLog).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 1, eventType: "auth.access.denied" }),
+        expect.anything(),
+      ),
+    );
+    expect(await screen.findByText("No matches")).toBeTruthy();
+  });
+
+  it("does not flash the loading skeleton when a filter refetch still resolves to zero results", async () => {
+    // Mirrors the Audit-view regression test above - same isInitialLoad bug, same fix, in the
+    // Security view's own hook. This edge case was the one the user actually hit: the Security
+    // table was empty for an unrelated reason (a stale backend build, fixed separately), so
+    // every filter change during that session reliably re-triggered this flicker.
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce(emptySecurityLog());
+    renderSecurityPanel();
+    expect(await screen.findByText("No security events yet")).toBeTruthy();
+
+    let resolveFiltered: (response: SecurityAuditLogResponse) => void = () => {};
+    vi.mocked(fetchSecurityAuditLog).mockImplementationOnce(
+      () => new Promise<SecurityAuditLogResponse>((resolve) => {
+        resolveFiltered = resolve;
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Event" }), {
+      target: { value: "auth.access.denied" },
+    });
+
+    // hasActiveFilters flips synchronously with the filter change, so "No matches" replaces the
+    // unfiltered empty state right away, even though the new request is still in flight - the
+    // skeleton must never appear while it settles.
+    expect(screen.getByText("No matches")).toBeTruthy();
+    expect(screen.queryByLabelText("Loading security audit log")).toBeNull();
+
+    resolveFiltered(emptySecurityLog());
+    expect(await screen.findByText("No matches")).toBeTruthy();
+    expect(fetchSecurityAuditLog).toHaveBeenCalledTimes(2);
+  });
+
+  it("paginates with Previous/Next", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValue({
+      entries: [makeSecurityEntry()],
+      total: 60,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderSecurityPanel();
+
+    expect(await screen.findByText("Showing 1–25 of 60")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Previous" })).property("disabled", true);
+    expect(screen.getByText("Page 1 of 3")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() =>
+      expect(vi.mocked(fetchSecurityAuditLog).mock.calls.at(-1)![0]).toMatchObject({ page: 2 }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+    await waitFor(() =>
+      expect(vi.mocked(fetchSecurityAuditLog).mock.calls.at(-1)![0]).toMatchObject({ page: 1 }),
+    );
+  });
+
+  it("falls back to the raw event type and a neutral badge tone for an unrecognized event type", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
+      entries: [makeSecurityEntry({ event_type: "auth.some_future_event" })],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderSecurityPanel();
+
+    const table = await screen.findByRole("table");
+    const badge = within(table).getByText("auth.some_future_event");
+    expect(badge.className).toContain("neutral");
+  });
+
+  it("bails out of the in-flight request without touching state once the component has unmounted (resolve race)", async () => {
+    let resolveFetch: (value: SecurityAuditLogResponse) => void = () => {};
+    vi.mocked(fetchSecurityAuditLog).mockImplementationOnce(
+      () => new Promise<SecurityAuditLogResponse>((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { unmount } = renderSecurityPanel();
+    unmount();
+
+    resolveFetch(emptySecurityLog());
+    await Promise.resolve();
+
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("bails out of the in-flight request without touching state once the component has unmounted (reject race)", async () => {
+    let rejectFetch: (err: unknown) => void = () => {};
+    vi.mocked(fetchSecurityAuditLog).mockImplementationOnce(
+      () => new Promise<SecurityAuditLogResponse>((_resolve, reject) => {
+        rejectFetch = reject;
+      }),
+    );
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { unmount } = renderSecurityPanel();
+    unmount();
+
+    rejectFetch(new Error("network error after unmount"));
+    await Promise.resolve();
+
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("silently re-fetches on a timer and shows newly arrived rows", async () => {
+    vi.mocked(fetchSecurityAuditLog)
+      .mockResolvedValueOnce({ entries: [makeSecurityEntry()], total: 1, page: 1, pageSize: 25 })
+      .mockResolvedValueOnce({
+        entries: [makeSecurityEntry({ id: "sec-2", user_display_name: "Bob Admin" }), makeSecurityEntry()],
+        total: 2,
+        page: 1,
+        pageSize: 25,
+      });
+
+    renderSecurityPanel();
+    await screen.findByText("Alice Admin");
+
+    // The poll tick fires on its own, with no user action - this is what makes it "live".
+    expect(await screen.findByText("Bob Admin", {}, { timeout: 3000 })).toBeTruthy();
+    expect(fetchSecurityAuditLog).toHaveBeenCalledTimes(2);
+  }, 10000);
+
+  it("stops polling once Live is turned off, and resumes when clicked again", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValue(emptySecurityLog());
+
+    renderSecurityPanel();
+    await screen.findByText("No security events yet");
+
+    fireEvent.click(screen.getByRole("button", { name: "Live" }));
+    expect(screen.getByRole("button", { name: "Paused" })).toBeTruthy();
+    const callsAfterPause = vi.mocked(fetchSecurityAuditLog).mock.calls.length;
+
+    // Long enough to cross at least one interval tick, proving it did NOT fire while paused.
+    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS + 750));
+    expect(vi.mocked(fetchSecurityAuditLog).mock.calls).toHaveLength(callsAfterPause);
+
+    fireEvent.click(screen.getByRole("button", { name: "Paused" }));
+    expect(screen.getByRole("button", { name: "Live" })).toBeTruthy();
+
+    await waitFor(
+      () => expect(vi.mocked(fetchSecurityAuditLog).mock.calls.length).toBeGreaterThan(callsAfterPause),
+      { timeout: 3000 },
+    );
+  }, 10000);
+
+  it("surfaces a banner after sustained live-poll failures, and clears it on the next success", async () => {
+    vi.mocked(fetchSecurityAuditLog)
+      .mockResolvedValueOnce(emptySecurityLog()) // initial load
+      .mockRejectedValueOnce(new Error("network error")) // poll 1
+      .mockRejectedValueOnce(new Error("network error")) // poll 2
+      .mockRejectedValueOnce(new Error("network error")) // poll 3
+      .mockRejectedValueOnce(new Error("network error")) // poll 4
+      .mockRejectedValueOnce(new Error("network error")) // poll 5 - crosses POLL_DEGRADED_THRESHOLD
+      .mockResolvedValueOnce(emptySecurityLog()); // poll 6 - recovers
+
+    renderSecurityPanel();
+    await screen.findByText("No security events yet");
+
+    expect(
+      await screen.findByText(/Live updates stopped coming through/, {}, { timeout: 12000 }),
+    ).toBeTruthy();
+
+    await waitFor(
+      () => expect(screen.queryByText(/Live updates stopped coming through/)).toBeNull(),
+      { timeout: 5000 },
+    );
+  }, 20000);
 });
 
 describe("SystemLogsPanel rendering", () => {

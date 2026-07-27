@@ -2,14 +2,37 @@ import type { Context } from "hono";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { parseDateBound, positiveIntQuery, requireSuperadmin } from "./admin-helpers.js";
 
+/** Free-text search over the resolved user (email/display name) - resolved to concrete ids up
+ * front since it isn't directly queryable on SecurityAuditLog itself (requires a User join).
+ * Mirrors resolveSearchMatch in audit-routes.ts but simpler: no event-title equivalent to also
+ * match, since these rows aren't event-scoped. An empty match list is a valid "no rows" result
+ * (a search matching zero users should show zero rows, not fall back to "no filter"). */
+async function resolveSecuritySearchMatch(
+  db: PrismaClient,
+  search: string,
+): Promise<Prisma.SecurityAuditLogWhereInput> {
+  const users = await db.user.findMany({
+    where: {
+      OR: [
+        { email: { contains: search, mode: "insensitive" } },
+        { display_name: { contains: search, mode: "insensitive" } },
+      ],
+    },
+    select: { id: true },
+  });
+  return { user_id: { in: users.map((u) => u.id) } };
+}
+
 /** Shared by the count and list queries below. */
-function buildSecurityAuditLogWhere(c: Context): Prisma.SecurityAuditLogWhereInput {
+async function buildSecurityAuditLogWhere(c: Context, db: PrismaClient): Promise<Prisma.SecurityAuditLogWhereInput> {
   const eventType = c.req.query("event_type")?.trim() || undefined;
+  const search = c.req.query("search")?.trim() || undefined;
   const start = parseDateBound(c.req.query("start"), "start");
   const end = parseDateBound(c.req.query("end"), "end");
 
   return {
     ...(eventType ? { event_type: eventType } : {}),
+    ...(search ? await resolveSecuritySearchMatch(db, search) : {}),
     ...(start || end
       ? {
           created_at: {
@@ -46,8 +69,10 @@ async function resolveUserMap(
 /**
  * GET /api/admin/security-audit-log — paginated durable auth/security event trail (issue #473:
  * logins, MFA, logout, OIDC, access-denied). Superadmin only. Deliberately narrower than
- * `/api/admin/audit-log`: no CSV export, no free-text actor search, no organization scoping (the
- * underlying table has none - these are instance-wide auth events, not per-org admin mutations).
+ * `/api/admin/audit-log`: no CSV export, no organization scoping (the underlying table has none -
+ * these are instance-wide auth events, not per-org admin mutations). Supports the same
+ * event-type/search/date-range filters as the audit log so the admin UI can present both as one
+ * toggled view (see AuditLogPanel.tsx) with equivalent filtering.
  */
 export async function handleGetSecurityAuditLog(c: Context, db: PrismaClient): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
@@ -55,7 +80,7 @@ export async function handleGetSecurityAuditLog(c: Context, db: PrismaClient): P
 
   const page = positiveIntQuery(c.req.query("page"), 1);
   const pageSize = positiveIntQuery(c.req.query("pageSize"), 25, 100);
-  const where = buildSecurityAuditLogWhere(c);
+  const where = await buildSecurityAuditLogWhere(c, db);
 
   const [rows, total] = await Promise.all([
     db.securityAuditLog.findMany({

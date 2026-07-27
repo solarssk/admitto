@@ -12,9 +12,9 @@ import {
 } from "react";
 import { getCountryForTimezone } from "countries-and-timezones";
 import { Badge, Button, Card, EmptyState, Input, Tooltip, useToast, type BadgeVariant } from "@admitto/ui";
-import { exportAuditLog, fetchAdminEvents, fetchAuditLog } from "../api/client.js";
+import { exportAuditLog, fetchAdminEvents, fetchAuditLog, fetchSecurityAuditLog } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { AuditLogEntryDto, EventDto } from "../api/types.js";
+import type { AuditLogEntryDto, EventDto, SecurityAuditLogEntryDto } from "../api/types.js";
 import { DatePicker } from "../components/DatePicker.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
@@ -24,7 +24,7 @@ import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { localeDateInputPattern, utcDayEndIso, utcDayStartIso } from "../utils/event-dates.js";
 import { getPreferredLocale } from "../utils/locale-store.js";
 import { MAIL_PROVIDER_LABELS } from "./mailProviderOptions.js";
-import { SystemLogsPanel, type SystemLogsPanelHandle } from "./SystemLogsPanel.js";
+import { POLL_DEGRADED_THRESHOLD, POLL_INTERVAL_MS, SystemLogsPanel, type SystemLogsPanelHandle } from "./SystemLogsPanel.js";
 
 /** Human-readable labels for `AdminAuditLog.action_type` (current + planned IAM types). */
 const ACTION_LABELS: Record<string, string> = {
@@ -115,6 +115,48 @@ function actionTone(type: string): BadgeVariant {
 
 const ACTION_OPTIONS = Object.keys(ACTION_LABELS).sort((a, b) =>
   actionLabel(a).localeCompare(actionLabel(b)),
+);
+
+/** Human-readable labels for SecurityAuditLog.event_type (issue #473's durable auth/security
+ * event trail) - distinct from AdminAuditLog.action_type's ACTION_LABELS above, since the two
+ * tables track entirely different kinds of events (auth/session vs. admin mutations). */
+const SECURITY_EVENT_LABELS: Record<string, string> = {
+  "auth.login.success": "Login succeeded",
+  "auth.login.fail": "Login failed",
+  "auth.mfa.success": "2FA verified",
+  "auth.mfa.fail": "2FA failed",
+  "auth.mfa.break_glass": "2FA break-glass override",
+  "auth.mfa.recovery_consumed": "2FA recovery code used",
+  "auth.logout": "Logged out",
+  "auth.oidc.success": "OIDC login succeeded",
+  "auth.oidc.superadmin_revoke_blocked": "OIDC superadmin revoke blocked",
+  "auth.access.denied": "Access denied",
+};
+
+function securityEventLabel(type: string): string {
+  return SECURITY_EVENT_LABELS[type] ?? type;
+}
+
+/** Badge tone per event type - failures/denials read as `error`, break-glass/recovery (deliberate
+ * but sensitive) as `warn`, successes as `ok`; logout stays the Badge default `neutral`. */
+const TONE_BY_SECURITY_EVENT: Record<string, BadgeVariant> = {
+  "auth.login.success": "ok",
+  "auth.mfa.success": "ok",
+  "auth.oidc.success": "ok",
+  "auth.login.fail": "error",
+  "auth.mfa.fail": "error",
+  "auth.access.denied": "error",
+  "auth.oidc.superadmin_revoke_blocked": "error",
+  "auth.mfa.break_glass": "warn",
+  "auth.mfa.recovery_consumed": "warn",
+};
+
+function securityEventTone(type: string): BadgeVariant {
+  return TONE_BY_SECURITY_EVENT[type] ?? "neutral";
+}
+
+const SECURITY_EVENT_TYPE_OPTIONS = Object.keys(SECURITY_EVENT_LABELS).sort((a, b) =>
+  securityEventLabel(a).localeCompare(securityEventLabel(b)),
 );
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
@@ -438,7 +480,7 @@ function AuditLogCards({ entries, loading, eventTitleById, onCopyRow }: Readonly
           <div className="audit-log-card__top">
             <Badge variant={actionTone(entry.action_type)}>{actionLabel(entry.action_type)}</Badge>
             <div className="audit-log-time audit-log-card__time">
-              {formatAuditPrimaryTime(entry.created_at)}
+              {formatAuditPrimaryTime(entry.created_at)} UTC
               {actorLocalTime(entry) && <div className="sessions-subdued">{actorLocalTime(entry)}</div>}
             </div>
           </div>
@@ -567,6 +609,586 @@ function AuditLogListContent({
   return <AuditLogCards entries={entries} loading={loading} eventTitleById={eventTitleById} onCopyRow={onCopyRow} />;
 }
 
+// ============================================================================================
+// Security view (SecurityAuditLog, issue #473) - folded into this same System/Audit toggle as a
+// third "Security" option (formerly a separate SecurityAuditLogPanel card stacked below this one;
+// two separately-erroring/loading cards on one tab read as confusing, not as three distinct
+// things). The backend stays two separate tables/endpoints/retention policies - only the UI is
+// unified. Kept as a parallel, not shared, set of labels/helpers/components below rather than
+// generalizing AuditLogTable etc.: the two rows shapes differ enough (no Scope column, no
+// actor-timezone, no CSV export here) that a shared abstraction would cost more than it saves.
+
+/** Resolved display name for a row's subject - "Unknown" both when `user_id` is null
+ * (enumeration-safe rows, e.g. failed logins) and when the user record itself has neither a
+ * display name nor an email (already deleted). */
+function securityUserDisplay(entry: SecurityAuditLogEntryDto): string {
+  if (!entry.user_id) return "Unknown";
+  return entry.user_display_name || entry.user_email || "Unknown";
+}
+
+/** Tooltip for the User cell when `user_id` names an account that's since been deleted - mirrors
+ * actorTitle's raw-id-in-title pattern above. Distinct from the null-`user_id` "Unknown" case
+ * (an enumeration-safe row, e.g. a failed login, has no id to show a tooltip for). */
+function securityUserTitle(entry: SecurityAuditLogEntryDto): string | undefined {
+  if (!entry.user_id || entry.user_display_name || entry.user_email) return undefined;
+  return entry.user_id;
+}
+
+/** Plain-text rendering of one full row, for the same row-level "copy" affordance as Audit's
+ * buildRowSummary - no Scope/actor-timezone line here, since neither concept applies. */
+function buildSecurityRowSummary(entry: SecurityAuditLogEntryDto): string {
+  const lines = [
+    `Time: ${formatAuditPrimaryTime(entry.created_at)} UTC`,
+    `Event: ${securityEventLabel(entry.event_type)}`,
+    `User: ${securityUserDisplay(entry)}`,
+    `IP: ${entry.ip ?? "—"}`,
+  ];
+  if (hasVisibleMetadata(entry.metadata)) {
+    lines.push("Details:");
+    for (const [key, value] of Object.entries(entry.metadata!)) {
+      lines.push(`  ${humanizeMetadataKey(key)}: ${formatMetadataValue(key, value)}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+interface SecurityAuditRowsProps {
+  entries: SecurityAuditLogEntryDto[];
+  loading: boolean;
+  onCopyRow: (entry: SecurityAuditLogEntryDto) => Promise<void>;
+}
+
+/** Desktop row list - mirrors AuditLogTable; no Scope column (SecurityAuditLog rows aren't
+ * event-scoped) and no per-row local time (this table has no actor_timezone column). */
+function SecurityAuditTable({ entries, loading, onCopyRow }: Readonly<SecurityAuditRowsProps>) {
+  return (
+    <div className={`sessions-table-wrap${loading ? " audit-log-table-wrap--loading" : ""}`}>
+      <table className="table audit-log-table">
+        <thead>
+          <tr>
+            <th scope="col">Time (UTC)</th>
+            <th scope="col">Event</th>
+            <th scope="col">User</th>
+            <th scope="col">IP</th>
+            <th scope="col">Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((entry) => (
+            <tr key={entry.id}>
+              <td className="audit-log-time">{formatAuditPrimaryTime(entry.created_at)}</td>
+              <td>
+                <Badge variant={securityEventTone(entry.event_type)}>{securityEventLabel(entry.event_type)}</Badge>
+              </td>
+              <td title={securityUserTitle(entry)}>{securityUserDisplay(entry)}</td>
+              <td>{entry.ip ?? "—"}</td>
+              <td>
+                <div className="audit-log-details-cell">
+                  <DetailsCell metadata={entry.metadata} />
+                  <button
+                    type="button"
+                    className="audit-log-row-copy"
+                    aria-label="Copy row"
+                    onClick={() => void onCopyRow(entry)}
+                  >
+                    <i className="ti ti-copy" aria-hidden="true" />
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Mobile one-card-per-entry list - mirrors AuditLogCards. */
+function SecurityAuditCards({ entries, loading, onCopyRow }: Readonly<SecurityAuditRowsProps>) {
+  return (
+    <div className={`audit-log-cards${loading ? " audit-log-table-wrap--loading" : ""}`}>
+      {entries.map((entry) => (
+        <div key={entry.id} className="audit-log-card">
+          <div className="audit-log-card__top">
+            <Badge variant={securityEventTone(entry.event_type)}>{securityEventLabel(entry.event_type)}</Badge>
+            <div className="audit-log-time audit-log-card__time">{formatAuditPrimaryTime(entry.created_at)} UTC</div>
+          </div>
+          <div className="audit-log-card__meta">
+            <span className="audit-log-card__meta-item" title={securityUserTitle(entry)}>
+              <i className="ti ti-user" aria-hidden="true" />
+              {securityUserDisplay(entry)}
+            </span>
+          </div>
+          <div className="audit-log-card__foot">
+            <span>{entry.ip ?? "—"}</span>
+            <div className="audit-log-details-cell">
+              <DetailsCell metadata={entry.metadata} />
+              <button
+                type="button"
+                className="audit-log-row-copy"
+                aria-label="Copy row"
+                onClick={() => void onCopyRow(entry)}
+              >
+                <i className="ti ti-copy" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+interface SecurityAuditListContentProps extends SecurityAuditRowsProps {
+  isInitialLoad: boolean;
+  showLoadingSkeleton: boolean;
+  error: string | null;
+  onRetry: () => void;
+  total: number;
+  hasActiveFilters: boolean;
+  isDesktop: boolean;
+}
+
+/** Picks the loading skeleton / error / empty-state / table-or-cards branch - mirrors
+ * AuditLogListContent, with Security-specific empty-state copy. */
+function SecurityAuditListContent({
+  isInitialLoad,
+  showLoadingSkeleton,
+  error,
+  onRetry,
+  entries,
+  total,
+  hasActiveFilters,
+  isDesktop,
+  loading,
+  onCopyRow,
+}: Readonly<SecurityAuditListContentProps>) {
+  if (isInitialLoad) {
+    return (
+      <div
+        className="audit-log-skeleton"
+        aria-busy={showLoadingSkeleton || undefined}
+        aria-label="Loading security audit log"
+        style={{ visibility: showLoadingSkeleton ? "visible" : "hidden" }}
+      >
+        {Array.from({ length: 5 }, (_, i) => (
+          <div key={i} className="audit-log-skeleton__row" />
+        ))}
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <EmptyState
+        title="Could not load security audit log"
+        description={error}
+        action={
+          <Button type="button" variant="secondary" onClick={onRetry}>
+            Retry
+          </Button>
+        }
+      />
+    );
+  }
+  if (entries.length === 0 && total > 0) {
+    return <EmptyState title="No entries on this page." description="Try Previous, or adjust the filters." />;
+  }
+  if (entries.length === 0 && hasActiveFilters) {
+    return (
+      <EmptyState
+        icon={<i className="ti ti-filter-off" aria-hidden="true" />}
+        title="No matches"
+        description="Try different filters, or clear them to see everything."
+      />
+    );
+  }
+  if (entries.length === 0) {
+    return (
+      <EmptyState
+        icon={<i className="ti ti-shield-lock" aria-hidden="true" />}
+        title="No security events yet"
+        description="Logins, 2FA checks, logout, OIDC, and access-denied events will appear here."
+      />
+    );
+  }
+  if (isDesktop) {
+    return <SecurityAuditTable entries={entries} loading={loading} onCopyRow={onCopyRow} />;
+  }
+  return <SecurityAuditCards entries={entries} loading={loading} onCopyRow={onCopyRow} />;
+}
+
+type SecurityLogFilters = { eventType: string; search: string; start: string; end: string };
+
+interface SecurityAuditViewProps {
+  isDesktop: boolean;
+  rootRef: RefObject<HTMLDivElement | null>;
+  searchInput: string;
+  setSearchInput: Dispatch<SetStateAction<string>>;
+  searchInputRef: RefObject<HTMLInputElement | null>;
+  fromDatePicker: ReactNode;
+  toDatePicker: ReactNode;
+  filterActiveCount: number;
+  filters: SecurityLogFilters;
+  setFilters: Dispatch<SetStateAction<SecurityLogFilters>>;
+  setPage: Dispatch<SetStateAction<number>>;
+  clearFiltersButton: ReactNode;
+  liveButton: ReactNode;
+  pollDegraded: boolean;
+  onRetryNow: () => void;
+  listContent: ReactNode;
+  loading: boolean;
+  error: string | null;
+  total: number;
+  page: number;
+  pageSize: number;
+  setPageSize: Dispatch<SetStateAction<number>>;
+  goToPage: (next: number) => void;
+  totalPages: number;
+}
+
+/** The security-side toolbar + list + footer - mirrors AuditLogView exactly (search, date range,
+ * one filter dropdown instead of two, Clear filters, pagination), minus the Export CSV button
+ * (not requested for this view - see CHANGELOG). */
+function SecurityAuditView({
+  isDesktop,
+  rootRef,
+  searchInput,
+  setSearchInput,
+  searchInputRef,
+  fromDatePicker,
+  toDatePicker,
+  filterActiveCount,
+  filters,
+  setFilters,
+  setPage,
+  clearFiltersButton,
+  liveButton,
+  pollDegraded,
+  onRetryNow,
+  listContent,
+  loading,
+  error,
+  total,
+  page,
+  pageSize,
+  setPageSize,
+  goToPage,
+  totalPages,
+}: Readonly<SecurityAuditViewProps>) {
+  return (
+    <>
+      <div ref={rootRef} className="audit-log-toolbar">
+        <div className="audit-log-filter audit-log-filter--search">
+          <Input
+            ref={searchInputRef}
+            id="security-audit-log-search"
+            name="security-audit-log-search"
+            aria-label="Search user"
+            placeholder="Search user…"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            icon={<i className="ti ti-search" aria-hidden="true" />}
+          />
+          {searchInput.length > 0 && (
+            <button
+              type="button"
+              className="audit-log-search-clear"
+              onClick={() => {
+                setSearchInput("");
+                searchInputRef.current?.focus();
+              }}
+              aria-label="Clear search"
+            >
+              <i className="ti ti-x" aria-hidden="true" />
+            </button>
+          )}
+        </div>
+        {isDesktop && (
+          <>
+            <div className="audit-log-filter audit-log-filter--date">{fromDatePicker}</div>
+            <div className="audit-log-filter audit-log-filter--date">{toDatePicker}</div>
+          </>
+        )}
+        <FiltersMenu activeCount={filterActiveCount} className="audit-log-filters-menu">
+          {!isDesktop && (
+            <>
+              <div className="audit-log-filters-menu__field">{fromDatePicker}</div>
+              <div className="audit-log-filters-menu__field">{toDatePicker}</div>
+            </>
+          )}
+          <div className="audit-log-filters-menu__field">
+            <label className="audit-log-filter__label" htmlFor="security-audit-log-filter-event">
+              Event
+            </label>
+            <select
+              id="security-audit-log-filter-event"
+              name="security-audit-log-filter-event"
+              className="at-select"
+              value={filters.eventType}
+              onChange={(e) => {
+                setFilters((f) => ({ ...f, eventType: e.target.value }));
+                setPage(1);
+              }}
+            >
+              <option value="">All event types</option>
+              {SECURITY_EVENT_TYPE_OPTIONS.map((type) => (
+                <option key={type} value={type}>
+                  {securityEventLabel(type)}
+                </option>
+              ))}
+            </select>
+          </div>
+        </FiltersMenu>
+        {!isDesktop && (
+          <div className="audit-log-toolbar-actions">
+            {liveButton}
+            {clearFiltersButton}
+          </div>
+        )}
+      </div>
+
+      {pollDegraded && (
+        <output className="audit-log-poll-warning">
+          Live updates stopped coming through - the rows below may be out of date.{" "}
+          <button type="button" className="audit-log-poll-warning-retry" onClick={onRetryNow}>
+            Retry now
+          </button>
+        </output>
+      )}
+
+      {listContent}
+
+      {!loading && !error && total > 0 && (
+        <div className="audit-log-footer">
+          <span className="audit-log-footer__info">
+            {`Showing ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
+          </span>
+          <div className="audit-log-footer__pager">
+            <div className="audit-log-pagesize">
+              <label htmlFor="security-audit-log-pagesize-select">Rows per page</label>
+              <select
+                id="security-audit-log-pagesize-select"
+                name="security-audit-log-pagesize-select"
+                className="at-select audit-log-pagesize-select"
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setPage(1);
+                }}
+              >
+                {PAGE_SIZE_OPTIONS.map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => goToPage(Math.max(1, page - 1))}
+            >
+              Previous
+            </Button>
+            <span>
+              Page {page} of {totalPages}
+            </span>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={page >= totalPages}
+              onClick={() => goToPage(page + 1)}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** All state + fetch/pagination/scroll-restore logic for the Security view - mirrors the state
+ * block inline in AuditLogPanel for the Audit view, extracted into its own hook purely so
+ * AuditLogPanel's own body doesn't double in size; the two views intentionally behave
+ * identically (same filter/search/pagination/scroll-restore behavior), just against a narrower
+ * filter set (no action/event-scope filters - SecurityAuditLog has neither). */
+function useSecurityAuditLog() {
+  const [entries, setEntries] = useState<SecurityAuditLogEntryDto[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
+  const [filters, setFilters] = useState<SecurityLogFilters>({ eventType: "", search: "", start: "", end: "" });
+  const [searchInput, setSearchInput] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  // Set once the first fetch (success or failure) settles, and never reset - lets isInitialLoad
+  // below tell "nothing loaded yet" apart from "loaded, and happens to be empty right now" so a
+  // filter change that starts (or ends up) at zero rows doesn't re-trigger the skeleton and
+  // flash the empty-state text out from under the user. Matches AttendeesPage's hasLoadedOnce.
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  // Mirrors SystemLogsPanel's own Live toggle - defaults on, since a security review view is
+  // exactly the kind of thing an operator wants to watch update on its own.
+  const [live, setLive] = useState(true);
+  // True once a run of silent poll ticks has failed POLL_DEGRADED_THRESHOLD times in a row -
+  // see the matching comment on SystemLogsPanel's own pollDegraded for why a single miss is
+  // never surfaced but a sustained run must not leave "Live" looking green over silently stale
+  // rows forever.
+  const [pollDegraded, setPollDegraded] = useState(false);
+  const pollFailureCountRef = useRef(0);
+  const loadAbortRef = useRef<AbortController | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const loadSeqRef = useRef(0);
+  const scrollRestoreSeqRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setFilters((f) => ({ ...f, search: searchInput.trim() }));
+      setPage(1);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
+
+  const goToPage = useCallback((next: number) => {
+    scrollRestoreSeqRef.current = loadSeqRef.current + 1;
+    setPage(next);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!loading && scrollRestoreSeqRef.current !== null) {
+      if (loadSeqRef.current === scrollRestoreSeqRef.current) {
+        rootRef.current?.scrollIntoView({ block: "nearest" });
+      }
+      scrollRestoreSeqRef.current = null;
+    }
+  }, [loading, entries]);
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  // `silent` is used by the live-poll tick below: same request, but it must never show the
+  // dimmed "loading" table state (a nice-to-have refresh becoming a flicker every 1.75s would
+  // undo the whole point of the hasLoadedOnce fix above), never clear already-shown rows or
+  // surface an error banner for a single missed tick, and never yank the operator to a
+  // different page just because the row count shifted underneath them mid-read.
+  const load = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      const silent = opts?.silent ?? false;
+      loadAbortRef.current?.abort();
+      const ac = new AbortController();
+      loadAbortRef.current = ac;
+      loadSeqRef.current += 1;
+      if (!silent) {
+        setLoading(true);
+        setError(null);
+      }
+      try {
+        const data = await fetchSecurityAuditLog(
+          {
+            page,
+            pageSize,
+            eventType: filters.eventType || undefined,
+            search: filters.search || undefined,
+            start: filters.start ? utcDayStartIso(filters.start) : undefined,
+            end: filters.end ? utcDayEndIso(filters.end) : undefined,
+          },
+          ac.signal,
+        );
+        if (ac.signal.aborted) return;
+        const maxPage = Math.max(1, Math.ceil(data.total / pageSize));
+        if (page > maxPage) {
+          if (silent) return;
+          setEntries([]);
+          setPage(maxPage);
+          return;
+        }
+        setEntries(data.entries);
+        setTotal(data.total);
+        pollFailureCountRef.current = 0;
+        setPollDegraded(false);
+      } catch (err) {
+        if (ac.signal.aborted) return;
+        if (silent) {
+          // A single missed live-refresh tick is normal network noise - the next tick
+          // POLL_INTERVAL_MS later retries. A sustained run of them (endpoint down, role
+          // revoked) must not leave "Live" looking green over silently stale rows forever.
+          pollFailureCountRef.current += 1;
+          if (pollFailureCountRef.current >= POLL_DEGRADED_THRESHOLD) setPollDegraded(true);
+          return;
+        }
+        setError(operatorApiErrorMessage(err, "Failed to load security audit log."));
+        setEntries([]);
+        setTotal(0);
+      } finally {
+        if (!ac.signal.aborted) {
+          if (!silent) setLoading(false);
+          setHasLoadedOnce(true);
+        }
+      }
+    },
+    [page, pageSize, filters.eventType, filters.search, filters.start, filters.end],
+  );
+
+  useEffect(() => {
+    void load();
+    return () => loadAbortRef.current?.abort();
+  }, [load]);
+
+  // Live-refresh: re-runs the same query on a timer once the first real load has settled, so a
+  // superadmin watching this view sees new failed-login rows land without a manual Refresh -
+  // the same reason a security dashboard is worth having open at all. Independent of the
+  // effect above (its own deps only touch page/filters) so pausing/resuming Live doesn't
+  // re-trigger a fetch, matching SystemLogsPanel's own poll effect.
+  useEffect(() => {
+    if (!live || !hasLoadedOnce) return;
+    // Resuming Live always starts the degraded-state tracking fresh.
+    pollFailureCountRef.current = 0;
+    setPollDegraded(false);
+    const intervalId = window.setInterval(() => void load({ silent: true }), POLL_INTERVAL_MS);
+    return () => window.clearInterval(intervalId);
+  }, [live, hasLoadedOnce, load]);
+
+  const clearFilters = useCallback(() => {
+    setFilters({ eventType: "", search: "", start: "", end: "" });
+    setSearchInput("");
+    setPage(1);
+  }, []);
+
+  const hasActiveFilters = useMemo(
+    () => !!(filters.eventType || filters.search || filters.start || filters.end),
+    [filters.eventType, filters.search, filters.start, filters.end],
+  );
+
+  return {
+    entries,
+    total,
+    page,
+    setPage,
+    pageSize,
+    setPageSize,
+    filters,
+    setFilters,
+    searchInput,
+    setSearchInput,
+    loading,
+    error,
+    hasLoadedOnce,
+    live,
+    setLive,
+    pollDegraded,
+    rootRef,
+    searchInputRef,
+    goToPage,
+    totalPages,
+    hasActiveFilters,
+    clearFilters,
+    reload: load,
+  };
+}
+
 type AuditLogFilters = { actionType: string; eventId: string; search: string; start: string; end: string };
 
 interface AuditLogViewProps {
@@ -584,6 +1206,9 @@ interface AuditLogViewProps {
   events: EventDto[];
   clearFiltersButton: ReactNode;
   exportButton: ReactNode;
+  liveButton: ReactNode;
+  pollDegraded: boolean;
+  onRetryNow: () => void;
   listContent: ReactNode;
   loading: boolean;
   error: string | null;
@@ -613,6 +1238,9 @@ function AuditLogView({
   events,
   clearFiltersButton,
   exportButton,
+  liveButton,
+  pollDegraded,
+  onRetryNow,
   listContent,
   loading,
   error,
@@ -716,11 +1344,21 @@ function AuditLogView({
         </FiltersMenu>
         {!isDesktop && (
           <div className="audit-log-toolbar-actions">
+            {liveButton}
             {clearFiltersButton}
             {exportButton}
           </div>
         )}
       </div>
+
+      {pollDegraded && (
+        <output className="audit-log-poll-warning">
+          Live updates stopped coming through - the rows below may be out of date.{" "}
+          <button type="button" className="audit-log-poll-warning-retry" onClick={onRetryNow}>
+            Retry now
+          </button>
+        </output>
+      )}
 
       {listContent}
 
@@ -777,11 +1415,12 @@ function AuditLogView({
   );
 }
 
-type LogsView = "system" | "audit";
+type LogsView = "system" | "audit" | "security";
 
 const LOGS_VIEW_OPTIONS: ReadonlyArray<SegmentedOption<LogsView>> = [
   { value: "system", label: "System" },
   { value: "audit", label: "Audit" },
+  { value: "security", label: "Security" },
 ];
 
 /** Superadmin audit log viewer — read-only paginated table with action and date filters. */
@@ -807,10 +1446,20 @@ export function AuditLogPanel() {
   const [searchInput, setSearchInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Set once the first fetch (success or failure) settles, and never reset - see the matching
+  // comment on the Security view's own hasLoadedOnce above for why this replaces entries.length
+  // === 0 as the "first load" check.
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  // Mirrors the Security view's own live/pollDegraded/pollFailureCountRef above (see the
+  // matching comments on useSecurityAuditLog).
+  const [live, setLive] = useState(true);
+  const [pollDegraded, setPollDegraded] = useState(false);
+  const pollFailureCountRef = useRef(0);
   const [events, setEvents] = useState<EventDto[]>([]);
   const [exporting, setExporting] = useState(false);
   const { addToast } = useToast();
   const isDesktop = useIsDesktop();
+  const security = useSecurityAuditLog();
   const loadAbortRef = useRef<AbortController | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -847,6 +1496,31 @@ export function AuditLogPanel() {
       onChange={(next) => {
         setFilters((f) => ({ ...f, end: next }));
         setPage(1);
+      }}
+    />
+  );
+  // Same From/To fields, wired to the Security view's own filters state instead - shares
+  // datePattern/isDesktop with Audit's pickers above since both format/placement rules are
+  // identical, just against a different onChange target.
+  const securityFromDatePicker = (
+    <DatePicker
+      ariaLabel="From"
+      placeholder={`From (${datePattern})`}
+      value={security.filters.start}
+      onChange={(next) => {
+        security.setFilters((f) => ({ ...f, start: next }));
+        security.setPage(1);
+      }}
+    />
+  );
+  const securityToDatePicker = (
+    <DatePicker
+      ariaLabel="To"
+      placeholder={`To (${datePattern})`}
+      value={security.filters.end}
+      onChange={(next) => {
+        security.setFilters((f) => ({ ...f, end: next }));
+        security.setPage(1);
       }}
     />
   );
@@ -890,49 +1564,77 @@ export function AuditLogPanel() {
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  const load = useCallback(async () => {
-    loadAbortRef.current?.abort();
-    const ac = new AbortController();
-    loadAbortRef.current = ac;
-    loadSeqRef.current += 1;
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await fetchAuditLog(
-        {
-          page,
-          pageSize,
-          actionType: filters.actionType || undefined,
-          eventId: filters.eventId || undefined,
-          search: filters.search || undefined,
-          start: filters.start ? utcDayStartIso(filters.start) : undefined,
-          end: filters.end ? utcDayEndIso(filters.end) : undefined,
-        },
-        ac.signal,
-      );
-      if (ac.signal.aborted) return;
-      const maxPage = Math.max(1, Math.ceil(data.total / pageSize));
-      if (page > maxPage) {
-        setEntries([]);
-        setPage(maxPage);
-        return;
+  // See the matching comment on the Security hook's own load() above for why `silent` exists
+  // and what it must never do (dim the table, clear rows, surface an error, or move the page).
+  const load = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      const silent = opts?.silent ?? false;
+      loadAbortRef.current?.abort();
+      const ac = new AbortController();
+      loadAbortRef.current = ac;
+      loadSeqRef.current += 1;
+      if (!silent) {
+        setLoading(true);
+        setError(null);
       }
-      setEntries(data.entries);
-      setTotal(data.total);
-    } catch (err) {
-      if (ac.signal.aborted) return;
-      setError(operatorApiErrorMessage(err, "Failed to load audit log."));
-      setEntries([]);
-      setTotal(0);
-    } finally {
-      if (!ac.signal.aborted) setLoading(false);
-    }
-  }, [page, pageSize, filters.actionType, filters.eventId, filters.search, filters.start, filters.end]);
+      try {
+        const data = await fetchAuditLog(
+          {
+            page,
+            pageSize,
+            actionType: filters.actionType || undefined,
+            eventId: filters.eventId || undefined,
+            search: filters.search || undefined,
+            start: filters.start ? utcDayStartIso(filters.start) : undefined,
+            end: filters.end ? utcDayEndIso(filters.end) : undefined,
+          },
+          ac.signal,
+        );
+        if (ac.signal.aborted) return;
+        const maxPage = Math.max(1, Math.ceil(data.total / pageSize));
+        if (page > maxPage) {
+          if (silent) return;
+          setEntries([]);
+          setPage(maxPage);
+          return;
+        }
+        setEntries(data.entries);
+        setTotal(data.total);
+        pollFailureCountRef.current = 0;
+        setPollDegraded(false);
+      } catch (err) {
+        if (ac.signal.aborted) return;
+        if (silent) {
+          pollFailureCountRef.current += 1;
+          if (pollFailureCountRef.current >= POLL_DEGRADED_THRESHOLD) setPollDegraded(true);
+          return;
+        }
+        setError(operatorApiErrorMessage(err, "Failed to load audit log."));
+        setEntries([]);
+        setTotal(0);
+      } finally {
+        if (!ac.signal.aborted) {
+          if (!silent) setLoading(false);
+          setHasLoadedOnce(true);
+        }
+      }
+    },
+    [page, pageSize, filters.actionType, filters.eventId, filters.search, filters.start, filters.end],
+  );
 
   useEffect(() => {
     void load();
     return () => loadAbortRef.current?.abort();
   }, [load]);
+
+  // Live-refresh - see the matching comment on the Security hook's own poll effect above.
+  useEffect(() => {
+    if (!live || !hasLoadedOnce) return;
+    pollFailureCountRef.current = 0;
+    setPollDegraded(false);
+    const intervalId = window.setInterval(() => void load({ silent: true }), POLL_INTERVAL_MS);
+    return () => window.clearInterval(intervalId);
+  }, [live, hasLoadedOnce, load]);
 
   const clearFilters = () => {
     setFilters({ actionType: "", eventId: "", search: "", start: "", end: "" });
@@ -951,6 +1653,12 @@ export function AuditLogPanel() {
   const activeDateCount = (filters.start ? 1 : 0) + (filters.end ? 1 : 0);
   const actionScopeActiveCount =
     (filters.actionType ? 1 : 0) + (filters.eventId ? 1 : 0) + (isDesktop ? 0 : activeDateCount);
+
+  // Same mobile-double-count reasoning as activeDateCount/actionScopeActiveCount above, applied
+  // to the Security view's own (single) filter dropdown.
+  const securityActiveDateCount = (security.filters.start ? 1 : 0) + (security.filters.end ? 1 : 0);
+  const securityFilterActiveCount =
+    (security.filters.eventType ? 1 : 0) + (isDesktop ? 0 : securityActiveDateCount);
 
   const handleExport = useCallback(async () => {
     setExporting(true);
@@ -982,6 +1690,34 @@ export function AuditLogPanel() {
       {exporting ? "Exporting…" : "Export CSV"}
     </Button>
   );
+  const securityClearFiltersButton = (
+    <Button
+      type="button"
+      variant="secondary"
+      size="sm"
+      disabled={!security.hasActiveFilters}
+      onClick={security.clearFilters}
+    >
+      Clear filters
+    </Button>
+  );
+  // Same Live/Paused affordance as System's own liveButton below, one per view since each
+  // polls independently - pausing Audit's live-refresh has no effect on Security's.
+  const auditLiveButton = (
+    <Button type="button" variant={live ? "success" : "secondary"} size="sm" onClick={() => setLive((v) => !v)}>
+      {live ? "Live" : "Paused"}
+    </Button>
+  );
+  const securityLiveButton = (
+    <Button
+      type="button"
+      variant={security.live ? "success" : "secondary"}
+      size="sm"
+      onClick={() => security.setLive((v) => !v)}
+    >
+      {security.live ? "Live" : "Paused"}
+    </Button>
+  );
 
   const handleCopyRow = useCallback(
     async (entry: AuditLogEntryDto) => {
@@ -995,12 +1731,27 @@ export function AuditLogPanel() {
     [eventTitleById, addToast],
   );
 
+  const handleCopySecurityRow = useCallback(
+    async (entry: SecurityAuditLogEntryDto) => {
+      try {
+        await navigator.clipboard.writeText(buildSecurityRowSummary(entry));
+        addToast("Row copied to clipboard", "success");
+      } catch {
+        addToast("Could not copy — clipboard access was blocked.", "error");
+      }
+    },
+    [addToast],
+  );
+
   const showLoadingSkeleton = useDelayedLoading(loading);
   // A filter/page change re-fetches with the previous rows still on screen (never cleared at
   // the start of load()) - only the true first load (nothing to show yet) has no rows to keep
   // displaying, so only that case earns the skeleton; every later reload just dims the stale
-  // table below instead of blanking it out from under the user (matches AttendeesTable).
-  const isInitialLoad = loading && entries.length === 0;
+  // table below instead of blanking it out from under the user (matches AttendeesTable). Gated
+  // on hasLoadedOnce rather than entries.length === 0 - a filter/search that legitimately
+  // matches nothing is still a completed load, not a first load, so it must not re-arm the
+  // skeleton and flash the "No matches" empty-state text out from under the user.
+  const isInitialLoad = loading && !hasLoadedOnce;
 
   const listContent = (
     <AuditLogListContent
@@ -1015,6 +1766,27 @@ export function AuditLogPanel() {
       loading={loading}
       eventTitleById={eventTitleById}
       onCopyRow={handleCopyRow}
+    />
+  );
+
+  const showSecurityLoadingSkeleton = useDelayedLoading(security.loading);
+  // Mirrors isInitialLoad above - gated on the hook's own hasLoadedOnce, not entries.length,
+  // for the same reason (an event-type/search filter with zero matches is still a completed
+  // load).
+  const isSecurityInitialLoad = security.loading && !security.hasLoadedOnce;
+
+  const securityListContent = (
+    <SecurityAuditListContent
+      isInitialLoad={isSecurityInitialLoad}
+      showLoadingSkeleton={showSecurityLoadingSkeleton}
+      error={security.error}
+      onRetry={() => void security.reload()}
+      entries={security.entries}
+      total={security.total}
+      hasActiveFilters={security.hasActiveFilters}
+      isDesktop={isDesktop}
+      loading={security.loading}
+      onCopyRow={handleCopySecurityRow}
     />
   );
 
@@ -1045,15 +1817,16 @@ export function AuditLogPanel() {
 
   return (
     <Card
-      title={view === "system" ? "System logs" : "Audit log"}
+      title={view === "system" ? "System logs" : view === "audit" ? "Audit log" : "Security audit log"}
       className="audit-log-header-card"
       actions={
         <>
-          {/* On mobile these two move down into the toolbar instead (next to Filters) - a
+          {/* On mobile these move down into the toolbar instead (next to Filters) - a
               narrow card header can only fit the title plus this always-present toggle before
               wrapping onto a second line. */}
           {isDesktop && view === "audit" && (
             <>
+              {auditLiveButton}
               {clearFiltersButton}
               {exportButton}
             </>
@@ -1062,6 +1835,12 @@ export function AuditLogPanel() {
             <>
               {liveButton}
               {downloadButton}
+            </>
+          )}
+          {isDesktop && view === "security" && (
+            <>
+              {securityLiveButton}
+              {securityClearFiltersButton}
             </>
           )}
           {/* Always last: with the actions row right-anchored, a trailing item's own edge
@@ -1077,7 +1856,7 @@ export function AuditLogPanel() {
         </>
       }
     >
-      {/* Both views stay mounted the whole time, toggled by visibility rather than by
+      {/* All three views stay mounted the whole time, toggled by visibility rather than by
           conditional rendering - switching the toggle used to unmount/remount whichever side
           you left, which meant losing all of System's polled state and re-fetching from
           scratch on every return trip (a visible flash even on a fast local request). Neither
@@ -1109,6 +1888,9 @@ export function AuditLogPanel() {
           events={events}
           clearFiltersButton={clearFiltersButton}
           exportButton={exportButton}
+          liveButton={auditLiveButton}
+          pollDegraded={live && pollDegraded}
+          onRetryNow={() => void load()}
           listContent={listContent}
           loading={loading}
           error={error}
@@ -1118,6 +1900,34 @@ export function AuditLogPanel() {
           setPageSize={setPageSize}
           goToPage={goToPage}
           totalPages={totalPages}
+        />
+      </div>
+      <div style={{ display: view === "security" ? undefined : "none" }}>
+        <SecurityAuditView
+          isDesktop={isDesktop}
+          rootRef={security.rootRef}
+          searchInput={security.searchInput}
+          setSearchInput={security.setSearchInput}
+          searchInputRef={security.searchInputRef}
+          fromDatePicker={securityFromDatePicker}
+          toDatePicker={securityToDatePicker}
+          filterActiveCount={securityFilterActiveCount}
+          filters={security.filters}
+          setFilters={security.setFilters}
+          setPage={security.setPage}
+          clearFiltersButton={securityClearFiltersButton}
+          liveButton={securityLiveButton}
+          pollDegraded={security.live && security.pollDegraded}
+          onRetryNow={() => void security.reload()}
+          listContent={securityListContent}
+          loading={security.loading}
+          error={security.error}
+          total={security.total}
+          page={security.page}
+          pageSize={security.pageSize}
+          setPageSize={security.setPageSize}
+          goToPage={security.goToPage}
+          totalPages={security.totalPages}
         />
       </div>
     </Card>

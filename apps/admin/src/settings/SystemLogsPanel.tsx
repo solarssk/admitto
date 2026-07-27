@@ -10,11 +10,14 @@ type LevelFilter = "" | SystemLogEntryDto["level"];
 type SourceFilter = "" | SystemLogEntryDto["source"];
 
 const SEARCH_DEBOUNCE_MS = 300;
-const POLL_INTERVAL_MS = 1750;
+// Exported for AuditLogPanel's own live-refresh (Audit/Security views) - one shared cadence for
+// every "Live" toggle on this page, rather than a second magic number that could drift from
+// this one.
+export const POLL_INTERVAL_MS = 1750;
 const MAX_RENDERED_ENTRIES = 1000;
 // A single missed tick is normal network noise and never surfaced; this many in a row (~9s at
 // the interval above) means the endpoint is genuinely down, not just one slow request.
-const POLL_DEGRADED_THRESHOLD = 5;
+export const POLL_DEGRADED_THRESHOLD = 5;
 
 const SOURCE_LABELS: Record<SystemLogEntryDto["source"], string> = {
   api: "API",

@@ -1621,15 +1621,31 @@ export async function exportAuditLog(params: AuditLogFilterParams, signal?: Abor
   await downloadExportResponse(res, "audit-log.csv");
 }
 
-/** Load paginated durable auth/security event trail (superadmin, issue #473). Deliberately
- * narrower than fetchAuditLog: no date-range/search params here since the panel doesn't expose
- * them (see SecurityAuditLogPanel.tsx). */
-export async function fetchSecurityAuditLog(
-  params: { eventType?: string; page?: number; pageSize?: number },
-  signal?: AbortSignal,
-): Promise<SecurityAuditLogResponse> {
+export type SecurityAuditLogFilterParams = {
+  eventType?: string;
+  search?: string;
+  start?: string;
+  end?: string;
+};
+
+function securityAuditLogQuery(params: SecurityAuditLogFilterParams): URLSearchParams {
   const q = new URLSearchParams();
   if (params.eventType) q.set("event_type", params.eventType);
+  if (params.search) q.set("search", params.search);
+  if (params.start) q.set("start", params.start);
+  if (params.end) q.set("end", params.end);
+  return q;
+}
+
+/** Load paginated durable auth/security event trail (superadmin, issue #473). Deliberately
+ * narrower than fetchAuditLog: no CSV export, no organization scoping (the underlying table has
+ * none). Same event-type/search/date-range filter shape as fetchAuditLog so the admin UI can
+ * present both as one toggled view (see AuditLogPanel.tsx). */
+export async function fetchSecurityAuditLog(
+  params: SecurityAuditLogFilterParams & { page?: number; pageSize?: number },
+  signal?: AbortSignal,
+): Promise<SecurityAuditLogResponse> {
+  const q = securityAuditLogQuery(params);
   if (params.page != null) q.set("page", String(params.page));
   if (params.pageSize != null) q.set("pageSize", String(params.pageSize));
   const qs = q.toString();
