@@ -205,6 +205,32 @@ describe("GET /api/admin/security-audit-log", () => {
     expect(body.entries[0]?.user_display_name).toBeNull();
   });
 
+  it("falls back to null email/display_name for a user_id whose User row is gone", async () => {
+    await prisma.securityAuditLog.create({
+      data: {
+        event_type: "auth.oidc.success",
+        user_id: "deleted-user-does-not-exist",
+        ip: "1.2.3.8",
+        metadata: { providerId: "provider-1" },
+        created_at: new Date("2026-07-02T09:00:00.000Z"),
+      },
+    });
+    try {
+      const res = await app.request("/api/admin/security-audit-log?event_type=auth.oidc.success", {
+        headers: { Cookie: superCookie },
+      });
+      const body = (await res.json()) as {
+        entries: { user_id: string | null; user_email: string | null; user_display_name: string | null }[];
+      };
+      expect(body.entries).toHaveLength(1);
+      expect(body.entries[0]?.user_id).toBe("deleted-user-does-not-exist");
+      expect(body.entries[0]?.user_email).toBeNull();
+      expect(body.entries[0]?.user_display_name).toBeNull();
+    } finally {
+      await prisma.securityAuditLog.deleteMany({ where: { event_type: "auth.oidc.success" } });
+    }
+  });
+
   it("filters by event_type", async () => {
     const res = await app.request("/api/admin/security-audit-log?event_type=auth.mfa.fail", {
       headers: { Cookie: superCookie },
@@ -222,6 +248,24 @@ describe("GET /api/admin/security-audit-log", () => {
     const body = (await res.json()) as { entries: { event_type: string }[]; total: number };
     expect(body.total).toBe(2);
     expect(body.entries.map((e) => e.event_type).sort()).toEqual(["auth.login.fail", "auth.mfa.fail"]);
+  });
+
+  it("filters by start only (open-ended upper bound)", async () => {
+    const res = await app.request("/api/admin/security-audit-log?start=2026-06-17", {
+      headers: { Cookie: superCookie },
+    });
+    const body = (await res.json()) as { entries: { event_type: string }[]; total: number };
+    expect(body.total).toBe(2);
+    expect(body.entries.map((e) => e.event_type).sort()).toEqual(["auth.access.denied", "auth.mfa.fail"]);
+  });
+
+  it("filters by end only (open-ended lower bound)", async () => {
+    const res = await app.request("/api/admin/security-audit-log?end=2026-06-16", {
+      headers: { Cookie: superCookie },
+    });
+    const body = (await res.json()) as { entries: { event_type: string }[]; total: number };
+    expect(body.total).toBe(2);
+    expect(body.entries.map((e) => e.event_type).sort()).toEqual(["auth.login.fail", "auth.login.success"]);
   });
 
   it("paginates with page/pageSize", async () => {

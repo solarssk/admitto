@@ -189,5 +189,40 @@ describe("SecurityAuditLogPanel rendering", () => {
     await waitFor(() =>
       expect(fetchSecurityAuditLog).toHaveBeenLastCalledWith({ eventType: undefined, page: 2, pageSize: 25 }),
     );
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+
+    await waitFor(() =>
+      expect(fetchSecurityAuditLog).toHaveBeenLastCalledWith({ eventType: undefined, page: 1, pageSize: 25 }),
+    );
+  });
+
+  it("falls back to the raw event type and a neutral badge tone for an unrecognized event type", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
+      entries: [makeEntry({ event_type: "auth.some_future_event" })],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    render(<SecurityAuditLogPanel />);
+
+    const table = await screen.findByRole("table");
+    const badge = within(table).getByText("auth.some_future_event");
+    expect(badge.className).toContain("neutral");
+  });
+
+  it("shows Unknown when a row's user_id no longer resolves to any display name or email", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
+      entries: [makeEntry({ user_id: "deleted-user", user_display_name: null, user_email: null })],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    render(<SecurityAuditLogPanel />);
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Unknown")).toBeTruthy();
   });
 });

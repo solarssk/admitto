@@ -148,6 +148,15 @@ describe("login", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe("inactive");
   });
+
+  it("rejects a nonexistent email with invalid_credentials (enumeration-safe)", async () => {
+    const result = await login(prisma, {
+      email: "no-such-user@example.com",
+      password: "irrelevant-password",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("invalid_credentials");
+  });
 });
 
 describe("session", () => {

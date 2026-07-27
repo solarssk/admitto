@@ -6270,7 +6270,7 @@ select.system-log-panel__field {
   border-radius: var(--radius-sm, 4px);
   font-size: var(--fs-xs, 0.75rem);
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 /* Matches .audit-log-footer exactly (same summary-left, pager-right layout). */
