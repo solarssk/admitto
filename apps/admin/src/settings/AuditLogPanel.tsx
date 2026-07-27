@@ -202,6 +202,23 @@ function actorLocalTime(entry: AuditLogEntryDto): string | null {
   return `${hhmm} ${abbr} (${tzPlaceLabel(entry.actor_timezone)})`;
 }
 
+/** The instant, converted to whoever is currently reading the log's own browser timezone - unlike
+ * actorLocalTime above, this is never null: Security rows (e.g. a failed login) don't always have
+ * a known actor to show a local time *for*, but the superadmin viewing the table always has one. */
+function viewerLocalTime(iso: string): string {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const parts = new Intl.DateTimeFormat(getPreferredLocale(), {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone,
+    timeZoneName: "short",
+  }).formatToParts(new Date(iso));
+  const hhmm = `${parts.find((p) => p.type === "hour")?.value}:${parts.find((p) => p.type === "minute")?.value}`;
+  const abbr = parts.find((p) => p.type === "timeZoneName")?.value ?? timeZone;
+  return `${hhmm} ${abbr} (${tzPlaceLabel(timeZone)})`;
+}
+
 /** Primary actor label; deleted users show a readable fallback (id in cell title). */
 function actorDisplay(entry: AuditLogEntryDto): string {
   if (entry.actor_display_name) return entry.actor_display_name;
@@ -235,6 +252,8 @@ function scopeLabel(entry: AuditLogEntryDto, eventTitleById: Map<string, string>
 
 const SCOPE_HINT = "Which event this action affected, or “Instance” for account/organization-wide changes not tied to one event.";
 const TIME_HINT = "Top: when this happened, in UTC. Below: the same moment in the actor's own local time, when known.";
+const SECURITY_TIME_HINT =
+  "Top: when this happened, in UTC. Below: the same moment in your own local time (not the actor's - Audit's Time column shows that instead, but a security event doesn't always have a known actor).";
 
 /** camelCase or snake_case metadata key -> "Title case" label (e.g. "event_id"/"eventId" -> "Event id"). */
 function humanizeMetadataKey(key: string): string {
@@ -656,11 +675,12 @@ function securityUserEmail(entry: SecurityAuditLogEntryDto): string | undefined 
 }
 
 /** Plain-text rendering of one full row, for the same row-level "copy" affordance as Audit's
- * buildRowSummary - no Scope/actor-timezone line here, since neither concept applies. */
+ * buildRowSummary - no Scope line here, since that concept doesn't apply; the local time is the
+ * viewer's own (see viewerLocalTime), not an actor's. */
 function buildSecurityRowSummary(entry: SecurityAuditLogEntryDto): string {
   const userEmailSuffix = securityUserEmail(entry) ? ` (${securityUserEmail(entry)})` : "";
   const lines = [
-    `Time: ${formatAuditPrimaryTime(entry.created_at)} UTC`,
+    `Time: ${formatAuditPrimaryTime(entry.created_at)} UTC (${viewerLocalTime(entry.created_at)})`,
     `Event: ${securityEventLabel(entry.event_type)}`,
     `User: ${securityUserDisplay(entry)}${userEmailSuffix}`,
     `IP: ${entry.ip ?? "—"}`,
@@ -681,14 +701,19 @@ interface SecurityAuditRowsProps {
 }
 
 /** Desktop row list - mirrors AuditLogTable; no Scope column (SecurityAuditLog rows aren't
- * event-scoped) and no per-row local time (this table has no actor_timezone column). */
+ * event-scoped), and the Time column's second line is the viewer's own local time rather than an
+ * actor's (see viewerLocalTime). */
 function SecurityAuditTable({ entries, loading, onCopyRow }: Readonly<SecurityAuditRowsProps>) {
   return (
     <div className={`sessions-table-wrap${loading ? " audit-log-table-wrap--loading" : ""}`}>
       <table className="table audit-log-table">
         <thead>
           <tr>
-            <th scope="col">Time (UTC)</th>
+            <th scope="col">
+              <Tooltip content={SECURITY_TIME_HINT} className="audit-log-scope-header">
+                Time <i className="ti ti-info-circle" aria-hidden="true" />
+              </Tooltip>
+            </th>
             <th scope="col">Event</th>
             <th scope="col">User</th>
             <th scope="col">IP</th>
@@ -698,7 +723,10 @@ function SecurityAuditTable({ entries, loading, onCopyRow }: Readonly<SecurityAu
         <tbody>
           {entries.map((entry) => (
             <tr key={entry.id}>
-              <td className="audit-log-time">{formatAuditPrimaryTime(entry.created_at)}</td>
+              <td className="audit-log-time">
+                {formatAuditPrimaryTime(entry.created_at)} UTC
+                <div className="sessions-subdued">{viewerLocalTime(entry.created_at)}</div>
+              </td>
               <td>
                 <Badge variant={securityEventTone(entry.event_type)}>{securityEventLabel(entry.event_type)}</Badge>
               </td>
@@ -736,7 +764,10 @@ function SecurityAuditCards({ entries, loading, onCopyRow }: Readonly<SecurityAu
         <div key={entry.id} className="audit-log-card">
           <div className="audit-log-card__top">
             <Badge variant={securityEventTone(entry.event_type)}>{securityEventLabel(entry.event_type)}</Badge>
-            <div className="audit-log-time audit-log-card__time">{formatAuditPrimaryTime(entry.created_at)} UTC</div>
+            <div className="audit-log-time audit-log-card__time">
+              {formatAuditPrimaryTime(entry.created_at)} UTC
+              <div className="sessions-subdued">{viewerLocalTime(entry.created_at)}</div>
+            </div>
           </div>
           <div className="audit-log-card__meta">
             <span className="audit-log-card__meta-item" title={securityUserTitle(entry)}>

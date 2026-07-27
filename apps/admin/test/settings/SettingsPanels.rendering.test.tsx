@@ -1174,6 +1174,28 @@ describe("AuditLogPanel Security view rendering", () => {
     expect(within(table).getByText("192.0.2.10")).toBeTruthy();
   });
 
+  it("shows the viewer's own local time as a secondary line under the UTC timestamp, not the actor's", async () => {
+    const resolvedOptionsSpy = vi
+      .spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions")
+      .mockReturnValue({ timeZone: "Europe/Warsaw" } as Intl.ResolvedDateTimeFormatOptions);
+    try {
+      vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
+        entries: [makeSecurityEntry()],
+        total: 1,
+        page: 1,
+        pageSize: 25,
+      });
+
+      renderSecurityPanel();
+
+      const table = await screen.findByRole("table");
+      expect(within(table).getByText("2026-01-01 12:00:00 UTC")).toBeTruthy();
+      expect(within(table).getByText(/Warsaw, Poland/)).toBeTruthy();
+    } finally {
+      resolvedOptionsSpy.mockRestore();
+    }
+  });
+
   it("shows the redacted email under Unknown for a failed login, mirroring Audit's actor email subline", async () => {
     vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
       entries: [
@@ -1295,6 +1317,9 @@ describe("AuditLogPanel Security view rendering", () => {
   });
 
   it("copies a plain-text row summary to the clipboard and toasts on success", async () => {
+    const resolvedOptionsSpy = vi
+      .spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions")
+      .mockReturnValue({ timeZone: "Europe/Warsaw" } as Intl.ResolvedDateTimeFormatOptions);
     vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
       entries: [makeSecurityEntry({ metadata: { email: "alice@example.com", userAgent: "curl/8.0" } })],
       total: 1,
@@ -1312,6 +1337,7 @@ describe("AuditLogPanel Security view rendering", () => {
 
       expect(writeText).toHaveBeenCalledTimes(1);
       const [summary] = writeText.mock.calls[0]!;
+      expect(summary).toMatch(/Time: 2026-01-01 12:00:00 UTC \(.*Warsaw, Poland.*\)/);
       expect(summary).toContain("Event: Login succeeded");
       expect(summary).toContain("User: Alice Admin");
       expect(summary).toContain("Details:");
@@ -1319,6 +1345,7 @@ describe("AuditLogPanel Security view rendering", () => {
       expect(await screen.findByText("Row copied to clipboard")).toBeTruthy();
     } finally {
       Object.assign(navigator, { clipboard: originalClipboard });
+      resolvedOptionsSpy.mockRestore();
     }
   });
 
