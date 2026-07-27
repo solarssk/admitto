@@ -284,8 +284,9 @@ function formatMetadataValue(key: string, value: unknown): string {
   return JSON.stringify(value);
 }
 
-// Already shown by the Scope column - repeating it in Details would just be noise.
-const METADATA_KEYS_SHOWN_ELSEWHERE = new Set(["eventId", "event_id"]);
+// Already shown elsewhere in the row - repeating them in Details would just be noise.
+// eventId/event_id: shown by the Scope column. email_redacted: shown under Security's User column.
+const METADATA_KEYS_SHOWN_ELSEWHERE = new Set(["eventId", "event_id", "email_redacted"]);
 
 /** True when metadata has at least one key worth rendering in the Details column, beyond what
  * the Scope column already covers. */
@@ -436,7 +437,7 @@ function AuditLogTable({ entries, loading, eventTitleById, onCopyRow }: Readonly
           {entries.map((entry) => (
             <tr key={entry.id}>
               <td className="audit-log-time">
-                {formatAuditPrimaryTime(entry.created_at)}
+                {formatAuditPrimaryTime(entry.created_at)} UTC
                 {actorLocalTime(entry) && <div className="sessions-subdued">{actorLocalTime(entry)}</div>}
               </td>
               <td>
@@ -635,13 +636,33 @@ function securityUserTitle(entry: SecurityAuditLogEntryDto): string | undefined 
   return entry.user_id;
 }
 
+/** Redacted email for the `user_id`-is-null / enumeration-safe case (e.g. a failed login
+ * attempt) - `auth.login.fail` is the only event type that currently writes a redacted email
+ * into metadata for these rows; everything else with a null user_id (e.g. access denied) has no
+ * email at all, so this simply resolves to undefined for them. */
+function securityUnknownEmail(entry: SecurityAuditLogEntryDto): string | undefined {
+  if (entry.user_id) return undefined;
+  const value = entry.metadata?.["email_redacted"];
+  return typeof value === "string" ? value : undefined;
+}
+
+/** Email subline shown under the User cell - mirrors Audit's actor_email subline (full email
+ * only when a known user has both a display name and an email, so we don't duplicate the value
+ * when securityUserDisplay already fell back to showing the email as the primary text), plus the
+ * redacted email for enumeration-safe rows above. */
+function securityUserEmail(entry: SecurityAuditLogEntryDto): string | undefined {
+  if (entry.user_display_name && entry.user_email) return entry.user_email;
+  return securityUnknownEmail(entry);
+}
+
 /** Plain-text rendering of one full row, for the same row-level "copy" affordance as Audit's
  * buildRowSummary - no Scope/actor-timezone line here, since neither concept applies. */
 function buildSecurityRowSummary(entry: SecurityAuditLogEntryDto): string {
+  const userEmailSuffix = securityUserEmail(entry) ? ` (${securityUserEmail(entry)})` : "";
   const lines = [
     `Time: ${formatAuditPrimaryTime(entry.created_at)} UTC`,
     `Event: ${securityEventLabel(entry.event_type)}`,
-    `User: ${securityUserDisplay(entry)}`,
+    `User: ${securityUserDisplay(entry)}${userEmailSuffix}`,
     `IP: ${entry.ip ?? "—"}`,
   ];
   if (hasVisibleMetadata(entry.metadata)) {
@@ -681,7 +702,10 @@ function SecurityAuditTable({ entries, loading, onCopyRow }: Readonly<SecurityAu
               <td>
                 <Badge variant={securityEventTone(entry.event_type)}>{securityEventLabel(entry.event_type)}</Badge>
               </td>
-              <td title={securityUserTitle(entry)}>{securityUserDisplay(entry)}</td>
+              <td title={securityUserTitle(entry)}>
+                {securityUserDisplay(entry)}
+                {securityUserEmail(entry) && <div className="sessions-subdued">{securityUserEmail(entry)}</div>}
+              </td>
               <td>{entry.ip ?? "—"}</td>
               <td>
                 <div className="audit-log-details-cell">
@@ -719,6 +743,9 @@ function SecurityAuditCards({ entries, loading, onCopyRow }: Readonly<SecurityAu
               <i className="ti ti-user" aria-hidden="true" />
               {securityUserDisplay(entry)}
             </span>
+            {securityUserEmail(entry) && (
+              <div className="sessions-subdued audit-log-card__email">{securityUserEmail(entry)}</div>
+            )}
           </div>
           <div className="audit-log-card__foot">
             <span>{entry.ip ?? "—"}</span>
@@ -963,10 +990,10 @@ function SecurityAuditView({
 
       {!loading && !error && total > 0 && (
         <div className="audit-log-footer">
-          <span className="audit-log-footer__info">
-            {`Showing ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
-          </span>
-          <div className="audit-log-footer__pager">
+          <div className="audit-log-footer__summary">
+            <span className="audit-log-footer__info">
+              {`Showing ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
+            </span>
             <div className="audit-log-pagesize">
               <label htmlFor="security-audit-log-pagesize-select">Rows per page</label>
               <select
@@ -986,6 +1013,8 @@ function SecurityAuditView({
                 ))}
               </select>
             </div>
+          </div>
+          <div className="audit-log-footer__pager">
             <Button
               type="button"
               variant="secondary"
@@ -1387,10 +1416,10 @@ function AuditLogView({
 
       {!loading && !error && total > 0 && (
         <div className="audit-log-footer">
-          <span className="audit-log-footer__info">
-            {`Showing ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
-          </span>
-          <div className="audit-log-footer__pager">
+          <div className="audit-log-footer__summary">
+            <span className="audit-log-footer__info">
+              {`Showing ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
+            </span>
             <div className="audit-log-pagesize">
               <label htmlFor="audit-log-pagesize-select">Rows per page</label>
               <select
@@ -1410,6 +1439,8 @@ function AuditLogView({
                 ))}
               </select>
             </div>
+          </div>
+          <div className="audit-log-footer__pager">
             <Button
               type="button"
               variant="secondary"

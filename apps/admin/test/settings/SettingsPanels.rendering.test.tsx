@@ -340,7 +340,7 @@ describe("AuditLogPanel rendering", () => {
     renderAuditPanel();
 
     const table = await screen.findByRole("table");
-    expect(within(table).getByText("2026-06-15 12:00:00")).toBeTruthy();
+    expect(within(table).getByText("2026-06-15 12:00:00 UTC")).toBeTruthy();
     expect(within(table).getByText(/Warsaw, Poland/)).toBeTruthy();
   });
 
@@ -729,7 +729,7 @@ describe("AuditLogPanel rendering", () => {
     renderAuditPanel();
     const table = await screen.findByRole("table");
     expect(within(table).getByText("Time")).toBeTruthy();
-    expect(within(table).getByText("2026-01-01 12:00:00")).toBeTruthy();
+    expect(within(table).getByText("2026-01-01 12:00:00 UTC")).toBeTruthy();
     expect(screen.queryByRole("radio", { name: "Local" })).toBeNull();
   });
 
@@ -1170,7 +1170,32 @@ describe("AuditLogPanel Security view rendering", () => {
     const table = await screen.findByRole("table");
     expect(within(table).getByText("Login succeeded")).toBeTruthy();
     expect(within(table).getByText("Alice Admin")).toBeTruthy();
+    expect(within(table).getByText("alice@example.com")).toBeTruthy();
     expect(within(table).getByText("192.0.2.10")).toBeTruthy();
+  });
+
+  it("shows the redacted email under Unknown for a failed login, mirroring Audit's actor email subline", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
+      entries: [
+        makeSecurityEntry({
+          id: "sec-5",
+          event_type: "auth.login.fail",
+          user_id: null,
+          user_email: null,
+          user_display_name: null,
+          metadata: { email_redacted: "a***@example.com" },
+        }),
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderSecurityPanel();
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Unknown")).toBeTruthy();
+    expect(within(table).getByText("a***@example.com")).toBeTruthy();
   });
 
   it("falls back to email when display name is unset, to Unknown for a null user_id, and Unknown for a since-deleted user", async () => {
@@ -1258,6 +1283,7 @@ describe("AuditLogPanel Security view rendering", () => {
       expect(cards).toHaveLength(2);
       const firstCard = cards[0] as HTMLElement;
       expect(within(firstCard).getByText("Alice Admin")).toBeTruthy();
+      expect(within(firstCard).getByText("alice@example.com")).toBeTruthy();
       const secondCard = cards[1] as HTMLElement;
       expect(within(secondCard).getByText("Unknown")).toBeTruthy();
 

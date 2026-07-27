@@ -248,7 +248,10 @@ export function SessionsPanel() {
         </p>
         <div className="sessions-bulk-row">
           <select
+            id="sessions-bulk-revoke-event"
+            name="sessions-bulk-revoke-event"
             className="at-select"
+            aria-label="Event"
             value={selectedEventId}
             onChange={(e) => {
               setSelectedEventId(e.target.value);
