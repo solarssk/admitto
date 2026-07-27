@@ -38,7 +38,9 @@ async function writeSecurityAuditLog(
     event_type: SecurityAuditEventType;
     user_id?: string | null;
     ip?: string | null;
-    metadata?: Record<string, unknown> | null;
+    // Every one of this module's 10 callers always supplies a metadata object - non-optional
+    // here rather than a defensive `?? undefined` fallback for a shape nothing ever passes.
+    metadata: Record<string, unknown>;
   },
 ): Promise<void> {
   try {
@@ -47,7 +49,7 @@ async function writeSecurityAuditLog(
         event_type: fields.event_type,
         user_id: fields.user_id ?? null,
         ip: fields.ip ?? null,
-        metadata: (fields.metadata ?? undefined) as Prisma.InputJsonValue | undefined,
+        metadata: fields.metadata as Prisma.InputJsonValue,
       },
     });
   } catch (err) {
