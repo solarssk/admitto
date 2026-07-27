@@ -249,11 +249,19 @@ Be explicit with auditors about what is **out of product scope** today:
 - No built-in SIEM or central log platform (forward container logs if required). The in-app
   **System logs** screen (superadmin only, see [DATA-PROTECTION.md](../DATA-PROTECTION.md)) is a
   short, in-memory live tail for day-to-day diagnostics — not a substitute for a SIEM: it holds
-  only the last 1000 entries and is emptied on every restart.
+  only the last 1000 entries and is emptied on every restart. A narrower, durable exception exists
+  for ten auth/security event types (login, MFA, logout, OIDC, access-denied) — see **Durable
+  security audit trail (`SecurityAuditLog`)** in [DATA-PROTECTION.md](../DATA-PROTECTION.md); this
+  is a queryable incident-review trail, not a general-purpose log platform, and rate-limit/system
+  log signals stay ephemeral and operator-shipped as above. That trail is also neither complete nor
+  permanent: persistence is best-effort (a write failure is logged but never blocks the underlying
+  auth action, so a transient DB hiccup can leave a gap) and rows are purged after the configured
+  retention window (30 days by default).
 - No HA / multi-region failover in the default compose topology.
 - No always-on scheduler for all long-term PII purge domains yet (retention **policy** documented;
-  auth-state purge and email delivery snapshot nullification run best-effort at container startup
-  and are also available as CLI maintenance commands).
+  auth-state purge, email delivery snapshot nullification, and security audit log purge run
+  best-effort at container startup and daily thereafter, and are also available as CLI maintenance
+  commands).
 - Disk/volume encryption for PostgreSQL and Redis is an **infrastructure** control.
 - No automated entropy check on `CHECKIN_OPERATOR_TOKEN` / `OPS_HEALTH_TOKEN` at boot — minimum
   length only; operators should generate with `openssl rand -hex 32` (documented in `.env.example`).

@@ -61,6 +61,7 @@ import type {
   SetupOrgBrandingDto,
   PatchSetupOrgBrandingBody,
   AuditLogResponse,
+  SecurityAuditLogResponse,
   SystemLogResponse,
   EventOverviewDto,
   EventContactDto,
@@ -1618,6 +1619,26 @@ export async function exportAuditLog(params: AuditLogFilterParams, signal?: Abor
     signal,
   });
   await downloadExportResponse(res, "audit-log.csv");
+}
+
+/** Load paginated durable auth/security event trail (superadmin, issue #473). Deliberately
+ * narrower than fetchAuditLog: no date-range/search params here since the panel doesn't expose
+ * them (see SecurityAuditLogPanel.tsx). */
+export async function fetchSecurityAuditLog(
+  params: { eventType?: string; page?: number; pageSize?: number },
+  signal?: AbortSignal,
+): Promise<SecurityAuditLogResponse> {
+  const q = new URLSearchParams();
+  if (params.eventType) q.set("event_type", params.eventType);
+  if (params.page != null) q.set("page", String(params.page));
+  if (params.pageSize != null) q.set("pageSize", String(params.pageSize));
+  const qs = q.toString();
+  const queryPart = qs ? `?${qs}` : "";
+  const res = await fetch(`/api/admin/security-audit-log${queryPart}`, {
+    credentials: "same-origin",
+    signal,
+  });
+  return parseJson<SecurityAuditLogResponse>(res);
 }
 
 export type SystemLogFilterParams = {

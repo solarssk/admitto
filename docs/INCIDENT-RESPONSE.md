@@ -31,9 +31,14 @@ flowchart TD
 ## First 30 minutes
 
 1. **Contain** — rotate exposed secrets; disable compromised accounts; block abusive traffic at edge.
-2. **Assess** — audit log, **System logs** live tail (Settings → Logs & audit → System, superadmin
-   only — shows recent activity in near real time, but only the last 1000 entries and only while the
-   server process is still running), readiness probe, mail delivery log, recent deployments.
+2. **Assess** — admin audit log, **Security audit log** (Settings → Logs & audit → Security audit
+   log, superadmin only — durable login/MFA/logout/OIDC/access-denied history; survives a restart,
+   so prefer it over the live tail below for reconstructing what happened — but writes are
+   best-effort, so a DB hiccup at the moment of the event can leave a gap even though the
+   underlying auth action itself succeeded, and rows past the retention window, 30 days by
+   default, are gone), **System logs** live tail (Settings → Logs & audit → System, superadmin
+   only — shows recent activity in near real time, but only the last 1000 entries and only while
+   the server process is still running), readiness probe, mail delivery log, recent deployments.
 3. **Preserve** — snapshot logs and database if investigation is likely.
 4. **Notify** — privacy officer if personal data may be affected. Under **GDPR Art. 33** (when
    applicable), notify the supervisory authority **without undue delay and, where feasible, within

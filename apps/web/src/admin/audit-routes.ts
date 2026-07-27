@@ -1,54 +1,16 @@
 import type { Context } from "hono";
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { canManageInstance } from "@admitto/auth";
 import { EXPORT_ROW_CAP, quoteCsvCell, sanitizeCsvCell, writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog } from "@admitto/shared/system-log";
-import { adminAuditFromContext, positiveIntQuery, resolveActorEmailForLog } from "./admin-helpers.js";
+import {
+  adminAuditFromContext,
+  parseDateBound,
+  positiveIntQuery,
+  requireSuperadmin,
+  resolveActorEmailForLog,
+} from "./admin-helpers.js";
 import { attachmentContentDisposition } from "./content-disposition.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
-
-/** Return 403 when the session user is not a superadmin; otherwise null. */
-async function requireSuperadmin(c: Context, db: PrismaClient): Promise<Response | null> {
-  const auth = c.get("auth");
-  if (!(await canManageInstance(db, auth.userId))) return c.json({ error: "forbidden" }, 403);
-  return null;
-}
-
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
-
-/** Reject impossible calendar dates such as 2026-02-30. */
-function isValidCalendarDate(value: string): boolean {
-  const parts = value.split("-").map(Number);
-  if (parts.length !== 3) return false;
-  const [year, month, day] = parts as [number, number, number];
-  if (!year || !month || !day) return false;
-  const parsed = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-  return (
-    parsed.getUTCFullYear() === year &&
-    parsed.getUTCMonth() === month - 1 &&
-    parsed.getUTCDate() === day
-  );
-}
-
-/**
- * Parse a query date bound. Date-only values (`YYYY-MM-DD`) use UTC day bounds:
- * start → 00:00:00.000, end → 23:59:59.999 (inclusive through the selected day).
- * Full ISO instants (with `T`) are used as-is — the UI sends local-day bounds this way.
- * Invalid calendar dates and unparseable values are ignored (returns undefined).
- */
-function parseDateBound(raw: string | undefined, bound: "start" | "end"): Date | undefined {
-  if (!raw) return undefined;
-  const trimmed = raw.trim();
-  if (DATE_ONLY.test(trimmed)) {
-    if (!isValidCalendarDate(trimmed)) return undefined;
-    const [year, month, day] = trimmed.split("-").map(Number) as [number, number, number];
-    if (bound === "start") return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
-    return new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
-  }
-  const parsed = new Date(trimmed);
-  if (Number.isNaN(parsed.getTime())) return undefined;
-  return parsed;
-}
 
 /** An event_id metadata match - writers split between an `eventId` and a legacy `event_id` key,
  * so both are checked rather than picking one and silently missing the other's rows. */

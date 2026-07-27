@@ -27,3 +27,25 @@ export async function writeAdminAuditLog(
     },
   });
 }
+
+/** Same as `writeAdminAuditLog`, but never throws. For call sites where the audited
+ * action (a file save, a completed mutation run outside the same transaction) has
+ * already succeeded, so a transient audit-write failure must not turn that success
+ * into a client-visible error. Logs to stdout on failure instead of rethrowing. */
+export async function writeAdminAuditLogBestEffort(
+  db: PrismaClient | Prisma.TransactionClient,
+  data: AdminAuditWriteInput,
+): Promise<void> {
+  try {
+    await writeAdminAuditLog(db, data);
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: "admin_audit_log.write_failed",
+        action_type: data.actionType,
+        error: err instanceof Error ? err.message : String(err),
+        ts: new Date().toISOString(),
+      }),
+    );
+  }
+}
