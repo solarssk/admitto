@@ -1,14 +1,69 @@
 /** Strip token-like and email-like fragments from provider errors before persisting. */
+const EMAIL_LOCAL_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._%+-";
+const EMAIL_DOMAIN_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.-";
+const MAX_STORED_ERROR_LENGTH = 2000;
+const MAX_EMAIL_ADDRESS_LENGTH = 320;
+
+function hasEmailDomainShape(value: string): boolean {
+  const labels = value.split(".");
+  return labels.length >= 2 && labels.every((label) => label.length > 0 && label.length <= 63);
+}
+
+type EmailCandidate = { localStart: number; candidateEnd: number };
+
+function findEmailCandidate(value: string, at: number, cursor: number): EmailCandidate {
+  let localStart = at;
+  while (localStart > cursor && EMAIL_LOCAL_CHARS.includes(value.charAt(localStart - 1))) {
+    localStart--;
+  }
+
+  let candidateEnd = at + 1;
+  while (candidateEnd < value.length && EMAIL_DOMAIN_CHARS.includes(value.charAt(candidateEnd))) {
+    candidateEnd++;
+  }
+  while (candidateEnd > at + 1 && value.charAt(candidateEnd - 1) === ".") candidateEnd--;
+
+  return { localStart, candidateEnd };
+}
+
+function isEmailCandidate(value: string, at: number, candidate: EmailCandidate): boolean {
+  const local = value.slice(candidate.localStart, at);
+  const domain = value.slice(at + 1, candidate.candidateEnd);
+  return local.length > 0 && local.length <= 64 && hasEmailDomainShape(domain);
+}
+
+/** Linear email-like fragment redactor. Avoids a nested quantified regex on provider-controlled text. */
+function redactEmailLikeFragments(value: string): string {
+  let redacted = "";
+  let cursor = 0;
+
+  while (cursor < value.length) {
+    const at = value.indexOf("@", cursor);
+    if (at === -1) return redacted + value.slice(cursor);
+
+    const candidate = findEmailCandidate(value, at, cursor);
+    if (isEmailCandidate(value, at, candidate)) {
+      redacted += `${value.slice(cursor, candidate.localStart)}[redacted]`;
+      cursor = candidate.candidateEnd;
+    } else {
+      redacted += value.slice(cursor, at + 1);
+      cursor = at + 1;
+    }
+  }
+
+  return redacted;
+}
+
 export function sanitizeDeliveryError(message: string | undefined): string | undefined {
   if (!message) return undefined;
-  let s = message;
+  let s = message.slice(0, MAX_STORED_ERROR_LENGTH + MAX_EMAIL_ADDRESS_LENGTH);
   // base64url ticket tokens (~43 chars)
   s = s.replace(/[A-Za-z0-9_-]{40,60}/g, "[redacted]");
   // emails
-  s = s.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+/g, "[redacted]");
+  s = redactEmailLikeFragments(s);
   // URLs (e.g. Power Automate webhook in provider errors)
   s = s.replace(/https?:\/\/\S+/gi, "[redacted]");
-  return s.slice(0, 2000);
+  return s.slice(0, MAX_STORED_ERROR_LENGTH);
 }
 
 /** Admin API-safe send error text — no provider internals or long opaque messages. */

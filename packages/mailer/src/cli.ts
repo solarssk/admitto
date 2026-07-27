@@ -15,6 +15,7 @@ import { isSendSuccess } from "./types.js";
 import { splitCsvLine } from "./csvUtils.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ENV_KEY_RE = /^[A-Za-z_]\w*$/;
 
 function loadDotEnv() {
   const envPath = path.join(__dirname, "..", ".env");
@@ -25,9 +26,10 @@ function loadDotEnv() {
     const eq = t.indexOf("=");
     if (eq === -1) continue;
     const k = t.slice(0, eq).trim();
+    if (!ENV_KEY_RE.test(k)) continue;
     let v = t.slice(eq + 1).trim();
     if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
-    if (!(k in process.env)) process.env[k] = v;
+    if (!Object.hasOwn(process.env, k)) Reflect.set(process.env, k, v);
   }
 }
 
@@ -43,6 +45,8 @@ function renderHtml(firstName?: string): string {
 
 function readCsv(file: string): { email: string; firstName?: string }[] {
   const p = path.isAbsolute(file) ? file : path.join(process.cwd(), file);
+  // A local operator explicitly selects this CLI input file; it is never an HTTP request path.
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- local operator-selected CSV
   const lines = fs.readFileSync(p, "utf8").split("\n").map((l) => l.trim()).filter(Boolean);
   const headerLine = lines.shift();
   if (!headerLine) throw new Error(`CSV file is empty: ${file}`);
@@ -53,7 +57,10 @@ function readCsv(file: string): { email: string; firstName?: string }[] {
   return lines
     .map((l) => {
       const c = splitCsvLine(l);
-      return { email: (c[ei] ?? "").trim(), firstName: ni !== -1 ? (c[ni] ?? "").trim() : undefined };
+      return {
+        email: (c.at(ei) ?? "").trim(),
+        firstName: ni !== -1 ? (c.at(ni) ?? "").trim() : undefined,
+      };
     })
     .filter((r) => r.email);
 }

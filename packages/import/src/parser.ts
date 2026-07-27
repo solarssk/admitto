@@ -27,9 +27,13 @@ function buildRow(
   cells: string[],
 ): Record<string, string> {
   const record: Record<string, string> = {};
-  for (let i = 0; i < headers.length; i++) {
-    const key = headers[i];
-    if (key !== undefined && !(key in record)) record[key] = (cells[i] ?? "").trim();
+  for (const [index, key] of headers.entries()) {
+    Object.defineProperty(record, key, {
+      value: (cells.at(index) ?? "").trim(),
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
   }
   return record;
 }
@@ -44,7 +48,7 @@ function parseHeaderLine(
 
   const dupHeaders = [...new Set(rawHeaders.filter((h, i) => rawHeaders.indexOf(h) !== i))];
   if (dupHeaders.length > 0) {
-    warnings.push(`Duplicate column(s) detected (first value used): ${dupHeaders.join(", ")}`);
+    warnings.push(`Duplicate column(s) detected (last value used): ${dupHeaders.join(", ")}`);
   }
 
   for (const h of rawHeaders) {
@@ -235,7 +239,7 @@ export function parseAttendees(csvString: string, options: ParseAttendeesOptions
   const seenAgencyIdentifiers = new Set<string>();
 
   for (let rowIdx = 1; rowIdx < lines.length; rowIdx++) {
-    const line = lines[rowIdx]!;
+    const line = lines.at(rowIdx)!;
     const cells = splitCsvLine(line);
     const raw = buildRow(rawHeaders, cells);
 

@@ -20,4 +20,10 @@ describe("extractAccessTokenFromHeaders", () => {
     });
     expect(token).toBeNull();
   });
+
+  it("does not trust a token inherited through the headers prototype", () => {
+    const headers = Object.create({ [CF_ACCESS_HEADER]: "inherited.jwt" }) as Record<string, string>;
+
+    expect(extractAccessTokenFromHeaders(headers)).toBeNull();
+  });
 });

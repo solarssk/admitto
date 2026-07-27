@@ -269,11 +269,23 @@ describe("parseAttendees — edge cases", () => {
     expect(result.validRows).toHaveLength(2);
   });
 
-  it("warns on duplicate headers and uses first value", () => {
+  it("warns on duplicate headers and preserves the last value", () => {
     const result = parseAttendees(`email,first_name,last_name,email\nx@example.com,Jan,K,y@example.com`);
     expect(result.warnings.some((w) => /duplicate column/i.test(w))).toBe(true);
-    // First email value wins
-    expect(result.validRows[0]?.email).toBe("x@example.com");
+    expect(result.validRows[0]?.email).toBe("y@example.com");
+  });
+
+  it("treats a missing trailing optional cell as empty", () => {
+    const result = parseAttendees("first_name,last_name,email,external_uuid\nJan,K,jan@example.com");
+
+    expect(result.validRows).toEqual([
+      expect.objectContaining({
+        first_name: "Jan",
+        last_name: "K",
+        email: "jan@example.com",
+      }),
+    ]);
+    expect(result.validRows[0]).not.toHaveProperty("external_uuid");
   });
 
   it("handles CRLF line endings", () => {

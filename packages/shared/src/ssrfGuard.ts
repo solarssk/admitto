@@ -42,20 +42,51 @@ function parseIpv4(host: string): [number, number, number, number] | null {
   return nums as [number, number, number, number];
 }
 
+function parseIpv6HexGroup(group: string): number {
+  return Number.parseInt(group, 16);
+}
+
+function parseIpv6GroupList(part: string): number[] {
+  if (part === "") return [];
+  const rawGroups = part.split(":");
+  const dotted = rawGroups.at(-1)!;
+  const hasDottedSuffix = dotted.includes(".");
+  const groups = (hasDottedSuffix ? rawGroups.slice(0, -1) : rawGroups).map(parseIpv6HexGroup);
+
+  if (!hasDottedSuffix) return groups;
+  // extractIpv4FromMappedIpv6 calls this only after Node's isIPv6() has validated the address.
+  const ipv4 = parseIpv4(dotted)!;
+  groups.push(
+    (ipv4.at(0)! << 8) | ipv4.at(1)!,
+    (ipv4.at(2)! << 8) | ipv4.at(3)!,
+  );
+  return groups;
+}
+
+/** Expand a syntactically-valid IPv6 address into eight 16-bit groups. */
+function expandIpv6Groups(host: string): number[] {
+  const compressionStart = host.indexOf("::");
+  if (compressionStart === -1) {
+    return parseIpv6GroupList(host);
+  }
+
+  const head = parseIpv6GroupList(host.slice(0, compressionStart));
+  const tail = parseIpv6GroupList(host.slice(compressionStart + 2));
+  const omittedGroups = 8 - head.length - tail.length;
+  return [...head, ...Array.from({ length: omittedGroups }, () => 0), ...tail];
+}
+
 /** IPv4-mapped IPv6 (::ffff:127.0.0.1 or ::ffff:7f00:1) — normalize to dotted IPv4 for SSRF checks. */
 function extractIpv4FromMappedIpv6(host: string): string | null {
   const lower = host.toLowerCase();
   if (!isIPv6(lower)) return null;
 
-  const dotted = /(?:^|:)ffff:((?:\d{1,3}\.){3}\d{1,3})$/.exec(lower);
-  if (dotted) return dotted[1] ?? null;
+  const groups = expandIpv6Groups(lower);
+  if (groups.slice(0, 5).some((group) => group !== 0) || groups.at(5) !== 0xffff) return null;
 
-  const hex = /(?:^|:)ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(lower);
-  if (!hex) return null;
-  const hi = Number.parseInt(hex[1]!, 16);
-  const lo = Number.parseInt(hex[2]!, 16);
-  if (!Number.isFinite(hi) || !Number.isFinite(lo)) return null;
-  return `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+  const high = groups.at(6)!;
+  const low = groups.at(7)!;
+  return `${(high >> 8) & 0xff}.${high & 0xff}.${(low >> 8) & 0xff}.${low & 0xff}`;
 }
 
 function isBlockedPrivateIpv4Dotted(host: string): boolean {

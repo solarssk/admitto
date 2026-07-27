@@ -7,9 +7,9 @@ function parseQuotedField(line: string, start: number): { field: string; next: n
   let field = "";
   let i = start;
   while (i < line.length) {
-    if (line[i] === '"' && line[i + 1] === '"') { field += '"'; i += 2; }
-    else if (line[i] === '"') { i++; break; }
-    else { field += line[i++]; }
+    if (line.charAt(i) === '"' && line.charAt(i + 1) === '"') { field += '"'; i += 2; }
+    else if (line.charAt(i) === '"') { i++; break; }
+    else { field += line.charAt(i); i++; }
   }
   return { field, next: i };
 }
@@ -19,11 +19,11 @@ export function splitCsvLine(line: string): string[] {
   const fields: string[] = [];
   let i = 0;
   while (i <= line.length) {
-    if (line[i] === '"') {
+    if (line.charAt(i) === '"') {
       const { field, next } = parseQuotedField(line, i + 1); // i + 1 skips opening quote
       fields.push(field);
       i = next;
-      if (line[i] === ",") i++; // skip comma after closing quote
+      if (line.charAt(i) === ",") i++; // skip comma after closing quote
       else break; // end-of-line after quoted field — no phantom empty field
     } else {
       const end = line.indexOf(",", i);

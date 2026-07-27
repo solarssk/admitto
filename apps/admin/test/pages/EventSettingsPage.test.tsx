@@ -1230,6 +1230,41 @@ describe("EventSettingsPage — ticket types cross-event staleness", () => {
     expect(screen.queryByText("Loading…")).toBeNull();
   });
 
+  it("aborts the latest background ticket-type refresh when the page unmounts", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchTicketTypes).mockResolvedValueOnce([vipType]);
+    vi.mocked(updateTicketType).mockResolvedValueOnce({ ...vipType, label: "VIP Gold" });
+    let refreshSignal: AbortSignal | undefined;
+    vi.mocked(fetchTicketTypes).mockImplementationOnce((_eventId, signal) => {
+      refreshSignal = signal;
+      return new Promise(() => {});
+    });
+
+    const rendered = renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/settings?tab=ticket-types"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/settings" element={<EventSettingsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("VIP")).toBeTruthy();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const input = screen.getByDisplayValue("VIP") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "VIP Gold" } });
+    fireEvent.blur(input);
+
+    await waitFor(() => {
+      expect(refreshSignal).toBeDefined();
+    });
+    rendered.unmount();
+    expect(refreshSignal!.aborted).toBe(true);
+  });
+
   it("clears the previous event's stale ticket types when the new event's fetch fails", async () => {
     vi.mocked(fetchEventSettings).mockImplementation((eventId: string) =>
       Promise.resolve(eventId === "evt-1" ? activeEvent : eventB),

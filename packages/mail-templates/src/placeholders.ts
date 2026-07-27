@@ -48,9 +48,6 @@ export const WALLET_PLACEHOLDERS = new Set([
  */
 export const IMAGE_PLACEHOLDERS = new Set(["logo_url", "header_image_url", "qr_image_url"]);
 
-/** Matches any {{...}} token, including empty {{}} (malformed). */
-const ANY_PLACEHOLDER_RE = /\{\{([^}]*)\}\}/g; // NOSONAR — single negated-class quantifier between two literal delimiters, no nesting/overlap
-
 /** Valid placeholder name: lowercase snake_case. */
 const VALID_PLACEHOLDER_NAME_RE = /^[a-z][a-z0-9_]*$/;
 
@@ -61,7 +58,7 @@ export const VALID_PLACEHOLDER_RE = /\{\{([a-z][a-z0-9_]*)\}\}/g;
 export function findPlaceholdersInHtmlComments(html: string): string[] {
   const names = new Set<string>();
   let match: RegExpExecArray | null;
-  const re = new RegExp(VALID_PLACEHOLDER_RE.source, "g");
+  const re = /\{\{([a-z][a-z0-9_]*)\}\}/g;
   while ((match = re.exec(html)) !== null) {
     if (isPlaceholderInHtmlComment(html, match.index!)) {
       names.add(match[1]!);
@@ -74,7 +71,7 @@ export function findPlaceholdersInHtmlComments(html: string): string[] {
 export function findUnquotedAttributePlaceholders(html: string): string[] {
   const attributes = new Set<string>();
   let match: RegExpExecArray | null;
-  const re = new RegExp(VALID_PLACEHOLDER_RE.source, "g");
+  const re = /\{\{([a-z][a-z0-9_]*)\}\}/g;
   while ((match = re.exec(html)) !== null) {
     const ctx = getHtmlAttributeContext(html, match.index!);
     if (ctx.unquotedAttributeName) {
@@ -89,10 +86,20 @@ export function findUnquotedAttributePlaceholders(html: string): string[] {
 /** Returns inner text of every {{...}} token in the string. */
 export function extractPlaceholderTokens(text: string): string[] {
   const tokens: string[] = [];
-  let match: RegExpExecArray | null;
-  const re = new RegExp(ANY_PLACEHOLDER_RE.source, "g");
-  while ((match = re.exec(text)) !== null) {
-    tokens.push(match[1]!);
+  let cursor = 0;
+  while (cursor < text.length) {
+    const start = text.indexOf("{{", cursor);
+    if (start === -1) break;
+
+    const firstClosingBrace = text.indexOf("}", start + 2);
+    if (firstClosingBrace === -1) break;
+    if (text.charAt(firstClosingBrace + 1) !== "}") {
+      cursor = firstClosingBrace + 1;
+      continue;
+    }
+
+    tokens.push(text.slice(start + 2, firstClosingBrace));
+    cursor = firstClosingBrace + 2;
   }
   return tokens;
 }

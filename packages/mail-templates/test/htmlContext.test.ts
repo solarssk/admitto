@@ -74,6 +74,17 @@ describe("getHtmlAttributeContext", () => {
     expect(result.inQuotedAttribute).toBe(true);
   });
 
+  it("does not treat a placeholder after a self-closing tag as tag markup", () => {
+    const result = ctxAt("<img alt=\"name\" />{{first_name}}");
+
+    expect(result).toEqual({
+      inTag: false,
+      inQuotedAttribute: false,
+      unquotedAttributeName: null,
+      inBareTagMarkup: false,
+    });
+  });
+
   it("treats a value as quoted when whitespace separates the equals sign and quote", () => {
     const result = ctxAt('<td title =  "{{first_name}}">Hi</td>');
     expect(result.inTag).toBe(true);

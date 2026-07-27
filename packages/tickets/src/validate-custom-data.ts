@@ -4,6 +4,14 @@ import type { EventItemContent } from "./types.js";
 const BOOLEAN_TRUE = new Set(["true", "yes", "1"]);
 const BOOLEAN_FALSE = new Set(["false", "no", "0"]);
 
+function ownCustomDataValue<T>(values: Record<string, T>, key: string): T | undefined {
+  return Object.getOwnPropertyDescriptor(values, key)?.value as T | undefined;
+}
+
+function setOwnCustomDataValue<T>(values: Record<string, T>, key: string, value: T): void {
+  Object.defineProperty(values, key, { value, enumerable: true, configurable: true, writable: true });
+}
+
 /** Normalize and validate one custom_data value for a configured field. */
 export function normalizeCustomDataFieldValue(
   field: EventItemContent,
@@ -35,7 +43,7 @@ function assertRequiredFieldsPresent(
 ): void {
   for (const field of fields) {
     if (!field.required) continue;
-    const value = values[field.source_field];
+    const value = ownCustomDataValue(values, field.source_field);
     if (!value) {
       throw new Error(`required_custom_data_field_missing:${field.source_field}`);
     }
@@ -47,7 +55,7 @@ function assertStoredCustomDataValid(
   values: Record<string, string | null | undefined>,
 ): void {
   for (const field of fields) {
-    const raw = values[field.source_field];
+    const raw = ownCustomDataValue(values, field.source_field);
     if (raw) {
       normalizeCustomDataFieldValue(field, raw);
     }
@@ -67,7 +75,7 @@ function assignCustomDataEntry(
   if (value === null || value === undefined || value === "") return;
   if (typeof value !== "string") throw new Error("validation_failed");
   const normalized = normalizeCustomDataFieldValue(field, value);
-  if (normalized) out[key] = normalized;
+  if (normalized) setOwnCustomDataValue(out, key, normalized);
 }
 
 /** Build validated custom_data for attendee create. */
@@ -98,20 +106,20 @@ export function validateCustomDataPatch(
   const normalizedPatch: Record<string, string | null> = {};
 
   for (const field of fields) {
-    merged[field.source_field] = customDataValue(existing, field.source_field);
+    setOwnCustomDataValue(merged, field.source_field, customDataValue(existing, field.source_field));
   }
 
   for (const [key, value] of Object.entries(patch)) {
     const field = fields.find((row) => row.source_field === key);
     if (!field) throw new Error(`unknown_custom_data_field:${key}`);
     if (value === null || value === "") {
-      merged[key] = null;
-      normalizedPatch[key] = null;
+      setOwnCustomDataValue(merged, key, null);
+      setOwnCustomDataValue(normalizedPatch, key, null);
       continue;
     }
     const normalized = normalizeCustomDataFieldValue(field, value);
-    merged[key] = normalized;
-    normalizedPatch[key] = normalized;
+    setOwnCustomDataValue(merged, key, normalized);
+    setOwnCustomDataValue(normalizedPatch, key, normalized);
   }
 
   assertStoredCustomDataValid(fields, merged);
@@ -125,7 +133,7 @@ export function assertCustomDataMeetsRequirements(
 ): void {
   const values: Record<string, string | null | undefined> = {};
   for (const field of fields) {
-    values[field.source_field] = customDataValue(customData, field.source_field);
+    setOwnCustomDataValue(values, field.source_field, customDataValue(customData, field.source_field));
   }
   assertStoredCustomDataValid(fields, values);
 }

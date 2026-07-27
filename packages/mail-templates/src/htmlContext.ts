@@ -26,7 +26,7 @@ export function isPlaceholderInHtmlComment(html: string, index: number): boolean
 function isStillInsideOpeningTag(html: string, tagStart: number, index: number): boolean {
   let inQuote: '"' | "'" | null = null;
   for (let i = tagStart + 1; i < index; i++) {
-    const ch = html[i]!;
+    const ch = html.charAt(i);
     if (inQuote) {
       if (ch === inQuote) inQuote = null;
       continue;
@@ -36,7 +36,7 @@ function isStillInsideOpeningTag(html: string, tagStart: number, index: number):
       continue;
     }
     if (ch === ">") return false;
-    if (ch === "/" && html[i + 1] === ">") return false;
+    if (ch === "/" && html.charAt(i + 1) === ">") return false;
   }
   return true;
 }
@@ -73,7 +73,7 @@ function findOpeningTagStart(html: string, index: number): number | null {
 /** Advances past the tag name (e.g. `div` in `<div ...>`) and returns the index right after it. */
 function skipTagName(html: string, tagStart: number, index: number): number {
   let i = tagStart + 1;
-  while (i < index && /[A-Za-z0-9-]/.test(html[i]!)) i++;
+  while (i < index && /[A-Za-z0-9-]/.test(html.charAt(i))) i++;
   return i;
 }
 
@@ -98,9 +98,9 @@ function advanceInUnquotedValue(ch: string, state: AttributeScanState): void {
 /** Handles the `=` after a pending attribute name: enters a quoted or unquoted value. */
 function enterAttributeValue(html: string, i: number, index: number, state: AttributeScanState): number {
   let next = i + 1;
-  while (next < index && /\s/.test(html[next]!)) next++;
-  if (next < index && (html[next] === '"' || html[next] === "'")) {
-    state.inQuote = html[next] as '"' | "'";
+  while (next < index && /\s/.test(html.charAt(next))) next++;
+  if (next < index && (html.charAt(next) === '"' || html.charAt(next) === "'")) {
+    state.inQuote = html.charAt(next) as '"' | "'";
     state.unquotedAttributeName = null;
     next++;
   } else {
@@ -113,15 +113,15 @@ function enterAttributeValue(html: string, i: number, index: number, state: Attr
 
 /**
  * Processes the character at `i`, mutating `state` as needed, and returns the next
- * index to resume scanning from, or `null` when the opening tag ends here.
+ * index to resume scanning from.
  */
 function advanceTagScan(
   html: string,
   i: number,
   index: number,
   state: AttributeScanState,
-): number | null {
-  const ch = html[i]!;
+): number {
+  const ch = html.charAt(i);
 
   if (state.inQuote) {
     advanceInQuotedValue(ch, state);
@@ -135,8 +135,6 @@ function advanceTagScan(
 
   if (/\s/.test(ch)) return i + 1;
 
-  if (ch === ">" || (ch === "/" && html[i + 1] === ">")) return null;
-
   if (ch === "=") {
     if (state.pendingAttr) return enterAttributeValue(html, i, index, state);
     return i + 1;
@@ -145,7 +143,7 @@ function advanceTagScan(
   if (/[A-Za-z]/.test(ch)) {
     const nameStart = i;
     let j = i;
-    while (j < index && /[\w-]/.test(html[j]!)) j++;
+    while (j < index && /[\w-]/.test(html.charAt(j))) j++;
     state.pendingAttr = html.slice(nameStart, j);
     return j;
   }
@@ -164,9 +162,7 @@ function scanOpeningTagAttributes(html: string, start: number, index: number): A
 
   let i = start;
   while (i < index) {
-    const next = advanceTagScan(html, i, index, state);
-    if (next === null) break;
-    i = next;
+    i = advanceTagScan(html, i, index, state);
   }
 
   return state;

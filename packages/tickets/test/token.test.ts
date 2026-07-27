@@ -52,6 +52,16 @@ describe("extractTokenFromUrl", () => {
     expect(extractTokenFromUrl(`https://example.com/t/${token}?utm=mail`)).toBe(token);
   });
 
+  it("ignores ticket-like content in a URL query or fragment", () => {
+    const pathToken = generateToken();
+    const suffixToken = generateToken();
+
+    expect(extractTokenFromUrl(`https://example.com/t/${pathToken}?next=/t/${suffixToken}`))
+      .toBe(pathToken);
+    expect(extractTokenFromUrl(`https://example.com/t/${pathToken}#/t/${suffixToken}`))
+      .toBe(pathToken);
+  });
+
   it("returns null for agency payload (not a URL)", () => {
     expect(extractTokenFromUrl("AGENCY-QR-001")).toBeNull();
   });
@@ -59,6 +69,10 @@ describe("extractTokenFromUrl", () => {
   it("returns null for raw token without URL prefix", () => {
     const token = generateToken();
     expect(extractTokenFromUrl(token)).toBeNull();
+  });
+
+  it("returns null for a ticket path with an invalid token", () => {
+    expect(extractTokenFromUrl("https://example.com/t/not-a-ticket-token")).toBeNull();
   });
 });
 

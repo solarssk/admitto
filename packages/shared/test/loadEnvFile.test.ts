@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { loadEnvFile, parseEnvValue } from "../src/loadDotEnv.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { describe, expect, it } from "vitest";
+import { loadEnvFile, parseEnvValue } from "../src/loadEnvFile.js";
 
 describe("parseEnvValue", () => {
   it("strips unquoted inline comments", () => {
@@ -11,6 +11,8 @@ describe("parseEnvValue", () => {
 
   it("preserves hash inside quoted values", () => {
     expect(parseEnvValue('"secret#hash"')).toBe("secret#hash");
+    expect(parseEnvValue("'single-quoted'")).toBe("single-quoted");
+    expect(parseEnvValue('"unterminated')).toBe('"unterminated');
   });
 
   it("preserves equals in unquoted values", () => {
@@ -19,10 +21,17 @@ describe("parseEnvValue", () => {
 });
 
 describe("loadEnvFile", () => {
-  it("loads keys without overwriting existing process.env entries", () => {
+  it("does nothing when the file does not exist", () => {
+    expect(() => loadEnvFile(path.join(os.tmpdir(), "admitto-env-missing", ".env"))).not.toThrow();
+  });
+
+  it("loads valid keys without overwriting existing process.env entries", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "admitto-env-"));
     const envPath = path.join(dir, ".env");
-    fs.writeFileSync(envPath, "ADMITTO_TEST_ENV_KEY=from_file\n");
+    fs.writeFileSync(
+      envPath,
+      "ADMITTO_TEST_ENV_KEY=from_file\nADMITTO-INVALID_ENV_KEY=must_not_load\nMALFORMED_LINE\n",
+    );
 
     const key = "ADMITTO_TEST_ENV_KEY";
     const previous = process.env[key];
@@ -31,6 +40,7 @@ describe("loadEnvFile", () => {
     try {
       loadEnvFile(envPath);
       expect(process.env[key]).toBe("from_file");
+      expect(process.env["ADMITTO-INVALID_ENV_KEY"]).toBeUndefined();
       process.env[key] = "preset";
       loadEnvFile(envPath);
       expect(process.env[key]).toBe("preset");

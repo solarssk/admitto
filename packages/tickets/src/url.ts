@@ -9,8 +9,15 @@ export function buildTicketUrl(baseUrl: string, token: string): string {
  */
 export function extractTokenFromUrl(scanned: string): string | null {
   const trimmed = scanned.trim();
-  const match = /\/t\/([A-Za-z0-9_-]{40,60})(?:\/)?(?:[?#].*)?$/.exec(trimmed);
-  return match?.[1] ?? null;
+  const suffixStart = trimmed.search(/[?#]/);
+  const urlPath = suffixStart === -1 ? trimmed : trimmed.slice(0, suffixStart);
+  const marker = "/t/";
+  const start = urlPath.lastIndexOf(marker);
+  if (start === -1) return null;
+
+  const path = urlPath.slice(start + marker.length);
+  const token = path.endsWith("/") ? path.slice(0, -1) : path;
+  return looksLikeInternalToken(token) ? token : null;
 }
 
 /** Heuristic: true when input looks like a raw base64url internal token (not a URL or agency payload). */

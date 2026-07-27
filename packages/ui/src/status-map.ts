@@ -42,7 +42,11 @@ export const STATUS_MAP: Record<string, StatusMeta> = {
 };
 
 export function resolveStatusMeta(status: string): StatusMeta {
-  return STATUS_MAP[status] ?? { variant: "neutral", label: status, dot: true };
+  return Object.getOwnPropertyDescriptor(STATUS_MAP, status)?.value ?? {
+    variant: "neutral",
+    label: status,
+    dot: true,
+  };
 }
 
 /** SSR-friendly badge class for ticket pages. */
