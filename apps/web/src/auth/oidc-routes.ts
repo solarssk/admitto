@@ -187,7 +187,7 @@ async function finalizeOidcLogin(
     }
 
     setSessionCookie(c, rawToken);
-    logOidcLoginSuccess({
+    await logOidcLoginSuccess(db, {
       providerId: provider.id,
       userId,
       subject,

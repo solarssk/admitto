@@ -26,7 +26,7 @@ import {
 import { login } from "../src/login.js";
 import { bootstrapSuperadmin, superadminInstanceExists } from "../src/bootstrap.js";
 import { generateTotpSecret, encryptTotpSecret } from "../src/mfa/totp.js";
-import { purgeAuthRetention } from "../src/retention.js";
+import { purgeAuthRetention, purgeSecurityAuditLog, resolveSecurityAuditLogRetentionDays } from "../src/retention.js";
 import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -428,5 +428,94 @@ describe("auth retention purge", () => {
 
     await prisma.session.deleteMany({ where: { id: "session-retention-active" } });
     await prisma.trustedDevice.deleteMany({ where: { id: "trusted-retention-active" } });
+  });
+});
+
+describe("security audit log retention", () => {
+  it("deletes only SecurityAuditLog rows older than the retention window", async () => {
+    const now = new Date("2026-09-10T12:00:00Z");
+    const stale = new Date(now.getTime() - 31 * 24 * 60 * 60 * 1000); // past the default 30-day window
+    const fresh = new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000); // well within the window
+
+    await prisma.securityAuditLog.deleteMany({ where: { id: { startsWith: "sec-audit-retention-" } } });
+    const baseline = await purgeSecurityAuditLog(prisma, { now, dryRun: true });
+
+    await prisma.securityAuditLog.createMany({
+      data: [
+        { id: "sec-audit-retention-fresh", event_type: "auth.login.success", created_at: fresh },
+        { id: "sec-audit-retention-stale", event_type: "auth.login.fail", created_at: stale },
+      ],
+    });
+
+    const dryRun = await purgeSecurityAuditLog(prisma, { now, dryRun: true });
+    expect(dryRun).toEqual({ deleted: baseline.deleted + 1 });
+    expect(await prisma.securityAuditLog.count({ where: { id: { startsWith: "sec-audit-retention-" } } })).toBe(2);
+
+    const purged = await purgeSecurityAuditLog(prisma, { now, batchSize: 1 });
+    expect(purged).toEqual({ deleted: baseline.deleted + 1 });
+
+    expect(
+      await prisma.securityAuditLog.findMany({
+        where: { id: { startsWith: "sec-audit-retention-" } },
+        select: { id: true },
+      }),
+    ).toEqual([{ id: "sec-audit-retention-fresh" }]);
+
+    await prisma.securityAuditLog.deleteMany({ where: { id: "sec-audit-retention-fresh" } });
+  });
+
+  it("honors a custom retentionDays override", async () => {
+    const now = new Date("2026-09-10T12:00:00Z");
+    const eightDaysAgo = new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000);
+
+    await prisma.securityAuditLog.deleteMany({ where: { id: "sec-audit-retention-7d" } });
+    await prisma.securityAuditLog.create({
+      data: { id: "sec-audit-retention-7d", event_type: "auth.logout", created_at: eightDaysAgo },
+    });
+
+    // 8 days back survives the default 30-day window...
+    await purgeSecurityAuditLog(prisma, { now, dryRun: false, retentionDays: 30 });
+    expect(
+      await prisma.securityAuditLog.findUnique({ where: { id: "sec-audit-retention-7d" } }),
+    ).not.toBeNull();
+
+    // ...but not a 7-day window.
+    await purgeSecurityAuditLog(prisma, { now, dryRun: false, retentionDays: 7 });
+    expect(await prisma.securityAuditLog.findUnique({ where: { id: "sec-audit-retention-7d" } })).toBeNull();
+  });
+
+  it("falls back to the 30-day default for a non-positive or non-finite retentionDays", async () => {
+    const now = new Date("2026-09-10T12:00:00Z");
+    const twentyDaysAgo = new Date(now.getTime() - 20 * 24 * 60 * 60 * 1000);
+
+    await prisma.securityAuditLog.deleteMany({ where: { id: "sec-audit-retention-fallback" } });
+    await prisma.securityAuditLog.create({
+      data: { id: "sec-audit-retention-fallback", event_type: "auth.mfa.fail", created_at: twentyDaysAgo },
+    });
+
+    for (const invalid of [0, -5, Number.NaN]) {
+      await purgeSecurityAuditLog(prisma, { now, dryRun: false, retentionDays: invalid });
+      expect(
+        await prisma.securityAuditLog.findUnique({ where: { id: "sec-audit-retention-fallback" } }),
+      ).not.toBeNull();
+    }
+
+    await prisma.securityAuditLog.deleteMany({ where: { id: "sec-audit-retention-fallback" } });
+  });
+
+  it("resolves retention days from env with a safe fallback", () => {
+    expect(resolveSecurityAuditLogRetentionDays({})).toBe(30);
+    expect(
+      resolveSecurityAuditLogRetentionDays({ SECURITY_AUDIT_LOG_RETENTION_DAYS: "90" }),
+    ).toBe(90);
+    expect(
+      resolveSecurityAuditLogRetentionDays({ SECURITY_AUDIT_LOG_RETENTION_DAYS: "abc" }),
+    ).toBe(30);
+    expect(
+      resolveSecurityAuditLogRetentionDays({ SECURITY_AUDIT_LOG_RETENTION_DAYS: "30days" }),
+    ).toBe(30);
+    expect(
+      resolveSecurityAuditLogRetentionDays({ SECURITY_AUDIT_LOG_RETENTION_DAYS: "0" }),
+    ).toBe(30);
   });
 });

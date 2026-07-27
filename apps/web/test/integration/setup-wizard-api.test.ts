@@ -513,6 +513,12 @@ describe("POST /api/admin/setup/complete", () => {
     const meRes = await app.request("/api/admin/me", { headers: { Cookie: superCookie } });
     const me = (await meRes.json()) as { setup_complete: boolean };
     expect(me.setup_complete).toBe(true);
+    expect(
+      await prisma.adminAuditLog.findFirst({
+        where: { action_type: "instance_setup_completed", actor_user_id: superId },
+        orderBy: { created_at: "desc" },
+      }),
+    ).not.toBeNull();
     await prisma.systemSettings.deleteMany({ where: { key: SETTING_SETUP_COMPLETE } });
   });
 

@@ -8,6 +8,7 @@ import {
   SESSION_STAGE,
   type SessionStage,
 } from "@admitto/auth";
+import { writeAdminAuditLog } from "@admitto/tickets";
 import {
   getChangePasswordPageSecurityHeaders,
   renderChangePasswordForm,
@@ -19,6 +20,9 @@ import {
 import { createAuthPageScriptNonce } from "../auth-page-security.js";
 import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
 import { ensureEnrollmentBackupCodesStashed } from "./ensure-backup-codes.js";
+import { resolveClientIp } from "../rate-limit/client-ip.js";
+import { resolveClientTimezone } from "../admin/admin-helpers.js";
+import { resolveInstanceOrganizationId } from "../admin/instance-org.js";
 
 function htmlResponse(c: Context, html: string, scriptNonce: string, status: 200 | 400 = 200): Response {
   for (const [name, value] of Object.entries(getChangePasswordPageSecurityHeaders(scriptNonce))) {
@@ -91,17 +95,29 @@ export async function handlePostChangePassword(c: Context, db: PrismaClient): Pr
 
   try {
     const hash = await hashPassword(password);
+    const orgId = await resolveInstanceOrganizationId(db);
     let promotedStage: SessionStage | null = null;
     await db.$transaction(async (tx) => {
       await tx.user.update({
         where: { id: gate.userId },
         data: { password_hash: hash, must_change_password: false },
       });
-      await revokeOtherSessions(tx, gate.userId, gate.sessionId);
+      const revokedCount = await revokeOtherSessions(tx, gate.userId, gate.sessionId);
       // Flag is now cleared, so promote the constrained session and resolve any
       // remaining gates (backup codes, then full) in one transaction (IAM-001).
       promotedStage = await promoteSessionToFull(tx, gate.sessionId, gate.userId);
       if (!promotedStage) throw new Error("session_promotion_failed");
+      // No `auth`/full session exists yet at this stage (IAM-001) - build the audit
+      // context from the partial-session gate instead of `adminAuditFromContext(c)`.
+      await writeAdminAuditLog(tx, {
+        organizationId: orgId,
+        actorUserId: gate.userId,
+        sessionId: gate.sessionId,
+        ip: resolveClientIp(c),
+        timezone: resolveClientTimezone(c) ?? undefined,
+        actionType: "account_password_changed",
+        metadata: { forced: true, sessionsRevoked: revokedCount },
+      });
     });
 
     if (promotedStage === SESSION_STAGE.BACKUP_CODES_REQUIRED) {

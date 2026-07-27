@@ -68,12 +68,40 @@ compliance record**:
 - Everything shown here is also written to the container's own standard output at the same time —
   that is where long-term retention or forwarding to an external log system happens (see
   [docs/SECURITY-CONTROLS.md](docs/SECURITY-CONTROLS.md)'s "Known scope limits" — Admitto has no
-  built-in SIEM or central log platform).
+  built-in SIEM or central log platform). **Exception:** login, MFA, logout, OIDC, and access-denied
+  events are also written durably to the database — see **Durable security audit trail** below —
+  so those ten event types survive a restart even without external log shipping.
 - It follows the same redaction rules described in **Logs** above: attendee-facing data is never
   shown in full, and a staff member's email is shown in full only for the specific accountability
   events listed there.
 
+## Durable security audit trail (`SecurityAuditLog`)
+
+A superadmin-only screen (Settings → **Logs & audit** → **Security audit log**, next to the
+existing admin **Audit log** panel) shows a durable, database-backed history of ten auth/security
+event types: login success/failure, MFA success/failure, MFA break-glass override, MFA recovery
+code use, logout, OIDC login success, OIDC superadmin-revoke-blocked, and access-denied. Unlike the
+System-logs live tail above, this table is not in-memory — it survives a container restart, so it
+is the reliable source for reconstructing login/MFA/OIDC history during an incident review.
+
+- **Why:** before this, the same ten events only reached stdout (durability depends entirely on
+  your own log shipping/rotation setup) and the 1000-entry live tail (wiped on every restart). This
+  closes that gap independently of container/log configuration (issue #473).
+- **Access:** superadmin-only, same gate as the central admin audit log below.
+- **Fields:** `event_type`, a resolved `user_id` when the subject is known (null for failed logins
+  against a possibly-nonexistent account — an intentionally uniform, enumeration-safe shape), `ip`,
+  a small `metadata` object (redacted email for failed logins, full email once authenticated,
+  matching the **Logs** redaction rule above), and `created_at`.
+- **Not covered, by design:** rate-limit-exceeded events (span many unrelated features — throttling
+  signal, not itself a discrete auth incident; better served by metrics/alerting) and admin settings
+  changes (already durable via the central `AdminAuditLog` below — no need to duplicate into both
+  tables).
+- **Retention — product-automated**, unlike the central admin audit log's operator-run retention
+  below: purged after **30 days** by default (`SECURITY_AUDIT_LOG_RETENTION_DAYS`), consistent with
+  this document's existing 30-day IP-address convention. See the Retention table below.
+
 ## Admin audit trail (`AttendeeActionLog`)
+
 
 Every admin action on an attendee (profile edit, check-in, pass revoke/restore, ticket resend,
 import, etc.) writes a row here, shown to admins on the attendee's own Activity log tab. For a
@@ -155,6 +183,7 @@ periods for different categories are intentional — not an inconsistency.
 |---|---|---|
 | Login sessions, trusted devices | Product — automatic | Best-effort purge at container startup when expired/revoked |
 | Email bodies (`rendered_html`, `rendered_subject`) | Product — automatic | Nullified **60 days** after terminal delivery (`EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`) |
+| Durable security audit trail (`SecurityAuditLog` — login/MFA/logout/OIDC/access-denied) | Product — automatic | Best-effort purge at container startup and daily thereafter; default **30 days** (`SECURITY_AUDIT_LOG_RETENTION_DAYS`) |
 | IP addresses in admin audit log and check-in history | Operator | **30 days or your corporate log retention policy** (whichever applies); product does not auto-purge |
 | System logs live tail (in-memory only) | Product — automatic | Not persisted anywhere by the product; the last 1000 entries are kept in server memory and gone on the next restart. Long-term retention, if you need it, is whatever your container log driver already does with stdout |
 | Event attendee list (PII) | Operator | Export via admin UI; erasure via **Attendees → attendee detail → More actions → Delete attendee** (single) or the Attendees list's row-selection bulk bar (multiple at once), or the `DELETE` API directly — see [DSAR-PROCEDURE.md](docs/DSAR-PROCEDURE.md) |

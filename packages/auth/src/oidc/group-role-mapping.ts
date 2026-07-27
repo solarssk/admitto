@@ -166,7 +166,7 @@ async function revokeOidcRoleGrant(
             if (await removesActiveInstanceSuperadmin(tx, grant, userId)) {
               const remaining = await countActiveInstanceSuperadmins(tx);
               if (remaining <= 1) {
-                logOidcSuperadminRevokeBlocked({ providerId, userId });
+                await logOidcSuperadminRevokeBlocked(tx, { providerId, userId });
                 return false;
               }
             }

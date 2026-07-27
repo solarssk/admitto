@@ -1,8 +1,66 @@
 import { createHash } from "node:crypto";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { redactEmail } from "@admitto/shared";
 import { recordSystemLog } from "@admitto/shared/system-log";
 
 export { redactEmail };
+
+type Db = PrismaClient | Prisma.TransactionClient;
+
+/** The 10 auth/security event types persisted to the durable `SecurityAuditLog` table (issue
+ * #473), in addition to the stdout/ring-buffer emit every event in this module already gets.
+ * Deliberately narrower than this module's full event surface: `auth.rate_limit.exceeded` (11
+ * call sites spanning login, MFA, OIDC, admin imports, check-in — an infra/throttle signal better
+ * served by metrics/alerting than a queryable per-row table) and `auth.settings.changed` (already
+ * durable via `AdminAuditLog`, see identity-api-routes.ts) stay stdout/ring-buffer only. */
+export type SecurityAuditEventType =
+  | "auth.login.success"
+  | "auth.login.fail"
+  | "auth.mfa.success"
+  | "auth.mfa.fail"
+  | "auth.mfa.break_glass"
+  | "auth.mfa.recovery_consumed"
+  | "auth.logout"
+  | "auth.oidc.success"
+  | "auth.oidc.superadmin_revoke_blocked"
+  | "auth.access.denied";
+
+/**
+ * Persist a security/auth event to the durable `SecurityAuditLog` table (issue #473). Never
+ * throws: unlike `writeAdminAuditLog` (a deliberate admin mutation, audited inside the same
+ * transaction it mutates in — a write failure there rolls back the change too), these calls are
+ * bolted onto existing login/MFA/CLI flows that must keep working even if the audit table is
+ * briefly unavailable, so a persistence failure here only logs an error to stdout.
+ */
+async function writeSecurityAuditLog(
+  db: Db,
+  fields: {
+    event_type: SecurityAuditEventType;
+    user_id?: string | null;
+    ip?: string | null;
+    metadata?: Record<string, unknown> | null;
+  },
+): Promise<void> {
+  try {
+    await db.securityAuditLog.create({
+      data: {
+        event_type: fields.event_type,
+        user_id: fields.user_id ?? null,
+        ip: fields.ip ?? null,
+        metadata: (fields.metadata ?? undefined) as Prisma.InputJsonValue | undefined,
+      },
+    });
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: "auth.security_audit_log.write_failed",
+        target_event: fields.event_type,
+        error: err instanceof Error ? err.message : String(err),
+        ts: new Date().toISOString(),
+      }),
+    );
+  }
+}
 
 /** Short SHA-256 fingerprint for IDs in audit logs (no raw UUIDs). */
 export function fingerprint(value: string): string {
@@ -76,42 +134,70 @@ export type RateLimitScope =
   | "checkin_stream"
   | "checkin_history";
 
-/** Emit `auth.login.success` as JSON to stdout (no password/token fields). Full email, not
- * redacted - staff/operator sign-in is exactly the internal accountability case this log
- * exists for, matching the already-unredacted actor identification in the per-org Audit log
- * (`AdminAuditLog`, resolved via `actor_email` in audit-routes.ts). */
-export function logLoginSuccess(ctx: LoginAuditContext): void {
+/** Emit `auth.login.success` as JSON to stdout (no password/token fields) and persist a durable
+ * `SecurityAuditLog` row. Full email, not redacted - staff/operator sign-in is exactly the
+ * internal accountability case this log exists for, matching the already-unredacted actor
+ * identification in the per-org Audit log (`AdminAuditLog`, resolved via `actor_email` in
+ * audit-routes.ts). */
+export async function logLoginSuccess(db: Db, ctx: LoginAuditContext & { userId: string }): Promise<void> {
   emitAuditEvent("auth.login.success", {
     email: ctx.email,
     ip: ctx.ip ?? null,
     userAgent: ctx.userAgent ?? null,
   });
+  await writeSecurityAuditLog(db, {
+    event_type: "auth.login.success",
+    user_id: ctx.userId,
+    ip: ctx.ip ?? null,
+    metadata: { email: ctx.email, userAgent: ctx.userAgent ?? null },
+  });
 }
 
-/** Emit `auth.login.fail` as JSON to stdout (uniform shape for enumeration-safe failures).
- * Redacted, unlike logLoginSuccess above: `ctx.email` here is unauthenticated form input - the
- * login attempt failed, so this could be any real address someone typed in, not a verified
- * staff identity (external review on PR #593). Full email on success is fine precisely because
- * it's post-authentication; that reasoning doesn't extend to a failed attempt. */
-export function logLoginFailure(ctx: LoginAuditContext): void {
+/** Emit `auth.login.fail` as JSON to stdout (uniform shape for enumeration-safe failures) and
+ * persist a durable `SecurityAuditLog` row (`user_id: null` - same enumeration-safety reasoning:
+ * never reveals whether the email belongs to a real user). Redacted, unlike logLoginSuccess above:
+ * `ctx.email` here is unauthenticated form input - the login attempt failed, so this could be any
+ * real address someone typed in, not a verified staff identity (external review on PR #593). Full
+ * email on success is fine precisely because it's post-authentication; that reasoning doesn't
+ * extend to a failed attempt. */
+export async function logLoginFailure(db: Db, ctx: LoginAuditContext): Promise<void> {
   emitAuditEvent("auth.login.fail", {
     email: redactEmail(ctx.email),
     ip: ctx.ip ?? null,
     userAgent: ctx.userAgent ?? null,
   });
+  await writeSecurityAuditLog(db, {
+    event_type: "auth.login.fail",
+    user_id: null,
+    ip: ctx.ip ?? null,
+    metadata: { email_redacted: redactEmail(ctx.email), userAgent: ctx.userAgent ?? null },
+  });
 }
 
-/** Emit `auth.mfa.break_glass` audit (no codes/secrets). */
-export function logMfaBreakGlass(ctx: { action: string; email: string; ip?: string }): void {
+/** Emit `auth.mfa.break_glass` audit (no codes/secrets) and persist a durable `SecurityAuditLog`
+ * row. `userId` is the target superadmin resolved by `verifyTargetUserPassword` at every call
+ * site; kept optional here since the stdout/ring-buffer emit above doesn't require it. */
+export async function logMfaBreakGlass(
+  db: Db,
+  ctx: { action: string; email: string; userId?: string; ip?: string },
+): Promise<void> {
   emitAuditEvent("auth.mfa.break_glass", {
     action: ctx.action,
     email: ctx.email,
     ip: ctx.ip ?? null,
   });
+  await writeSecurityAuditLog(db, {
+    event_type: "auth.mfa.break_glass",
+    user_id: ctx.userId ?? null,
+    ip: ctx.ip ?? null,
+    metadata: { action: ctx.action, email: ctx.email },
+  });
 }
 
-/** Emit `auth.mfa.success` after TOTP or recovery code verification. */
-export function logMfaSuccess(ctx: MfaAuditContext, method: MfaMethod): void {
+/** Emit `auth.mfa.success` after TOTP or recovery code verification and persist a durable
+ * `SecurityAuditLog` row (raw `user_id`, not the stdout fingerprint - a durable row needs to be
+ * genuinely queryable/joinable to the User table). */
+export async function logMfaSuccess(db: Db, ctx: MfaAuditContext, method: MfaMethod): Promise<void> {
   emitAuditEvent("auth.mfa.success", {
     user_fingerprint: fingerprint(ctx.userId),
     session_fingerprint: ctx.sessionId ? fingerprint(ctx.sessionId) : null,
@@ -119,34 +205,68 @@ export function logMfaSuccess(ctx: MfaAuditContext, method: MfaMethod): void {
     ip: ctx.ip ?? null,
     userAgent: ctx.userAgent ?? null,
   });
+  await writeSecurityAuditLog(db, {
+    event_type: "auth.mfa.success",
+    user_id: ctx.userId,
+    ip: ctx.ip ?? null,
+    metadata: { sessionId: ctx.sessionId ?? null, method, userAgent: ctx.userAgent ?? null },
+  });
 }
 
-/** Emit `auth.mfa.fail` after invalid MFA code (no code value). */
-export function logMfaFailure(ctx: MfaAuditContext): void {
+/** Emit `auth.mfa.fail` after invalid MFA code (no code value) and persist a durable
+ * `SecurityAuditLog` row (raw `user_id` - see logMfaSuccess). */
+export async function logMfaFailure(db: Db, ctx: MfaAuditContext): Promise<void> {
   emitAuditEvent("auth.mfa.fail", {
     user_fingerprint: fingerprint(ctx.userId),
     session_fingerprint: ctx.sessionId ? fingerprint(ctx.sessionId) : null,
     ip: ctx.ip ?? null,
     userAgent: ctx.userAgent ?? null,
   });
+  await writeSecurityAuditLog(db, {
+    event_type: "auth.mfa.fail",
+    user_id: ctx.userId,
+    ip: ctx.ip ?? null,
+    metadata: { sessionId: ctx.sessionId ?? null, userAgent: ctx.userAgent ?? null },
+  });
 }
 
-/** Emit `auth.mfa.recovery_consumed` when a backup or emergency code is used. */
-export function logMfaRecoveryConsumed(ctx: MfaAuditContext, method: "backup" | "emergency"): void {
+/** Emit `auth.mfa.recovery_consumed` when a backup or emergency code is used and persist a
+ * durable `SecurityAuditLog` row. */
+export async function logMfaRecoveryConsumed(
+  db: Db,
+  ctx: MfaAuditContext,
+  method: "backup" | "emergency",
+): Promise<void> {
   emitAuditEvent("auth.mfa.recovery_consumed", {
     user_fingerprint: fingerprint(ctx.userId),
     session_fingerprint: ctx.sessionId ? fingerprint(ctx.sessionId) : null,
     method,
     ip: ctx.ip ?? null,
   });
+  await writeSecurityAuditLog(db, {
+    event_type: "auth.mfa.recovery_consumed",
+    user_id: ctx.userId,
+    ip: ctx.ip ?? null,
+    metadata: { method, sessionId: ctx.sessionId ?? null },
+  });
 }
 
-/** Emit `auth.logout` when a session is revoked at sign-out. */
-export function logLogout(ctx: { userId: string; sessionId: string; ip?: string }): void {
+/** Emit `auth.logout` when a session is revoked at sign-out and persist a durable
+ * `SecurityAuditLog` row. */
+export async function logLogout(
+  db: Db,
+  ctx: { userId: string; sessionId: string; ip?: string },
+): Promise<void> {
   emitAuditEvent("auth.logout", {
     user_fingerprint: fingerprint(ctx.userId),
     session_fingerprint: fingerprint(ctx.sessionId),
     ip: ctx.ip ?? null,
+  });
+  await writeSecurityAuditLog(db, {
+    event_type: "auth.logout",
+    user_id: ctx.userId,
+    ip: ctx.ip ?? null,
+    metadata: { sessionId: ctx.sessionId },
   });
 }
 
@@ -163,46 +283,75 @@ export function logRateLimitExceeded(input: {
   });
 }
 
-/** Emit `auth.oidc.superadmin_revoke_blocked` when OIDC sync would remove the last active instance superadmin. */
-export function logOidcSuperadminRevokeBlocked(input: {
-  providerId: string;
-  userId: string;
-}): void {
+/** Emit `auth.oidc.superadmin_revoke_blocked` when OIDC sync would remove the last active
+ * instance superadmin, and persist a durable `SecurityAuditLog` row. */
+export async function logOidcSuperadminRevokeBlocked(
+  db: Db,
+  input: {
+    providerId: string;
+    userId: string;
+  },
+): Promise<void> {
   emitAuditEvent("auth.oidc.superadmin_revoke_blocked", {
     provider_id: input.providerId,
     user_fingerprint: fingerprint(input.userId),
   });
+  await writeSecurityAuditLog(db, {
+    event_type: "auth.oidc.superadmin_revoke_blocked",
+    user_id: input.userId,
+    metadata: { providerId: input.providerId },
+  });
 }
 
-/** Emit `auth.oidc.success` after OIDC callback creates a full session. */
-export function logOidcLoginSuccess(input: {
-  providerId: string;
-  userId: string;
-  subject?: string;
-  ip?: string;
-}): void {
+/** Emit `auth.oidc.success` after OIDC callback creates a full session, and persist a durable
+ * `SecurityAuditLog` row. */
+export async function logOidcLoginSuccess(
+  db: Db,
+  input: {
+    providerId: string;
+    userId: string;
+    subject?: string;
+    ip?: string;
+  },
+): Promise<void> {
   emitAuditEvent("auth.oidc.success", {
     provider_id: input.providerId,
     user_fingerprint: fingerprint(input.userId),
     subject_fingerprint: input.subject ? fingerprint(input.subject) : null,
     ip: input.ip ?? null,
   });
+  await writeSecurityAuditLog(db, {
+    event_type: "auth.oidc.success",
+    user_id: input.userId,
+    ip: input.ip ?? null,
+    metadata: { providerId: input.providerId, subject: input.subject ?? null },
+  });
 }
 
-/** Emit `auth.access.denied` for session-based 403 on protected admin paths. */
-export function logAccessDenied(input: {
-  path: string;
-  reason: string;
-  authSource?: string;
-  userId?: string;
-  ip?: string;
-}): void {
+/** Emit `auth.access.denied` for session-based 403 on protected admin paths, and persist a
+ * durable `SecurityAuditLog` row (`user_id: null` when the request had no resolvable session). */
+export async function logAccessDenied(
+  db: Db,
+  input: {
+    path: string;
+    reason: string;
+    authSource?: string;
+    userId?: string;
+    ip?: string;
+  },
+): Promise<void> {
   emitAuditEvent("auth.access.denied", {
     path: input.path,
     reason: input.reason,
     auth_source: input.authSource ?? null,
     user_fingerprint: input.userId ? fingerprint(input.userId) : null,
     ip: input.ip ?? null,
+  });
+  await writeSecurityAuditLog(db, {
+    event_type: "auth.access.denied",
+    user_id: input.userId ?? null,
+    ip: input.ip ?? null,
+    metadata: { path: input.path, reason: input.reason, authSource: input.authSource ?? null },
   });
 }
 

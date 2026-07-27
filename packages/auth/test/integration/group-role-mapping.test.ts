@@ -302,7 +302,7 @@ describe("OIDC instance superadmin revoke floor-guard", () => {
 
       const roles = await prisma.roleAssignment.findMany({ where: { user_id: FLOOR_USER_ID } });
       expect(roles.some((r) => r.role === "superadmin" && r.scope_id === null)).toBe(true);
-      expect(auditSpy).toHaveBeenCalledWith({
+      expect(auditSpy).toHaveBeenCalledWith(expect.anything(), {
         providerId: FLOOR_PROVIDER_ID,
         userId: FLOOR_USER_ID,
       });
