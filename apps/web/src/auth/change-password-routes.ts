@@ -8,7 +8,7 @@ import {
   SESSION_STAGE,
   type SessionStage,
 } from "@admitto/auth";
-import { writeAdminAuditLog } from "@admitto/tickets";
+import { writeAdminAuditLogBestEffort } from "@admitto/tickets";
 import {
   getChangePasswordPageSecurityHeaders,
   renderChangePasswordForm,
@@ -97,27 +97,32 @@ export async function handlePostChangePassword(c: Context, db: PrismaClient): Pr
     const hash = await hashPassword(password);
     const orgId = await resolveInstanceOrganizationId(db);
     let promotedStage: SessionStage | null = null;
+    let revokedCount = 0;
     await db.$transaction(async (tx) => {
       await tx.user.update({
         where: { id: gate.userId },
         data: { password_hash: hash, must_change_password: false },
       });
-      const revokedCount = await revokeOtherSessions(tx, gate.userId, gate.sessionId);
+      revokedCount = await revokeOtherSessions(tx, gate.userId, gate.sessionId);
       // Flag is now cleared, so promote the constrained session and resolve any
       // remaining gates (backup codes, then full) in one transaction (IAM-001).
       promotedStage = await promoteSessionToFull(tx, gate.sessionId, gate.userId);
       if (!promotedStage) throw new Error("session_promotion_failed");
-      // No `auth`/full session exists yet at this stage (IAM-001) - build the audit
-      // context from the partial-session gate instead of `adminAuditFromContext(c)`.
-      await writeAdminAuditLog(tx, {
-        organizationId: orgId,
-        actorUserId: gate.userId,
-        sessionId: gate.sessionId,
-        ip: resolveClientIp(c),
-        timezone: resolveClientTimezone(c) ?? undefined,
-        actionType: "account_password_changed",
-        metadata: { forced: true, sessionsRevoked: revokedCount },
-      });
+    });
+
+    // Audit write runs after the transaction commits, not inside it: the password
+    // change and session promotion have already succeeded at this point, and a
+    // transient audit-write failure must not roll that back (CodeRabbit PR #611).
+    // No `auth`/full session exists yet at this stage (IAM-001) - build the audit
+    // context from the partial-session gate instead of `adminAuditFromContext(c)`.
+    await writeAdminAuditLogBestEffort(db, {
+      organizationId: orgId,
+      actorUserId: gate.userId,
+      sessionId: gate.sessionId,
+      ip: resolveClientIp(c),
+      timezone: resolveClientTimezone(c) ?? undefined,
+      actionType: "account_password_changed",
+      metadata: { forced: true, sessionsRevoked: revokedCount },
     });
 
     if (promotedStage === SESSION_STAGE.BACKUP_CODES_REQUIRED) {

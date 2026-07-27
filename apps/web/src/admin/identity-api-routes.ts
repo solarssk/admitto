@@ -30,7 +30,7 @@ import {
   type IdentityProviderFormView,
   type IdentityProviderInput,
 } from "@admitto/auth";
-import { writeAdminAuditLog } from "@admitto/tickets";
+import { writeAdminAuditLogBestEffort } from "@admitto/tickets";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { adminAuditFromContext } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
@@ -264,7 +264,7 @@ export async function handleApiCreateProvider(c: Context, db: PrismaClient): Pro
   });
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
-  await writeAdminAuditLog(db, {
+  await writeAdminAuditLogBestEffort(db, {
     organizationId: orgId,
     actorUserId: actorUserId(c),
     sessionId: audit.sessionId,
@@ -311,7 +311,7 @@ export async function handleApiUpdateProvider(c: Context, db: PrismaClient): Pro
   });
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
-  await writeAdminAuditLog(db, {
+  await writeAdminAuditLogBestEffort(db, {
     organizationId: orgId,
     actorUserId: actorUserId(c),
     sessionId: audit.sessionId,
@@ -348,7 +348,7 @@ export async function handleApiToggleProvider(c: Context, db: PrismaClient): Pro
   });
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
-  await writeAdminAuditLog(db, {
+  await writeAdminAuditLogBestEffort(db, {
     organizationId: orgId,
     actorUserId: actorUserId(c),
     sessionId: audit.sessionId,
@@ -401,7 +401,7 @@ export async function handleApiDiscoverProvider(c: Context, db: PrismaClient): P
   });
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
-  await writeAdminAuditLog(db, {
+  await writeAdminAuditLogBestEffort(db, {
     organizationId: orgId,
     actorUserId: actorUserId(c),
     sessionId: audit.sessionId,
@@ -602,7 +602,7 @@ export async function handleApiUpdateCfAccess(c: Context, db: PrismaClient): Pro
   });
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
-  await writeAdminAuditLog(db, {
+  await writeAdminAuditLogBestEffort(db, {
     organizationId: orgId,
     actorUserId: actorUserId(c),
     sessionId: audit.sessionId,

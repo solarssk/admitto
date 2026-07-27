@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { canManageInstance } from "@admitto/auth";
-import { writeAdminAuditLog } from "@admitto/tickets";
+import { writeAdminAuditLogBestEffort } from "@admitto/tickets";
 import { BrandingUploadError, saveBrandingUpload, saveEventUpload } from "./branding-upload.js";
 import { assertEventManageAccess, adminAuditFromContext, requireEventId } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
@@ -35,7 +35,7 @@ export async function handlePostUpload(c: Context, db: PrismaClient): Promise<Re
     const result = await saveBrandingUpload(fileField, orgId);
     const realOrgId = await resolveInstanceOrganizationId(db);
     const audit = adminAuditFromContext(c);
-    await writeAdminAuditLog(db, {
+    await writeAdminAuditLogBestEffort(db, {
       organizationId: realOrgId,
       actorUserId: auth.userId,
       sessionId: audit.sessionId,
@@ -91,7 +91,7 @@ export async function handlePostEventBrandingUpload(c: Context, db: PrismaClient
     const result = await saveEventUpload(fileField, orgId, eventId);
     const realOrgId = await resolveInstanceOrganizationId(db);
     const audit = adminAuditFromContext(c);
-    await writeAdminAuditLog(db, {
+    await writeAdminAuditLogBestEffort(db, {
       organizationId: realOrgId,
       actorUserId: c.get("auth").userId,
       sessionId: audit.sessionId,

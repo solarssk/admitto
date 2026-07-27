@@ -90,8 +90,12 @@ is the reliable source for reconstructing login/MFA/OIDC history during an incid
 - **Access:** superadmin-only, same gate as the central admin audit log below.
 - **Fields:** `event_type`, a resolved `user_id` when the subject is known (null for failed logins
   against a possibly-nonexistent account — an intentionally uniform, enumeration-safe shape), `ip`,
-  a small `metadata` object (redacted email for failed logins, full email once authenticated,
-  matching the **Logs** redaction rule above), and `created_at`.
+  a small `metadata` object, and `created_at`. Email in `metadata` follows the same rule as
+  **Logs** above (redacted for failed logins, full once authenticated) *when the email identifies
+  the person being held accountable* — e.g. the user who just logged in or completed OIDC. MFA
+  break-glass events are the exception: `email`/`userId` there identify the operator's *target*
+  account, not the accountable actor, and `user_id` already resolves that target via the admin
+  panel's user join, so `metadata` omits the raw email there.
 - **Not covered, by design:** rate-limit-exceeded events (span many unrelated features — throttling
   signal, not itself a discrete auth incident; better served by metrics/alerting) and admin settings
   changes (already durable via the central `AdminAuditLog` below — no need to duplicate into both

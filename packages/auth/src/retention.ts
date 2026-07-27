@@ -117,13 +117,19 @@ export interface PurgeSecurityAuditLogResult {
 }
 
 const DEFAULT_SECURITY_AUDIT_LOG_RETENTION_DAYS = 30;
+// A misconfigured "keep forever" retentionDays (e.g. a fat-fingered extra zero) must not reach
+// the cutoff Date arithmetic below: Postgres's timestamp type rejects values far enough outside
+// its own range, so clamping the millisecond math afterward (as first tried) still crashes the
+// query - capping the input days here, to a generous 100 years, keeps the whole computation in
+// safely representable territory (CodeRabbit PR #611).
+const MAX_SECURITY_AUDIT_LOG_RETENTION_DAYS = 36_500;
 
-/** Clamp retention days to a positive integer, defaulting to 30. */
+/** Clamp retention days to a positive integer within a sane range, defaulting to 30. */
 function normalizeSecurityAuditLogRetentionDays(retentionDays: number | undefined): number {
   if (!Number.isFinite(retentionDays) || !retentionDays || retentionDays < 1) {
     return DEFAULT_SECURITY_AUDIT_LOG_RETENTION_DAYS;
   }
-  return Math.floor(retentionDays);
+  return Math.min(Math.floor(retentionDays), MAX_SECURITY_AUDIT_LOG_RETENTION_DAYS);
 }
 
 /** Delete stale SecurityAuditLog rows in bounded batches to avoid one large startup delete. */

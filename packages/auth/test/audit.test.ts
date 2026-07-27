@@ -241,7 +241,7 @@ describe("audit", () => {
   });
 
   describe("logMfaBreakGlass", () => {
-    it("persists the target user id when the caller resolved one", async () => {
+    it("persists the target user id when the caller resolved one, without the target's email", async () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       const create = vi.fn().mockResolvedValue({});
       await logMfaBreakGlass(fakeDb(create), {
@@ -255,7 +255,7 @@ describe("audit", () => {
           event_type: "auth.mfa.break_glass",
           user_id: "user-1",
           ip: "1.2.3.4",
-          metadata: { action: "reset_mfa", email: "admin@example.com" },
+          metadata: { action: "reset_mfa" },
         },
       });
     });

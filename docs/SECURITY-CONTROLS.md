@@ -253,7 +253,10 @@ Be explicit with auditors about what is **out of product scope** today:
   for ten auth/security event types (login, MFA, logout, OIDC, access-denied) — see **Durable
   security audit trail (`SecurityAuditLog`)** in [DATA-PROTECTION.md](../DATA-PROTECTION.md); this
   is a queryable incident-review trail, not a general-purpose log platform, and rate-limit/system
-  log signals stay ephemeral and operator-shipped as above.
+  log signals stay ephemeral and operator-shipped as above. That trail is also neither complete nor
+  permanent: persistence is best-effort (a write failure is logged but never blocks the underlying
+  auth action, so a transient DB hiccup can leave a gap) and rows are purged after the configured
+  retention window (30 days by default).
 - No HA / multi-region failover in the default compose topology.
 - No always-on scheduler for all long-term PII purge domains yet (retention **policy** documented;
   auth-state purge, email delivery snapshot nullification, and security audit log purge run

@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { canManageInstance, markSetupComplete } from "@admitto/auth";
-import { writeAdminAuditLog } from "@admitto/tickets";
+import { writeAdminAuditLogBestEffort } from "@admitto/tickets";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import { adminAuditFromContext } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
@@ -28,7 +28,7 @@ export async function handlePostSetupComplete(
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
-  await writeAdminAuditLog(db, {
+  await writeAdminAuditLogBestEffort(db, {
     organizationId: orgId,
     actorUserId: auth.userId,
     sessionId: audit.sessionId,

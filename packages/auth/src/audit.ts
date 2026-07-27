@@ -176,7 +176,11 @@ export async function logLoginFailure(db: Db, ctx: LoginAuditContext): Promise<v
 
 /** Emit `auth.mfa.break_glass` audit (no codes/secrets) and persist a durable `SecurityAuditLog`
  * row. `userId` is the target superadmin resolved by `verifyTargetUserPassword` at every call
- * site; kept optional here since the stdout/ring-buffer emit above doesn't require it. */
+ * site; kept optional here since the stdout/ring-buffer emit above doesn't require it. Unlike
+ * `logLoginSuccess`/`logOidcLoginSuccess` (where the email belongs to the person authenticating,
+ * i.e. the accountable actor), `email` here identifies the *target* of an operator-run CLI
+ * command - already resolvable via `user_id` in the admin panel's user join - so it's kept in the
+ * ephemeral stdout emit only, not durably persisted (CodeRabbit PR #611). */
 export async function logMfaBreakGlass(
   db: Db,
   ctx: { action: string; email: string; userId?: string; ip?: string },
@@ -190,7 +194,7 @@ export async function logMfaBreakGlass(
     event_type: "auth.mfa.break_glass",
     user_id: ctx.userId ?? null,
     ip: ctx.ip ?? null,
-    metadata: { action: ctx.action, email: ctx.email },
+    metadata: { action: ctx.action },
   });
 }
 
