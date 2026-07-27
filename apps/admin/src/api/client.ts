@@ -1638,9 +1638,9 @@ function securityAuditLogQuery(params: SecurityAuditLogFilterParams): URLSearchP
 }
 
 /** Load paginated durable auth/security event trail (superadmin, issue #473). Deliberately
- * narrower than fetchAuditLog: no CSV export, no organization scoping (the underlying table has
- * none). Same event-type/search/date-range filter shape as fetchAuditLog so the admin UI can
- * present both as one toggled view (see AuditLogPanel.tsx). */
+ * narrower than fetchAuditLog: no organization scoping (the underlying table has none). Same
+ * event-type/search/date-range filter shape as fetchAuditLog so the admin UI can present both as
+ * one toggled view (see AuditLogPanel.tsx). */
 export async function fetchSecurityAuditLog(
   params: SecurityAuditLogFilterParams & { page?: number; pageSize?: number },
   signal?: AbortSignal,
@@ -1655,6 +1655,24 @@ export async function fetchSecurityAuditLog(
     signal,
   });
   return parseJson<SecurityAuditLogResponse>(res);
+}
+
+/** Export the (filtered) security audit log as CSV — same filters as fetchSecurityAuditLog, but
+ * every matching row, not just the current page. Mirrors exportAuditLog, including the
+ * X-Client-Timezone header (this endpoint self-audits a write into the admin audit log, and that
+ * row should show the operator's local time too). */
+export async function exportSecurityAuditLog(
+  params: SecurityAuditLogFilterParams,
+  signal?: AbortSignal,
+): Promise<void> {
+  const q = securityAuditLogQuery(params);
+  q.set("format", "csv");
+  const res = await fetch(`/api/admin/security-audit-log/export?${q.toString()}`, {
+    credentials: "same-origin",
+    headers: { "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone },
+    signal,
+  });
+  await downloadExportResponse(res, "security-audit-log.csv");
 }
 
 export type SystemLogFilterParams = {

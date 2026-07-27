@@ -96,7 +96,7 @@ export function SettingsTabContent() {
         tab="logs"
         activeTab={tab}
         visited={visitedTabs}
-        label="Logs & audit"
+        label="Logs"
         className="settings-sections"
       >
         <AuditLogPanel />

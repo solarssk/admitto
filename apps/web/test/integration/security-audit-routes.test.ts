@@ -1,14 +1,16 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 
+const ORG_SECURITY = "org-security-audit-test";
 const EMAIL_SUPER = "security-audit-super@example.com";
 const EMAIL_ADMIN = "security-audit-admin@example.com";
 const EMAIL_TARGET = "security-audit-target@example.com";
@@ -22,12 +24,16 @@ let superId: string;
 let adminId: string;
 let targetId: string;
 let superCookie = "";
+let prevInstanceOrgId: string | undefined;
 
 /** Seed a superadmin, a non-superadmin admin, and a third "target" user referenced by some
- * SecurityAuditLog rows - no organization/event fixtures needed, this table has no org scoping
- * (see security-audit-routes.ts doc comment). */
+ * SecurityAuditLog rows - no organization/event fixtures needed for the table itself (no org
+ * scoping, see security-audit-routes.ts doc comment). A real Organization row is still seeded so
+ * the export route's self-audit write (resolveInstanceOrganizationId, via INSTANCE_ORG_ID set in
+ * beforeAll below) has something to resolve to, matching audit-routes.test.ts's own setup. */
 async function seed(client: PrismaClient) {
   await client.securityAuditLog.deleteMany({});
+  await client.adminAuditLog.deleteMany({ where: { organization_id: ORG_SECURITY } });
   await client.session.deleteMany({
     where: { user: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN, EMAIL_TARGET] } } },
   });
@@ -38,6 +44,11 @@ async function seed(client: PrismaClient) {
     where: { user: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN, EMAIL_TARGET] } } },
   });
   await client.user.deleteMany({ where: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN, EMAIL_TARGET] } } });
+  await client.organization.deleteMany({ where: { id: ORG_SECURITY } });
+
+  await client.organization.create({
+    data: { id: ORG_SECURITY, name: "Security Audit Test Org", slug: "security-audit-test" },
+  });
 
   const password_hash = await hashPassword(PASSWORD);
   const superUser = await client.user.create({ data: { email: EMAIL_SUPER, password_hash } });
@@ -57,7 +68,7 @@ async function seed(client: PrismaClient) {
       // cleanly from this route's own requireSuperadmin check, not the gate's
       // forbiddenNoAdminAccess (which would otherwise durably log a no_admin_access row and
       // pollute the SecurityAuditLog fixture counts asserted further down).
-      { user_id: adminId, role: "admin", scope_type: "organization", scope_id: "org-security-audit-test" },
+      { user_id: adminId, role: "admin", scope_type: "organization", scope_id: ORG_SECURITY },
     ],
   });
 
@@ -107,6 +118,9 @@ async function seed(client: PrismaClient) {
 }
 
 beforeAll(async () => {
+  prevInstanceOrgId = process.env.INSTANCE_ORG_ID;
+  process.env.INSTANCE_ORG_ID = ORG_SECURITY;
+
   prisma = new PrismaClient();
   await seed(prisma);
 
@@ -128,7 +142,13 @@ beforeAll(async () => {
   superCookie = `admitto_session=${superSession.rawToken}`;
 });
 
+beforeEach(() => {
+  resetSystemLogBufferForTest();
+});
+
 afterAll(async () => {
+  if (prevInstanceOrgId !== undefined) process.env.INSTANCE_ORG_ID = prevInstanceOrgId;
+  else delete process.env.INSTANCE_ORG_ID;
   await prisma?.$disconnect();
 });
 
@@ -324,5 +344,97 @@ describe("GET /api/admin/security-audit-log", () => {
       reason: "no_admin_access",
       path: "/api/admin/security-audit-log",
     });
+  });
+});
+
+describe("GET /api/admin/security-audit-log/export", () => {
+  it("returns 401 without auth", async () => {
+    const res = await app.request("/api/admin/security-audit-log/export?format=csv");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 403 for non-superadmin admin", async () => {
+    const adminSession = await createSession(prisma, { userId: adminId, stage: SESSION_STAGE.FULL });
+    const res = await app.request("/api/admin/security-audit-log/export?format=csv", {
+      headers: { Cookie: `admitto_session=${adminSession.rawToken}` },
+    });
+    expect(res.status).toBe(403);
+    await prisma.session.delete({ where: { id: adminSession.session.id } });
+  });
+
+  it("rejects a format other than csv", async () => {
+    const res = await app.request("/api/admin/security-audit-log/export?format=xlsx", {
+      headers: { Cookie: superCookie },
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns a filtered CSV and self-audits the export into the instance org's admin audit log", async () => {
+    const before = await app.request("/api/admin/audit-log?action_type=security_audit_log_exported", {
+      headers: { Cookie: superCookie },
+    });
+    const beforeTotal = ((await before.json()) as { total: number }).total;
+
+    const res = await app.request("/api/admin/security-audit-log/export?format=csv&event_type=auth.mfa.fail", {
+      headers: { Cookie: superCookie },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/csv");
+    expect(res.headers.get("Content-Disposition")).toMatch(
+      /^attachment; filename="security-audit-log-\d{4}-\d{2}-\d{2}\.csv"$/,
+    );
+
+    const buf = await res.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    expect(bytes[0]).toBe(0xef);
+    expect(bytes[1]).toBe(0xbb);
+    expect(bytes[2]).toBe(0xbf);
+
+    const csv = new TextDecoder("utf-8").decode(buf);
+    const lines = csv.replace(/^\uFEFF/, "").split("\r\n");
+    expect(lines[0]).toBe('"time","event","user","ip","details"');
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toContain('"auth.mfa.fail"');
+    expect(lines[1]).toContain(`"${EMAIL_TARGET}"`);
+    expect(lines[1]).toContain('"1.2.3.6"');
+
+    const after = await app.request("/api/admin/audit-log?action_type=security_audit_log_exported", {
+      headers: { Cookie: superCookie },
+    });
+    const afterTotal = ((await after.json()) as { total: number }).total;
+    expect(afterTotal).toBe(beforeTotal + 1);
+
+    const logs = querySystemLogs({ source: "admin" });
+    expect(logs.some((entry) => entry.message === "security_audit_log_exported")).toBe(true);
+  });
+
+  it("exports \"Unknown\" for a null user_id and an empty details cell for null metadata", async () => {
+    await prisma.securityAuditLog.create({
+      data: {
+        event_type: "auth.oidc.success",
+        user_id: null,
+        ip: "1.2.3.99",
+        metadata: undefined,
+        created_at: new Date("2026-08-01T00:00:00.000Z"),
+      },
+    });
+    try {
+      const res = await app.request(
+        "/api/admin/security-audit-log/export?format=csv&event_type=auth.oidc.success",
+        { headers: { Cookie: superCookie } },
+      );
+      expect(res.status).toBe(200);
+      const lines = (await res.text()).split("\r\n");
+      expect(lines).toHaveLength(2);
+      // Row is [time, event, user, ip, details]; time is a fresh, non-deterministic timestamp,
+      // so compare everything else positionally instead of the whole line.
+      const cells = lines[1]!.split(",");
+      expect(cells[1]).toBe('"auth.oidc.success"');
+      expect(cells[2]).toBe('"Unknown"');
+      expect(cells[3]).toBe('"1.2.3.99"');
+      expect(cells[4]).toBe('""');
+    } finally {
+      await prisma.securityAuditLog.deleteMany({ where: { event_type: "auth.oidc.success" } });
+    }
   });
 });

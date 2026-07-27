@@ -4070,10 +4070,12 @@ output.mail-field-hint {
   margin-bottom: var(--space-4);
 }
 
-/* Mobile only (see AuditLogPanel.tsx) - Clear filters/Export CSV move down from the Card
+/* Mobile only (see AuditLogPanel.tsx) - Clear filters/Export logs/Live move down from the Card
    header into this row. flex: 1 1 100% always claims a full row of its own (never shares
-   the line with Search/Filters above), with Export pushed to the right - the header-actions
-   convention these two follow everywhere else in the app. */
+   the line with Search/Filters above); justify-content: space-between spreads Clear filters
+   (first, leftmost), Export logs, and Live (last, rightmost, beside where the System/Audit/
+   Security selector sits on desktop) across the row - the header-actions convention these
+   three follow everywhere else in the app. */
 .audit-log-toolbar-actions {
   display: flex;
   justify-content: space-between;
@@ -4120,9 +4122,9 @@ output.mail-field-hint {
 }
 
 /* Below the same 768px breakpoint useIsDesktop() switches on (From/To move into Filters,
-   Clear filters/Export CSV move into this row too) - search's desktop-sized 18rem basis left
-   no room for Filters to share the line, forcing it onto its own row. Shrinking instead of
-   stretching lets Filters (and, wrapping below if needed, Clear filters/Export CSV) sit
+   Clear filters/Export logs/Live move into this row too) - search's desktop-sized 18rem basis
+   left no room for Filters to share the line, forcing it onto its own row. Shrinking instead of
+   stretching lets Filters (and, wrapping below if needed, Clear filters/Export logs/Live) sit
    alongside it on the same row. */
 @media (max-width: 767px) {
   .audit-log-filter--search {
@@ -4437,10 +4439,11 @@ output.mail-field-hint {
 }
 
 /* The header's shared .at-card__header is nowrap by design (a fixed, consistent height is
-   the standard across every Settings card) - but three actions (System/Audit, Clear filters,
-   Export CSV) alongside the "Audit log" title genuinely don't fit in one line under ~480px.
-   Wrapping to a second line there is the lesser evil vs. clipping a button off-screen; every
-   other Settings card only carries one or two header actions and isn't affected. */
+   the standard across every Settings card) - but the view-specific actions (Clear filters,
+   Export logs) plus Live and the System/Audit/Security selector, alongside the title, genuinely
+   don't fit in one line under ~480px. Wrapping to a second line there is the lesser evil vs.
+   clipping a button off-screen; every other Settings card only carries one or two header
+   actions and isn't affected. */
 @media (max-width: 480px) {
   .audit-log-header-card .at-card__header {
     flex-wrap: wrap;
@@ -4527,8 +4530,8 @@ output.mail-field-hint {
   cursor: not-allowed;
 }
 
-/* System logs panel (Logs & audit > System toggle) - toolbar sits at the same level as the
-   Audit log toolbar (no intro paragraph pushing it down, no labels above each field - "All
+/* System logs panel (Logs tab > System toggle) - toolbar sits at the same level as the
+   Audit logs toolbar (no intro paragraph pushing it down, no labels above each field - "All
    sources"/"All levels" already say what the select does). */
 .system-log-panel__toolbar {
   display: flex;
@@ -4567,7 +4570,7 @@ select.system-log-panel__field {
   flex: 0 1 auto;
 }
 
-/* Mobile only - Live/Download move down from the Card header into this row, mirroring
+/* Mobile only - Export logs/Live move down from the Card header into this row, mirroring
    .audit-log-toolbar-actions exactly. */
 .system-log-panel__toolbar-actions {
   display: flex;

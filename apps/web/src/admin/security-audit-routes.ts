@@ -1,6 +1,16 @@
 import type { Context } from "hono";
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { parseDateBound, positiveIntQuery, requireSuperadmin } from "./admin-helpers.js";
+import { EXPORT_ROW_CAP, quoteCsvCell, sanitizeCsvCell, writeAdminAuditLog } from "@admitto/tickets";
+import { emitSystemLog } from "@admitto/shared/system-log";
+import {
+  adminAuditFromContext,
+  parseDateBound,
+  positiveIntQuery,
+  requireSuperadmin,
+  resolveActorEmailForLog,
+} from "./admin-helpers.js";
+import { attachmentContentDisposition } from "./content-disposition.js";
+import { resolveInstanceOrganizationId } from "./instance-org.js";
 
 /** Free-text search over the resolved user (email/display name) - resolved to concrete ids up
  * front since it isn't directly queryable on SecurityAuditLog itself (requires a User join).
@@ -69,8 +79,8 @@ async function resolveUserMap(
 /**
  * GET /api/admin/security-audit-log — paginated durable auth/security event trail (issue #473:
  * logins, MFA, logout, OIDC, access-denied). Superadmin only. Deliberately narrower than
- * `/api/admin/audit-log`: no CSV export, no organization scoping (the underlying table has none -
- * these are instance-wide auth events, not per-org admin mutations). Supports the same
+ * `/api/admin/audit-log`: no organization scoping (the underlying table has none - these are
+ * instance-wide auth events, not per-org admin mutations). Supports the same
  * event-type/search/date-range filters as the audit log so the admin UI can present both as one
  * toggled view (see AuditLogPanel.tsx) with equivalent filtering.
  */
@@ -106,4 +116,94 @@ export async function handleGetSecurityAuditLog(c: Context, db: PrismaClient): P
   }));
 
   return c.json({ entries, total, page, pageSize });
+}
+
+const SECURITY_CSV_COLUMNS = ["time", "event", "user", "ip", "details"] as const;
+
+/** Build CSV text for a page of security audit log rows (CRLF, quoted, formula-injection-safe
+ * fields). Mirrors buildAuditLogCsv in audit-routes.ts, minus the "scope" column - these rows
+ * aren't event-scoped. */
+function buildSecurityAuditLogCsv(
+  rows: {
+    created_at: Date;
+    event_type: string;
+    user_id: string | null;
+    ip: string | null;
+    metadata: unknown;
+  }[],
+  userMap: Record<string, UserRow>,
+): string {
+  const header = SECURITY_CSV_COLUMNS.map((col) => quoteCsvCell(col)).join(",");
+  const csvRows = rows.map((r) => {
+    const user = r.user_id ? userMap[r.user_id] : undefined;
+    const meta = r.metadata as Record<string, unknown> | null;
+    return [
+      r.created_at.toISOString(),
+      sanitizeCsvCell(r.event_type),
+      sanitizeCsvCell(user?.email ?? r.user_id ?? "Unknown"),
+      sanitizeCsvCell(r.ip),
+      sanitizeCsvCell(meta ? JSON.stringify(meta) : ""),
+    ]
+      .map((cell) => quoteCsvCell(cell))
+      .join(",");
+  });
+  return [header, ...csvRows].join("\r\n");
+}
+
+/** GET /api/admin/security-audit-log/export — CSV of every row matching the current filters (not
+ * just the current page). Superadmin only. The underlying SecurityAuditLog table has no
+ * organization scoping (see handleGetSecurityAuditLog's doc comment), but the export action
+ * itself is still an admin action worth recording - self-audits into the instance org's
+ * AdminAuditLog, matching handleExportAuditLog in audit-routes.ts. */
+export async function handleExportSecurityAuditLog(c: Context, db: PrismaClient): Promise<Response> {
+  const denied = await requireSuperadmin(c, db);
+  if (denied) return denied;
+
+  if (c.req.query("format") !== "csv") {
+    return c.json({ error: "format must be csv" }, 400);
+  }
+
+  const where = await buildSecurityAuditLogWhere(c, db);
+
+  const total = await db.securityAuditLog.count({ where });
+  if (total > EXPORT_ROW_CAP) {
+    return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
+  }
+
+  // `take` is defense-in-depth, not the primary guard (the count() check above already rejects
+  // an over-cap export) - matches handleExportAuditLog's own belt-and-suspenders cap.
+  const rows = await db.securityAuditLog.findMany({ where, orderBy: { created_at: "desc" }, take: EXPORT_ROW_CAP });
+  const userMap = await resolveUserMap(db, rows);
+  const csv = buildSecurityAuditLogCsv(rows, userMap);
+
+  const orgId = await resolveInstanceOrganizationId(db, process.env);
+  const audit = adminAuditFromContext(c);
+  const actorUserId = audit.operator ?? c.get("auth").userId;
+  await writeAdminAuditLog(db, {
+    organizationId: orgId,
+    actorUserId,
+    sessionId: audit.sessionId,
+    ip: audit.ip,
+    timezone: audit.timezone,
+    actionType: "security_audit_log_exported",
+    metadata: { rowCount: rows.length },
+  });
+  emitSystemLog("admin", "info", "security_audit_log_exported", {
+    rowCount: rows.length,
+    actorUserId,
+    actorEmail: await resolveActorEmailForLog(db, actorUserId),
+    ip: audit.ip,
+  });
+
+  const timestamp = new Date().toISOString().slice(0, 10);
+  // BOM so Excel detects UTF-8 - matches handleExportAuditLog's own prefix for the same reason.
+  const bom = "\uFEFF";
+  return new Response(bom + csv, {
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": attachmentContentDisposition(`security-audit-log-${timestamp}.csv`),
+      "Cache-Control": "no-store",
+      "Pragma": "no-cache",
+    },
+  });
 }

@@ -12,7 +12,7 @@ import {
 } from "react";
 import { getCountryForTimezone } from "countries-and-timezones";
 import { Badge, Button, Card, EmptyState, Input, Tooltip, useToast, type BadgeVariant } from "@admitto/ui";
-import { exportAuditLog, fetchAdminEvents, fetchAuditLog, fetchSecurityAuditLog } from "../api/client.js";
+import { exportAuditLog, exportSecurityAuditLog, fetchAdminEvents, fetchAuditLog, fetchSecurityAuditLog } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AuditLogEntryDto, EventDto, SecurityAuditLogEntryDto } from "../api/types.js";
 import { DatePicker } from "../components/DatePicker.js";
@@ -70,6 +70,7 @@ const ACTION_LABELS: Record<string, string> = {
   retention_run: "Retention job run",
   role_granted: "Role granted",
   role_revoked: "Role revoked",
+  security_audit_log_exported: "Security log exported",
   session_revoked: "Session revoked",
   system_settings_updated: "System settings updated",
   user_created: "User created",
@@ -615,8 +616,8 @@ function AuditLogListContent({
 // two separately-erroring/loading cards on one tab read as confusing, not as three distinct
 // things). The backend stays two separate tables/endpoints/retention policies - only the UI is
 // unified. Kept as a parallel, not shared, set of labels/helpers/components below rather than
-// generalizing AuditLogTable etc.: the two rows shapes differ enough (no Scope column, no
-// actor-timezone, no CSV export here) that a shared abstraction would cost more than it saves.
+// generalizing AuditLogTable etc.: the two row shapes differ enough (no Scope column, no
+// actor-timezone) that a shared abstraction would cost more than it saves.
 
 /** Resolved display name for a row's subject - "Unknown" both when `user_id` is null
  * (enumeration-safe rows, e.g. failed logins) and when the user record itself has neither a
@@ -833,6 +834,7 @@ interface SecurityAuditViewProps {
   setPage: Dispatch<SetStateAction<number>>;
   clearFiltersButton: ReactNode;
   liveButton: ReactNode;
+  exportButton: ReactNode;
   pollDegraded: boolean;
   onRetryNow: () => void;
   listContent: ReactNode;
@@ -847,8 +849,7 @@ interface SecurityAuditViewProps {
 }
 
 /** The security-side toolbar + list + footer - mirrors AuditLogView exactly (search, date range,
- * one filter dropdown instead of two, Clear filters, pagination), minus the Export CSV button
- * (not requested for this view - see CHANGELOG). */
+ * one filter dropdown instead of two, Clear filters, Export logs, pagination). */
 function SecurityAuditView({
   isDesktop,
   rootRef,
@@ -863,6 +864,7 @@ function SecurityAuditView({
   setPage,
   clearFiltersButton,
   liveButton,
+  exportButton,
   pollDegraded,
   onRetryNow,
   listContent,
@@ -941,8 +943,9 @@ function SecurityAuditView({
         </FiltersMenu>
         {!isDesktop && (
           <div className="audit-log-toolbar-actions">
-            {liveButton}
             {clearFiltersButton}
+            {exportButton}
+            {liveButton}
           </div>
         )}
       </div>
@@ -1162,6 +1165,24 @@ function useSecurityAuditLog() {
     [filters.eventType, filters.search, filters.start, filters.end],
   );
 
+  const [exporting, setExporting] = useState(false);
+  const { addToast } = useToast();
+  const handleExport = useCallback(async () => {
+    setExporting(true);
+    try {
+      await exportSecurityAuditLog({
+        eventType: filters.eventType || undefined,
+        search: filters.search || undefined,
+        start: filters.start ? utcDayStartIso(filters.start) : undefined,
+        end: filters.end ? utcDayEndIso(filters.end) : undefined,
+      });
+    } catch (err) {
+      addToast(operatorApiErrorMessage(err, "Failed to export security audit log."), "error");
+    } finally {
+      setExporting(false);
+    }
+  }, [filters.eventType, filters.search, filters.start, filters.end, addToast]);
+
   return {
     entries,
     total,
@@ -1185,6 +1206,8 @@ function useSecurityAuditLog() {
     totalPages,
     hasActiveFilters,
     clearFilters,
+    exporting,
+    handleExport,
     reload: load,
   };
 }
@@ -1344,9 +1367,9 @@ function AuditLogView({
         </FiltersMenu>
         {!isDesktop && (
           <div className="audit-log-toolbar-actions">
-            {liveButton}
             {clearFiltersButton}
             {exportButton}
+            {liveButton}
           </div>
         )}
       </div>
@@ -1687,7 +1710,7 @@ export function AuditLogPanel() {
   );
   const exportButton = (
     <Button type="button" variant="secondary" size="sm" disabled={exporting} onClick={() => void handleExport()}>
-      {exporting ? "Exporting…" : "Export CSV"}
+      {exporting ? "Exporting…" : "Export logs"}
     </Button>
   );
   const securityClearFiltersButton = (
@@ -1716,6 +1739,17 @@ export function AuditLogPanel() {
       onClick={() => security.setLive((v) => !v)}
     >
       {security.live ? "Live" : "Paused"}
+    </Button>
+  );
+  const securityExportButton = (
+    <Button
+      type="button"
+      variant="secondary"
+      size="sm"
+      disabled={security.exporting}
+      onClick={() => void security.handleExport()}
+    >
+      {security.exporting ? "Exporting…" : "Export logs"}
     </Button>
   );
 
@@ -1811,36 +1845,40 @@ export function AuditLogPanel() {
       disabled={!systemHasEntries}
       onClick={() => systemLogsRef.current?.download()}
     >
-      Download .log
+      Export logs
     </Button>
   );
 
   return (
     <Card
-      title={view === "system" ? "System logs" : view === "audit" ? "Audit log" : "Security audit log"}
+      title={view === "system" ? "System logs" : view === "audit" ? "Audit logs" : "Security logs"}
       className="audit-log-header-card"
       actions={
         <>
           {/* On mobile these move down into the toolbar instead (next to Filters) - a
               narrow card header can only fit the title plus this always-present toggle before
-              wrapping onto a second line. */}
+              wrapping onto a second line. Order (both here and in each view's own mobile
+              toolbar) is fixed across all three views: Clear filters (if the view has one)
+              first, then Export logs, then Live last so it sits directly beside the
+              System/Audit/Security selector it's paused/resumed relative to. */}
           {isDesktop && view === "audit" && (
             <>
-              {auditLiveButton}
               {clearFiltersButton}
               {exportButton}
+              {auditLiveButton}
             </>
           )}
           {isDesktop && view === "system" && (
             <>
-              {liveButton}
               {downloadButton}
+              {liveButton}
             </>
           )}
           {isDesktop && view === "security" && (
             <>
-              {securityLiveButton}
               {securityClearFiltersButton}
+              {securityExportButton}
+              {securityLiveButton}
             </>
           )}
           {/* Always last: with the actions row right-anchored, a trailing item's own edge
@@ -1917,6 +1955,7 @@ export function AuditLogPanel() {
           setPage={security.setPage}
           clearFiltersButton={securityClearFiltersButton}
           liveButton={securityLiveButton}
+          exportButton={securityExportButton}
           pollDegraded={security.live && security.pollDegraded}
           onRetryNow={() => void security.reload()}
           listContent={securityListContent}

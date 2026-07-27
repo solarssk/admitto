@@ -120,7 +120,7 @@ interface SystemLogsPanelProps {
   isDesktop: boolean;
   /** Rendered inline in this panel's own toolbar on mobile, where AuditLogPanel's Card header
    * only has room for the title and the System/Audit toggle - matches how AuditLogView's own
-   * Clear filters/Export CSV move down the same way. Undefined on desktop, where AuditLogPanel
+   * Clear filters/Export logs move down the same way. Undefined on desktop, where AuditLogPanel
    * renders them in the Card header instead. */
   liveButton?: ReactNode;
   downloadButton?: ReactNode;
@@ -400,8 +400,8 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
         )}
         {!isDesktop && (liveButton || downloadButton) && (
           <div className="system-log-panel__toolbar-actions">
-            {liveButton}
             {downloadButton}
+            {liveButton}
           </div>
         )}
       </div>

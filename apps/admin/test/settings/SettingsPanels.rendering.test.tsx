@@ -13,6 +13,7 @@ import type {
 import {
   ApiError,
   exportAuditLog,
+  exportSecurityAuditLog,
   fetchAdminEvents,
   fetchAuditLog,
   fetchSecurityAuditLog,
@@ -32,6 +33,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchAuditLog: vi.fn(),
     fetchSecurityAuditLog: vi.fn(),
     exportAuditLog: vi.fn(),
+    exportSecurityAuditLog: vi.fn(),
     fetchSessions: vi.fn(),
     fetchSystemLogs: vi.fn(),
   };
@@ -940,7 +942,7 @@ describe("AuditLogPanel rendering", () => {
     await screen.findByText("No audit log entries yet");
 
     // With no filters active yet, every optional export param is omitted.
-    fireEvent.click(screen.getByRole("button", { name: "Export CSV" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export logs" }));
     await waitFor(() =>
       expect(exportAuditLog).toHaveBeenNthCalledWith(1, {
         actionType: undefined,
@@ -960,12 +962,12 @@ describe("AuditLogPanel rendering", () => {
       expect.anything(),
     ));
 
-    fireEvent.click(screen.getByRole("button", { name: "Export CSV" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export logs" }));
     await waitFor(() => expect(exportAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({ actionType: "event_created" }),
     ));
 
-    fireEvent.click(await screen.findByRole("button", { name: "Export CSV" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Export logs" }));
     expect(await screen.findByText(/Failed to export audit log/)).toBeTruthy();
   });
 
@@ -1004,7 +1006,7 @@ describe("AuditLogPanel rendering", () => {
     fireEvent.click(screen.getByRole("radio", { name: "Audit" }));
 
     expect(await screen.findByText("No audit log entries yet")).toBeTruthy();
-    expect(screen.getByText("Audit log")).toBeTruthy();
+    expect(screen.getByText("Audit logs")).toBeTruthy();
   });
 
   it("changes rows per page and reloads from page 1", async () => {
@@ -1345,6 +1347,29 @@ describe("AuditLogPanel Security view rendering", () => {
     expect(await screen.findByText("No matches")).toBeTruthy();
   });
 
+  it("exports the current filters as CSV and toasts on failure", async () => {
+    vi.mocked(exportSecurityAuditLog)
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+
+    renderSecurityPanel();
+    await screen.findByText("No security events yet");
+
+    // With no filters active yet, every optional export param is omitted.
+    fireEvent.click(screen.getByRole("button", { name: "Export logs" }));
+    await waitFor(() =>
+      expect(exportSecurityAuditLog).toHaveBeenNthCalledWith(1, {
+        eventType: undefined,
+        search: undefined,
+        start: undefined,
+        end: undefined,
+      }),
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Export logs" }));
+    expect(await screen.findByText(/Failed to export security audit log/)).toBeTruthy();
+  });
+
   it("does not flash the loading skeleton when a filter refetch still resolves to zero results", async () => {
     // Mirrors the Audit-view regression test above - same isInitialLoad bug, same fix, in the
     // Security view's own hook. This edge case was the one the user actually hit: the Security
@@ -1587,7 +1612,7 @@ describe("SystemLogsPanel rendering", () => {
     ).toBeTruthy();
   });
 
-  it("hosts Live/Download in the Card header, next to the System/Audit toggle", async () => {
+  it("hosts Export logs/Live in the Card header, next to the System/Audit/Security toggle", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
     vi.mocked(fetchSystemLogs).mockResolvedValueOnce({
       entries: [{ id: 1, ts: "2026-01-01T12:00:00.000Z", level: "info", source: "api", message: "http_request" }],
@@ -1602,7 +1627,7 @@ describe("SystemLogsPanel rendering", () => {
     // onHasEntriesChange fires from a useEffect one tick after the entries themselves render,
     // so the header button's disabled state can lag the text by a render - wait for it rather
     // than asserting synchronously.
-    await waitFor(() => expect(screen.getByRole("button", { name: "Download .log" })).property("disabled", false));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Export logs" })).property("disabled", false));
 
     const liveButton = screen.getByRole("button", { name: "Live" });
     fireEvent.click(liveButton);
@@ -1612,7 +1637,7 @@ describe("SystemLogsPanel rendering", () => {
     expect(screen.getByRole("button", { name: "Live" })).toBeTruthy();
   });
 
-  it("disables the header Download button until there's something to download", async () => {
+  it("disables the header Export logs button until there's something to download", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
     vi.mocked(fetchSystemLogs).mockResolvedValue(emptySystemLog());
 
@@ -1621,7 +1646,7 @@ describe("SystemLogsPanel rendering", () => {
     openSystemLogsView();
     await screen.findByText("No log activity yet");
 
-    expect(screen.getByRole("button", { name: "Download .log" })).property("disabled", true);
+    expect(screen.getByRole("button", { name: "Export logs" })).property("disabled", true);
   });
 
   it("refetches when the source filter changes", async () => {
@@ -1712,7 +1737,7 @@ describe("SystemLogsPanel rendering", () => {
     }
   });
 
-  it("downloads the visible lines as a .log file via the header Download button", async () => {
+  it("downloads the visible lines as a .log file via the header Export logs button", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
     vi.mocked(fetchSystemLogs).mockResolvedValueOnce({
       entries: [{ id: 1, ts: "2026-01-01T12:00:00.000Z", level: "info", source: "api", message: "http_request" }],
@@ -1727,8 +1752,8 @@ describe("SystemLogsPanel rendering", () => {
       openSystemLogsView();
       await screen.findByText("http_request");
 
-      await waitFor(() => expect(screen.getByRole("button", { name: "Download .log" })).property("disabled", false));
-      fireEvent.click(screen.getByRole("button", { name: "Download .log" }));
+      await waitFor(() => expect(screen.getByRole("button", { name: "Export logs" })).property("disabled", false));
+      fireEvent.click(screen.getByRole("button", { name: "Export logs" }));
 
       expect(clickSpy).toHaveBeenCalledOnce();
     } finally {
@@ -1891,7 +1916,7 @@ describe("SystemLogsPanel rendering", () => {
     expect(screen.getByRole("combobox", { name: "Level" })).toBeTruthy();
   });
 
-  it("moves Live/Download into the toolbar on mobile instead of the Card header", async () => {
+  it("moves Export logs/Live into the toolbar on mobile instead of the Card header", async () => {
     mockMatchMedia(false);
     vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
     vi.mocked(fetchSystemLogs).mockResolvedValue(emptySystemLog());
@@ -1900,7 +1925,7 @@ describe("SystemLogsPanel rendering", () => {
     await screen.findByText("No log activity yet");
 
     expect(screen.getByRole("button", { name: "Live" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Download .log" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Export logs" })).toBeTruthy();
   });
 });
 
