@@ -421,67 +421,89 @@ function DetailsCell({ metadata }: Readonly<{ metadata: Record<string, unknown> 
   );
 }
 
-interface AuditLogRowsProps {
-  entries: AuditLogEntryDto[];
-  loading: boolean;
-  eventTitleById: Map<string, string>;
-  onCopyRow: (entry: AuditLogEntryDto) => Promise<void>;
+interface LogColumn<T> {
+  key: string;
+  header: ReactNode;
+  className?: string;
+  title?: (entry: T) => string | undefined;
+  cell: (entry: T) => ReactNode;
 }
 
-/** Desktop row list - extracted from AuditLogPanel to keep that component's own cognitive
- * complexity within the shared lint budget; pure presentational, no state of its own. */
-function AuditLogTable({ entries, loading, eventTitleById, onCopyRow }: Readonly<AuditLogRowsProps>) {
+/** Shared Details-popover + row-copy-button combo - identical on every row of every view
+ * (desktop table or mobile card, Audit or Security). */
+function LogDetailsAction({
+  metadata,
+  onCopy,
+}: Readonly<{ metadata: Record<string, unknown> | null; onCopy: () => void }>) {
+  return (
+    <div className="audit-log-details-cell">
+      <DetailsCell metadata={metadata} />
+      <button type="button" className="audit-log-row-copy" aria-label="Copy row" onClick={onCopy}>
+        <i className="ti ti-copy" aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
+/** Reserves the skeleton's own height from the very first paint - navigating here from a
+ * separate route (e.g. Identity, which unmounts this whole panel) re-triggers a genuine first
+ * load, and rendering nothing at all while entries === [] let the card visibly collapse then
+ * snap back once data arrived, reading as a flicker even on a fast fetch. A fetch that resolves
+ * near-instantly (localhost, a warm cache) still shouldn't flash a visible skeleton on and off -
+ * `visibility` (not conditional rendering) keeps the space reserved throughout while only
+ * revealing it once loading has genuinely taken a moment. */
+function LogSkeleton({ label, visible }: Readonly<{ label: string; visible: boolean }>) {
+  return (
+    <div
+      className="audit-log-skeleton"
+      aria-busy={visible || undefined}
+      aria-label={label}
+      style={{ visibility: visible ? "visible" : "hidden" }}
+    >
+      {Array.from({ length: 5 }, (_, i) => (
+        <div key={i} className="audit-log-skeleton__row" />
+      ))}
+    </div>
+  );
+}
+
+interface LogTableProps<T> {
+  entries: T[];
+  loading: boolean;
+  columns: LogColumn<T>[];
+  rowKey: (entry: T) => string;
+  metadataOf: (entry: T) => Record<string, unknown> | null;
+  onCopyRow: (entry: T) => Promise<void>;
+}
+
+/** Desktop row list, driven by a column config - shared by Audit and Security. Their row shapes
+ * differ enough (no Scope column on Security, a different Time/User cell) that each view still
+ * supplies its own column list, but the table/row/details-cell scaffolding itself no longer
+ * exists twice. */
+function LogTable<T>({ entries, loading, columns, rowKey, metadataOf, onCopyRow }: Readonly<LogTableProps<T>>) {
   return (
     <div className={`sessions-table-wrap${loading ? " audit-log-table-wrap--loading" : ""}`}>
       <table className="table audit-log-table">
         <thead>
           <tr>
-            <th scope="col">
-              <Tooltip content={TIME_HINT} className="audit-log-scope-header">
-                Time <i className="ti ti-info-circle" aria-hidden="true" />
-              </Tooltip>
-            </th>
-            <th scope="col">Action</th>
-            <th scope="col">
-              <Tooltip content={SCOPE_HINT} className="audit-log-scope-header">
-                Scope <i className="ti ti-info-circle" aria-hidden="true" />
-              </Tooltip>
-            </th>
-            <th scope="col">Actor</th>
-            <th scope="col">IP</th>
+            {columns.map((col) => (
+              <th key={col.key} scope="col">
+                {col.header}
+              </th>
+            ))}
             <th scope="col">Details</th>
           </tr>
         </thead>
         <tbody>
           {entries.map((entry) => (
-            <tr key={entry.id}>
-              <td className="audit-log-time">
-                {formatAuditPrimaryTime(entry.created_at)} UTC
-                {actorLocalTime(entry) && <div className="sessions-subdued">{actorLocalTime(entry)}</div>}
-              </td>
+            <tr key={rowKey(entry)}>
+              {columns.map((col) => (
+                <td key={col.key} className={col.className} title={col.title?.(entry)}>
+                  {col.cell(entry)}
+                </td>
+              ))}
               <td>
-                <Badge variant={actionTone(entry.action_type)}>{actionLabel(entry.action_type)}</Badge>
-              </td>
-              <td>{scopeLabel(entry, eventTitleById)}</td>
-              <td title={actorTitle(entry)}>
-                {actorDisplay(entry)}
-                {entry.actor_display_name && entry.actor_email && (
-                  <div className="sessions-subdued">{entry.actor_email}</div>
-                )}
-              </td>
-              <td>{entry.ip ?? "—"}</td>
-              <td>
-                <div className="audit-log-details-cell">
-                  <DetailsCell metadata={entry.metadata} />
-                  <button
-                    type="button"
-                    className="audit-log-row-copy"
-                    aria-label="Copy row"
-                    onClick={() => void onCopyRow(entry)}
-                  >
-                    <i className="ti ti-copy" aria-hidden="true" />
-                  </button>
-                </div>
+                <LogDetailsAction metadata={metadataOf(entry)} onCopy={() => void onCopyRow(entry)} />
               </td>
             </tr>
           ))}
@@ -491,46 +513,41 @@ function AuditLogTable({ entries, loading, eventTitleById, onCopyRow }: Readonly
   );
 }
 
-/** Mobile one-card-per-entry list - extracted alongside AuditLogTable for the same reason;
- * mirrors AttendeesTable's/ReportsPage's own desktop-table/mobile-card split. */
-function AuditLogCards({ entries, loading, eventTitleById, onCopyRow }: Readonly<AuditLogRowsProps>) {
+interface LogCardsProps<T> {
+  entries: T[];
+  loading: boolean;
+  rowKey: (entry: T) => string;
+  renderTop: (entry: T) => ReactNode;
+  renderMeta: (entry: T) => ReactNode;
+  renderFootLeft: (entry: T) => ReactNode;
+  metadataOf: (entry: T) => Record<string, unknown> | null;
+  onCopyRow: (entry: T) => Promise<void>;
+}
+
+/** Mobile one-card-per-entry list - mirrors AttendeesTable's/ReportsPage's own desktop-table/
+ * mobile-card split. Shares the wrapper/top/meta/foot scaffolding and the details-cell/copy
+ * affordance with both views; each supplies its own top/meta content since the two rows' visual
+ * grouping (which fields sit together) differs enough that forcing them through the same
+ * column list as LogTable would read worse than just naming the two render slots. */
+function LogCards<T>({
+  entries,
+  loading,
+  rowKey,
+  renderTop,
+  renderMeta,
+  renderFootLeft,
+  metadataOf,
+  onCopyRow,
+}: Readonly<LogCardsProps<T>>) {
   return (
     <div className={`audit-log-cards${loading ? " audit-log-table-wrap--loading" : ""}`}>
       {entries.map((entry) => (
-        <div key={entry.id} className="audit-log-card">
-          <div className="audit-log-card__top">
-            <Badge variant={actionTone(entry.action_type)}>{actionLabel(entry.action_type)}</Badge>
-            <div className="audit-log-time audit-log-card__time">
-              {formatAuditPrimaryTime(entry.created_at)} UTC
-              {actorLocalTime(entry) && <div className="sessions-subdued">{actorLocalTime(entry)}</div>}
-            </div>
-          </div>
-          <div className="audit-log-card__meta">
-            <span className="audit-log-card__meta-item">
-              <i className="ti ti-calendar-event" aria-hidden="true" />
-              {scopeLabel(entry, eventTitleById)}
-            </span>
-            <span className="audit-log-card__meta-item" title={actorTitle(entry)}>
-              <i className="ti ti-user" aria-hidden="true" />
-              {actorDisplay(entry)}
-            </span>
-            {entry.actor_display_name && entry.actor_email && (
-              <div className="sessions-subdued audit-log-card__email">{entry.actor_email}</div>
-            )}
-          </div>
+        <div key={rowKey(entry)} className="audit-log-card">
+          <div className="audit-log-card__top">{renderTop(entry)}</div>
+          <div className="audit-log-card__meta">{renderMeta(entry)}</div>
           <div className="audit-log-card__foot">
-            <span>{entry.ip ?? "—"}</span>
-            <div className="audit-log-details-cell">
-              <DetailsCell metadata={entry.metadata} />
-              <button
-                type="button"
-                className="audit-log-row-copy"
-                aria-label="Copy row"
-                onClick={() => void onCopyRow(entry)}
-              >
-                <i className="ti ti-copy" aria-hidden="true" />
-              </button>
-            </div>
+            <span>{renderFootLeft(entry)}</span>
+            <LogDetailsAction metadata={metadataOf(entry)} onCopy={() => void onCopyRow(entry)} />
           </div>
         </div>
       ))}
@@ -538,57 +555,51 @@ function AuditLogCards({ entries, loading, eventTitleById, onCopyRow }: Readonly
   );
 }
 
-interface AuditLogListContentProps extends AuditLogRowsProps {
+interface LogListContentProps {
   isInitialLoad: boolean;
   showLoadingSkeleton: boolean;
+  skeletonLabel: string;
   error: string | null;
+  errorTitle: string;
   onRetry: () => void;
+  entriesCount: number;
   total: number;
   hasActiveFilters: boolean;
+  emptyIcon: ReactNode;
+  emptyTitle: string;
+  emptyDescription: string;
   isDesktop: boolean;
+  renderTable: () => ReactNode;
+  renderCards: () => ReactNode;
 }
 
-/** Picks the loading skeleton / error / empty-state / table-or-cards branch - extracted
- * alongside AuditLogTable/AuditLogCards for the same cognitive-complexity reason; this whole
- * if-chain used to live directly inside AuditLogPanel. */
-function AuditLogListContent({
+/** Picks the loading skeleton / error / empty-state / table-or-cards branch - shared by both
+ * views; this whole if-chain used to live directly inside AuditLogPanel, then got duplicated
+ * once for Security. Only the copy/icon and which table-or-cards to render differ per view. */
+function LogListContent({
   isInitialLoad,
   showLoadingSkeleton,
+  skeletonLabel,
   error,
+  errorTitle,
   onRetry,
-  entries,
+  entriesCount,
   total,
   hasActiveFilters,
+  emptyIcon,
+  emptyTitle,
+  emptyDescription,
   isDesktop,
-  loading,
-  eventTitleById,
-  onCopyRow,
-}: Readonly<AuditLogListContentProps>) {
+  renderTable,
+  renderCards,
+}: Readonly<LogListContentProps>) {
   if (isInitialLoad) {
-    // Reserve the skeleton's own height from the very first paint - navigating here from a
-    // separate route (e.g. Identity, which unmounts this whole panel) re-triggers a genuine
-    // first load, and rendering nothing at all while entries === [] let the card visibly
-    // collapse then snap back once data arrived, reading as a flicker even on a fast fetch.
-    // A fetch that resolves near-instantly (localhost, a warm cache) still shouldn't flash a
-    // visible skeleton on and off - `visibility` (not conditional rendering) keeps the space
-    // reserved throughout while only revealing it once loading has genuinely taken a moment.
-    return (
-      <div
-        className="audit-log-skeleton"
-        aria-busy={showLoadingSkeleton || undefined}
-        aria-label="Loading audit log"
-        style={{ visibility: showLoadingSkeleton ? "visible" : "hidden" }}
-      >
-        {Array.from({ length: 5 }, (_, i) => (
-          <div key={i} className="audit-log-skeleton__row" />
-        ))}
-      </div>
-    );
+    return <LogSkeleton label={skeletonLabel} visible={showLoadingSkeleton} />;
   }
   if (error) {
     return (
       <EmptyState
-        title="Could not load audit log"
+        title={errorTitle}
         description={error}
         action={
           <Button type="button" variant="secondary" onClick={onRetry}>
@@ -598,10 +609,10 @@ function AuditLogListContent({
       />
     );
   }
-  if (entries.length === 0 && total > 0) {
+  if (entriesCount === 0 && total > 0) {
     return <EmptyState title="No entries on this page." description="Try Previous, or adjust the filters." />;
   }
-  if (entries.length === 0 && hasActiveFilters) {
+  if (entriesCount === 0 && hasActiveFilters) {
     return (
       <EmptyState
         icon={<i className="ti ti-filter-off" aria-hidden="true" />}
@@ -610,24 +621,99 @@ function AuditLogListContent({
       />
     );
   }
-  if (entries.length === 0) {
-    return (
-      <EmptyState
-        icon={<i className="ti ti-history" aria-hidden="true" />}
-        title="No audit log entries yet"
-        description="Actions taken across Settings will appear here."
-      />
-    );
-  }
-  if (isDesktop) {
-    return (
-      <AuditLogTable entries={entries} loading={loading} eventTitleById={eventTitleById} onCopyRow={onCopyRow} />
-    );
+  if (entriesCount === 0) {
+    return <EmptyState icon={emptyIcon} title={emptyTitle} description={emptyDescription} />;
   }
   // Mobile: one card per entry instead of a horizontally-scrolling table, mirroring
   // AttendeesTable's/ReportsPage's own desktop-table/mobile-card split at the same
   // useIsDesktop() breakpoint.
-  return <AuditLogCards entries={entries} loading={loading} eventTitleById={eventTitleById} onCopyRow={onCopyRow} />;
+  return isDesktop ? renderTable() : renderCards();
+}
+
+/** Audit's column config for LogTable - built per-render (unlike Security's static one) since
+ * the Scope column needs the current eventTitleById map. */
+function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<AuditLogEntryDto>[] {
+  return [
+    {
+      key: "time",
+      header: (
+        <Tooltip content={TIME_HINT} className="audit-log-scope-header">
+          Time <i className="ti ti-info-circle" aria-hidden="true" />
+        </Tooltip>
+      ),
+      className: "audit-log-time",
+      cell: (entry) => (
+        <>
+          {formatAuditPrimaryTime(entry.created_at)} UTC
+          {actorLocalTime(entry) && <div className="sessions-subdued">{actorLocalTime(entry)}</div>}
+        </>
+      ),
+    },
+    {
+      key: "action",
+      header: "Action",
+      cell: (entry) => <Badge variant={actionTone(entry.action_type)}>{actionLabel(entry.action_type)}</Badge>,
+    },
+    {
+      key: "scope",
+      header: (
+        <Tooltip content={SCOPE_HINT} className="audit-log-scope-header">
+          Scope <i className="ti ti-info-circle" aria-hidden="true" />
+        </Tooltip>
+      ),
+      cell: (entry) => scopeLabel(entry, eventTitleById),
+    },
+    {
+      key: "actor",
+      header: "Actor",
+      title: (entry) => actorTitle(entry),
+      cell: (entry) => (
+        <>
+          {actorDisplay(entry)}
+          {entry.actor_display_name && entry.actor_email && (
+            <div className="sessions-subdued">{entry.actor_email}</div>
+          )}
+        </>
+      ),
+    },
+    {
+      key: "ip",
+      header: "IP",
+      cell: (entry) => entry.ip ?? "—",
+    },
+  ];
+}
+
+/** Audit's LogCards top/meta slots - mirrors Security's own render*Card* functions below, plus
+ * the Scope meta item Security has no equivalent of. */
+function renderAuditCardTop(entry: AuditLogEntryDto): ReactNode {
+  return (
+    <>
+      <Badge variant={actionTone(entry.action_type)}>{actionLabel(entry.action_type)}</Badge>
+      <div className="audit-log-time audit-log-card__time">
+        {formatAuditPrimaryTime(entry.created_at)} UTC
+        {actorLocalTime(entry) && <div className="sessions-subdued">{actorLocalTime(entry)}</div>}
+      </div>
+    </>
+  );
+}
+
+function renderAuditCardMeta(entry: AuditLogEntryDto, eventTitleById: Map<string, string>): ReactNode {
+  return (
+    <>
+      <span className="audit-log-card__meta-item">
+        <i className="ti ti-calendar-event" aria-hidden="true" />
+        {scopeLabel(entry, eventTitleById)}
+      </span>
+      <span className="audit-log-card__meta-item" title={actorTitle(entry)}>
+        <i className="ti ti-user" aria-hidden="true" />
+        {actorDisplay(entry)}
+      </span>
+      {entry.actor_display_name && entry.actor_email && (
+        <div className="sessions-subdued audit-log-card__email">{entry.actor_email}</div>
+      )}
+    </>
+  );
 }
 
 // ============================================================================================
@@ -635,9 +721,10 @@ function AuditLogListContent({
 // third "Security" option (formerly a separate SecurityAuditLogPanel card stacked below this one;
 // two separately-erroring/loading cards on one tab read as confusing, not as three distinct
 // things). The backend stays two separate tables/endpoints/retention policies - only the UI is
-// unified. Kept as a parallel, not shared, set of labels/helpers/components below rather than
-// generalizing AuditLogTable etc.: the two row shapes differ enough (no Scope column, no
-// actor-timezone) that a shared abstraction would cost more than it saves.
+// unified. The row shapes differ enough (no Scope column, a viewer- rather than actor-local
+// time) that each view keeps its own labels/helpers/column config below, but the actual
+// table/cards/list-content/toolbar/footer/data-fetching scaffolding is the shared LogTable/
+// LogCards/LogListContent/LogView/useLogQuery above and below.
 
 /** Resolved display name for a row's subject - "Unknown" both when `user_id` is null
  * (enumeration-safe rows, e.g. failed logins) and when the user record itself has neither a
@@ -694,397 +781,164 @@ function buildSecurityRowSummary(entry: SecurityAuditLogEntryDto): string {
   return lines.join("\n");
 }
 
-interface SecurityAuditRowsProps {
-  entries: SecurityAuditLogEntryDto[];
-  loading: boolean;
-  onCopyRow: (entry: SecurityAuditLogEntryDto) => Promise<void>;
-}
-
-/** Desktop row list - mirrors AuditLogTable; no Scope column (SecurityAuditLog rows aren't
+/** Security's column config for LogTable - no Scope column (SecurityAuditLog rows aren't
  * event-scoped), and the Time column's second line is the viewer's own local time rather than an
- * actor's (see viewerLocalTime). */
-function SecurityAuditTable({ entries, loading, onCopyRow }: Readonly<SecurityAuditRowsProps>) {
-  return (
-    <div className={`sessions-table-wrap${loading ? " audit-log-table-wrap--loading" : ""}`}>
-      <table className="table audit-log-table">
-        <thead>
-          <tr>
-            <th scope="col">
-              <Tooltip content={SECURITY_TIME_HINT} className="audit-log-scope-header">
-                Time <i className="ti ti-info-circle" aria-hidden="true" />
-              </Tooltip>
-            </th>
-            <th scope="col">Event</th>
-            <th scope="col">User</th>
-            <th scope="col">IP</th>
-            <th scope="col">Details</th>
-          </tr>
-        </thead>
-        <tbody>
-          {entries.map((entry) => (
-            <tr key={entry.id}>
-              <td className="audit-log-time">
-                {formatAuditPrimaryTime(entry.created_at)} UTC
-                <div className="sessions-subdued">{viewerLocalTime(entry.created_at)}</div>
-              </td>
-              <td>
-                <Badge variant={securityEventTone(entry.event_type)}>{securityEventLabel(entry.event_type)}</Badge>
-              </td>
-              <td title={securityUserTitle(entry)}>
-                {securityUserDisplay(entry)}
-                {securityUserEmail(entry) && <div className="sessions-subdued">{securityUserEmail(entry)}</div>}
-              </td>
-              <td>{entry.ip ?? "—"}</td>
-              <td>
-                <div className="audit-log-details-cell">
-                  <DetailsCell metadata={entry.metadata} />
-                  <button
-                    type="button"
-                    className="audit-log-row-copy"
-                    aria-label="Copy row"
-                    onClick={() => void onCopyRow(entry)}
-                  >
-                    <i className="ti ti-copy" aria-hidden="true" />
-                  </button>
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
+ * actor's (see viewerLocalTime). Static (unlike Audit's, built per-render below) since nothing
+ * here depends on data outside the entry itself. */
+const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
+  {
+    key: "time",
+    header: (
+      <Tooltip content={SECURITY_TIME_HINT} className="audit-log-scope-header">
+        Time <i className="ti ti-info-circle" aria-hidden="true" />
+      </Tooltip>
+    ),
+    className: "audit-log-time",
+    cell: (entry) => (
+      <>
+        {formatAuditPrimaryTime(entry.created_at)} UTC
+        <div className="sessions-subdued">{viewerLocalTime(entry.created_at)}</div>
+      </>
+    ),
+  },
+  {
+    key: "event",
+    header: "Event",
+    cell: (entry) => (
+      <Badge variant={securityEventTone(entry.event_type)}>{securityEventLabel(entry.event_type)}</Badge>
+    ),
+  },
+  {
+    key: "user",
+    header: "User",
+    title: (entry) => securityUserTitle(entry),
+    cell: (entry) => (
+      <>
+        {securityUserDisplay(entry)}
+        {securityUserEmail(entry) && <div className="sessions-subdued">{securityUserEmail(entry)}</div>}
+      </>
+    ),
+  },
+  {
+    key: "ip",
+    header: "IP",
+    cell: (entry) => entry.ip ?? "—",
+  },
+];
 
-/** Mobile one-card-per-entry list - mirrors AuditLogCards. */
-function SecurityAuditCards({ entries, loading, onCopyRow }: Readonly<SecurityAuditRowsProps>) {
-  return (
-    <div className={`audit-log-cards${loading ? " audit-log-table-wrap--loading" : ""}`}>
-      {entries.map((entry) => (
-        <div key={entry.id} className="audit-log-card">
-          <div className="audit-log-card__top">
-            <Badge variant={securityEventTone(entry.event_type)}>{securityEventLabel(entry.event_type)}</Badge>
-            <div className="audit-log-time audit-log-card__time">
-              {formatAuditPrimaryTime(entry.created_at)} UTC
-              <div className="sessions-subdued">{viewerLocalTime(entry.created_at)}</div>
-            </div>
-          </div>
-          <div className="audit-log-card__meta">
-            <span className="audit-log-card__meta-item" title={securityUserTitle(entry)}>
-              <i className="ti ti-user" aria-hidden="true" />
-              {securityUserDisplay(entry)}
-            </span>
-            {securityUserEmail(entry) && (
-              <div className="sessions-subdued audit-log-card__email">{securityUserEmail(entry)}</div>
-            )}
-          </div>
-          <div className="audit-log-card__foot">
-            <span>{entry.ip ?? "—"}</span>
-            <div className="audit-log-details-cell">
-              <DetailsCell metadata={entry.metadata} />
-              <button
-                type="button"
-                className="audit-log-row-copy"
-                aria-label="Copy row"
-                onClick={() => void onCopyRow(entry)}
-              >
-                <i className="ti ti-copy" aria-hidden="true" />
-              </button>
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-interface SecurityAuditListContentProps extends SecurityAuditRowsProps {
-  isInitialLoad: boolean;
-  showLoadingSkeleton: boolean;
-  error: string | null;
-  onRetry: () => void;
-  total: number;
-  hasActiveFilters: boolean;
-  isDesktop: boolean;
-}
-
-/** Picks the loading skeleton / error / empty-state / table-or-cards branch - mirrors
- * AuditLogListContent, with Security-specific empty-state copy. */
-function SecurityAuditListContent({
-  isInitialLoad,
-  showLoadingSkeleton,
-  error,
-  onRetry,
-  entries,
-  total,
-  hasActiveFilters,
-  isDesktop,
-  loading,
-  onCopyRow,
-}: Readonly<SecurityAuditListContentProps>) {
-  if (isInitialLoad) {
-    return (
-      <div
-        className="audit-log-skeleton"
-        aria-busy={showLoadingSkeleton || undefined}
-        aria-label="Loading security audit log"
-        style={{ visibility: showLoadingSkeleton ? "visible" : "hidden" }}
-      >
-        {Array.from({ length: 5 }, (_, i) => (
-          <div key={i} className="audit-log-skeleton__row" />
-        ))}
-      </div>
-    );
-  }
-  if (error) {
-    return (
-      <EmptyState
-        title="Could not load security audit log"
-        description={error}
-        action={
-          <Button type="button" variant="secondary" onClick={onRetry}>
-            Retry
-          </Button>
-        }
-      />
-    );
-  }
-  if (entries.length === 0 && total > 0) {
-    return <EmptyState title="No entries on this page." description="Try Previous, or adjust the filters." />;
-  }
-  if (entries.length === 0 && hasActiveFilters) {
-    return (
-      <EmptyState
-        icon={<i className="ti ti-filter-off" aria-hidden="true" />}
-        title="No matches"
-        description="Try different filters, or clear them to see everything."
-      />
-    );
-  }
-  if (entries.length === 0) {
-    return (
-      <EmptyState
-        icon={<i className="ti ti-shield-lock" aria-hidden="true" />}
-        title="No security events yet"
-        description="Logins, 2FA checks, logout, OIDC, and access-denied events will appear here."
-      />
-    );
-  }
-  if (isDesktop) {
-    return <SecurityAuditTable entries={entries} loading={loading} onCopyRow={onCopyRow} />;
-  }
-  return <SecurityAuditCards entries={entries} loading={loading} onCopyRow={onCopyRow} />;
-}
-
-type SecurityLogFilters = { eventType: string; search: string; start: string; end: string };
-
-interface SecurityAuditViewProps {
-  isDesktop: boolean;
-  rootRef: RefObject<HTMLDivElement | null>;
-  searchInput: string;
-  setSearchInput: Dispatch<SetStateAction<string>>;
-  searchInputRef: RefObject<HTMLInputElement | null>;
-  fromDatePicker: ReactNode;
-  toDatePicker: ReactNode;
-  filterActiveCount: number;
-  filters: SecurityLogFilters;
-  setFilters: Dispatch<SetStateAction<SecurityLogFilters>>;
-  setPage: Dispatch<SetStateAction<number>>;
-  clearFiltersButton: ReactNode;
-  liveButton: ReactNode;
-  exportButton: ReactNode;
-  pollDegraded: boolean;
-  onRetryNow: () => void;
-  listContent: ReactNode;
-  loading: boolean;
-  error: string | null;
-  total: number;
-  page: number;
-  pageSize: number;
-  setPageSize: Dispatch<SetStateAction<number>>;
-  goToPage: (next: number) => void;
-  totalPages: number;
-}
-
-/** The security-side toolbar + list + footer - mirrors AuditLogView exactly (search, date range,
- * one filter dropdown instead of two, Clear filters, Export logs, pagination). */
-function SecurityAuditView({
-  isDesktop,
-  rootRef,
-  searchInput,
-  setSearchInput,
-  searchInputRef,
-  fromDatePicker,
-  toDatePicker,
-  filterActiveCount,
-  filters,
-  setFilters,
-  setPage,
-  clearFiltersButton,
-  liveButton,
-  exportButton,
-  pollDegraded,
-  onRetryNow,
-  listContent,
-  loading,
-  error,
-  total,
-  page,
-  pageSize,
-  setPageSize,
-  goToPage,
-  totalPages,
-}: Readonly<SecurityAuditViewProps>) {
+/** Security's LogCards top/meta slots - mirrors Audit's own render*Card* functions below. */
+function renderSecurityCardTop(entry: SecurityAuditLogEntryDto): ReactNode {
   return (
     <>
-      <div ref={rootRef} className="audit-log-toolbar">
-        <div className="audit-log-filter audit-log-filter--search">
-          <Input
-            ref={searchInputRef}
-            id="security-audit-log-search"
-            name="security-audit-log-search"
-            aria-label="Search user"
-            placeholder="Search user…"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            icon={<i className="ti ti-search" aria-hidden="true" />}
-          />
-          {searchInput.length > 0 && (
-            <button
-              type="button"
-              className="audit-log-search-clear"
-              onClick={() => {
-                setSearchInput("");
-                searchInputRef.current?.focus();
-              }}
-              aria-label="Clear search"
-            >
-              <i className="ti ti-x" aria-hidden="true" />
-            </button>
-          )}
-        </div>
-        {isDesktop && (
-          <>
-            <div className="audit-log-filter audit-log-filter--date">{fromDatePicker}</div>
-            <div className="audit-log-filter audit-log-filter--date">{toDatePicker}</div>
-          </>
-        )}
-        <FiltersMenu activeCount={filterActiveCount} className="audit-log-filters-menu">
-          {!isDesktop && (
-            <>
-              <div className="audit-log-filters-menu__field">{fromDatePicker}</div>
-              <div className="audit-log-filters-menu__field">{toDatePicker}</div>
-            </>
-          )}
-          <div className="audit-log-filters-menu__field">
-            <label className="audit-log-filter__label" htmlFor="security-audit-log-filter-event">
-              Event
-            </label>
-            <select
-              id="security-audit-log-filter-event"
-              name="security-audit-log-filter-event"
-              className="at-select"
-              value={filters.eventType}
-              onChange={(e) => {
-                setFilters((f) => ({ ...f, eventType: e.target.value }));
-                setPage(1);
-              }}
-            >
-              <option value="">All event types</option>
-              {SECURITY_EVENT_TYPE_OPTIONS.map((type) => (
-                <option key={type} value={type}>
-                  {securityEventLabel(type)}
-                </option>
-              ))}
-            </select>
-          </div>
-        </FiltersMenu>
-        {!isDesktop && (
-          <div className="audit-log-toolbar-actions">
-            {clearFiltersButton}
-            {exportButton}
-            {liveButton}
-          </div>
-        )}
+      <Badge variant={securityEventTone(entry.event_type)}>{securityEventLabel(entry.event_type)}</Badge>
+      <div className="audit-log-time audit-log-card__time">
+        {formatAuditPrimaryTime(entry.created_at)} UTC
+        <div className="sessions-subdued">{viewerLocalTime(entry.created_at)}</div>
       </div>
+    </>
+  );
+}
 
-      {pollDegraded && (
-        <output className="audit-log-poll-warning">
-          Live updates stopped coming through - the rows below may be out of date.{" "}
-          <button type="button" className="audit-log-poll-warning-retry" onClick={onRetryNow}>
-            Retry now
-          </button>
-        </output>
-      )}
-
-      {listContent}
-
-      {!loading && !error && total > 0 && (
-        <div className="audit-log-footer">
-          <div className="audit-log-footer__summary">
-            <span className="audit-log-footer__info">
-              {`Showing ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
-            </span>
-            <div className="audit-log-pagesize">
-              <label htmlFor="security-audit-log-pagesize-select">Rows per page</label>
-              <select
-                id="security-audit-log-pagesize-select"
-                name="security-audit-log-pagesize-select"
-                className="at-select audit-log-pagesize-select"
-                value={pageSize}
-                onChange={(e) => {
-                  setPageSize(Number(e.target.value));
-                  setPage(1);
-                }}
-              >
-                {PAGE_SIZE_OPTIONS.map((size) => (
-                  <option key={size} value={size}>
-                    {size}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <div className="audit-log-footer__pager">
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => goToPage(Math.max(1, page - 1))}
-            >
-              Previous
-            </Button>
-            <span>
-              Page {page} of {totalPages}
-            </span>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => goToPage(page + 1)}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
+function renderSecurityCardMeta(entry: SecurityAuditLogEntryDto): ReactNode {
+  return (
+    <>
+      <span className="audit-log-card__meta-item" title={securityUserTitle(entry)}>
+        <i className="ti ti-user" aria-hidden="true" />
+        {securityUserDisplay(entry)}
+      </span>
+      {securityUserEmail(entry) && (
+        <div className="sessions-subdued audit-log-card__email">{securityUserEmail(entry)}</div>
       )}
     </>
   );
 }
 
-/** All state + fetch/pagination/scroll-restore logic for the Security view - mirrors the state
- * block inline in AuditLogPanel for the Audit view, extracted into its own hook purely so
- * AuditLogPanel's own body doesn't double in size; the two views intentionally behave
- * identically (same filter/search/pagination/scroll-restore behavior), just against a narrower
- * filter set (no action/event-scope filters - SecurityAuditLog has neither). */
-function useSecurityAuditLog() {
-  const [entries, setEntries] = useState<SecurityAuditLogEntryDto[]>([]);
+type SecurityLogFilters = { eventType: string; search: string; start: string; end: string };
+
+type AuditLogFilters = { actionType: string; eventId: string; search: string; start: string; end: string };
+
+/** Stable (module-level, never-recreated) query functions passed into useLogQuery below - kept
+ * as plain functions rather than closures defined inside AuditLogPanel so they never need to be
+ * memoized to avoid re-triggering the hook's own load effect on every render. */
+function fetchAuditLogPage(page: number, pageSize: number, filters: AuditLogFilters, signal: AbortSignal) {
+  return fetchAuditLog(
+    {
+      page,
+      pageSize,
+      actionType: filters.actionType || undefined,
+      eventId: filters.eventId || undefined,
+      search: filters.search || undefined,
+      start: filters.start ? utcDayStartIso(filters.start) : undefined,
+      end: filters.end ? utcDayEndIso(filters.end) : undefined,
+    },
+    signal,
+  );
+}
+
+function exportAuditLogRows(filters: AuditLogFilters) {
+  return exportAuditLog({
+    actionType: filters.actionType || undefined,
+    eventId: filters.eventId || undefined,
+    search: filters.search || undefined,
+    start: filters.start ? utcDayStartIso(filters.start) : undefined,
+    end: filters.end ? utcDayEndIso(filters.end) : undefined,
+  });
+}
+
+function fetchSecurityLogPage(page: number, pageSize: number, filters: SecurityLogFilters, signal: AbortSignal) {
+  return fetchSecurityAuditLog(
+    {
+      page,
+      pageSize,
+      eventType: filters.eventType || undefined,
+      search: filters.search || undefined,
+      start: filters.start ? utcDayStartIso(filters.start) : undefined,
+      end: filters.end ? utcDayEndIso(filters.end) : undefined,
+    },
+    signal,
+  );
+}
+
+function exportSecurityLogRows(filters: SecurityLogFilters) {
+  return exportSecurityAuditLog({
+    eventType: filters.eventType || undefined,
+    search: filters.search || undefined,
+    start: filters.start ? utcDayStartIso(filters.start) : undefined,
+    end: filters.end ? utcDayEndIso(filters.end) : undefined,
+  });
+}
+
+const AUDIT_INITIAL_FILTERS: AuditLogFilters = { actionType: "", eventId: "", search: "", start: "", end: "" };
+const SECURITY_INITIAL_FILTERS: SecurityLogFilters = { eventType: "", search: "", start: "", end: "" };
+
+interface UseLogQueryOptions<TEntry, TFilters extends { search: string; start: string; end: string }> {
+  initialFilters: TFilters;
+  hasActiveFilters: (filters: TFilters) => boolean;
+  fetchPage: (page: number, pageSize: number, filters: TFilters, signal: AbortSignal) => Promise<{
+    entries: TEntry[];
+    total: number;
+  }>;
+  exportRows: (filters: TFilters) => Promise<void>;
+  loadErrorMessage: string;
+  exportErrorMessage: string;
+}
+
+/** All state + fetch/pagination/live-poll/scroll-restore logic shared by the Audit and Security
+ * views - both behave identically (same filter/search/pagination/scroll-restore/live-refresh
+ * behavior), just against a different filter shape and API call, supplied by each caller below. */
+function useLogQuery<TEntry, TFilters extends { search: string; start: string; end: string }>({
+  initialFilters,
+  hasActiveFilters: computeHasActiveFilters,
+  fetchPage,
+  exportRows,
+  loadErrorMessage,
+  exportErrorMessage,
+}: Readonly<UseLogQueryOptions<TEntry, TFilters>>) {
+  const [entries, setEntries] = useState<TEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
-  const [filters, setFilters] = useState<SecurityLogFilters>({ eventType: "", search: "", start: "", end: "" });
+  const [filters, setFilters] = useState<TFilters>(initialFilters);
   const [searchInput, setSearchInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1093,8 +947,8 @@ function useSecurityAuditLog() {
   // filter change that starts (or ends up) at zero rows doesn't re-trigger the skeleton and
   // flash the empty-state text out from under the user. Matches AttendeesPage's hasLoadedOnce.
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
-  // Mirrors SystemLogsPanel's own Live toggle - defaults on, since a security review view is
-  // exactly the kind of thing an operator wants to watch update on its own.
+  // Mirrors SystemLogsPanel's own Live toggle - defaults on, since a log view is exactly the
+  // kind of thing an operator wants to watch update on its own.
   const [live, setLive] = useState(true);
   // True once a run of silent poll ticks has failed POLL_DEGRADED_THRESHOLD times in a row -
   // see the matching comment on SystemLogsPanel's own pollDegraded for why a single miss is
@@ -1149,17 +1003,7 @@ function useSecurityAuditLog() {
         setError(null);
       }
       try {
-        const data = await fetchSecurityAuditLog(
-          {
-            page,
-            pageSize,
-            eventType: filters.eventType || undefined,
-            search: filters.search || undefined,
-            start: filters.start ? utcDayStartIso(filters.start) : undefined,
-            end: filters.end ? utcDayEndIso(filters.end) : undefined,
-          },
-          ac.signal,
-        );
+        const data = await fetchPage(page, pageSize, filters, ac.signal);
         if (ac.signal.aborted) return;
         const maxPage = Math.max(1, Math.ceil(data.total / pageSize));
         if (page > maxPage) {
@@ -1182,7 +1026,7 @@ function useSecurityAuditLog() {
           if (pollFailureCountRef.current >= POLL_DEGRADED_THRESHOLD) setPollDegraded(true);
           return;
         }
-        setError(operatorApiErrorMessage(err, "Failed to load security audit log."));
+        setError(operatorApiErrorMessage(err, loadErrorMessage));
         setEntries([]);
         setTotal(0);
       } finally {
@@ -1192,7 +1036,11 @@ function useSecurityAuditLog() {
         }
       }
     },
-    [page, pageSize, filters.eventType, filters.search, filters.start, filters.end],
+    // filters' own fields are the real dependency, not the object reference - Object.values
+    // gives element-by-element comparison generically without each call site repeating its own
+    // filter-field list here. fetchPage/loadErrorMessage are stable module-level values at every
+    // real call site (see fetchAuditLogPage/fetchSecurityLogPage above).
+    [page, pageSize, ...Object.values(filters), fetchPage, loadErrorMessage],
   );
 
   useEffect(() => {
@@ -1201,10 +1049,10 @@ function useSecurityAuditLog() {
   }, [load]);
 
   // Live-refresh: re-runs the same query on a timer once the first real load has settled, so a
-  // superadmin watching this view sees new failed-login rows land without a manual Refresh -
-  // the same reason a security dashboard is worth having open at all. Independent of the
-  // effect above (its own deps only touch page/filters) so pausing/resuming Live doesn't
-  // re-trigger a fetch, matching SystemLogsPanel's own poll effect.
+  // superadmin watching this view sees new rows land without a manual Refresh - the same reason
+  // a live dashboard is worth having open at all. Independent of the effect above (its own deps
+  // only touch page/filters) so pausing/resuming Live doesn't re-trigger a fetch, matching
+  // SystemLogsPanel's own poll effect.
   useEffect(() => {
     if (!live || !hasLoadedOnce) return;
     // Resuming Live always starts the degraded-state tracking fresh.
@@ -1215,33 +1063,23 @@ function useSecurityAuditLog() {
   }, [live, hasLoadedOnce, load]);
 
   const clearFilters = useCallback(() => {
-    setFilters({ eventType: "", search: "", start: "", end: "" });
+    setFilters(initialFilters);
     setSearchInput("");
     setPage(1);
-  }, []);
-
-  const hasActiveFilters = useMemo(
-    () => !!(filters.eventType || filters.search || filters.start || filters.end),
-    [filters.eventType, filters.search, filters.start, filters.end],
-  );
+  }, [initialFilters]);
 
   const [exporting, setExporting] = useState(false);
   const { addToast } = useToast();
   const handleExport = useCallback(async () => {
     setExporting(true);
     try {
-      await exportSecurityAuditLog({
-        eventType: filters.eventType || undefined,
-        search: filters.search || undefined,
-        start: filters.start ? utcDayStartIso(filters.start) : undefined,
-        end: filters.end ? utcDayEndIso(filters.end) : undefined,
-      });
+      await exportRows(filters);
     } catch (err) {
-      addToast(operatorApiErrorMessage(err, "Failed to export security audit log."), "error");
+      addToast(operatorApiErrorMessage(err, exportErrorMessage), "error");
     } finally {
       setExporting(false);
     }
-  }, [filters.eventType, filters.search, filters.start, filters.end, addToast]);
+  }, [filters, exportRows, exportErrorMessage, addToast]);
 
   return {
     entries,
@@ -1264,7 +1102,7 @@ function useSecurityAuditLog() {
     searchInputRef,
     goToPage,
     totalPages,
-    hasActiveFilters,
+    hasActiveFilters: computeHasActiveFilters(filters),
     clearFilters,
     exporting,
     handleExport,
@@ -1272,9 +1110,10 @@ function useSecurityAuditLog() {
   };
 }
 
-type AuditLogFilters = { actionType: string; eventId: string; search: string; start: string; end: string };
-
-interface AuditLogViewProps {
+interface LogViewProps {
+  idPrefix: string;
+  searchAriaLabel: string;
+  searchPlaceholder: string;
   isDesktop: boolean;
   rootRef: RefObject<HTMLDivElement | null>;
   searchInput: string;
@@ -1282,11 +1121,8 @@ interface AuditLogViewProps {
   searchInputRef: RefObject<HTMLInputElement | null>;
   fromDatePicker: ReactNode;
   toDatePicker: ReactNode;
-  actionScopeActiveCount: number;
-  filters: AuditLogFilters;
-  setFilters: Dispatch<SetStateAction<AuditLogFilters>>;
-  setPage: Dispatch<SetStateAction<number>>;
-  events: EventDto[];
+  filterActiveCount: number;
+  filterFields: ReactNode;
   clearFiltersButton: ReactNode;
   exportButton: ReactNode;
   liveButton: ReactNode;
@@ -1298,15 +1134,21 @@ interface AuditLogViewProps {
   total: number;
   page: number;
   pageSize: number;
+  setPage: Dispatch<SetStateAction<number>>;
   setPageSize: Dispatch<SetStateAction<number>>;
   goToPage: (next: number) => void;
   totalPages: number;
 }
 
-/** The audit-side toolbar + list + footer - extracted from AuditLogPanel so that component can
- * stay a thin switch between this and SystemLogsPanel based on the System/Audit toggle. State
- * stays in AuditLogPanel; only the JSX moved here. */
-function AuditLogView({
+/** The shared toolbar + list + footer shell for the Audit and Security views (search, date
+ * range, a view-specific filter-dropdown slot, Clear filters, Export logs, Live, pagination) -
+ * extracted from AuditLogPanel so that component can stay a thin switch between this,
+ * SystemLogsPanel, and this same view rendered twice, based on the System/Audit/Security
+ * toggle. State stays in AuditLogPanel (via useLogQuery); only the JSX is shared here. */
+function LogView({
+  idPrefix,
+  searchAriaLabel,
+  searchPlaceholder,
   isDesktop,
   rootRef,
   searchInput,
@@ -1314,11 +1156,8 @@ function AuditLogView({
   searchInputRef,
   fromDatePicker,
   toDatePicker,
-  actionScopeActiveCount,
-  filters,
-  setFilters,
-  setPage,
-  events,
+  filterActiveCount,
+  filterFields,
   clearFiltersButton,
   exportButton,
   liveButton,
@@ -1330,20 +1169,21 @@ function AuditLogView({
   total,
   page,
   pageSize,
+  setPage,
   setPageSize,
   goToPage,
   totalPages,
-}: Readonly<AuditLogViewProps>) {
+}: Readonly<LogViewProps>) {
   return (
     <>
       <div ref={rootRef} className="audit-log-toolbar">
         <div className="audit-log-filter audit-log-filter--search">
           <Input
             ref={searchInputRef}
-            id="audit-log-search"
-            name="audit-log-search"
-            aria-label="Search actor or event"
-            placeholder="Search actor or event…"
+            id={`${idPrefix}-search`}
+            name={`${idPrefix}-search`}
+            aria-label={searchAriaLabel}
+            placeholder={searchPlaceholder}
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             icon={<i className="ti ti-search" aria-hidden="true" />}
@@ -1368,7 +1208,7 @@ function AuditLogView({
             <div className="audit-log-filter audit-log-filter--date">{toDatePicker}</div>
           </>
         )}
-        <FiltersMenu activeCount={actionScopeActiveCount} className="audit-log-filters-menu">
+        <FiltersMenu activeCount={filterActiveCount} className="audit-log-filters-menu">
           {!isDesktop && (
             <>
               {/* Full width, one per row (not side by side) - the panel is only ~236px wide,
@@ -1378,52 +1218,7 @@ function AuditLogView({
               <div className="audit-log-filters-menu__field">{toDatePicker}</div>
             </>
           )}
-          <div className="audit-log-filters-menu__field">
-            <label className="audit-log-filter__label" htmlFor="audit-log-filter-action">
-              Action
-            </label>
-            <select
-              id="audit-log-filter-action"
-              name="audit-log-filter-action"
-              className="at-select"
-              value={filters.actionType}
-              onChange={(e) => {
-                setFilters((f) => ({ ...f, actionType: e.target.value }));
-                setPage(1);
-              }}
-            >
-              <option value="">All actions</option>
-              {ACTION_OPTIONS.map((type) => (
-                <option key={type} value={type}>
-                  {actionLabel(type)}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="audit-log-filters-menu__field">
-            <label className="audit-log-filter__label" htmlFor="audit-log-filter-scope">
-              Event
-            </label>
-            <select
-              id="audit-log-filter-scope"
-              name="audit-log-filter-scope"
-              className="at-select"
-              value={filters.eventId}
-              onChange={(e) => {
-                setFilters((f) => ({ ...f, eventId: e.target.value }));
-                setPage(1);
-              }}
-            >
-              <option value="">All events</option>
-              {[...events]
-                .sort((a, b) => a.title.localeCompare(b.title))
-                .map((event) => (
-                  <option key={event.id} value={event.id}>
-                    {event.title}
-                  </option>
-                ))}
-            </select>
-          </div>
+          {filterFields}
         </FiltersMenu>
         {!isDesktop && (
           <div className="audit-log-toolbar-actions">
@@ -1452,10 +1247,10 @@ function AuditLogView({
               {`Showing ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
             </span>
             <div className="audit-log-pagesize">
-              <label htmlFor="audit-log-pagesize-select">Rows per page</label>
+              <label htmlFor={`${idPrefix}-pagesize-select`}>Rows per page</label>
               <select
-                id="audit-log-pagesize-select"
-                name="audit-log-pagesize-select"
+                id={`${idPrefix}-pagesize-select`}
+                name={`${idPrefix}-pagesize-select`}
                 className="at-select audit-log-pagesize-select"
                 value={pageSize}
                 onChange={(e) => {
@@ -1517,45 +1312,53 @@ export function AuditLogPanel() {
   const [systemLive, setSystemLive] = useState(true);
   const [systemHasEntries, setSystemHasEntries] = useState(false);
   const systemLogsRef = useRef<SystemLogsPanelHandle>(null);
-  const [entries, setEntries] = useState<AuditLogEntryDto[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
-  const [filters, setFilters] = useState<AuditLogFilters>({
-    actionType: "",
-    eventId: "",
-    search: "",
-    start: "",
-    end: "",
-  });
-  const [searchInput, setSearchInput] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  // Set once the first fetch (success or failure) settles, and never reset - see the matching
-  // comment on the Security view's own hasLoadedOnce above for why this replaces entries.length
-  // === 0 as the "first load" check.
-  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
-  // Mirrors the Security view's own live/pollDegraded/pollFailureCountRef above (see the
-  // matching comments on useSecurityAuditLog).
-  const [live, setLive] = useState(true);
-  const [pollDegraded, setPollDegraded] = useState(false);
-  const pollFailureCountRef = useRef(0);
-  const [events, setEvents] = useState<EventDto[]>([]);
-  const [exporting, setExporting] = useState(false);
-  const { addToast } = useToast();
   const isDesktop = useIsDesktop();
-  const security = useSecurityAuditLog();
-  const loadAbortRef = useRef<AbortController | null>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  // Previous/Next can shrink the table (e.g. a shorter last page), which can
-  // otherwise leave the card scrolled out of view — keep it in view once the
-  // new page has actually rendered instead of letting Settings jump around.
-  // Keyed to the load() call that armed it (not just loading/entries) so an
-  // unrelated reload that happens to finish around the same time (a filter
-  // change, Clear filters, Retry) doesn't also trigger a scroll it never asked for.
-  const loadSeqRef = useRef(0);
-  const scrollRestoreSeqRef = useRef<number | null>(null);
+  const { addToast } = useToast();
+
+  const {
+    entries,
+    total,
+    page,
+    setPage,
+    pageSize,
+    setPageSize,
+    filters,
+    setFilters,
+    searchInput,
+    setSearchInput,
+    loading,
+    error,
+    hasLoadedOnce,
+    live,
+    setLive,
+    pollDegraded,
+    rootRef,
+    searchInputRef,
+    goToPage,
+    totalPages,
+    hasActiveFilters,
+    clearFilters,
+    exporting,
+    handleExport,
+    reload: load,
+  } = useLogQuery<AuditLogEntryDto, AuditLogFilters>({
+    initialFilters: AUDIT_INITIAL_FILTERS,
+    hasActiveFilters: (f) => !!(f.actionType || f.eventId || f.search || f.start || f.end),
+    fetchPage: fetchAuditLogPage,
+    exportRows: exportAuditLogRows,
+    loadErrorMessage: "Failed to load audit log.",
+    exportErrorMessage: "Failed to export audit log.",
+  });
+  const security = useLogQuery<SecurityAuditLogEntryDto, SecurityLogFilters>({
+    initialFilters: SECURITY_INITIAL_FILTERS,
+    hasActiveFilters: (f) => !!(f.eventType || f.search || f.start || f.end),
+    fetchPage: fetchSecurityLogPage,
+    exportRows: exportSecurityLogRows,
+    loadErrorMessage: "Failed to load security audit log.",
+    exportErrorMessage: "Failed to export security audit log.",
+  });
+
+  const [events, setEvents] = useState<EventDto[]>([]);
   // From/To no longer show a visible label above the field (PO: nothing above the date
   // selector) - the locale date format is folded into the placeholder instead, so the
   // dd/mm/yyyy-typing affordance survives without a separate label line pushing the row down.
@@ -1624,113 +1427,7 @@ export function AuditLogPanel() {
     return () => ac.abort();
   }, []);
   const eventTitleById = useMemo(() => new Map(events.map((e) => [e.id, e.title])), [events]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setFilters((f) => ({ ...f, search: searchInput.trim() }));
-      setPage(1);
-    }, SEARCH_DEBOUNCE_MS);
-    return () => window.clearTimeout(timer);
-  }, [searchInput]);
-
-  const goToPage = useCallback((next: number) => {
-    scrollRestoreSeqRef.current = loadSeqRef.current + 1;
-    setPage(next);
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!loading && scrollRestoreSeqRef.current !== null) {
-      if (loadSeqRef.current === scrollRestoreSeqRef.current) {
-        rootRef.current?.scrollIntoView({ block: "nearest" });
-      }
-      scrollRestoreSeqRef.current = null;
-    }
-  }, [loading, entries]);
-
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-
-  // See the matching comment on the Security hook's own load() above for why `silent` exists
-  // and what it must never do (dim the table, clear rows, surface an error, or move the page).
-  const load = useCallback(
-    async (opts?: { silent?: boolean }) => {
-      const silent = opts?.silent ?? false;
-      loadAbortRef.current?.abort();
-      const ac = new AbortController();
-      loadAbortRef.current = ac;
-      loadSeqRef.current += 1;
-      if (!silent) {
-        setLoading(true);
-        setError(null);
-      }
-      try {
-        const data = await fetchAuditLog(
-          {
-            page,
-            pageSize,
-            actionType: filters.actionType || undefined,
-            eventId: filters.eventId || undefined,
-            search: filters.search || undefined,
-            start: filters.start ? utcDayStartIso(filters.start) : undefined,
-            end: filters.end ? utcDayEndIso(filters.end) : undefined,
-          },
-          ac.signal,
-        );
-        if (ac.signal.aborted) return;
-        const maxPage = Math.max(1, Math.ceil(data.total / pageSize));
-        if (page > maxPage) {
-          if (silent) return;
-          setEntries([]);
-          setPage(maxPage);
-          return;
-        }
-        setEntries(data.entries);
-        setTotal(data.total);
-        pollFailureCountRef.current = 0;
-        setPollDegraded(false);
-      } catch (err) {
-        if (ac.signal.aborted) return;
-        if (silent) {
-          pollFailureCountRef.current += 1;
-          if (pollFailureCountRef.current >= POLL_DEGRADED_THRESHOLD) setPollDegraded(true);
-          return;
-        }
-        setError(operatorApiErrorMessage(err, "Failed to load audit log."));
-        setEntries([]);
-        setTotal(0);
-      } finally {
-        if (!ac.signal.aborted) {
-          if (!silent) setLoading(false);
-          setHasLoadedOnce(true);
-        }
-      }
-    },
-    [page, pageSize, filters.actionType, filters.eventId, filters.search, filters.start, filters.end],
-  );
-
-  useEffect(() => {
-    void load();
-    return () => loadAbortRef.current?.abort();
-  }, [load]);
-
-  // Live-refresh - see the matching comment on the Security hook's own poll effect above.
-  useEffect(() => {
-    if (!live || !hasLoadedOnce) return;
-    pollFailureCountRef.current = 0;
-    setPollDegraded(false);
-    const intervalId = window.setInterval(() => void load({ silent: true }), POLL_INTERVAL_MS);
-    return () => window.clearInterval(intervalId);
-  }, [live, hasLoadedOnce, load]);
-
-  const clearFilters = () => {
-    setFilters({ actionType: "", eventId: "", search: "", start: "", end: "" });
-    setSearchInput("");
-    setPage(1);
-  };
-
-  const hasActiveFilters = useMemo(
-    () => !!(filters.actionType || filters.eventId || filters.search || filters.start || filters.end),
-    [filters.actionType, filters.eventId, filters.search, filters.start, filters.end],
-  );
+  const auditColumns = useMemo(() => buildAuditColumns(eventTitleById), [eventTitleById]);
 
   // On mobile the date fields move into this same panel (see the toolbar JSX below), so an
   // active From/To should count toward the badge there too - on desktop they stay in the main
@@ -1744,23 +1441,6 @@ export function AuditLogPanel() {
   const securityActiveDateCount = (security.filters.start ? 1 : 0) + (security.filters.end ? 1 : 0);
   const securityFilterActiveCount =
     (security.filters.eventType ? 1 : 0) + (isDesktop ? 0 : securityActiveDateCount);
-
-  const handleExport = useCallback(async () => {
-    setExporting(true);
-    try {
-      await exportAuditLog({
-        actionType: filters.actionType || undefined,
-        eventId: filters.eventId || undefined,
-        search: filters.search || undefined,
-        start: filters.start ? utcDayStartIso(filters.start) : undefined,
-        end: filters.end ? utcDayEndIso(filters.end) : undefined,
-      });
-    } catch (err) {
-      addToast(operatorApiErrorMessage(err, "Failed to export audit log."), "error");
-    } finally {
-      setExporting(false);
-    }
-  }, [filters.actionType, filters.eventId, filters.search, filters.start, filters.end, addToast]);
 
   // Rendered in the Card header on desktop, or in the toolbar (next to Filters) on mobile -
   // on a narrow card the header can only fit the title and the always-present System/Audit
@@ -1849,19 +1529,94 @@ export function AuditLogPanel() {
   // skeleton and flash the "No matches" empty-state text out from under the user.
   const isInitialLoad = loading && !hasLoadedOnce;
 
+  const auditFilterFields = (
+    <>
+      <div className="audit-log-filters-menu__field">
+        <label className="audit-log-filter__label" htmlFor="audit-log-filter-action">
+          Action
+        </label>
+        <select
+          id="audit-log-filter-action"
+          name="audit-log-filter-action"
+          className="at-select"
+          value={filters.actionType}
+          onChange={(e) => {
+            setFilters((f) => ({ ...f, actionType: e.target.value }));
+            setPage(1);
+          }}
+        >
+          <option value="">All actions</option>
+          {ACTION_OPTIONS.map((type) => (
+            <option key={type} value={type}>
+              {actionLabel(type)}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="audit-log-filters-menu__field">
+        <label className="audit-log-filter__label" htmlFor="audit-log-filter-scope">
+          Event
+        </label>
+        <select
+          id="audit-log-filter-scope"
+          name="audit-log-filter-scope"
+          className="at-select"
+          value={filters.eventId}
+          onChange={(e) => {
+            setFilters((f) => ({ ...f, eventId: e.target.value }));
+            setPage(1);
+          }}
+        >
+          <option value="">All events</option>
+          {[...events]
+            .sort((a, b) => a.title.localeCompare(b.title))
+            .map((event) => (
+              <option key={event.id} value={event.id}>
+                {event.title}
+              </option>
+            ))}
+        </select>
+      </div>
+    </>
+  );
+
   const listContent = (
-    <AuditLogListContent
+    <LogListContent
       isInitialLoad={isInitialLoad}
       showLoadingSkeleton={showLoadingSkeleton}
+      skeletonLabel="Loading audit log"
       error={error}
+      errorTitle="Could not load audit log"
       onRetry={() => void load()}
-      entries={entries}
+      entriesCount={entries.length}
       total={total}
       hasActiveFilters={hasActiveFilters}
+      emptyIcon={<i className="ti ti-history" aria-hidden="true" />}
+      emptyTitle="No audit log entries yet"
+      emptyDescription="Actions taken across Settings will appear here."
       isDesktop={isDesktop}
-      loading={loading}
-      eventTitleById={eventTitleById}
-      onCopyRow={handleCopyRow}
+      renderTable={() => (
+        <LogTable
+          entries={entries}
+          loading={loading}
+          columns={auditColumns}
+          rowKey={(entry) => entry.id}
+          metadataOf={(entry) => entry.metadata}
+          onCopyRow={handleCopyRow}
+        />
+      )}
+      renderCards={() => (
+        <LogCards
+          entries={entries}
+          loading={loading}
+          rowKey={(entry) => entry.id}
+          renderTop={renderAuditCardTop}
+          renderMeta={(entry) => renderAuditCardMeta(entry, eventTitleById)}
+          renderFootLeft={(entry) => entry.ip ?? "—"}
+          metadataOf={(entry) => entry.metadata}
+          onCopyRow={handleCopyRow}
+        />
+      )}
     />
   );
 
@@ -1871,18 +1626,68 @@ export function AuditLogPanel() {
   // load).
   const isSecurityInitialLoad = security.loading && !security.hasLoadedOnce;
 
+  const securityFilterFields = (
+    <div className="audit-log-filters-menu__field">
+      <label className="audit-log-filter__label" htmlFor="security-audit-log-filter-event">
+        Event
+      </label>
+      <select
+        id="security-audit-log-filter-event"
+        name="security-audit-log-filter-event"
+        className="at-select"
+        value={security.filters.eventType}
+        onChange={(e) => {
+          security.setFilters((f) => ({ ...f, eventType: e.target.value }));
+          security.setPage(1);
+        }}
+      >
+        <option value="">All event types</option>
+        {SECURITY_EVENT_TYPE_OPTIONS.map((type) => (
+          <option key={type} value={type}>
+            {securityEventLabel(type)}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+
   const securityListContent = (
-    <SecurityAuditListContent
+    <LogListContent
       isInitialLoad={isSecurityInitialLoad}
       showLoadingSkeleton={showSecurityLoadingSkeleton}
+      skeletonLabel="Loading security audit log"
       error={security.error}
+      errorTitle="Could not load security audit log"
       onRetry={() => void security.reload()}
-      entries={security.entries}
+      entriesCount={security.entries.length}
       total={security.total}
       hasActiveFilters={security.hasActiveFilters}
+      emptyIcon={<i className="ti ti-shield-lock" aria-hidden="true" />}
+      emptyTitle="No security events yet"
+      emptyDescription="Logins, 2FA checks, logout, OIDC, and access-denied events will appear here."
       isDesktop={isDesktop}
-      loading={security.loading}
-      onCopyRow={handleCopySecurityRow}
+      renderTable={() => (
+        <LogTable
+          entries={security.entries}
+          loading={security.loading}
+          columns={SECURITY_COLUMNS}
+          rowKey={(entry) => entry.id}
+          metadataOf={(entry) => entry.metadata}
+          onCopyRow={handleCopySecurityRow}
+        />
+      )}
+      renderCards={() => (
+        <LogCards
+          entries={security.entries}
+          loading={security.loading}
+          rowKey={(entry) => entry.id}
+          renderTop={renderSecurityCardTop}
+          renderMeta={renderSecurityCardMeta}
+          renderFootLeft={(entry) => entry.ip ?? "—"}
+          metadataOf={(entry) => entry.metadata}
+          onCopyRow={handleCopySecurityRow}
+        />
+      )}
     />
   );
 
@@ -1973,7 +1778,10 @@ export function AuditLogPanel() {
         />
       </div>
       <div style={{ display: view === "audit" ? undefined : "none" }}>
-        <AuditLogView
+        <LogView
+          idPrefix="audit-log"
+          searchAriaLabel="Search actor or event"
+          searchPlaceholder="Search actor or event…"
           isDesktop={isDesktop}
           rootRef={rootRef}
           searchInput={searchInput}
@@ -1981,11 +1789,8 @@ export function AuditLogPanel() {
           searchInputRef={searchInputRef}
           fromDatePicker={fromDatePicker}
           toDatePicker={toDatePicker}
-          actionScopeActiveCount={actionScopeActiveCount}
-          filters={filters}
-          setFilters={setFilters}
-          setPage={setPage}
-          events={events}
+          filterActiveCount={actionScopeActiveCount}
+          filterFields={auditFilterFields}
           clearFiltersButton={clearFiltersButton}
           exportButton={exportButton}
           liveButton={auditLiveButton}
@@ -1997,13 +1802,17 @@ export function AuditLogPanel() {
           total={total}
           page={page}
           pageSize={pageSize}
+          setPage={setPage}
           setPageSize={setPageSize}
           goToPage={goToPage}
           totalPages={totalPages}
         />
       </div>
       <div style={{ display: view === "security" ? undefined : "none" }}>
-        <SecurityAuditView
+        <LogView
+          idPrefix="security-audit-log"
+          searchAriaLabel="Search user"
+          searchPlaceholder="Search user…"
           isDesktop={isDesktop}
           rootRef={security.rootRef}
           searchInput={security.searchInput}
@@ -2012,9 +1821,7 @@ export function AuditLogPanel() {
           fromDatePicker={securityFromDatePicker}
           toDatePicker={securityToDatePicker}
           filterActiveCount={securityFilterActiveCount}
-          filters={security.filters}
-          setFilters={security.setFilters}
-          setPage={security.setPage}
+          filterFields={securityFilterFields}
           clearFiltersButton={securityClearFiltersButton}
           liveButton={securityLiveButton}
           exportButton={securityExportButton}
@@ -2026,6 +1833,7 @@ export function AuditLogPanel() {
           total={security.total}
           page={security.page}
           pageSize={security.pageSize}
+          setPage={security.setPage}
           setPageSize={security.setPageSize}
           goToPage={security.goToPage}
           totalPages={security.totalPages}
