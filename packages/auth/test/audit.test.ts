@@ -135,6 +135,19 @@ describe("audit", () => {
       expect(payload.event).toBe("auth.security_audit_log.write_failed");
       expect(payload.target_event).toBe("auth.login.success");
     });
+
+    it("stringifies a non-Error rejection instead of reading .message off it", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      // Not every rejection is a real Error instance (e.g. some driver-level failures) -
+      // the catch handler falls back to String(err) rather than assuming `.message` exists.
+      const create = vi.fn().mockRejectedValue("connection reset");
+      await expect(
+        logLoginSuccess(fakeDb(create), { email: "bob@example.com", userId: "user-1" }),
+      ).resolves.toBeUndefined();
+      const payload = JSON.parse(String(errorSpy.mock.calls[0]?.[0]));
+      expect(payload.error).toBe("connection reset");
+    });
   });
 
   describe("logLoginFailure", () => {
@@ -191,6 +204,15 @@ describe("audit", () => {
         },
       });
     });
+
+    it("persists sessionId null when the caller has no session id", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const create = vi.fn().mockResolvedValue({});
+      await logMfaSuccess(fakeDb(create), { userId: "user-1" }, "totp");
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ metadata: expect.objectContaining({ sessionId: null }) }) }),
+      );
+    });
   });
 
   describe("logMfaFailure", () => {
@@ -206,6 +228,15 @@ describe("audit", () => {
           metadata: { sessionId: "sess-1", userAgent: null },
         },
       });
+    });
+
+    it("persists sessionId null when the caller has no session id", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const create = vi.fn().mockResolvedValue({});
+      await logMfaFailure(fakeDb(create), { userId: "user-1" });
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ metadata: expect.objectContaining({ sessionId: null }) }) }),
+      );
     });
   });
 
@@ -253,6 +284,15 @@ describe("audit", () => {
         },
       });
     });
+
+    it("persists sessionId null when the caller has no session id", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const create = vi.fn().mockResolvedValue({});
+      await logMfaRecoveryConsumed(fakeDb(create), { userId: "user-1" }, "backup");
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ metadata: expect.objectContaining({ sessionId: null }) }) }),
+      );
+    });
   });
 
   describe("logLogout", () => {
@@ -268,6 +308,13 @@ describe("audit", () => {
           metadata: { sessionId: "sess-1" },
         },
       });
+    });
+
+    it("persists ip null when the caller has no ip", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const create = vi.fn().mockResolvedValue({});
+      await logLogout(fakeDb(create), { userId: "user-1", sessionId: "sess-1" });
+      expect(create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ ip: null }) }));
     });
   });
 
@@ -287,6 +334,20 @@ describe("audit", () => {
           user_id: "user-1",
           ip: "1.2.3.4",
           metadata: { providerId: "prov-1", subject: "sub-1" },
+        },
+      });
+    });
+
+    it("persists ip and subject null when the caller has neither", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const create = vi.fn().mockResolvedValue({});
+      await logOidcLoginSuccess(fakeDb(create), { providerId: "prov-1", userId: "user-1" });
+      expect(create).toHaveBeenCalledWith({
+        data: {
+          event_type: "auth.oidc.success",
+          user_id: "user-1",
+          ip: null,
+          metadata: { providerId: "prov-1", subject: null },
         },
       });
     });

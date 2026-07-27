@@ -23,7 +23,7 @@ import {
   listCheckInEvents,
   listAdminEvents,
 } from "../src/authorization.js";
-import { login } from "../src/login.js";
+import { login, logout } from "../src/login.js";
 import { bootstrapSuperadmin, superadminInstanceExists } from "../src/bootstrap.js";
 import { generateTotpSecret, encryptTotpSecret } from "../src/mfa/totp.js";
 import { purgeAuthRetention, purgeSecurityAuditLog, resolveSecurityAuditLogRetentionDays } from "../src/retention.js";
@@ -156,6 +156,47 @@ describe("login", () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe("invalid_credentials");
+  });
+});
+
+describe("logout", () => {
+  it("is a no-op when there is no validated session", async () => {
+    await expect(logout(prisma, null)).resolves.toBeUndefined();
+  });
+
+  it("revokes an active session and logs the logout event", async () => {
+    const { session, rawToken } = await createSession(prisma, { userId: USER_OP_A, stage: SESSION_STAGE.FULL });
+    const validated = await validateSession(prisma, rawToken);
+    expect(validated).not.toBeNull();
+
+    await logout(prisma, validated, { ip: "203.0.113.9" });
+
+    expect(await validateSession(prisma, rawToken)).toBeNull();
+    const logged = await prisma.securityAuditLog.findFirst({
+      where: { event_type: "auth.logout", user_id: USER_OP_A },
+      orderBy: { created_at: "desc" },
+    });
+    expect(logged?.metadata).toMatchObject({ sessionId: session.id });
+    expect(logged?.ip).toBe("203.0.113.9");
+  });
+
+  it("is idempotent when the session is already revoked (no duplicate audit log)", async () => {
+    const { rawToken } = await createSession(prisma, { userId: USER_OP_A, stage: SESSION_STAGE.FULL });
+    const validated = await validateSession(prisma, rawToken);
+    expect(validated).not.toBeNull();
+    if (!validated) throw new Error("unreachable");
+
+    await revokeSession(prisma, validated.session.id);
+    const countBefore = await prisma.securityAuditLog.count({
+      where: { event_type: "auth.logout", metadata: { path: ["sessionId"], equals: validated.session.id } },
+    });
+
+    await logout(prisma, validated);
+
+    const countAfter = await prisma.securityAuditLog.count({
+      where: { event_type: "auth.logout", metadata: { path: ["sessionId"], equals: validated.session.id } },
+    });
+    expect(countAfter).toBe(countBefore);
   });
 });
 
