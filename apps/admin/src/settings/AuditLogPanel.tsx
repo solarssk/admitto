@@ -1044,6 +1044,24 @@ function recordSilentPollFailure(pollFailureCountRef: RefObject<number>, setPoll
   if (pollFailureCountRef.current >= POLL_DEGRADED_THRESHOLD) setPollDegraded(true);
 }
 
+/** load()'s own finally-block cleanup, extracted purely to keep that function's cognitive
+ * complexity within the shared lint budget. `aborted` short-circuits before touching
+ * loading/hasLoadedOnce - see load()'s own comments for why (an aborted call was superseded by
+ * a newer one, which owns setting those states instead). */
+function finishLoad(opts: {
+  silent: boolean;
+  aborted: boolean;
+  nonSilentLoadInFlightRef: RefObject<boolean>;
+  setLoading: (loading: boolean) => void;
+  setHasLoadedOnce: (loaded: boolean) => void;
+}): void {
+  const { silent, aborted, nonSilentLoadInFlightRef, setLoading, setHasLoadedOnce } = opts;
+  if (!silent) nonSilentLoadInFlightRef.current = false;
+  if (aborted) return;
+  if (!silent) setLoading(false);
+  setHasLoadedOnce(true);
+}
+
 interface UseLogQueryOptions<TEntry, TFilters extends { search: string; start: string; end: string }> {
   initialFilters: TFilters;
   hasActiveFilters: (filters: TFilters) => boolean;
@@ -1169,11 +1187,7 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
         setEntries([]);
         setTotal(0);
       } finally {
-        if (!silent) nonSilentLoadInFlightRef.current = false;
-        if (!ac.signal.aborted) {
-          if (!silent) setLoading(false);
-          setHasLoadedOnce(true);
-        }
+        finishLoad({ silent, aborted: ac.signal.aborted, nonSilentLoadInFlightRef, setLoading, setHasLoadedOnce });
       }
     },
     // Deliberately NOT `filters` by reference (confirmed by a real test regression when tried):
