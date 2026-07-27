@@ -214,6 +214,10 @@ if [ "${1:-}" = "serve" ]; then
   if ! run_as_node_cmd timeout 120 node packages/mail-delivery/dist/cli.js nullify-delivery-snapshots; then
     log "warning: email delivery snapshot retention failed or timed out; continuing startup"
   fi
+  log "purging stale security audit log rows with 120s timeout"
+  if ! run_as_node_cmd timeout 120 node packages/auth/dist/cli.js purge-security-audit-log; then
+    log "warning: security audit log purge failed or timed out; continuing startup"
+  fi
   exec node apps/web/dist/src/index.js
 fi
 

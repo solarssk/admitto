@@ -907,6 +907,29 @@ export interface AuditLogResponse {
   pageSize: number;
 }
 
+/** One row from GET /api/admin/security-audit-log — durable auth/security event trail (issue
+ * #473), distinct from AuditLogEntryDto's admin mutations above. No org scoping (instance-wide
+ * auth events); `user_id`/`user_email`/`user_display_name` are all null for enumeration-safe
+ * rows (failed logins, access-denied with no session). */
+export interface SecurityAuditLogEntryDto {
+  id: string;
+  event_type: string;
+  user_id: string | null;
+  user_email: string | null;
+  user_display_name: string | null;
+  ip: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}
+
+/** Paginated security audit log list response. */
+export interface SecurityAuditLogResponse {
+  entries: SecurityAuditLogEntryDto[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 /** One row from GET /api/admin/system-logs. */
 export interface SystemLogEntryDto {
   id: number;

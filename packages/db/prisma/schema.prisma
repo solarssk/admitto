@@ -383,6 +383,26 @@ model AdminAuditLog {
   @@index([organization_id, created_at(sort: Desc)])
 }
 
+// Durable auth/security-event trail (issue #473) — logins, MFA, OIDC, access-denied. Distinct
+// from AdminAuditLog: actor_user_id there is required/non-null, but a failed login against a
+// non-existent email has no real user to attribute. user_id is intentionally nullable here for
+// exactly that case (enumeration-safe: never reveals whether an email exists). Before this model,
+// these events only reached stdout (container log driver) and an in-memory 1000-entry ring buffer
+// wiped on every restart — see packages/auth/src/audit.ts and DATA-PROTECTION.md. Product-automated
+// 30-day retention (packages/auth/src/retention.ts, purgeSecurityAuditLog), unlike AdminAuditLog's
+// operator-run IP-retention convention, since this table can grow quickly under attack.
+model SecurityAuditLog {
+  id         String   @id @default(cuid())
+  event_type String
+  user_id    String?
+  ip         String?
+  metadata   Json?
+  created_at DateTime @default(now())
+
+  @@index([event_type, created_at(sort: Desc)])
+  @@index([user_id])
+}
+
 // Per-scope mailer configuration (ADR 0005, ADR 0006).
 // scope_type = "organization" | "event". Secrets stored encrypted via @admitto/crypto.
 model MailSettings {

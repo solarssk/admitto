@@ -6,6 +6,7 @@
  *   npm run cli -w @admitto/auth -- reset-mfa --email superadmin@example.com
  *   npm run cli -w @admitto/auth -- generate-emergency-recovery --email superadmin@example.com
  *   npm run cli -w @admitto/auth -- purge-auth-retention [--dry-run]
+ *   npm run cli -w @admitto/auth -- purge-security-audit-log [--dry-run]
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,7 +20,7 @@ import { generateEmergencyRecoveryCode } from "./mfa/emergency-recovery.js";
 import { logMfaBreakGlass } from "./audit.js";
 import { loadEnvFile } from "@admitto/shared/load-env-file";
 import { assertNoPasswordArgv, CliError, readPasswordFromStdin } from "./cli-helpers.js";
-import { purgeAuthRetention } from "./retention.js";
+import { purgeAuthRetention, purgeSecurityAuditLog, resolveSecurityAuditLogRetentionDays } from "./retention.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -49,7 +50,8 @@ function usage(): never {
   npm run cli -w @admitto/auth -- bootstrap-superadmin --email <email> [--force]
   npm run cli -w @admitto/auth -- reset-mfa --email <email>
   npm run cli -w @admitto/auth -- generate-emergency-recovery --email <email>
-  npm run cli -w @admitto/auth -- purge-auth-retention [--dry-run]`);
+  npm run cli -w @admitto/auth -- purge-auth-retention [--dry-run]
+  npm run cli -w @admitto/auth -- purge-security-audit-log [--dry-run]`);
   throw new CliError("Invalid usage");
 }
 
@@ -122,7 +124,7 @@ async function runResetMfa(): Promise<void> {
 
   const { userId } = await verifyTargetUserPassword(email);
   await resetUserMfa(prisma, userId);
-  logMfaBreakGlass({ action: "reset_mfa", email });
+  await logMfaBreakGlass(prisma, { action: "reset_mfa", email, userId });
   console.log(`MFA reset for ${email} (sessions and trusted devices revoked).`);
 }
 
@@ -132,7 +134,7 @@ async function runGenerateEmergencyRecovery(): Promise<void> {
 
   const { userId } = await verifyTargetUserPassword(email);
   const { code } = await generateEmergencyRecoveryCode(prisma, userId);
-  logMfaBreakGlass({ action: "generate_emergency_recovery", email });
+  await logMfaBreakGlass(prisma, { action: "generate_emergency_recovery", email, userId });
   console.log(`Emergency one-time recovery code (shown once): ${code}`);
 }
 
@@ -143,6 +145,14 @@ async function runPurgeAuthRetention(): Promise<void> {
   console.log(
     `${verb} ${result.sessions} expired/revoked sessions and ${result.trustedDevices} expired/revoked trusted devices.`,
   );
+}
+
+async function runPurgeSecurityAuditLog(): Promise<void> {
+  const dryRun = hasFlag("dry-run");
+  const retentionDays = resolveSecurityAuditLogRetentionDays(process.env);
+  const result = await purgeSecurityAuditLog(prisma, { dryRun, retentionDays });
+  const verb = dryRun ? "Would delete" : "Deleted";
+  console.log(`${verb} ${result.deleted} security audit log row(s) older than ${retentionDays} days.`);
 }
 
 async function main(): Promise<void> {
@@ -161,6 +171,8 @@ async function main(): Promise<void> {
     await runGenerateEmergencyRecovery();
   } else if (sub === "purge-auth-retention") {
     await runPurgeAuthRetention();
+  } else if (sub === "purge-security-audit-log") {
+    await runPurgeSecurityAuditLog();
   } else {
     usage();
   }

@@ -23,10 +23,10 @@ import {
   listCheckInEvents,
   listAdminEvents,
 } from "../src/authorization.js";
-import { login } from "../src/login.js";
+import { login, logout } from "../src/login.js";
 import { bootstrapSuperadmin, superadminInstanceExists } from "../src/bootstrap.js";
 import { generateTotpSecret, encryptTotpSecret } from "../src/mfa/totp.js";
-import { purgeAuthRetention } from "../src/retention.js";
+import { purgeAuthRetention, purgeSecurityAuditLog, resolveSecurityAuditLogRetentionDays } from "../src/retention.js";
 import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -147,6 +147,67 @@ describe("login", () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe("inactive");
+  });
+
+  it("rejects a nonexistent email with invalid_credentials (enumeration-safe)", async () => {
+    const result = await login(prisma, {
+      email: "no-such-user@example.com",
+      password: "irrelevant-password",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("invalid_credentials");
+  });
+});
+
+describe("logout", () => {
+  it("is a no-op when there is no validated session", async () => {
+    await expect(logout(prisma, null)).resolves.toBeUndefined();
+  });
+
+  it("revokes an active session and logs the logout event", async () => {
+    const { session, rawToken } = await createSession(prisma, { userId: USER_OP_A, stage: SESSION_STAGE.FULL });
+    try {
+      const validated = await validateSession(prisma, rawToken);
+      expect(validated).not.toBeNull();
+
+      await logout(prisma, validated, { ip: "203.0.113.9" });
+
+      expect(await validateSession(prisma, rawToken)).toBeNull();
+      const logged = await prisma.securityAuditLog.findFirst({
+        where: { event_type: "auth.logout", user_id: USER_OP_A },
+        orderBy: { created_at: "desc" },
+      });
+      expect(logged?.metadata).toMatchObject({ sessionId: session.id });
+      expect(logged?.ip).toBe("203.0.113.9");
+    } finally {
+      // A revoked session left behind would otherwise be swept up by the "auth retention
+      // purge" describe block below, which purges *any* revoked/expired session regardless
+      // of which test created it (CodeRabbit PR #611).
+      await prisma.session.deleteMany({ where: { id: session.id } });
+    }
+  });
+
+  it("is idempotent when the session is already revoked (no duplicate audit log)", async () => {
+    const { session, rawToken } = await createSession(prisma, { userId: USER_OP_A, stage: SESSION_STAGE.FULL });
+    try {
+      const validated = await validateSession(prisma, rawToken);
+      expect(validated).not.toBeNull();
+      if (!validated) throw new Error("unreachable");
+
+      await revokeSession(prisma, validated.session.id);
+      const countBefore = await prisma.securityAuditLog.count({
+        where: { event_type: "auth.logout", metadata: { path: ["sessionId"], equals: validated.session.id } },
+      });
+
+      await logout(prisma, validated);
+
+      const countAfter = await prisma.securityAuditLog.count({
+        where: { event_type: "auth.logout", metadata: { path: ["sessionId"], equals: validated.session.id } },
+      });
+      expect(countAfter).toBe(countBefore);
+    } finally {
+      await prisma.session.deleteMany({ where: { id: session.id } });
+    }
   });
 });
 
@@ -428,5 +489,118 @@ describe("auth retention purge", () => {
 
     await prisma.session.deleteMany({ where: { id: "session-retention-active" } });
     await prisma.trustedDevice.deleteMany({ where: { id: "trusted-retention-active" } });
+  });
+});
+
+describe("security audit log retention", () => {
+  it("deletes only SecurityAuditLog rows older than the retention window", async () => {
+    // Real current time, not a fixed future date: this file's own tests (and other files
+    // sharing this test DB) create real SecurityAuditLog rows with a real `created_at`. A fixed
+    // "now" far enough in the future combined with the default 30-day retention would make the
+    // non-dry-run purge calls below sweep up those unrelated, unprefixed rows too (CodeRabbit PR
+    // #611) - anchoring "now" to the actual clock keeps the cutoff in the real past, where only
+    // this test's own explicitly-backdated fixtures fall.
+    const now = new Date();
+    const stale = new Date(now.getTime() - 31 * 24 * 60 * 60 * 1000); // past the default 30-day window
+    const fresh = new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000); // well within the window
+
+    await prisma.securityAuditLog.deleteMany({ where: { id: { startsWith: "sec-audit-retention-" } } });
+    const baseline = await purgeSecurityAuditLog(prisma, { now, dryRun: true });
+
+    await prisma.securityAuditLog.createMany({
+      data: [
+        { id: "sec-audit-retention-fresh", event_type: "auth.login.success", created_at: fresh },
+        { id: "sec-audit-retention-stale", event_type: "auth.login.fail", created_at: stale },
+      ],
+    });
+
+    const dryRun = await purgeSecurityAuditLog(prisma, { now, dryRun: true });
+    expect(dryRun).toEqual({ deleted: baseline.deleted + 1 });
+    expect(await prisma.securityAuditLog.count({ where: { id: { startsWith: "sec-audit-retention-" } } })).toBe(2);
+
+    const purged = await purgeSecurityAuditLog(prisma, { now, batchSize: 1 });
+    expect(purged).toEqual({ deleted: baseline.deleted + 1 });
+
+    expect(
+      await prisma.securityAuditLog.findMany({
+        where: { id: { startsWith: "sec-audit-retention-" } },
+        select: { id: true },
+      }),
+    ).toEqual([{ id: "sec-audit-retention-fresh" }]);
+
+    await prisma.securityAuditLog.deleteMany({ where: { id: "sec-audit-retention-fresh" } });
+  });
+
+  it("honors a custom retentionDays override", async () => {
+    const now = new Date(); // real clock - see the comment in the test above
+    const eightDaysAgo = new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000);
+
+    await prisma.securityAuditLog.deleteMany({ where: { id: "sec-audit-retention-7d" } });
+    await prisma.securityAuditLog.create({
+      data: { id: "sec-audit-retention-7d", event_type: "auth.logout", created_at: eightDaysAgo },
+    });
+
+    // 8 days back survives the default 30-day window...
+    await purgeSecurityAuditLog(prisma, { now, dryRun: false, retentionDays: 30 });
+    expect(
+      await prisma.securityAuditLog.findUnique({ where: { id: "sec-audit-retention-7d" } }),
+    ).not.toBeNull();
+
+    // ...but not a 7-day window.
+    await purgeSecurityAuditLog(prisma, { now, dryRun: false, retentionDays: 7 });
+    expect(await prisma.securityAuditLog.findUnique({ where: { id: "sec-audit-retention-7d" } })).toBeNull();
+  });
+
+  it("falls back to the 30-day default for a non-positive or non-finite retentionDays", async () => {
+    const now = new Date(); // real clock - see the comment in the first test above
+    const twentyDaysAgo = new Date(now.getTime() - 20 * 24 * 60 * 60 * 1000);
+
+    await prisma.securityAuditLog.deleteMany({ where: { id: "sec-audit-retention-fallback" } });
+    await prisma.securityAuditLog.create({
+      data: { id: "sec-audit-retention-fallback", event_type: "auth.mfa.fail", created_at: twentyDaysAgo },
+    });
+
+    for (const invalid of [0, -5, Number.NaN]) {
+      await purgeSecurityAuditLog(prisma, { now, dryRun: false, retentionDays: invalid });
+      expect(
+        await prisma.securityAuditLog.findUnique({ where: { id: "sec-audit-retention-fallback" } }),
+      ).not.toBeNull();
+    }
+
+    await prisma.securityAuditLog.deleteMany({ where: { id: "sec-audit-retention-fallback" } });
+  });
+
+  it("clamps an absurdly large retentionDays instead of producing an Invalid Date cutoff", async () => {
+    const now = new Date();
+    await prisma.securityAuditLog.deleteMany({ where: { id: "sec-audit-retention-absurd" } });
+    await prisma.securityAuditLog.create({
+      data: { id: "sec-audit-retention-absurd", event_type: "auth.logout", created_at: now },
+    });
+
+    // A "keep forever" retentionDays this large would put the naive cutoff outside Date's
+    // representable range; it must match nothing rather than throw or delete everything.
+    const result = await purgeSecurityAuditLog(prisma, { now, dryRun: true, retentionDays: 1_000_000_000 });
+    expect(result.deleted).toBe(0);
+    expect(
+      await prisma.securityAuditLog.findUnique({ where: { id: "sec-audit-retention-absurd" } }),
+    ).not.toBeNull();
+
+    await prisma.securityAuditLog.deleteMany({ where: { id: "sec-audit-retention-absurd" } });
+  });
+
+  it("resolves retention days from env with a safe fallback", () => {
+    expect(resolveSecurityAuditLogRetentionDays({})).toBe(30);
+    expect(
+      resolveSecurityAuditLogRetentionDays({ SECURITY_AUDIT_LOG_RETENTION_DAYS: "90" }),
+    ).toBe(90);
+    expect(
+      resolveSecurityAuditLogRetentionDays({ SECURITY_AUDIT_LOG_RETENTION_DAYS: "abc" }),
+    ).toBe(30);
+    expect(
+      resolveSecurityAuditLogRetentionDays({ SECURITY_AUDIT_LOG_RETENTION_DAYS: "30days" }),
+    ).toBe(30);
+    expect(
+      resolveSecurityAuditLogRetentionDays({ SECURITY_AUDIT_LOG_RETENTION_DAYS: "0" }),
+    ).toBe(30);
   });
 });
