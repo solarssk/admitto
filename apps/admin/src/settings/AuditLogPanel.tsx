@@ -775,6 +775,7 @@ function buildSecurityRowSummary(entry: SecurityAuditLogEntryDto): string {
   if (hasVisibleMetadata(entry.metadata)) {
     lines.push("Details:");
     for (const [key, value] of Object.entries(entry.metadata!)) {
+      if (METADATA_KEYS_SHOWN_ELSEWHERE.has(key)) continue;
       lines.push(`  ${humanizeMetadataKey(key)}: ${formatMetadataValue(key, value)}`);
     }
   }
@@ -1020,6 +1021,20 @@ function countTruthy(...values: unknown[]): number {
   return values.filter(Boolean).length;
 }
 
+/** Shared by handleCopyRow/handleCopySecurityRow - identical clipboard-write + success/error
+ * toast pair, differing only in which summary-builder produced the text. */
+async function copyRowToClipboard(
+  summary: string,
+  addToast: ReturnType<typeof useToast>["addToast"],
+): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(summary);
+    addToast("Row copied to clipboard", "success");
+  } catch {
+    addToast("Could not copy — clipboard access was blocked.", "error");
+  }
+}
+
 /** A single missed live-refresh tick is normal network noise - the next tick POLL_INTERVAL_MS
  * later retries. A sustained run of them (endpoint down, role revoked) must not leave "Live"
  * looking green over silently stale rows forever. Extracted out of useLogQuery's own load()
@@ -1075,6 +1090,12 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
   const [pollDegraded, setPollDegraded] = useState(false);
   const pollFailureCountRef = useRef(0);
   const loadAbortRef = useRef<AbortController | null>(null);
+  // True while a non-silent load (mount, filter/page change, explicit Retry) is in flight - a
+  // silent poll tick must never abort one of these (CodeRabbit review): aborting it skips its
+  // own `finally` block, and the silent tick's own `finally` also skips setLoading(false) (silent
+  // must never toggle the dimmed/loading state either), so `loading` would get stuck true
+  // forever with no non-silent load left to clear it.
+  const nonSilentLoadInFlightRef = useRef(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const loadSeqRef = useRef(0);
@@ -1112,11 +1133,15 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
   const load = useCallback(
     async (opts?: { silent?: boolean }) => {
       const silent = opts?.silent ?? false;
+      // See nonSilentLoadInFlightRef's own comment above - a silent tick simply skips this turn
+      // (the in-flight non-silent load will refresh the data itself) instead of aborting it.
+      if (silent && nonSilentLoadInFlightRef.current) return;
       loadAbortRef.current?.abort();
       const ac = new AbortController();
       loadAbortRef.current = ac;
       loadSeqRef.current += 1;
       if (!silent) {
+        nonSilentLoadInFlightRef.current = true;
         setLoading(true);
         setError(null);
       }
@@ -1144,16 +1169,24 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
         setEntries([]);
         setTotal(0);
       } finally {
+        if (!silent) nonSilentLoadInFlightRef.current = false;
         if (!ac.signal.aborted) {
           if (!silent) setLoading(false);
           setHasLoadedOnce(true);
         }
       }
     },
-    // filters' own fields are the real dependency, not the object reference - Object.values
-    // gives element-by-element comparison generically without each call site repeating its own
-    // filter-field list here. fetchPage/loadErrorMessage are stable module-level values at every
-    // real call site (see fetchAuditLogPage/fetchSecurityLogPage above).
+    // Deliberately NOT `filters` by reference (confirmed by a real test regression when tried):
+    // the search-debounce effect above calls setFilters((f) => ({ ...f, search: ... })) every
+    // time searchInput settles, including when the trimmed value is unchanged (e.g. mount, or
+    // typing then deleting back to the same text within the debounce window) - the spread always
+    // produces a brand-new object, so depending on `filters` itself would recreate `load` (and
+    // retrigger the mount effect + reset the poll-failure counter via the poll effect, both of
+    // which also depend on `load`) on a change that isn't a real one. Object.values gives
+    // element-by-element comparison instead, generically, without each call site repeating its
+    // own filter-field list here - safe because TFilters is a fixed, flat shape of primitive
+    // strings at every real call site, never gaining/losing keys at runtime. fetchPage/
+    // loadErrorMessage are stable module-level values (see fetchAuditLogPage/fetchSecurityLogPage).
     [page, pageSize, ...Object.values(filters), fetchPage, loadErrorMessage],
   );
 
@@ -1683,26 +1716,12 @@ export function AuditLogPanel() {
   );
 
   const handleCopyRow = useCallback(
-    async (entry: AuditLogEntryDto) => {
-      try {
-        await navigator.clipboard.writeText(buildRowSummary(entry, eventTitleById));
-        addToast("Row copied to clipboard", "success");
-      } catch {
-        addToast("Could not copy — clipboard access was blocked.", "error");
-      }
-    },
+    (entry: AuditLogEntryDto) => copyRowToClipboard(buildRowSummary(entry, eventTitleById), addToast),
     [eventTitleById, addToast],
   );
 
   const handleCopySecurityRow = useCallback(
-    async (entry: SecurityAuditLogEntryDto) => {
-      try {
-        await navigator.clipboard.writeText(buildSecurityRowSummary(entry));
-        addToast("Row copied to clipboard", "success");
-      } catch {
-        addToast("Could not copy — clipboard access was blocked.", "error");
-      }
-    },
+    (entry: SecurityAuditLogEntryDto) => copyRowToClipboard(buildSecurityRowSummary(entry), addToast),
     [addToast],
   );
 

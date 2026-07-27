@@ -4101,7 +4101,7 @@ output.mail-field-hint {
   border: 1px solid var(--at-yellow);
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--at-yellow) 12%, transparent);
-  color: var(--at-gray-700);
+  color: var(--text-muted);
   font-size: var(--fs-sm);
 }
 
