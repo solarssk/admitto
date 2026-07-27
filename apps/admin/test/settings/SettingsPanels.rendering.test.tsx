@@ -1349,6 +1349,42 @@ describe("AuditLogPanel Security view rendering", () => {
     }
   });
 
+  it("row-copy summary excludes email_redacted from Details, already shown in the User line", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
+      entries: [
+        makeSecurityEntry({
+          user_id: null,
+          user_email: null,
+          user_display_name: null,
+          metadata: { email_redacted: "a***@example.com", note: "hello" },
+        }),
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+    const originalClipboard = navigator.clipboard;
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    try {
+      renderSecurityPanel();
+      const table = await screen.findByRole("table");
+      fireEvent.click(within(table).getByRole("button", { name: "Copy row" }));
+
+      expect(writeText).toHaveBeenCalledTimes(1);
+      const [summary] = writeText.mock.calls[0]!;
+      expect(summary).toContain("User: Unknown (a***@example.com)");
+      expect(summary).toContain("Details:");
+      expect(summary).toContain("Note: hello");
+      // email_redacted already shown on the User line above - the Details section (mirroring
+      // Audit's own buildRowSummary and the Details popover) must not repeat it.
+      expect(summary).not.toMatch(/Email redacted/i);
+    } finally {
+      Object.assign(navigator, { clipboard: originalClipboard });
+    }
+  });
+
   it("debounces the search box before refetching with the trimmed term", async () => {
     renderSecurityPanel();
     await screen.findByText("No security events yet");
@@ -1398,6 +1434,54 @@ describe("AuditLogPanel Security view rendering", () => {
       ),
     );
     expect(await screen.findByText("No matches")).toBeTruthy();
+  });
+
+  it("applies the From/To date filters (as UTC day bounds), resets to page 1, and carries them into export", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValue({
+      entries: [makeSecurityEntry()],
+      total: 50,
+      page: 1,
+      pageSize: 25,
+    });
+    vi.mocked(exportSecurityAuditLog).mockResolvedValueOnce(undefined);
+
+    renderSecurityPanel();
+    await screen.findByRole("table");
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText("Page 2 of 2")).toBeTruthy();
+
+    // getByRole (not getByLabelText): Audit's own From/To fields share the exact same
+    // aria-label - see the matching comment on Audit's own version of this test.
+    const fromInput = screen.getByRole("textbox", { name: "From" });
+    fireEvent.change(fromInput, { target: { value: "2026-01-01" } });
+    fireEvent.blur(fromInput);
+    expect(await screen.findByText("Page 1 of 2")).toBeTruthy();
+    expect(vi.mocked(fetchSecurityAuditLog).mock.calls.at(-1)![0]).toMatchObject({
+      page: 1,
+      start: "2026-01-01T00:00:00.000Z",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByText("Page 2 of 2");
+    const toInput = screen.getByRole("textbox", { name: "To" });
+    fireEvent.change(toInput, { target: { value: "2026-01-31" } });
+    fireEvent.blur(toInput);
+    expect(await screen.findByText("Page 1 of 2")).toBeTruthy();
+    expect(vi.mocked(fetchSecurityAuditLog).mock.calls.at(-1)![0]).toMatchObject({
+      page: 1,
+      end: "2026-01-31T23:59:59.999Z",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Export logs" }));
+    await waitFor(() =>
+      expect(exportSecurityAuditLog).toHaveBeenCalledWith({
+        eventType: undefined,
+        search: undefined,
+        start: "2026-01-01T00:00:00.000Z",
+        end: "2026-01-31T23:59:59.999Z",
+      }),
+    );
   });
 
   it("exports the current filters as CSV and toasts on failure", async () => {
