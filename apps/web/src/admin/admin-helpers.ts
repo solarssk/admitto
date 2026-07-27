@@ -1,14 +1,15 @@
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { canManageEvent, canManageInstance } from "@admitto/auth";
-import { IllegalItemTransitionError, type OpsAuditContext } from "@admitto/tickets";
-import { recordSystemLog } from "@admitto/shared/system-log";
+import { IllegalItemTransitionError, writeAdminAuditLog, type OpsAuditContext } from "@admitto/tickets";
+import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import { isValidIanaTimezone } from "./timezone.js";
 import {
   InstanceUrlRequiredError,
   resolveInstanceBaseUrl,
 } from "../instance-base-url.js";
+import { attachmentContentDisposition } from "./content-disposition.js";
 
 /** Resolve mail/preview base URL or return 422 when unset in production. */
 export async function resolveMailInstanceBaseUrl(
@@ -76,6 +77,50 @@ export async function resolveActorEmailForLog(
   } catch {
     return null;
   }
+}
+
+/** Self-audits a CSV export action into AdminAuditLog and the System-logs Admin source - shared
+ * tail of handleExportAuditLog/handleExportSecurityAuditLog (audit-routes.ts/
+ * security-audit-routes.ts), which otherwise duplicated this write+emit pair verbatim aside from
+ * the action type and organization scoping. */
+export async function selfAuditCsvExport(
+  db: PrismaClient,
+  c: Context,
+  params: { organizationId: string; actionType: string; rowCount: number },
+): Promise<void> {
+  const audit = adminAuditFromContext(c);
+  const actorUserId = audit.operator ?? c.get("auth").userId;
+  await writeAdminAuditLog(db, {
+    organizationId: params.organizationId,
+    actorUserId,
+    sessionId: audit.sessionId,
+    ip: audit.ip,
+    timezone: audit.timezone,
+    actionType: params.actionType,
+    metadata: { rowCount: params.rowCount },
+  });
+  emitSystemLog("admin", "info", params.actionType, {
+    rowCount: params.rowCount,
+    actorUserId,
+    actorEmail: await resolveActorEmailForLog(db, actorUserId),
+    ip: audit.ip,
+  });
+}
+
+/** CSV file response with a UTF-8 BOM (Excel needs it to detect encoding - actor display names
+ * and JSON `details` values can carry non-ASCII text) and the standard no-cache/attachment
+ * headers - shared by every admin CSV export route. */
+export function csvExportResponse(csv: string, filenamePrefix: string): Response {
+  const timestamp = new Date().toISOString().slice(0, 10);
+  const bom = "\uFEFF";
+  return new Response(bom + csv, {
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": attachmentContentDisposition(`${filenamePrefix}-${timestamp}.csv`),
+      "Cache-Control": "no-store",
+      "Pragma": "no-cache",
+    },
+  });
 }
 
 /** Require `:eventId` route param or return 400. */

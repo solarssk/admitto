@@ -1,15 +1,13 @@
 import type { Context } from "hono";
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { EXPORT_ROW_CAP, quoteCsvCell, sanitizeCsvCell, writeAdminAuditLog } from "@admitto/tickets";
-import { emitSystemLog } from "@admitto/shared/system-log";
+import { EXPORT_ROW_CAP, quoteCsvCell, sanitizeCsvCell } from "@admitto/tickets";
 import {
-  adminAuditFromContext,
+  csvExportResponse,
   parseDateBound,
   positiveIntQuery,
   requireSuperadmin,
-  resolveActorEmailForLog,
+  selfAuditCsvExport,
 } from "./admin-helpers.js";
-import { attachmentContentDisposition } from "./content-disposition.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 
 /** Free-text search over the resolved user (email/display name) - resolved to concrete ids up
@@ -177,33 +175,10 @@ export async function handleExportSecurityAuditLog(c: Context, db: PrismaClient)
   const csv = buildSecurityAuditLogCsv(rows, userMap);
 
   const orgId = await resolveInstanceOrganizationId(db, process.env);
-  const audit = adminAuditFromContext(c);
-  const actorUserId = audit.operator ?? c.get("auth").userId;
-  await writeAdminAuditLog(db, {
+  await selfAuditCsvExport(db, c, {
     organizationId: orgId,
-    actorUserId,
-    sessionId: audit.sessionId,
-    ip: audit.ip,
-    timezone: audit.timezone,
     actionType: "security_audit_log_exported",
-    metadata: { rowCount: rows.length },
-  });
-  emitSystemLog("admin", "info", "security_audit_log_exported", {
     rowCount: rows.length,
-    actorUserId,
-    actorEmail: await resolveActorEmailForLog(db, actorUserId),
-    ip: audit.ip,
   });
-
-  const timestamp = new Date().toISOString().slice(0, 10);
-  // BOM so Excel detects UTF-8 - matches handleExportAuditLog's own prefix for the same reason.
-  const bom = "\uFEFF";
-  return new Response(bom + csv, {
-    headers: {
-      "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": attachmentContentDisposition(`security-audit-log-${timestamp}.csv`),
-      "Cache-Control": "no-store",
-      "Pragma": "no-cache",
-    },
-  });
+  return csvExportResponse(csv, "security-audit-log");
 }

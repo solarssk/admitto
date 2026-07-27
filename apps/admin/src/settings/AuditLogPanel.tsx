@@ -911,6 +911,115 @@ function exportSecurityLogRows(filters: SecurityLogFilters) {
 const AUDIT_INITIAL_FILTERS: AuditLogFilters = { actionType: "", eventId: "", search: "", start: "", end: "" };
 const SECURITY_INITIAL_FILTERS: SecurityLogFilters = { eventType: "", search: "", start: "", end: "" };
 
+interface LogFilterFieldProps {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  allLabel: string;
+  options: ReadonlyArray<{ value: string; label: string }>;
+}
+
+/** One labeled <select> inside a view's FiltersMenu - shared by Audit's Action/Event selects and
+ * Security's Event-type select, all three otherwise identical in shape (label + select + an
+ * "All ..." option + a mapped option list). */
+function LogFilterField({ id, label, value, onChange, allLabel, options }: Readonly<LogFilterFieldProps>) {
+  return (
+    <div className="audit-log-filters-menu__field">
+      <label className="audit-log-filter__label" htmlFor={id}>
+        {label}
+      </label>
+      <select id={id} name={id} className="at-select" value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">{allLabel}</option>
+        {options.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+interface AuditFilterFieldsProps {
+  filters: AuditLogFilters;
+  setFilters: Dispatch<SetStateAction<AuditLogFilters>>;
+  setPage: Dispatch<SetStateAction<number>>;
+  events: EventDto[];
+}
+
+/** Audit's own Action + Event(scope) selects, rendered inside LogView's shared FiltersMenu slot -
+ * extracted from AuditLogPanel for the same cognitive-complexity reason as LogsCardActions. */
+function AuditFilterFields({ filters, setFilters, setPage, events }: Readonly<AuditFilterFieldsProps>) {
+  const eventOptions = [...events]
+    .sort((a, b) => a.title.localeCompare(b.title))
+    .map((event) => ({ value: event.id, label: event.title }));
+  return (
+    <>
+      <LogFilterField
+        id="audit-log-filter-action"
+        label="Action"
+        allLabel="All actions"
+        value={filters.actionType}
+        onChange={(value) => {
+          setFilters((f) => ({ ...f, actionType: value }));
+          setPage(1);
+        }}
+        options={ACTION_OPTIONS.map((type) => ({ value: type, label: actionLabel(type) }))}
+      />
+      <LogFilterField
+        id="audit-log-filter-scope"
+        label="Event"
+        allLabel="All events"
+        value={filters.eventId}
+        onChange={(value) => {
+          setFilters((f) => ({ ...f, eventId: value }));
+          setPage(1);
+        }}
+        options={eventOptions}
+      />
+    </>
+  );
+}
+
+interface SecurityFilterFieldsProps {
+  filters: SecurityLogFilters;
+  setFilters: Dispatch<SetStateAction<SecurityLogFilters>>;
+  setPage: Dispatch<SetStateAction<number>>;
+}
+
+/** Security's own Event-type select - mirrors AuditFilterFields above. */
+function SecurityFilterFields({ filters, setFilters, setPage }: Readonly<SecurityFilterFieldsProps>) {
+  return (
+    <LogFilterField
+      id="security-audit-log-filter-event"
+      label="Event"
+      allLabel="All event types"
+      value={filters.eventType}
+      onChange={(value) => {
+        setFilters((f) => ({ ...f, eventType: value }));
+        setPage(1);
+      }}
+      options={SECURITY_EVENT_TYPE_OPTIONS.map((type) => ({ value: type, label: securityEventLabel(type) }))}
+    />
+  );
+}
+
+function hasActiveAuditFilters(f: AuditLogFilters): boolean {
+  return !!(f.actionType || f.eventId || f.search || f.start || f.end);
+}
+
+function hasActiveSecurityFilters(f: SecurityLogFilters): boolean {
+  return !!(f.eventType || f.search || f.start || f.end);
+}
+
+/** How many of the given values are truthy - used for the Filters button's active-count badge,
+ * where each caller's own fields differ (Audit counts actionType+eventId, Security just
+ * eventType) but the "count the truthy ones" shape is the same. */
+function countTruthy(...values: unknown[]): number {
+  return values.filter(Boolean).length;
+}
+
 /** A single missed live-refresh tick is normal network noise - the next tick POLL_INTERVAL_MS
  * later retries. A sustained run of them (endpoint down, role revoked) must not leave "Live"
  * looking green over silently stale rows forever. Extracted out of useLogQuery's own load()
@@ -1422,7 +1531,7 @@ export function AuditLogPanel() {
     reload: load,
   } = useLogQuery<AuditLogEntryDto, AuditLogFilters>({
     initialFilters: AUDIT_INITIAL_FILTERS,
-    hasActiveFilters: (f) => !!(f.actionType || f.eventId || f.search || f.start || f.end),
+    hasActiveFilters: hasActiveAuditFilters,
     fetchPage: fetchAuditLogPage,
     exportRows: exportAuditLogRows,
     loadErrorMessage: "Failed to load audit log.",
@@ -1430,7 +1539,7 @@ export function AuditLogPanel() {
   });
   const security = useLogQuery<SecurityAuditLogEntryDto, SecurityLogFilters>({
     initialFilters: SECURITY_INITIAL_FILTERS,
-    hasActiveFilters: (f) => !!(f.eventType || f.search || f.start || f.end),
+    hasActiveFilters: hasActiveSecurityFilters,
     fetchPage: fetchSecurityLogPage,
     exportRows: exportSecurityLogRows,
     loadErrorMessage: "Failed to load security audit log.",
@@ -1511,15 +1620,14 @@ export function AuditLogPanel() {
   // On mobile the date fields move into this same panel (see the toolbar JSX below), so an
   // active From/To should count toward the badge there too - on desktop they stay in the main
   // toolbar, always visible, so they'd double-count if included here as well.
-  const activeDateCount = (filters.start ? 1 : 0) + (filters.end ? 1 : 0);
-  const actionScopeActiveCount =
-    (filters.actionType ? 1 : 0) + (filters.eventId ? 1 : 0) + (isDesktop ? 0 : activeDateCount);
+  const activeDateCount = countTruthy(filters.start, filters.end);
+  const actionScopeActiveCount = countTruthy(filters.actionType, filters.eventId) + (isDesktop ? 0 : activeDateCount);
 
   // Same mobile-double-count reasoning as activeDateCount/actionScopeActiveCount above, applied
   // to the Security view's own (single) filter dropdown.
-  const securityActiveDateCount = (security.filters.start ? 1 : 0) + (security.filters.end ? 1 : 0);
+  const securityActiveDateCount = countTruthy(security.filters.start, security.filters.end);
   const securityFilterActiveCount =
-    (security.filters.eventType ? 1 : 0) + (isDesktop ? 0 : securityActiveDateCount);
+    countTruthy(security.filters.eventType) + (isDesktop ? 0 : securityActiveDateCount);
 
   // Rendered in the Card header on desktop, or in the toolbar (next to Filters) on mobile -
   // on a narrow card the header can only fit the title and the always-present System/Audit
@@ -1609,54 +1717,7 @@ export function AuditLogPanel() {
   const isInitialLoad = loading && !hasLoadedOnce;
 
   const auditFilterFields = (
-    <>
-      <div className="audit-log-filters-menu__field">
-        <label className="audit-log-filter__label" htmlFor="audit-log-filter-action">
-          Action
-        </label>
-        <select
-          id="audit-log-filter-action"
-          name="audit-log-filter-action"
-          className="at-select"
-          value={filters.actionType}
-          onChange={(e) => {
-            setFilters((f) => ({ ...f, actionType: e.target.value }));
-            setPage(1);
-          }}
-        >
-          <option value="">All actions</option>
-          {ACTION_OPTIONS.map((type) => (
-            <option key={type} value={type}>
-              {actionLabel(type)}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="audit-log-filters-menu__field">
-        <label className="audit-log-filter__label" htmlFor="audit-log-filter-scope">
-          Event
-        </label>
-        <select
-          id="audit-log-filter-scope"
-          name="audit-log-filter-scope"
-          className="at-select"
-          value={filters.eventId}
-          onChange={(e) => {
-            setFilters((f) => ({ ...f, eventId: e.target.value }));
-            setPage(1);
-          }}
-        >
-          <option value="">All events</option>
-          {[...events]
-            .sort((a, b) => a.title.localeCompare(b.title))
-            .map((event) => (
-              <option key={event.id} value={event.id}>
-                {event.title}
-              </option>
-            ))}
-        </select>
-      </div>
-    </>
+    <AuditFilterFields filters={filters} setFilters={setFilters} setPage={setPage} events={events} />
   );
 
   const listContent = (
@@ -1706,28 +1767,7 @@ export function AuditLogPanel() {
   const isSecurityInitialLoad = security.loading && !security.hasLoadedOnce;
 
   const securityFilterFields = (
-    <div className="audit-log-filters-menu__field">
-      <label className="audit-log-filter__label" htmlFor="security-audit-log-filter-event">
-        Event
-      </label>
-      <select
-        id="security-audit-log-filter-event"
-        name="security-audit-log-filter-event"
-        className="at-select"
-        value={security.filters.eventType}
-        onChange={(e) => {
-          security.setFilters((f) => ({ ...f, eventType: e.target.value }));
-          security.setPage(1);
-        }}
-      >
-        <option value="">All event types</option>
-        {SECURITY_EVENT_TYPE_OPTIONS.map((type) => (
-          <option key={type} value={type}>
-            {securityEventLabel(type)}
-          </option>
-        ))}
-      </select>
-    </div>
+    <SecurityFilterFields filters={security.filters} setFilters={security.setFilters} setPage={security.setPage} />
   );
 
   const securityListContent = (
