@@ -610,6 +610,7 @@ export function EventSettingsPage() {
   // back in, which read as a full-card flicker (PO review).
   const ticketTypesLoadedRef = useRef(false);
   const ticketTypesAbortRef = useRef<AbortController | null>(null);
+  const abortLatestTicketTypes = useCallback(() => ticketTypesAbortRef.current?.abort(), []);
 
   // A stale in-flight request from a previous eventId (e.g. navigating between two events'
   // settings before the first request lands) must not overwrite this event's state once it
@@ -636,9 +637,8 @@ export function EventSettingsPage() {
 
   useEffect(() => {
     loadTicketTypes().catch(() => {});
-    const ticketTypesAbortController = ticketTypesAbortRef.current;
-    return () => ticketTypesAbortController?.abort();
-  }, [loadTicketTypes]);
+    return abortLatestTicketTypes;
+  }, [abortLatestTicketTypes, loadTicketTypes]);
 
   useEffect(() => {
     if (!pageDirty) return;
