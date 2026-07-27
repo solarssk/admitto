@@ -911,6 +911,15 @@ function exportSecurityLogRows(filters: SecurityLogFilters) {
 const AUDIT_INITIAL_FILTERS: AuditLogFilters = { actionType: "", eventId: "", search: "", start: "", end: "" };
 const SECURITY_INITIAL_FILTERS: SecurityLogFilters = { eventType: "", search: "", start: "", end: "" };
 
+/** A single missed live-refresh tick is normal network noise - the next tick POLL_INTERVAL_MS
+ * later retries. A sustained run of them (endpoint down, role revoked) must not leave "Live"
+ * looking green over silently stale rows forever. Extracted out of useLogQuery's own load()
+ * purely to keep that function's cognitive complexity within the shared lint budget. */
+function recordSilentPollFailure(pollFailureCountRef: RefObject<number>, setPollDegraded: (degraded: boolean) => void) {
+  pollFailureCountRef.current += 1;
+  if (pollFailureCountRef.current >= POLL_DEGRADED_THRESHOLD) setPollDegraded(true);
+}
+
 interface UseLogQueryOptions<TEntry, TFilters extends { search: string; start: string; end: string }> {
   initialFilters: TFilters;
   hasActiveFilters: (filters: TFilters) => boolean;
@@ -1019,11 +1028,7 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
       } catch (err) {
         if (ac.signal.aborted) return;
         if (silent) {
-          // A single missed live-refresh tick is normal network noise - the next tick
-          // POLL_INTERVAL_MS later retries. A sustained run of them (endpoint down, role
-          // revoked) must not leave "Live" looking green over silently stale rows forever.
-          pollFailureCountRef.current += 1;
-          if (pollFailureCountRef.current >= POLL_DEGRADED_THRESHOLD) setPollDegraded(true);
+          recordSilentPollFailure(pollFailureCountRef, setPollDegraded);
           return;
         }
         setError(operatorApiErrorMessage(err, loadErrorMessage));
@@ -1302,6 +1307,80 @@ const LOGS_VIEW_OPTIONS: ReadonlyArray<SegmentedOption<LogsView>> = [
   { value: "audit", label: "Audit" },
   { value: "security", label: "Security" },
 ];
+
+const LOGS_VIEW_TITLES: Record<LogsView, string> = {
+  system: "System logs",
+  audit: "Audit logs",
+  security: "Security logs",
+};
+
+function logsViewTitle(view: LogsView): string {
+  return LOGS_VIEW_TITLES[view];
+}
+
+interface LogsCardActionsProps {
+  view: LogsView;
+  isDesktop: boolean;
+  auditActions: ReactNode;
+  systemActions: ReactNode;
+  securityActions: ReactNode;
+  onViewChange: (view: LogsView) => void;
+}
+
+/** The Card header's actions row - extracted from AuditLogPanel purely to keep that component's
+ * own cognitive complexity within the shared lint budget; on mobile these same buttons render
+ * inline in each view's own toolbar instead (see LogView), since a narrow card header can only
+ * fit the title plus the always-present System/Audit/Security toggle before wrapping. */
+function LogsCardActions({
+  view,
+  isDesktop,
+  auditActions,
+  systemActions,
+  securityActions,
+  onViewChange,
+}: Readonly<LogsCardActionsProps>) {
+  return (
+    <>
+      {isDesktop && view === "audit" && auditActions}
+      {isDesktop && view === "system" && systemActions}
+      {isDesktop && view === "security" && securityActions}
+      {/* Always last: with the actions row right-anchored, a trailing item's own edge
+          stays flush against the card's right edge no matter how many of the preceding,
+          view-dependent buttons are present - the one placement that's genuinely fixed. */}
+      <Segmented
+        ariaLabel="Logs view"
+        value={view}
+        onChange={onViewChange}
+        options={LOGS_VIEW_OPTIONS}
+        className="audit-log-view-toggle"
+      />
+    </>
+  );
+}
+
+interface LogsPanelViewsProps {
+  view: LogsView;
+  systemLogsPanel: ReactNode;
+  auditView: ReactNode;
+  securityView: ReactNode;
+}
+
+/** All three views stay mounted the whole time, toggled by visibility rather than by
+ * conditional rendering - switching the toggle used to unmount/remount whichever side you
+ * left, which meant losing all of System's polled state and re-fetching from scratch on
+ * every return trip (a visible flash even on a fast local request). Neither side's effects
+ * care that they're temporarily hidden - polling simply continues, so flipping back shows
+ * already-current data instead of an empty/loading flash. Extracted from AuditLogPanel for
+ * the same cognitive-complexity reason as LogsCardActions above. */
+function LogsPanelViews({ view, systemLogsPanel, auditView, securityView }: Readonly<LogsPanelViewsProps>) {
+  return (
+    <>
+      <div style={{ display: view === "system" ? undefined : "none" }}>{systemLogsPanel}</div>
+      <div style={{ display: view === "audit" ? undefined : "none" }}>{auditView}</div>
+      <div style={{ display: view === "security" ? undefined : "none" }}>{securityView}</div>
+    </>
+  );
+}
 
 /** Superadmin audit log viewer — read-only paginated table with action and date filters. */
 export function AuditLogPanel() {
@@ -1716,129 +1795,121 @@ export function AuditLogPanel() {
     </Button>
   );
 
+  // On mobile these same buttons render inline in each view's own toolbar instead (see
+  // LogView) - order (both here and there) is fixed across all three views: Clear filters (if
+  // the view has one) first, then Export logs, then Live last so it sits directly beside the
+  // System/Audit/Security selector it's paused/resumed relative to.
+  const auditActions = (
+    <>
+      {clearFiltersButton}
+      {exportButton}
+      {auditLiveButton}
+    </>
+  );
+  const systemActions = (
+    <>
+      {downloadButton}
+      {liveButton}
+    </>
+  );
+  const securityActions = (
+    <>
+      {securityClearFiltersButton}
+      {securityExportButton}
+      {securityLiveButton}
+    </>
+  );
+
   return (
     <Card
-      title={view === "system" ? "System logs" : view === "audit" ? "Audit logs" : "Security logs"}
+      title={logsViewTitle(view)}
       className="audit-log-header-card"
       actions={
-        <>
-          {/* On mobile these move down into the toolbar instead (next to Filters) - a
-              narrow card header can only fit the title plus this always-present toggle before
-              wrapping onto a second line. Order (both here and in each view's own mobile
-              toolbar) is fixed across all three views: Clear filters (if the view has one)
-              first, then Export logs, then Live last so it sits directly beside the
-              System/Audit/Security selector it's paused/resumed relative to. */}
-          {isDesktop && view === "audit" && (
-            <>
-              {clearFiltersButton}
-              {exportButton}
-              {auditLiveButton}
-            </>
-          )}
-          {isDesktop && view === "system" && (
-            <>
-              {downloadButton}
-              {liveButton}
-            </>
-          )}
-          {isDesktop && view === "security" && (
-            <>
-              {securityClearFiltersButton}
-              {securityExportButton}
-              {securityLiveButton}
-            </>
-          )}
-          {/* Always last: with the actions row right-anchored, a trailing item's own edge
-              stays flush against the card's right edge no matter how many of the preceding,
-              view-dependent buttons are present - the one placement that's genuinely fixed. */}
-          <Segmented
-            ariaLabel="Logs view"
-            value={view}
-            onChange={setView}
-            options={LOGS_VIEW_OPTIONS}
-            className="audit-log-view-toggle"
-          />
-        </>
+        <LogsCardActions
+          view={view}
+          isDesktop={isDesktop}
+          auditActions={auditActions}
+          systemActions={systemActions}
+          securityActions={securityActions}
+          onViewChange={setView}
+        />
       }
     >
-      {/* All three views stay mounted the whole time, toggled by visibility rather than by
-          conditional rendering - switching the toggle used to unmount/remount whichever side
-          you left, which meant losing all of System's polled state and re-fetching from
-          scratch on every return trip (a visible flash even on a fast local request). Neither
-          side's effects care that they're temporarily hidden - polling simply continues, so
-          flipping back shows already-current data instead of an empty/loading flash. */}
-      <div style={{ display: view === "system" ? undefined : "none" }}>
-        <SystemLogsPanel
-          ref={systemLogsRef}
-          isDesktop={isDesktop}
-          liveButton={!isDesktop ? liveButton : undefined}
-          downloadButton={!isDesktop ? downloadButton : undefined}
-          onLiveChange={setSystemLive}
-          onHasEntriesChange={setSystemHasEntries}
-        />
-      </div>
-      <div style={{ display: view === "audit" ? undefined : "none" }}>
-        <LogView
-          idPrefix="audit-log"
-          searchAriaLabel="Search actor or event"
-          searchPlaceholder="Search actor or event…"
-          isDesktop={isDesktop}
-          rootRef={rootRef}
-          searchInput={searchInput}
-          setSearchInput={setSearchInput}
-          searchInputRef={searchInputRef}
-          fromDatePicker={fromDatePicker}
-          toDatePicker={toDatePicker}
-          filterActiveCount={actionScopeActiveCount}
-          filterFields={auditFilterFields}
-          clearFiltersButton={clearFiltersButton}
-          exportButton={exportButton}
-          liveButton={auditLiveButton}
-          pollDegraded={live && pollDegraded}
-          onRetryNow={() => void load()}
-          listContent={listContent}
-          loading={loading}
-          error={error}
-          total={total}
-          page={page}
-          pageSize={pageSize}
-          setPage={setPage}
-          setPageSize={setPageSize}
-          goToPage={goToPage}
-          totalPages={totalPages}
-        />
-      </div>
-      <div style={{ display: view === "security" ? undefined : "none" }}>
-        <LogView
-          idPrefix="security-audit-log"
-          searchAriaLabel="Search user"
-          searchPlaceholder="Search user…"
-          isDesktop={isDesktop}
-          rootRef={security.rootRef}
-          searchInput={security.searchInput}
-          setSearchInput={security.setSearchInput}
-          searchInputRef={security.searchInputRef}
-          fromDatePicker={securityFromDatePicker}
-          toDatePicker={securityToDatePicker}
-          filterActiveCount={securityFilterActiveCount}
-          filterFields={securityFilterFields}
-          clearFiltersButton={securityClearFiltersButton}
-          liveButton={securityLiveButton}
-          exportButton={securityExportButton}
-          pollDegraded={security.live && security.pollDegraded}
-          onRetryNow={() => void security.reload()}
-          listContent={securityListContent}
-          loading={security.loading}
-          error={security.error}
-          total={security.total}
-          page={security.page}
-          pageSize={security.pageSize}
-          setPage={security.setPage}
-          setPageSize={security.setPageSize}
-          goToPage={security.goToPage}
-          totalPages={security.totalPages}
-        />
-      </div>
+      <LogsPanelViews
+        view={view}
+        systemLogsPanel={
+          <SystemLogsPanel
+            ref={systemLogsRef}
+            isDesktop={isDesktop}
+            liveButton={!isDesktop ? liveButton : undefined}
+            downloadButton={!isDesktop ? downloadButton : undefined}
+            onLiveChange={setSystemLive}
+            onHasEntriesChange={setSystemHasEntries}
+          />
+        }
+        auditView={
+          <LogView
+            idPrefix="audit-log"
+            searchAriaLabel="Search actor or event"
+            searchPlaceholder="Search actor or event…"
+            isDesktop={isDesktop}
+            rootRef={rootRef}
+            searchInput={searchInput}
+            setSearchInput={setSearchInput}
+            searchInputRef={searchInputRef}
+            fromDatePicker={fromDatePicker}
+            toDatePicker={toDatePicker}
+            filterActiveCount={actionScopeActiveCount}
+            filterFields={auditFilterFields}
+            clearFiltersButton={clearFiltersButton}
+            exportButton={exportButton}
+            liveButton={auditLiveButton}
+            pollDegraded={live && pollDegraded}
+            onRetryNow={() => void load()}
+            listContent={listContent}
+            loading={loading}
+            error={error}
+            total={total}
+            page={page}
+            pageSize={pageSize}
+            setPage={setPage}
+            setPageSize={setPageSize}
+            goToPage={goToPage}
+            totalPages={totalPages}
+          />
+        }
+        securityView={
+          <LogView
+            idPrefix="security-audit-log"
+            searchAriaLabel="Search user"
+            searchPlaceholder="Search user…"
+            isDesktop={isDesktop}
+            rootRef={security.rootRef}
+            searchInput={security.searchInput}
+            setSearchInput={security.setSearchInput}
+            searchInputRef={security.searchInputRef}
+            fromDatePicker={securityFromDatePicker}
+            toDatePicker={securityToDatePicker}
+            filterActiveCount={securityFilterActiveCount}
+            filterFields={securityFilterFields}
+            clearFiltersButton={securityClearFiltersButton}
+            liveButton={securityLiveButton}
+            exportButton={securityExportButton}
+            pollDegraded={security.live && security.pollDegraded}
+            onRetryNow={() => void security.reload()}
+            listContent={securityListContent}
+            loading={security.loading}
+            error={security.error}
+            total={security.total}
+            page={security.page}
+            pageSize={security.pageSize}
+            setPage={security.setPage}
+            setPageSize={security.setPageSize}
+            goToPage={security.goToPage}
+            totalPages={security.totalPages}
+          />
+        }
+      />
     </Card>
   );
 }
