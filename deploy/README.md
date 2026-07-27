@@ -139,7 +139,7 @@ never runs any of this itself and never runs as root (docker:S6471).
 3. `prisma migrate deploy` — idempotent schema migrations (automatic; operators never run this by hand; drops to the `node` user for this and every step below)
 4. `backfill-public-ref.js` and other idempotent backfills (safe to re-run; throw if DB/schema incompatible)
 
-**`app`** (always runs as `node`, never root) then runs its own startup step — best-effort retention cleanup (120s timeout each, non-fatal on failure): expired/revoked auth sessions and trusted devices (`purge-auth-retention`), then stale email delivery HTML/subject snapshots (`nullify-delivery-snapshots`) — before execing `node apps/web/dist/src/index.js`. Retention lives here rather than in `migrate` because `migrate`'s `depends_on: condition: service_completed_successfully` is only evaluated on `docker compose up`; a bare `app` restart (crash loop, `docker compose restart app`, `restart: unless-stopped`) never re-runs `migrate`, so retention needs to run on every `app` start independently to keep its original on-every-boot cadence. No migration logic here, and no filesystem access to `/backups` at all (not mounted).
+**`app`** (always runs as `node`, never root) then runs its own startup step — best-effort retention cleanup (120s timeout each, non-fatal on failure): expired/revoked auth sessions and trusted devices (`purge-auth-retention`), stale email delivery HTML/subject snapshots (`nullify-delivery-snapshots`), then stale `SecurityAuditLog` rows (`purge-security-audit-log`, default 30 days, `SECURITY_AUDIT_LOG_RETENTION_DAYS`) — before execing `node apps/web/dist/src/index.js`. Retention lives here rather than in `migrate` because `migrate`'s `depends_on: condition: service_completed_successfully` is only evaluated on `docker compose up`; a bare `app` restart (crash loop, `docker compose restart app`, `restart: unless-stopped`) never re-runs `migrate`, so retention needs to run on every `app` start independently to keep its original on-every-boot cadence. No migration logic here, and no filesystem access to `/backups` at all (not mounted).
 
 **Operator upgrade:** pull the new image and `docker compose up -d` — migrations apply automatically with a restore point when needed. No manual migration step.
 
@@ -217,7 +217,7 @@ docker compose run --rm app node apps/cli/dist/index.js retention run --operator
 
 **Pre-event drill:** on staging, admit at least three test attendees using only `checkin lookup` → `checkin admit` and verify `AttendeeActionLog` / admitted status in admin.
 
-Legacy per-package CLIs (`packages/auth/dist/cli.js`, `packages/mail-delivery/dist/cli.js`) remain for bootstrap and low-level retention; `admitto retention run` combines auth + mail snapshot cleanup in one command.
+Legacy per-package CLIs (`packages/auth/dist/cli.js`, `packages/mail-delivery/dist/cli.js`) remain for bootstrap and low-level retention (and are what actually run automatically — see below); `admitto retention run` combines auth + mail snapshot + security audit log cleanup in one audited command for manual/on-demand use.
 
 ## Nginx Proxy Manager (production edge)
 
@@ -270,10 +270,10 @@ See [`../../_ops/design/deployment-cloudflare-access.md`](../../_ops/design/depl
 
 Public attendee paths (`/t/*`, `/q/*`) must stay bypassed at Cloudflare.
 
-## Retention (auth sessions, mail snapshots)
+## Retention (auth sessions, mail snapshots, security audit log)
 
-**On app startup:** `docker-entrypoint.sh` runs `purge-auth-retention` and
-`nullify-delivery-snapshots` (best-effort, 120s timeout per CLI).
+**On app startup:** `docker-entrypoint.sh` runs `purge-auth-retention`,
+`nullify-delivery-snapshots`, and `purge-security-audit-log` (best-effort, 120s timeout per CLI).
 
 **Daily sidecar (`retention`):** the same CLIs run every 24 hours so long-lived stacks
 do not skip retention between restarts. Logs:
@@ -287,7 +287,11 @@ Manual one-off (same commands as the sidecar):
 ```bash
 docker compose exec app node packages/auth/dist/cli.js purge-auth-retention
 docker compose exec app node packages/mail-delivery/dist/cli.js nullify-delivery-snapshots
+docker compose exec app node packages/auth/dist/cli.js purge-security-audit-log
 ```
+
+`purge-security-audit-log` defaults to a 30-day window; override with
+`SECURITY_AUDIT_LOG_RETENTION_DAYS` (see `.env.example`).
 
 Failed runs log `FAILED` but do not stop the loop — check logs after deploy.
 

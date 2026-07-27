@@ -30,7 +30,10 @@ import {
   type IdentityProviderFormView,
   type IdentityProviderInput,
 } from "@admitto/auth";
+import { writeAdminAuditLogBestEffort } from "@admitto/tickets";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
+import { adminAuditFromContext } from "./admin-helpers.js";
+import { resolveInstanceOrganizationId } from "./instance-org.js";
 
 const MAPPING_ROLE = z.enum(["superadmin", "admin", "operator"]);
 const MAPPING_SCOPE = z.enum(["instance", "organization", "event"]);
@@ -259,6 +262,17 @@ export async function handleApiCreateProvider(c: Context, db: PrismaClient): Pro
     action: "create",
     targetId: provider.id,
   });
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
+  await writeAdminAuditLogBestEffort(db, {
+    organizationId: orgId,
+    actorUserId: actorUserId(c),
+    sessionId: audit.sessionId,
+    ip: audit.ip,
+    timezone: audit.timezone,
+    actionType: "identity_provider_created",
+    metadata: { providerId: provider.id, displayName: provider.display_name },
+  });
   return c.json(await providerDetailDto(db, provider), 201);
 }
 
@@ -295,6 +309,17 @@ export async function handleApiUpdateProvider(c: Context, db: PrismaClient): Pro
     action: "update",
     targetId: id,
   });
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
+  await writeAdminAuditLogBestEffort(db, {
+    organizationId: orgId,
+    actorUserId: actorUserId(c),
+    sessionId: audit.sessionId,
+    ip: audit.ip,
+    timezone: audit.timezone,
+    actionType: "identity_provider_updated",
+    metadata: { providerId: id },
+  });
   return c.json(await providerDetailDto(db, updated));
 }
 
@@ -320,6 +345,17 @@ export async function handleApiToggleProvider(c: Context, db: PrismaClient): Pro
     resource: "oidc_provider",
     action: provider.enabled ? "disable" : "enable",
     targetId: id,
+  });
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
+  await writeAdminAuditLogBestEffort(db, {
+    organizationId: orgId,
+    actorUserId: actorUserId(c),
+    sessionId: audit.sessionId,
+    ip: audit.ip,
+    timezone: audit.timezone,
+    actionType: "identity_provider_toggled",
+    metadata: { providerId: id, enabled: intended },
   });
   return c.json({ id, enabled: intended });
 }
@@ -362,6 +398,17 @@ export async function handleApiDiscoverProvider(c: Context, db: PrismaClient): P
     resource: "oidc_provider",
     action: "discover",
     targetId: id,
+  });
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
+  await writeAdminAuditLogBestEffort(db, {
+    organizationId: orgId,
+    actorUserId: actorUserId(c),
+    sessionId: audit.sessionId,
+    ip: audit.ip,
+    timezone: audit.timezone,
+    actionType: "identity_provider_discovered",
+    metadata: { providerId: id },
   });
 
   const refreshed = await findOidcProviderById(db, id);
@@ -552,6 +599,17 @@ export async function handleApiUpdateCfAccess(c: Context, db: PrismaClient): Pro
     actorUserId: actorUserId(c),
     resource: "cf_access",
     action: settingsAction,
+  });
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
+  await writeAdminAuditLogBestEffort(db, {
+    organizationId: orgId,
+    actorUserId: actorUserId(c),
+    sessionId: audit.sessionId,
+    ip: audit.ip,
+    timezone: audit.timezone,
+    actionType: "identity_cf_access_updated",
+    metadata: { action: settingsAction },
   });
 
   return c.json(await cfAccessDto(db));

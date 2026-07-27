@@ -134,11 +134,13 @@ services:
     command:
       - |
         while true; do
-          echo "[retention] $$(date -u +%FT%TZ) running auth + mail retention"
+          echo "[retention] $$(date -u +%FT%TZ) running auth + mail + security audit log retention"
           node packages/auth/dist/cli.js purge-auth-retention \
             || echo "[retention] auth purge FAILED"
           node packages/mail-delivery/dist/cli.js nullify-delivery-snapshots \
             || echo "[retention] mail nullify FAILED"
+          node packages/auth/dist/cli.js purge-security-audit-log \
+            || echo "[retention] security audit log purge FAILED"
           sleep 86400
         done
     networks:

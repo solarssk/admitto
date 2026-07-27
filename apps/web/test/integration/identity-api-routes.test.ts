@@ -285,6 +285,13 @@ describe("identity providers API — toggle", () => {
     const off = await json(`/api/admin/identity/providers/${PROVIDER_ID}/toggle`, { method: "POST" });
     expect(off.status).toBe(200);
     expect(await jsonAs<{ id: string; enabled: boolean }>(off)).toEqual({ id: PROVIDER_ID, enabled: false });
+
+    expect(
+      await prisma.adminAuditLog.findFirst({
+        where: { action_type: "identity_provider_toggled", actor_user_id: SUPER_ID },
+        orderBy: { created_at: "desc" },
+      }),
+    ).toMatchObject({ metadata: { providerId: PROVIDER_ID, enabled: false } });
   });
 });
 
@@ -316,6 +323,13 @@ describe("identity providers API — update", () => {
 
     const after = await prisma.identityProvider.findUniqueOrThrow({ where: { id: PROVIDER_ID } });
     expect(after.client_secret_enc).toBe(before.client_secret_enc);
+
+    expect(
+      await prisma.adminAuditLog.findFirst({
+        where: { action_type: "identity_provider_updated", actor_user_id: SUPER_ID },
+        orderBy: { created_at: "desc" },
+      }),
+    ).toMatchObject({ metadata: { providerId: PROVIDER_ID } });
   });
 
   it("rejects invalid mapping role with 400", async () => {
@@ -427,6 +441,12 @@ describe("identity providers API — create", () => {
     expect(body.display_name).toBe("Created via API");
     expect(body.has_client_secret).toBe(false);
     const createdId = body.id;
+    expect(
+      await prisma.adminAuditLog.findFirst({
+        where: { action_type: "identity_provider_created", actor_user_id: SUPER_ID },
+        orderBy: { created_at: "desc" },
+      }),
+    ).toMatchObject({ metadata: { providerId: createdId, displayName: "Created via API" } });
     await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: createdId } });
     await prisma.identityProvider.delete({ where: { id: createdId } });
   });
@@ -525,6 +545,29 @@ describe("identity providers API — discover preview", () => {
   });
 });
 
+describe("identity providers API — discover", () => {
+  it("discovers and persists new endpoints, recording an admin audit row (200)", async () => {
+    vi.mocked(fetchOidcDiscovery).mockResolvedValueOnce({
+      issuer: "https://idp-api-test.example.com/",
+      authorization_endpoint: "https://idp-api-test.example.com/a",
+      token_endpoint: "https://idp-api-test.example.com/t",
+      jwks_uri: "https://idp-api-test.example.com/j",
+    });
+    const res = await json(`/api/admin/identity/providers/${PROVIDER_ID}/discover`, {
+      method: "POST",
+    });
+    expect(res.status).toBe(200);
+    expect((await jsonAs<{ ok: true; endpoints: { issuer: string } }>(res)).ok).toBe(true);
+
+    expect(
+      await prisma.adminAuditLog.findFirst({
+        where: { action_type: "identity_provider_discovered", actor_user_id: SUPER_ID },
+        orderBy: { created_at: "desc" },
+      }),
+    ).toMatchObject({ metadata: { providerId: PROVIDER_ID } });
+  });
+});
+
 describe("cloudflare access API", () => {
   it("returns CF access dto with locks", async () => {
     const res = await json("/api/admin/identity/cf-access");
@@ -600,6 +643,12 @@ describe("cloudflare access API", () => {
         audience: ["aud-test"],
         protectedPrefixes: ["/admin"],
       });
+      expect(
+        await prisma.adminAuditLog.findFirst({
+          where: { action_type: "identity_cf_access_updated", actor_user_id: SUPER_ID },
+          orderBy: { created_at: "desc" },
+        }),
+      ).toMatchObject({ metadata: { action: "enable" } });
 
       const disabled = await json("/api/admin/identity/cf-access", {
         method: "PUT",
@@ -612,6 +661,12 @@ describe("cloudflare access API", () => {
         audience: ["aud-test"],
         protectedPrefixes: ["/admin"],
       });
+      expect(
+        await prisma.adminAuditLog.findFirst({
+          where: { action_type: "identity_cf_access_updated", actor_user_id: SUPER_ID },
+          orderBy: { created_at: "desc" },
+        }),
+      ).toMatchObject({ metadata: { action: "disable" } });
 
       vi.stubEnv("CF_ACCESS_AUD", JSON.stringify(["audience-from-env"]));
       try {

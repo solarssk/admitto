@@ -6247,3 +6247,58 @@ select.system-log-panel__field {
 /* Settings tab bar's horizontal scroll + edge-fade behavior now lives in the
    shared ScrollFadeTabs component (apps/admin/src/components/ScrollFadeTabs.tsx),
    used instead of the plain <Tabs> in SettingsLayout.tsx. */
+
+/* Security audit log panel (issue #473's durable auth/security event trail) - "Logs & audit"
+   tab, right after the admin AuditLogPanel above. Smaller table, so its own scoped classes
+   rather than reaching into audit-log- or sessions- prefixed ones (owned by sibling panels). */
+.security-audit-log-status {
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  padding: var(--space-4) 0;
+}
+
+.security-audit-table-wrap {
+  overflow-x: auto;
+  margin: 0 calc(-1 * var(--space-4));
+  padding: 0 var(--space-4);
+}
+
+.security-audit-log-metadata {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-subtle, var(--gray-50, #f8f9fa));
+  border-radius: var(--radius-sm, 4px);
+  font-size: var(--fs-xs, 0.75rem);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+/* Matches .audit-log-footer exactly (same summary-left, pager-right layout). */
+.security-audit-log-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.security-audit-log-footer__pager {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+@media (max-width: 600px) {
+  .security-audit-log-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+  }
+
+  .security-audit-log-footer__pager {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+}

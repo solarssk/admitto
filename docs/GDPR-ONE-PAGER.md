@@ -52,6 +52,7 @@ Two layers: **product-automated** (daily sidecar + container startup, best-effor
 | Data | Policy (default design intent) |
 |------|-------------------------------|
 | Login sessions, trusted devices | Purged automatically when expired/revoked — **daily automated sidecar + app startup** |
+| Security audit trail (`SecurityAuditLog` — login/MFA/logout/OIDC/access-denied) | Purged automatically after **30 days** default (`SECURITY_AUDIT_LOG_RETENTION_DAYS`) — **daily automated sidecar + app startup** |
 | Email delivery snapshots (`rendered_html`, `rendered_subject`) | Nullified **60 days** after terminal delivery — **daily automated sidecar + app startup**; delivery log metadata retained |
 | IP in admin audit / check-in logs | **30 days or operator corporate log retention policy** — not auto-purged by product |
 | Event attendee PII | **Retained until operator erasure** (conscious product default); export via admin UI; erasure via `DELETE` API per DSAR procedure (no SPA delete button yet) |

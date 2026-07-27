@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import type { PrismaClient } from "@prisma/client";
-import { resolveActorEmailForLog, resolveClientTimezone } from "../src/admin/admin-helpers.js";
+import {
+  isValidCalendarDate,
+  resolveActorEmailForLog,
+  resolveClientTimezone,
+} from "../src/admin/admin-helpers.js";
 
 function appWithRequest(headers: Record<string, string> = {}) {
   const app = new Hono();
@@ -23,6 +27,24 @@ describe("resolveClientTimezone (Codecov review — previously untested)", () =>
   it("returns the header value when it's a valid IANA timezone", async () => {
     const res = await appWithRequest({ "X-Client-Timezone": "Europe/Warsaw" });
     expect(await res.json()).toEqual({ timezone: "Europe/Warsaw" });
+  });
+});
+
+describe("isValidCalendarDate", () => {
+  it("rejects a string with the wrong number of dash-separated parts", () => {
+    // parseDateBound's own regex (\d{4}-\d{2}-\d{2}) already guarantees exactly 3 parts before
+    // ever calling this - exercised here directly since it's exported and a caller with a
+    // looser gate could still reach this branch.
+    expect(isValidCalendarDate("2026-02")).toBe(false);
+    expect(isValidCalendarDate("2026-02-30-99")).toBe(false);
+  });
+
+  it("rejects an impossible day-for-month", () => {
+    expect(isValidCalendarDate("2026-02-30")).toBe(false);
+  });
+
+  it("accepts a real calendar date", () => {
+    expect(isValidCalendarDate("2026-02-28")).toBe(true);
   });
 });
 

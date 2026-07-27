@@ -703,6 +703,12 @@ describe("IAM-001/IAM-003 forced password change is enforced at the session laye
         select: { must_change_password: true },
       });
       expect(refreshed?.must_change_password).toBe(false);
+      expect(
+        await prisma.adminAuditLog.findFirst({
+          where: { action_type: "account_password_changed", actor_user_id: op!.id },
+          orderBy: { created_at: "desc" },
+        }),
+      ).toMatchObject({ metadata: { forced: true } });
 
       // The same session is now full and may reach protected routes.
       const allowed = await app.request("/api/checkin/events", {

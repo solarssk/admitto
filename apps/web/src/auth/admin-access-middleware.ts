@@ -167,7 +167,7 @@ async function sessionSuperadminGate(
     return loginBoundaryResponse(c, prisma);
   }
   if (!(await canManageInstance(prisma, validated.userId))) {
-    logAccessDenied({
+    await logAccessDenied(prisma, {
       path: c.req.path,
       reason: "no_superadmin_role",
       authSource: "session",

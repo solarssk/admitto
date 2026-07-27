@@ -38,7 +38,7 @@ async function forbiddenNoAdminAccess(
   prisma: PrismaClient,
   userId: string,
 ): Promise<Response> {
-  logAccessDenied({
+  await logAccessDenied(prisma, {
     path: c.req.path,
     reason: "no_admin_access",
     authSource: "session",
