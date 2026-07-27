@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- `argon2` bumped to 0.45.1; updated `packages/auth/src/password.ts` for the library's `Options` → `HashOptions` type rename. Type-only fix — `hash()` still returns the same encoded PHC string (not raw bytes) with no `raw` option set, confirmed by the full `@admitto/auth` suite including integration tests that write the hash straight into `password_hash`.
+- CI: `scripts/test-migration-backup.sh` Scenario B (bare `app` restart → retention cleanup log line) now polls for up to 30s instead of a fixed 5s sleep before grepping logs — the fixed delay was a flaky race (container restart-to-ready time varies with CI load), most visible after #611 added a third startup retention query.
 - CI: `github/codeql-action` (`init`, `autobuild`, `analyze`, `upload-sarif`) bumped to v4.37.3 across `codeql.yml`, `semgrep.yml`, and `publish-container.yml` in one commit, keeping all four pins in sync — Dependabot had split this into separate per-action PRs (#601, #599) which each individually mismatched the pinned config version and broke the `analyze` job.
 
 ### Added

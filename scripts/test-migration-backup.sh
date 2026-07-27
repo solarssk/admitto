@@ -76,14 +76,22 @@ if [[ "$after" != "$before" ]]; then
   exit 1
 fi
 $COMPOSE restart app
-sleep 5
-$COMPOSE ps app | grep -q healthy || $COMPOSE ps app | grep -q running
 # A bare restart never re-runs migrate (depends_on: condition: service_completed_successfully is
 # only evaluated on `docker compose up`), so retention cleanup must show up in app's own logs on
 # every restart to actually happen at all (regression class caught by Codex review on PR #572).
-if ! $COMPOSE logs app --since 15s 2>&1 | grep -q "purging expired/revoked auth sessions"; then
+# Poll instead of a fixed sleep: restart-to-ready timing varies with CI load, and a slower
+# startup must not turn into a flaky failure here.
+retention_seen=0
+for _ in $(seq 1 30); do
+  if $COMPOSE logs app --since 30s 2>&1 | grep -q "purging expired/revoked auth sessions"; then
+    retention_seen=1
+    break
+  fi
+  sleep 1
+done
+if [[ "$retention_seen" -ne 1 ]]; then
   echo "expected retention cleanup log line after a bare app restart" >&2
-  $COMPOSE logs app --since 15s
+  $COMPOSE logs app --since 30s
   exit 1
 fi
 echo "Scenario B OK"
