@@ -59,12 +59,12 @@ export async function login(
 
   const passwordOk = await verifyPasswordOrDummy(input.password, user?.password_hash ?? null);
   if (!user || !passwordOk) {
-    logLoginFailure(audit ?? { email, ip: input.ip, userAgent: input.userAgent });
+    await logLoginFailure(prisma, audit ?? { email, ip: input.ip, userAgent: input.userAgent });
     return INVALID;
   }
 
   if (!user.is_active) {
-    logLoginFailure(audit ?? { email, ip: input.ip, userAgent: input.userAgent });
+    await logLoginFailure(prisma, audit ?? { email, ip: input.ip, userAgent: input.userAgent });
     return { ok: false, reason: "inactive" };
   }
 
@@ -111,7 +111,10 @@ export async function login(
     deviceLabel: input.deviceLabel,
   });
 
-  logLoginSuccess(audit ?? { email, ip: input.ip, userAgent: input.userAgent });
+  await logLoginSuccess(prisma, {
+    ...(audit ?? { email, ip: input.ip, userAgent: input.userAgent }),
+    userId: user.id,
+  });
 
   return {
     ok: true,
@@ -194,11 +197,12 @@ async function completeMfaInTransaction(
 }
 
 /** Emit MFA audit events after the DB transaction commits (success paths only). */
-function emitMfaAudit(
+async function emitMfaAudit(
+  db: PrismaClient | Prisma.TransactionClient,
   audit: MfaAuditContext | undefined,
   input: CompleteMfaInput,
   result: CompleteMfaTxResult,
-): void {
+): Promise<void> {
   const auditCtx: MfaAuditContext = audit ?? {
     userId: input.userId,
     sessionId: input.sessionId,
@@ -207,14 +211,14 @@ function emitMfaAudit(
   };
   if (!result.ok) {
     if (result.reason === "invalid_code") {
-      logMfaFailure(auditCtx);
+      await logMfaFailure(db, auditCtx);
     }
     return;
   }
   if (result.recoveryMethod) {
-    logMfaRecoveryConsumed(auditCtx, result.recoveryMethod);
+    await logMfaRecoveryConsumed(db, auditCtx, result.recoveryMethod);
   }
-  logMfaSuccess(auditCtx, result.method);
+  await logMfaSuccess(db, auditCtx, result.method);
 }
 
 /**
@@ -234,7 +238,7 @@ export async function completeMfa(
     txResult = await completeMfaInTransaction(prisma, input);
   }
 
-  emitMfaAudit(audit, input, txResult);
+  await emitMfaAudit(prisma, audit, input, txResult);
 
   if (!txResult.ok) return { ok: false };
   return {
@@ -269,7 +273,7 @@ export async function logout(
     data: { revoked_at: new Date() },
   });
   if (count > 0) {
-    logLogout({
+    await logLogout(prisma, {
       userId: validated.userId,
       sessionId: validated.session.id,
       ip: audit?.ip,

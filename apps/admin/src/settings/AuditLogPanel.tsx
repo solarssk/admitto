@@ -38,6 +38,7 @@ const ACTION_LABELS: Record<string, string> = {
   audit_log_exported: "Audit log exported",
   emergency_session_purge: "Emergency session purge",
   event_archived: "Event archived",
+  event_branding_uploaded: "Event branding uploaded",
   event_checkins_bulk_revoked: "Event check-ins bulk revoked",
   event_contact_created: "Event contact added",
   event_contact_deleted: "Event contact removed",
@@ -56,9 +57,16 @@ const ACTION_LABELS: Record<string, string> = {
   event_resource_updated: "Event resource updated",
   event_unarchived: "Event unarchived",
   event_updated: "Event updated",
+  identity_cf_access_updated: "Cloudflare Access settings updated",
+  identity_provider_created: "SSO provider created",
+  identity_provider_discovered: "SSO provider endpoints rediscovered",
+  identity_provider_toggled: "SSO provider enabled/disabled",
+  identity_provider_updated: "SSO provider updated",
+  instance_setup_completed: "Instance setup completed",
   mail_settings_updated: "Mail settings updated",
   mail_transport_tested: "Mail transport tested",
   operator_sessions_bulk_revoked: "Operator sessions revoked",
+  org_branding_logo_uploaded: "Organization branding logo uploaded",
   retention_run: "Retention job run",
   role_granted: "Role granted",
   role_revoked: "Role revoked",
@@ -97,6 +105,8 @@ const TONE_BY_ADMIN_ACTION: Record<string, BadgeVariant> = {
   user_sessions_revoked: "error",
   role_granted: "info",
   system_settings_updated: "info",
+  identity_provider_toggled: "info",
+  identity_cf_access_updated: "info",
 };
 
 function actionTone(type: string): BadgeVariant {

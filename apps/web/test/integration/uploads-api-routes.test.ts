@@ -171,6 +171,14 @@ describe("POST /api/admin/uploads", () => {
     const getRes = await app.request(body.url);
     expect(getRes.status).toBe(200);
     expect(getRes.headers.get("content-type")).toBe("image/png");
+
+    const superUser = await prisma.user.findUniqueOrThrow({ where: { email: EMAIL_SUPER } });
+    expect(
+      await prisma.adminAuditLog.findFirst({
+        where: { action_type: "org_branding_logo_uploaded", actor_user_id: superUser.id },
+        orderBy: { created_at: "desc" },
+      }),
+    ).not.toBeNull();
   });
 
   it("rejects unsupported file type with 415", async () => {
@@ -209,6 +217,14 @@ describe("POST /api/admin/events/:eventId/branding-upload", () => {
 
     const getRes = await app.request(body.url);
     expect(getRes.status).toBe(200);
+
+    const superUser = await prisma.user.findUniqueOrThrow({ where: { email: EMAIL_SUPER } });
+    expect(
+      await prisma.adminAuditLog.findFirst({
+        where: { action_type: "event_branding_uploaded", actor_user_id: superUser.id },
+        orderBy: { created_at: "desc" },
+      }),
+    ).toMatchObject({ metadata: { eventId: EVENT_OWN } });
   });
 
   it("accepts PNG for the org admin who manages the event (not superadmin-only)", async () => {
