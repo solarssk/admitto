@@ -240,8 +240,8 @@ export interface AttendeeDetailDto {
   deliveries: DeliveryDto[];
   action_log: AttendeeActionLogEntryDto[];
   event_items: AttendeeDetailItemDto[];
-  notes: AttendeeNoteDto[];
   notes_total: number;
+  notes: AttendeeNoteDto[];
   notes_page_size: number;
   notes_page: number;
 }
