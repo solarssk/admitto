@@ -13,9 +13,13 @@ import {
 } from "../src/item-states.js";
 import {
   addAttendeeNote,
+  updateAttendeeNote,
+  deleteAttendeeNote,
   NoteTooLongError,
   OperatorRequiredError,
   AttendeeNotFoundError,
+  NoteNotFoundError,
+  NoteForbiddenError,
 } from "../src/notes.js";
 import { generateToken, hashToken } from "../src/index.js";
 import { getAttendeeCard, getCheckInStats, lookupAttendees } from "../src/attendee-card.js";
@@ -285,6 +289,104 @@ describe("addAttendeeNote (Lock #8)", () => {
         prisma,
       ),
     ).rejects.toBeInstanceOf(AttendeeNotFoundError);
+  });
+});
+
+describe("updateAttendeeNote", () => {
+  it("updates the author's own note, trims the body, and writes a PII-minimised audit row", async () => {
+    const note = await prisma.attendeeNote.create({
+      data: { attendee_id: attendeeId, event_id: EVENT_ID, author_user_id: OPERATOR, body: "Original" },
+    });
+
+    const updated = await updateAttendeeNote(
+      { attendeeId, eventId: EVENT_ID, noteId: note.id, body: "  Updated  ", audit: { operator: OPERATOR, sessionId: "sess-1" } },
+      prisma,
+    );
+
+    expect(updated).toMatchObject({ id: note.id, body: "Updated" });
+    const audit = await prisma.attendeeActionLog.findFirst({
+      where: { attendee_id: attendeeId, action_type: "note_updated" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit?.metadata).toEqual({ note_id: note.id });
+  });
+
+  it("rejects an empty or overlong body and a missing operator", async () => {
+    const note = await prisma.attendeeNote.create({
+      data: { attendee_id: attendeeId, event_id: EVENT_ID, author_user_id: OPERATOR, body: "Original" },
+    });
+
+    await expect(updateAttendeeNote(
+      { attendeeId, eventId: EVENT_ID, noteId: note.id, body: "  ", audit: { operator: OPERATOR } }, prisma,
+    )).rejects.toThrow("Note body required");
+    await expect(updateAttendeeNote(
+      { attendeeId, eventId: EVENT_ID, noteId: note.id, body: "n".repeat(2001), audit: { operator: OPERATOR } }, prisma,
+    )).rejects.toBeInstanceOf(NoteTooLongError);
+    await expect(updateAttendeeNote(
+      { attendeeId, eventId: EVENT_ID, noteId: note.id, body: "Updated", audit: {} }, prisma,
+    )).rejects.toBeInstanceOf(OperatorRequiredError);
+  });
+
+  it("rejects an unknown note and a note written by someone else", async () => {
+    await expect(updateAttendeeNote(
+      { attendeeId, eventId: EVENT_ID, noteId: "missing", body: "Updated", audit: { operator: OPERATOR } }, prisma,
+    )).rejects.toBeInstanceOf(NoteNotFoundError);
+
+    const note = await prisma.attendeeNote.create({
+      data: { attendee_id: attendeeId, event_id: EVENT_ID, author_user_id: "another-operator", body: "Original" },
+    });
+    await expect(updateAttendeeNote(
+      { attendeeId, eventId: EVENT_ID, noteId: note.id, body: "Updated", audit: { operator: OPERATOR } }, prisma,
+    )).rejects.toBeInstanceOf(NoteForbiddenError);
+  });
+});
+
+describe("deleteAttendeeNote", () => {
+  it("deletes the author's own note and records the original author without its body", async () => {
+    const note = await prisma.attendeeNote.create({
+      data: { attendee_id: attendeeId, event_id: EVENT_ID, author_user_id: OPERATOR, body: "Remove me" },
+    });
+
+    await deleteAttendeeNote(
+      { attendeeId, eventId: EVENT_ID, noteId: note.id, canDeleteAnyNote: false, audit: { operator: OPERATOR } },
+      prisma,
+    );
+
+    expect(await prisma.attendeeNote.findUnique({ where: { id: note.id } })).toBeNull();
+    const audit = await prisma.attendeeActionLog.findFirst({
+      where: { attendee_id: attendeeId, action_type: "note_deleted" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit?.metadata).toEqual({ note_id: note.id, author_user_id: OPERATOR });
+  });
+
+  it("allows an authorised admin to delete someone else's note", async () => {
+    const note = await prisma.attendeeNote.create({
+      data: { attendee_id: attendeeId, event_id: EVENT_ID, author_user_id: "another-operator", body: "Remove me" },
+    });
+
+    await deleteAttendeeNote(
+      { attendeeId, eventId: EVENT_ID, noteId: note.id, canDeleteAnyNote: true, audit: { operator: OPERATOR } },
+      prisma,
+    );
+
+    expect(await prisma.attendeeNote.findUnique({ where: { id: note.id } })).toBeNull();
+  });
+
+  it("rejects a missing operator, unknown note, and unauthorised deletion", async () => {
+    const note = await prisma.attendeeNote.create({
+      data: { attendee_id: attendeeId, event_id: EVENT_ID, author_user_id: "another-operator", body: "Keep me" },
+    });
+
+    await expect(deleteAttendeeNote(
+      { attendeeId, eventId: EVENT_ID, noteId: note.id, canDeleteAnyNote: false, audit: {} }, prisma,
+    )).rejects.toBeInstanceOf(OperatorRequiredError);
+    await expect(deleteAttendeeNote(
+      { attendeeId, eventId: EVENT_ID, noteId: "missing", canDeleteAnyNote: false, audit: { operator: OPERATOR } }, prisma,
+    )).rejects.toBeInstanceOf(NoteNotFoundError);
+    await expect(deleteAttendeeNote(
+      { attendeeId, eventId: EVENT_ID, noteId: note.id, canDeleteAnyNote: false, audit: { operator: OPERATOR } }, prisma,
+    )).rejects.toBeInstanceOf(NoteForbiddenError);
   });
 });
 

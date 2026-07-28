@@ -671,18 +671,26 @@ function AttendeeActivityTab({
   );
 }
 
-function noteRoleBadgeVariant(role: NoteAuthorRole): BadgeProps["variant"] {
-  if (role === "superadmin") return "error";
-  if (role === "admin") return "warn";
-  if (role === "operator") return "info";
-  return "neutral";
+type AssignedNoteAuthorRole = Exclude<NoteAuthorRole, null>;
+
+const NOTE_ROLE_BADGE_VARIANTS: Record<AssignedNoteAuthorRole, BadgeProps["variant"]> = {
+  superadmin: "error",
+  admin: "warn",
+  operator: "info",
+};
+
+const NOTE_ROLE_SHORTS: Record<AssignedNoteAuthorRole, string> = {
+  superadmin: "SA",
+  admin: "AD",
+  operator: "OP",
+};
+
+function noteRoleBadgeVariant(role: AssignedNoteAuthorRole): BadgeProps["variant"] {
+  return NOTE_ROLE_BADGE_VARIANTS[role];
 }
 
-function noteRoleShort(role: NoteAuthorRole): string {
-  if (role === "superadmin") return "SA";
-  if (role === "admin") return "AD";
-  if (role === "operator") return "OP";
-  return "";
+function noteRoleShort(role: AssignedNoteAuthorRole): string {
+  return NOTE_ROLE_SHORTS[role];
 }
 
 /** Delete rule (PO): admins may delete their own note or one written by an operator, but not

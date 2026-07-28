@@ -366,7 +366,7 @@ describe("AttendeeDetailPage — Notes tab", () => {
       await waitFor(() => {
         expect(updateAttendeeNote).toHaveBeenCalledWith("evt-1", "att-1", "n1", "Updated body");
       });
-      await waitFor(() => expect(screen.getByText("Updated body")).toBeTruthy());
+      expect(await screen.findByText("Updated body")).toBeTruthy();
       expect(screen.getByTestId("at-toast").textContent).toContain("Note updated");
     });
 

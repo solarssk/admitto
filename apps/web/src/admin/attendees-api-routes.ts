@@ -46,8 +46,6 @@ import {
   updateAttendeeNote,
   deleteAttendeeNote,
   NoteTooLongError,
-  OperatorRequiredError,
-  AttendeeNotFoundError,
   NoteNotFoundError,
   NoteForbiddenError,
   type OpsAuditContext,
@@ -2847,10 +2845,6 @@ export async function handleAddAttendeeNote(c: Context, db: PrismaClient): Promi
     );
   } catch (err) {
     if (err instanceof NoteTooLongError) return c.json({ error: "Note too long" }, 400);
-    // Both defensive-only here: requireManagedEventAttendee already authenticated the admin
-    // session and confirmed the attendee exists in this event before this call.
-    if (err instanceof OperatorRequiredError) return c.json({ error: "unauthorized" }, 401);
-    if (err instanceof AttendeeNotFoundError) return c.json({ error: "forbidden" }, 403);
     console.error("handleAddAttendeeNote failed:", err);
     return c.json({ error: "server error" }, 500);
   }
@@ -2890,13 +2884,40 @@ export async function handlePatchAttendeeNote(c: Context, db: PrismaClient): Pro
     if (err instanceof NoteTooLongError) return c.json({ error: "Note too long" }, 400);
     if (err instanceof NoteNotFoundError) return c.json({ error: "not found" }, 404);
     if (err instanceof NoteForbiddenError) return c.json({ error: "forbidden" }, 403);
-    if (err instanceof OperatorRequiredError) return c.json({ error: "unauthorized" }, 401);
     console.error("handlePatchAttendeeNote failed:", err);
     return c.json({ error: "server error" }, 500);
   }
 
   const dto = await buildAttendeeDetailDto(db, eventId, existing);
   return c.json(dto);
+}
+
+/** Resolve whether the actor may delete a note they did not author. Own-note deletion remains
+ * the domain function's responsibility; this only grants the elevated paths: superadmin for any
+ * author, or an event's admin for a current event-scoped operator author. */
+async function canDeleteAnyAttendeeNote(
+  db: PrismaClient,
+  eventId: string,
+  attendeeId: string,
+  noteId: string,
+  actorUserId: string,
+): Promise<boolean> {
+  if (await canManageInstance(db, actorUserId)) return true;
+
+  const note = await db.attendeeNote.findFirst({
+    where: { id: noteId, attendee_id: attendeeId, event_id: eventId },
+    select: { author_user_id: true },
+  });
+  if (!note || note.author_user_id === actorUserId) return false;
+
+  const event = await db.event.findUniqueOrThrow({
+    where: { id: eventId },
+    select: { organization_id: true },
+  });
+  const roles = await resolveNoteAuthorRoles(db, eventId, event.organization_id, [
+    note.author_user_id,
+  ]);
+  return roles.get(note.author_user_id) === "operator";
 }
 
 /**
@@ -2917,25 +2938,13 @@ export async function handleDeleteAttendeeNote(c: Context, db: PrismaClient): Pr
   const noteId = noteIdOrRes;
 
   const auth = c.get("auth");
-  let canDeleteAnyNote = await canManageInstance(db, auth.userId);
-  if (!canDeleteAnyNote) {
-    const note = await db.attendeeNote.findFirst({
-      where: { id: noteId, attendee_id: attendeeId, event_id: eventId },
-      select: { author_user_id: true },
-    });
-    if (note && note.author_user_id !== auth.userId) {
-      const event = await db.event.findUnique({
-        where: { id: eventId },
-        select: { organization_id: true },
-      });
-      if (event) {
-        const roles = await resolveNoteAuthorRoles(db, eventId, event.organization_id, [
-          note.author_user_id,
-        ]);
-        canDeleteAnyNote = roles.get(note.author_user_id) === "operator";
-      }
-    }
-  }
+  const canDeleteAnyNote = await canDeleteAnyAttendeeNote(
+    db,
+    eventId,
+    attendeeId,
+    noteId,
+    auth.userId,
+  );
 
   try {
     await deleteAttendeeNote(
@@ -2945,7 +2954,6 @@ export async function handleDeleteAttendeeNote(c: Context, db: PrismaClient): Pr
   } catch (err) {
     if (err instanceof NoteNotFoundError) return c.json({ error: "not found" }, 404);
     if (err instanceof NoteForbiddenError) return c.json({ error: "forbidden" }, 403);
-    if (err instanceof OperatorRequiredError) return c.json({ error: "unauthorized" }, 401);
     console.error("handleDeleteAttendeeNote failed:", err);
     return c.json({ error: "server error" }, 500);
   }

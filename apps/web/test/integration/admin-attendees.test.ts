@@ -3029,6 +3029,23 @@ describe("POST /api/admin/events/:eventId/attendees/:id/notes", () => {
     expect(json.error).toMatch(/too long/i);
   });
 
+  it("returns a generic 500 without leaking an unexpected note-create failure", async () => {
+    const transactionSpy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("db exploded"));
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_NOTE}/notes`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ body: "Will not be stored" }),
+      });
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: "server error" });
+    } finally {
+      transactionSpy.mockRestore();
+      consoleSpy.mockRestore();
+    }
+  });
+
   it("returns 403 for an unknown attendee id (no existence oracle, matches sibling routes)", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/does-not-exist/notes`, {
       method: "POST",
@@ -3157,6 +3174,25 @@ describe("PATCH & DELETE /api/admin/events/:eventId/attendees/:id/notes/:noteId"
       await prisma.attendeeNote.delete({ where: { id: noteId } });
     });
 
+    it("returns a generic 500 without leaking an unexpected note-update failure", async () => {
+      const noteId = await createNote(adminId);
+      const transactionSpy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("db exploded"));
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      try {
+        const res = await app.request(noteUrl(noteId), {
+          method: "PATCH",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ body: "Will not be stored" }),
+        });
+        expect(res.status).toBe(500);
+        expect(await res.json()).toEqual({ error: "server error" });
+      } finally {
+        transactionSpy.mockRestore();
+        consoleSpy.mockRestore();
+        await prisma.attendeeNote.delete({ where: { id: noteId } });
+      }
+    });
+
     it("returns 404 for an unknown note id", async () => {
       const res = await app.request(noteUrl("does-not-exist"), {
         method: "PATCH",
@@ -3229,6 +3265,24 @@ describe("PATCH & DELETE /api/admin/events/:eventId/attendees/:id/notes/:noteId"
       });
       const row = await prisma.attendeeNote.findUnique({ where: { id: noteId } });
       expect(row).toBeNull();
+    });
+
+    it("returns a generic 500 without leaking an unexpected note-delete failure", async () => {
+      const noteId = await createNote(adminId);
+      const transactionSpy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("db exploded"));
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      try {
+        const res = await app.request(noteUrl(noteId), {
+          method: "DELETE",
+          headers: { Cookie: adminCookie, ...sameOrigin },
+        });
+        expect(res.status).toBe(500);
+        expect(await res.json()).toEqual({ error: "server error" });
+      } finally {
+        transactionSpy.mockRestore();
+        consoleSpy.mockRestore();
+        await prisma.attendeeNote.delete({ where: { id: noteId } });
+      }
     });
 
     it("returns 404 for an unknown note id", async () => {
@@ -3604,6 +3658,32 @@ describe("Attendees v2 — RSVP and manual create", () => {
     expect(Array.isArray(body.action_log)).toBe(true);
   });
 
+  it("detail omits the ticket preview when the stored token cannot be decrypted", async () => {
+    const attendee = await prisma.attendee.findUniqueOrThrow({
+      where: { id: ATT_A1 },
+      select: { token_enc: true },
+    });
+    await prisma.attendee.update({
+      where: { id: ATT_A1 },
+      data: { token_enc: "invalid-encrypted-token" },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A1}`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      expect((await res.json()) as { ticket_ref: string | null }).toMatchObject({
+        ticket_ref: null,
+      });
+    } finally {
+      await prisma.attendee.update({
+        where: { id: ATT_A1 },
+        data: { token_enc: attendee.token_enc },
+      });
+    }
+  });
+
   it("PATCH rsvp_status writes rsvp_status_changed audit log", async () => {
     const expectedUpdatedAt = await currentUpdatedAt(ATT_A2);
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
@@ -3679,6 +3759,17 @@ describe("Attendees v2 — RSVP and manual create", () => {
     expect(adminMeta.attendee_email).toBe("manual@example.com");
 
     await prisma.attendee.delete({ where: { id: body.id } });
+  });
+
+  it("POST create rejects malformed JSON without writing an attendee", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{",
+    });
+
+    expect(res.status).toBe(400);
+    expect((await res.json()) as { error: string }).toEqual({ error: "invalid json" });
   });
 
   it("POST create rejects invalid custom_data select option", async () => {
