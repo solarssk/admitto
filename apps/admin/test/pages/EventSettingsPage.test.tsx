@@ -151,6 +151,13 @@ function inheritedMailSettingsResponse(): EventMailSettingsResponse {
   };
 }
 
+/** Same fixture but already saved as this event's own dedicated override, so the Mailing
+ * tab's toggle opens on "Dedicated for this event" — used to dirty the draft by switching
+ * back to "Organization mail" without having to fill out a full SMTP/Graph form. */
+function dedicatedMailSettingsResponse(): EventMailSettingsResponse {
+  return { ...inheritedMailSettingsResponse(), hasEventOverride: true };
+}
+
 beforeEach(() => {
   // The ticket-type staleness tests queue one-off mock implementations. Resetting them before
   // every test prevents an unconsumed async response in a failed test from affecting the next one.
@@ -646,6 +653,88 @@ describe("EventSettingsPage Mailing tab (superadmin-only)", () => {
     await screen.findByLabelText("Event title");
     expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.queryByRole("radio", { name: "Organization mail" })).toBeNull();
+  });
+});
+
+describe("EventSettingsPage Mail tab — single hoisted Save/Reset pair", () => {
+  // Regression coverage: the Mail tab used to render its own Save/Reset footer inside
+  // EventMailSettingsCard *in addition to* this page header's Save button — two ways to
+  // save the same form, and the bottom one could scroll out of view. The card now only
+  // exposes save()/reset() imperatively; this page header is the single save affordance.
+  async function openMailTab() {
+    await screen.findByRole("tab", { name: "Mailing" });
+    fireEvent.click(screen.getByRole("tab", { name: "Mailing" }));
+    await screen.findByRole("radio", { name: "Organization mail" });
+  }
+
+  it("shows exactly one Save button and one Reset button, both in the page header", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings();
+    await openMailTab();
+
+    expect(screen.getAllByRole("button", { name: "Save changes" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Reset" })).toHaveLength(1);
+  });
+
+  it("disables the header's Save/Reset pair until the mail draft is dirty", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings();
+    await openMailTab();
+
+    expect(screen.getByRole("button", { name: "Save changes" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Reset" }).hasAttribute("disabled")).toBe(true);
+
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+
+    expect(screen.getByRole("button", { name: "Save changes" }).hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: "Reset" }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("clicking the header's Save button drives the card's own save flow", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchEventMailSettings).mockResolvedValue(dedicatedMailSettingsResponse());
+    renderSettings();
+    await openMailTab();
+    expect(
+      screen.getByRole("radio", { name: "Dedicated for this event" }).getAttribute("aria-checked"),
+    ).toBe("true");
+
+    // Switching back to "Organization mail" is destructive (drops the dedicated override),
+    // so saving it goes through EventMailSettingsCard's own ConfirmDialog rather than an
+    // immediate save — proof the header button reaches the card's real handleSave, not a
+    // no-op stub.
+    fireEvent.click(screen.getByRole("radio", { name: "Organization mail" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(screen.getByText(/Revert to organization mail/)).toBeTruthy();
+  });
+
+  it("clicking the header's Reset button reverts the mail draft", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings();
+    await openMailTab();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+    expect(
+      screen.getByRole("radio", { name: "Dedicated for this event" }).getAttribute("aria-checked"),
+    ).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+
+    expect(
+      screen.getByRole("radio", { name: "Organization mail" }).getAttribute("aria-checked"),
+    ).toBe("true");
+  });
+
+  it("keeps the General tab's own Save button unaffected", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings();
+    await screen.findByLabelText("Event title");
+
+    expect(screen.getByRole("button", { name: "Save changes" }).hasAttribute("disabled")).toBe(true);
+    fireEvent.change(screen.getByLabelText("Event title"), { target: { value: "Summit 2" } });
+    expect(screen.getByRole("button", { name: "Save changes" }).hasAttribute("disabled")).toBe(false);
   });
 });
 

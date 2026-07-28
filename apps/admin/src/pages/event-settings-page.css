@@ -78,6 +78,12 @@
   display: none;
 }
 
+.save-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 /* Single "Save changes" action (shortened to "Save" below desktop, EventSettingsPage.tsx) -
    keep it beside the "Event settings" title instead of the shared PageHeader's default
    stack-below-767px behavior (components.css), same scoped-override reasoning as
@@ -210,4 +216,3 @@
 .danger-zone-notice i {
   margin-top: 2px;
 }
-

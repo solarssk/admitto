@@ -820,6 +820,27 @@ export function MailTransportCard({
   );
 }
 
+/** Inline validation error list shown near a mail settings form — shared by SettingsFooter
+ * (Instance Settings' own save/reset bar) and EventMailSettingsCard (which hoists its actual
+ * Save/Reset buttons to the page header, but still needs to surface these errors where the
+ * form itself is). Renders nothing when there's nothing to report. */
+export function ValidationErrorList({
+  errors,
+  errorsRef,
+}: Readonly<{
+  errors: string[];
+  errorsRef: RefObject<HTMLUListElement | null>;
+}>) {
+  if (errors.length === 0) return null;
+  return (
+    <ul ref={errorsRef} role="alert" className="text-error">
+      {errors.map((e) => (
+        <li key={e}>{e}</li>
+      ))}
+    </ul>
+  );
+}
+
 export function SettingsFooter({
   validationErrors,
   validationErrorsRef,
@@ -847,18 +868,11 @@ export function SettingsFooter({
   return (
     <div className="settings-footer">
       <div className="settings-footer__status">
-        {validationErrors.length > 0 ? (
-          <ul ref={validationErrorsRef} role="alert" className="text-error">
-            {validationErrors.map((e) => (
-              <li key={e}>{e}</li>
-            ))}
-          </ul>
-        ) : (
-          hasUnsavedChanges && (
-            <span className="settings-footer__save-state">
-              <i className="ti ti-alert-triangle" aria-hidden="true" /> Unsaved changes
-            </span>
-          )
+        <ValidationErrorList errors={validationErrors} errorsRef={validationErrorsRef} />
+        {validationErrors.length === 0 && hasUnsavedChanges && (
+          <span className="settings-footer__save-state">
+            <i className="ti ti-alert-triangle" aria-hidden="true" /> Unsaved changes
+          </span>
         )}
       </div>
       <div className="settings-footer__buttons">
