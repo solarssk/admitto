@@ -9,6 +9,36 @@
   display: inline-flex;
 }
 
+/* Single action button (unlike Attendees' 4-button row) - it already fits beside the "Reports"
+   title once shortened to "Export" (ReportsPage.tsx, isDesktop-driven, same pattern as
+   Attendees' "+ Add attendee"/"Send tickets"), so keep the shared PageHeader's default row
+   layout instead of letting it stack the button below the title (components.css's
+   max-width:767px rule - scoped override, same reasoning as .attendees-pageheader). Button
+   sizing (height/font/padding, icon hidden) matches .attendees-pageheader's own mobile rule
+   below it, verbatim - these two drifted apart once (Reports left at the default taller size
+   while Attendees was compacted), which read as a mismatch beside the same title-height
+   button pattern (PO review). */
+@media (max-width: 767px) {
+  .reports-pageheader .at-pageheader__row {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .reports-pageheader .at-pageheader__actions {
+    justify-content: flex-end;
+  }
+
+  .reports-pageheader .at-pageheader__actions .at-btn {
+    height: var(--control-h-sm);
+    font-size: var(--fs-sm);
+    padding: 0 var(--space-2);
+  }
+
+  .reports-pageheader .at-pageheader__actions .at-btn .at-btn__icon {
+    display: none;
+  }
+}
+
 .reports-export-menu__panel {
   position: absolute;
   top: calc(100% + 4px);

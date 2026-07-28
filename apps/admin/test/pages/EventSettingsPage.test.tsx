@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RouterProvider } from "react-router/dom";
 import { createMemoryRouter, MemoryRouter, Route, Routes } from "react-router";
 import { EventSettingsPage } from "../../src/pages/EventSettingsPage.js";
-import { renderWithToast } from "../test-utils.js";
+import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 import type { RoleAssignment, TicketTypeDto } from "../../src/api/types.js";
 
 const superadminAssignments: RoleAssignment[] = [
@@ -166,11 +166,16 @@ beforeEach(() => {
   vi.mocked(fetchTicketTypes).mockResolvedValue([]);
   vi.mocked(fetchEventMailSettings).mockResolvedValue(inheritedMailSettingsResponse());
   mockBlocker = { state: "unblocked", proceed: vi.fn(), reset: vi.fn() };
+  // The page's Save button label shortens on mobile via useIsDesktop(), which reads
+  // window.matchMedia - jsdom doesn't implement it. Default to desktop so existing
+  // "Save changes" label assertions keep working unchanged.
+  mockMatchMedia(true);
 });
 
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
   mockAssignments = superadminAssignments;
 });
 
@@ -185,6 +190,17 @@ function renderSettings(entry = "/admin/events/evt-1/settings") {
     </MemoryRouter>,
   );
 }
+
+describe("EventSettingsPage responsive save label", () => {
+  it("uses the short Save label on mobile", async () => {
+    mockMatchMedia(false);
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings();
+
+    expect(await screen.findByRole("button", { name: "Save" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+  });
+});
 
 describe("EventSettingsPage subtitle", () => {
   const SUBTITLE = "Manage this event's details, branding, and access controls.";

@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useParams } from "react-router";
 import type { EventDto } from "../api/types.js";
 import { StaffShell } from "./StaffShell.js";
-import { BrandMark } from "./BrandMark.js";
+import { BrandLink } from "./BrandLink.js";
 import { InstanceSidebarFoot } from "./InstanceSidebarFoot.js";
 import { formatEventCalendarDate } from "../utils/event-dates.js";
 
@@ -17,11 +17,8 @@ const LIFECYCLE_NAV: NavItem[] = [
   { segment: "overview", icon: "layout-dashboard", label: "Overview" },
   { segment: "attendees", icon: "users", label: "Attendees" },
   { segment: "requirements", icon: "clipboard-list", label: "Requirements" },
-  { segment: "approval", icon: "user-check", label: "Approval" },
   { segment: "communication", icon: "mail", label: "Communication" },
   { segment: "checkin", icon: "qrcode", label: "Check-in" },
-  { segment: "wallet", icon: "wallet", label: "Passes" },
-  { segment: "fulfilment", icon: "package", label: "Fulfilment" },
   { segment: "thank-you", icon: "heart", label: "Post-event" },
   { segment: "reports", icon: "chart-bar", label: "Reports" },
   { segment: "settings", icon: "adjustments", label: "Event settings" },
@@ -53,10 +50,7 @@ export function AdminShell({ event, refreshEvent }: AdminShellProps) {
 
   const sidebar = (
     <>
-      <NavLink to="/admin" className="sidebar__brand" end>
-        <BrandMark />
-        <span>Admitto</span>
-      </NavLink>
+      <BrandLink to="/admin" end className="sidebar__brand" />
       <div className="sidebar__event">
         <div className="overline">Event</div>
         <div className="sidebar__event-info">
@@ -114,7 +108,7 @@ export function AdminShell({ event, refreshEvent }: AdminShellProps) {
   );
 
   return (
-    <StaffShell sidebar={sidebar} eventId={eventId}>
+    <StaffShell sidebar={sidebar} eventId={eventId} brandTo="/admin" brandEnd>
       <Outlet context={{ event, refreshEvent }} />
     </StaffShell>
   );

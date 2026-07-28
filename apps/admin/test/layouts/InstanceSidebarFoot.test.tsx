@@ -17,34 +17,32 @@ afterEach(() => {
 });
 
 describe("InstanceSidebarFoot", () => {
-  it("shows All events, administration links, account, and docs for superadmin", () => {
+  it("shows administration links for superadmin", () => {
     mockAssignments = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
     render(
       <MemoryRouter>
         <InstanceSidebarFoot />
       </MemoryRouter>,
     );
-    expect(screen.getByRole("link", { name: "All events" }).getAttribute("href")).toBe("/admin");
-    expect(screen.getByRole("link", { name: "Users & roles" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Settings" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "My account" }).getAttribute("href")).toBe("/account");
-    expect(screen.getByRole("link", { name: "Documentation" }).getAttribute("href")).toBe(
-      "https://github.com/solarssk/admitto/wiki",
+    expect(screen.getByRole("link", { name: "Users & roles" }).getAttribute("href")).toBe(
+      "/admin/users",
+    );
+    expect(screen.getByRole("link", { name: "Settings" }).getAttribute("href")).toBe(
+      "/admin/settings",
     );
     expect(screen.getByText(/^v\d/)).toBeTruthy();
   });
 
-  it("shows Check-in instead of All events for check-in-only operators", () => {
+  it("renders no administration links for check-in-only operators", () => {
     mockAssignments = [{ role: "operator", scope_type: "event", scope_id: "evt-1" }];
     render(
       <MemoryRouter>
         <InstanceSidebarFoot />
       </MemoryRouter>,
     );
-    expect(screen.getByRole("link", { name: "Check-in" }).getAttribute("href")).toBe("/operator");
-    expect(screen.queryByRole("link", { name: "All events" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Users & roles" })).toBeNull();
-    expect(screen.getByRole("link", { name: "My account" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
+    expect(screen.getByText(/^v\d/)).toBeTruthy();
   });
 
   it("hides Settings for org admin without superadmin", () => {
@@ -54,20 +52,34 @@ describe("InstanceSidebarFoot", () => {
         <InstanceSidebarFoot />
       </MemoryRouter>,
     );
-    expect(screen.getByRole("link", { name: "All events" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Users & roles" })).toBeTruthy();
     expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
   });
 
-  it("hides primary nav when omitPrimary is set for operator-only account views", () => {
-    mockAssignments = [{ role: "operator", scope_type: "event", scope_id: "evt-1" }];
+  it("renders no administration links for a role with neither admin nor check-in access", () => {
+    mockAssignments = [];
     render(
       <MemoryRouter>
-        <InstanceSidebarFoot omitPrimary />
+        <InstanceSidebarFoot />
       </MemoryRouter>,
     );
-    expect(screen.queryByRole("link", { name: "Check-in" })).toBeNull();
-    expect(screen.queryByRole("link", { name: "All events" })).toBeNull();
-    expect(screen.getByRole("link", { name: "My account" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Users & roles" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
+    expect(screen.getByText(/^v\d/)).toBeTruthy();
+  });
+
+  it("marks the current route's nav link as active", () => {
+    mockAssignments = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
+    render(
+      <MemoryRouter initialEntries={["/admin/users"]}>
+        <InstanceSidebarFoot />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("link", { name: "Users & roles" }).className).toContain(
+      "nav-item--active",
+    );
+    expect(screen.getByRole("link", { name: "Settings" }).className).not.toContain(
+      "nav-item--active",
+    );
   });
 });

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
-import { Badge, Button, Card, EmptyState, PageHeader, Select, Skeleton, TICKET_TYPE_COLORS, useToast } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, PageHeader, Select, Skeleton, ticketTypeChartColor, useToast } from "@admitto/ui";
 import {
   ApiError,
   eventReportsPrintUrl,
@@ -53,6 +53,7 @@ const EXPORT_FORMATS: { key: ExportFormat; label: string; icon: string; hint: st
 interface ReportsExportMenuProps {
   readonly exportingCsv: boolean;
   readonly disabled: boolean;
+  readonly isDesktop: boolean;
   readonly onExport: (format: ExportFormat) => void;
 }
 
@@ -60,8 +61,11 @@ interface ReportsExportMenuProps {
  * useDropdownMenu-backed pattern as the Attendees list's own Export menu. The trigger itself is
  * only gated on `disabled` (loading/error) - CSV's own in-flight state only disables the CSV
  * menuitem, so PDF (a synchronous window.open, no loading state of its own) stays reachable
- * while a CSV export is running, matching the two formats' old independent buttons. */
-function ReportsExportMenu({ exportingCsv, disabled, onExport }: Readonly<ReportsExportMenuProps>) {
+ * while a CSV export is running, matching the two formats' old independent buttons.
+ * Label shortens to "Export" below desktop (same isDesktop-driven pattern as Attendees'
+ * "+ Add attendee"/"Send tickets") so it keeps sitting beside the title instead of forcing the
+ * header to stack (reports-pageheader override in reports-page.css). */
+function ReportsExportMenu({ exportingCsv, disabled, isDesktop, onExport }: Readonly<ReportsExportMenuProps>) {
   const { open, setOpen, close, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
 
   return (
@@ -77,7 +81,7 @@ function ReportsExportMenu({ exportingCsv, disabled, onExport }: Readonly<Report
         disabled={disabled}
         onClick={() => setOpen((current) => !current)}
       >
-        Export report
+        {isDesktop ? "Export report" : "Export"}
       </Button>
       {open && (
         <div className="reports-export-menu__panel" role="menu" ref={panelRef}>
@@ -324,16 +328,13 @@ function BreakdownRows({ rows }: Readonly<{ rows: BreakdownRow[] }>) {
 }
 
 function ticketTypeBreakdownRows(rows: EventReportsResponse["by_ticket_type"]): BreakdownRow[] {
-  return rows.map((row) => {
-    const swatch = TICKET_TYPE_COLORS[row.color] ?? TICKET_TYPE_COLORS.gray;
-    return {
-      id: encodeTypeFilterValue(row.key),
-      label: row.type,
-      meta: `${row.admitted}/${row.total} (${row.admission_pct}%)`,
-      pct: row.admission_pct,
-      color: swatch.solid,
-    };
-  });
+  return rows.map((row) => ({
+    id: encodeTypeFilterValue(row.key),
+    label: row.type,
+    meta: `${row.admitted}/${row.total} (${row.admission_pct}%)`,
+    pct: row.admission_pct,
+    color: ticketTypeChartColor(row.color),
+  }));
 }
 
 /** Always renders all 5 RSVP statuses (even at 0), in RSVP_LABELS' own order, so the card reads
@@ -705,6 +706,7 @@ export function ReportsPage() {
   const { eventId } = useParams();
   const { addToast } = useToast();
   const { reportApiError } = useConnectionState();
+  const isDesktop = useIsDesktop();
   const abortRef = useRef<AbortController | null>(null);
   const exportAbortRef = useRef<AbortController | null>(null);
 
@@ -907,10 +909,12 @@ export function ReportsPage() {
       <PageHeader
         title="Reports"
         subtitle={REPORT_SUBTITLE}
+        className="reports-pageheader"
         actions={
           <ReportsExportMenu
             exportingCsv={exportingCsv}
             disabled={loading || !!error}
+            isDesktop={isDesktop}
             onExport={handleExport}
           />
         }

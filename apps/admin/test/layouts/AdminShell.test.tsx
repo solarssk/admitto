@@ -88,8 +88,7 @@ describe("AdminShell", () => {
 
   it("renders shared instance sidebar foot links", () => {
     renderShell();
-    expect(screen.getByRole("link", { name: "All events" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "My account" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Users & roles" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Attendees" }).getAttribute("href")).toBe(
       "/admin/events/evt-1/attendees",
     );
@@ -103,7 +102,7 @@ describe("AdminShell", () => {
   it("marks live lifecycle segments as links and defers upcoming segments", () => {
     renderShell();
     expect(screen.getByRole("link", { name: "Overview" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Passes" })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "Post-event" })).toHaveProperty("disabled", true);
   });
 
   it("threads refreshEvent through to the nested route via Outlet context", () => {

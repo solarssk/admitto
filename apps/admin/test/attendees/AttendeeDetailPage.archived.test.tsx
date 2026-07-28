@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
-import { getTooltipText, renderWithToast } from "../test-utils.js";
+import { getTooltipText, mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const loadAttendeeDetailData = vi.fn();
 
@@ -90,9 +90,14 @@ function renderPage() {
   );
 }
 
+beforeEach(() => {
+  mockMatchMedia(true);
+});
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 function expectArchivedLock(control: HTMLElement) {
@@ -105,12 +110,13 @@ function expectArchivedLock(control: HTMLElement) {
 }
 
 describe("AttendeeDetailPage archived lockdown", () => {
-  it("disables the revoke menu and Edit for a registered attendee", async () => {
+  it("disables Revoke pass (in More actions) and Edit for a registered attendee", async () => {
     mockLoad(baseDetail());
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
 
-    expectArchivedLock(screen.getByRole("button", { name: "Revoke" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expectArchivedLock(screen.getByRole("menuitem", { name: /Revoke pass/ }));
     // Edit mode can't be entered at all on an archived event — the read-only
     // view stays up, no Save button ever renders, and the RSVP select (now
     // inside the Edit modal) is unreachable along with the rest of the form (#361).
@@ -128,7 +134,8 @@ describe("AttendeeDetailPage archived lockdown", () => {
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
 
-    expectArchivedLock(screen.getByRole("button", { name: "Restore pass" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expectArchivedLock(screen.getByRole("menuitem", { name: /Restore pass/ }));
   });
 
   it("keeps the More actions trigger and Delete attendee open, but still locks Resend ticket (#356)", async () => {
@@ -143,7 +150,7 @@ describe("AttendeeDetailPage archived lockdown", () => {
     expect((trigger as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(trigger);
 
-    expectArchivedLock(await screen.findByRole("menuitem", { name: "Resend ticket" }));
+    expectArchivedLock(await screen.findByRole("menuitem", { name: /Resend ticket/ }));
     const deleteItem = screen.getByRole("menuitem", { name: /Delete attendee/ });
     expect((deleteItem as HTMLButtonElement).disabled).toBe(false);
   });

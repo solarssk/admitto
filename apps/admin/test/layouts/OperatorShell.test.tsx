@@ -61,6 +61,7 @@ function renderShell(path = "/operator") {
         <Route element={<OperatorShell />}>
           <Route path="/operator" element={<div>picker</div>} />
           <Route path="/operator/events/:eventId/checkin" element={<div>checkin</div>} />
+          <Route path="/operator/events/:eventId/history" element={<div>history</div>} />
         </Route>
       </Routes>
     </MemoryRouter>,
@@ -90,6 +91,19 @@ describe("OperatorShell", () => {
     expect(mockFetchCheckInEvents).toHaveBeenCalled();
     expect(screen.queryByTestId("connection-banner")).toBeNull();
     expect(connectionBanner).not.toHaveBeenCalled();
+  });
+
+  it("marks Check-in active only on its exact route", async () => {
+    mockFetchCheckInEvents.mockResolvedValue([sampleEvent]);
+    renderShell("/operator/events/evt-1/checkin");
+    const activeLink = await screen.findByRole("link", { name: "Check-in" });
+    expect(activeLink.className).toContain("nav-item--active");
+
+    cleanup();
+    renderShell("/operator/events/evt-1/history");
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: "Check-in" }).className).not.toContain("nav-item--active");
+    });
   });
 
   it("forwards the route's eventId to StaffShell on a check-in route, and forwards none on the picker", () => {

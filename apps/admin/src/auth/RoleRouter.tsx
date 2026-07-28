@@ -38,10 +38,15 @@ export function AuthenticatedGuard() {
 
 export function OperatorGuard() {
   const { assignments } = useAuth();
+  // Admin/superadmin always bounce to /admin, even though canAccessCheckInPanel is also true
+  // for them (they can drive check-in from the admin panel's own Check-in tab) - the device
+  // kiosk shell at /operator is reserved for accounts that are ONLY operators, so an admin
+  // landing here (a stray link, a bookmark, a typed URL) doesn't get dropped into a full-screen
+  // surface with no admin nav and have to click their way back out.
+  if (canAccessAdminPanel(assignments)) {
+    return <Navigate to="/admin" replace />;
+  }
   if (!canAccessCheckInPanel(assignments)) {
-    if (canAccessAdminPanel(assignments)) {
-      return <Navigate to="/admin" replace />;
-    }
     return <RedirectToLogin />;
   }
   return <Outlet />;

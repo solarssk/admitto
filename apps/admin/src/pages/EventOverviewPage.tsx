@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useOutletContext } from "react-router";
-import { Avatar, Badge, Button, Card, EmptyState, Input, PageHeader, Select, TICKET_TYPE_COLORS, useToast } from "@admitto/ui";
+import {
+  Avatar,
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  Input,
+  PageHeader,
+  Select,
+  ticketTypeChartColor,
+  useToast,
+} from "@admitto/ui";
 import {
   ApiError,
   fetchEventOverview,
@@ -38,6 +49,7 @@ import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
 import { useCountdown, daysUntilEvent } from "../utils/event-countdown.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
@@ -117,7 +129,7 @@ function OverviewKpiTile({
   children?: ReactNode;
 }>) {
   return (
-    <Card>
+    <Card className="overview-kpi-card">
       <div className="overview-kpi">
         <span className={`overview-kpi__icon overview-kpi__icon--${tone}`} aria-hidden="true">
           {icon}
@@ -242,7 +254,7 @@ function SetupChecklistCard({
 }>) {
   if (!overview) {
     return (
-      <Card title="Setup checklist">
+      <Card title="Setup checklist" className="overview-card--fill">
         <p className="overview-muted">
           {unavailablePlaceholderText(loading, showLoading)}
         </p>
@@ -258,6 +270,7 @@ function SetupChecklistCard({
   return (
     <Card
       title="Setup checklist"
+      className="overview-card--fill"
       actions={
         <span className="overview-readiness-score">
           {okCount}/{total}
@@ -326,6 +339,15 @@ function CheckInProgressCard({
   const admitted = Math.min(admittedCount ?? overview.admitted_count, total);
   const notYet = Math.max(total - admitted, 0);
   const pct = total > 0 ? Math.round((admitted / total) * 100) : 0;
+  // --border-strong (#cbd5e1, ~1.5:1 contrast vs white) rather than a --text-muted-based mix
+  // (PO review, round 2): the previous ~3.2:1 mix sat too close in weight to --at-gray-500, which
+  // "By ticket type" below now uses for its own "Gray" swatch (ticketTypeChartColor) — reading as
+  // the same gray made the ring's neutral "not yet" wedge look like it belonged to that unrelated
+  // category legend. --border-strong is a clearly lighter, purely structural token (also used for
+  // borders/dividers elsewhere) that no longer visually competes with real ticket-type swatches.
+  // Under the 3:1 floor is acceptable here specifically because the count is redundant with
+  // accessible text right next to it (ring-center "{pct}%", legend "Not yet {notYet}").
+  const notYetColor = "var(--border-strong)";
   // Defensive fallback: a stale apps/web dev process (no watch mode) still running from before
   // this field existed on the overview API would otherwise crash the whole page (same class of
   // gap already hardened on the Attendee Detail page's `event_items ?? []`).
@@ -347,7 +369,9 @@ function CheckInProgressCard({
           <div
             className="overview-ring"
             style={{
-              background: `conic-gradient(var(--status-ok) 0% ${pct}%, var(--surface-sunken) ${pct}% 100%)`,
+              // notYetColor: deliberately under the 3:1 graphical-object floor here (see const
+              // above) so the "not yet" wedge reads as a neutral track, not a ticket-type swatch.
+              background: `conic-gradient(var(--status-ok) 0% ${pct}%, ${notYetColor} ${pct}% 100%)`,
             }}
             role="img"
             aria-label={`${pct}% of attendees checked in`}
@@ -362,7 +386,7 @@ function CheckInProgressCard({
               Checked in <strong>{admitted}</strong>
             </div>
             <div className="overview-progress__legend-item">
-              <span className="overview-progress__legend-dot" style={{ background: "var(--surface-sunken)" }} />{" "}
+              <span className="overview-progress__legend-dot" style={{ background: notYetColor }} />{" "}
               Not yet <strong>{notYet}</strong>
             </div>
           </div>
@@ -378,7 +402,7 @@ function CheckInProgressCard({
                   className="overview-tt-bar__seg"
                   style={{
                     width: `${breakdownTotal > 0 ? (t.count / breakdownTotal) * 100 : 0}%`,
-                    background: (TICKET_TYPE_COLORS[t.color] ?? TICKET_TYPE_COLORS.gray).solid,
+                    background: ticketTypeChartColor(t.color),
                   }}
                 />
               ))}
@@ -388,7 +412,7 @@ function CheckInProgressCard({
                 <span key={t.key} className="overview-tt-legend__item">
                   <span
                     className="overview-tt-legend__dot"
-                    style={{ background: (TICKET_TYPE_COLORS[t.color] ?? TICKET_TYPE_COLORS.gray).solid }}
+                    style={{ background: ticketTypeChartColor(t.color) }}
                   />
                   {t.label} <span className="overview-tt-legend__count">{t.count}</span>
                 </span>
@@ -526,6 +550,11 @@ function groupActivityByDay(
 
 type ActivityFilter = "all" | "issues";
 
+const ACTIVITY_FILTER_OPTIONS: ReadonlyArray<SegmentedOption<ActivityFilter>> = [
+  { value: "all", label: "All" },
+  { value: "issues", label: "Issues" },
+];
+
 /** Recent activity card (replaces "Recent check-ins", #373 + Part B): a day-grouped timeline of
  * check-ins, mail failures/bounces, and imports, with an All/Issues filter. */
 function RecentActivityCard({
@@ -568,30 +597,18 @@ function RecentActivityCard({
       className="overview-card--header-fixed"
       actions={
         <>
-          {/* Pill-shaped segmented control (staff.css .overview-activity-filter) — no existing
-           * compact 2-option toggle fits: the shared Tabs component is an underline tab bar for
-           * page-level nav, and Communication's MJML/HTML switch is the same plain bordered-button
-           * pair this replaces. */}
-          <fieldset className="overview-activity-filter" aria-label="Filter activity">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              aria-pressed={filter === "all"}
-              onClick={() => setFilter("all")}
-            >
-              All
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              aria-pressed={filter === "issues"}
-              onClick={() => setFilter("issues")}
-            >
-              Issues
-            </Button>
-          </fieldset>
+          {/* Reuses the app's established Segmented control (AuditLogPanel's System/Audit
+           * toggle, the event Mail tab's Organization/Dedicated toggle) instead of a bespoke
+           * pill-shaped fieldset, so this filter matches the same toggle standard used in
+           * Instance Settings rather than its own one-off styling. className mirrors
+           * .seg-control.audit-log-view-toggle's own header-sizing fix (staff.css). */}
+          <Segmented
+            options={ACTIVITY_FILTER_OPTIONS}
+            value={filter}
+            onChange={setFilter}
+            ariaLabel="Filter activity"
+            className="overview-activity-filter"
+          />
           {/* Reuses the app's established dot-badge pattern for a live/active signal (Badge
            * variant="ok" dot — same as CfAccessEditor/IdentityProvidersPanel's "Active"/"Enabled"
            * pills) instead of a bespoke dot+text pair; .overview-live-badge only adds the pulse.
@@ -1357,7 +1374,7 @@ function NotesAndContactsCard(props: Readonly<{
   onDeleteResource: (id: string) => Promise<void>;
 }>) {
   return (
-    <Card title="Notes & contacts">
+    <Card title="Notes & contacts" className="overview-card--fill">
       <PinnedNoteSection
         note={props.pinnedNote}
         loading={props.loading}
@@ -1717,7 +1734,7 @@ export function EventOverviewPage() {
             timezone={eventTimezone}
           />
         </div>
-        <div className="overview-row">
+        <div className="overview-row overview-row--stretch">
           <SetupChecklistCard overview={currentOverview} loading={loading} showLoading={showLoading} eventId={event.id} />
           <NotesAndContactsCard
             pinnedNote={pinnedNote}

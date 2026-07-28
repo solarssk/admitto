@@ -1,11 +1,22 @@
 /* Event Settings — Ticket types tab (batch 04 / #351) */
-.tt-count-pill {
+.tt-count-badge {
+  display: inline-flex;
+  align-items: center;
   font-size: var(--fs-xs);
   font-weight: 700;
   color: var(--text-muted);
   background: var(--surface-sunken);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius);
   padding: 4px 10px;
+}
+
+/* Title + count badge + "Add ticket type" button rarely fit on one line under ~400px - wrap
+   rather than clip a button off-screen, same tradeoff as the audit log header (staff.css). */
+@media (max-width: 400px) {
+  .ticket-types-card .at-card__header {
+    flex-wrap: wrap;
+    height: auto;
+  }
 }
 
 .tt-list {
@@ -21,7 +32,6 @@
   border-bottom: 1px solid var(--at-gray-100);
   border-radius: var(--radius);
   transition: background var(--dur-fast);
-  flex-wrap: wrap;
 }
 
 .tt-row:last-child {
@@ -32,6 +42,28 @@
   background: var(--surface-hover);
 }
 
+/* Swatch + name: the row's "identity" - always share space with each other, never split apart. */
+.tt-row__identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 0;
+}
+
+.tt-row__label-input {
+  flex: 1;
+  min-width: 100px;
+}
+
+/* Preview badge + attendee count + delete: the row's read-only "meta" - stays grouped together. */
+.tt-row__meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: none;
+}
+
 .tt-row__count {
   font-size: var(--fs-xs);
   color: var(--text-muted);
@@ -39,6 +71,28 @@
   flex: none;
   min-width: 78px;
   text-align: right;
+}
+
+/* Below this width the identity and meta groups no longer fit side by side without crushing the
+   name field - stack them as two full-width lines instead of letting individual controls (swatch,
+   input, badge, count, delete) wrap apart from their group. */
+@media (max-width: 480px) {
+  .tt-row {
+    flex-wrap: wrap;
+  }
+
+  .tt-row__identity {
+    flex: 1 1 100%;
+  }
+
+  .tt-row__meta {
+    flex: 1 1 100%;
+    justify-content: space-between;
+  }
+
+  .tt-row__count {
+    text-align: left;
+  }
 }
 
 .tt-color-wrap {
@@ -100,34 +154,4 @@
 
 .tt-color-swatch--active {
   border-color: var(--text-primary);
-}
-
-.tt-add-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  margin-top: 12px;
-  padding: 11px 14px;
-  border: 1.5px dashed var(--border-strong);
-  border-radius: var(--radius);
-  background: none;
-  font-family: inherit;
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all var(--dur-fast);
-  justify-content: center;
-}
-
-.tt-add-row:hover {
-  border-color: var(--primary);
-  color: var(--primary);
-  background: var(--primary-tint);
-}
-
-.tt-add-row:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
 }

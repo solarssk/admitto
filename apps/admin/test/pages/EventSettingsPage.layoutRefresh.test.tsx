@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { EventSettingsPage } from "../../src/pages/EventSettingsPage.js";
-import { renderWithToast } from "../test-utils.js";
+import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 // Focused regression coverage for the shared-layout staleness fix: Settings is
 // the only page that mutates `archived_at`/other event fields, but every
@@ -66,6 +66,14 @@ Element.prototype.scrollIntoView = vi.fn();
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
+});
+
+// The page's Save button label shortens on mobile via useIsDesktop(), which reads
+// window.matchMedia - jsdom doesn't implement it. Default to desktop so existing
+// "Save changes" label assertions keep working unchanged.
+beforeEach(() => {
+  mockMatchMedia(true);
 });
 
 function renderSettings(eventId = "evt-1") {

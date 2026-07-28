@@ -49,9 +49,10 @@ export interface EventOverviewResponse {
   checkin_staff_count: number;
   /** Distinct attendees with at least one successful initial ticket delivery. */
   attendees_with_ticket: number;
-  /** Most recent VALID check-in for this event, or null before the first one. */
+  /** Most recent still-current admission for this event, or null if nobody is checked in. */
   last_check_in_at: string | null;
-  /** Hour-of-day (event timezone) with the most VALID check-ins, or null before the first one. */
+  /** Hour-of-day (event timezone) with the most still-current admissions, or null if nobody is
+   * checked in. */
   busiest_hour: { hour: string; count: number } | null;
   /** Active attendees per catalog ticket type (batch 04), catalog order, zero-count types omitted. */
   ticket_type_breakdown: Array<{ key: string; label: string; color: string; count: number }>;
@@ -75,28 +76,34 @@ export interface EventRecentActivityEntry {
 
 const RECENT_ACTIVITY_LIMIT = 30;
 
-/** Most recent VALID check-in and the busiest hour-of-day among VALID check-ins, in the event's
- * timezone. Mirrors reports-routes.ts's buildByHour/resolvePeakHour approach (same naive-UTC
- * double AT TIME ZONE conversion, CheckIn.checked_in_at is TIMESTAMP(3) same as Attendee.admitted_at)
- * but against CheckIn rather than Attendee, so only successful admissions are counted (not
- * ALREADY_CHECKED_IN/REVOKED/UNDO scan attempts, which are also persisted to this table). */
+/** Most recent check-in and the busiest hour-of-day among currently-admitted attendees, in the
+ * event's timezone. Sourced from Attendee.admitted_at rather than CheckIn: undo.ts/bulk-revoke.ts
+ * never delete or update a check-in's own row when an admission is undone/revoked, they only clear
+ * admitted_at and append a new UNDO row (CheckIn is an append-only scan log, not current state) -
+ * querying CheckIn directly (even with a `status = 'VALID'` filter) would keep counting a
+ * since-revoked attendee's original row forever, e.g. "revoke all check-ins" would still show a
+ * stale busiest hour/last check-in instead of resetting to none. admitted_at is cleared on
+ * undo/revoke, so it always reflects only still-current admissions. Mirrors reports-routes.ts's
+ * own byHourRaw peak-hour query, which already sources from Attendee for the same reason (see its
+ * comment there) - same naive-UTC double AT TIME ZONE conversion, Attendee.admitted_at is
+ * TIMESTAMP(3) same as CheckIn.checked_in_at. */
 async function loadCheckInTimingStats(
   db: PrismaClient,
   eventId: string,
   timeZone: string,
 ): Promise<{ lastCheckInAt: string | null; busiestHour: { hour: string; count: number } | null }> {
-  const [lastCheckIn, byHour] = await Promise.all([
-    db.checkIn.findFirst({
-      where: { event_id: eventId, status: "VALID" },
-      orderBy: { checked_in_at: "desc" },
-      select: { checked_in_at: true },
+  const [lastAdmitted, byHour] = await Promise.all([
+    db.attendee.findFirst({
+      where: { event_id: eventId, admitted_at: { not: null } },
+      orderBy: { admitted_at: "desc" },
+      select: { admitted_at: true },
     }),
     db.$queryRaw<Array<{ hour: string; count: bigint }>>`
       SELECT
-        TO_CHAR(DATE_TRUNC('hour', (checked_in_at AT TIME ZONE 'UTC') AT TIME ZONE ${timeZone}), 'HH24:00') AS hour,
+        TO_CHAR(DATE_TRUNC('hour', (admitted_at AT TIME ZONE 'UTC') AT TIME ZONE ${timeZone}), 'HH24:00') AS hour,
         COUNT(*)::bigint AS count
-      FROM "CheckIn"
-      WHERE event_id = ${eventId} AND status = 'VALID'
+      FROM "Attendee"
+      WHERE event_id = ${eventId} AND admitted_at IS NOT NULL
       GROUP BY 1
       ORDER BY 1
     `,
@@ -109,7 +116,7 @@ async function loadCheckInTimingStats(
   }
 
   return {
-    lastCheckInAt: lastCheckIn?.checked_in_at.toISOString() ?? null,
+    lastCheckInAt: lastAdmitted?.admitted_at?.toISOString() ?? null,
     busiestHour,
   };
 }

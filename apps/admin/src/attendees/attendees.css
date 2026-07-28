@@ -1,6 +1,15 @@
 /* Shared by the Attendees list, Requirements' Event items table, and its Custom attendee
-   fields table - keep this to layout that's actually generic across all three. */
+   fields table - keep this to layout that's actually generic across all three.
+   position: relative anchors the table's own position:absolute descendants (e.g. the
+   Actions column's visually-hidden .sr-only header label, which has no top/left of its own
+   and so renders at its normal in-flow spot) to this scroll container. Without it, their
+   containing block bubbles up to the document root - overflow-x:auto here still clips them
+   from view, but the document itself gained their full, unclipped-table-width position as
+   extra scrollable area, widening <html>'s own scrollWidth past the viewport with nothing
+   visible in the gap (tablet portrait, sidebar expanded, #attendees-only bug report: this is
+   the one table wide enough to overflow its wrap at that breakpoint). */
 .attendees-table-wrap {
+  position: relative;
   overflow-x: auto;
 }
 
@@ -24,6 +33,20 @@
 
 .attendees-table-wrap .table {
   min-width: 720px;
+}
+
+/* Compressed tier: 1024-1279px (shell.css's tablet-rail sidebar range) is exactly where
+   this table (AttendeesTable.tsx's own isDesktop breakpoint) is wide enough to render
+   instead of cards, but the rail still only leaves ~887px for it at the 1024px floor -
+   about 60-90px short of the table's ~950-975px natural width at the shared .table padding
+   (shell.css). Trim horizontal padding only here (font-size shrinking read worse in review)
+   to close that gap without touching every other .table consumer in the app. */
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .attendees-table-wrap .table thead th,
+  .attendees-table-wrap .table tbody td {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
 }
 
 /* Search box + a single "Filters" button — the row itself is just these two items, so it
@@ -145,23 +168,34 @@
    the table/cards split at min-width:768px; this must be the exact complement
    or the two breakpoints overlap by one pixel and disagree at exactly 768px. */
 @media (max-width: 767px) {
-  /* Import / + Add attendee / Send tickets / Export wrap onto a 2nd line below ~640px,
-     changing the header's height as the viewport narrows (PO review, with devtools
-     measurements: 36px vs 80px) — scoped to just this page (.attendees-pageheader, set via
-     PageHeader's className prop) rather than the shared PageHeader component every admin page
-     uses, since other pages' action sets haven't been reviewed for this yet. Compacted the
-     same way as the bulk bar: smaller buttons, decorative icons dropped (Export's own trailing
-     chevron survives — same reasoning as "More"), tighter gap. That alone isn't quite enough
-     here — four buttons' worth of full labels don't fit even fully compacted — so "+ Add
-     attendee" and "Send tickets" also shorten in AttendeesPage.tsx (via useIsDesktop()), the
-     one part CSS can't do; "Import" and "Export" were already short enough as-is. */
-  /* Centered (PO review) — the shared PageHeader stacks title above actions and
-     left-aligns them below 768px (packages/ui components.css); once the row itself
-     stretches full width, left-flush buttons with a gap of empty space to their right
-     read as unbalanced, especially now that they're the compact/shorter mobile set. */
+  /* Import / Send tickets / Export used to wrap onto a 2nd line below ~640px, changing the
+     header's height as the viewport narrows (PO review, with devtools measurements: 36px vs
+     80px) — scoped to just this page (.attendees-pageheader, set via PageHeader's className
+     prop) rather than the shared PageHeader component every admin page uses, since other
+     pages' action sets haven't been reviewed for this yet. Import and Send tickets live inside
+     the "More" menu instead of their own buttons; Export's 3 formats fold into that same
+     "More" menu below this breakpoint too (its standalone button is hidden here —
+     AttendeesPage.tsx) — leaving only "+ Add" / "More", few enough to sit beside the title
+     instead of stacking below it (.at-pageheader__row override below, same row-restoring
+     pattern as .reports-pageheader/.checkin-pageheader). Still compacted the same way as the
+     bulk bar: smaller buttons, decorative icons dropped (More's own trailing chevron
+     survives), and "+ Add attendee" also shortens in AttendeesPage.tsx (via useIsDesktop()),
+     the one part CSS can't do. */
+  .attendees-pageheader .at-pageheader__row {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  /* Right-aligned beside the title (not the shared PageHeader's stacked/left-aligned mobile
+     default, packages/ui components.css) — matches the row layout restored above.
+     position: relative — anchors the "More" menu's panel to this row's own stable right edge
+     rather than whatever further-up ancestor happens to be positioned; same mechanism as
+     .attendees-bulkbar__actions below and the shared .more-actions-menu rule further down
+     this file. */
   .attendees-pageheader .at-pageheader__actions {
     gap: var(--space-2);
-    justify-content: center;
+    justify-content: flex-end;
+    position: relative;
   }
 
   .attendees-pageheader .at-pageheader__actions .at-btn {
@@ -174,7 +208,7 @@
     display: none;
   }
 
-  .attendees-pageheader .attendees-export-menu .at-btn .at-btn__icon {
+  .attendees-pageheader .more-actions-menu .at-btn .at-btn__icon {
     display: inline-flex;
   }
 
@@ -221,25 +255,19 @@
     gap: var(--space-1);
   }
 
-  /* The panel positions itself relative to .more-actions-menu by default (a bare inline-flex
-     wrapper around the trigger button, sized to the button's own narrow width) — fine on
-     desktop, where that wrapper sits flush against the row's right edge anyway. On mobile the
-     trigger can land anywhere along the row depending on how much space the other two buttons
-     took, so anchoring to the trigger's own box put the panel off-screen either direction
-     (PO review, twice: first past the left edge when the trigger used to wrap alone onto its
-     own line, then past the right edge once the row above was widened to fit all three buttons
-     on one line). Anchoring to the whole row instead (its own position: relative, above) — a
-     stable, always-on-screen edge — fixes both: the trigger's own position becomes irrelevant. */
-  .more-actions-menu {
-    position: static;
-  }
-
   /* The summary text + rows-per-page + Previous/Page X of Y/Next pager don't fit on one
-     row below ~600px — stack them, and let the pager itself wrap rather than overflow. */
+     row below ~767px — stack them. __summary (text + rows-per-page) and __pager
+     (Previous/Page/Next) each wrap on their own below this, matching .audit-log-footer's
+     fix for the identical 4-item wrap: 2-then-2 reads as tidy, unlike the uneven 3-then-1
+     that resulted from letting all four items wrap inside one row. */
   .attendees-table-foot {
     flex-direction: column;
     align-items: stretch;
     gap: var(--space-2);
+  }
+
+  .attendees-table-foot__summary {
+    flex-wrap: wrap;
   }
 
   .attendees-table-foot__pager {
@@ -262,6 +290,16 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+/* Groups the summary text with the rows-per-page picker, so the pager beside it is left
+   with just Previous/Page/Next — matches .audit-log-footer__summary's own fix for the
+   identical 4-item wrap. */
+.attendees-table-foot__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
 }
 
 .attendees-table-foot__pagesize {
@@ -639,51 +677,29 @@
   color: var(--status-error);
 }
 
-.revoke-menu {
-  position: relative;
-  display: inline-flex;
-}
-
-.revoke-menu__panel {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: var(--z-dropdown);
-  min-width: 180px;
-  background: var(--surface-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
-  padding: var(--space-2);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.revoke-menu__item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  text-align: left;
-  border: none;
-  background: none;
-  border-radius: var(--radius-sm);
-  padding: var(--space-2) var(--space-3);
-  font-family: var(--font-sans);
-  font-size: var(--fs-sm);
-  font-weight: 500;
-  color: var(--status-error, #b42318);
-  cursor: pointer;
-}
-
-.revoke-menu__item:hover {
-  background: var(--status-error-tint);
-}
-
 .more-actions-menu {
   position: relative;
   display: inline-flex;
+}
+
+/* The panel positions itself relative to .more-actions-menu by default (a bare inline-flex
+   wrapper around the trigger button, sized to the button's own narrow width) — fine on
+   desktop, where that wrapper sits flush against the row's right edge anyway. On mobile the
+   trigger can land anywhere along the row depending on how much space the other buttons
+   took, so anchoring to the trigger's own box put the panel off-screen either direction
+   (PO review, twice: first past the left edge when the trigger used to wrap alone onto its
+   own line, then past the right edge once the row above was widened to fit all three buttons
+   on one line). Anchoring to the whole row instead (each row's own position: relative —
+   .attendees-bulkbar__actions, .attendees-pageheader .at-pageheader__actions above) — a
+   stable, always-on-screen edge — fixes both: the trigger's own position becomes irrelevant.
+   Shared by both the bulk bar's "More actions" menu and the header's "More" menu. Declared
+   here (after the base rule above, same specificity) rather than inside the
+   @media (max-width: 767px) block further up so it reliably wins the cascade — a same-
+   specificity override earlier in the file was silently losing to this later base rule. */
+@media (max-width: 767px) {
+  .more-actions-menu {
+    position: static;
+  }
 }
 
 .more-actions-menu__panel {
@@ -1181,6 +1197,43 @@
   gap: 16px;
 }
 
+/* Mirrors .attendees-pageheader's mobile treatment above (row restored beside the title,
+   compact buttons, decorative icons dropped except the More menu's own) - was left at the
+   shared PageHeader's default (stack below, full desktop button size) until a PO review found
+   it didn't match Reports/Event settings/Attendees, which had all already been compacted.
+   Only two buttons ever reach this row on mobile (More actions, Back) - Edit and Revoke/Restore
+   fold into the More actions menu instead (see MoreActionsMenu's showEdit/RevokeActionMenuItems),
+   so no order/flex-basis wrapping trick is needed here, unlike the list pages above. */
+@media (max-width: 767px) {
+  .attendee-detail-pageheader .at-pageheader__row {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .attendee-detail-pageheader .at-pageheader__actions {
+    justify-content: flex-end;
+    /* Anchors the More-actions menu's panel to this row instead of letting it escape to the
+       document root - .more-actions-menu itself switches to position: static below this same
+       breakpoint (see the shared rule further down this file), same mechanism as
+       .attendees-pageheader .at-pageheader__actions above. */
+    position: relative;
+  }
+
+  .attendee-detail-pageheader .at-pageheader__actions .at-btn {
+    height: var(--control-h-sm);
+    font-size: var(--fs-sm);
+    padding: 0 var(--space-2);
+  }
+
+  .attendee-detail-pageheader .at-pageheader__actions .at-btn .at-btn__icon {
+    display: none;
+  }
+
+  .attendee-detail-pageheader .more-actions-menu .at-btn .at-btn__icon {
+    display: inline-flex;
+  }
+}
+
 /* Same 5-column track (repeat(5, minmax(0, 1fr)), 12px gap) as .attendee-status-strip above
    it, so the main/side split lines up exactly with the strip's chip boundaries at every width
    instead of just at whatever one viewport width a fixed side-column px value happened to
@@ -1313,7 +1366,7 @@
 .attendee-items-row__state--ok { color: var(--status-ok); }
 .attendee-items-row__state--muted { color: var(--text-disabled); }
 
-/* Attendee detail status strip - 5 chips (Registration/Attendance/Ticket delivery/Check-in/
+/* Attendee detail status strip - 5 chips (Pass/Attendance/Ticket delivery/Check-in/
    Wallet), matching the design mockup's .att-status-strip. */
 .attendee-status-strip {
   display: grid;
@@ -1369,7 +1422,19 @@
   color: var(--text-muted);
 }
 
-.attendee-status-chip__body > span {
+.attendee-status-chip__body > span:not(.at-badge):not(.attendee-status-chip__checkin) {
+  /* align-self: stretch, not the parent's own align-items: flex-start - a long check-in
+     timestamp ("28 Jul 2026, 13:20 CEST") is a flex item sized to its own content by
+     flex-start, so it grows past the chip's edge with nothing for overflow/ellipsis to
+     actually clip against (both stay no-ops since nothing is overflowing the item's own,
+     content-sized box). Stretching to the parent's (grid-constrained) width gives the
+     value a real max width so the existing truncation below finally applies (PO report:
+     check-in date overflowing its card on mobile). Scoped to :not(.at-badge) - the
+     Pass/Attendance/Ticket delivery chips render a <Badge> pill here instead of
+     plain text, and stretching that pill's own inline-flex box to the full row width blew
+     up its background into an oversized bar instead of a compact pill. Also excludes
+     .attendee-status-chip__checkin, which stacks its own day/time lines below instead. */
+  align-self: stretch;
   font-size: var(--fs-sm);
   font-weight: 500;
   overflow: hidden;
@@ -1377,9 +1442,65 @@
   white-space: nowrap;
 }
 
+/* Check-in chip's admitted value: on wide desktop it's "Today, 14:51 CEST" on one line, keeping
+   this chip the same 2-line height as its siblings (PO report: a 3rd stacked line made it look
+   taller/wider than the rest of the row). Below 900px (tablet/mobile, less width per chip and
+   the strip already drops to 3 then 2 columns) it stacks day above time instead, same shape as
+   the Attendees list's check-in cell (.attendees-table-v2__checkin-lines) - a single truncated
+   line hid the time on narrow chips (PO report: on mobile "godziny... nie widzimy"). Each part
+   is short enough alone that truncation below is a defensive fallback, not the normal case. */
+.attendee-status-chip__checkin {
+  align-self: stretch;
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.attendee-status-chip__checkin-day,
+.attendee-status-chip__checkin-time {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.attendee-status-chip__checkin-day {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+
+/* Separates day/time on the shared desktop line ("Today, 14:51 CEST"); cleared below 900px
+   where the two parts move onto their own lines instead. */
+.attendee-status-chip__checkin-day::after {
+  content: ",";
+}
+
+.attendee-status-chip__checkin-time {
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
 @media (max-width: 900px) {
   .attendee-status-strip {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .attendee-status-chip__checkin {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+  }
+
+  .attendee-status-chip__checkin-day::after {
+    content: "";
+  }
+
+  .attendee-status-chip__checkin-time {
+    font-size: var(--fs-xs);
   }
 }
 

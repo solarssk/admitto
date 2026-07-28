@@ -715,8 +715,8 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     // All/Issues live in the Card's header row next to "live", not a separate row above the timeline.
     const activityCard = screen.getByText("Recent activity").closest(".at-card") as HTMLElement;
     const header = activityCard.querySelector(".at-card__header") as HTMLElement;
-    const allButton = within(header).getByRole("button", { name: "All" });
-    const issuesButton = within(header).getByRole("button", { name: "Issues" });
+    const allButton = within(header).getByRole("radio", { name: "All" });
+    const issuesButton = within(header).getByRole("radio", { name: "Issues" });
     expect(allButton).toBeTruthy();
     expect(issuesButton).toBeTruthy();
     // Live indicator reuses the app's dot-Badge pattern (Badge variant="ok" dot), not a bespoke
@@ -725,9 +725,10 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(liveBadge.className).toContain("at-badge--ok");
     expect(liveBadge.className).toContain("overview-live-badge");
 
-    // All/Issues render as a pill segmented control keyed on aria-pressed, not variant swapping.
-    expect(allButton.getAttribute("aria-pressed")).toBe("true");
-    expect(issuesButton.getAttribute("aria-pressed")).toBe("false");
+    // All/Issues render as the shared Segmented control (radiogroup/radio + aria-checked), the
+    // same standard used for Instance Settings' toggles - not a bespoke button pair.
+    expect(allButton.getAttribute("aria-checked")).toBe("true");
+    expect(issuesButton.getAttribute("aria-checked")).toBe("false");
 
     act(() => {
       issuesButton.click();
@@ -737,8 +738,8 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
       expect(screen.queryByText("Fine Guest")).toBeNull();
     });
     expect(screen.getByText("Bounced Guest")).toBeTruthy();
-    expect(allButton.getAttribute("aria-pressed")).toBe("false");
-    expect(issuesButton.getAttribute("aria-pressed")).toBe("true");
+    expect(allButton.getAttribute("aria-checked")).toBe("false");
+    expect(issuesButton.getAttribute("aria-checked")).toBe("true");
   });
 
   it("still renders the live badge when the SSE handshake hasn't connected yet, instead of hiding it (#C)", async () => {
@@ -785,7 +786,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     const activityCard = screen.getByText("Recent activity").closest(".at-card") as HTMLElement;
     const header = activityCard.querySelector(".at-card__header") as HTMLElement;
     act(() => {
-      within(header).getByRole("button", { name: "Issues" }).click();
+      within(header).getByRole("radio", { name: "Issues" }).click();
     });
 
     await waitFor(() => {

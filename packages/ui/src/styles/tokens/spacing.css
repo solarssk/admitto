@@ -34,9 +34,9 @@
   --control-h-lg: 2.75rem;   /* 44 — touch target (check-in) */
 
   /* Layout */
-  --sidebar-w:    15rem;     /* 240 */
-  --sidebar-w-collapsed: 3.25rem; /* 52 — icon-only sidebar */
-  --topbar-h:     3.5rem;    /* 56  */
+  --sidebar-w:      15rem;   /* 240 */
+  --sidebar-rail-w: 4.5rem;  /* 72 — tablet-portrait icon-only rail, see shell.css */
+  --topbar-h:       3.5rem;  /* 56  */
   --container-max: 1320px;
 
   /* Borders */

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet, useParams } from "react-router";
 import { ConnectionBanner } from "../connection/ConnectionStateProvider.js";
 import { StaffShell } from "./StaffShell.js";
-import { BrandMark } from "./BrandMark.js";
+import { BrandLink } from "./BrandLink.js";
 import { InstanceSidebarFoot } from "./InstanceSidebarFoot.js";
 import { fetchCheckInEvents } from "../api/client.js";
 import { formatEventCalendarDate } from "../utils/event-dates.js";
@@ -23,10 +23,7 @@ function OperatorSidebar() {
 
   return (
     <>
-      <NavLink to="/operator" className="sidebar__brand" end>
-        <BrandMark />
-        <span>Admitto</span>
-      </NavLink>
+      <BrandLink to="/operator" end className="sidebar__brand" />
       {event && (
         <div className="sidebar__event">
           <div className="overline">Event</div>
@@ -45,9 +42,19 @@ function OperatorSidebar() {
           </div>
         </div>
       )}
-      <nav className="sidebar__nav" aria-label="Navigation" />
+      <nav className="sidebar__nav" aria-label="Navigation">
+        {eventId && (
+          <NavLink
+            to={`/operator/events/${eventId}/checkin`}
+            className={({ isActive }: { isActive: boolean }) => `nav-item${isActive ? " nav-item--active" : ""}`}
+          >
+            <i className="ti ti-qrcode" aria-hidden="true" />
+            <span>Check-in</span>
+          </NavLink>
+        )}
+      </nav>
       <div className="sidebar__foot">
-        <InstanceSidebarFoot omitPrimary />
+        <InstanceSidebarFoot />
       </div>
     </>
   );
@@ -58,7 +65,7 @@ export function OperatorShell() {
   const onCheckInRoute = Boolean(eventId);
 
   return (
-    <StaffShell sidebar={<OperatorSidebar />} eventId={eventId}>
+    <StaffShell sidebar={<OperatorSidebar />} eventId={eventId} brandTo="/operator" brandEnd>
       {!onCheckInRoute && <ConnectionBanner />}
       <Outlet />
     </StaffShell>

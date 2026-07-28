@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StaffShell } from "../../src/layouts/StaffShell.js";
 
@@ -20,13 +21,19 @@ vi.mock("../../src/components/UserMenu.js", () => ({
   UserMenu: () => <span data-testid="user-menu" />,
 }));
 
-const SIDEBAR_PIN_KEY = "admitto_sidebar_pinned";
-
-function renderShell(eventId?: string) {
+function renderShell(eventId?: string, sidebar = <span>nav items</span>) {
   return render(
-    <StaffShell sidebar={<span>nav items</span>} subnav={<span>section nav</span>} eventId={eventId}>
-      <div>page content</div>
-    </StaffShell>,
+    <MemoryRouter>
+      <StaffShell
+        sidebar={sidebar}
+        subnav={<span>section nav</span>}
+        eventId={eventId}
+        brandTo="/admin"
+        brandEnd
+      >
+        <div>page content</div>
+      </StaffShell>
+    </MemoryRouter>,
   );
 }
 
@@ -38,13 +45,6 @@ function shellRoot(container: HTMLElement): HTMLElement {
 
 afterEach(() => {
   cleanup();
-  // The pin preference persists in jsdom's localStorage for the lifetime of
-  // this worker — clear it so each test starts from the "no preference" state.
-  try {
-    localStorage.removeItem(SIDEBAR_PIN_KEY);
-  } catch {
-    /* storage may be unavailable in some Node/jsdom combinations */
-  }
 });
 
 describe("StaffShell", () => {
@@ -62,39 +62,10 @@ describe("StaffShell", () => {
     expect(screen.getByTestId("system-status").dataset.eventId).toBe("evt-123");
   });
 
-  it("defaults to a pinned sidebar when no preference is stored", () => {
-    const { container } = renderShell();
-    expect(shellRoot(container).className).not.toContain("shell--sidebar-unpinned");
-    expect(screen.getByRole("button", { name: "Unpin sidebar" })).toBeTruthy();
-  });
-
-  it("unpins on toggle and persists the preference", () => {
-    const { container } = renderShell();
-    fireEvent.click(screen.getByRole("button", { name: "Unpin sidebar" }));
-    expect(shellRoot(container).className).toContain("shell--sidebar-unpinned");
-    expect(screen.getByRole("button", { name: "Pin sidebar" })).toBeTruthy();
-    expect(localStorage.getItem(SIDEBAR_PIN_KEY)).toBe("false");
-  });
-
-  it("starts unpinned when the stored preference says so, and re-pinning persists", () => {
-    localStorage.setItem(SIDEBAR_PIN_KEY, "false");
-    const { container } = renderShell();
-    expect(shellRoot(container).className).toContain("shell--sidebar-unpinned");
-    fireEvent.click(screen.getByRole("button", { name: "Pin sidebar" }));
-    expect(shellRoot(container).className).not.toContain("shell--sidebar-unpinned");
-    expect(localStorage.getItem(SIDEBAR_PIN_KEY)).toBe("true");
-  });
-
-  it("expands an unpinned sidebar on hover and collapses on leave", () => {
-    localStorage.setItem(SIDEBAR_PIN_KEY, "false");
-    const { container } = renderShell();
-    const sidebar = container.querySelector(".sidebar");
-    if (!sidebar) throw new Error("sidebar not rendered");
-    expect(shellRoot(container).className).not.toContain("shell--sidebar-expanded");
-    fireEvent.mouseEnter(sidebar);
-    expect(shellRoot(container).className).toContain("shell--sidebar-expanded");
-    fireEvent.mouseLeave(sidebar);
-    expect(shellRoot(container).className).not.toContain("shell--sidebar-expanded");
+  it("renders the topbar brand link using the given brandTo/brandEnd", () => {
+    renderShell();
+    const brand = screen.getByRole("link", { name: "Admitto" });
+    expect(brand.getAttribute("href")).toBe("/admin");
   });
 
   it("opens the mobile nav from the topbar menu and closes it via the backdrop", () => {
@@ -105,5 +76,33 @@ describe("StaffShell", () => {
     if (!backdrop) throw new Error("backdrop not rendered");
     fireEvent.click(backdrop);
     expect(shellRoot(container).className).not.toContain("shell--nav-open");
+  });
+
+  it("closes the opened navigation when a sidebar link is activated", () => {
+    const { container } = renderShell(
+      undefined,
+      <a href="/admin/events" onClick={(event) => event.preventDefault()}>Events</a>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    expect(shellRoot(container).className).toContain("shell--nav-open");
+
+    fireEvent.click(screen.getByRole("link", { name: "Events" }));
+    expect(shellRoot(container).className).not.toContain("shell--nav-open");
+  });
+
+  it("keeps the navigation open when a non-link sidebar element is clicked", () => {
+    const { container } = renderShell(undefined, <span>nav items</span>);
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    fireEvent.click(screen.getByText("nav items"));
+    expect(shellRoot(container).className).toContain("shell--nav-open");
+  });
+
+  it("keeps the navigation open when the link listener receives a text-node target", () => {
+    const { container } = renderShell(undefined, <span>nav items</span>);
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    const textNode = screen.getByText("nav items").firstChild;
+    if (!textNode) throw new Error("sidebar label has no text node");
+    fireEvent.click(textNode);
+    expect(shellRoot(container).className).toContain("shell--nav-open");
   });
 });

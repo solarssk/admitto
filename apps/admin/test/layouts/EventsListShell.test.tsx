@@ -45,7 +45,6 @@ describe("EventsListShell", () => {
     renderShell("/admin");
     const brand = screen.getByRole("link", { name: "Admitto" });
     expect(brand.getAttribute("href")).toBe("/admin");
-    expect(screen.getByRole("link", { name: "All events" })).toBeTruthy();
   });
 
   it("links the brand to /operator for check-in-only operators", () => {

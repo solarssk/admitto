@@ -37,13 +37,22 @@
 @media (max-width: 640px) {
   .danger-zone__item {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: flex-end;
     justify-content: flex-start;
     gap: var(--space-3);
   }
 
   .danger-zone__info {
     width: 100%;
+  }
+
+  /* Full labels ("Export personal data", "Revoke all items issued", …) stay - shortening them
+     risked losing meaning for a destructive action - but a slightly smaller control still reads
+     clearly and keeps the row from looking oversized once it's no longer sharing the line with
+     the description. */
+  .danger-zone__item .at-btn {
+    height: var(--control-h-sm);
+    font-size: var(--fs-sm);
   }
 }
 
@@ -67,6 +76,33 @@
 
 .event-settings--archived .save-actions {
   display: none;
+}
+
+/* Single "Save changes" action (shortened to "Save" below desktop, EventSettingsPage.tsx) -
+   keep it beside the "Event settings" title instead of the shared PageHeader's default
+   stack-below-767px behavior (components.css), same scoped-override reasoning as
+   .attendees-pageheader/.reports-pageheader. Button sizing matches those two, verbatim -
+   left at the default taller size here once while Attendees was compacted, which read as a
+   mismatch beside the same title-height button pattern (PO review). */
+@media (max-width: 767px) {
+  .event-settings-pageheader .at-pageheader__row {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .event-settings-pageheader .at-pageheader__actions {
+    justify-content: flex-end;
+  }
+
+  .event-settings-pageheader .at-pageheader__actions .at-btn {
+    height: var(--control-h-sm);
+    font-size: var(--fs-sm);
+    padding: 0 var(--space-2);
+  }
+
+  .event-settings-pageheader .at-pageheader__actions .at-btn .at-btn__icon {
+    display: none;
+  }
 }
 
 .event-settings-card + .event-settings-card {

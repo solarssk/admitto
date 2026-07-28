@@ -14,6 +14,7 @@ export { StatusBadge, type StatusBadgeProps } from "./components/StatusBadge.js"
 export {
   TicketTypeBadge,
   TICKET_TYPE_COLORS,
+  ticketTypeChartColor,
   type TicketTypeBadgeProps,
   type TicketTypeColor,
 } from "./components/TicketTypeBadge.js";

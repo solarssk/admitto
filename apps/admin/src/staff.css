@@ -13,55 +13,27 @@
 
 /* nav-item base styles live in packages/ui/src/styles/shell.css */
 
+/* Box model (padding/margin/min-height/border-width) is identical whether the sidebar is
+   collapsed or expanded, so .sidebar__foot's nav items below never shift position when
+   toggling — only the text's visibility changes (clipped via .sidebar__section-label-text,
+   see the collapsed-rail rule in shell.css). min-height reserves the same vertical space the
+   visible text's line-height takes, so hiding it doesn't shrink the row. border-top stays
+   transparent (not "none") in both states — .sidebar__foot's own border-top already marks
+   this boundary a few px above, so painting a second rule here would just stack two lines. */
 .sidebar__section-label {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted);
-  padding: 12px 8px 4px;
+  padding: 8px 8px 4px;
   margin-top: 4px;
-}
-
-@media (min-width: 1025px) {
-  .sidebar__pin-btn {
-    position: absolute;
-    bottom: 12px;
-    right: 8px;
-    width: 28px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: none;
-    border-radius: var(--radius-sm);
-    color: var(--text-muted);
-    cursor: pointer;
-    opacity: 0;
-    transition: opacity var(--dur-fast);
-    z-index: 1;
-  }
-
-  .sidebar:hover .sidebar__pin-btn,
-  .sidebar:focus-within .sidebar__pin-btn {
-    opacity: 1;
-  }
-
-  .sidebar__pin-btn:focus-visible {
-    opacity: 1;
-  }
-
-  .sidebar__pin-btn:hover {
-    background: var(--surface-hover);
-    color: var(--text-primary);
-  }
-}
-
-@media (max-width: 1024px) {
-  .sidebar__pin-btn {
-    display: none;
-  }
+  border-top: 1px solid transparent;
+  /* box-sizing: border-box (global reset) means min-height sets this box's *total* height,
+     padding and border included — 8 + 4 + 1 + this text's own 15px line-height = 28, the
+     row's natural height when the text is visible. Reserving that same total unconditionally
+     is what keeps it from shrinking once the collapsed rail below clips the text away. */
+  min-height: 28px;
 }
 
 .event-grid {
@@ -419,6 +391,15 @@
   height: 8px;
   border-radius: 50%;
   flex: none;
+}
+
+/* Same slow "still live" breathing pulse as the Recent activity live badge (reuses its
+   overview-live-pulse keyframe below rather than defining a second one) — signals this
+   status is actively polled, not a static icon. */
+@media (prefers-reduced-motion: no-preference) {
+  .sys-status__dot {
+    animation: overview-live-pulse 1.6s ease-in-out infinite;
+  }
 }
 
 .sys-status__dot--ok {
@@ -1074,6 +1055,12 @@
   color: var(--text-primary);
   font-family: var(--font-sans);
   min-width: 0;
+}
+
+/* .ck-scan-bar:focus-within already draws one ring around the whole field;
+   suppress the input's own focus-visible ring so we don't show two. */
+.ck-scan-bar__input:focus-visible {
+  box-shadow: none;
 }
 
 .ck-scan-bar__icon {
@@ -2273,11 +2260,28 @@
   color: var(--text-muted);
 }
 
-/* Inline camera (desktop check-in) */
+/* Inline camera (desktop check-in). Nested inside PageHeader's own
+   .at-pageheader__actions (gap + flex-end already applied there) — this only needs its
+   own gap between the two buttons themselves. */
 .ck-operator-actions {
   display: flex;
-  justify-content: flex-end;
-  margin-bottom: 12px;
+  gap: var(--space-2);
+}
+
+/* Admin/superadmin and operator Check-in header: "Use camera" + mute button are short
+   enough to stay beside the "Check-in" title on mobile too, instead of the shared
+   PageHeader's default stack-below-full-width (components.css) — same reasoning as
+   .reports-pageheader / .event-settings-pageheader. Operator's header reuses this same
+   .checkin-pageheader class (CheckInPage.tsx) so both surfaces match. */
+@media (max-width: 767px) {
+  .checkin-pageheader .at-pageheader__row {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .checkin-pageheader .at-pageheader__actions {
+    justify-content: flex-end;
+  }
 }
 
 /* Mockup kiosk viewfinder (.vf__feed): a QR-sized square, not a full-width
@@ -2604,10 +2608,9 @@
 }
 
 @media (max-width: 1024px) {
-  .shell {
-    grid-template-columns: 1fr;
-  }
-
+  /* .shell's grid-template-columns for this range is @admitto/ui's shell.css alone (drawer
+     rule there, further overridden by the tablet-portrait rail rule) — a duplicate here used
+     to win the cascade last and silently re-collapse the rail back to a single column. */
   .sidebar {
     border-right: 0;
     border-bottom: 1px solid var(--border);
@@ -2671,6 +2674,14 @@
 .settings-row:last-child {
   border-bottom: 0;
   padding-bottom: 0;
+}
+
+/* Without this, the list's own top padding stacks on top of the card body's padding
+   (space-3 + pad-card) while the bottom only gets the card's padding (:last-child above
+   already zeroes it) - the first row's text reads visibly lower than it should relative to
+   the card top, out of step with the last row's flush bottom. */
+.settings-row:first-child {
+  padding-top: 0;
 }
 
 .settings-row__text strong {
@@ -3906,6 +3917,26 @@ output.mail-field-hint {
   border-color: var(--status-ok);
 }
 
+/* Icon (36px, flex:none) + body (flex:1) + the optional "Open instance settings" button all
+   share one nowrap row by default - on narrow widths the button's own natural width leaves so
+   little room for the body that its title/summary text wraps awkwardly, line after cramped
+   line, right beside the icon (PO review). Let the button wrap onto its own full-width line
+   below instead, so the icon+body row keeps enough space for the text to wrap normally. */
+@media (max-width: 640px) {
+  .org-mail-summary {
+    flex-wrap: wrap;
+  }
+
+  .org-mail-summary__body {
+    flex-basis: 0;
+  }
+
+  .org-mail-summary > .at-btn {
+    flex: 1 0 100%;
+    margin-top: var(--space-1);
+  }
+}
+
 /* mfa-roles-fieldset — Security panel "Require 2FA for roles" checkbox group */
 .mfa-roles-fieldset {
   border: 0;
@@ -4890,21 +4921,36 @@ select.system-log-panel__field {
 
 .overview-stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* minmax(0, 1fr), not a bare 1fr (= minmax(auto, 1fr)) — a bare 1fr lets whichever column
+   * has the larger min-content (e.g. an unbreakable label) win extra width, so the 4/2/2 columns
+   * render unevenly and the widest one overflows the grid at narrow widths. minmax(0, 1fr) keeps
+   * every column equal and lets the tile's own text wrap instead. */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-4);
   margin-bottom: var(--space-6);
 }
 
-@media (max-width: 900px) {
+/* 1024px (not 900px, unlike .overview-row below) — these 4 tiles keep a fixed-width icon
+ * square + value/label text (not a title-only card), so they need roughly 2x the per-tile
+ * width .overview-row's cards do before wrapping looks acceptable. At tablet widths
+ * (768-1024px) 4-up left the longer tiles ("In 4 days", "Failed delivery") wrapping their
+ * value/label onto two lines. */
+@media (max-width: 1024px) {
   .overview-stats {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-@media (max-width: 480px) {
-  .overview-stats {
-    grid-template-columns: 1fr;
-  }
+/* .overview-stats is a grid, so its direct children (each tile's outer .at-card) already
+ * stretch to the row's tallest tile (CSS Grid's default align-items: stretch) — but @admitto/ui's
+ * own .at-card__body only ever gets its content's height (no card elsewhere in the app needs it
+ * to do otherwise), so on tiles shorter than their row's tallest sibling (e.g. "Attendees" next to
+ * "Event countdown", whose longer label/value wraps at in-between 4-column widths, see #612) the
+ * icon+text block was left stranded at the top of unused blank space below it, instead of
+ * centered in the full card. Scoped to this tile only (via Card's className prop) rather than
+ * widening .at-card__body itself, which every other card in the app also uses. */
+.overview-kpi-card > .at-card__body {
+  height: 100%;
 }
 
 /* KPI tiles (D, E2) — icon-square-left layout scoped to Overview's 4 top tiles only, a separate
@@ -4917,6 +4963,7 @@ select.system-log-panel__field {
   display: flex;
   align-items: center;
   gap: var(--space-4);
+  height: 100%;
 }
 
 .overview-kpi__icon {
@@ -4966,6 +5013,31 @@ select.system-log-panel__field {
   color: var(--text-muted);
 }
 
+/* Stays 2-up rather than collapsing to a single column (PO review: a 1x4 stack read as an
+ * oversized, sparse list on a phone) — the icon and value/label text shrink instead so the
+ * "Failed delivery" / "In 4 days" tiles still fit their content in roughly half the tablet
+ * breakpoint's per-tile width. Must come after the base .overview-kpi* rules above so this
+ * override wins the cascade at matching widths (equal specificity, source order decides). */
+@media (max-width: 480px) {
+  .overview-kpi {
+    gap: var(--space-3);
+  }
+
+  .overview-kpi__icon {
+    width: 2.75rem;
+    height: 2.75rem;
+    font-size: 1.25rem;
+  }
+
+  .overview-kpi__value {
+    font-size: var(--fs-h2);
+  }
+
+  .overview-kpi__label {
+    font-size: var(--fs-sm);
+  }
+}
+
 .overview-archived-note {
   margin: 0;
   font-size: var(--fs-sm);
@@ -4973,7 +5045,9 @@ select.system-log-panel__field {
 }
 
 /* Two stacked, genuinely symmetric 1fr/1fr rows (mockup-aligned) instead of a wide-left +
- * narrow-fixed-width sidebar — same breakpoint the KPI stat row above already collapses at. */
+ * narrow-fixed-width sidebar. Collapses to 1-column earlier (900px) than the KPI stat row
+ * above (1024px) — these cards' own content (timeline list, donut + legend) stays readable
+ * at 2-up down to a narrower width than the stat tiles' fixed-width icon + value/label do. */
 .overview-body {
   display: flex;
   flex-direction: column;
@@ -4982,14 +5056,18 @@ select.system-log-panel__field {
 
 .overview-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* minmax(0, 1fr), not a bare 1fr (= minmax(auto, 1fr)) — see .overview-stats above. Recent
+   * activity's timeline content (attendee names, timestamps) can't shrink below its own
+   * min-content, so a bare 1fr let it force the whole row (and the page) wider than the
+   * viewport at narrow widths instead of wrapping. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--space-4);
   align-items: start;
 }
 
 @media (max-width: 900px) {
   .overview-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -5038,6 +5116,22 @@ select.system-log-panel__field {
  * instead of `space-between`'s single-child default of pinning it to the top. */
 .overview-card--header-fixed.overview-card--empty .at-card__body {
   justify-content: center;
+}
+
+/* Setup checklist / Notes & contacts row: same "stretch the row, let the shorter card's body
+ * fill the height" idea as Check-in progress / Recent activity above, minus the header
+ * min-height override — both of this row's headers are a plain single-line title (+ a small
+ * score badge on Setup checklist), so there's no header-height mismatch to pin here. */
+.overview-card--fill {
+  display: flex;
+  flex-direction: column;
+}
+
+.overview-card--fill .at-card__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
 .overview-muted {
@@ -5322,38 +5416,23 @@ select.system-log-panel__field {
   }
 }
 
-/* All/Issues filter — pill-shaped segmented control. Rendered as the Card's header `actions`
- * (next to the live badge), not a row of its own above the timeline. No existing compact 2-option
- * toggle fit here: the shared Tabs component is an underline tab bar for page-level nav, and
- * Communication's MJML/HTML switch is the same plain bordered-button pair this replaces. */
-.overview-activity-filter {
+/* All/Issues filter — the shared Segmented control (.seg-control/.seg-btn, see Segmented.tsx),
+ * same as AuditLogPanel's System/Audit toggle, rendered in the Card's header `actions` (next to
+ * the live badge) rather than a row of its own above the timeline. Mirrors
+ * .seg-control.audit-log-view-toggle's own fix (Settings → Security → Audit log) for the same
+ * reason: .seg-control's shared margin-bottom is meant for standalone usage above unrelated
+ * content, and .seg-btn's own padding is taller than the --control-h-sm other header controls
+ * use. */
+.seg-control.overview-activity-filter {
+  margin-bottom: 0;
+  height: var(--control-h-sm);
+}
+
+.seg-control.overview-activity-filter .seg-btn {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  padding: 2px;
-  margin: 0;
-  border: 0;
-  min-width: 0;
-  background: var(--surface-sunken);
-  border-radius: var(--radius-pill);
-}
-
-.overview-activity-filter .at-btn {
-  border-radius: var(--radius-pill);
-  border-color: transparent;
-  background: transparent;
-  color: var(--text-muted);
-}
-
-.overview-activity-filter .at-btn:hover:not(:disabled) {
-  background: var(--at-gray-100);
-  color: var(--text-primary);
-}
-
-.overview-activity-filter .at-btn[aria-pressed="true"] {
-  background: var(--surface-card);
-  color: var(--text-primary);
-  box-shadow: var(--shadow-sm);
+  padding: 0 var(--space-2);
+  line-height: 1;
 }
 
 /* Fixed height (not max-height) so the card's footprint stays stable regardless of how many
