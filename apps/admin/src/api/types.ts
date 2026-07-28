@@ -207,6 +207,17 @@ export interface AttendeeDetailItemDto {
   state: string;
 }
 
+export type NoteAuthorRole = "superadmin" | "admin" | "operator" | null;
+
+export interface AttendeeNoteDto {
+  id: string;
+  body: string;
+  author_display: string;
+  author_user_id: string;
+  author_role: NoteAuthorRole;
+  created_at: string;
+}
+
 export interface AttendeeDetailDto {
   id: string;
   name: string;
@@ -229,6 +240,7 @@ export interface AttendeeDetailDto {
   deliveries: DeliveryDto[];
   action_log: AttendeeActionLogEntryDto[];
   event_items: AttendeeDetailItemDto[];
+  notes: AttendeeNoteDto[];
 }
 
 export interface AttendeesListResponse {

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router";
 import {
+  Avatar,
+  Badge,
   Button,
   Card,
   EmptyState,
@@ -12,20 +14,24 @@ import {
   Tabs,
   Tooltip,
   useToast,
+  type BadgeProps,
 } from "@admitto/ui";
 import {
+  addAttendeeNote,
   ApiError,
   bulkRevokeItems,
   deleteAttendee,
+  deleteAttendeeNote,
   fetchAttendeeDetail,
   fetchTicketTypes,
   resendTicket,
   revokeAttendeeCheckIn,
   updateAttendee,
+  updateAttendeeNote,
   type EventFullMeta,
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { AttendeeDetailDto, EventDto, RsvpStatus, TicketTypeDto, UpdateAttendeePatch } from "../api/types.js";
+import type { AttendeeDetailDto, EventDto, NoteAuthorRole, RsvpStatus, TicketTypeDto, UpdateAttendeePatch } from "../api/types.js";
 import {
   loadAttendeeDetailData,
   mergeFormAfterReload,
@@ -69,10 +75,10 @@ import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { canRevokeCheckIn } from "../checkin/revokeEligibility.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import { useAuth } from "../auth/AuthProvider.js";
-import { isSuperadmin } from "../auth/capabilities.js";
+import { isOrgAdmin, isSuperadmin } from "../auth/capabilities.js";
 import "../attendees/attendees.css";
 
-type TabId = "overview" | "activity";
+type TabId = "overview" | "activity" | "notes";
 type ActiveRevokeAction = "pass" | "checkin" | "items" | "restore" | null;
 
 /** Secondary actions that don't need their own header button - Resend ticket always, plus Edit
@@ -665,6 +671,213 @@ function AttendeeActivityTab({
   );
 }
 
+function noteRoleBadgeVariant(role: NoteAuthorRole): BadgeProps["variant"] {
+  if (role === "superadmin") return "error";
+  if (role === "admin") return "warn";
+  if (role === "operator") return "info";
+  return "neutral";
+}
+
+function noteRoleShort(role: NoteAuthorRole): string {
+  if (role === "superadmin") return "SA";
+  if (role === "admin") return "AD";
+  if (role === "operator") return "OP";
+  return "";
+}
+
+/** Delete rule (PO): admins may delete their own note or one written by an operator, but not
+ * another admin's or a superadmin's; a superadmin may delete any note. Edit stays own-note-only
+ * for every role - the server re-enforces both authoritatively regardless of what these hide. */
+function canDeleteNote(
+  note: AttendeeDetailDto["notes"][number],
+  currentUserId: string | undefined,
+  superadminUser: boolean,
+  orgAdminUser: boolean,
+): boolean {
+  if (note.author_user_id === currentUserId) return true;
+  if (superadminUser) return true;
+  return orgAdminUser && note.author_role === "operator";
+}
+
+type NoteEditState = {
+  noteId: string | null;
+  draft: string;
+  submitting: boolean;
+  error: string | null;
+};
+
+/** Internal, staff-only notes on this attendee - shares the same AttendeeNote rows as the
+ * check-in operator's own "Add note" action, so a note added on either side shows up on the
+ * other (matches the mockup's "Internal, visible to staff only, never shown to the attendee"). */
+function AttendeeNotesTab({
+  notes,
+  event,
+  draft,
+  onDraftChange,
+  onSubmit,
+  submitting,
+  error,
+  currentUserId,
+  superadminUser,
+  orgAdminUser,
+  editState,
+  onEditDraftChange,
+  onStartEdit,
+  onCancelEdit,
+  onSaveEdit,
+  onRequestDelete,
+}: Readonly<{
+  notes: AttendeeDetailDto["notes"];
+  event: EventDto;
+  draft: string;
+  onDraftChange: (value: string) => void;
+  onSubmit: () => void;
+  submitting: boolean;
+  error: string | null;
+  currentUserId: string | undefined;
+  superadminUser: boolean;
+  orgAdminUser: boolean;
+  editState: NoteEditState;
+  onEditDraftChange: (value: string) => void;
+  onStartEdit: (note: AttendeeDetailDto["notes"][number]) => void;
+  onCancelEdit: () => void;
+  onSaveEdit: () => void;
+  onRequestDelete: (noteId: string) => void;
+}>) {
+  return (
+    <Card padded>
+      <p className="at-notes-hint">
+        <i className="ti ti-info-circle" aria-hidden="true" /> Internal notes are visible to
+        staff only and are never shown to the attendee.
+      </p>
+      <div className="at-notes-form">
+        <textarea
+          className="at-textarea at-notes-form__textarea"
+          rows={2}
+          // 2000-char cap matches NoteModal.tsx (check-in) and the backend's MAX_ATTENDEE_NOTE_LENGTH.
+          maxLength={2000}
+          placeholder="Add a note about this attendee…"
+          value={draft}
+          disabled={submitting}
+          onChange={(e) => onDraftChange(e.target.value)}
+        />
+        {error && (
+          <p className="text-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="at-notes-form__actions">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={!draft.trim() || submitting}
+            onClick={onSubmit}
+          >
+            {submitting ? "Adding…" : "Add"}
+          </Button>
+        </div>
+      </div>
+      {notes.length === 0 ? (
+        <p className="at-notes-empty">No notes yet.</p>
+      ) : (
+        <ul className="at-notes-list">
+          {notes.map((note) => {
+            const isOwn = note.author_user_id === currentUserId;
+            const canDelete = canDeleteNote(note, currentUserId, superadminUser, orgAdminUser);
+            const isEditing = editState.noteId === note.id;
+            return (
+              <li key={note.id} className="at-notes-list__item">
+                <div className="at-notes-list__head">
+                  <div className="at-notes-list__author-group">
+                    <Avatar name={note.author_display} size="sm" />
+                    <span className="at-notes-list__author">{note.author_display}</span>
+                    {note.author_role && (
+                      <Badge variant={noteRoleBadgeVariant(note.author_role)}>
+                        {noteRoleShort(note.author_role)}
+                      </Badge>
+                    )}
+                  </div>
+                  <time className="at-notes-list__time" dateTime={note.created_at}>
+                    {formatActivityTimestamp(note.created_at, null, event.timezone)}
+                  </time>
+                </div>
+                {isEditing ? (
+                  <div className="at-notes-list__edit">
+                    <textarea
+                      className="at-textarea at-notes-form__textarea"
+                      rows={2}
+                      maxLength={2000}
+                      value={editState.draft}
+                      disabled={editState.submitting}
+                      onChange={(e) => onEditDraftChange(e.target.value)}
+                    />
+                    {editState.error && (
+                      <p className="text-error" role="alert">
+                        {editState.error}
+                      </p>
+                    )}
+                    <div className="at-notes-form__actions">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={editState.submitting}
+                        onClick={onCancelEdit}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        disabled={!editState.draft.trim() || editState.submitting}
+                        onClick={onSaveEdit}
+                      >
+                        {editState.submitting ? "Saving…" : "Save"}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <p className="at-notes-list__text">{note.body}</p>
+                    {(isOwn || canDelete) && (
+                      <div className="at-notes-list__actions">
+                        {isOwn && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            icon={<i className="ti ti-pencil" aria-hidden="true" />}
+                            onClick={() => onStartEdit(note)}
+                          >
+                            Edit
+                          </Button>
+                        )}
+                        {canDelete && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            icon={<i className="ti ti-trash" aria-hidden="true" />}
+                            onClick={() => onRequestDelete(note.id)}
+                          >
+                            Delete
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
 /** Event attendee detail: profile edit, pass revoke/restore, resend, and activity log. */
 /** Diffs the edit form against the loaded attendee to build the PATCH body — top-level fields
  * plus any changed custom-data attributes — extracted out of handleSave (SonarCloud S3776). */
@@ -755,8 +968,9 @@ function classifyPassStatusError(err: unknown): PassStatusErrorOutcome {
 export function AttendeeDetailPage() {
   const { eventId, attendeeId } = useParams();
   const { event } = useOutletContext<{ event: EventDto }>();
-  const { assignments } = useAuth();
+  const { assignments, user } = useAuth();
   const superadmin = isSuperadmin(assignments);
+  const orgAdmin = isOrgAdmin(assignments, event.organization_id);
   const navigate = useNavigate();
   const { addToast } = useToast();
   // Edit folds into the "More actions" menu below this breakpoint instead of its own header
@@ -803,6 +1017,16 @@ export function AttendeeDetailPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [noteSubmitting, setNoteSubmitting] = useState(false);
+  const [noteError, setNoteError] = useState<string | null>(null);
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [noteEditDraft, setNoteEditDraft] = useState("");
+  const [noteEditSubmitting, setNoteEditSubmitting] = useState(false);
+  const [noteEditError, setNoteEditError] = useState<string | null>(null);
+  const [noteDeleteId, setNoteDeleteId] = useState<string | null>(null);
+  const [noteDeleting, setNoteDeleting] = useState(false);
+  const [noteDeleteError, setNoteDeleteError] = useState<string | null>(null);
 
   /** Guards async handlers when route params change before a request completes. */
   const selectionRef = useRef({ eventId, attendeeId });
@@ -824,6 +1048,9 @@ export function AttendeeDetailPage() {
     setRevokeError(null);
     setRevokeBusy(false);
     setActiveRevoke(null);
+    setNoteDraft("");
+    setNoteError(null);
+    setNoteSubmitting(false);
     try {
       const { detail: d, attributeFields: fields, itemsWarning: warn } =
         await loadAttendeeDetailData(eventId, attendeeId);
@@ -1128,6 +1355,88 @@ export function AttendeeDetailPage() {
     }
   }
 
+  /** Adds a staff note from the Notes tab - same AttendeeNote model as check-in's note
+   * composer, so the response's full detail DTO (incl. the new note) replaces local state
+   * directly, matching handlePassStatusChange's toast-on-success / inline-error-on-failure split. */
+  async function handleAddNote() {
+    if (!eventId || !attendeeId || !detail) return;
+    const body = noteDraft.trim();
+    if (!body) return;
+    const target = { eventId, attendeeId };
+    setNoteSubmitting(true);
+    setNoteError(null);
+    try {
+      const updated = await addAttendeeNote(eventId, attendeeId, body);
+      if (!isStillSelected(target)) return;
+      setDetail(updated);
+      setNoteDraft("");
+      addToast("Note added", "success");
+    } catch (err) {
+      if (!isStillSelected(target)) return;
+      setNoteError(operatorApiErrorMessage(err, "Could not add note."));
+    } finally {
+      if (isStillSelected(target)) setNoteSubmitting(false);
+    }
+  }
+
+  /** Opens the inline editor on a note's own body - server re-checks own-note-only regardless
+   * of what the Edit button's visibility already hides. */
+  function handleStartEditNote(note: AttendeeDetailDto["notes"][number]) {
+    setEditingNoteId(note.id);
+    setNoteEditDraft(note.body);
+    setNoteEditError(null);
+  }
+
+  function handleCancelEditNote() {
+    setEditingNoteId(null);
+    setNoteEditDraft("");
+    setNoteEditError(null);
+  }
+
+  async function handleSaveEditNote() {
+    if (!eventId || !attendeeId || !detail || !editingNoteId) return;
+    const body = noteEditDraft.trim();
+    if (!body) return;
+    const target = { eventId, attendeeId };
+    setNoteEditSubmitting(true);
+    setNoteEditError(null);
+    try {
+      const updated = await updateAttendeeNote(eventId, attendeeId, editingNoteId, body);
+      if (!isStillSelected(target)) return;
+      setDetail(updated);
+      setEditingNoteId(null);
+      setNoteEditDraft("");
+      addToast("Note updated", "success");
+    } catch (err) {
+      if (!isStillSelected(target)) return;
+      setNoteEditError(operatorApiErrorMessage(err, "Could not update note."));
+    } finally {
+      if (isStillSelected(target)) setNoteEditSubmitting(false);
+    }
+  }
+
+  /** Confirm-dialog-driven delete - canDeleteNote() in AttendeeNotesTab already hides the
+   * Delete button when neither ownership nor role rules allow it, but the server is the
+   * authority (resolves the note author's role itself before deciding). */
+  async function handleConfirmDeleteNote() {
+    if (!eventId || !attendeeId || !detail || !noteDeleteId) return;
+    const target = { eventId, attendeeId };
+    setNoteDeleting(true);
+    setNoteDeleteError(null);
+    try {
+      const updated = await deleteAttendeeNote(eventId, attendeeId, noteDeleteId);
+      if (!isStillSelected(target)) return;
+      setDetail(updated);
+      setNoteDeleteId(null);
+      addToast("Note deleted", "success");
+    } catch (err) {
+      if (!isStillSelected(target)) return;
+      setNoteDeleteError(operatorApiErrorMessage(err, "Could not delete note."));
+    } finally {
+      if (isStillSelected(target)) setNoteDeleting(false);
+    }
+  }
+
   // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
   // the skeleton on and off faster than it can register as loading — show it only once
   // the fetch has genuinely taken a moment.
@@ -1335,6 +1644,9 @@ export function AttendeeDetailPage() {
         tabs={[
           { id: "overview", label: "Overview" },
           { id: "activity", label: "Activity log" },
+          // `?? []` guards older test fixtures built before this field existed - real API
+          // responses always include `notes` (see buildAttendeeDetailDto on the server).
+          { id: "notes", label: "Notes", count: (detail.notes ?? []).length || undefined },
         ]}
       />
 
@@ -1355,6 +1667,32 @@ export function AttendeeDetailPage() {
           attributeFields={attributeFields}
           eventItems={eventItems}
           event={event}
+        />
+      )}
+
+      {tab === "notes" && (
+        <AttendeeNotesTab
+          notes={detail.notes ?? []}
+          event={event}
+          draft={noteDraft}
+          onDraftChange={setNoteDraft}
+          onSubmit={() => void handleAddNote()}
+          submitting={noteSubmitting}
+          error={noteError}
+          currentUserId={user?.id}
+          superadminUser={superadmin}
+          orgAdminUser={orgAdmin}
+          editState={{
+            noteId: editingNoteId,
+            draft: noteEditDraft,
+            submitting: noteEditSubmitting,
+            error: noteEditError,
+          }}
+          onEditDraftChange={setNoteEditDraft}
+          onStartEdit={handleStartEditNote}
+          onCancelEdit={handleCancelEditNote}
+          onSaveEdit={() => void handleSaveEditNote()}
+          onRequestDelete={setNoteDeleteId}
         />
       )}
 
@@ -1632,6 +1970,23 @@ export function AttendeeDetailPage() {
           if (!revokeBusy) {
             setActiveRevoke(null);
             setRevokeError(null);
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={noteDeleteId !== null}
+        title="Delete this note?"
+        message="This permanently removes the note. This cannot be undone."
+        confirmLabel="Delete note"
+        confirmVariant="danger"
+        loading={noteDeleting}
+        errorMessage={noteDeleteError ?? undefined}
+        onConfirm={() => void handleConfirmDeleteNote()}
+        onCancel={() => {
+          if (!noteDeleting) {
+            setNoteDeleteId(null);
+            setNoteDeleteError(null);
           }
         }}
       />

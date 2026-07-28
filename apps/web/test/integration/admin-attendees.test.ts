@@ -211,6 +211,62 @@ async function sessionCookieFor(userId: string): Promise<string> {
   return `admitto_session=${rawToken}`;
 }
 
+/** Runs `fn` with a session cookie for a temporary superadmin, reassigning the sole existing
+ * superadmin role row to it for the duration (RoleAssignment_single_superadmin_key allows only
+ * one superadmin instance-wide) and restoring the prior assignment afterwards - same pattern as
+ * "POST create allows superadmin force when at capacity" below. Confirmed TOTP is required here
+ * (unlike opCookie's operator, which isn't in the MFA-required role set): validateSession's
+ * assertFullSessionMfaPolicy rejects full sessions for MFA-required roles without a confirmed
+ * TOTP method, regardless of session stage. */
+async function withSuperadminCookie(fn: (cookie: string) => Promise<void>): Promise<void> {
+  const superEmail = "admin-attendees-notes-super@example.com";
+  await prisma.session.deleteMany({ where: { user: { email: superEmail } } });
+  await prisma.roleAssignment.deleteMany({ where: { user: { email: superEmail } } });
+  await prisma.user.deleteMany({ where: { email: superEmail } });
+
+  const password_hash = await hashPassword(PASSWORD);
+  const priorSuper = await prisma.roleAssignment.findFirst({
+    where: { role: "superadmin", scope_type: "instance" },
+    select: { id: true, user_id: true },
+  });
+  const superUser = await prisma.user.create({ data: { email: superEmail, password_hash } });
+  try {
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: superUser.id,
+        type: "totp",
+        secret_enc: encryptTotpSecret(generateTotpSecret()),
+        confirmed_at: new Date(),
+      },
+    });
+    if (priorSuper) {
+      await prisma.roleAssignment.update({
+        where: { id: priorSuper.id },
+        data: { user_id: superUser.id },
+      });
+    } else {
+      await prisma.roleAssignment.create({
+        data: { user_id: superUser.id, role: "superadmin", scope_type: "instance", scope_id: null },
+      });
+    }
+    await fn(await sessionCookieFor(superUser.id));
+  } finally {
+    if (priorSuper) {
+      await prisma.roleAssignment.update({
+        where: { id: priorSuper.id },
+        data: { user_id: priorSuper.user_id },
+      });
+    } else {
+      await prisma.roleAssignment.deleteMany({
+        where: { user_id: superUser.id, role: "superadmin", scope_type: "instance" },
+      });
+    }
+    await prisma.session.deleteMany({ where: { user_id: superUser.id } });
+    await prisma.roleAssignment.deleteMany({ where: { user_id: superUser.id } });
+    await prisma.user.delete({ where: { id: superUser.id } });
+  }
+}
+
 beforeAll(async () => {
   prisma = new PrismaClient();
   await seed(prisma);
@@ -2880,6 +2936,308 @@ describe("POST /api/admin/events/:eventId/attendees/:id/items/:itemKey/revoke", 
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe("POST /api/admin/events/:eventId/attendees/:id/notes", () => {
+  const ATT_NOTE = "att-admin-note-target";
+
+  beforeAll(async () => {
+    await prisma.attendee.upsert({
+      where: { id: ATT_NOTE },
+      create: {
+        id: ATT_NOTE,
+        event_id: EVENT_A,
+        email: "note-target@example.com",
+        name: "Note Target",
+        token_hash: hashToken(generateToken()),
+      },
+      update: {},
+    });
+  });
+
+  // bulk-resend below counts EVENT_A's attendees — don't leak this fixture.
+  afterAll(async () => {
+    await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: ATT_NOTE } });
+    await prisma.attendeeNote.deleteMany({ where: { attendee_id: ATT_NOTE } });
+    await prisma.attendee.delete({ where: { id: ATT_NOTE } });
+  });
+
+  it("rejects operator (server enforces admin/superadmin, not just frontend hiding)", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_NOTE}/notes`, {
+      method: "POST",
+      headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ body: "Should not be saved" }),
+    });
+    expect(res.status).toBe(403);
+    const count = await prisma.attendeeNote.count({ where: { attendee_id: ATT_NOTE } });
+    expect(count).toBe(0);
+  });
+
+  it("admin adds a note, logs note_added, and returns the refreshed detail with the note (PII-safe author)", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_NOTE}/notes`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ body: "Arrived early, seated at table 4." }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      notes: {
+        id: string;
+        body: string;
+        author_display: string;
+        author_user_id: string;
+        author_role: string | null;
+        created_at: string;
+      }[];
+    };
+    expect(body.notes[0]?.body).toBe("Arrived early, seated at table 4.");
+    expect(body.notes[0]?.author_display).toBe("Admin");
+    expect(body.notes[0]?.author_display).not.toBe(EMAIL_ADMIN);
+    expect(body.notes[0]?.author_user_id).toBe(adminId);
+    expect(body.notes[0]?.author_role).toBe("admin");
+
+    const row = await prisma.attendeeNote.findFirst({ where: { attendee_id: ATT_NOTE } });
+    expect(row?.body).toBe("Arrived early, seated at table 4.");
+    expect(row?.author_user_id).toBe(adminId);
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { attendee_id: ATT_NOTE, action_type: "note_added" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log).not.toBeNull();
+    expect(log?.metadata).toMatchObject({ note_id: row!.id });
+  });
+
+  it("rejects a blank body", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_NOTE}/notes`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ body: "   " }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a note body over 2000 characters", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_NOTE}/notes`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ body: "x".repeat(2001) }),
+    });
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as { error: string };
+    expect(json.error).toMatch(/too long/i);
+  });
+
+  it("returns 403 for an unknown attendee id (no existence oracle, matches sibling routes)", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/does-not-exist/notes`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ body: "hello" }),
+    });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("PATCH & DELETE /api/admin/events/:eventId/attendees/:id/notes/:noteId", () => {
+  const ATT_NOTE_RW = "att-admin-note-rw";
+  const SECOND_ADMIN_EMAIL = "admin-attendees-notes-admin2@example.com";
+  let secondAdminId = "";
+
+  beforeAll(async () => {
+    await prisma.attendee.upsert({
+      where: { id: ATT_NOTE_RW },
+      create: {
+        id: ATT_NOTE_RW,
+        event_id: EVENT_A,
+        email: "note-rw-target@example.com",
+        name: "Note RW Target",
+        token_hash: hashToken(generateToken()),
+      },
+      update: {},
+    });
+
+    await prisma.user.deleteMany({ where: { email: SECOND_ADMIN_EMAIL } });
+    const password_hash = await hashPassword(PASSWORD);
+    const secondAdmin = await prisma.user.create({
+      data: { email: SECOND_ADMIN_EMAIL, password_hash },
+    });
+    secondAdminId = secondAdmin.id;
+    await prisma.roleAssignment.create({
+      data: { user_id: secondAdminId, role: "admin", scope_type: "organization", scope_id: ORG_A },
+    });
+  });
+
+  // bulk-resend below counts EVENT_A's attendees — don't leak this fixture.
+  afterAll(async () => {
+    await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: ATT_NOTE_RW } });
+    await prisma.attendeeNote.deleteMany({ where: { attendee_id: ATT_NOTE_RW } });
+    await prisma.attendee.delete({ where: { id: ATT_NOTE_RW } });
+    await prisma.session.deleteMany({ where: { user_id: secondAdminId } });
+    await prisma.roleAssignment.deleteMany({ where: { user_id: secondAdminId } });
+    await prisma.user.delete({ where: { id: secondAdminId } });
+  });
+
+  async function createNote(authorUserId: string, body = "Note body"): Promise<string> {
+    const note = await prisma.attendeeNote.create({
+      data: { attendee_id: ATT_NOTE_RW, event_id: EVENT_A, author_user_id: authorUserId, body },
+    });
+    return note.id;
+  }
+
+  const noteUrl = (noteId: string) =>
+    `/api/admin/events/${EVENT_A}/attendees/${ATT_NOTE_RW}/notes/${noteId}`;
+
+  describe("PATCH", () => {
+    it("rejects operator (server enforces admin/superadmin, not just frontend hiding)", async () => {
+      const noteId = await createNote(adminId);
+      const res = await app.request(noteUrl(noteId), {
+        method: "PATCH",
+        headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ body: "Should not be saved" }),
+      });
+      expect(res.status).toBe(403);
+      await prisma.attendeeNote.delete({ where: { id: noteId } });
+    });
+
+    it("updates the author's own note and logs note_updated without leaking the body", async () => {
+      const noteId = await createNote(adminId, "Original body");
+      const res = await app.request(noteUrl(noteId), {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ body: "Updated body" }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { notes: { id: string; body: string }[] };
+      expect(body.notes.find((n) => n.id === noteId)?.body).toBe("Updated body");
+
+      const row = await prisma.attendeeNote.findUniqueOrThrow({ where: { id: noteId } });
+      expect(row.body).toBe("Updated body");
+
+      const log = await prisma.attendeeActionLog.findFirst({
+        where: { attendee_id: ATT_NOTE_RW, action_type: "note_updated" },
+        orderBy: { created_at: "desc" },
+      });
+      expect(log?.metadata).toMatchObject({ note_id: noteId });
+      expect(log?.metadata).not.toHaveProperty("body");
+    });
+
+    it("rejects editing someone else's note (403), row unchanged", async () => {
+      const noteId = await createNote(opId, "Operator's own note");
+      const res = await app.request(noteUrl(noteId), {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ body: "Trying to overwrite" }),
+      });
+      expect(res.status).toBe(403);
+      const row = await prisma.attendeeNote.findUniqueOrThrow({ where: { id: noteId } });
+      expect(row.body).toBe("Operator's own note");
+      await prisma.attendeeNote.delete({ where: { id: noteId } });
+    });
+
+    it("rejects a blank body", async () => {
+      const noteId = await createNote(adminId);
+      const res = await app.request(noteUrl(noteId), {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ body: "   " }),
+      });
+      expect(res.status).toBe(400);
+      await prisma.attendeeNote.delete({ where: { id: noteId } });
+    });
+
+    it("rejects a note body over 2000 characters", async () => {
+      const noteId = await createNote(adminId);
+      const res = await app.request(noteUrl(noteId), {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ body: "x".repeat(2001) }),
+      });
+      expect(res.status).toBe(400);
+      await prisma.attendeeNote.delete({ where: { id: noteId } });
+    });
+
+    it("returns 404 for an unknown note id", async () => {
+      const res = await app.request(noteUrl("does-not-exist"), {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ body: "hello" }),
+      });
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe("DELETE", () => {
+    it("rejects operator (server enforces admin/superadmin, not just frontend hiding)", async () => {
+      const noteId = await createNote(adminId);
+      const res = await app.request(noteUrl(noteId), {
+        method: "DELETE",
+        headers: { Cookie: opCookie, ...sameOrigin },
+      });
+      expect(res.status).toBe(403);
+      await prisma.attendeeNote.delete({ where: { id: noteId } });
+    });
+
+    it("admin deletes their own note and logs note_deleted with author_user_id", async () => {
+      const noteId = await createNote(adminId);
+      const res = await app.request(noteUrl(noteId), {
+        method: "DELETE",
+        headers: { Cookie: adminCookie, ...sameOrigin },
+      });
+      expect(res.status).toBe(200);
+      const row = await prisma.attendeeNote.findUnique({ where: { id: noteId } });
+      expect(row).toBeNull();
+
+      const log = await prisma.attendeeActionLog.findFirst({
+        where: { attendee_id: ATT_NOTE_RW, action_type: "note_deleted" },
+        orderBy: { created_at: "desc" },
+      });
+      expect(log?.metadata).toMatchObject({ note_id: noteId, author_user_id: adminId });
+    });
+
+    it("admin deletes an operator-authored note", async () => {
+      const noteId = await createNote(opId);
+      const res = await app.request(noteUrl(noteId), {
+        method: "DELETE",
+        headers: { Cookie: adminCookie, ...sameOrigin },
+      });
+      expect(res.status).toBe(200);
+      const row = await prisma.attendeeNote.findUnique({ where: { id: noteId } });
+      expect(row).toBeNull();
+    });
+
+    it("rejects an admin deleting another admin's note (403), row unchanged", async () => {
+      const noteId = await createNote(secondAdminId);
+      const res = await app.request(noteUrl(noteId), {
+        method: "DELETE",
+        headers: { Cookie: adminCookie, ...sameOrigin },
+      });
+      expect(res.status).toBe(403);
+      const row = await prisma.attendeeNote.findUnique({ where: { id: noteId } });
+      expect(row).not.toBeNull();
+      await prisma.attendeeNote.delete({ where: { id: noteId } });
+    });
+
+    it("superadmin deletes any note, including another admin's", async () => {
+      const noteId = await createNote(secondAdminId);
+      await withSuperadminCookie(async (superCookie) => {
+        const res = await app.request(noteUrl(noteId), {
+          method: "DELETE",
+          headers: { Cookie: superCookie, ...sameOrigin },
+        });
+        expect(res.status).toBe(200);
+      });
+      const row = await prisma.attendeeNote.findUnique({ where: { id: noteId } });
+      expect(row).toBeNull();
+    });
+
+    it("returns 404 for an unknown note id", async () => {
+      const res = await app.request(noteUrl("does-not-exist"), {
+        method: "DELETE",
+        headers: { Cookie: adminCookie, ...sameOrigin },
+      });
+      expect(res.status).toBe(404);
+    });
   });
 });
 

@@ -22,9 +22,13 @@ export {
 } from "./bulk-revoke.js";
 export {
   addAttendeeNote,
+  updateAttendeeNote,
+  deleteAttendeeNote,
   NoteTooLongError,
   OperatorRequiredError,
   AttendeeNotFoundError,
+  NoteNotFoundError,
+  NoteForbiddenError,
   MAX_ATTENDEE_NOTE_LENGTH,
 } from "./notes.js";
 export {

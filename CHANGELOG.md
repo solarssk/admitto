@@ -36,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The 6-digit MFA code entry on the login screen could overflow narrow phones (320–390px) instead of fitting the viewport.** Digit boxes, their spacing, and the card's own side padding now shrink slightly below 480px so the row always fits.
 
 ### Added
+- **Attendee Detail page gained a "Notes" tab**, so staff can read and add internal notes on an attendee without going through check-in. It shares the same notes check-in operators already write during scanning (`AttendeeNote`) — a note added from either side shows up on the other. The tab's count badge shows how many notes exist; adding one shows a success toast and any failure shows inline under the form instead, matching the page's existing pattern for other actions. Notes are staff-only and never shown to the attendee. Follow-up polish (PO review): each note now shows the author's avatar and a role badge (Operator/Admin/Superadmin) next to their name, with the timestamp right-aligned. Staff can edit their own note; deleting one follows the same escalation as other admin actions — admins may delete their own note or an operator's, but not another admin's, while superadmins may delete any note — and both edits and deletions are recorded in the audit log. The hint above the note form is now a neutral info callout instead of alarm-styled text, and the Add button moved into its own actions row below the textarea instead of floating awkwardly beside it.
+
+### Added
 - **Attendee Detail page gained a "Revoke items" action**, resetting every issued item (badge, wristband, giftbag, …) for just this attendee back to pending. Previously this was only possible from the Attendees list's bulk actions menu; it now reuses that same endpoint scoped to a single attendee, with its own confirmation dialog and the same disabled-with-tooltip treatment as the list's version when there's nothing to revoke.
 
 ### Added

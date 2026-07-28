@@ -654,6 +654,51 @@ export async function revokeAttendeeCheckIn(
   return parseJson<{ card: AttendeeCardDto }>(res);
 }
 
+/** Add a note on the attendee detail page's Notes tab — shares the same AttendeeNote model
+ * as the check-in operator note composer (submitAttendeeNote), so a note added here also
+ * shows up on the check-in card, and vice versa. Returns the refreshed detail DTO so the
+ * caller can replace its whole local `detail` state, matching updateAttendee's convention. */
+export async function addAttendeeNote(
+  eventId: string,
+  attendeeId: string,
+  body: string,
+): Promise<AttendeeDetailDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/notes`,
+    jsonPostInit({ body }),
+  );
+  return parseJson<AttendeeDetailDto>(res);
+}
+
+/** Edit a note the signed-in user authored. Server re-enforces own-note-only regardless of
+ * what the UI shows. Returns the refreshed detail DTO, matching addAttendeeNote's convention. */
+export async function updateAttendeeNote(
+  eventId: string,
+  attendeeId: string,
+  noteId: string,
+  body: string,
+): Promise<AttendeeDetailDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/notes/${encodeURIComponent(noteId)}`,
+    jsonPatchInit({ body }),
+  );
+  return parseJson<AttendeeDetailDto>(res);
+}
+
+/** Delete a note. Server enforces who may delete which notes (own note; admins may also delete
+ * operator-authored notes; superadmins may delete any note). Returns the refreshed detail DTO. */
+export async function deleteAttendeeNote(
+  eventId: string,
+  attendeeId: string,
+  noteId: string,
+): Promise<AttendeeDetailDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/notes/${encodeURIComponent(noteId)}`,
+    jsonDeleteInit(),
+  );
+  return parseJson<AttendeeDetailDto>(res);
+}
+
 export async function fetchCheckInHistory(
   eventId: string,
   limit = 8,

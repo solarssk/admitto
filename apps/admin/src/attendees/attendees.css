@@ -1649,3 +1649,109 @@
 .attendees-table-v2__sort-btn--active i {
   color: var(--primary);
 }
+
+/* Notes tab (attendee detail) */
+/* Plain informational context, not a caution/danger - same neutral "well" treatment as
+   system-log-panel__notice (Settings > System logs), the deliberate non-alarming counterpart to
+   the red danger-zone-notice. */
+.at-notes-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.at-notes-hint i {
+  margin-top: 2px;
+}
+
+.at-notes-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.at-notes-form__textarea {
+  flex: 1;
+}
+
+.at-notes-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.at-notes-empty {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.at-notes-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.at-notes-list__item {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.at-notes-list__item:last-child {
+  border-bottom: none;
+}
+
+.at-notes-list__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.at-notes-list__author-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.at-notes-list__author {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.at-notes-list__time {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.at-notes-list__text {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.at-notes-list__edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.at-notes-list__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}

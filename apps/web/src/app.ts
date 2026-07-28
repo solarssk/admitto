@@ -122,6 +122,9 @@ import {
   handleExportSelectedAttendees,
   handleRevokeAttendeeCheckIn,
   handleRevokeAttendeeItem,
+  handleAddAttendeeNote,
+  handlePatchAttendeeNote,
+  handleDeleteAttendeeNote,
 } from "./admin/attendees-api-routes.js";
 import { handleImportPreview, handleImportCommit, handleGetImportTemplate, handleGetImportHistory, MAX_IMPORT_BODY_BYTES } from "./admin/import-api-routes.js";
 import {
@@ -777,6 +780,24 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     guardArchivedEvent((c) => handleRevokeAttendeeItem(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/:id/notes",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleAddAttendeeNote(c, db)),
+  );
+  app.patch(
+    "/api/admin/events/:eventId/attendees/:id/notes/:noteId",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handlePatchAttendeeNote(c, db)),
+  );
+  app.delete(
+    "/api/admin/events/:eventId/attendees/:id/notes/:noteId",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleDeleteAttendeeNote(c, db)),
   );
   app.get("/api/admin/events/:eventId/template", staffAdminGate, (c) =>
     handleGetEventTemplate(c, db),
