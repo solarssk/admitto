@@ -24,7 +24,7 @@ import {
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventSettingsDto, TicketTypeDto } from "../api/types.js";
 import { TicketTypesCard } from "../settings/TicketTypesCard.js";
-import { EventMailSettingsCard } from "../settings/EventMailSettingsCard.js";
+import { EventMailSettingsCard, type EventMailSettingsCardHandle } from "../settings/EventMailSettingsCard.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
@@ -549,6 +549,11 @@ export function EventSettingsPage() {
   const [ticketTypesLoading, setTicketTypesLoading] = useState(true);
   const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
   const [mailDirty, setMailDirty] = useState(false);
+  const [mailSaving, setMailSaving] = useState(false);
+  // Card exposes save()/reset() imperatively so this page's single PageHeader Save/Reset
+  // pair can drive the Mail tab's form the same way it drives the General tab's — the card
+  // itself no longer renders its own footer (previously a second, redundant Save button).
+  const mailCardRef = useRef<EventMailSettingsCardHandle>(null);
   // Archiving and the bulk Danger Zone actions below reload `event` but never touch
   // EventMailSettingsCard's own internal draft/secrets state, so a pending mail edit would
   // otherwise survive them despite the confirm dialogs promising unsaved changes are lost
@@ -800,13 +805,32 @@ export function EventSettingsPage() {
         actions={
           !isArchived ? (
             <span className="save-actions">
-              <Button
-                variant="primary"
-                disabled={!dirty || saving || logoUploading}
-                onClick={() => void handleSave()}
-              >
-                {saveButtonLabel}
-              </Button>
+              {tab === "mail" ? (
+                <>
+                  <Button
+                    variant="secondary"
+                    disabled={!mailDirty || mailSaving}
+                    onClick={() => mailCardRef.current?.reset()}
+                  >
+                    Reset
+                  </Button>
+                  <Button
+                    variant="primary"
+                    disabled={!mailDirty || mailSaving}
+                    onClick={() => void mailCardRef.current?.save()}
+                  >
+                    {computeSaveButtonLabel(mailSaving, false, isDesktop)}
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  variant="primary"
+                  disabled={!dirty || saving || logoUploading}
+                  onClick={() => void handleSave()}
+                >
+                  {saveButtonLabel}
+                </Button>
+              )}
             </span>
           ) : undefined
         }
@@ -983,9 +1007,11 @@ export function EventSettingsPage() {
         <EventSettingsTabPanel tab="mail" activeTab={tab} visited={visitedTabs} label="Mail">
           <EventMailSettingsCard
             key={mailCardResetKey}
+            ref={mailCardRef}
             eventId={eventId}
             isArchived={isArchived}
             onDirtyChange={setMailDirty}
+            onSavingChange={setMailSaving}
           />
         </EventSettingsTabPanel>
       )}

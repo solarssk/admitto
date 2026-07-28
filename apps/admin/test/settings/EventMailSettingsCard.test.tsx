@@ -1,8 +1,12 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { createRef } from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { EventMailSettingsCard } from "../../src/settings/EventMailSettingsCard.js";
+import {
+  EventMailSettingsCard,
+  type EventMailSettingsCardHandle,
+} from "../../src/settings/EventMailSettingsCard.js";
 import { renderWithToast } from "../test-utils.js";
 import type { EventMailSettingsResponse, MailSettingsFieldsDto } from "../../src/api/types.js";
 
@@ -138,11 +142,13 @@ const SMTP_SUMMARY_TEXT = "SMTP · sends as org@example.com";
 const DEDICATED_HINT = /This event sends its own mail instead of the organization/;
 
 function renderCard(isArchived = false) {
-  return renderWithToast(
+  const ref = createRef<EventMailSettingsCardHandle>();
+  const result = renderWithToast(
     <MemoryRouter>
-      <EventMailSettingsCard eventId="evt-1" isArchived={isArchived} />
+      <EventMailSettingsCard ref={ref} eventId="evt-1" isArchived={isArchived} />
     </MemoryRouter>,
   );
+  return { ...result, ref };
 }
 
 /** Renders with a real route table so "Open instance settings" navigation is observable. */
@@ -296,7 +302,7 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
   it("saves via saveEventMailSettings with the edited field and applies the response", async () => {
     mockFetch.mockResolvedValue(inheritedResponse());
     mockSave.mockResolvedValue(dedicatedResponse());
-    renderCard();
+    const { ref } = renderCard();
     await screen.findByText(SMTP_SUMMARY_TEXT);
 
     fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
@@ -309,7 +315,9 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
     });
     fireEvent.change(screen.getByLabelText("Port"), { target: { value: "587" } });
     fireEvent.change(screen.getByLabelText("Username"), { target: { value: "dedicated-user" } });
-    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
+    await act(async () => {
+      await ref.current?.save();
+    });
 
     await waitFor(() => expect(mockSave).toHaveBeenCalledTimes(1));
     expect(mockSave.mock.calls[0][0]).toBe("evt-1");
@@ -323,13 +331,15 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
 
   it("Reset reverts the toggle and discards the draft", async () => {
     mockFetch.mockResolvedValue(inheritedResponse());
-    renderCard();
+    const { ref } = renderCard();
     await screen.findByText(SMTP_SUMMARY_TEXT);
 
     fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
     expect(screen.getByText(DEDICATED_HINT)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    act(() => {
+      ref.current?.reset();
+    });
     expect(
       screen.getByRole("radio", { name: "Organization mail" }).getAttribute("aria-checked"),
     ).toBe("true");
@@ -338,12 +348,14 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
 
   it("shows validation errors and does not save an incomplete SMTP draft", async () => {
     mockFetch.mockResolvedValue(inheritedResponse());
-    renderCard();
+    const { ref } = renderCard();
     await screen.findByText(SMTP_SUMMARY_TEXT);
 
     fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
     fireEvent.click(screen.getByRole("radio", { name: "SMTP (recommended)" }));
-    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
+    await act(async () => {
+      await ref.current?.save();
+    });
 
     await waitFor(() => {
       expect(screen.getByText("SMTP host is required.")).toBeTruthy();
@@ -354,7 +366,7 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
   it("toasts save failure without leaking server detail", async () => {
     mockFetch.mockResolvedValue(inheritedResponse());
     mockSave.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    renderCard();
+    const { ref } = renderCard();
     await screen.findByText(SMTP_SUMMARY_TEXT);
 
     fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
@@ -367,7 +379,9 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
     });
     fireEvent.change(screen.getByLabelText("Port"), { target: { value: "587" } });
     fireEvent.change(screen.getByLabelText("Username"), { target: { value: "dedicated-user" } });
-    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
+    await act(async () => {
+      await ref.current?.save();
+    });
 
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to save mail settings/);
@@ -414,11 +428,13 @@ describe("EventMailSettingsCard — reverting to organization", () => {
   it("calls clearEventMailSettings on save and applies the inherited response", async () => {
     mockFetch.mockResolvedValue(dedicatedResponse());
     mockClear.mockResolvedValue(inheritedResponse());
-    renderCard();
+    const { ref } = renderCard();
     await screen.findByText(DEDICATED_HINT);
 
     fireEvent.click(screen.getByRole("radio", { name: "Organization mail" }));
-    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
+    await act(async () => {
+      await ref.current?.save();
+    });
 
     // Reverting to org mail is destructive (deletes the event's dedicated transport and
     // secrets) — it goes through a ConfirmDialog rather than saving immediately.
@@ -431,11 +447,13 @@ describe("EventMailSettingsCard — reverting to organization", () => {
 
   it("cancelling the confirm dialog leaves the dedicated override in place", async () => {
     mockFetch.mockResolvedValue(dedicatedResponse());
-    renderCard();
+    const { ref } = renderCard();
     await screen.findByText(DEDICATED_HINT);
 
     fireEvent.click(screen.getByRole("radio", { name: "Organization mail" }));
-    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
+    await act(async () => {
+      await ref.current?.save();
+    });
     fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
 
     expect(mockClear).not.toHaveBeenCalled();
@@ -445,11 +463,13 @@ describe("EventMailSettingsCard — reverting to organization", () => {
   it("shows the error inline in the confirm dialog when revert fails", async () => {
     mockFetch.mockResolvedValue(dedicatedResponse());
     mockClear.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    renderCard();
+    const { ref } = renderCard();
     await screen.findByText(DEDICATED_HINT);
 
     fireEvent.click(screen.getByRole("radio", { name: "Organization mail" }));
-    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
+    await act(async () => {
+      await ref.current?.save();
+    });
     fireEvent.click(await screen.findByRole("button", { name: "Revert" }));
 
     await waitFor(() => {
@@ -520,12 +540,11 @@ describe("EventMailSettingsCard — test send", () => {
 });
 
 describe("EventMailSettingsCard — archived event", () => {
-  it("hides the Save/Reset footer and shows an archived note instead", async () => {
+  it("shows an archived note instead of the validation error area", async () => {
     mockFetch.mockResolvedValue(inheritedResponse());
     renderCard(true);
     await screen.findByText(SMTP_SUMMARY_TEXT);
 
-    expect(screen.queryByRole("button", { name: "Reset" })).toBeNull();
     expect(screen.getByText(/This event is archived - mail settings cannot be changed/)).toBeTruthy();
   });
 

@@ -6058,7 +6058,10 @@ select.system-log-panel__field {
 
 .timezone-select__group {
   position: sticky;
-  top: 0;
+  /* Negative offset matches .timezone-select__list's padding so the sticky
+     header fully covers the list's padding gutter; otherwise the option
+     scrolled just before it peeks through above the "stuck" header. */
+  top: -0.25rem;
   z-index: 1;
   margin: 0.15rem 0 0;
   padding: 0.35rem 0.55rem 0.2rem;

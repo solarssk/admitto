@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { Card, Input, Button, Tooltip, useToast } from "@admitto/ui";
 import {
@@ -30,11 +30,11 @@ import {
   PowerAutomateCard,
   runTestSend,
   SenderCard,
-  SettingsFooter,
   SmtpConnectionCard,
   TestResultPreview,
   TransportTileGrid,
   useMailSettingsFormState,
+  ValidationErrorList,
   type FieldLocked,
 } from "./mailTransportFormParts.js";
 
@@ -92,21 +92,31 @@ function OrgMailSummary({
   );
 }
 
+/** Imperative actions exposed to EventSettingsPage, which hosts the single page-level
+ * Save changes/Reset button pair — this card no longer renders its own footer. */
+export type EventMailSettingsCardHandle = {
+  save: () => Promise<void>;
+  reset: () => void;
+};
+
 /** Per-event dedicated transport override — inherits the organization's mail settings by
  * default; a superadmin or org admin can switch an event to send through its own transport
  * instead (see issue #511). Reuses the same tile-grid/secret-field building blocks as the
  * instance-level Mail transport panel. */
-export function EventMailSettingsCard({
-  eventId,
-  isArchived,
-  onDirtyChange,
-}: Readonly<{
-  eventId: string;
-  isArchived: boolean;
-  /** Notified on every change to hasUnsavedChanges, so a hosting page can fold this card's
-   * dirty state into its own navigation/unload/destructive-action warnings (CodeRabbit review). */
-  onDirtyChange?: (dirty: boolean) => void;
-}>) {
+export const EventMailSettingsCard = forwardRef<
+  EventMailSettingsCardHandle,
+  Readonly<{
+    eventId: string;
+    isArchived: boolean;
+    /** Notified on every change to hasUnsavedChanges, so a hosting page can fold this card's
+     * dirty state into its own navigation/unload/destructive-action warnings (CodeRabbit review). */
+    onDirtyChange?: (dirty: boolean) => void;
+    /** Notified on every change to the in-flight save/revert state, so the page header's
+     * hoisted Save button can disable itself and show "Saving…" the same way this card's
+     * own button used to. */
+    onSavingChange?: (saving: boolean) => void;
+  }>
+>(function EventMailSettingsCard({ eventId, isArchived, onDirtyChange, onSavingChange }, ref) {
   const { addToast } = useToast();
   const { assignments } = useAuth();
   const isSa = isSuperadmin(assignments);
@@ -272,12 +282,21 @@ export function EventMailSettingsCard({
     dedicatedDraftSeededRef.current = false;
   };
 
+  useImperativeHandle(ref, () => ({
+    save: handleSave,
+    reset: handleReset,
+  }));
+
   const hasUnsavedChanges =
     mode !== savedMode || (mode === "dedicated" && isMailSettingsDirty(draft, savedDraft, secrets));
 
   useEffect(() => {
     onDirtyChange?.(hasUnsavedChanges);
   }, [hasUnsavedChanges, onDirtyChange]);
+
+  useEffect(() => {
+    onSavingChange?.(saving);
+  }, [saving, onSavingChange]);
 
   // Org mode always tests the saved organization transport, never leftover edits from a
   // dedicated draft the admin switched away from (CodeRabbit review) — inherited -> dedicated
@@ -513,14 +532,7 @@ export function EventMailSettingsCard({
           This event is archived - mail settings cannot be changed.
         </p>
       ) : (
-        <SettingsFooter
-          validationErrors={validationErrors}
-          validationErrorsRef={validationErrorsRef}
-          hasUnsavedChanges={hasUnsavedChanges}
-          saving={saving}
-          onReset={handleReset}
-          onSave={() => void handleSave()}
-        />
+        <ValidationErrorList errors={validationErrors} errorsRef={validationErrorsRef} />
       )}
 
       <ConfirmDialog
@@ -536,4 +548,4 @@ export function EventMailSettingsCard({
       />
     </div>
   );
-}
+});
