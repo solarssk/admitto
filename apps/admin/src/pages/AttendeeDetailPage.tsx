@@ -1388,13 +1388,13 @@ export function AttendeeDetailPage() {
    * composer, so the response's full detail DTO (incl. the new note) replaces local state
    * directly, matching handlePassStatusChange's toast-on-success / inline-error-on-failure split. */
   async function handleAddNote() {
-    if (!eventId || !attendeeId || !detail) return;
     const body = noteDraft.trim();
-    if (!body) return;
-    const target = { eventId, attendeeId };
+    // The Notes tab only renders after the route and detail are present, and the Add button is
+    // disabled for an empty draft. The server remains authoritative for the same validation.
+    const target = { eventId: eventId!, attendeeId: attendeeId! };
     setNoteSubmitting(true);
     try {
-      const updated = await addAttendeeNote(eventId, attendeeId, body);
+      const updated = await addAttendeeNote(eventId!, attendeeId!, body);
       if (!isStillSelected(target)) return;
       setDetail(updated);
       setNoteDraft("");
@@ -1420,13 +1420,12 @@ export function AttendeeDetailPage() {
   }
 
   async function handleSaveEditNote() {
-    if (!eventId || !attendeeId || !detail || !editingNoteId) return;
     const body = noteEditDraft.trim();
-    if (!body) return;
-    const target = { eventId, attendeeId };
+    // Save is only rendered for the selected note, and disabled until its draft is non-empty.
+    const target = { eventId: eventId!, attendeeId: attendeeId! };
     setNoteEditSubmitting(true);
     try {
-      const updated = await updateAttendeeNote(eventId, attendeeId, editingNoteId, body);
+      const updated = await updateAttendeeNote(eventId!, attendeeId!, editingNoteId!, body);
       if (!isStillSelected(target)) return;
       setDetail(updated);
       setNotesPage(updated.notes_page);
@@ -1445,12 +1444,12 @@ export function AttendeeDetailPage() {
    * Delete button when neither ownership nor role rules allow it, but the server is the
    * authority (resolves the note author's role itself before deciding). */
   async function handleConfirmDeleteNote() {
-    if (!eventId || !attendeeId || !detail || !noteDeleteId) return;
-    const target = { eventId, attendeeId };
+    // This callback is mounted only while a note id is selected in the open confirmation dialog.
+    const target = { eventId: eventId!, attendeeId: attendeeId! };
     setNoteDeleting(true);
     setNoteDeleteError(null);
     try {
-      const updated = await deleteAttendeeNote(eventId, attendeeId, noteDeleteId);
+      const updated = await deleteAttendeeNote(eventId!, attendeeId!, noteDeleteId!);
       if (!isStillSelected(target)) return;
       setDetail(updated);
       setNotesPage(updated.notes_page);

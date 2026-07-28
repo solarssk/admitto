@@ -12,7 +12,11 @@ import * as ticketOperations from "@admitto/tickets";
 import * as mailDelivery from "@admitto/mail-delivery";
 import type { ExportPayload } from "@admitto/mailer";
 import { createApp } from "../../src/app.js";
-import { handleBulkRevokeAttendeeItems } from "../../src/admin/attendees-api-routes.js";
+import {
+  handleBulkRevokeAttendeeItems,
+  handleDeleteAttendeeNote,
+  handlePatchAttendeeNote,
+} from "../../src/admin/attendees-api-routes.js";
 import { createRateLimitStore, InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 import { CAPACITY_EXCLUDED_STATUSES } from "../../src/admin/event-capacity.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
@@ -49,6 +53,22 @@ function buildNoEmailBulkHarness() {
   harness.post("/api/admin/events/:eventId/attendees/bulk-revoke-items", (c) => {
     c.set("auth", { userId: adminId });
     return handleBulkRevokeAttendeeItems(c, prisma);
+  });
+  return harness;
+}
+
+/** Exercises note handlers after route authentication has established an operator identity.
+ * The full app rejects operators in middleware, so this harness covers the handlers' own
+ * authorization-return path as defence in depth. */
+function buildOperatorNoteHarness() {
+  const harness = new Hono();
+  harness.patch("/api/admin/events/:eventId/attendees/:id/notes/:noteId", (c) => {
+    c.set("auth", { userId: opId });
+    return handlePatchAttendeeNote(c, prisma);
+  });
+  harness.delete("/api/admin/events/:eventId/attendees/:id/notes/:noteId", (c) => {
+    c.set("auth", { userId: opId });
+    return handleDeleteAttendeeNote(c, prisma);
   });
   return harness;
 }
@@ -3018,6 +3038,17 @@ describe("POST /api/admin/events/:eventId/attendees/:id/notes", () => {
     expect(res.status).toBe(400);
   });
 
+  it("rejects malformed JSON before attempting to create a note", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_NOTE}/notes`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{not json",
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "body required" });
+  });
+
   it("rejects a note body over 2000 characters", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_NOTE}/notes`, {
       method: "POST",
@@ -3108,6 +3139,53 @@ describe("POST /api/admin/events/:eventId/attendees/:id/notes", () => {
       await prisma.attendeeNote.delete({ where: { id: note.id } });
     }
   });
+
+  it("resolves each note author's effective role and preserves a named unassigned author", async () => {
+    await prisma.attendeeNote.deleteMany({ where: { attendee_id: ATT_NOTE } });
+    const unassigned = await prisma.user.create({
+      data: { email: "admin-attendees-unassigned@example.com", password_hash: await hashPassword(PASSWORD), display_name: "Unaffiliated staff" },
+    });
+    const noteIds: string[] = [];
+    try {
+      const created = await prisma.attendeeNote.createManyAndReturn({
+        data: [
+          { attendee_id: ATT_NOTE, event_id: EVENT_A, author_user_id: adminId, body: "Admin role" },
+          { attendee_id: ATT_NOTE, event_id: EVENT_A, author_user_id: opId, body: "Operator role" },
+          { attendee_id: ATT_NOTE, event_id: EVENT_A, author_user_id: unassigned.id, body: "No role" },
+        ],
+        select: { id: true },
+      });
+      noteIds.push(...created.map((note) => note.id));
+
+      await withSuperadminCookie(async () => {
+        const superUser = await prisma.user.findUniqueOrThrow({
+          where: { email: "admin-attendees-notes-super@example.com" },
+          select: { id: true },
+        });
+        const note = await prisma.attendeeNote.create({
+          data: { attendee_id: ATT_NOTE, event_id: EVENT_A, author_user_id: superUser.id, body: "Superadmin role" },
+        });
+        noteIds.push(note.id);
+
+        const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_NOTE}`, {
+          headers: { Cookie: adminCookie },
+        });
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as { notes: { body: string; author_display: string; author_role: string | null }[] };
+        const byBody = new Map(body.notes.map((note) => [note.body, note]));
+        expect(byBody.get("Admin role")?.author_role).toBe("admin");
+        expect(byBody.get("Operator role")?.author_role).toBe("operator");
+        expect(byBody.get("No role")).toMatchObject({ author_display: "Unaffiliated staff", author_role: null });
+        expect(byBody.get("Superadmin role")?.author_role).toBe("superadmin");
+
+        await prisma.attendeeNote.delete({ where: { id: note.id } });
+        noteIds.splice(noteIds.indexOf(note.id), 1);
+      });
+    } finally {
+      await prisma.attendeeNote.deleteMany({ where: { id: { in: noteIds } } });
+      await prisma.user.delete({ where: { id: unassigned.id } });
+    }
+  });
 });
 
 describe("PATCH & DELETE /api/admin/events/:eventId/attendees/:id/notes/:noteId", () => {
@@ -3167,6 +3245,18 @@ describe("PATCH & DELETE /api/admin/events/:eventId/attendees/:id/notes/:noteId"
         headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" },
         body: JSON.stringify({ body: "Should not be saved" }),
       });
+      expect(res.status).toBe(403);
+      await prisma.attendeeNote.delete({ where: { id: noteId } });
+    });
+
+    it("defensively rejects an operator inside the handler after route authentication", async () => {
+      const noteId = await createNote(adminId);
+      const res = await buildOperatorNoteHarness().request(noteUrl(noteId), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: "Should not be saved" }),
+      });
+
       expect(res.status).toBe(403);
       await prisma.attendeeNote.delete({ where: { id: noteId } });
     });
@@ -3264,6 +3354,14 @@ describe("PATCH & DELETE /api/admin/events/:eventId/attendees/:id/notes/:noteId"
         method: "DELETE",
         headers: { Cookie: opCookie, ...sameOrigin },
       });
+      expect(res.status).toBe(403);
+      await prisma.attendeeNote.delete({ where: { id: noteId } });
+    });
+
+    it("defensively rejects an operator inside the handler after route authentication", async () => {
+      const noteId = await createNote(adminId);
+      const res = await buildOperatorNoteHarness().request(noteUrl(noteId), { method: "DELETE" });
+
       expect(res.status).toBe(403);
       await prisma.attendeeNote.delete({ where: { id: noteId } });
     });

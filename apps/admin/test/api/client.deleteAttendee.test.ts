@@ -106,4 +106,17 @@ describe("deleteAttendee (client) — thin wrapper coverage", () => {
       expect.objectContaining({ credentials: "same-origin" }),
     );
   });
+
+  it("requests the first notes page without a query string by default", async () => {
+    const detail = { id: "att-1", notes: [] };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => detail });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchAttendeeDetail("evt with space", "att with space");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/events/evt%20with%20space/attendees/att%20with%20space",
+      expect.objectContaining({ credentials: "same-origin" }),
+    );
+  });
 });

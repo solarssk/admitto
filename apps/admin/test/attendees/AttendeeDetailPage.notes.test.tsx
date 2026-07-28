@@ -227,6 +227,20 @@ describe("AttendeeDetailPage — Notes tab", () => {
     expect(await screen.findByText("Newest")).toBeTruthy();
   });
 
+  it("keeps the Notes tab usable with a legacy detail response that lacks pagination metadata", async () => {
+    mockLoad(baseDetail({
+      notes: undefined,
+      notes_total: undefined,
+      notes_page: undefined,
+      notes_page_size: undefined,
+    }));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+    await openNotesTab();
+
+    expect(screen.getByText("No notes yet.")).toBeTruthy();
+  });
+
   it("disables Add until the draft has non-whitespace text", async () => {
     mockLoad(baseDetail());
     renderPage();
@@ -336,6 +350,72 @@ describe("AttendeeDetailPage — Notes tab", () => {
     expect(screen.queryByText("Late arrival expected")).toBeNull();
   });
 
+  it("does not show an add failure from a previously selected attendee", async () => {
+    mockLoad(baseDetail());
+    mockLoad(baseDetail({ id: "att-2", name: "Bea", notes: [] }));
+    renderPage({ withRouteChangeControl: true });
+    await screen.findByRole("heading", { name: "Anna" });
+    await openNotesTab();
+
+    fireEvent.change(screen.getByPlaceholderText("Add a note about this attendee…"), {
+      target: { value: "Late arrival expected" },
+    });
+    let rejectRequest!: (reason: Error) => void;
+    addAttendeeNote.mockReturnValueOnce(new Promise((_, reject) => { rejectRequest = reject; }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(addAttendeeNote).toHaveBeenCalledOnce());
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch attendee" }));
+    await screen.findByRole("heading", { name: "Bea" });
+    rejectRequest(new Error("network"));
+
+    await waitFor(() => expect(loadAttendeeDetailData).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+  });
+
+  it("does not apply a stale note edit after navigating to another attendee", async () => {
+    mockLoad(baseDetail({ notes: [makeNote({ id: "n1", body: "Original" })] }));
+    mockLoad(baseDetail({ id: "att-2", name: "Bea", notes: [] }));
+    renderPage({ withRouteChangeControl: true });
+    await screen.findByRole("heading", { name: "Anna" });
+    await openNotesTab();
+
+    fireEvent.click(within(notesList()).getByRole("button", { name: /^Edit note by/ }));
+    fireEvent.change(screen.getByDisplayValue("Original"), { target: { value: "Changed" } });
+    let resolveRequest!: (value: ReturnType<typeof baseDetail>) => void;
+    updateAttendeeNote.mockReturnValueOnce(new Promise((resolve) => { resolveRequest = resolve; }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(updateAttendeeNote).toHaveBeenCalledOnce());
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch attendee" }));
+    await screen.findByRole("heading", { name: "Bea" });
+    resolveRequest(baseDetail({ notes: [makeNote({ id: "n1", body: "Changed" })] }));
+
+    await waitFor(() => expect(loadAttendeeDetailData).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+  });
+
+  it("does not show an edit failure from a previously selected attendee", async () => {
+    mockLoad(baseDetail({ notes: [makeNote({ id: "n1", body: "Original" })] }));
+    mockLoad(baseDetail({ id: "att-2", name: "Bea", notes: [] }));
+    renderPage({ withRouteChangeControl: true });
+    await screen.findByRole("heading", { name: "Anna" });
+    await openNotesTab();
+
+    fireEvent.click(within(notesList()).getByRole("button", { name: /^Edit note by/ }));
+    let rejectRequest!: (reason: Error) => void;
+    updateAttendeeNote.mockReturnValueOnce(new Promise((_, reject) => { rejectRequest = reject; }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(updateAttendeeNote).toHaveBeenCalledOnce());
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch attendee" }));
+    await screen.findByRole("heading", { name: "Bea" });
+    rejectRequest(new Error("network"));
+
+    await waitFor(() => expect(loadAttendeeDetailData).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+  });
+
   it("closes a pending note-delete dialog when navigating to another attendee", async () => {
     mockLoad(baseDetail({ notes: [makeNote()] }));
     mockLoad(baseDetail({ id: "att-2", name: "Bea", notes: [] }));
@@ -349,6 +429,49 @@ describe("AttendeeDetailPage — Notes tab", () => {
 
     await screen.findByRole("heading", { name: "Bea" });
     expect(screen.queryByText("Delete this note?")).toBeNull();
+  });
+
+  it("does not apply a stale note delete after navigating to another attendee", async () => {
+    mockLoad(baseDetail({ notes: [makeNote()] }));
+    mockLoad(baseDetail({ id: "att-2", name: "Bea", notes: [] }));
+    renderPage({ withRouteChangeControl: true });
+    await screen.findByRole("heading", { name: "Anna" });
+    await openNotesTab();
+
+    fireEvent.click(within(notesList()).getByRole("button", { name: /^Delete note by/ }));
+    await screen.findByText("Delete this note?");
+    let resolveRequest!: (value: ReturnType<typeof baseDetail>) => void;
+    deleteAttendeeNote.mockReturnValueOnce(new Promise((resolve) => { resolveRequest = resolve; }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete note" }));
+    await waitFor(() => expect(deleteAttendeeNote).toHaveBeenCalledOnce());
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch attendee" }));
+    await screen.findByRole("heading", { name: "Bea" });
+    resolveRequest(baseDetail({ notes: [] }));
+
+    await waitFor(() => expect(loadAttendeeDetailData).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+  });
+
+  it("does not show a delete failure from a previously selected attendee", async () => {
+    mockLoad(baseDetail({ notes: [makeNote()] }));
+    mockLoad(baseDetail({ id: "att-2", name: "Bea", notes: [] }));
+    renderPage({ withRouteChangeControl: true });
+    await screen.findByRole("heading", { name: "Anna" });
+    await openNotesTab();
+
+    fireEvent.click(within(notesList()).getByRole("button", { name: /^Delete note by/ }));
+    let rejectRequest!: (reason: Error) => void;
+    deleteAttendeeNote.mockReturnValueOnce(new Promise((_, reject) => { rejectRequest = reject; }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete note" }));
+    await waitFor(() => expect(deleteAttendeeNote).toHaveBeenCalledOnce());
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch attendee" }));
+    await screen.findByRole("heading", { name: "Bea" });
+    rejectRequest(new Error("network"));
+
+    await waitFor(() => expect(loadAttendeeDetailData).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId("at-toast")).toBeNull();
   });
 
   it("disables note mutations for an archived event", async () => {
@@ -532,6 +655,24 @@ describe("AttendeeDetailPage — Notes tab", () => {
 
       expect(screen.queryByText("Delete this note?")).toBeNull();
       expect(deleteAttendeeNote).not.toHaveBeenCalled();
+    });
+
+    it("keeps the dialog open while a deletion is in progress", async () => {
+      mockLoad(baseDetail({ notes: [makeNote({ id: "n1" })] }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+      await openNotesTab();
+
+      fireEvent.click(screen.getByRole("button", { name: /^Delete note by/ }));
+      let resolveRequest!: (value: ReturnType<typeof baseDetail>) => void;
+      deleteAttendeeNote.mockReturnValueOnce(new Promise((resolve) => { resolveRequest = resolve; }));
+      fireEvent.click(screen.getByRole("button", { name: "Delete note" }));
+      await waitFor(() => expect(deleteAttendeeNote).toHaveBeenCalledOnce());
+      fireEvent.click(document.querySelector(".confirm-dialog__backdrop")!);
+
+      expect(screen.getByText("Delete this note?")).toBeTruthy();
+      resolveRequest(baseDetail({ notes: [] }));
+      await waitFor(() => expect(screen.queryByText("Delete this note?")).toBeNull());
     });
 
     it("shows an inline error and keeps the dialog open when delete fails", async () => {

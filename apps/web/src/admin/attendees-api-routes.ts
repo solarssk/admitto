@@ -555,10 +555,9 @@ function requireAttendeeId(c: Context): string | Response {
   return id;
 }
 
-function requireNoteId(c: Context): string | Response {
-  const noteId = c.req.param("noteId");
-  if (!noteId) return c.json({ error: "noteId required" }, 400);
-  return noteId;
+function requireNoteId(c: Context): string {
+  // `noteId` is a required segment on both registered note-mutation routes.
+  return c.req.param("noteId")!;
 }
 
 async function requireNoteBody(c: Context): Promise<string | Response> {
@@ -782,7 +781,6 @@ async function resolveNoteAuthorRoles(
   userIds: string[],
 ): Promise<Map<string, NoteAuthorRole>> {
   const roles = new Map<string, NoteAuthorRole>(userIds.map((id) => [id, null]));
-  if (userIds.length === 0) return roles;
 
   const assignments = await db.roleAssignment.findMany({
     where: {
@@ -806,9 +804,10 @@ async function resolveNoteAuthorRoles(
   for (const id of userIds) {
     const userRoles = rolesByUser.get(id);
     if (!userRoles) continue;
-    if (userRoles.has("superadmin")) roles.set(id, "superadmin");
-    else if (userRoles.has("admin")) roles.set(id, "admin");
-    else if (userRoles.has("operator")) roles.set(id, "operator");
+    // Apply low to high so a broader role replaces a narrower one when a user has both.
+    for (const role of ["operator", "admin", "superadmin"] as const) {
+      if (userRoles.has(role)) roles.set(id, role);
+    }
   }
   return roles;
 }
@@ -845,12 +844,8 @@ async function loadAttendeeNotes(
     select: { id: true, display_name: true },
   });
   const rolesPromise = db.event
-    .findUnique({ where: { id: eventId }, select: { organization_id: true } })
-    .then((event) =>
-      event
-        ? resolveNoteAuthorRoles(db, eventId, event.organization_id, authorIds)
-        : new Map<string, NoteAuthorRole>(),
-    );
+    .findUniqueOrThrow({ where: { id: eventId }, select: { organization_id: true } })
+    .then((event) => resolveNoteAuthorRoles(db, eventId, event.organization_id, authorIds));
   const [authors, rolesByAuthor] = await Promise.all([authorsPromise, rolesPromise]);
   const authorById = new Map(authors.map((author) => [author.id, author]));
 
@@ -2891,7 +2886,6 @@ export async function handlePatchAttendeeNote(c: Context, db: PrismaClient): Pro
   const { attendee: existing, attendeeId, eventId } = attendeeContextOrRes;
 
   const noteIdOrRes = requireNoteId(c);
-  if (noteIdOrRes instanceof Response) return noteIdOrRes;
   const noteId = noteIdOrRes;
 
   const noteBodyOrRes = await requireNoteBody(c);
@@ -2957,7 +2951,6 @@ export async function handleDeleteAttendeeNote(c: Context, db: PrismaClient): Pr
   const { attendee: existing, attendeeId, eventId } = attendeeContextOrRes;
 
   const noteIdOrRes = requireNoteId(c);
-  if (noteIdOrRes instanceof Response) return noteIdOrRes;
   const noteId = noteIdOrRes;
 
   const auth = c.get("auth");
