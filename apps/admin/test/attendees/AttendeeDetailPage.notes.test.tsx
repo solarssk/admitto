@@ -157,6 +157,30 @@ afterEach(() => {
 });
 
 describe("AttendeeDetailPage — Notes tab", () => {
+  it("does not load detail when the route has no event or attendee parameters", () => {
+    renderWithToast(
+      <MemoryRouter initialEntries={["/"]}>
+        <AttendeeDetailPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("Missing event or attendee.")).toBeTruthy();
+    expect(loadAttendeeDetailData).not.toHaveBeenCalled();
+  });
+
+  it("does not load detail when the route has an event but no attendee parameter", () => {
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId" element={<AttendeeDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("Missing event or attendee.")).toBeTruthy();
+    expect(loadAttendeeDetailData).not.toHaveBeenCalled();
+  });
+
   it("shows the tab with no count badge and an empty state when there are no notes", async () => {
     mockLoad(baseDetail());
     renderPage();
