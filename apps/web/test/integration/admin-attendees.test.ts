@@ -2992,7 +2992,7 @@ describe("POST /api/admin/events/:eventId/attendees/:id/notes", () => {
       }[];
     };
     expect(body.notes[0]?.body).toBe("Arrived early, seated at table 4.");
-    expect(body.notes[0]?.author_display).toBe("Admin");
+    expect(body.notes[0]?.author_display).toBe("Staff member");
     expect(body.notes[0]?.author_display).not.toBe(EMAIL_ADMIN);
     expect(body.notes[0]?.author_user_id).toBe(adminId);
     expect(body.notes[0]?.author_role).toBe("admin");
@@ -3053,6 +3053,60 @@ describe("POST /api/admin/events/:eventId/attendees/:id/notes", () => {
       body: JSON.stringify({ body: "hello" }),
     });
     expect(res.status).toBe(403);
+  });
+
+  it("paginates notes and returns their total instead of silently truncating the list", async () => {
+    await prisma.attendeeNote.deleteMany({ where: { attendee_id: ATT_NOTE } });
+    await prisma.attendeeNote.createMany({
+      data: Array.from({ length: 51 }, (_, index) => ({
+        attendee_id: ATT_NOTE,
+        event_id: EVENT_A,
+        author_user_id: adminId,
+        body: `Paginated note ${index + 1}`,
+      })),
+    });
+
+    const firstPage = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_NOTE}`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(firstPage.status).toBe(200);
+    expect((await firstPage.json()) as { notes: unknown[]; notes_total: number; notes_page: number; notes_page_size: number }).toMatchObject({
+      notes_total: 51,
+      notes_page: 1,
+      notes_page_size: 50,
+    });
+
+    const secondPage = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_NOTE}?notes_page=2`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(secondPage.status).toBe(200);
+    const body = (await secondPage.json()) as { notes: { body: string }[]; notes_total: number; notes_page: number };
+    expect(body.notes_total).toBe(51);
+    expect(body.notes_page).toBe(2);
+    expect(body.notes).toHaveLength(1);
+  });
+
+  it("uses a role-neutral fallback when an author no longer has a display name", async () => {
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { id: adminId },
+      select: { display_name: true },
+    });
+    await prisma.user.update({ where: { id: adminId }, data: { display_name: null } });
+    const note = await prisma.attendeeNote.create({
+      data: { attendee_id: ATT_NOTE, event_id: EVENT_A, author_user_id: adminId, body: "No display name" },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_NOTE}`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { notes: { id: string; author_display: string }[] };
+      expect(body.notes.find((item) => item.id === note.id)?.author_display).toBe("Staff member");
+    } finally {
+      await prisma.user.update({ where: { id: adminId }, data: { display_name: user.display_name } });
+      await prisma.attendeeNote.delete({ where: { id: note.id } });
+    }
   });
 });
 

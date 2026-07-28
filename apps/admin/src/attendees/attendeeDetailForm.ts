@@ -85,13 +85,14 @@ export function mergeFormAfterReload(
 export async function loadAttendeeDetailData(
   eventId: string,
   attendeeId: string,
+  notesPage = 1,
 ): Promise<{
   detail: AttendeeDetailDto;
   attributeFields: CustomDataFieldDef[];
   itemsWarning: string | null;
 }> {
   const [detail, fieldsResult] = await Promise.all([
-    fetchAttendeeDetail(eventId, attendeeId),
+    fetchAttendeeDetail(eventId, attendeeId, undefined, notesPage),
     fetchAttendeeCustomFields(eventId).then(
       (fields) => ({ ok: true as const, fields }),
       () => ({ ok: false as const }),

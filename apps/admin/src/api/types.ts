@@ -241,6 +241,9 @@ export interface AttendeeDetailDto {
   action_log: AttendeeActionLogEntryDto[];
   event_items: AttendeeDetailItemDto[];
   notes: AttendeeNoteDto[];
+  notes_total: number;
+  notes_page: number;
+  notes_page_size: number;
 }
 
 export interface AttendeesListResponse {

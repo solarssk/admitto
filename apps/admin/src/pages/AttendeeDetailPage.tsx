@@ -711,7 +711,6 @@ type NoteEditState = {
   noteId: string | null;
   draft: string;
   submitting: boolean;
-  error: string | null;
 };
 
 /** Internal, staff-only notes on this attendee - shares the same AttendeeNote rows as the
@@ -719,12 +718,15 @@ type NoteEditState = {
  * other (matches the mockup's "Internal, visible to staff only, never shown to the attendee"). */
 function AttendeeNotesTab({
   notes,
+  notesTotal,
+  notesPage,
+  notesPageSize,
+  onPageChange,
   event,
   draft,
   onDraftChange,
   onSubmit,
   submitting,
-  error,
   currentUserId,
   superadminUser,
   orgAdminUser,
@@ -734,14 +736,18 @@ function AttendeeNotesTab({
   onCancelEdit,
   onSaveEdit,
   onRequestDelete,
+  mutationsDisabled,
 }: Readonly<{
   notes: AttendeeDetailDto["notes"];
+  notesTotal: number;
+  notesPage: number;
+  notesPageSize: number;
+  onPageChange: (page: number) => void;
   event: EventDto;
   draft: string;
   onDraftChange: (value: string) => void;
   onSubmit: () => void;
   submitting: boolean;
-  error: string | null;
   currentUserId: string | undefined;
   superadminUser: boolean;
   orgAdminUser: boolean;
@@ -751,7 +757,9 @@ function AttendeeNotesTab({
   onCancelEdit: () => void;
   onSaveEdit: () => void;
   onRequestDelete: (noteId: string) => void;
+  mutationsDisabled: boolean;
 }>) {
+  const pageCount = Math.max(1, Math.ceil(notesTotal / notesPageSize));
   return (
     <Card padded>
       <p className="at-notes-hint">
@@ -762,24 +770,20 @@ function AttendeeNotesTab({
         <textarea
           className="at-textarea at-notes-form__textarea"
           rows={2}
+          aria-label="New internal note"
           // 2000-char cap matches NoteModal.tsx (check-in) and the backend's MAX_ATTENDEE_NOTE_LENGTH.
           maxLength={2000}
           placeholder="Add a note about this attendee…"
           value={draft}
-          disabled={submitting}
+          disabled={mutationsDisabled || submitting}
           onChange={(e) => onDraftChange(e.target.value)}
         />
-        {error && (
-          <p className="text-error" role="alert">
-            {error}
-          </p>
-        )}
         <div className="at-notes-form__actions">
           <Button
             type="button"
             variant="secondary"
             size="sm"
-            disabled={!draft.trim() || submitting}
+            disabled={mutationsDisabled || !draft.trim() || submitting}
             onClick={onSubmit}
           >
             {submitting ? "Adding…" : "Add"}
@@ -791,9 +795,9 @@ function AttendeeNotesTab({
       ) : (
         <ul className="at-notes-list">
           {notes.map((note) => {
-            const isOwn = note.author_user_id === currentUserId;
-            const canDelete = canDeleteNote(note, currentUserId, superadminUser, orgAdminUser);
-            const isEditing = editState.noteId === note.id;
+            const isOwn = !mutationsDisabled && note.author_user_id === currentUserId;
+            const canDelete = !mutationsDisabled && canDeleteNote(note, currentUserId, superadminUser, orgAdminUser);
+            const isEditing = !mutationsDisabled && editState.noteId === note.id;
             return (
               <li key={note.id} className="at-notes-list__item">
                 <div className="at-notes-list__head">
@@ -801,7 +805,7 @@ function AttendeeNotesTab({
                     <Avatar name={note.author_display} size="sm" />
                     <span className="at-notes-list__author">{note.author_display}</span>
                     {note.author_role && (
-                      <Badge variant={noteRoleBadgeVariant(note.author_role)}>
+                      <Badge variant={noteRoleBadgeVariant(note.author_role)} title={note.author_role}>
                         {noteRoleShort(note.author_role)}
                       </Badge>
                     )}
@@ -815,16 +819,12 @@ function AttendeeNotesTab({
                     <textarea
                       className="at-textarea at-notes-form__textarea"
                       rows={2}
+                      aria-label="Edit note"
                       maxLength={2000}
                       value={editState.draft}
                       disabled={editState.submitting}
                       onChange={(e) => onEditDraftChange(e.target.value)}
                     />
-                    {editState.error && (
-                      <p className="text-error" role="alert">
-                        {editState.error}
-                      </p>
-                    )}
                     <div className="at-notes-form__actions">
                       <Button
                         type="button"
@@ -857,6 +857,7 @@ function AttendeeNotesTab({
                             variant="ghost"
                             size="sm"
                             icon={<i className="ti ti-pencil" aria-hidden="true" />}
+                            aria-label={`Edit note by ${note.author_display}`}
                             onClick={() => onStartEdit(note)}
                           >
                             Edit
@@ -868,6 +869,7 @@ function AttendeeNotesTab({
                             variant="ghost"
                             size="sm"
                             icon={<i className="ti ti-trash" aria-hidden="true" />}
+                            aria-label={`Delete note by ${note.author_display}`}
                             onClick={() => onRequestDelete(note.id)}
                           >
                             Delete
@@ -881,6 +883,17 @@ function AttendeeNotesTab({
             );
           })}
         </ul>
+      )}
+      {notesTotal > notesPageSize && (
+        <nav className="at-notes-pagination" aria-label="Notes pagination">
+          <Button type="button" variant="ghost" size="sm" disabled={notesPage <= 1} onClick={() => onPageChange(notesPage - 1)}>
+            Previous
+          </Button>
+          <span>Page {notesPage} of {pageCount}</span>
+          <Button type="button" variant="ghost" size="sm" disabled={notesPage >= pageCount} onClick={() => onPageChange(notesPage + 1)}>
+            Next
+          </Button>
+        </nav>
       )}
     </Card>
   );
@@ -1027,14 +1040,13 @@ export function AttendeeDetailPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
   const [noteSubmitting, setNoteSubmitting] = useState(false);
-  const [noteError, setNoteError] = useState<string | null>(null);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteEditDraft, setNoteEditDraft] = useState("");
   const [noteEditSubmitting, setNoteEditSubmitting] = useState(false);
-  const [noteEditError, setNoteEditError] = useState<string | null>(null);
   const [noteDeleteId, setNoteDeleteId] = useState<string | null>(null);
   const [noteDeleting, setNoteDeleting] = useState(false);
   const [noteDeleteError, setNoteDeleteError] = useState<string | null>(null);
+  const [notesPage, setNotesPage] = useState(1);
 
   /** Guards async handlers when route params change before a request completes. */
   const selectionRef = useRef({ eventId, attendeeId });
@@ -1057,11 +1069,16 @@ export function AttendeeDetailPage() {
     setRevokeBusy(false);
     setActiveRevoke(null);
     setNoteDraft("");
-    setNoteError(null);
     setNoteSubmitting(false);
+    setEditingNoteId(null);
+    setNoteEditDraft("");
+    setNoteEditSubmitting(false);
+    setNoteDeleteId(null);
+    setNoteDeleting(false);
+    setNoteDeleteError(null);
     try {
       const { detail: d, attributeFields: fields, itemsWarning: warn } =
-        await loadAttendeeDetailData(eventId, attendeeId);
+        await loadAttendeeDetailData(eventId, attendeeId, notesPage);
       if (!isStillSelected(target)) return;
       setDetail(d);
       setAttributeFields(fields);
@@ -1080,11 +1097,15 @@ export function AttendeeDetailPage() {
     } finally {
       if (isStillSelected(target)) setLoading(false);
     }
-  }, [eventId, attendeeId]);
+  }, [eventId, attendeeId, notesPage]);
 
   useEffect(() => {
     void loadDetail();
   }, [loadDetail]);
+
+  useEffect(() => {
+    setNotesPage(1);
+  }, [eventId, attendeeId]);
 
   const loadTicketTypes = useCallback(() => {
     if (!eventId || !attendeeId) return;
@@ -1372,7 +1393,6 @@ export function AttendeeDetailPage() {
     if (!body) return;
     const target = { eventId, attendeeId };
     setNoteSubmitting(true);
-    setNoteError(null);
     try {
       const updated = await addAttendeeNote(eventId, attendeeId, body);
       if (!isStillSelected(target)) return;
@@ -1381,7 +1401,7 @@ export function AttendeeDetailPage() {
       addToast("Note added", "success");
     } catch (err) {
       if (!isStillSelected(target)) return;
-      setNoteError(operatorApiErrorMessage(err, "Could not add note."));
+      addToast(operatorApiErrorMessage(err, "Could not add note."), "error");
     } finally {
       if (isStillSelected(target)) setNoteSubmitting(false);
     }
@@ -1392,13 +1412,11 @@ export function AttendeeDetailPage() {
   function handleStartEditNote(note: AttendeeDetailDto["notes"][number]) {
     setEditingNoteId(note.id);
     setNoteEditDraft(note.body);
-    setNoteEditError(null);
   }
 
   function handleCancelEditNote() {
     setEditingNoteId(null);
     setNoteEditDraft("");
-    setNoteEditError(null);
   }
 
   async function handleSaveEditNote() {
@@ -1407,17 +1425,17 @@ export function AttendeeDetailPage() {
     if (!body) return;
     const target = { eventId, attendeeId };
     setNoteEditSubmitting(true);
-    setNoteEditError(null);
     try {
       const updated = await updateAttendeeNote(eventId, attendeeId, editingNoteId, body);
       if (!isStillSelected(target)) return;
       setDetail(updated);
+      setNotesPage(updated.notes_page);
       setEditingNoteId(null);
       setNoteEditDraft("");
       addToast("Note updated", "success");
     } catch (err) {
       if (!isStillSelected(target)) return;
-      setNoteEditError(operatorApiErrorMessage(err, "Could not update note."));
+      addToast(operatorApiErrorMessage(err, "Could not update note."), "error");
     } finally {
       if (isStillSelected(target)) setNoteEditSubmitting(false);
     }
@@ -1435,6 +1453,7 @@ export function AttendeeDetailPage() {
       const updated = await deleteAttendeeNote(eventId, attendeeId, noteDeleteId);
       if (!isStillSelected(target)) return;
       setDetail(updated);
+      setNotesPage(updated.notes_page);
       setNoteDeleteId(null);
       addToast("Note deleted", "success");
     } catch (err) {
@@ -1652,9 +1671,7 @@ export function AttendeeDetailPage() {
         tabs={[
           { id: "overview", label: "Overview" },
           { id: "activity", label: "Activity log" },
-          // `?? []` guards older test fixtures built before this field existed - real API
-          // responses always include `notes` (see buildAttendeeDetailDto on the server).
-          { id: "notes", label: "Notes", count: (detail.notes ?? []).length || undefined },
+          { id: "notes", label: "Notes", count: detail.notes_total || undefined },
         ]}
       />
 
@@ -1681,12 +1698,15 @@ export function AttendeeDetailPage() {
       {tab === "notes" && (
         <AttendeeNotesTab
           notes={detail.notes ?? []}
+          notesTotal={detail.notes_total ?? detail.notes?.length ?? 0}
+          notesPage={detail.notes_page ?? 1}
+          notesPageSize={detail.notes_page_size ?? 50}
+          onPageChange={setNotesPage}
           event={event}
           draft={noteDraft}
           onDraftChange={setNoteDraft}
           onSubmit={() => void handleAddNote()}
           submitting={noteSubmitting}
-          error={noteError}
           currentUserId={user?.id}
           superadminUser={superadmin}
           orgAdminUser={orgAdmin}
@@ -1694,13 +1714,13 @@ export function AttendeeDetailPage() {
             noteId: editingNoteId,
             draft: noteEditDraft,
             submitting: noteEditSubmitting,
-            error: noteEditError,
           }}
           onEditDraftChange={setNoteEditDraft}
           onStartEdit={handleStartEditNote}
           onCancelEdit={handleCancelEditNote}
           onSaveEdit={() => void handleSaveEditNote()}
           onRequestDelete={setNoteDeleteId}
+          mutationsDisabled={isEventArchived(event)}
         />
       )}
 

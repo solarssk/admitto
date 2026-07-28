@@ -757,9 +757,11 @@ export async function fetchAttendeeDetail(
   eventId: string,
   attendeeId: string,
   signal?: AbortSignal,
+  notesPage = 1,
 ): Promise<AttendeeDetailDto> {
+  const notesQuery = notesPage > 1 ? `?notes_page=${notesPage}` : "";
   const res = await fetch(
-    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}`,
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}${notesQuery}`,
     { credentials: "same-origin", signal },
   );
   return parseJson<AttendeeDetailDto>(res);

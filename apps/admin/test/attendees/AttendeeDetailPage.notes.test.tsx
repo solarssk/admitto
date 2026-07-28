@@ -14,6 +14,17 @@ const deleteAttendeeNote = vi.fn();
 const ADMIN_ONE: RoleAssignment = { role: "admin", scope_type: "organization", scope_id: "org-1" };
 let assignments: RoleAssignment[] = [ADMIN_ONE];
 let currentUser: { id: string } | undefined = { id: "user-admin-1" };
+let outletEvent = {
+  id: "evt-1",
+  title: "Demo",
+  slug: "demo",
+  date: "2026-06-01",
+  timezone: "Europe/Warsaw",
+  location: null,
+  attendee_count: 1,
+  archived_at: null as string | null,
+  organization_id: "org-1",
+};
 
 vi.mock("../../src/attendees/attendeeDetailForm.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/attendees/attendeeDetailForm.js")>();
@@ -33,19 +44,7 @@ vi.mock("react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router")>();
   return {
     ...actual,
-    useOutletContext: () => ({
-      event: {
-        id: "evt-1",
-        title: "Demo",
-        slug: "demo",
-        date: "2026-06-01",
-        timezone: "Europe/Warsaw",
-        location: null,
-        attendee_count: 1,
-        archived_at: null,
-        organization_id: "org-1",
-      },
-    }),
+    useOutletContext: () => ({ event: outletEvent }),
   };
 });
 
@@ -84,6 +83,9 @@ function baseDetail(overrides: Partial<Record<string, unknown>> = {}) {
     action_log: [],
     event_items: [],
     notes: [],
+    notes_total: Array.isArray(overrides.notes) ? overrides.notes.length : 0,
+    notes_page: 1,
+    notes_page_size: 50,
     ...overrides,
   };
 }
@@ -151,6 +153,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   assignments = [ADMIN_ONE];
   currentUser = { id: "user-admin-1" };
+  outletEvent = { ...outletEvent, archived_at: null };
 });
 
 describe("AttendeeDetailPage — Notes tab", () => {
@@ -190,6 +193,38 @@ describe("AttendeeDetailPage — Notes tab", () => {
     expect(screen.getByText("Called about dietary needs.")).toBeTruthy();
     expect(screen.getByText("Admin")).toBeTruthy();
     expect(screen.queryByText("No notes yet.")).toBeNull();
+  });
+
+  it("shows the total note count and loads another notes page", async () => {
+    mockLoad(baseDetail({
+      notes: [makeNote({ id: "n1", body: "Newest" })],
+      notes_total: 51,
+      notes_page: 1,
+      notes_page_size: 50,
+    }));
+    mockLoad(baseDetail({
+      notes: [makeNote({ id: "n51", body: "Oldest" })],
+      notes_total: 51,
+      notes_page: 2,
+      notes_page_size: 50,
+    }));
+    mockLoad(baseDetail({
+      notes: [makeNote({ id: "n1", body: "Newest" })],
+      notes_total: 51,
+      notes_page: 1,
+      notes_page_size: 50,
+    }));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+    expect(screen.getByRole("tab", { name: "Notes51" })).toBeTruthy();
+    await openNotesTab();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText("Oldest")).toBeTruthy();
+    expect(screen.getByText("Page 2 of 2")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+    expect(await screen.findByText("Newest")).toBeTruthy();
   });
 
   it("disables Add until the draft has non-whitespace text", async () => {
@@ -242,7 +277,7 @@ describe("AttendeeDetailPage — Notes tab", () => {
     expect((screen.getByPlaceholderText("Add a note about this attendee…") as HTMLTextAreaElement).value).toBe("");
   });
 
-  it("shows an inline error and preserves the draft on failure", async () => {
+  it("toasts an API error and preserves the draft on failure", async () => {
     mockLoad(baseDetail());
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
@@ -254,7 +289,7 @@ describe("AttendeeDetailPage — Notes tab", () => {
     addAttendeeNote.mockRejectedValueOnce(new Error("boom"));
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
 
-    expect((await screen.findByRole("alert")).textContent).toBe("Could not add note.");
+    expect((await screen.findByTestId("at-toast")).textContent).toContain("Could not add note.");
     expect((screen.getByPlaceholderText("Add a note about this attendee…") as HTMLTextAreaElement).value).toBe(
       "Needs wheelchair access",
     );
@@ -301,6 +336,34 @@ describe("AttendeeDetailPage — Notes tab", () => {
     expect(screen.queryByText("Late arrival expected")).toBeNull();
   });
 
+  it("closes a pending note-delete dialog when navigating to another attendee", async () => {
+    mockLoad(baseDetail({ notes: [makeNote()] }));
+    mockLoad(baseDetail({ id: "att-2", name: "Bea", notes: [] }));
+    renderPage({ withRouteChangeControl: true });
+    await screen.findByRole("heading", { name: "Anna" });
+    await openNotesTab();
+
+    fireEvent.click(within(notesList()).getByRole("button", { name: /^Delete note by/ }));
+    await screen.findByText("Delete this note?");
+    fireEvent.click(screen.getByRole("button", { name: "Switch attendee" }));
+
+    await screen.findByRole("heading", { name: "Bea" });
+    expect(screen.queryByText("Delete this note?")).toBeNull();
+  });
+
+  it("disables note mutations for an archived event", async () => {
+    outletEvent = { ...outletEvent, archived_at: "2026-06-02T00:00:00.000Z" };
+    mockLoad(baseDetail({ notes: [makeNote()] }));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+    await openNotesTab();
+
+    expect((screen.getByRole("button", { name: "Add" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("textbox", { name: "New internal note" }) as HTMLTextAreaElement).disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: /^Edit note by/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Delete note by/ })).toBeNull();
+  });
+
   it("renders an avatar and a role badge for the note's author", async () => {
     mockLoad(baseDetail({ notes: [makeNote({ author_display: "Ola Nowak", author_role: "admin" })] }));
     renderPage();
@@ -344,7 +407,7 @@ describe("AttendeeDetailPage — Notes tab", () => {
       await screen.findByRole("heading", { name: "Anna" });
       await openNotesTab();
 
-      expect(within(notesList()).getAllByRole("button", { name: "Edit" })).toHaveLength(1);
+      expect(within(notesList()).getAllByRole("button", { name: /^Edit note by/ })).toHaveLength(1);
     });
 
     it("edits the author's own note, replaces the detail, and toasts success", async () => {
@@ -353,7 +416,7 @@ describe("AttendeeDetailPage — Notes tab", () => {
       await screen.findByRole("heading", { name: "Anna" });
       await openNotesTab();
 
-      fireEvent.click(within(notesList()).getByRole("button", { name: "Edit" }));
+      fireEvent.click(within(notesList()).getByRole("button", { name: /^Edit note by/ }));
       fireEvent.change(screen.getByDisplayValue("Original body"), {
         target: { value: "Updated body" },
       });
@@ -376,7 +439,7 @@ describe("AttendeeDetailPage — Notes tab", () => {
       await screen.findByRole("heading", { name: "Anna" });
       await openNotesTab();
 
-      fireEvent.click(within(notesList()).getByRole("button", { name: "Edit" }));
+      fireEvent.click(within(notesList()).getByRole("button", { name: /^Edit note by/ }));
       fireEvent.change(screen.getByDisplayValue("Original body"), { target: { value: "Changed" } });
       fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
@@ -385,18 +448,18 @@ describe("AttendeeDetailPage — Notes tab", () => {
       expect(updateAttendeeNote).not.toHaveBeenCalled();
     });
 
-    it("shows an inline error and stays in edit mode on failure", async () => {
+    it("toasts an API error and stays in edit mode on failure", async () => {
       mockLoad(baseDetail({ notes: [makeNote({ id: "n1", body: "Original body" })] }));
       renderPage();
       await screen.findByRole("heading", { name: "Anna" });
       await openNotesTab();
 
-      fireEvent.click(within(notesList()).getByRole("button", { name: "Edit" }));
+      fireEvent.click(within(notesList()).getByRole("button", { name: /^Edit note by/ }));
       fireEvent.change(screen.getByDisplayValue("Original body"), { target: { value: "Changed" } });
       updateAttendeeNote.mockRejectedValueOnce(new Error("boom"));
       fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-      expect((await screen.findByRole("alert")).textContent).toBe("Could not update note.");
+      expect((await screen.findByTestId("at-toast")).textContent).toContain("Could not update note.");
       expect(screen.getByDisplayValue("Changed")).toBeTruthy();
     });
   });
@@ -416,7 +479,7 @@ describe("AttendeeDetailPage — Notes tab", () => {
       await screen.findByRole("heading", { name: "Anna" });
       await openNotesTab();
 
-      expect(screen.getAllByRole("button", { name: "Delete" })).toHaveLength(2);
+      expect(screen.getAllByRole("button", { name: /^Delete note by/ })).toHaveLength(2);
     });
 
     it("superadmin sees Delete on every note", async () => {
@@ -435,7 +498,7 @@ describe("AttendeeDetailPage — Notes tab", () => {
       await screen.findByRole("heading", { name: "Anna" });
       await openNotesTab();
 
-      expect(screen.getAllByRole("button", { name: "Delete" })).toHaveLength(3);
+      expect(screen.getAllByRole("button", { name: /^Delete note by/ })).toHaveLength(3);
     });
 
     it("deletes a note through the confirm dialog, replaces the detail, and toasts success", async () => {
@@ -444,7 +507,7 @@ describe("AttendeeDetailPage — Notes tab", () => {
       await screen.findByRole("heading", { name: "Anna" });
       await openNotesTab();
 
-      fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+      fireEvent.click(screen.getByRole("button", { name: /^Delete note by/ }));
       await screen.findByText("Delete this note?");
 
       deleteAttendeeNote.mockResolvedValueOnce(baseDetail({ notes: [] }));
@@ -463,7 +526,7 @@ describe("AttendeeDetailPage — Notes tab", () => {
       await screen.findByRole("heading", { name: "Anna" });
       await openNotesTab();
 
-      fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+      fireEvent.click(screen.getByRole("button", { name: /^Delete note by/ }));
       await screen.findByText("Delete this note?");
       fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
@@ -477,7 +540,7 @@ describe("AttendeeDetailPage — Notes tab", () => {
       await screen.findByRole("heading", { name: "Anna" });
       await openNotesTab();
 
-      fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+      fireEvent.click(screen.getByRole("button", { name: /^Delete note by/ }));
       await screen.findByText("Delete this note?");
       deleteAttendeeNote.mockRejectedValueOnce(new Error("boom"));
       fireEvent.click(screen.getByRole("button", { name: "Delete note" }));

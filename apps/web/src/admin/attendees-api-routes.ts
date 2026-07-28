@@ -486,6 +486,9 @@ export type AttendeeDetailDto = {
   action_log: AttendeeActionLogEntryDto[];
   event_items: AttendeeDetailItemDto[];
   notes: AttendeeNoteDto[];
+  notes_total: number;
+  notes_page: number;
+  notes_page_size: number;
 };
 
 /** Read-only event-day item summary for the attendee detail page — same source data as the
@@ -556,6 +559,15 @@ function requireNoteId(c: Context): string | Response {
   const noteId = c.req.param("noteId");
   if (!noteId) return c.json({ error: "noteId required" }, 400);
   return noteId;
+}
+
+async function requireNoteBody(c: Context): Promise<string | Response> {
+  const body = await c.req.json().catch(() => null);
+  const noteBody = body && typeof body === "object" ? (body as Record<string, unknown>).body : undefined;
+  if (typeof noteBody !== "string" || !noteBody.trim()) {
+    return c.json({ error: "body required" }, 400);
+  }
+  return noteBody;
 }
 
 /** Load attendee scoped to event; null when missing or cross-event (caller returns 403). */
@@ -702,10 +714,12 @@ function buildTicketRefPreview(row: {
 /** Shown in activity log when a human actor has no display_name (email is never exposed). */
 const ACTION_LOG_ACTOR_FALLBACK = "Admin";
 
-/** Generous cap for the detail page's full notes list — unlike the check-in card's
- * CARD_NOTES_LIMIT (5, deliberately small for the operator scan flow), this view has no
- * space constraint, so this only guards against an unbounded query on a pathological attendee. */
-const ATTENDEE_NOTES_LIST_LIMIT = 200;
+/** Page size for the detail page's notes list. The check-in card remains deliberately smaller
+ * (CARD_NOTES_LIMIT = 5) for the operator scan flow; this endpoint exposes the full history
+ * through explicit pages without an unbounded query. */
+const ATTENDEE_NOTES_PAGE_SIZE = 50;
+const ATTENDEE_NOTES_MAX_PAGE = 10_000;
+const NOTE_AUTHOR_FALLBACK = "Staff member";
 
 async function loadAttendeeActionLogEntries(
   db: PrismaClient,
@@ -810,37 +824,47 @@ async function loadAttendeeNotes(
   db: PrismaClient,
   eventId: string,
   attendeeId: string,
-): Promise<AttendeeNoteDto[]> {
-  const notes = await db.attendeeNote.findMany({
-    where: { attendee_id: attendeeId, event_id: eventId },
-    orderBy: { created_at: "desc" },
-    take: ATTENDEE_NOTES_LIST_LIMIT,
-    select: { id: true, body: true, author_user_id: true, created_at: true },
-  });
+  page: number,
+): Promise<{ items: AttendeeNoteDto[]; total: number }> {
+  const where = { attendee_id: attendeeId, event_id: eventId };
+  const [notes, total] = await Promise.all([
+    db.attendeeNote.findMany({
+      where,
+      orderBy: { created_at: "desc" },
+      skip: (page - 1) * ATTENDEE_NOTES_PAGE_SIZE,
+      take: ATTENDEE_NOTES_PAGE_SIZE,
+      select: { id: true, body: true, author_user_id: true, created_at: true },
+    }),
+    db.attendeeNote.count({ where }),
+  ]);
+  if (notes.length === 0) return { items: [], total };
 
   const authorIds = [...new Set(notes.map((note) => note.author_user_id))];
-  const [authors, event] = await Promise.all([
-    authorIds.length > 0
-      ? db.user.findMany({
-          where: { id: { in: authorIds } },
-          select: { id: true, display_name: true },
-        })
-      : Promise.resolve([]),
-    db.event.findUnique({ where: { id: eventId }, select: { organization_id: true } }),
-  ]);
+  const authorsPromise = db.user.findMany({
+    where: { id: { in: authorIds } },
+    select: { id: true, display_name: true },
+  });
+  const rolesPromise = db.event
+    .findUnique({ where: { id: eventId }, select: { organization_id: true } })
+    .then((event) =>
+      event
+        ? resolveNoteAuthorRoles(db, eventId, event.organization_id, authorIds)
+        : new Map<string, NoteAuthorRole>(),
+    );
+  const [authors, rolesByAuthor] = await Promise.all([authorsPromise, rolesPromise]);
   const authorById = new Map(authors.map((author) => [author.id, author]));
-  const rolesByAuthor = event
-    ? await resolveNoteAuthorRoles(db, eventId, event.organization_id, authorIds)
-    : new Map<string, NoteAuthorRole>();
 
-  return notes.map((note) => ({
-    id: note.id,
-    body: note.body,
-    author_display: authorById.get(note.author_user_id)?.display_name ?? ACTION_LOG_ACTOR_FALLBACK,
-    author_user_id: note.author_user_id,
-    author_role: rolesByAuthor.get(note.author_user_id) ?? null,
-    created_at: note.created_at.toISOString(),
-  }));
+  return {
+    items: notes.map((note) => ({
+      id: note.id,
+      body: note.body,
+      author_display: authorById.get(note.author_user_id)?.display_name ?? NOTE_AUTHOR_FALLBACK,
+      author_user_id: note.author_user_id,
+      author_role: rolesByAuthor.get(note.author_user_id) ?? null,
+      created_at: note.created_at.toISOString(),
+    })),
+    total,
+  };
 }
 
 /** Serialize a list row with derived check-in and last-mail status. */
@@ -902,12 +926,13 @@ async function buildAttendeeDetailDto(
     token_enc: string | null;
     public_ref: string | null;
   },
+  notesPage = 1,
 ): Promise<AttendeeDetailDto> {
   const [deliveriesResult, action_log, event_items, notes] = await Promise.all([
     listDeliveries({ eventId, filters: { attendeeId: row.id } }, db),
     loadAttendeeActionLogEntries(db, row.id),
     loadAttendeeItemsSummary(db, eventId, row.id),
-    loadAttendeeNotes(db, eventId, row.id),
+    loadAttendeeNotes(db, eventId, row.id, notesPage),
   ]);
   const { company, department } = resolveCompanyDepartment(row);
 
@@ -932,7 +957,10 @@ async function buildAttendeeDetailDto(
     deliveries: deliveriesResult.items.map(toDeliveryDto),
     action_log,
     event_items,
-    notes,
+    notes: notes.items,
+    notes_total: notes.total,
+    notes_page: notesPage,
+    notes_page_size: ATTENDEE_NOTES_PAGE_SIZE,
   };
 }
 
@@ -1150,7 +1178,8 @@ export async function handleGetEventAttendee(c: Context, db: PrismaClient): Prom
   const row = await loadAttendeeInEvent(db, eventId, attendeeId);
   if (!row) return c.json({ error: "forbidden" }, 403);
 
-  const dto = await buildAttendeeDetailDto(db, eventId, row);
+  const notesPage = positiveIntQuery(c.req.query("notes_page"), 1, ATTENDEE_NOTES_MAX_PAGE);
+  const dto = await buildAttendeeDetailDto(db, eventId, row, notesPage);
   c.header("Cache-Control", "no-store");
   return c.json(dto);
 }
@@ -2831,12 +2860,9 @@ export async function handleAddAttendeeNote(c: Context, db: PrismaClient): Promi
   if (attendeeContextOrRes instanceof Response) return attendeeContextOrRes;
   const { attendee: existing, attendeeId, eventId } = attendeeContextOrRes;
 
-  const body = await c.req.json().catch(() => null);
-  const noteBody =
-    body && typeof body === "object" ? (body as Record<string, unknown>).body : undefined;
-  if (typeof noteBody !== "string" || !noteBody.trim()) {
-    return c.json({ error: "body required" }, 400);
-  }
+  const noteBodyOrRes = await requireNoteBody(c);
+  if (noteBodyOrRes instanceof Response) return noteBodyOrRes;
+  const noteBody = noteBodyOrRes;
 
   try {
     await addAttendeeNote(
@@ -2868,12 +2894,9 @@ export async function handlePatchAttendeeNote(c: Context, db: PrismaClient): Pro
   if (noteIdOrRes instanceof Response) return noteIdOrRes;
   const noteId = noteIdOrRes;
 
-  const body = await c.req.json().catch(() => null);
-  const noteBody =
-    body && typeof body === "object" ? (body as Record<string, unknown>).body : undefined;
-  if (typeof noteBody !== "string" || !noteBody.trim()) {
-    return c.json({ error: "body required" }, 400);
-  }
+  const noteBodyOrRes = await requireNoteBody(c);
+  if (noteBodyOrRes instanceof Response) return noteBodyOrRes;
+  const noteBody = noteBodyOrRes;
 
   try {
     await updateAttendeeNote(
