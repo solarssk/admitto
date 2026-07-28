@@ -1,15 +1,13 @@
 import type { Context } from "hono";
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { EXPORT_ROW_CAP, quoteCsvCell, sanitizeCsvCell, writeAdminAuditLog } from "@admitto/tickets";
-import { emitSystemLog } from "@admitto/shared/system-log";
+import { EXPORT_ROW_CAP, quoteCsvCell, sanitizeCsvCell } from "@admitto/tickets";
 import {
-  adminAuditFromContext,
+  csvExportResponse,
   parseDateBound,
   positiveIntQuery,
   requireSuperadmin,
-  resolveActorEmailForLog,
+  selfAuditCsvExport,
 } from "./admin-helpers.js";
-import { attachmentContentDisposition } from "./content-disposition.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 
 /** An event_id metadata match - writers split between an `eventId` and a legacy `event_id` key,
@@ -195,35 +193,6 @@ export async function handleExportAuditLog(c: Context, db: PrismaClient): Promis
   const actorMap = await resolveActorMap(db, rows);
   const csv = buildAuditLogCsv(rows, actorMap);
 
-  const audit = adminAuditFromContext(c);
-  const actorUserId = audit.operator ?? c.get("auth").userId;
-  await writeAdminAuditLog(db, {
-    organizationId: orgId,
-    actorUserId,
-    sessionId: audit.sessionId,
-    ip: audit.ip,
-    timezone: audit.timezone,
-    actionType: "audit_log_exported",
-    metadata: { rowCount: rows.length },
-  });
-  emitSystemLog("admin", "info", "audit_log_exported", {
-    rowCount: rows.length,
-    actorUserId,
-    actorEmail: await resolveActorEmailForLog(db, actorUserId),
-    ip: audit.ip,
-  });
-
-  const timestamp = new Date().toISOString().slice(0, 10);
-  // BOM so Excel detects UTF-8 - actor display names and JSON `details` values can carry
-  // non-ASCII text, matching the same prefix handleExportEventPii already uses for the same
-  // reason.
-  const bom = "\uFEFF";
-  return new Response(bom + csv, {
-    headers: {
-      "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": attachmentContentDisposition(`audit-log-${timestamp}.csv`),
-      "Cache-Control": "no-store",
-      "Pragma": "no-cache",
-    },
-  });
+  await selfAuditCsvExport(db, c, { organizationId: orgId, actionType: "audit_log_exported", rowCount: rows.length });
+  return csvExportResponse(csv, "audit-log");
 }

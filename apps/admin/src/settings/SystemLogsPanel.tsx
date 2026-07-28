@@ -10,11 +10,14 @@ type LevelFilter = "" | SystemLogEntryDto["level"];
 type SourceFilter = "" | SystemLogEntryDto["source"];
 
 const SEARCH_DEBOUNCE_MS = 300;
-const POLL_INTERVAL_MS = 1750;
+// Exported for AuditLogPanel's own live-refresh (Audit/Security views) - one shared cadence for
+// every "Live" toggle on this page, rather than a second magic number that could drift from
+// this one.
+export const POLL_INTERVAL_MS = 1750;
 const MAX_RENDERED_ENTRIES = 1000;
 // A single missed tick is normal network noise and never surfaced; this many in a row (~9s at
 // the interval above) means the endpoint is genuinely down, not just one slow request.
-const POLL_DEGRADED_THRESHOLD = 5;
+export const POLL_DEGRADED_THRESHOLD = 5;
 
 const SOURCE_LABELS: Record<SystemLogEntryDto["source"], string> = {
   api: "API",
@@ -116,9 +119,9 @@ export interface SystemLogsPanelHandle {
 interface SystemLogsPanelProps {
   isDesktop: boolean;
   /** Rendered inline in this panel's own toolbar on mobile, where AuditLogPanel's Card header
-   * only has room for the title and the System/Audit toggle - matches how AuditLogView's own
-   * Clear filters/Export CSV move down the same way. Undefined on desktop, where AuditLogPanel
-   * renders them in the Card header instead. */
+   * only has room for the title and the System/Audit toggle - matches how the shared LogView's
+   * own Clear filters/Export logs move down the same way. Undefined on desktop, where
+   * AuditLogPanel renders them in the Card header instead. */
   liveButton?: ReactNode;
   downloadButton?: ReactNode;
   /** Mirrors this panel's own `live` state up so the header's Live/Paused button can reflect it -
@@ -397,8 +400,8 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
         )}
         {!isDesktop && (liveButton || downloadButton) && (
           <div className="system-log-panel__toolbar-actions">
-            {liveButton}
             {downloadButton}
+            {liveButton}
           </div>
         )}
       </div>
@@ -431,6 +434,17 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
           </Button>
         </div>
       </div>
+
+      {/* Always shown, regardless of entry count or live state - unlike the poll-warning above
+          (a transient alert), this is a plain fact about what this view is, so a design that
+          only surfaces it in the empty state (easy to never see once the tail has any activity)
+          would undersell how easy it is to mistake this for a durable, retention-configurable
+          log store. It isn't - see DATA-PROTECTION.md's "System logs (live tail)" section. */}
+      <p className="system-log-panel__notice">
+        <i className="ti ti-info-circle" aria-hidden="true" /> Live view only — keeps the last
+        1,000 entries and resets on restart. For durable history, use the Audit log or Security
+        audit log instead.
+      </p>
     </div>
   );
 });

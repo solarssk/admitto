@@ -7,7 +7,7 @@ export const SETTINGS_TABS = [
   { id: "security", label: "Security" },
   { id: "archiving", label: "Archiving" },
   { id: "identity", label: "Identity" },
-  { id: "logs", label: "Logs & audit" },
+  { id: "logs", label: "Logs" },
 ] as const;
 
 export const SETTINGS_INDEX_PATH = "/admin/settings";
