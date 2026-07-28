@@ -822,6 +822,8 @@ export function AttendeeDetailPage() {
     setRestoreCapacityBlocked(null);
     setRestoreForceCapacity(false);
     setRevokeError(null);
+    setRevokeBusy(false);
+    setActiveRevoke(null);
     try {
       const { detail: d, attributeFields: fields, itemsWarning: warn } =
         await loadAttendeeDetailData(eventId, attendeeId);
@@ -1105,12 +1107,14 @@ export function AttendeeDetailPage() {
    * with a single-element id array (PO report: "brakuje nam opcji revoke items w osobie, mamy
    * chyba już mechanizm utworzony"). */
   async function handleRevokeItems() {
-    if (!eventId || !attendeeId || !detail) return;
-    const target = { eventId, attendeeId };
+    // This handler is reachable only from the loaded attendee view, which already returns early
+    // for missing route params or detail. Keeping that invariant here avoids a second, unreachable
+    // guard and makes the single-attendee bulk request explicit.
+    const target = { eventId: eventId!, attendeeId: attendeeId! };
     setRevokeBusy(true);
     setRevokeError(null);
     try {
-      const { revokedCount } = await bulkRevokeItems(eventId, [attendeeId]);
+      const { revokedCount } = await bulkRevokeItems(target.eventId, [target.attendeeId]);
       if (!isStillSelected(target)) return;
       await loadDetail();
       setActiveRevoke(null);

@@ -519,21 +519,25 @@ describe("identity providers API — test connection", () => {
 });
 
 describe("identity providers API — discover preview", () => {
-  it("returns endpoints or a failure without persisting", async () => {
+  it("returns discovered endpoints without persisting", async () => {
+    vi.mocked(fetchOidcDiscovery).mockResolvedValueOnce({
+      issuer: "https://idp-api-discover-preview.example.com/",
+      authorization_endpoint: "https://idp-api-discover-preview.example.com/authorize",
+      token_endpoint: "https://idp-api-discover-preview.example.com/token",
+      jwks_uri: "https://idp-api-discover-preview.example.com/jwks",
+    });
+    const providersBefore = await prisma.identityProvider.count();
+
     const res = await json("/api/admin/identity/providers/discover-preview", {
       method: "POST",
       body: JSON.stringify({ issuer: "https://idp-api-discover-preview.example.com/" }),
     });
-    expect([200, 400]).toContain(res.status);
-    if (res.status === 200) {
-      const body = await jsonAs<{ ok: true; endpoints: { issuer: string } }>(res);
-      expect(body.ok).toBe(true);
-      expect(typeof body.endpoints.issuer).toBe("string");
-    } else {
-      const body = await jsonAs<{ ok: false; error: string }>(res);
-      expect(body.ok).toBe(false);
-      expect(typeof body.error).toBe("string");
-    }
+    expect(res.status).toBe(200);
+    expect(await jsonAs<{ ok: true; endpoints: { issuer: string } }>(res)).toMatchObject({
+      ok: true,
+      endpoints: { issuer: "https://idp-api-discover-preview.example.com/" },
+    });
+    expect(await prisma.identityProvider.count()).toBe(providersBefore);
   });
 
   it("rejects discover preview without an issuer (400)", async () => {

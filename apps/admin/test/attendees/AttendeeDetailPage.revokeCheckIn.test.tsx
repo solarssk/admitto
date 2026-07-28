@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { getTooltipText, mockMatchMedia, renderWithToast } from "../test-utils.js";
 
@@ -81,11 +81,28 @@ function mockLoad(detail: ReturnType<typeof baseDetail>) {
   loadAttendeeDetailData.mockResolvedValueOnce({ detail, attributeFields: [], itemsWarning: null });
 }
 
-function renderPage() {
+function RouteChangeControl() {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate("/admin/events/evt-2/attendees/att-2")}>
+      Switch attendee
+    </button>
+  );
+}
+
+function renderPage({ withRouteChangeControl = false } = {}) {
   renderWithToast(
     <MemoryRouter initialEntries={["/admin/events/evt-1/attendees/att-1"]}>
       <Routes>
-        <Route path="/admin/events/:eventId/attendees/:attendeeId" element={<AttendeeDetailPage />} />
+        <Route
+          path="/admin/events/:eventId/attendees/:attendeeId"
+          element={
+            <>
+              {withRouteChangeControl && <RouteChangeControl />}
+              <AttendeeDetailPage />
+            </>
+          }
+        />
       </Routes>
     </MemoryRouter>,
   );
@@ -298,4 +315,35 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(bulkRevokeItems).not.toHaveBeenCalled();
   });
+
+  it.each(["success", "failure"] as const)(
+    "does not apply a stale Revoke items %s after navigating to another attendee",
+    async (outcome) => {
+      mockLoad(baseDetail({ event_items: [{ key: "badge", label: "Badge", state: "issued" }] }));
+      mockLoad(baseDetail({ id: "att-2", name: "Bea", event_items: [] }));
+      let settle!: () => void;
+      const pending = new Promise<{ revokedCount: number }>((resolve, reject) => {
+        settle = () => {
+          if (outcome === "success") resolve({ revokedCount: 1 });
+          else reject(new Error("request failed"));
+        };
+      });
+      bulkRevokeItems.mockReturnValueOnce(pending);
+      renderPage({ withRouteChangeControl: true });
+      await screen.findByRole("heading", { name: "Anna" });
+
+      fireEvent.click(within(openMoreActionsMenu()).getByRole("menuitem", { name: /Revoke items/ }));
+      fireEvent.click(within(screen.getByRole("dialog", { name: "Revoke items?" })).getByRole("button", { name: "Revoke items" }));
+      await waitFor(() => expect(bulkRevokeItems).toHaveBeenCalled());
+
+      fireEvent.click(screen.getByRole("button", { name: "Switch attendee" }));
+      await screen.findByRole("heading", { name: "Bea" });
+      expect(screen.queryByRole("dialog")).toBeNull();
+      settle();
+
+      await waitFor(() => expect(loadAttendeeDetailData).toHaveBeenCalledTimes(2));
+      expect(screen.queryByText("Could not revoke items.")).toBeNull();
+      expect(screen.queryByText("1 item revoked.")).toBeNull();
+    },
+  );
 });
