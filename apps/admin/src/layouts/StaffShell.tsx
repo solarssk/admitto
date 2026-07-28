@@ -1,4 +1,4 @@
-import { useCallback, useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "../auth/AuthProvider.js";
 import { SystemStatus } from "../components/SystemStatus.js";
 import { UserMenu } from "../components/UserMenu.js";
@@ -30,20 +30,21 @@ export function StaffShell({
 }: Readonly<StaffShellProps>) {
   const { user, assignments } = useAuth();
   const [navOpen, setNavOpen] = useState(false);
+  const sidebarRef = useRef<HTMLElement>(null);
 
   const closeNav = useCallback(() => setNavOpen(false), []);
 
-  // Auto-close only when the click actually navigates (an <a>, e.g. NavLink) — clicking
-  // non-interactive sidebar area (event info block, section labels, whitespace) must not
-  // dismiss the drawer. Keyboard users already have the dedicated close button + backdrop above.
-  const closeNavOnLinkClick = useCallback(
-    (event: MouseEvent<HTMLElement>) => {
-      if ((event.target as HTMLElement).closest("a")) {
-        closeNav();
-      }
-    },
-    [closeNav],
-  );
+  // Auto-close only when a sidebar link is activated. Keeping the listener off the non-interactive
+  // <aside> avoids pretending that the whole landmark is a control; keyboard activation of a
+  // NavLink emits the same click event as pointer activation.
+  useEffect(() => {
+    const sidebar = sidebarRef.current!;
+    const closeOnLinkClick = (event: MouseEvent) => {
+      if (event.target instanceof Element && event.target.closest("a")) closeNav();
+    };
+    sidebar.addEventListener("click", closeOnLinkClick);
+    return () => sidebar.removeEventListener("click", closeOnLinkClick);
+  }, [closeNav]);
 
   return (
     <div className={`shell${navOpen ? " shell--nav-open" : ""}`}>
@@ -54,7 +55,7 @@ export function StaffShell({
         tabIndex={navOpen ? 0 : -1}
         onClick={closeNav}
       />
-      <aside className="sidebar" onClick={closeNavOnLinkClick}>
+      <aside className="sidebar" ref={sidebarRef}>
         <button
           type="button"
           className="sidebar__close-btn"

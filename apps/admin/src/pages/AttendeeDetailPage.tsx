@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import type { ReactNode } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router";
 import {
   Button,
@@ -74,10 +73,11 @@ import { isSuperadmin } from "../auth/capabilities.js";
 import "../attendees/attendees.css";
 
 type TabId = "overview" | "activity";
+type ActiveRevokeAction = "pass" | "checkin" | "items" | "restore" | null;
 
 /** Secondary actions that don't need their own header button - Resend ticket always, plus Edit
  * once folded in here below the mobile breakpoint (see `showEdit`) and Revoke check-in/items/pass
- * once folded in here on every viewport (see `revokeSection`) - matching the design mockup's
+ * once grouped here on every viewport (see `RevokeActionMenuItems`) - matching the design mockup's
  * "More actions" menu (which also groups actions this page doesn't have yet, e.g. attendee
  * removal, tracked separately by #356). The trigger's own `disabled` is the archived lock
  * (blocks the whole menu); "Resend ticket" additionally gets its own disabled+tooltip when the
@@ -93,7 +93,17 @@ function MoreActionsMenu({
   mailConfigured,
   showEdit,
   onEdit,
-  revokeSection,
+  canRevokeCheckIn,
+  revokeCheckInTooltip,
+  canRevokeItems,
+  revokeItemsTooltip,
+  isRevoked,
+  revokeBusy,
+  activeRevoke,
+  onRevokeCheckIn,
+  onRevokeItems,
+  onRestorePass,
+  onRevokePass,
 }: Readonly<{
   event: ArchivedGuardEvent;
   onResend: () => void;
@@ -105,16 +115,17 @@ function MoreActionsMenu({
    * every button at once, on this page specifically Edit + Revoke/Restore + More + Back). */
   showEdit: boolean;
   onEdit: () => void;
-  /** Render slot for the whole Revoke check-in / Revoke items / Revoke pass (or Restore pass)
-   * group, always supplied by the parent (unlike the removed per-item props this used to take) -
-   * grouped back-to-back with no dividers between them, same as the Attendees list's bulk "More
-   * actions" menu (PO report: "nie ma sensu odsuwać revoke items kreską, bo jest to ten sam jakby
-   * tym zadania" - these are all "undo/reset" actions on this one attendee). Rendered just above
-   * Delete attendee, matching that same reference menu's order (PO report: "przenieś do more
-   * actions gdzieś przy delete" / "taka kolejność" pointing at Revoke check-in, items, pass).
-   * Receives `close` so the parent's own click handlers also collapse this menu, matching every
-   * other item here. */
-  revokeSection: (close: () => void) => ReactNode;
+  canRevokeCheckIn: boolean;
+  revokeCheckInTooltip?: string;
+  canRevokeItems: boolean;
+  revokeItemsTooltip?: string;
+  isRevoked: boolean;
+  revokeBusy: boolean;
+  activeRevoke: ActiveRevokeAction;
+  onRevokeCheckIn: () => void;
+  onRevokeItems: () => void;
+  onRestorePass: () => void;
+  onRevokePass: () => void;
 }>) {
   const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
 
@@ -189,9 +200,32 @@ function MoreActionsMenu({
             )}
           </ArchivedGuard>
           <hr className="more-actions-menu__divider" />
-          {/* Revoke check-in / Revoke items / Revoke pass (or Restore pass) — grouped with no
-           * dividers between them, same as the Attendees list's bulk menu (PO report). */}
-          {revokeSection(() => setOpen(false))}
+          <RevokeActionMenuItems
+            event={event}
+            canRevokeCheckIn={canRevokeCheckIn}
+            revokeCheckInTooltip={revokeCheckInTooltip}
+            canRevokeItems={canRevokeItems}
+            revokeItemsTooltip={revokeItemsTooltip}
+            isRevoked={isRevoked}
+            revokeBusy={revokeBusy}
+            activeRevoke={activeRevoke}
+            onRevokeCheckIn={() => {
+              setOpen(false);
+              onRevokeCheckIn();
+            }}
+            onRevokeItems={() => {
+              setOpen(false);
+              onRevokeItems();
+            }}
+            onRestorePass={() => {
+              setOpen(false);
+              onRestorePass();
+            }}
+            onRevokePass={() => {
+              setOpen(false);
+              onRevokePass();
+            }}
+          />
           <hr className="more-actions-menu__divider" />
           {/* Not ArchivedGuard'd, unlike Resend ticket above — GDPR erasure requests can
            * legally arrive after an event ends, and the DELETE endpoint itself doesn't block
@@ -214,6 +248,117 @@ function MoreActionsMenu({
         </div>
       )}
     </div>
+  );
+}
+
+/** The reversible attendee actions share one contiguous menu group directly above deletion.
+ * Extracted from AttendeeDetailPage so the menu stays a stable component instead of being
+ * recreated by an inline render callback on every page render. */
+function RevokeActionMenuItems({
+  event,
+  canRevokeCheckIn,
+  revokeCheckInTooltip,
+  canRevokeItems,
+  revokeItemsTooltip,
+  isRevoked,
+  revokeBusy,
+  activeRevoke,
+  onRevokeCheckIn,
+  onRevokeItems,
+  onRestorePass,
+  onRevokePass,
+}: Readonly<{
+  event: ArchivedGuardEvent;
+  canRevokeCheckIn: boolean;
+  revokeCheckInTooltip?: string;
+  canRevokeItems: boolean;
+  revokeItemsTooltip?: string;
+  isRevoked: boolean;
+  revokeBusy: boolean;
+  activeRevoke: ActiveRevokeAction;
+  onRevokeCheckIn: () => void;
+  onRevokeItems: () => void;
+  onRestorePass: () => void;
+  onRevokePass: () => void;
+}>) {
+  return (
+    <>
+      <ArchivedGuard
+        event={event}
+        reasonId="revoke-checkin-reason-menu"
+        disabled={!canRevokeCheckIn || revokeBusy}
+        tooltip={revokeCheckInTooltip}
+      >
+        {(guard) => (
+          <button
+            type="button"
+            role="menuitem"
+            className="more-actions-menu__item more-actions-menu__item--warning"
+            {...guard}
+            onClick={onRevokeCheckIn}
+          >
+            <i className="ti ti-qrcode-off" aria-hidden="true" />
+            <span className="more-actions-menu__item-text">
+              <span>{revokeBusy && activeRevoke === "checkin" ? "Revoking…" : "Revoke check-in"}</span>
+              <span className="more-actions-menu__item-hint">Undo this attendee&rsquo;s check-in</span>
+            </span>
+          </button>
+        )}
+      </ArchivedGuard>
+      <ArchivedGuard
+        event={event}
+        reasonId="revoke-items-reason-menu"
+        disabled={!canRevokeItems || revokeBusy}
+        tooltip={revokeItemsTooltip}
+      >
+        {(guard) => (
+          <button
+            type="button"
+            role="menuitem"
+            className="more-actions-menu__item more-actions-menu__item--warning"
+            {...guard}
+            onClick={onRevokeItems}
+          >
+            <i className="ti ti-package" aria-hidden="true" />
+            <span className="more-actions-menu__item-text">
+              <span>{revokeBusy && activeRevoke === "items" ? "Revoking items…" : "Revoke items"}</span>
+              <span className="more-actions-menu__item-hint">Reset issued items to pending</span>
+            </span>
+          </button>
+        )}
+      </ArchivedGuard>
+      {isRevoked ? (
+        <ArchivedGuard event={event} reasonId="restore-pass-reason-menu" disabled={revokeBusy}>
+          {(guard) => (
+            <button type="button" role="menuitem" className="more-actions-menu__item" {...guard} onClick={onRestorePass}>
+              <i className="ti ti-refresh" aria-hidden="true" />
+              <span className="more-actions-menu__item-text">
+                <span>{revokeBusy && activeRevoke === "restore" ? "Restoring…" : "Restore pass"}</span>
+                <span className="more-actions-menu__item-hint">Re-enable check-in for this attendee</span>
+              </span>
+            </button>
+          )}
+        </ArchivedGuard>
+      ) : (
+        <ArchivedGuard event={event} reasonId="revoke-pass-reason-menu">
+          {(guard) => (
+            <button
+              type="button"
+              role="menuitem"
+              className="more-actions-menu__item more-actions-menu__item--danger"
+              {...guard}
+              onClick={onRevokePass}
+            >
+              <i className="ti ti-ban" aria-hidden="true" />
+              <span className="more-actions-menu__item-text">
+                <span>Revoke pass</span>
+                <span className="more-actions-menu__item-hint">Block check-in for this attendee</span>
+              </span>
+            </button>
+          )}
+        </ArchivedGuard>
+      )}
+    </>
   );
 }
 
@@ -253,6 +398,12 @@ function revokeItemsMenuTooltip(itemCount: number, canRevokeItems: boolean): str
   if (itemCount === 0) return "No items configured for this event. Add some in Requirements.";
   if (!canRevokeItems) return "Nothing issued to revoke for this attendee.";
   return undefined;
+}
+
+function revokeItemsToast(revokedCount: number): { message: string; variant: "success" | "info" } {
+  if (revokedCount === 0) return { message: "No issued items to revoke.", variant: "info" };
+  const pluralSuffix = revokedCount === 1 ? "" : "s";
+  return { message: `${revokedCount} item${pluralSuffix} revoked.`, variant: "success" };
 }
 
 /** "Revoke check-in" menu item's disabled-title on the detail page - same always-visible,
@@ -649,7 +800,7 @@ export function AttendeeDetailPage() {
   // Which of the three "revoke" confirm flows is active — mutually exclusive
   // by construction, replacing six independent booleans that could
   // technically both be true at once (review finding).
-  const [activeRevoke, setActiveRevoke] = useState<"pass" | "checkin" | "items" | "restore" | null>(null);
+  const [activeRevoke, setActiveRevoke] = useState<ActiveRevokeAction>(null);
   const [revokeBusy, setRevokeBusy] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
   const [restoreCapacityBlocked, setRestoreCapacityBlocked] = useState<EventFullMeta | null>(null);
@@ -968,10 +1119,8 @@ export function AttendeeDetailPage() {
       if (!isStillSelected(target)) return;
       await loadDetail();
       setActiveRevoke(null);
-      addToast(
-        revokedCount > 0 ? `${revokedCount} item${revokedCount === 1 ? "" : "s"} revoked.` : "No issued items to revoke.",
-        revokedCount > 0 ? "success" : "info",
-      );
+      const toast = revokeItemsToast(revokedCount);
+      addToast(toast.message, toast.variant);
     } catch (err) {
       if (!isStillSelected(target)) return;
       setRevokeError(operatorApiErrorMessage(err, "Could not revoke items."));
@@ -1073,7 +1222,7 @@ export function AttendeeDetailPage() {
               </ArchivedGuard>
             )}
             {/* Revoke pass/check-in/items and Restore pass all live only in the More actions
-             * menu now, on every viewport (see revokeSection below) - the standalone header
+             * menu now, on every viewport (see RevokeActionMenuItems above) - the standalone header
              * "Revoke" dropdown was folded in there too (PO report: "te revoke przenieś też na
              * desktop do more actions"), and Restore pass followed the same move so it sits "w
              * miejscu revoke pass" and goes through the same confirm-dialog gate instead of
@@ -1088,126 +1237,29 @@ export function AttendeeDetailPage() {
                 setDeleteError(null);
                 setDeleteOpen(true);
               }}
-              revokeSection={(close) => (
-                <>
-                  {/* Revoke check-in / Revoke items / Revoke pass (or Restore pass) - grouped
-                   * back-to-back with no dividers between them, same order and grouping as the
-                   * Attendees list's bulk "More actions" menu (PO report: "nie ma sensu odsuwać
-                   * revoke items kreską, bo jest to ten sam jakby tym zadania" / "taka
-                   * kolejność" pointing at that menu's Revoke check-in, items, pass order). */}
-                  {/* Stays visible and just disables (ArchivedGuard's disabled+tooltip) instead
-                   * of vanishing when not applicable - matches "Revoke items" below (PO report:
-                   * "znika mi przycisk revoke checkin... bardziej preferowałbym wyszarzoną
-                   * opcję z tooltipem jak jest ładnie zrobione wobec revoke items"). */}
-                  <ArchivedGuard
-                    event={event}
-                    reasonId="revoke-checkin-reason-menu"
-                    disabled={!canRevokeCheckInForAttendee || revokeBusy}
-                    tooltip={revokeCheckInMenuTooltip(detail.check_in_status, isRevoked)}
-                  >
-                    {(guard) => (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        className="more-actions-menu__item more-actions-menu__item--warning"
-                        {...guard}
-                        onClick={() => {
-                          close();
-                          setRevokeError(null);
-                          setActiveRevoke("checkin");
-                        }}
-                      >
-                        <i className="ti ti-qrcode-off" aria-hidden="true" />
-                        <span className="more-actions-menu__item-text">
-                          <span>{revokeBusy && activeRevoke === "checkin" ? "Revoking…" : "Revoke check-in"}</span>
-                          <span className="more-actions-menu__item-hint">Undo this attendee&rsquo;s check-in</span>
-                        </span>
-                      </button>
-                    )}
-                  </ArchivedGuard>
-                  {/* Unlike Revoke check-in/pass above and below, "Revoke items" has no
-                   * standalone header button on either viewport and isn't gated by isRevoked -
-                   * reuses the Attendees list's bulk revoke-items endpoint for just this one
-                   * attendee (PO report: "brakuje nam opcji revoke items w osobie"). */}
-                  <ArchivedGuard
-                    event={event}
-                    reasonId="revoke-items-reason-menu"
-                    disabled={!canRevokeItemsForAttendee || revokeBusy}
-                    tooltip={revokeItemsMenuTooltip(eventItems.length, canRevokeItemsForAttendee)}
-                  >
-                    {(guard) => (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        className="more-actions-menu__item more-actions-menu__item--warning"
-                        {...guard}
-                        onClick={() => {
-                          close();
-                          setRevokeError(null);
-                          setActiveRevoke("items");
-                        }}
-                      >
-                        <i className="ti ti-package" aria-hidden="true" />
-                        <span className="more-actions-menu__item-text">
-                          <span>{revokeBusy && activeRevoke === "items" ? "Revoking items…" : "Revoke items"}</span>
-                          <span className="more-actions-menu__item-hint">Reset issued items to pending</span>
-                        </span>
-                      </button>
-                    )}
-                  </ArchivedGuard>
-                  {isRevoked
-                    ? (
-                        <ArchivedGuard
-                          event={event}
-                          reasonId="restore-pass-reason-menu"
-                          disabled={revokeBusy}
-                        >
-                          {(guard) => (
-                            <button
-                              type="button"
-                              role="menuitem"
-                              className="more-actions-menu__item"
-                              {...guard}
-                              onClick={() => {
-                                close();
-                                setRevokeError(null);
-                                setActiveRevoke("restore");
-                              }}
-                            >
-                              <i className="ti ti-refresh" aria-hidden="true" />
-                              <span className="more-actions-menu__item-text">
-                                <span>{revokeBusy && activeRevoke === "restore" ? "Restoring…" : "Restore pass"}</span>
-                                <span className="more-actions-menu__item-hint">Re-enable check-in for this attendee</span>
-                              </span>
-                            </button>
-                          )}
-                        </ArchivedGuard>
-                      )
-                    : (
-                        <ArchivedGuard event={event} reasonId="revoke-pass-reason-menu">
-                          {(guard) => (
-                            <button
-                              type="button"
-                              role="menuitem"
-                              className="more-actions-menu__item more-actions-menu__item--danger"
-                              {...guard}
-                              onClick={() => {
-                                close();
-                                setRevokeError(null);
-                                setActiveRevoke("pass");
-                              }}
-                            >
-                              <i className="ti ti-ban" aria-hidden="true" />
-                              <span className="more-actions-menu__item-text">
-                                <span>Revoke pass</span>
-                                <span className="more-actions-menu__item-hint">Block check-in for this attendee</span>
-                              </span>
-                            </button>
-                          )}
-                        </ArchivedGuard>
-                      )}
-                </>
-              )}
+              canRevokeCheckIn={canRevokeCheckInForAttendee}
+              revokeCheckInTooltip={revokeCheckInMenuTooltip(detail.check_in_status, isRevoked)}
+              canRevokeItems={canRevokeItemsForAttendee}
+              revokeItemsTooltip={revokeItemsMenuTooltip(eventItems.length, canRevokeItemsForAttendee)}
+              isRevoked={isRevoked}
+              revokeBusy={revokeBusy}
+              activeRevoke={activeRevoke}
+              onRevokeCheckIn={() => {
+                setRevokeError(null);
+                setActiveRevoke("checkin");
+              }}
+              onRevokeItems={() => {
+                setRevokeError(null);
+                setActiveRevoke("items");
+              }}
+              onRestorePass={() => {
+                setRevokeError(null);
+                setActiveRevoke("restore");
+              }}
+              onRevokePass={() => {
+                setRevokeError(null);
+                setActiveRevoke("pass");
+              }}
             />
             <Button variant="secondary" onClick={handleBack}>
               Back

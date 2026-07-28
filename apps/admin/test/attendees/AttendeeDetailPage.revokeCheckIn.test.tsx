@@ -7,6 +7,7 @@ import { getTooltipText, mockMatchMedia, renderWithToast } from "../test-utils.j
 
 const loadAttendeeDetailData = vi.fn();
 const revokeAttendeeCheckIn = vi.fn();
+const bulkRevokeItems = vi.fn();
 
 vi.mock("../../src/attendees/attendeeDetailForm.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/attendees/attendeeDetailForm.js")>();
@@ -47,6 +48,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     resendTicket: vi.fn(),
     fetchAttendeeDetail: vi.fn(),
     revokeAttendeeCheckIn: (...args: unknown[]) => revokeAttendeeCheckIn(...args),
+    bulkRevokeItems: (...args: unknown[]) => bulkRevokeItems(...args),
   };
 });
 
@@ -109,6 +111,18 @@ function openMoreActionsMenu() {
 }
 
 describe("AttendeeDetailPage — Revoke check-in", () => {
+  it("moves Edit into More actions on mobile and opens the profile editor", async () => {
+    mockMatchMedia(false);
+    mockLoad(baseDetail());
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(within(openMoreActionsMenu()).getByRole("menuitem", { name: /^Edit/ }));
+
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(await screen.findByRole("button", { name: "Save changes" })).toBeTruthy();
+  });
+
   it("keeps Revoke check-in visible but disabled with a tooltip when not admitted", async () => {
     mockLoad(baseDetail({ check_in_status: "not_admitted", admitted_at: null }));
     renderPage();
@@ -200,5 +214,59 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
     });
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("disables Revoke items with a useful tooltip when the event has no configured items", async () => {
+    mockLoad(baseDetail());
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    const item = within(openMoreActionsMenu()).getByRole("menuitem", { name: /Revoke items/ });
+    expect((item as HTMLButtonElement).disabled).toBe(true);
+    expect(getTooltipText(item)).toBe("No items configured for this event. Add some in Requirements.");
+  });
+
+  it("confirms Revoke items, scopes it to the attendee, reloads, and reports a singular success", async () => {
+    mockLoad(baseDetail({ event_items: [{ key: "badge", label: "Badge", state: "issued" }] }));
+    mockLoad(baseDetail({ event_items: [{ key: "badge", label: "Badge", state: "pending" }] }));
+    bulkRevokeItems.mockResolvedValue({ revokedCount: 1 });
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(within(openMoreActionsMenu()).getByRole("menuitem", { name: /Revoke items/ }));
+    const dialog = screen.getByRole("dialog", { name: "Revoke items?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke items" }));
+
+    await waitFor(() => {
+      expect(bulkRevokeItems).toHaveBeenCalledWith("evt-1", ["att-1"]);
+      expect(screen.getByTestId("at-toast").textContent).toContain("1 item revoked.");
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("accepts a returned item and keeps a revoke-items failure in its confirmation dialog", async () => {
+    mockLoad(baseDetail({ event_items: [{ key: "badge", label: "Badge", state: "returned" }] }));
+    bulkRevokeItems.mockRejectedValue(new Error("boom"));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(within(openMoreActionsMenu()).getByRole("menuitem", { name: /Revoke items/ }));
+    const dialog = screen.getByRole("dialog", { name: "Revoke items?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke items" }));
+
+    expect(await within(dialog).findByText("Could not revoke items.")).toBeTruthy();
+  });
+
+  it("closes the Revoke items dialog without making a request when cancelled", async () => {
+    mockLoad(baseDetail({ event_items: [{ key: "badge", label: "Badge", state: "issued" }] }));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(within(openMoreActionsMenu()).getByRole("menuitem", { name: /Revoke items/ }));
+    const dialog = screen.getByRole("dialog", { name: "Revoke items?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(bulkRevokeItems).not.toHaveBeenCalled();
   });
 });

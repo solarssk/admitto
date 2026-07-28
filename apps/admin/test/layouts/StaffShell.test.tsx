@@ -21,11 +21,11 @@ vi.mock("../../src/components/UserMenu.js", () => ({
   UserMenu: () => <span data-testid="user-menu" />,
 }));
 
-function renderShell(eventId?: string) {
+function renderShell(eventId?: string, sidebar = <span>nav items</span>) {
   return render(
     <MemoryRouter>
       <StaffShell
-        sidebar={<span>nav items</span>}
+        sidebar={sidebar}
         subnav={<span>section nav</span>}
         eventId={eventId}
         brandTo="/admin"
@@ -76,5 +76,24 @@ describe("StaffShell", () => {
     if (!backdrop) throw new Error("backdrop not rendered");
     fireEvent.click(backdrop);
     expect(shellRoot(container).className).not.toContain("shell--nav-open");
+  });
+
+  it("closes the opened navigation when a sidebar link is activated", () => {
+    const { container } = renderShell(
+      undefined,
+      <a href="/admin/events" onClick={(event) => event.preventDefault()}>Events</a>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    expect(shellRoot(container).className).toContain("shell--nav-open");
+
+    fireEvent.click(screen.getByRole("link", { name: "Events" }));
+    expect(shellRoot(container).className).not.toContain("shell--nav-open");
+  });
+
+  it("keeps the navigation open when a non-link sidebar element is clicked", () => {
+    const { container } = renderShell(undefined, <span>nav items</span>);
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    fireEvent.click(screen.getByText("nav items"));
+    expect(shellRoot(container).className).toContain("shell--nav-open");
   });
 });

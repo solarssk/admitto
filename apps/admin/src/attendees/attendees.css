@@ -1202,7 +1202,7 @@
    shared PageHeader's default (stack below, full desktop button size) until a PO review found
    it didn't match Reports/Event settings/Attendees, which had all already been compacted.
    Only two buttons ever reach this row on mobile (More actions, Back) - Edit and Revoke/Restore
-   fold into the More actions menu instead (see MoreActionsMenu's showEdit/revokeSection props),
+   fold into the More actions menu instead (see MoreActionsMenu's showEdit/RevokeActionMenuItems),
    so no order/flex-basis wrapping trick is needed here, unlike the list pages above. */
 @media (max-width: 767px) {
   .attendee-detail-pageheader .at-pageheader__row {

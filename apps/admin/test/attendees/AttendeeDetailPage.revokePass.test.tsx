@@ -114,6 +114,20 @@ function clickRevokePassMenuItem() {
 }
 
 describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confirm-flow state)", () => {
+  it("closes the Restore pass dialog without changing status when cancelled", async () => {
+    mockLoad(baseDetail({ status: "revoked" }));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Restore pass/ }));
+    const dialog = screen.getByRole("dialog", { name: "Restore pass?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(updateAttendee).not.toHaveBeenCalled();
+  });
+
   it("confirms Revoke pass, closes the dialog, and shows Restore pass afterward", async () => {
     mockLoad(baseDetail());
     renderPage();

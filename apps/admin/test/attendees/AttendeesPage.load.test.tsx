@@ -6,6 +6,7 @@ import { AttendeesPage } from "../../src/pages/AttendeesPage.js";
 import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const fetchEventAttendees = vi.fn();
+const exportAttendees = vi.fn();
 const reportApiError = vi.fn();
 
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
@@ -42,7 +43,7 @@ vi.mock("../../src/api/client.js", () => ({
     hasEventOverride: false,
     fields: { provider: { value: "smtp", source: "organization", locked: false } },
   }),
-  exportAttendees: vi.fn(),
+  exportAttendees: (...args: unknown[]) => exportAttendees(...args),
   bulkResendTickets: vi.fn(),
   sendEventBulk: vi.fn(),
   updateAttendee: vi.fn(),
@@ -71,6 +72,7 @@ function renderPage() {
     <MemoryRouter initialEntries={["/admin/events/evt-1/attendees"]}>
       <Routes>
         <Route path="/admin/events/:eventId/attendees" element={<AttendeesPage />} />
+        <Route path="/admin/events/:eventId/attendees/import" element={<div>import page</div>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -186,6 +188,25 @@ describe("AttendeesPage header actions on mobile (PO review — header must neve
     expect(screen.getByRole("menuitem", { name: /^Export XLSX/ })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: /^Export CSV/ })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: /^Export PDF/ })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Import/ }));
+    expect(screen.getByText("import page")).toBeTruthy();
+  });
+
+  it("exports from the mobile More menu and closes it before starting the download", async () => {
+    mockMatchMedia(false);
+    fetchEventAttendees.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
+    exportAttendees.mockResolvedValue(undefined);
+
+    renderPage();
+    await screen.findByText(/No attendees yet/i);
+
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Export CSV/ }));
+
+    await waitFor(() => expect(exportAttendees).toHaveBeenCalledTimes(1));
+    expect(exportAttendees.mock.calls[0]![2]).toBe("csv");
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 
   it("keeps the full header button labels at desktop widths, with Export as its own standalone button", async () => {

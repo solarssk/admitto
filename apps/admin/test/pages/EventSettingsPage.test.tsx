@@ -191,6 +191,17 @@ function renderSettings(entry = "/admin/events/evt-1/settings") {
   );
 }
 
+describe("EventSettingsPage responsive save label", () => {
+  it("uses the short Save label on mobile", async () => {
+    mockMatchMedia(false);
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings();
+
+    expect(await screen.findByRole("button", { name: "Save" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+  });
+});
+
 describe("EventSettingsPage subtitle", () => {
   const SUBTITLE = "Manage this event's details, branding, and access controls.";
 
