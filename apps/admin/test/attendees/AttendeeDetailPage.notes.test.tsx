@@ -227,6 +227,114 @@ describe("AttendeeDetailPage — Notes tab", () => {
     expect(await screen.findByText("Newest")).toBeTruthy();
   });
 
+  it("keeps notes pagination usable after adding a note from a later page", async () => {
+    mockLoad(baseDetail({
+      notes: [makeNote({ id: "n1", body: "Newest" })],
+      notes_total: 51,
+      notes_page: 1,
+      notes_page_size: 50,
+    }));
+    mockLoad(baseDetail({
+      notes: [makeNote({ id: "n51", body: "Oldest" })],
+      notes_total: 51,
+      notes_page: 2,
+      notes_page_size: 50,
+    }));
+    mockLoad(baseDetail({
+      notes: [makeNote({ id: "n-new", body: "Added note" })],
+      notes_total: 52,
+      notes_page: 1,
+      notes_page_size: 50,
+    }));
+    mockLoad(baseDetail({
+      notes: [makeNote({ id: "n52", body: "Oldest after add" })],
+      notes_total: 52,
+      notes_page: 2,
+      notes_page_size: 50,
+    }));
+    addAttendeeNote.mockResolvedValueOnce(baseDetail({
+      notes: [makeNote({ id: "n-new", body: "Added note" })],
+      notes_total: 52,
+      notes_page: 1,
+      notes_page_size: 50,
+    }));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+    await openNotesTab();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText("Oldest")).toBeTruthy();
+
+    fireEvent.change(screen.getByPlaceholderText("Add a note about this attendee…"), {
+      target: { value: "Added note" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(await screen.findByText("Added note")).toBeTruthy();
+    await waitFor(() => expect(loadAttendeeDetailData).toHaveBeenCalledTimes(3));
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText("Oldest after add")).toBeTruthy();
+    expect(loadAttendeeDetailData).toHaveBeenLastCalledWith("evt-1", "att-1", 2);
+  });
+
+  it("ignores a stale notes-page response after switching attendee", async () => {
+    mockLoad(baseDetail({
+      notes: [makeNote({ id: "n1", body: "Anna newest" })],
+      notes_total: 51,
+      notes_page: 1,
+      notes_page_size: 50,
+    }));
+    mockLoad(baseDetail({
+      notes: [makeNote({ id: "n51", body: "Anna oldest" })],
+      notes_total: 51,
+      notes_page: 2,
+      notes_page_size: 50,
+    }));
+    let resolveStalePage!: (value: { detail: ReturnType<typeof baseDetail>; attributeFields: []; itemsWarning: null }) => void;
+    let resolveFirstPage!: (value: { detail: ReturnType<typeof baseDetail>; attributeFields: []; itemsWarning: null }) => void;
+    loadAttendeeDetailData.mockReturnValueOnce(new Promise((resolve) => { resolveStalePage = resolve; }));
+    loadAttendeeDetailData.mockReturnValueOnce(new Promise((resolve) => { resolveFirstPage = resolve; }));
+    renderPage({ withRouteChangeControl: true });
+    await screen.findByRole("heading", { name: "Anna" });
+    await openNotesTab();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText("Anna oldest")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Switch attendee" }));
+    await waitFor(() => expect(loadAttendeeDetailData).toHaveBeenCalledTimes(4));
+    expect(loadAttendeeDetailData).toHaveBeenNthCalledWith(3, "evt-2", "att-2", 2);
+    expect(loadAttendeeDetailData).toHaveBeenNthCalledWith(4, "evt-2", "att-2", 1);
+
+    resolveFirstPage({
+      detail: baseDetail({
+        id: "att-2",
+        name: "Bea",
+        notes: [makeNote({ id: "b1", body: "Bea newest" })],
+        notes_total: 51,
+        notes_page: 1,
+        notes_page_size: 50,
+      }),
+      attributeFields: [],
+      itemsWarning: null,
+    });
+    expect(await screen.findByText("Bea newest")).toBeTruthy();
+
+    resolveStalePage({
+      detail: baseDetail({
+        id: "att-2",
+        name: "Bea",
+        notes: [makeNote({ id: "b51", body: "Bea stale oldest" })],
+        notes_total: 51,
+        notes_page: 2,
+        notes_page_size: 50,
+      }),
+      attributeFields: [],
+      itemsWarning: null,
+    });
+    await waitFor(() => expect(screen.queryByText("Bea stale oldest")).toBeNull());
+    expect(screen.getByText("Bea newest")).toBeTruthy();
+  });
+
   it("keeps the Notes tab usable with a legacy detail response that lacks pagination metadata", async () => {
     mockLoad(baseDetail({
       notes: undefined,

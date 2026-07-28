@@ -1051,6 +1051,8 @@ export function AttendeeDetailPage() {
   /** Guards async handlers when route params change before a request completes. */
   const selectionRef = useRef({ eventId, attendeeId });
   selectionRef.current = { eventId, attendeeId };
+  const notesPageRef = useRef(notesPage);
+  notesPageRef.current = notesPage;
 
   function isStillSelected(target: { eventId: string; attendeeId: string }): boolean {
     const current = selectionRef.current;
@@ -1059,7 +1061,11 @@ export function AttendeeDetailPage() {
 
   const loadDetail = useCallback(async () => {
     if (!eventId || !attendeeId) return;
-    const target = { eventId, attendeeId };
+    const target = { eventId, attendeeId, notesPage };
+    // Changing attendee resets the page to one, but the previous page's request can still
+    // finish afterwards. Only let the currently selected page update the detail view.
+    const isCurrentRequest = () =>
+      isStillSelected(target) && notesPageRef.current === target.notesPage;
     setLoading(true);
     setError(null);
     setNotFound(false);
@@ -1079,7 +1085,7 @@ export function AttendeeDetailPage() {
     try {
       const { detail: d, attributeFields: fields, itemsWarning: warn } =
         await loadAttendeeDetailData(eventId, attendeeId, notesPage);
-      if (!isStillSelected(target)) return;
+      if (!isCurrentRequest()) return;
       setDetail(d);
       setAttributeFields(fields);
       setForm(toAttendeeForm(d, fields));
@@ -1088,14 +1094,14 @@ export function AttendeeDetailPage() {
       setStaleWrite(false);
       setEmailConflict(false);
     } catch (err) {
-      if (!isStillSelected(target)) return;
+      if (!isCurrentRequest()) return;
       if (err instanceof ApiError && (err.status === 403 || err.status === 404)) {
         setNotFound(true);
       } else {
         setError(operatorApiErrorMessage(err, "Failed to load attendee."));
       }
     } finally {
-      if (isStillSelected(target)) setLoading(false);
+      if (isCurrentRequest()) setLoading(false);
     }
   }, [eventId, attendeeId, notesPage]);
 
@@ -1397,6 +1403,7 @@ export function AttendeeDetailPage() {
       const updated = await addAttendeeNote(eventId!, attendeeId!, body);
       if (!isStillSelected(target)) return;
       setDetail(updated);
+      setNotesPage(updated.notes_page);
       setNoteDraft("");
       addToast("Note added", "success");
     } catch (err) {
