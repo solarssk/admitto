@@ -21,13 +21,12 @@ const orgAdminAssignment: RoleAssignment = { role: "admin", scope_type: "organiz
 const operatorAssignment: RoleAssignment = { role: "operator", scope_type: "event", scope_id: "evt-1" };
 
 describe("OperatorGuard", () => {
-  function renderAtOperator(path = "/operator") {
+  function renderAtOperator() {
     render(
-      <MemoryRouter initialEntries={[path]}>
+      <MemoryRouter initialEntries={["/operator"]}>
         <Routes>
           <Route path="/operator" element={<OperatorGuard />}>
             <Route index element={<p>Operator content</p>} />
-            <Route path="events/:eventId/checkin" element={<p>Check-in content</p>} />
           </Route>
           <Route path="/admin" element={<p>Admin home</p>} />
         </Routes>
@@ -58,15 +57,10 @@ describe("OperatorGuard", () => {
     expect(screen.queryByText("Operator content")).toBeNull();
   });
 
-  it("preserves the operator picker and event route for mixed-scope staff", () => {
+  it("still redirects to /admin for a user holding both an admin and an operator assignment", () => {
     assignments = [orgAdminAssignment, operatorAssignment];
     renderAtOperator();
-    expect(screen.getByText("Operator content")).toBeTruthy();
-
-    cleanup();
-    renderAtOperator("/operator/events/evt-1/checkin");
-    expect(screen.getByText("Check-in content")).toBeTruthy();
-    expect(screen.queryByText("Admin home")).toBeNull();
+    expect(screen.getByText("Admin home")).toBeTruthy();
   });
 
   it("redirects to login when the assignment has neither admin nor check-in access", () => {

@@ -1,12 +1,7 @@
 import { useEffect } from "react";
 import { Navigate, Outlet } from "react-router";
 import { useAuth } from "./AuthProvider.js";
-import {
-  canAccessAdminPanel,
-  canAccessCheckInPanel,
-  hasEventOperatorAssignment,
-  isSuperadmin,
-} from "./capabilities.js";
+import { canAccessAdminPanel, canAccessCheckInPanel, isSuperadmin } from "./capabilities.js";
 
 function RedirectToLogin() {
   useEffect(() => {
@@ -43,10 +38,12 @@ export function AuthenticatedGuard() {
 
 export function OperatorGuard() {
   const { assignments } = useAuth();
-  // Admin/superadmin normally bounce to /admin because they can use its Check-in tab. Do not
-  // do that for a mixed-scope user with an explicit event-operator assignment: their admin
-  // event picker cannot list an event belonging to another organization, while /operator can.
-  if (canAccessAdminPanel(assignments) && !hasEventOperatorAssignment(assignments)) {
+  // Admin/superadmin always bounce to /admin, even though canAccessCheckInPanel is also true
+  // for them (they can drive check-in from the admin panel's own Check-in tab) - the device
+  // kiosk shell at /operator is reserved for accounts that are ONLY operators, so an admin
+  // landing here (a stray link, a bookmark, a typed URL) doesn't get dropped into a full-screen
+  // surface with no admin nav and have to click their way back out.
+  if (canAccessAdminPanel(assignments)) {
     return <Navigate to="/admin" replace />;
   }
   if (!canAccessCheckInPanel(assignments)) {

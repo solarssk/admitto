@@ -20,16 +20,6 @@ export function canAccessCheckInPanel(assignments: RoleAssignment[]): boolean {
   );
 }
 
-/** An explicit event-operator role must keep the dedicated `/operator` surface available even
- * when the same person is also an admin in a different organization. Admin roles alone can use
- * the admin Check-in tab; this assignment is the only one that can grant check-in for an event
- * outside those organizations. */
-export function hasEventOperatorAssignment(assignments: RoleAssignment[]): boolean {
-  return assignments.some(
-    (a) => a.role === "operator" && a.scope_type === "event" && a.scope_id,
-  );
-}
-
 export function isSuperadmin(assignments: RoleAssignment[]): boolean {
   return assignments.some((a) => a.role === "superadmin" && a.scope_type === "instance");
 }
