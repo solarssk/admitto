@@ -385,7 +385,7 @@ describe("SystemStatus", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  it("navigates to Settings → Logs & audit when 'View system logs' is clicked", async () => {
+  it("navigates to Settings → Logs when 'View system logs' is clicked", async () => {
     fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
 
     renderStatus(SUPERADMIN);

@@ -33,6 +33,17 @@ describe("fetchSecurityAuditLog (client) — query string building", () => {
     expect(url).toBe("/api/admin/security-audit-log?event_type=auth.login.fail&page=2&pageSize=50");
   });
 
+  it("includes search/start/end when given", async () => {
+    const fetchMock = stubFetch();
+
+    await fetchSecurityAuditLog({ search: "admin@example.com", start: "2026-01-01", end: "2026-01-31" });
+
+    const [url] = fetchMock.mock.calls[0]!;
+    expect(url).toBe(
+      "/api/admin/security-audit-log?search=admin%40example.com&start=2026-01-01&end=2026-01-31",
+    );
+  });
+
   it("passes the abort signal through", async () => {
     const fetchMock = stubFetch();
     const controller = new AbortController();

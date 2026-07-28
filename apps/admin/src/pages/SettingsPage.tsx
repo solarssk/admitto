@@ -8,7 +8,6 @@ import { SessionsPanel } from "../settings/SessionsPanel.js";
 import { EventArchivingPanel } from "../settings/EventArchivingPanel.js";
 import { SecurityPanel } from "../settings/SecurityPanel.js";
 import { AuditLogPanel } from "../settings/AuditLogPanel.js";
-import { SecurityAuditLogPanel } from "../settings/SecurityAuditLogPanel.js";
 import { inPageTabFromSearch, type SettingsTab } from "../settings/settingsTabs.js";
 
 interface SettingsTabPanelProps {
@@ -97,11 +96,10 @@ export function SettingsTabContent() {
         tab="logs"
         activeTab={tab}
         visited={visitedTabs}
-        label="Logs & audit"
+        label="Logs"
         className="settings-sections"
       >
         <AuditLogPanel />
-        <SecurityAuditLogPanel />
       </SettingsTabPanel>
     </>
   );

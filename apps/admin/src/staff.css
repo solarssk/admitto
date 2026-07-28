@@ -4070,10 +4070,12 @@ output.mail-field-hint {
   margin-bottom: var(--space-4);
 }
 
-/* Mobile only (see AuditLogPanel.tsx) - Clear filters/Export CSV move down from the Card
+/* Mobile only (see AuditLogPanel.tsx) - Clear filters/Export logs/Live move down from the Card
    header into this row. flex: 1 1 100% always claims a full row of its own (never shares
-   the line with Search/Filters above), with Export pushed to the right - the header-actions
-   convention these two follow everywhere else in the app. */
+   the line with Search/Filters above); justify-content: space-between spreads Clear filters
+   (first, leftmost), Export logs, and Live (last, rightmost, beside where the System/Audit/
+   Security selector sits on desktop) across the row - the header-actions convention these
+   three follow everywhere else in the app. */
 .audit-log-toolbar-actions {
   display: flex;
   justify-content: space-between;
@@ -4087,15 +4089,42 @@ output.mail-field-hint {
   flex: 1 1 12rem;
 }
 
+/* Live-refresh degraded banner (Audit/Security "Live" toggle) - same warning treatment as
+   SystemLogsPanel's own .system-log-panel__poll-warning, just scoped under audit-log-* since
+   it sits inside AuditLogPanel's own toolbar/list stack instead of System's console shell. */
+.audit-log-poll-warning {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--at-yellow);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--at-yellow) 12%, transparent);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.audit-log-poll-warning-retry {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .audit-log-filter--search {
   position: relative;
   flex: 1 1 18rem;
 }
 
 /* Below the same 768px breakpoint useIsDesktop() switches on (From/To move into Filters,
-   Clear filters/Export CSV move into this row too) - search's desktop-sized 18rem basis left
-   no room for Filters to share the line, forcing it onto its own row. Shrinking instead of
-   stretching lets Filters (and, wrapping below if needed, Clear filters/Export CSV) sit
+   Clear filters/Export logs/Live move into this row too) - search's desktop-sized 18rem basis
+   left no room for Filters to share the line, forcing it onto its own row. Shrinking instead of
+   stretching lets Filters (and, wrapping below if needed, Clear filters/Export logs/Live) sit
    alongside it on the same row. */
 @media (max-width: 767px) {
   .audit-log-filter--search {
@@ -4410,10 +4439,11 @@ output.mail-field-hint {
 }
 
 /* The header's shared .at-card__header is nowrap by design (a fixed, consistent height is
-   the standard across every Settings card) - but three actions (System/Audit, Clear filters,
-   Export CSV) alongside the "Audit log" title genuinely don't fit in one line under ~480px.
-   Wrapping to a second line there is the lesser evil vs. clipping a button off-screen; every
-   other Settings card only carries one or two header actions and isn't affected. */
+   the standard across every Settings card) - but the view-specific actions (Clear filters,
+   Export logs) plus Live and the System/Audit/Security selector, alongside the title, genuinely
+   don't fit in one line under ~480px. Wrapping to a second line there is the lesser evil vs.
+   clipping a button off-screen; every other Settings card only carries one or two header
+   actions and isn't affected. */
 @media (max-width: 480px) {
   .audit-log-header-card .at-card__header {
     flex-wrap: wrap;
@@ -4441,11 +4471,25 @@ output.mail-field-hint {
   gap: var(--space-2);
 }
 
+/* Groups "Showing X of Y" with the rows-per-page picker, so the pager beside it is left with
+   just Previous/Page/Next - below ~600px that keeps each row to a tidy 2 items instead of 4
+   wrapping unevenly across three lines. */
+.audit-log-footer__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
 @media (max-width: 600px) {
   .audit-log-footer {
     flex-direction: column;
     align-items: stretch;
     gap: var(--space-2);
+  }
+
+  .audit-log-footer__summary {
+    flex-wrap: wrap;
   }
 
   .audit-log-footer__pager {
@@ -4500,8 +4544,8 @@ output.mail-field-hint {
   cursor: not-allowed;
 }
 
-/* System logs panel (Logs & audit > System toggle) - toolbar sits at the same level as the
-   Audit log toolbar (no intro paragraph pushing it down, no labels above each field - "All
+/* System logs panel (Logs tab > System toggle) - toolbar sits at the same level as the
+   Audit logs toolbar (no intro paragraph pushing it down, no labels above each field - "All
    sources"/"All levels" already say what the select does). */
 .system-log-panel__toolbar {
   display: flex;
@@ -4540,7 +4584,7 @@ select.system-log-panel__field {
   flex: 0 1 auto;
 }
 
-/* Mobile only - Live/Download move down from the Card header into this row, mirroring
+/* Mobile only - Export logs/Live move down from the Card header into this row, mirroring
    .audit-log-toolbar-actions exactly. */
 .system-log-panel__toolbar-actions {
   display: flex;
@@ -4752,6 +4796,26 @@ select.system-log-panel__field {
 .system-log-panel__footer-actions {
   display: flex;
   gap: var(--space-2);
+}
+
+/* Plain informational context, not a caution (poll-warning above, amber) or a danger
+   (event-settings' danger-zone-notice, red) - this is a permanent fact about the view, so a
+   neutral "well" background reads as documentation rather than an alert. */
+.system-log-panel__notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.system-log-panel__notice i {
+  margin-top: 2px;
 }
 
 /* Event archiving panel */
@@ -6248,57 +6312,3 @@ select.system-log-panel__field {
    shared ScrollFadeTabs component (apps/admin/src/components/ScrollFadeTabs.tsx),
    used instead of the plain <Tabs> in SettingsLayout.tsx. */
 
-/* Security audit log panel (issue #473's durable auth/security event trail) - "Logs & audit"
-   tab, right after the admin AuditLogPanel above. Smaller table, so its own scoped classes
-   rather than reaching into audit-log- or sessions- prefixed ones (owned by sibling panels). */
-.security-audit-log-status {
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-  padding: var(--space-4) 0;
-}
-
-.security-audit-table-wrap {
-  overflow-x: auto;
-  margin: 0 calc(-1 * var(--space-4));
-  padding: 0 var(--space-4);
-}
-
-.security-audit-log-metadata {
-  margin: 0;
-  padding: var(--space-2) var(--space-3);
-  background: var(--bg-subtle, var(--gray-50, #f8f9fa));
-  border-radius: var(--radius-sm, 4px);
-  font-size: var(--fs-xs, 0.75rem);
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
-}
-
-/* Matches .audit-log-footer exactly (same summary-left, pager-right layout). */
-.security-audit-log-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  width: 100%;
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-}
-
-.security-audit-log-footer__pager {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-@media (max-width: 600px) {
-  .security-audit-log-footer {
-    flex-direction: column;
-    align-items: stretch;
-    gap: var(--space-2);
-  }
-
-  .security-audit-log-footer__pager {
-    flex-wrap: wrap;
-    justify-content: center;
-  }
-}
