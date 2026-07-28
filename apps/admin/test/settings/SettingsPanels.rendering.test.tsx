@@ -1051,6 +1051,50 @@ describe("AuditLogPanel rendering", () => {
     expect(fetchAuditLog).toHaveBeenCalledTimes(2);
   }, 10000);
 
+  it("does not let a poll cancel a newer filter/page reload", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValueOnce({
+      entries: [makeAuditEntry()],
+      total: 50,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderAuditPanel();
+    await screen.findByText("Page 1 of 2");
+    vi.mocked(fetchAuditLog).mockClear();
+
+    let resolveNewestLoad: (value: AuditLogResponse) => void = () => {};
+    vi.mocked(fetchAuditLog).mockImplementation(
+      (params, signal) =>
+        new Promise<AuditLogResponse>((resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+          if (params.page === 1 && params.actionType === "event_created") resolveNewestLoad = resolve;
+        }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(fetchAuditLog).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Action" }), { target: { value: "event_created" } });
+    await waitFor(() => expect(fetchAuditLog).toHaveBeenCalledTimes(2));
+
+    // The first, aborted non-silent request must not clear the guard owned by the second one.
+    // If it did, this tick would start a third request and abort the reload the operator awaits.
+    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS + 250));
+    expect(fetchAuditLog).toHaveBeenCalledTimes(2);
+
+    await act(async () => resolveNewestLoad({ entries: [makeAuditEntry()], total: 50, page: 1, pageSize: 25 }));
+  }, 10000);
+
+  it("clears an initial load error when a live poll recovers", async () => {
+    vi.mocked(fetchAuditLog).mockRejectedValueOnce(new Error("network error")).mockResolvedValueOnce(emptyAuditLog());
+
+    renderAuditPanel();
+    expect(await screen.findByText("Could not load audit log")).toBeTruthy();
+    expect(await screen.findByText("No audit log entries yet", {}, { timeout: 3000 })).toBeTruthy();
+    expect(screen.queryByText("Could not load audit log")).toBeNull();
+  }, 10000);
+
   it("stops polling once Live is turned off, and resumes when clicked again", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
 
@@ -1631,6 +1675,17 @@ describe("AuditLogPanel Security view rendering", () => {
     // The poll tick fires on its own, with no user action - this is what makes it "live".
     expect(await screen.findByText("Bob Admin", {}, { timeout: 3000 })).toBeTruthy();
     expect(fetchSecurityAuditLog).toHaveBeenCalledTimes(2);
+  }, 10000);
+
+  it("clears an initial load error when a live poll recovers", async () => {
+    vi.mocked(fetchSecurityAuditLog)
+      .mockRejectedValueOnce(new Error("network error"))
+      .mockResolvedValueOnce(emptySecurityLog());
+
+    renderSecurityPanel();
+    expect(await screen.findByText("Could not load security audit log")).toBeTruthy();
+    expect(await screen.findByText("No security events yet", {}, { timeout: 3000 })).toBeTruthy();
+    expect(screen.queryByText("Could not load security audit log")).toBeNull();
   }, 10000);
 
   it("stops polling once Live is turned off, and resumes when clicked again", async () => {

@@ -930,9 +930,11 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePostSetupComplete(c, db, rateLimitStore, mailInjectedBaseUrl),
   );
   app.get("/api/admin/audit-log", staffAdminGate, (c) => handleGetAuditLog(c, db));
-  app.get("/api/admin/audit-log/export", staffAdminGate, (c) => handleExportAuditLog(c, db));
+  app.get("/api/admin/audit-log/export", staffAdminGate, adminExportRateLimit, (c) => handleExportAuditLog(c, db));
   app.get("/api/admin/security-audit-log", staffAdminGate, (c) => handleGetSecurityAuditLog(c, db));
-  app.get("/api/admin/security-audit-log/export", staffAdminGate, (c) => handleExportSecurityAuditLog(c, db));
+  app.get("/api/admin/security-audit-log/export", staffAdminGate, adminExportRateLimit, (c) =>
+    handleExportSecurityAuditLog(c, db),
+  );
   app.get("/api/admin/system-logs", staffAdminGate, (c) => handleGetSystemLogs(c, db));
   app.get("/api/admin/sessions", staffAdminGate, (c) => handleGetSessions(c, db));
   app.post("/api/admin/sessions/:id/revoke", jsonPostCsrf, staffAdminGate, (c) =>

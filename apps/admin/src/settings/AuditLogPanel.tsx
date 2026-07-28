@@ -202,18 +202,35 @@ function actorLocalTime(entry: AuditLogEntryDto): string | null {
   return `${hhmm} ${abbr} (${tzPlaceLabel(entry.actor_timezone)})`;
 }
 
+/** Cached formatter for viewerLocalTime below - SECURITY_COLUMNS calls it once per visible row on
+ * every live poll (~1.75s), so constructing a fresh Intl.DateTimeFormat per cell per tick was
+ * measurable churn on a tab left open all day. Invalidated when locale or browser timezone changes. */
+let viewerLocalTimeFormat: Intl.DateTimeFormat | null = null;
+let viewerLocalTimeFormatKey: string | null = null;
+
+function viewerLocalTimeFormatForNow(): { format: Intl.DateTimeFormat; timeZone: string } {
+  const locale = getPreferredLocale();
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const key = `${locale}\0${timeZone}`;
+  if (!viewerLocalTimeFormat || viewerLocalTimeFormatKey !== key) {
+    viewerLocalTimeFormatKey = key;
+    viewerLocalTimeFormat = new Intl.DateTimeFormat(locale, {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      timeZone,
+      timeZoneName: "short",
+    });
+  }
+  return { format: viewerLocalTimeFormat, timeZone };
+}
+
 /** The instant, converted to whoever is currently reading the log's own browser timezone - unlike
  * actorLocalTime above, this is never null: Security rows (e.g. a failed login) don't always have
  * a known actor to show a local time *for*, but the superadmin viewing the table always has one. */
 function viewerLocalTime(iso: string): string {
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const parts = new Intl.DateTimeFormat(getPreferredLocale(), {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone,
-    timeZoneName: "short",
-  }).formatToParts(new Date(iso));
+  const { format, timeZone } = viewerLocalTimeFormatForNow();
+  const parts = format.formatToParts(new Date(iso));
   const hhmm = `${parts.find((p) => p.type === "hour")?.value}:${parts.find((p) => p.type === "minute")?.value}`;
   const abbr = parts.find((p) => p.type === "timeZoneName")?.value ?? timeZone;
   return `${hhmm} ${abbr} (${tzPlaceLabel(timeZone)})`;
@@ -1047,16 +1064,19 @@ function recordSilentPollFailure(pollFailureCountRef: RefObject<number>, setPoll
 /** load()'s own finally-block cleanup, extracted purely to keep that function's cognitive
  * complexity within the shared lint budget. `aborted` short-circuits before touching
  * loading/hasLoadedOnce - see load()'s own comments for why (an aborted call was superseded by
- * a newer one, which owns setting those states instead). */
+ * a newer one, which owns setting those states instead). Clears the non-silent guard only when
+ * this exact request still owns it: an older, aborted request must never clear a newer request's
+ * guard and let a poll abort it. */
 function finishLoad(opts: {
   silent: boolean;
   aborted: boolean;
-  nonSilentLoadInFlightRef: RefObject<boolean>;
+  request: AbortController;
+  nonSilentLoadInFlightRef: RefObject<AbortController | null>;
   setLoading: (loading: boolean) => void;
   setHasLoadedOnce: (loaded: boolean) => void;
 }): void {
-  const { silent, aborted, nonSilentLoadInFlightRef, setLoading, setHasLoadedOnce } = opts;
-  if (!silent) nonSilentLoadInFlightRef.current = false;
+  const { silent, aborted, request, nonSilentLoadInFlightRef, setLoading, setHasLoadedOnce } = opts;
+  if (!silent && nonSilentLoadInFlightRef.current === request) nonSilentLoadInFlightRef.current = null;
   if (aborted) return;
   if (!silent) setLoading(false);
   setHasLoadedOnce(true);
@@ -1108,12 +1128,11 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
   const [pollDegraded, setPollDegraded] = useState(false);
   const pollFailureCountRef = useRef(0);
   const loadAbortRef = useRef<AbortController | null>(null);
-  // True while a non-silent load (mount, filter/page change, explicit Retry) is in flight - a
-  // silent poll tick must never abort one of these (CodeRabbit review): aborting it skips its
-  // own `finally` block, and the silent tick's own `finally` also skips setLoading(false) (silent
-  // must never toggle the dimmed/loading state either), so `loading` would get stuck true
-  // forever with no non-silent load left to clear it.
-  const nonSilentLoadInFlightRef = useRef(false);
+  // The active non-silent load (mount, filter/page change, explicit Retry), if any. A silent poll
+  // must never abort it: that would leave `loading` stuck true because neither the aborted load
+  // nor the silent tick clears it. Keep the controller, not a boolean, so an older aborted load
+  // cannot clear the guard after a newer non-silent load has taken over.
+  const nonSilentLoadInFlightRef = useRef<AbortController | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const loadSeqRef = useRef(0);
@@ -1159,7 +1178,7 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
       loadAbortRef.current = ac;
       loadSeqRef.current += 1;
       if (!silent) {
-        nonSilentLoadInFlightRef.current = true;
+        nonSilentLoadInFlightRef.current = ac;
         setLoading(true);
         setError(null);
       }
@@ -1173,6 +1192,10 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
           setPage(maxPage);
           return;
         }
+        // A silent poll can be the first successful response after an initial/request error.
+        // Its fresh rows must replace the error state too, otherwise LogListContent keeps showing
+        // the stale Retry empty state even though the data has recovered.
+        setError(null);
         setEntries(data.entries);
         setTotal(data.total);
         pollFailureCountRef.current = 0;
@@ -1187,7 +1210,14 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
         setEntries([]);
         setTotal(0);
       } finally {
-        finishLoad({ silent, aborted: ac.signal.aborted, nonSilentLoadInFlightRef, setLoading, setHasLoadedOnce });
+        finishLoad({
+          silent,
+          aborted: ac.signal.aborted,
+          request: ac,
+          nonSilentLoadInFlightRef,
+          setLoading,
+          setHasLoadedOnce,
+        });
       }
     },
     // Deliberately NOT `filters` by reference (confirmed by a real test regression when tried):
@@ -1213,7 +1243,9 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
   // superadmin watching this view sees new rows land without a manual Refresh - the same reason
   // a live dashboard is worth having open at all. Independent of the effect above (its own deps
   // only touch page/filters) so pausing/resuming Live doesn't re-trigger a fetch, matching
-  // SystemLogsPanel's own poll effect.
+  // SystemLogsPanel's own poll effect. AuditLogPanel mounts both Audit and Security hooks at
+  // once (LogsPanelViews toggles visibility, not mount) so this interval keeps firing even when
+  // the operator is on System or the sibling tab - deliberate; see LogsPanelViews.
   useEffect(() => {
     if (!live || !hasLoadedOnce) return;
     // Resuming Live always starts the degraded-state tracking fresh.
