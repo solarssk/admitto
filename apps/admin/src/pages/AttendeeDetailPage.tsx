@@ -99,7 +99,6 @@ function MoreActionsMenu({
   revokeItemsTooltip,
   isRevoked,
   revokeBusy,
-  activeRevoke,
   onRevokeCheckIn,
   onRevokeItems,
   onRestorePass,
@@ -121,7 +120,6 @@ function MoreActionsMenu({
   revokeItemsTooltip?: string;
   isRevoked: boolean;
   revokeBusy: boolean;
-  activeRevoke: ActiveRevokeAction;
   onRevokeCheckIn: () => void;
   onRevokeItems: () => void;
   onRestorePass: () => void;
@@ -208,7 +206,6 @@ function MoreActionsMenu({
             revokeItemsTooltip={revokeItemsTooltip}
             isRevoked={isRevoked}
             revokeBusy={revokeBusy}
-            activeRevoke={activeRevoke}
             onRevokeCheckIn={() => {
               setOpen(false);
               onRevokeCheckIn();
@@ -262,7 +259,6 @@ function RevokeActionMenuItems({
   revokeItemsTooltip,
   isRevoked,
   revokeBusy,
-  activeRevoke,
   onRevokeCheckIn,
   onRevokeItems,
   onRestorePass,
@@ -275,7 +271,6 @@ function RevokeActionMenuItems({
   revokeItemsTooltip?: string;
   isRevoked: boolean;
   revokeBusy: boolean;
-  activeRevoke: ActiveRevokeAction;
   onRevokeCheckIn: () => void;
   onRevokeItems: () => void;
   onRestorePass: () => void;
@@ -299,7 +294,7 @@ function RevokeActionMenuItems({
           >
             <i className="ti ti-qrcode-off" aria-hidden="true" />
             <span className="more-actions-menu__item-text">
-              <span>{revokeBusy && activeRevoke === "checkin" ? "Revoking…" : "Revoke check-in"}</span>
+              <span>Revoke check-in</span>
               <span className="more-actions-menu__item-hint">Undo this attendee&rsquo;s check-in</span>
             </span>
           </button>
@@ -321,7 +316,7 @@ function RevokeActionMenuItems({
           >
             <i className="ti ti-package" aria-hidden="true" />
             <span className="more-actions-menu__item-text">
-              <span>{revokeBusy && activeRevoke === "items" ? "Revoking items…" : "Revoke items"}</span>
+              <span>Revoke items</span>
               <span className="more-actions-menu__item-hint">Reset issued items to pending</span>
             </span>
           </button>
@@ -333,7 +328,7 @@ function RevokeActionMenuItems({
             <button type="button" role="menuitem" className="more-actions-menu__item" {...guard} onClick={onRestorePass}>
               <i className="ti ti-refresh" aria-hidden="true" />
               <span className="more-actions-menu__item-text">
-                <span>{revokeBusy && activeRevoke === "restore" ? "Restoring…" : "Restore pass"}</span>
+                <span>Restore pass</span>
                 <span className="more-actions-menu__item-hint">Re-enable check-in for this attendee</span>
               </span>
             </button>
@@ -1243,7 +1238,6 @@ export function AttendeeDetailPage() {
               revokeItemsTooltip={revokeItemsMenuTooltip(eventItems.length, canRevokeItemsForAttendee)}
               isRevoked={isRevoked}
               revokeBusy={revokeBusy}
-              activeRevoke={activeRevoke}
               onRevokeCheckIn={() => {
                 setRevokeError(null);
                 setActiveRevoke("checkin");

@@ -237,6 +237,17 @@ describe("TicketTypesCard", () => {
     await waitFor(() => expect(updateTicketType).toHaveBeenCalledWith("evt-1", "tt-vip", { label: "VIP Gold" }));
   });
 
+  it("does not commit the label for a non-Enter key", () => {
+    const { onChanged } = renderCard([vipType]);
+    const input = screen.getByDisplayValue("VIP") as HTMLInputElement;
+    input.focus();
+    fireEvent.change(input, { target: { value: "VIP Gold" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    expect(updateTicketType).not.toHaveBeenCalled();
+    expect(onChanged).not.toHaveBeenCalled();
+  });
+
   it("closes the delete confirm dialog on Cancel without calling deleteTicketType", () => {
     renderCard([vipType]);
 

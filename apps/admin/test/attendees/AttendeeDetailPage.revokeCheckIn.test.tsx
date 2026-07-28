@@ -226,6 +226,19 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
     expect(getTooltipText(item)).toBe("No items configured for this event. Add some in Requirements.");
   });
 
+  it.each(["cancelled", "revoked"] as const)(
+    "disables Revoke items when a %s pass still has an issued item",
+    async (status) => {
+      mockLoad(baseDetail({ status, event_items: [{ key: "badge", label: "Badge", state: "issued" }] }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      const item = within(openMoreActionsMenu()).getByRole("menuitem", { name: /Revoke items/ });
+      expect((item as HTMLButtonElement).disabled).toBe(true);
+      expect(getTooltipText(item)).toBe("Nothing issued to revoke for this attendee.");
+    },
+  );
+
   it("confirms Revoke items, scopes it to the attendee, reloads, and reports a singular success", async () => {
     mockLoad(baseDetail({ event_items: [{ key: "badge", label: "Badge", state: "issued" }] }));
     mockLoad(baseDetail({ event_items: [{ key: "badge", label: "Badge", state: "pending" }] }));
@@ -242,6 +255,22 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
       expect(screen.getByTestId("at-toast").textContent).toContain("1 item revoked.");
     });
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it.each([
+    [0, "No issued items to revoke."],
+    [2, "2 items revoked."],
+  ])("reports the correct Revoke items outcome for %i revoked items", async (revokedCount, message) => {
+    mockLoad(baseDetail({ event_items: [{ key: "badge", label: "Badge", state: "issued" }] }));
+    mockLoad(baseDetail({ event_items: [{ key: "badge", label: "Badge", state: "pending" }] }));
+    bulkRevokeItems.mockResolvedValue({ revokedCount });
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(within(openMoreActionsMenu()).getByRole("menuitem", { name: /Revoke items/ }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Revoke items?" })).getByRole("button", { name: "Revoke items" }));
+
+    await waitFor(() => expect(screen.getByTestId("at-toast").textContent).toContain(message));
   });
 
   it("accepts a returned item and keeps a revoke-items failure in its confirmation dialog", async () => {

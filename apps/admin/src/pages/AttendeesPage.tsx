@@ -654,7 +654,7 @@ function HeaderMoreMenu({
           />
           <MoreActionsMenuItem
             icon="send"
-            label={sendBusy ? "Sending…" : "Send tickets"}
+            label="Send tickets"
             hint="Email tickets to unsent attendees"
             disabled={archived || sendBusy || mailConfigured === false}
             tooltip={headerSendTicketsTooltip(archived, mailConfigured)}

@@ -96,4 +96,13 @@ describe("StaffShell", () => {
     fireEvent.click(screen.getByText("nav items"));
     expect(shellRoot(container).className).toContain("shell--nav-open");
   });
+
+  it("keeps the navigation open when the link listener receives a text-node target", () => {
+    const { container } = renderShell(undefined, <span>nav items</span>);
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    const textNode = screen.getByText("nav items").firstChild;
+    if (!textNode) throw new Error("sidebar label has no text node");
+    fireEvent.click(textNode);
+    expect(shellRoot(container).className).toContain("shell--nav-open");
+  });
 });
