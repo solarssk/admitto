@@ -128,6 +128,32 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
     expect(updateAttendee).not.toHaveBeenCalled();
   });
 
+  it("keeps the Restore pass dialog open when its backdrop is clicked during the request", async () => {
+    mockLoad(baseDetail({ status: "revoked" }));
+    let rejectRequest!: (reason?: unknown) => void;
+    updateAttendee.mockReturnValueOnce(
+      new Promise((_, reject) => {
+        rejectRequest = reject;
+      }),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Restore pass/ }));
+    const dialog = screen.getByRole("dialog", { name: "Restore pass?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restore pass" }));
+    await waitFor(() => expect(updateAttendee).toHaveBeenCalledOnce());
+
+    fireEvent.click(document.querySelector(".confirm-dialog__backdrop")!);
+    expect(screen.getByRole("dialog", { name: "Restore pass?" })).toBeTruthy();
+
+    rejectRequest(new Error("request failed"));
+    await within(dialog).findByText("Could not update pass status.");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("confirms Revoke pass, closes the dialog, and shows Restore pass afterward", async () => {
     mockLoad(baseDetail());
     renderPage();

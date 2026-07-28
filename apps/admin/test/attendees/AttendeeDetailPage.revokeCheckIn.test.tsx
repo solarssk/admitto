@@ -346,4 +346,29 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
       expect(screen.queryByText("1 item revoked.")).toBeNull();
     },
   );
+
+  it("keeps the Revoke items dialog open when its backdrop is clicked during the request", async () => {
+    mockLoad(baseDetail({ event_items: [{ key: "badge", label: "Badge", state: "issued" }] }));
+    let rejectRequest!: (reason?: unknown) => void;
+    bulkRevokeItems.mockReturnValueOnce(
+      new Promise((_, reject) => {
+        rejectRequest = reject;
+      }),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(within(openMoreActionsMenu()).getByRole("menuitem", { name: /Revoke items/ }));
+    const dialog = screen.getByRole("dialog", { name: "Revoke items?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke items" }));
+    await waitFor(() => expect(bulkRevokeItems).toHaveBeenCalledOnce());
+
+    fireEvent.click(document.querySelector(".confirm-dialog__backdrop")!);
+    expect(screen.getByRole("dialog", { name: "Revoke items?" })).toBeTruthy();
+
+    rejectRequest(new Error("request failed"));
+    await within(dialog).findByText("Could not revoke items.");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
 });
