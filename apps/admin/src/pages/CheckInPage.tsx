@@ -8,7 +8,7 @@ import {
   type RefObject,
 } from "react";
 import { useParams } from "react-router";
-import { Button, Card, useToast } from "@admitto/ui";
+import { Button, Card, PageHeader, useToast } from "@admitto/ui";
 import {
   ApiError,
   fetchAttendeeCard,
@@ -203,6 +203,10 @@ interface CheckInOperatorActionsBarProps {
   actionsRef: RefObject<HTMLDivElement | null>;
 }
 
+/** Operator check-in header — mirrors AdminCheckInRoute's PageHeader (same title/subtitle/actions
+ * layout) so the operator surface isn't missing the page title admin/superadmin see (#614 review).
+ * Hidden on the mobile camera overlay, same as before: that fixed full-screen surface covers it
+ * anyway (see CameraOverlay.tsx). */
 function CheckInOperatorActionsBar({
   isDesktop,
   cameraActive,
@@ -213,27 +217,34 @@ function CheckInOperatorActionsBar({
 }: Readonly<CheckInOperatorActionsBarProps>) {
   if (!isDesktop && cameraActive) return null;
   return (
-    <div className="ck-operator-actions" ref={actionsRef}>
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        icon={<i className={`ti ti-camera${cameraActive ? "-off" : ""}`} aria-hidden="true" />}
-        onClick={onToggleCamera}
-      >
-        {cameraActive ? "Disable camera" : "Use camera"}
-      </Button>
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        aria-pressed={scanSoundMuted}
-        aria-label={scanSoundMuteLabel(scanSoundMuted)}
-        title={scanSoundMuteTitle(scanSoundMuted)}
-        icon={<i className={scanSoundMuteIconClass(scanSoundMuted)} aria-hidden="true" />}
-        onClick={onToggleScanSound}
-      />
-    </div>
+    <PageHeader
+      title="Check-in"
+      subtitle="Scan QR codes and admit guests on event day"
+      className="checkin-pageheader"
+      actions={
+        <div className="ck-operator-actions" ref={actionsRef}>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            icon={<i className={`ti ti-camera${cameraActive ? "-off" : ""}`} aria-hidden="true" />}
+            onClick={onToggleCamera}
+          >
+            {cameraActive ? "Disable camera" : "Use camera"}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            aria-pressed={scanSoundMuted}
+            aria-label={scanSoundMuteLabel(scanSoundMuted)}
+            title={scanSoundMuteTitle(scanSoundMuted)}
+            icon={<i className={scanSoundMuteIconClass(scanSoundMuted)} aria-hidden="true" />}
+            onClick={onToggleScanSound}
+          />
+        </div>
+      }
+    />
   );
 }
 

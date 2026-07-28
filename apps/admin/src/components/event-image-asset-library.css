@@ -1,5 +1,12 @@
 /* Upload images card ------------------------------------------------- */
 
+/* Matches .logo-upload__zone's box model/typography (components.css's LogoUploadZone) so the
+   "Event logo" dropzone above and this "Upload images" dropzone read as the same control, not
+   two different styles (PO review). Kept its own filename-overflow handling on the title
+   (unlike LogoUploadZone, this one shows the picked file's name before upload) and its working
+   drag-over color feedback (--primary/--primary-tint - LogoUploadZone's own :dragging state
+   references an undefined --accent token so it never actually shows a color change; not
+   replicating that bug here). */
 .image-asset-library__dropzone {
   position: relative;
   display: flex;
@@ -8,22 +15,18 @@
   justify-content: center;
   gap: var(--space-2);
   width: 100%;
-  min-height: 140px;
+  min-height: 120px;
   margin-top: var(--space-4);
-  padding: var(--space-6) var(--space-4);
-  border: 1.5px dashed var(--border-strong);
+  padding: var(--space-4);
+  border: 2px dashed var(--border);
   border-radius: var(--radius-md);
   background: var(--surface-sunken);
   color: var(--text-muted);
+  font-size: var(--fs-sm);
   cursor: pointer;
   text-align: center;
   box-sizing: border-box;
   transition: border-color 0.15s ease, background 0.15s ease;
-}
-
-.image-asset-library__dropzone:hover {
-  border-color: var(--primary);
-  background: var(--primary-tint);
 }
 
 .image-asset-library__dropzone:focus-visible {
@@ -44,14 +47,13 @@
 }
 
 .image-asset-library__dropzone i {
-  font-size: 2rem;
+  font-size: 1.5rem;
   color: var(--text-muted);
 }
 
 .image-asset-library__dropzone-title {
-  font-weight: var(--fw-semibold);
-  font-size: var(--fs-body);
-  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -59,7 +61,7 @@
 }
 
 .image-asset-library__dropzone-hint {
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
   color: var(--text-muted);
 }
 
@@ -90,6 +92,31 @@
 
 .image-asset-library__add-btn-spacer {
   visibility: hidden;
+}
+
+/* Below 480px, 220px min-width plus the "Add asset" button often squeezes the Name field down
+   to little more than that floor - not the "fills the field like everywhere else" width it
+   should have (PO review). Stack instead: Name field gets the full card width, button keeps its
+   natural size below it, right-aligned like the danger zone's own mobile buttons. */
+@media (max-width: 480px) {
+  .image-asset-library__add-fields {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .image-asset-library__token-field {
+    min-width: 0;
+  }
+
+  .image-asset-library__add-btn-wrap {
+    align-self: flex-end;
+  }
+
+  /* Only needed to line up with the Name input in the side-by-side layout - stacked below it,
+     it would just add dead space above the button. */
+  .image-asset-library__add-btn-spacer {
+    display: none;
+  }
 }
 
 /* Your images card ------------------------------------------------- */

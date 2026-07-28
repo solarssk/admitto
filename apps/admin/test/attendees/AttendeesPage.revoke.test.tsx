@@ -540,9 +540,10 @@ describe("AttendeesPage revoke/restore", () => {
     bulkResendTickets.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderPage();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Send tickets" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "More" })).toBeTruthy();
     });
-    fireEvent.click(screen.getAllByRole("button", { name: "Send tickets" })[0]!);
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Send tickets/ }));
     const dialog = screen.getByRole("dialog", { name: "Send tickets" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Send tickets" }));
     await waitFor(() => {

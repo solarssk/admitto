@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
-import { renderWithToast } from "../test-utils.js";
+import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const loadAttendeeDetailData = vi.fn();
 const updateAttendee = vi.fn();
@@ -93,11 +93,25 @@ function renderPage() {
   );
 }
 
+beforeEach(() => {
+  mockMatchMedia(true);
+});
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   mockAssignments = [{ role: "admin", scope_type: "organization", scope_id: "org-1" }];
+  vi.unstubAllGlobals();
 });
+
+/** Revoke pass/check-in live only inside "More actions" now, on every viewport (the standalone
+ * desktop "Revoke" dropdown was folded in there too) - matches accessible names with a regex
+ * since each item also carries a hint line (e.g. "Revoke pass Block check-in for this
+ * attendee"), same convention as the Attendees list's bulk menu tests. */
+function clickRevokePassMenuItem() {
+  fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: /Revoke pass/ }));
+}
 
 describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confirm-flow state)", () => {
   it("confirms Revoke pass, closes the dialog, and shows Restore pass afterward", async () => {
@@ -109,8 +123,7 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
       baseDetail({ status: "revoked", updated_at: "2026-01-02T00:00:00.000Z" }),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Pass" }));
+    clickRevokePassMenuItem();
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText("Revoke pass?")).toBeTruthy();
 
@@ -118,12 +131,13 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).toBeNull();
     });
-    expect(screen.getByRole("button", { name: "Restore pass" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(screen.getByRole("menuitem", { name: /Restore pass/ })).toBeTruthy();
     // The other flow's ConfirmDialog must not have opened as a side effect.
     expect(screen.queryByText("Revoke check-in?")).toBeNull();
   });
 
-  it("shows the capacity-blocked banner (not the dialog) when Restore pass hits event_full", async () => {
+  it("keeps the capacity-blocked error in the Restore pass dialog when it hits event_full", async () => {
     mockLoad(baseDetail({ status: "revoked" }));
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
@@ -133,12 +147,16 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
       new ApiError(409, "event_full", "event_full", { current: 5, capacity: 5 }),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Restore pass" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Restore pass/ }));
+    const dialog = screen.getByRole("dialog", { name: "Restore pass?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restore pass" }));
+
     await waitFor(() => {
-      expect(screen.getByText(/Event is at capacity/)).toBeTruthy();
+      expect(within(dialog).getByText(/Event is at capacity/)).toBeTruthy();
     });
-    // This is the page-level banner, not the (pass-revoke-only) ConfirmDialog.
-    expect(screen.queryByRole("dialog")).toBeNull();
+    // Stays in the dialog (superadmin-only override checkbox lives here too), not a page banner.
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
   it("keeps an unmapped 409 pass error in the revoke confirmation dialog", async () => {
@@ -149,8 +167,7 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
     const { ApiError } = await import("../../src/api/client.js");
     updateAttendee.mockRejectedValue(new ApiError(409, "unexpected_conflict", "unexpected_conflict"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Pass" }));
+    clickRevokePassMenuItem();
     const dialog = screen.getByRole("dialog", { name: "Revoke pass?" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
 
@@ -167,8 +184,7 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
     const { ApiError } = await import("../../src/api/client.js");
     updateAttendee.mockRejectedValue(new ApiError(500, "server_error", "server_error"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Pass" }));
+    clickRevokePassMenuItem();
     const dialog = screen.getByRole("dialog", { name: "Revoke pass?" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
 
@@ -184,8 +200,7 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
     const { ApiError } = await import("../../src/api/client.js");
     updateAttendee.mockRejectedValue(new ApiError(409, "stale_write", "stale_write"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Pass" }));
+    clickRevokePassMenuItem();
     const dialog = screen.getByRole("dialog", { name: "Revoke pass?" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
 
@@ -208,13 +223,17 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
       )
       .mockResolvedValueOnce(baseDetail({ status: "registered" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Restore pass" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Restore pass/ }));
+    const dialog = screen.getByRole("dialog", { name: "Restore pass?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restore pass" }));
+
     await waitFor(() => {
-      expect(screen.getByText(/Event is at capacity/)).toBeTruthy();
+      expect(within(dialog).getByText(/Event is at capacity/)).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByLabelText(/Override capacity limit/));
-    fireEvent.click(screen.getByRole("button", { name: "Restore pass" }));
+    fireEvent.click(within(dialog).getByLabelText(/Override capacity limit/));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restore pass" }));
 
     await waitFor(() => {
       expect(updateAttendee).toHaveBeenLastCalledWith(

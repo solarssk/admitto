@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
-import { renderWithToast } from "../test-utils.js";
+import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const loadAttendeeDetailData = vi.fn();
 const fetchEventMailSettings = vi.fn();
@@ -101,9 +101,14 @@ function renderPage() {
   );
 }
 
+beforeEach(() => {
+  mockMatchMedia(true);
+});
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("AttendeeDetailPage More actions — Resend ticket mail-configured gate (PO review, matches AttendeesPage's Send tickets)", () => {
@@ -114,7 +119,7 @@ describe("AttendeeDetailPage More actions — Resend ticket mail-configured gate
     await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
-    const resendItem = await screen.findByRole("menuitem", { name: "Resend ticket" });
+    const resendItem = await screen.findByRole("menuitem", { name: /Resend ticket/ });
 
     await waitFor(() => expect((resendItem as HTMLButtonElement).disabled).toBe(true));
     const describedBy = resendItem.getAttribute("aria-describedby");
@@ -129,7 +134,7 @@ describe("AttendeeDetailPage More actions — Resend ticket mail-configured gate
     await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
-    const resendItem = await screen.findByRole("menuitem", { name: "Resend ticket" });
+    const resendItem = await screen.findByRole("menuitem", { name: /Resend ticket/ });
     await waitFor(() => expect(fetchEventMailSettings).toHaveBeenCalled());
     expect((resendItem as HTMLButtonElement).disabled).toBe(false);
   });
@@ -141,7 +146,7 @@ describe("AttendeeDetailPage More actions — Resend ticket mail-configured gate
     await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
-    const resendItem = await screen.findByRole("menuitem", { name: "Resend ticket" });
+    const resendItem = await screen.findByRole("menuitem", { name: /Resend ticket/ });
     await waitFor(() => expect((resendItem as HTMLButtonElement).disabled).toBe(true));
   });
 
@@ -152,7 +157,7 @@ describe("AttendeeDetailPage More actions — Resend ticket mail-configured gate
     await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
-    const resendItem = await screen.findByRole("menuitem", { name: "Resend ticket" });
+    const resendItem = await screen.findByRole("menuitem", { name: /Resend ticket/ });
     await waitFor(() => expect(fetchEventMailSettings).toHaveBeenCalled());
     expect((resendItem as HTMLButtonElement).disabled).toBe(false);
   });

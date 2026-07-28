@@ -414,7 +414,7 @@ function bulkRevokePassTooltip(archived: boolean, canRevokePass: boolean): strin
  * in a Tooltip, even when `tooltip` is undefined: Tooltip renders children unchanged with no
  * tooltip wiring in that case (see its own doc comment), and `.more-actions-menu__item-wrapper`
  * exists specifically so that wrapping doesn't affect this stacked list's layout. */
-function MoreActionsMenuItem({
+export function MoreActionsMenuItem({
   icon,
   label,
   hint,
@@ -1341,7 +1341,18 @@ export function AttendeesTable({
   eventTimezone,
   event,
 }: Readonly<AttendeesTableProps>) {
-  const isDesktop = useIsDesktop();
+  // Wider than the shared 768px breakpoint (used elsewhere in this file for button-label
+  // fit, unaffected): the table itself needs ~950-975px min-width for its 7 columns, which
+  // used to force this all the way out to 1280px — 1024px (the tablet-rail sidebar's own
+  // split, staff.css) left the table ~90px short, and 1025-1279px used to be worse still,
+  // since past the rail breakpoint the sidebar switched to its ~240px always-expanded
+  // desktop width there. Fixed at the source instead of compressing the table down to fit
+  // that narrow 1025-1279px band: the rail now spans 768-1279px (shell.css), so the sidebar
+  // never widens past 72px until there's already enough room for the table. That leaves a
+  // single, continuous ~88px shortfall right at this 1024px floor (887px available vs the
+  // table's 975px), closed with attendees.css's own compressed-table rules below this
+  // breakpoint (tighter cell padding, truncated email) instead of needing a wider floor.
+  const isDesktop = useIsDesktop(1024);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(page * pageSize, total);
@@ -1469,8 +1480,8 @@ export function AttendeesTable({
         onRestorePass={onRestorePass}
       />
       <div className="attendees-table-foot">
-        <span>{footSummary(isInitialLoad, showFooterLoadingText, total, from, to)}</span>
-        <div className="attendees-table-foot__pager">
+        <div className="attendees-table-foot__summary">
+          <span>{footSummary(isInitialLoad, showFooterLoadingText, total, from, to)}</span>
           <div className="attendees-table-foot__pagesize">
             <label htmlFor="attendees-rows-per-page">Rows per page</label>
             <select
@@ -1485,6 +1496,8 @@ export function AttendeesTable({
               <option value={100}>100</option>
             </select>
           </div>
+        </div>
+        <div className="attendees-table-foot__pager">
           <Button
             variant="secondary"
             size="sm"

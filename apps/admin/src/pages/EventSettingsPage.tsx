@@ -35,6 +35,7 @@ import { ScrollFadeTabs } from "../components/ScrollFadeTabs.js";
 import { TimezoneSelect } from "../components/TimezoneSelect.js";
 import { DatePicker } from "../components/DatePicker.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { formatUtcDateTime } from "../utils/event-dates.js";
 import {
   EVENT_SETTINGS_TABS,
@@ -127,10 +128,10 @@ function eventOverviewPath(eventId: string | undefined): string {
   return eventId ? `/admin/events/${eventId}/overview` : "/admin";
 }
 
-function computeSaveButtonLabel(saving: boolean, logoUploading: boolean): string {
+function computeSaveButtonLabel(saving: boolean, logoUploading: boolean, isDesktop: boolean): string {
   if (saving) return "Saving…";
   if (logoUploading) return "Uploading…";
-  return "Save changes";
+  return isDesktop ? "Save changes" : "Save";
 }
 
 /** Tooltip shared by the Danger Zone's superadmin-gated actions: superadmin restriction wins
@@ -518,6 +519,7 @@ export function EventSettingsPage() {
   const { addToast } = useToast();
   const { assignments } = useAuth();
   const isSa = isSuperadmin(assignments);
+  const isDesktop = useIsDesktop();
   // Optional: this page renders under the same event layout as Attendees/
   // Requirements/Communication/Import/Check-in and, like them, could in
   // principle be reached without that layout (e.g. in isolation in tests) —
@@ -584,7 +586,7 @@ export function EventSettingsPage() {
   // running a page action that reloads state (archive, revoke) would otherwise silently
   // discard unsaved mail transport edits and pending secret replacements (CodeRabbit review).
   const pageDirty = dirty || mailDirty;
-  const saveButtonLabel = computeSaveButtonLabel(saving, logoUploading);
+  const saveButtonLabel = computeSaveButtonLabel(saving, logoUploading, isDesktop);
   // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
   // these "Loading…" placeholders on and off faster than they can register as loading —
   // show them only once the fetch has genuinely taken a moment.
@@ -794,6 +796,7 @@ export function EventSettingsPage() {
       <PageHeader
         title="Event settings"
         subtitle={EVENT_SETTINGS_SUBTITLE}
+        className="event-settings-pageheader"
         actions={
           !isArchived ? (
             <span className="save-actions">

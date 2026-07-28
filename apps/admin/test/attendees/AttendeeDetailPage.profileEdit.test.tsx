@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
-import { renderWithToast } from "../test-utils.js";
+import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const loadAttendeeDetailData = vi.fn();
 
@@ -98,9 +98,14 @@ function renderPage() {
   );
 }
 
+beforeEach(() => {
+  mockMatchMedia(true);
+});
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("AttendeeDetailPage profile edit (active event)", () => {
@@ -203,7 +208,7 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Resend ticket" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Resend ticket/ }));
 
     const dialog = await screen.findByRole("dialog");
     expect(dialog.textContent).toMatch(/Resend ticket/);
@@ -217,7 +222,7 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Resend ticket" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Resend ticket/ }));
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Send" }));
 
@@ -593,7 +598,7 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
   it("shows a Wallet card with an empty-state placeholder below Additional information (PO review)", async () => {
     // No wallet-pass integration exists yet - this is a static placeholder, not a real empty
     // state. Deliberately titled "Wallet", not "Wallet pass", so it doesn't read as the same
-    // thing as the app's own QR admission pass (Revoke menu's "Pass", the Registration chip).
+    // thing as the app's own QR admission pass (Revoke menu's "Pass", the Pass chip).
     mockLoad(baseDetail());
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });

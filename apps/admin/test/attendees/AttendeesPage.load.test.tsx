@@ -164,7 +164,7 @@ describe("AttendeesPage load errors", () => {
 });
 
 describe("AttendeesPage header actions on mobile (PO review — header must never change height)", () => {
-  it("shortens '+ Add attendee' to '+ Add' and 'Send tickets' to 'Send' below 768px, so all four header buttons fit one line", async () => {
+  it("shortens '+ Add attendee' to '+ Add' below 768px, so all header buttons fit one line", async () => {
     mockMatchMedia(false);
     fetchEventAttendees.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
 
@@ -173,20 +173,31 @@ describe("AttendeesPage header actions on mobile (PO review — header must neve
 
     expect(screen.queryByRole("button", { name: "+ Add attendee" })).toBeNull();
     expect(screen.getByRole("button", { name: "+ Add" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Send tickets" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
-    // Already short enough as-is — unchanged at any width.
-    expect(screen.getByRole("link", { name: "Import" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Export" })).toBeTruthy();
+    // Import, Send tickets, and Export all moved into the "More" menu (#615) — only "+ Add"
+    // and "More" remain as standalone buttons, few enough to sit beside the "Attendees" title
+    // instead of wrapping onto their own row underneath it. Menu items always show their full
+    // label, since a menu item isn't width-constrained the way a header button is.
+    expect(screen.getByRole("button", { name: "More" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Export" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.getByRole("menuitem", { name: /^Import/ })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /^Send tickets/ })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /^Export XLSX/ })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /^Export CSV/ })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /^Export PDF/ })).toBeTruthy();
   });
 
-  it("keeps the full header button labels at desktop widths", async () => {
+  it("keeps the full header button labels at desktop widths, with Export as its own standalone button", async () => {
     fetchEventAttendees.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
 
     renderPage();
     await screen.findByText(/No attendees yet/i);
 
     expect(screen.getByRole("button", { name: "+ Add attendee" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Send tickets" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Export" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.getByRole("menuitem", { name: /^Send tickets/ })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: /^Export/ })).toBeNull();
   });
 });

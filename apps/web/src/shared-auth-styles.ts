@@ -168,6 +168,23 @@ body {
   border-color: var(--at-blue);
   box-shadow: 0 0 0 3px rgba(6,111,209,0.15);
 }
+/* Narrow phones: 6 digits at the default 2.75rem width + 0.5rem gaps (~19rem) plus the
+   card's own side padding no longer fit inside small viewports (e.g. 320-390px) without
+   horizontal overflow. Shrink the card's side padding and the digit boxes so the row
+   always fits within the viewport instead of scrolling. */
+@media (max-width: 480px) {
+  .auth-card {
+    padding: 1.75rem 1.25rem;
+  }
+  .auth-otp-digits {
+    gap: 0.3125rem;
+  }
+  .auth-otp-digit {
+    width: 2.25rem;
+    height: 2.625rem;
+    font-size: 1.125rem;
+  }
+}
 .auth-otp-backup-toggle {
   display: block;
   width: 100%;

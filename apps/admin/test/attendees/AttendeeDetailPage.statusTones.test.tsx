@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
-import { renderWithToast } from "../test-utils.js";
+import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const loadAttendeeDetailData = vi.fn();
 
@@ -108,9 +108,14 @@ function chipIconClasses(container: HTMLElement, label: string): string {
   return icon?.className ?? "";
 }
 
+beforeEach(() => {
+  mockMatchMedia(true);
+});
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("AttendeeDetailPage status strip icon tones (Codecov review — passStatusTone/rsvpTone fallback branches)", () => {
@@ -119,7 +124,7 @@ describe("AttendeeDetailPage status strip icon tones (Codecov review — passSta
     const { container } = renderPage();
     await screen.findByRole("heading", { name: "Anna" });
 
-    expect(chipIconClasses(container, "Registration")).toContain("attendee-status-chip__icon--neutral");
+    expect(chipIconClasses(container, "Pass")).toContain("attendee-status-chip__icon--neutral");
   });
 
   it("shows a warn rsvp icon for a tentative attendee", async () => {

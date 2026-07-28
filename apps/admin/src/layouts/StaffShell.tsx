@@ -1,8 +1,8 @@
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useState, type MouseEvent, type ReactNode } from "react";
 import { useAuth } from "../auth/AuthProvider.js";
 import { SystemStatus } from "../components/SystemStatus.js";
 import { UserMenu } from "../components/UserMenu.js";
-import { readSidebarPinned, writeSidebarPinned } from "./sidebarPinPref.js";
+import { BrandLink } from "./BrandLink.js";
 
 export interface StaffShellProps {
   sidebar: ReactNode;
@@ -12,36 +12,41 @@ export interface StaffShellProps {
   /** The event currently in view, if any — forwarded to SystemStatus so a superadmin's
    * Email sending row can reflect that event's own resolved mail transport. */
   eventId?: string;
+  /** Href + NavLink `end` for the sidebar's own brand link, duplicated into the topbar
+   * (mobile/tablet only, see .topbar__brand in shell.css) so the Admitto brand stays
+   * visible while the drawer is closed (#454). */
+  brandTo: string;
+  brandEnd: boolean;
 }
 
 /** App shell: fixed sidebar + topbar chrome, scrollable main content area. */
-export function StaffShell({ sidebar, subnav, children, eventId }: Readonly<StaffShellProps>) {
+export function StaffShell({
+  sidebar,
+  subnav,
+  children,
+  eventId,
+  brandTo,
+  brandEnd,
+}: Readonly<StaffShellProps>) {
   const { user, assignments } = useAuth();
   const [navOpen, setNavOpen] = useState(false);
-  const [pinned, setPinned] = useState(readSidebarPinned);
-  const [hovered, setHovered] = useState(false);
 
   const closeNav = useCallback(() => setNavOpen(false), []);
 
-  const togglePin = () => {
-    const next = !pinned;
-    setPinned(next);
-    writeSidebarPinned(next);
-  };
-
-  const sidebarExpanded = pinned || hovered;
+  // Auto-close only when the click actually navigates (an <a>, e.g. NavLink) — clicking
+  // non-interactive sidebar area (event info block, section labels, whitespace) must not
+  // dismiss the drawer. Keyboard users already have the dedicated close button + backdrop above.
+  const closeNavOnLinkClick = useCallback(
+    (event: MouseEvent<HTMLElement>) => {
+      if ((event.target as HTMLElement).closest("a")) {
+        closeNav();
+      }
+    },
+    [closeNav],
+  );
 
   return (
-    <div
-      className={[
-        "shell",
-        navOpen ? "shell--nav-open" : "",
-        !pinned ? "shell--sidebar-unpinned" : "",
-        sidebarExpanded ? "shell--sidebar-expanded" : "",
-      ]
-        .filter(Boolean)
-        .join(" ")}
-    >
+    <div className={`shell${navOpen ? " shell--nav-open" : ""}`}>
       <button
         type="button"
         className="shell__backdrop"
@@ -49,12 +54,7 @@ export function StaffShell({ sidebar, subnav, children, eventId }: Readonly<Staf
         tabIndex={navOpen ? 0 : -1}
         onClick={closeNav}
       />
-      <aside // NOSONAR — mouse-only auto-close-on-click convenience; keyboard users already have the dedicated "Close navigation" button and the focusable backdrop button above
-        className="sidebar"
-        onClick={closeNav}
-        onMouseEnter={() => !pinned && setHovered(true)}
-        onMouseLeave={() => !pinned && setHovered(false)}
-      >
+      <aside className="sidebar" onClick={closeNavOnLinkClick}>
         <button
           type="button"
           className="sidebar__close-btn"
@@ -64,18 +64,6 @@ export function StaffShell({ sidebar, subnav, children, eventId }: Readonly<Staf
           <i className="ti ti-x" aria-hidden="true" />
         </button>
         {sidebar}
-        <button
-          type="button"
-          className="sidebar__pin-btn"
-          onClick={(e) => {
-            e.stopPropagation();
-            togglePin();
-          }}
-          title={pinned ? "Unpin sidebar" : "Pin sidebar"}
-          aria-label={pinned ? "Unpin sidebar" : "Pin sidebar"}
-        >
-          <i className={`ti ti-${pinned ? "pin-filled" : "pin"}`} aria-hidden="true" />
-        </button>
       </aside>
       <div className="main">
         <header className="topbar">
@@ -88,6 +76,7 @@ export function StaffShell({ sidebar, subnav, children, eventId }: Readonly<Staf
           >
             <i className="ti ti-menu-2" aria-hidden="true" />
           </button>
+          <BrandLink to={brandTo} end={brandEnd} className="topbar__brand" markClassName="topbar__brand-mark" />
           <div className="topbar__right">
             <SystemStatus assignments={assignments} mailerStatus={user.mailer_status} eventId={eventId} />
             <UserMenu user={user} assignments={assignments} />

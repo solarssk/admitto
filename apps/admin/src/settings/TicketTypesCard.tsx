@@ -130,34 +130,38 @@ function TicketTypeRow({
 
   return (
     <div className="tt-row">
-      <ColorSwatchPicker
-        color={type.color}
-        disabled={disabled}
-        onChange={(color) => onUpdate(type.id, { color })}
-      />
-      <Input
-        ref={inputRef}
-        aria-label={`Ticket type label for ${type.label}`}
-        value={label}
-        disabled={disabled}
-        style={{ flex: 1, minWidth: 140 }}
-        onChange={(e) => setLabel(e.target.value)}
-        onBlur={commitLabel}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-        }}
-      />
-      <TicketTypeBadge label={type.label} color={type.color} />
-      <span className="tt-row__count">
-        {type.attendee_count} attendee{pluralSuffix(type.attendee_count)}
-      </span>
-      <IconButton
-        label={`Remove ${type.label}`}
-        size="sm"
-        icon={<i className="ti ti-trash" aria-hidden="true" />}
-        disabled={disabled}
-        onClick={onRemove}
-      />
+      <div className="tt-row__identity">
+        <ColorSwatchPicker
+          color={type.color}
+          disabled={disabled}
+          onChange={(color) => onUpdate(type.id, { color })}
+        />
+        <Input
+          ref={inputRef}
+          aria-label={`Ticket type label for ${type.label}`}
+          value={label}
+          disabled={disabled}
+          className="tt-row__label-input"
+          onChange={(e) => setLabel(e.target.value)}
+          onBlur={commitLabel}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          }}
+        />
+      </div>
+      <div className="tt-row__meta">
+        <TicketTypeBadge label={type.label} color={type.color} />
+        <span className="tt-row__count">
+          {type.attendee_count} attendee{pluralSuffix(type.attendee_count)}
+        </span>
+        <IconButton
+          label={`Remove ${type.label}`}
+          size="sm"
+          icon={<i className="ti ti-trash" aria-hidden="true" />}
+          disabled={disabled}
+          onClick={onRemove}
+        />
+      </div>
     </div>
   );
 }
@@ -257,11 +261,27 @@ export function TicketTypesCard({
     <>
       <Card
         title="Ticket types"
-        className="event-settings-card"
+        className="event-settings-card ticket-types-card"
         actions={
-          <span className="tt-count-pill">
-            {types.length} type{pluralSuffix(types.length)}
-          </span>
+          <>
+            <span className="tt-count-badge">
+              {types.length} type{pluralSuffix(types.length)}
+            </span>
+            <ArchivedGuard event={event} reasonId="add-ticket-type-reason" disabled={adding}>
+              {(guard) => (
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  icon={<i className="ti ti-plus" aria-hidden="true" />}
+                  {...guard}
+                  onClick={() => void handleAdd()}
+                >
+                  {adding ? "Adding…" : "Add ticket type"}
+                </Button>
+              )}
+            </ArchivedGuard>
+          </>
         }
       >
         {error && !loading ? (
@@ -279,8 +299,8 @@ export function TicketTypesCard({
         ) : (
           <>
             <p className="field-hint">
-              The only place a ticket type's name and color are set. Every screen below reads this
-              list, so you never type it in twice.
+              Set each ticket type's name and color here — every other screen in the app uses this
+              list.
             </p>
             {loading ? (
               whenShown(showLoading, <p className="field-hint">Loading…</p>)
@@ -301,14 +321,6 @@ export function TicketTypesCard({
                 )}
               </div>
             )}
-
-            <ArchivedGuard event={event} reasonId="add-ticket-type-reason" disabled={adding}>
-              {(guard) => (
-                <button type="button" className="tt-add-row" {...guard} onClick={() => void handleAdd()}>
-                  <i className="ti ti-plus" aria-hidden="true" /> {adding ? "Adding…" : "Add ticket type"}
-                </button>
-              )}
-            </ArchivedGuard>
 
             <p className="field-hint">
               Used in the add attendee form, CSV import, the attendees list, check-in, and reports.

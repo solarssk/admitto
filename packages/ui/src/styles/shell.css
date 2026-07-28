@@ -48,12 +48,30 @@ body {
   font-weight: 700;
   letter-spacing: -0.3px;
   color: var(--text-primary);
-  padding: 6px 6px 12px;
+  /* 0 + 28 (brand mark) + 14, plus .sidebar's own 14px top padding, totals var(--topbar-h)
+     (56px) so this row's outer box lines up with .topbar's height (#454) — and splitting
+     the padding 0/14 instead of evenly centers the mark at 28px from .sidebar's top, the
+     same distance .topbar__menu's own centered position sits at, so the two don't drift
+     apart when both are visible at once (the mobile/tablet drawer open over the topbar). */
+  padding: 0 6px 14px;
+  /* .sidebar's flex `gap: 6px` (shared with every other sidebar row spacing) would push
+     .sidebar__event's border-top 6px below the 56px mark above, so it no longer lines up
+     with .topbar's border-bottom despite the row itself totaling exactly 56px. Cancel just
+     this one gap rather than the sidebar's shared spacing (#minor follow-up to #454). */
+  margin-bottom: -6px;
   text-decoration: none;
 }
 
 .sidebar__brand:hover {
   text-decoration: none;
+}
+
+/* "Admitto" has no descenders (g/y/p/q/j), so its ink sits slightly higher than the
+   solid, edge-to-edge brand mark next to it even though both boxes are centered — a
+   1px nudge corrects that optical bias. Shared by BrandLink so the sidebar and topbar
+   wordmarks stay pixel-consistent (#454). */
+.brand-link__label {
+  transform: translateY(1px);
 }
 
 .sidebar__close-btn {
@@ -127,11 +145,49 @@ body {
   padding-top: 6px;
 }
 
-.sidebar__version {
-  padding: 4px 10px 6px;
-  font-size: var(--fs-xs);
+.sidebar__build {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  /* Matches the 22px bug-report button below (its tallest possible child) so hiding that
+     button in the collapsed rail (below) can't shrink this row — see that rule's comment. */
+  min-height: 34px;
+  border-radius: var(--radius-md);
+}
+
+.sidebar__build:hover {
+  background: var(--surface-hover);
+}
+
+.sidebar__build-ver {
+  font-size: 10px;
   color: var(--text-muted);
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
   user-select: none;
+}
+
+.sidebar__build-report {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  background: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-disabled);
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.sidebar__build-report:hover {
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  text-decoration: none;
 }
 
 .nav-item {
@@ -156,6 +212,23 @@ body {
 .nav-item i {
   font-size: 18px;
   color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* Multi-word labels (e.g. "Users & roles") default to wrapping when their flex item runs out
+   of room. That's invisible at the sidebar's two resting widths (72px rail/240px expanded,
+   both wide enough), but during the tablet-rail's animated width transition between them the
+   in-between widths aren't - so the label would wrap to 2 lines for a few frames, growing that
+   row's height and shoving every row below it down and back up. Force one line + ellipsis
+   (min-width: 0 lets this flex item actually shrink instead of overflowing) so the row's
+   height never changes mid-transition; single-word labels like "Settings" never wrapped in
+   the first place; and it now doubles as ellipsis-truncation for any label too long for
+   whatever fixed width it renders at, though today all labels fit both resting widths. */
+.nav-item span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .nav-item:hover:not(:disabled) {
@@ -238,6 +311,31 @@ body {
 .topbar__menu:hover {
   background: var(--surface-hover);
   color: var(--text-primary);
+}
+
+/* Hidden on desktop, where the always-visible sidebar already shows .sidebar__brand.
+   Shown on mobile/tablet next to the menu toggle so the brand stays visible while the
+   drawer is closed (#454) — see the (max-width: 1279px) block below. */
+.topbar__brand {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  color: var(--text-primary);
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.topbar__brand:hover {
+  text-decoration: none;
+}
+
+.topbar__brand-mark {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
 }
 
 .topbar__right {
@@ -441,60 +539,7 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
-@media (min-width: 1025px) {
-  .shell {
-    transition: grid-template-columns var(--dur-fast);
-  }
-
-  .sidebar {
-    position: relative;
-  }
-
-  .shell--sidebar-unpinned .sidebar {
-    width: var(--sidebar-w-collapsed);
-    overflow: hidden;
-    transition: width var(--dur-fast);
-  }
-
-  .shell--sidebar-unpinned .sidebar .nav-item span,
-  .shell--sidebar-unpinned .sidebar .sidebar__brand span,
-  .shell--sidebar-unpinned .sidebar .sidebar__event,
-  .shell--sidebar-unpinned .sidebar .sidebar__section-label,
-  .shell--sidebar-unpinned .sidebar .sidebar__version {
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity var(--dur-fast);
-    white-space: nowrap;
-  }
-
-  .shell--sidebar-unpinned.shell--sidebar-expanded .sidebar {
-    width: var(--sidebar-w);
-  }
-
-  .shell--sidebar-unpinned.shell--sidebar-expanded .sidebar .nav-item span,
-  .shell--sidebar-unpinned.shell--sidebar-expanded .sidebar .sidebar__brand span,
-  .shell--sidebar-unpinned.shell--sidebar-expanded .sidebar .sidebar__event,
-  .shell--sidebar-unpinned.shell--sidebar-expanded .sidebar .sidebar__section-label,
-  .shell--sidebar-unpinned.shell--sidebar-expanded .sidebar .sidebar__version {
-    opacity: 1;
-  }
-
-  .shell--sidebar-unpinned:not(.shell--sidebar-expanded) {
-    grid-template-columns: var(--sidebar-w-collapsed) 1fr;
-  }
-
-  .shell--sidebar-unpinned:not(.shell--sidebar-expanded) .sidebar .sidebar__event {
-    visibility: hidden;
-    pointer-events: none;
-  }
-
-  .shell--sidebar-unpinned.shell--sidebar-expanded .sidebar .sidebar__event {
-    visibility: visible;
-    pointer-events: auto;
-  }
-}
-
-@media (max-width: 1024px) {
+@media (max-width: 1279px) {
   .shell {
     grid-template-columns: 1fr;
   }
@@ -503,14 +548,25 @@ body {
     display: inline-flex;
   }
 
+  .topbar__brand {
+    display: flex;
+  }
+
+  /* The open drawer already shows the real .sidebar__brand, and covers this same top-left
+     area — hide the topbar's copy so a keyboard/AT user doesn't land on two "Admitto"
+     links in a row. */
+  .shell--nav-open .topbar__brand {
+    display: none;
+  }
+
   .sidebar {
     position: fixed;
     top: 0;
     left: 0;
     bottom: 0;
-    /* 100% (not 100vw) so a reserved-space scrollbar (e.g. Windows) isn't counted into
-       the drawer's width, which would push it past the actually-visible viewport edge. */
-    width: 100%;
+    /* Narrow drawer (not full-width) so the dimmed backdrop stays visible around it;
+       min() with a vw clamp keeps it from overflowing on very narrow phone viewports. */
+    width: min(var(--sidebar-w), 85vw);
     transform: translateX(-105%);
     transition: transform var(--dur-fast);
     box-shadow: var(--shadow-lg);
@@ -527,17 +583,17 @@ body {
     display: block;
   }
 
-  /* A full-width mobile drawer covers the topbar's hamburger toggle entirely, so it
+  /* The narrow drawer still overlaps the topbar's hamburger toggle at the left edge, so it
      needs its own explicit close affordance instead of relying on the (now hidden) toggle.
-     Styled to match .topbar__menu (same button language); top offset centers it against
-     .sidebar__brand-mark's vertical center (14px sidebar padding + 6px brand padding + half
-     of the 28px mark = 34px from the top of .sidebar). */
+     Styled to match .topbar__menu (same button language); top offset centers it at 28px
+     from the top of .sidebar — .sidebar__brand-mark's own vertical center — which also
+     matches .topbar__menu's centered position in the (still visible) topbar behind it. */
   .sidebar__close-btn {
     display: flex;
     align-items: center;
     justify-content: center;
     position: absolute;
-    top: 16px;
+    top: 10px;
     right: 12px;
     width: 2.25rem;
     height: 2.25rem;
@@ -552,6 +608,140 @@ body {
   .sidebar__close-btn:hover {
     background: var(--surface-hover);
     color: var(--text-primary);
+  }
+}
+
+/* Tablet width (768–1279px), either orientation: enough width for a persistent icon-only
+   rail instead of the phone-style off-canvas drawer above. There's no mouse to hover an
+   icon with here, so tapping the topbar's menu toggle (.shell--nav-open, shared with the
+   block above) temporarily widens the same rail into a labelled sidebar instead of a
+   second bespoke look — but unlike the drawer above, the rail always stays a normal
+   *in-flow* grid column (never fixed/overlaid), so widening it is a plain, transitionable
+   grid-template-columns change that pushes the content column over, with no backdrop and
+   no discontinuous position:static→fixed jump to animate across. Below 768px (phones, in
+   either orientation) the rail's fixed 72px cost is proportionally too expensive and the
+   drawer above takes over instead. Upper bound is 1279px, not 1024px — above 1024px the
+   base .shell rule (top of this file) jumps straight to the full var(--sidebar-w) desktop
+   sidebar with no tier in between, which left content unusably narrow from 1025-1279px
+   (narrower than the 1024px rail itself) until AttendeesTable's compressed-table tier
+   needed a continuously-available width through that whole range. */
+@media (min-width: 768px) and (max-width: 1279px) {
+  .shell {
+    grid-template-columns: var(--sidebar-rail-w) 1fr;
+    transition: grid-template-columns var(--dur-slow);
+  }
+
+  /* Same specificity as the bare .shell rule above (one class each) — declared after it,
+     so it wins whenever both classes are on the element, i.e. while expanded. */
+  .shell--nav-open {
+    grid-template-columns: var(--sidebar-w) 1fr;
+  }
+
+  /* .sidebar__brand's icon mark is always visible, collapsed or expanded, so the topbar's
+     mobile-only brand duplicate stays redundant here in both states (#454's original
+     reason for it). The menu toggle keeps the drawer block's display:inline-flex above —
+     it's the rail's "show labels" affordance now, not dead weight. */
+  .topbar__brand {
+    display: none;
+  }
+
+  /* Always a normal grid item here, expanded or not — overrides the drawer block's fixed/
+     translated/shadowed overlay above (same specificity, later in source order wins).
+     position: relative (not static) so .sidebar__close-btn's absolute offsets below still
+     anchor to the rail itself instead of the viewport, without taking it out of grid flow. */
+  .sidebar {
+    position: relative;
+    top: auto;
+    left: auto;
+    bottom: auto;
+    width: auto;
+    transform: none;
+    box-shadow: none;
+  }
+
+  /* No dimmed scrim — the rail pushes content over in place instead of floating on top of
+     it, so there's nothing to dim. (Specificity matches the drawer block's own
+     .shell--nav-open .shell__backdrop rule; declared after it here, so this wins.) */
+  .shell--nav-open .shell__backdrop {
+    display: none;
+  }
+
+  /* Unlike the drawer block above (where the open overlay covers the topbar's hamburger,
+     forcing a dedicated close affordance), the rail never leaves the topbar's toggle
+     button — it's a plain in-flow grid column, so .topbar__menu stays visible and
+     clickable (as the same open/close toggle) whether collapsed or expanded here. A
+     second close button next to .sidebar__brand would just duplicate it, so this stays
+     hidden in both states, not only while collapsed. */
+  .sidebar__close-btn {
+    display: none;
+  }
+
+  /* No room for the event title/date/location card at this width, and it's redundant
+     with the page's own <h1> heading — hide rather than truncate it (collapsed only;
+     expanded shows the same full sidebar content a phone drawer does). */
+  .shell:not(.shell--nav-open) .sidebar__event {
+    display: none;
+  }
+
+  /* "Administration" is the first thing inside .sidebar__foot now (its old sibling, the
+     primary "All events" link, was removed as redundant with the brand logo above), so
+     .sidebar__foot's own border-top (below) is the only boundary that makes sense while
+     expanded — the visible "ADMINISTRATION" text right under it reads as its own group
+     heading. The label's own border-top stays transparent (staff.css's base rule) in both
+     states; only the text hides here, via the same clip-rect technique as the nav-item
+     labels below (text stays in the DOM for screen readers). */
+
+  /* Collapsed rail only: with the label's text clipped away, .sidebar__foot's border-top
+     has nothing left to introduce — it just reads as a stray line floating above the icons
+     with no heading to justify it (tried adding a second line right at the icons instead;
+     two nearby rules looked worse, not better). Drop it here; the icon group + version
+     footer already sit visually apart from the empty nav above via padding/gap alone. */
+  .shell:not(.shell--nav-open) .sidebar__foot {
+    border-top-color: transparent;
+  }
+
+  /* PO review: dropping the whole row (previous behavior) shrank .sidebar__foot's total
+     height, and since it's pinned to the bottom via margin-top: auto, the nav items above it
+     visibly jumped position between collapsed/expanded instead of staying put. Keep the row
+     (same height, same position — enforced by .sidebar__build's own min-height above, since
+     this 22px icon was otherwise its tallest child) and just drop the bug-report link below —
+     .sidebar__build-ver alone easily fits the rail's width, unlike .sidebar__event's full
+     address block. */
+  .shell:not(.shell--nav-open) .sidebar__build-report {
+    display: none;
+  }
+
+  .shell:not(.shell--nav-open) .sidebar__build {
+    justify-content: center;
+  }
+
+  .shell:not(.shell--nav-open) .sidebar__brand,
+  .shell:not(.shell--nav-open) .nav-item {
+    justify-content: center;
+  }
+
+  .shell:not(.shell--nav-open) .nav-item i {
+    font-size: 20px;
+  }
+
+  /* Visually hide label text (nav items + brand wordmark + Administration group label)
+     while keeping it in the accessibility tree, so the rail's links keep the same
+     accessible name as the full sidebar — only sighted users see icon-only, and only while
+     collapsed. Same clip-rect technique as .sr-only (staff.css), scoped here since it must
+     also reach the brand link's label and the section label's text span, neither of which
+     otherwise uses that class. */
+  .shell:not(.shell--nav-open) .nav-item span,
+  .shell:not(.shell--nav-open) .brand-link__label,
+  .shell:not(.shell--nav-open) .sidebar__section-label-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 }
 

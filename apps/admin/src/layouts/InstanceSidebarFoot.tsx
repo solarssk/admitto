@@ -1,42 +1,24 @@
 import { NavLink } from "react-router";
-import {
-  canAccessAdminPanel,
-  canAccessCheckInPanel,
-  isAdmin,
-  isSuperadmin,
-} from "../auth/capabilities.js";
+import { isAdmin, isSuperadmin } from "../auth/capabilities.js";
 import { useAuth } from "../auth/AuthProvider.js";
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
   `nav-item${isActive ? " nav-item--active" : ""}`;
 
-/** Sidebar footer shared by all instance-level shells (/admin, /admin/users, /admin/settings, /account). */
-export function InstanceSidebarFoot({ omitPrimary = false }: Readonly<{ omitPrimary?: boolean }>) {
+/** Sidebar footer shared by all instance-level shells (/admin, /admin/users, /admin/settings, /account).
+ * No "back to events list" / "back to check-in list" link here — the brand mark above already
+ * links home for every role (see BrandLink usages in each shell), so a second nav item pointing
+ * to the same place would just duplicate it. */
+export function InstanceSidebarFoot() {
   const { assignments } = useAuth();
-  const canAdmin = canAccessAdminPanel(assignments);
-  const canCheckIn = canAccessCheckInPanel(assignments);
-
-  const checkInLink = canCheckIn ? (
-    <NavLink to="/operator" className={navClass}>
-      <i className="ti ti-qrcode" aria-hidden="true" />
-      <span>Check-in</span>
-    </NavLink>
-  ) : null;
-  const primaryLink = canAdmin ? (
-    <NavLink to="/admin" className={navClass} end>
-      <i className="ti ti-calendar-event" aria-hidden="true" />
-      <span>All events</span>
-    </NavLink>
-  ) : (
-    checkInLink
-  );
 
   return (
     <>
-      {!omitPrimary && primaryLink}
       {isAdmin(assignments) && (
         <>
-          <div className="sidebar__section-label">Administration</div>
+          <div className="sidebar__section-label">
+            <span className="sidebar__section-label-text">Administration</span>
+          </div>
           <NavLink to="/admin/users" className={navClass}>
             <i className="ti ti-users-group" aria-hidden="true" />
             <span>Users & roles</span>
@@ -49,20 +31,19 @@ export function InstanceSidebarFoot({ omitPrimary = false }: Readonly<{ omitPrim
           )}
         </>
       )}
-      <NavLink to="/account" className={navClass}>
-        <i className="ti ti-user-circle" aria-hidden="true" />
-        <span>My account</span>
-      </NavLink>
-      <a
-        href="https://github.com/solarssk/admitto/wiki"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="nav-item"
-      >
-        <i className="ti ti-book" aria-hidden="true" />
-        <span>Documentation</span>
-      </a>
-      <div className="sidebar__version">v{__APP_VERSION__}</div>
+      <div className="sidebar__build">
+        <span className="sidebar__build-ver">v{__APP_VERSION__}</span>
+        <a
+          href="https://github.com/solarssk/admitto/issues/new"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="sidebar__build-report"
+          title="Report a bug"
+          aria-label="Report a bug"
+        >
+          <i className="ti ti-bug" aria-hidden="true" />
+        </a>
+      </div>
     </>
   );
 }

@@ -9,7 +9,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { Link, useNavigate, useOutletContext, useParams } from "react-router";
+import { useNavigate, useOutletContext, useParams } from "react-router";
 import { Button, EmptyState, PageHeader, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
 import {
   ApiError,
@@ -41,11 +41,11 @@ import type {
   TicketTypeDto,
 } from "../api/types.js";
 import { AddAttendeeModal } from "../attendees/AddAttendeeModal.js";
-import { AttendeesTable } from "../attendees/AttendeesTable.js";
+import { AttendeesTable, MoreActionsMenuItem } from "../attendees/AttendeesTable.js";
 import { RSVP_LABELS, RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { useMailConfigured } from "../attendees/useMailConfigured.js";
-import { ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
+import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
@@ -79,13 +79,6 @@ function mergeAttendeeRow(prev: AttendeeRowDto, updated: AttendeeDetailDto): Att
 
 function pluralize(count: number, singular: string): string {
   return count === 1 ? singular : `${singular}s`;
-}
-
-/** Header "Send tickets" button label — busy state wins, then the responsive short label
- * (Sonar S3358: was a nested ternary). */
-function sendTicketsButtonLabel(sendBusy: boolean, isDesktop: boolean): string {
-  if (sendBusy) return "Sending…";
-  return isDesktop ? "Send tickets" : "Send";
 }
 
 /** Standard "N queued / M failed / K skipped" toast for a bulk-send queue result — shared by
@@ -587,6 +580,110 @@ function CardPickerDialog<T>({
         </div>
       </div>
     </dialog>
+  );
+}
+
+/** Header "Send tickets" menu item's disabled-reason tooltip — mirrors AttendeesTable's own
+ * bulkSendTicketsTooltip (Sonar S3358: was a nested ternary). */
+function headerSendTicketsTooltip(archived: boolean, mailConfigured: boolean | undefined): string | undefined {
+  if (archived) return ARCHIVED_ACTION_TOOLTIP;
+  if (mailConfigured === false) {
+    return "No mail transport configured for this event. Set one up in Event Settings → Mailing.";
+  }
+  return undefined;
+}
+
+interface HeaderMoreMenuProps {
+  archived: boolean;
+  onImport: () => void;
+  sendBusy: boolean;
+  mailConfigured: boolean | undefined;
+  onSendTickets: () => void;
+  isDesktop: boolean;
+  exportingFormat: ExportFormat | null;
+  onExport: (format: ExportFormat) => void;
+}
+
+/** Header "More" menu — bundles Import and Send tickets behind one compact button, keeping
+ * "+ Add attendee" and Export as their own standalone buttons on desktop (4 separate buttons
+ * crowded the header there and didn't fit at all on mobile). Below 768px, Export's 3 formats
+ * fold into this same menu too (its own standalone button is hidden there, AttendeesPage.tsx) —
+ * that leaves only "+ Add"/"More" as standalone buttons, few enough to sit beside the
+ * "Attendees" title instead of wrapping onto their own row underneath it (PO review, matching
+ * Reports'/Check-in's single-action-button-beside-the-title pattern). Reuses the same
+ * .more-actions-menu / MoreActionsMenuItem visual pattern already established for the
+ * selection bulk bar's own "More actions" menu below, instead of inventing a second style for
+ * the same idea. */
+function HeaderMoreMenu({
+  archived,
+  onImport,
+  sendBusy,
+  mailConfigured,
+  onSendTickets,
+  isDesktop,
+  exportingFormat,
+  onExport,
+}: Readonly<HeaderMoreMenuProps>) {
+  const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+
+  return (
+    <div className="more-actions-menu" ref={rootRef}>
+      <Button
+        ref={triggerRef}
+        type="button"
+        variant="secondary"
+        hasMenu
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        More
+      </Button>
+      {open && (
+        <div className="more-actions-menu__panel" role="menu" ref={panelRef}>
+          <MoreActionsMenuItem
+            icon="upload"
+            label="Import"
+            hint="Upload a CSV or XLSX file"
+            disabled={archived}
+            tooltip={archived ? ARCHIVED_ACTION_TOOLTIP : undefined}
+            onClick={() => {
+              setOpen(false);
+              onImport();
+            }}
+          />
+          <MoreActionsMenuItem
+            icon="send"
+            label={sendBusy ? "Sending…" : "Send tickets"}
+            hint="Email tickets to unsent attendees"
+            disabled={archived || sendBusy || mailConfigured === false}
+            tooltip={headerSendTicketsTooltip(archived, mailConfigured)}
+            onClick={() => {
+              setOpen(false);
+              onSendTickets();
+            }}
+          />
+          {!isDesktop && (
+            <>
+              <hr className="more-actions-menu__divider" />
+              {EXPORT_FORMATS.map((format) => (
+                <MoreActionsMenuItem
+                  key={format.key}
+                  icon={format.icon}
+                  label={`Export ${format.label}`}
+                  hint={format.hint}
+                  disabled={exportingFormat !== null}
+                  onClick={() => {
+                    setOpen(false);
+                    onExport(format.key);
+                  }}
+                />
+              ))}
+            </>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1351,54 +1448,34 @@ export function AttendeesPage() {
         className="attendees-pageheader"
         actions={
           <>
-            {isEventArchived(event) ? (
-              <ArchivedGuard event={event} reasonId="import-attendees-reason">
-                {(guard) => (
-                  <Button variant="secondary" {...guard}>
-                    Import
-                  </Button>
-                )}
-              </ArchivedGuard>
-            ) : (
-              <Link to={`/admin/events/${eventId}/attendees/import`}>
-                <Button variant="secondary">Import</Button>
-              </Link>
-            )}
             <ArchivedGuard event={event} reasonId="add-attendee-reason">
               {(guard) => (
                 <Button variant="primary" {...guard} onClick={() => setAddOpen(true)}>
-                  {/* Shortened below 768px (attendees.css compacts these 4 buttons to fit one
+                  {/* Shortened below 768px (attendees.css compacts these buttons to fit one
                    * line, matching the bulk bar's own "never changes height" fix) — "+ Add
                    * attendee" is the one label still too long to fit even fully compacted. */}
                   {isDesktop ? "+ Add attendee" : "+ Add"}
                 </Button>
               )}
             </ArchivedGuard>
-            <ArchivedGuard
-              event={event}
-              reasonId="send-tickets-reason"
-              disabled={sendBusy || mailConfigured === false}
-              tooltip={
-                mailConfigured === false
-                  ? "No mail transport configured for this event. Set one up in Event Settings → Mailing."
-                  : undefined
-              }
-            >
-              {(guard) => (
-                <Button
-                  variant="secondary"
-                  {...guard}
-                  onClick={() => {
-                    setSendTarget("unsent");
-                    setSendError(null);
-                    setSendTicketsOpen(true);
-                  }}
-                >
-                  {sendTicketsButtonLabel(sendBusy, isDesktop)}
-                </Button>
-              )}
-            </ArchivedGuard>
-            <ExportMenu exportingFormat={exportingFormat} onExport={handleExport} />
+            <HeaderMoreMenu
+              archived={isEventArchived(event)}
+              onImport={() => navigate(`/admin/events/${eventId}/attendees/import`)}
+              sendBusy={sendBusy}
+              mailConfigured={mailConfigured}
+              onSendTickets={() => {
+                setSendTarget("unsent");
+                setSendError(null);
+                setSendTicketsOpen(true);
+              }}
+              isDesktop={isDesktop}
+              exportingFormat={exportingFormat}
+              onExport={handleExport}
+            />
+            {/* Hidden below 768px — its 3 formats fold into HeaderMoreMenu's own panel there
+             * instead (above), so only "+ Add"/"More" remain as standalone buttons, which is
+             * few enough to sit beside the "Attendees" title (attendees.css). */}
+            {isDesktop && <ExportMenu exportingFormat={exportingFormat} onExport={handleExport} />}
           </>
         }
       />

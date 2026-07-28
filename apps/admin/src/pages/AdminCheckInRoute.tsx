@@ -52,6 +52,7 @@ export function AdminCheckInRoute() {
       <PageHeader
         title="Check-in"
         subtitle="Scan QR codes and admit guests on event day"
+        className="checkin-pageheader"
         actions={
           <>
             <Button

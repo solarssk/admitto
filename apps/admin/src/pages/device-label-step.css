@@ -1,0 +1,72 @@
+/* Centered full-page gate shown once after operator sign-in, before the check-in shell
+   mounts (no topbar/sidebar exists yet at this point) — same centered-card recipe as
+   apps/web's login/MFA screens and SetupWizardPage (brand mark + wordmark, same font/size). */
+.device-gate {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  background: var(--surface-page);
+  padding: 2rem 1.25rem;
+  box-sizing: border-box;
+}
+
+.device-gate__shell {
+  width: 100%;
+  max-width: min(28rem, 100%);
+}
+
+.device-gate__brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5625rem;
+  color: var(--text-primary);
+  font-weight: 700;
+  font-size: 1.0625rem;
+  margin-bottom: 1rem;
+}
+
+.device-gate__brand-mark {
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+}
+
+/* Heading recipe mirrors apps/web's .auth-page-action / .subtitle (shared-auth-styles.ts) —
+   same size and tight heading-to-subtitle gap as Login/MFA, instead of @admitto/ui's PageHeader
+   (--fs-h1, meant for full dashboard pages), which read too large with too much gap here. */
+.device-gate__title {
+  margin: 0 0 0.25rem;
+  font-size: 1.375rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-wrap: balance;
+}
+
+.device-gate__subtitle {
+  margin: 0 0 1.375rem;
+  font-size: var(--fs-body);
+  color: var(--text-secondary);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+/* .at-stack / .at-row / .at-row--gap are only used on this screen — no shared definition
+   exists in @admitto/ui, so scope real layout to .device-gate rather than leaving them as
+   no-op classes relying on default block/inline flow. */
+.device-gate .at-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.device-gate .at-row {
+  display: flex;
+  align-items: center;
+}
+
+.device-gate .at-row--gap {
+  gap: var(--space-2);
+  justify-content: flex-end;
+}

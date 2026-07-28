@@ -20,6 +20,7 @@ const EVENT_OTHER = "evt-overview-other";
 const EVENT_CAP = "evt-overview-capacity";
 const EVENT_MISSING = "evt-overview-missing";
 const EVENT_ACTIVITY = "evt-overview-activity";
+const EVENT_REVOKED_CHECKIN = "evt-overview-revoked-checkin";
 
 const EMAIL_SUPER = "overview-super@example.com";
 const EMAIL_ADMIN = "overview-admin@example.com";
@@ -38,6 +39,9 @@ const ATT_ACT_VIP_1 = "att-overview-activity-vip-1";
 const ATT_ACT_NONE = "att-overview-activity-none";
 const ATT_ACT_REVOKED = "att-overview-activity-revoked";
 
+const ATT_REVOKED_1 = "att-overview-revoked-checkin-1";
+const ATT_REVOKED_2 = "att-overview-revoked-checkin-2";
+
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
 let superId: string;
@@ -50,7 +54,15 @@ let adminBCookie = "";
 let opCookie = "";
 
 async function seed(client: PrismaClient) {
-  const eventIds = [EVENT_MAIN, EVENT_EMPTY, EVENT_ARCHIVED, EVENT_OTHER, EVENT_CAP, EVENT_ACTIVITY];
+  const eventIds = [
+    EVENT_MAIN,
+    EVENT_EMPTY,
+    EVENT_ARCHIVED,
+    EVENT_OTHER,
+    EVENT_CAP,
+    EVENT_ACTIVITY,
+    EVENT_REVOKED_CHECKIN,
+  ];
   await client.checkIn.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.attendeeActionLog.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.emailDelivery.deleteMany({ where: { event_id: { in: eventIds } } });
@@ -129,6 +141,14 @@ async function seed(client: PrismaClient) {
         slug: "overview-activity",
         date: new Date("2027-02-01T12:00:00.000Z"),
         // UTC keeps hour-bucketing assertions below trivial to reason about.
+        timezone: "UTC",
+        organization_id: ORG_OV,
+      },
+      {
+        id: EVENT_REVOKED_CHECKIN,
+        title: "Overview Revoked Check-in Event",
+        slug: "overview-revoked-checkin",
+        date: new Date("2027-03-01T12:00:00.000Z"),
         timezone: "UTC",
         organization_id: ORG_OV,
       },
@@ -280,6 +300,8 @@ async function seed(client: PrismaClient) {
         email: "activity-std-1@example.com",
         name: "Activity Standard One",
         ticket_type: "standard",
+        // Mirrors the matching VALID check-in below - admit.ts always sets both together.
+        admitted_at: new Date("2027-02-01T08:00:00.000Z"),
       },
       {
         id: ATT_ACT_STD_2,
@@ -287,6 +309,7 @@ async function seed(client: PrismaClient) {
         email: "activity-std-2@example.com",
         name: "Activity Standard Two",
         ticket_type: "standard",
+        admitted_at: new Date("2027-02-01T08:30:00.000Z"),
       },
       {
         id: ATT_ACT_VIP_1,
@@ -294,6 +317,7 @@ async function seed(client: PrismaClient) {
         email: "activity-vip-1@example.com",
         name: "Activity VIP One",
         ticket_type: "vip",
+        admitted_at: new Date("2027-02-01T10:00:00.000Z"),
       },
       {
         id: ATT_ACT_NONE,
@@ -386,6 +410,66 @@ async function seed(client: PrismaClient) {
       created_at: new Date("2027-02-01T06:00:00.000Z"),
       metadata: { filename: "activity-guests.csv", created: 3, updated: 1, skipped: 0 },
     },
+  });
+
+  // Regression fixture for the "revoke all check-ins" bug: both attendees were checked in and
+  // later had that check-in revoked (admitted_at cleared, mirroring revokeCheckInMutation), but
+  // undo.ts never touches the original CheckIn row it superseded - it only appends a new UNDO row
+  // - so a stale "status: VALID" row is still sitting in the table for each of them. Neither
+  // attendee is currently admitted, so last_check_in_at/busiest_hour must come back null instead
+  // of reflecting these now-stale rows.
+  await client.attendee.createMany({
+    data: [
+      {
+        id: ATT_REVOKED_1,
+        event_id: EVENT_REVOKED_CHECKIN,
+        email: "revoked-checkin-1@example.com",
+        name: "Revoked Checkin One",
+      },
+      {
+        id: ATT_REVOKED_2,
+        event_id: EVENT_REVOKED_CHECKIN,
+        email: "revoked-checkin-2@example.com",
+        name: "Revoked Checkin Two",
+      },
+    ],
+  });
+
+  await client.checkIn.createMany({
+    data: [
+      {
+        id: "checkin-overview-revoked-1-valid",
+        attendee_id: ATT_REVOKED_1,
+        event_id: EVENT_REVOKED_CHECKIN,
+        checked_in_at: new Date("2027-03-01T09:00:00.000Z"),
+        status: "VALID",
+        source: "scan",
+      },
+      {
+        id: "checkin-overview-revoked-1-undo",
+        attendee_id: ATT_REVOKED_1,
+        event_id: EVENT_REVOKED_CHECKIN,
+        checked_in_at: new Date("2027-03-01T09:05:00.000Z"),
+        status: "UNDO",
+        source: "admin_revoke",
+      },
+      {
+        id: "checkin-overview-revoked-2-valid",
+        attendee_id: ATT_REVOKED_2,
+        event_id: EVENT_REVOKED_CHECKIN,
+        checked_in_at: new Date("2027-03-01T09:30:00.000Z"),
+        status: "VALID",
+        source: "scan",
+      },
+      {
+        id: "checkin-overview-revoked-2-undo",
+        attendee_id: ATT_REVOKED_2,
+        event_id: EVENT_REVOKED_CHECKIN,
+        checked_in_at: new Date("2027-03-01T09:35:00.000Z"),
+        status: "UNDO",
+        source: "admin_revoke",
+      },
+    ],
   });
 }
 
@@ -600,6 +684,21 @@ describe("GET /api/admin/events/:eventId/overview", () => {
     expect(body.last_check_in_at).toBe("2027-02-01T10:00:00.000Z");
     // Two VALID check-ins land in the 08:00 hour, one in 10:00 - 08:00 wins.
     expect(body.busiest_hour).toEqual({ hour: "08:00", count: 2 });
+  });
+
+  it("resets last_check_in_at and busiest_hour to null once every check-in is revoked", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_REVOKED_CHECKIN}/overview`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as EventOverviewResponse;
+    // Both attendees' original VALID check-in row is still sitting in the CheckIn table (undo.ts
+    // never deletes it, see the seed fixture's comment) but neither is currently admitted -
+    // reading last_check_in_at/busiest_hour off that stale row instead of admitted_at was exactly
+    // the bug (#reported: "revoke all check-ins" still showed the old busiest hour/last check-in).
+    expect(body.admitted_count).toBe(0);
+    expect(body.last_check_in_at).toBeNull();
+    expect(body.busiest_hour).toBeNull();
   });
 
   it("returns ticket_type_breakdown for active attendees only, zero-count types omitted", async () => {

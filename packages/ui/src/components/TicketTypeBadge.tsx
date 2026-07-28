@@ -18,6 +18,17 @@ export const TICKET_TYPE_COLORS: Record<TicketTypeColor, { label: string; solid:
   purple: { label: "Purple", solid: "var(--status-vip-fg)", tint: "var(--status-vip-tint)" },
 };
 
+/** `TICKET_TYPE_COLORS[x].solid`, but with "gray" softened for graphical fills (chart bar
+ * segments, legend dots in the Overview/Reports ticket-type breakdowns) instead of text.
+ * --at-gray-600 is the darkest/highest-contrast color in the whole family (7.6:1 vs white,
+ * vs. 5.0-6.9:1 for the other hues), so a "gray" ticket type visually dominates a breakdown
+ * chart instead of reading as a neutral/muted default (PO review). TicketTypeBadge keeps the
+ * full-strength gray-600 above since badge labels need real text-on-tint contrast (4.5:1). */
+export function ticketTypeChartColor(color: TicketTypeColor): string {
+  const swatch = TICKET_TYPE_COLORS[color];
+  return swatch && swatch !== TICKET_TYPE_COLORS.gray ? swatch.solid : "var(--at-gray-500)";
+}
+
 export interface TicketTypeBadgeProps extends HTMLAttributes<HTMLSpanElement> {
   label: string;
   /** @default "gray" */

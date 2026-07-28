@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { AttendeesPage } from "../../src/pages/AttendeesPage.js";
-import { mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { mockMatchMedia, getTooltipText, renderWithToast } from "../test-utils.js";
 import type { AttendeeRowDto } from "../../src/api/types.js";
 
 const fetchEventAttendees = vi.fn();
@@ -111,37 +111,39 @@ describe("AttendeesPage header Send tickets — mail-configured gate", () => {
     fetchEventMailSettings.mockResolvedValue(mailSettings(null));
     renderPage();
 
-    const sendTicketsButton = await screen.findByRole("button", { name: "Send tickets" });
+    fireEvent.click(await screen.findByRole("button", { name: "More" }));
+    const sendTicketsItem = await screen.findByRole("menuitem", { name: /^Send tickets/ });
 
-    await waitFor(() => expect(sendTicketsButton.disabled).toBe(true));
-    const describedBy = sendTicketsButton.getAttribute("aria-describedby");
-    expect(describedBy).toBeTruthy();
-    expect(document.getElementById(describedBy!)?.textContent).toMatch(/no mail transport configured/i);
+    await waitFor(() => expect(sendTicketsItem.disabled).toBe(true));
+    expect(getTooltipText(sendTicketsItem)).toMatch(/no mail transport configured/i);
   });
 
   it("keeps Send tickets enabled when a real transport (smtp/graph/powerautomate) resolves, inherited or dedicated", async () => {
     fetchEventMailSettings.mockResolvedValue(mailSettings("graph"));
     renderPage();
 
-    const sendTicketsButton = await screen.findByRole("button", { name: "Send tickets" });
+    fireEvent.click(await screen.findByRole("button", { name: "More" }));
+    const sendTicketsItem = await screen.findByRole("menuitem", { name: /^Send tickets/ });
     await waitFor(() => expect(fetchEventMailSettings).toHaveBeenCalled());
-    expect(sendTicketsButton.disabled).toBe(false);
+    expect(sendTicketsItem.disabled).toBe(false);
   });
 
   it('treats "export_only" as not actually configured, same as EventMailSettingsCard\'s own check', async () => {
     fetchEventMailSettings.mockResolvedValue(mailSettings("export_only"));
     renderPage();
 
-    const sendTicketsButton = await screen.findByRole("button", { name: "Send tickets" });
-    await waitFor(() => expect(sendTicketsButton.disabled).toBe(true));
+    fireEvent.click(await screen.findByRole("button", { name: "More" }));
+    const sendTicketsItem = await screen.findByRole("menuitem", { name: /^Send tickets/ });
+    await waitFor(() => expect(sendTicketsItem.disabled).toBe(true));
   });
 
   it("does not block the button while the mail-settings fetch is still pending or if it fails (fails open)", async () => {
     fetchEventMailSettings.mockRejectedValue(new Error("network down"));
     renderPage();
 
-    const sendTicketsButton = await screen.findByRole("button", { name: "Send tickets" });
+    fireEvent.click(await screen.findByRole("button", { name: "More" }));
+    const sendTicketsItem = await screen.findByRole("menuitem", { name: /^Send tickets/ });
     await waitFor(() => expect(fetchEventMailSettings).toHaveBeenCalled());
-    expect(sendTicketsButton.disabled).toBe(false);
+    expect(sendTicketsItem.disabled).toBe(false);
   });
 });

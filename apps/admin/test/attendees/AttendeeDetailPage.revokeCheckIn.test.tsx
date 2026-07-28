@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
-import { renderWithToast } from "../test-utils.js";
+import { getTooltipText, mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const loadAttendeeDetailData = vi.fn();
 const revokeAttendeeCheckIn = vi.fn();
@@ -89,24 +89,35 @@ function renderPage() {
   );
 }
 
+beforeEach(() => {
+  mockMatchMedia(true);
+});
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
-function openRevokeMenu() {
-  fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
+/** Revoke pass/check-in live only inside "More actions" now, on every viewport (the standalone
+ * desktop "Revoke" dropdown was folded in there too) - matches accessible names with a regex
+ * since each item also carries a hint line (e.g. "Revoke check-in Undo this attendee's
+ * check-in"), same convention as the Attendees list's bulk menu tests. */
+function openMoreActionsMenu() {
+  fireEvent.click(screen.getByRole("button", { name: "More actions" }));
   return screen.getByRole("menu");
 }
 
 describe("AttendeeDetailPage — Revoke check-in", () => {
-  it("shows the menu item only for an admitted attendee", async () => {
+  it("keeps Revoke check-in visible but disabled with a tooltip when not admitted", async () => {
     mockLoad(baseDetail({ check_in_status: "not_admitted", admitted_at: null }));
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
-    const menu = openRevokeMenu();
-    expect(within(menu).queryByRole("menuitem", { name: "Check-in" })).toBeNull();
-    expect(within(menu).getByRole("menuitem", { name: "Pass" })).toBeTruthy();
+    const menu = openMoreActionsMenu();
+    const item = within(menu).getByRole("menuitem", { name: /Revoke check-in/ });
+    expect((item as HTMLButtonElement).disabled).toBe(true);
+    expect(getTooltipText(item)).toBe("This attendee isn't checked in.");
+    expect(within(menu).getByRole("menuitem", { name: /Revoke pass/ })).toBeTruthy();
   });
 
   it("Revoke pass menu item opens the pass confirm dialog and closes the menu", async () => {
@@ -114,8 +125,8 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
 
-    const menu = openRevokeMenu();
-    fireEvent.click(within(menu).getByRole("menuitem", { name: "Pass" }));
+    const menu = openMoreActionsMenu();
+    fireEvent.click(within(menu).getByRole("menuitem", { name: /Revoke pass/ }));
 
     expect(screen.queryByRole("menu")).toBeNull();
     const dialog = screen.getByRole("dialog");
@@ -127,18 +138,22 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
 
-    openRevokeMenu();
+    openMoreActionsMenu();
     fireEvent.pointerDown(document.body);
     expect(screen.queryByRole("menu")).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("hides the whole Revoke menu once the pass itself has been revoked, even with a stale admitted_at (PO review)", async () => {
+  it("shows Revoke check-in disabled with a pass-revoked tooltip, and Restore pass as a menu item, once the pass itself has been revoked, even with a stale admitted_at (PO review)", async () => {
     mockLoad(baseDetail({ status: "revoked" }));
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
-    expect(screen.queryByRole("button", { name: "Revoke" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Restore pass" })).toBeTruthy();
+    const menu = openMoreActionsMenu();
+    const checkInItem = within(menu).getByRole("menuitem", { name: /Revoke check-in/ });
+    expect((checkInItem as HTMLButtonElement).disabled).toBe(true);
+    expect(getTooltipText(checkInItem)).toBe("This attendee's pass is revoked.");
+    expect(within(menu).queryByRole("menuitem", { name: /^Revoke pass/ })).toBeNull();
+    expect(within(menu).getByRole("menuitem", { name: /Restore pass/ })).toBeTruthy();
   });
 
   it("confirms, revokes, and reloads the detail", async () => {
@@ -149,8 +164,8 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
     revokeAttendeeCheckIn.mockResolvedValue({ card: { check_in_status: "not_admitted" } });
     mockLoad(baseDetail({ check_in_status: "not_admitted", admitted_at: null }));
 
-    const menu = openRevokeMenu();
-    fireEvent.click(within(menu).getByRole("menuitem", { name: "Check-in" }));
+    const menu = openMoreActionsMenu();
+    fireEvent.click(within(menu).getByRole("menuitem", { name: /Revoke check-in/ }));
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText("Revoke check-in?")).toBeTruthy();
 
@@ -161,9 +176,11 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).toBeNull();
     });
-    // Reloaded detail no longer offers the action.
-    const reopenedMenu = openRevokeMenu();
-    expect(within(reopenedMenu).queryByRole("menuitem", { name: "Check-in" })).toBeNull();
+    // Reloaded detail keeps the action visible, now disabled with a tooltip instead of hidden.
+    const reopenedMenu = openMoreActionsMenu();
+    const item = within(reopenedMenu).getByRole("menuitem", { name: /Revoke check-in/ });
+    expect((item as HTMLButtonElement).disabled).toBe(true);
+    expect(getTooltipText(item)).toBe("This attendee isn't checked in.");
   });
 
   it("shows an inline error on failure and keeps the action available", async () => {
@@ -173,8 +190,8 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
 
     revokeAttendeeCheckIn.mockRejectedValue(new Error("boom"));
 
-    const menu = openRevokeMenu();
-    fireEvent.click(within(menu).getByRole("menuitem", { name: "Check-in" }));
+    const menu = openMoreActionsMenu();
+    fireEvent.click(within(menu).getByRole("menuitem", { name: /Revoke check-in/ }));
     const dialog = screen.getByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke check-in" }));
 
