@@ -137,6 +137,8 @@ export function getTimelineIcon(actionType: string): string {
     check_in_undone: "arrow-back-up",
     check_in_revoked: "ban",
     note_added: "pencil",
+    note_updated: "pencil",
+    note_deleted: "trash",
     item_issued: "package",
     item_state_changed: "package",
     item_returned: "package",
@@ -182,6 +184,10 @@ export function getTimelineLabel(entry: AttendeeActionLogEntryDto): string {
       return "Check-in revoked";
     case "note_added":
       return "Note added";
+    case "note_updated":
+      return "Note updated";
+    case "note_deleted":
+      return "Note deleted";
     case "item_issued":
     case "item_state_changed":
       return "Item issued";

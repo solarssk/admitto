@@ -92,6 +92,8 @@ describe("getTimelineLabel — full action_type coverage (Codecov review)", () =
     ["check_in_undo", "Check-in undone"],
     ["check_in_undone", "Check-in undone"],
     ["note_added", "Note added"],
+    ["note_updated", "Note updated"],
+    ["note_deleted", "Note deleted"],
     ["item_returned", "Item returned"],
     ["attendee_edited", "Profile updated"],
     ["pass_revoked", "Pass revoked"],
@@ -120,6 +122,13 @@ describe("getTimelineLabel — full action_type coverage (Codecov review)", () =
 });
 
 describe("getTimelineIcon — unrecognized action_type (Codecov review)", () => {
+  it.each([
+    ["note_updated", "pencil"],
+    ["note_deleted", "trash"],
+  ])("maps %s to %s", (actionType, expected) => {
+    expect(getTimelineIcon(actionType)).toBe(expected);
+  });
+
   it("falls back to a generic history icon", () => {
     expect(getTimelineIcon("some_future_action")).toBe("history");
   });

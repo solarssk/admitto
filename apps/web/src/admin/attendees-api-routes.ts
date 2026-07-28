@@ -42,6 +42,12 @@ import {
   revokeItemsForAttendees,
   getAttendeeCard,
   UndoNotAllowedError,
+  addAttendeeNote,
+  updateAttendeeNote,
+  deleteAttendeeNote,
+  NoteTooLongError,
+  NoteNotFoundError,
+  NoteForbiddenError,
   type OpsAuditContext,
   ADMITTABLE_STATUS_LIST,
   IllegalItemTransitionError,
@@ -63,6 +69,7 @@ import {
   buildSanitizedExportRows,
   type SanitizedExportRow,
 } from "@admitto/tickets/attendees-export";
+import { canManageInstance } from "@admitto/auth";
 import {
   adminAuditFromContext,
   assertEventManageAccess,
@@ -440,6 +447,22 @@ export type AttendeeDetailItemDto = {
   state: string;
 };
 
+/** A note author's effective role in this event's context, resolved the same way the Users page
+ * shows role badges (see resolveNoteAuthorRoles) - null when the author has no role assignment
+ * left (e.g. removed from staff since writing the note). */
+export type NoteAuthorRole = "superadmin" | "admin" | "operator" | null;
+
+export type AttendeeNoteDto = {
+  id: string;
+  body: string;
+  author_display: string;
+  /** Raw author id (not PII beyond what author_display already reveals) - the frontend compares
+   * this against the signed-in user's own id to show Edit/Delete on their own notes. */
+  author_user_id: string;
+  author_role: NoteAuthorRole;
+  created_at: string;
+};
+
 export type AttendeeDetailDto = {
   id: string;
   name: string;
@@ -462,6 +485,10 @@ export type AttendeeDetailDto = {
   deliveries: DeliveryDto[];
   action_log: AttendeeActionLogEntryDto[];
   event_items: AttendeeDetailItemDto[];
+  notes: AttendeeNoteDto[];
+  notes_total: number;
+  notes_page: number;
+  notes_page_size: number;
 };
 
 /** Read-only event-day item summary for the attendee detail page — same source data as the
@@ -526,6 +553,20 @@ function requireAttendeeId(c: Context): string | Response {
   const id = c.req.param("id");
   if (!id) return c.json({ error: "id required" }, 400);
   return id;
+}
+
+function requireNoteId(c: Context): string {
+  // `noteId` is a required segment on both registered note-mutation routes.
+  return c.req.param("noteId")!;
+}
+
+async function requireNoteBody(c: Context): Promise<string | Response> {
+  const body = await c.req.json().catch(() => null);
+  const noteBody = body && typeof body === "object" ? (body as Record<string, unknown>).body : undefined;
+  if (typeof noteBody !== "string" || !noteBody.trim()) {
+    return c.json({ error: "body required" }, 400);
+  }
+  return noteBody;
 }
 
 /** Load attendee scoped to event; null when missing or cross-event (caller returns 403). */
@@ -672,6 +713,13 @@ function buildTicketRefPreview(row: {
 /** Shown in activity log when a human actor has no display_name (email is never exposed). */
 const ACTION_LOG_ACTOR_FALLBACK = "Admin";
 
+/** Page size for the detail page's notes list. The check-in card remains deliberately smaller
+ * (CARD_NOTES_LIMIT = 5) for the operator scan flow; this endpoint exposes the full history
+ * through explicit pages without an unbounded query. */
+const ATTENDEE_NOTES_PAGE_SIZE = 50;
+const ATTENDEE_NOTES_MAX_PAGE = 10_000;
+const NOTE_AUTHOR_FALLBACK = "Staff member";
+
 async function loadAttendeeActionLogEntries(
   db: PrismaClient,
   attendeeId: string,
@@ -718,6 +766,100 @@ async function loadAttendeeActionLogEntries(
       client_timezone: log.client_timezone,
     };
   });
+}
+
+/** Resolves each given user's effective role *in this event's context* - instance-wide
+ * superadmin outranks an org admin (matching this event's organization), which outranks an
+ * event-scoped operator (matching this event) - null when none apply. Same scope-per-role model
+ * ADR 0010 assumes elsewhere (canManageEvent/canManageInstance): in practice a RoleAssignment row
+ * only ever pairs superadmin with instance scope, admin with organization scope, and operator
+ * with event scope, so a single query for "any row that could plausibly apply here" is enough. */
+async function resolveNoteAuthorRoles(
+  db: PrismaClient,
+  eventId: string,
+  organizationId: string,
+  userIds: string[],
+): Promise<Map<string, NoteAuthorRole>> {
+  const roles = new Map<string, NoteAuthorRole>(userIds.map((id) => [id, null]));
+
+  const assignments = await db.roleAssignment.findMany({
+    where: {
+      user_id: { in: userIds },
+      OR: [
+        { scope_type: "instance" },
+        { scope_type: "organization", scope_id: organizationId },
+        { scope_type: "event", scope_id: eventId },
+      ],
+    },
+    select: { user_id: true, role: true },
+  });
+
+  const rolesByUser = new Map<string, Set<string>>();
+  for (const a of assignments) {
+    const set = rolesByUser.get(a.user_id) ?? new Set<string>();
+    set.add(a.role);
+    rolesByUser.set(a.user_id, set);
+  }
+
+  for (const id of userIds) {
+    const userRoles = rolesByUser.get(id);
+    if (!userRoles) continue;
+    // Apply low to high so a broader role replaces a narrower one when a user has both.
+    for (const role of ["operator", "admin", "superadmin"] as const) {
+      if (userRoles.has(role)) roles.set(id, role);
+    }
+  }
+  return roles;
+}
+
+/** Loads notes for the detail page's Notes tab — same AttendeeNote rows the check-in card
+ * reads (attendee-card.ts), newest first, just without that card's small CARD_NOTES_LIMIT.
+ * author_user_id is always a real staff User.id (admin session or check-in operator token),
+ * so this resolves it the same way loadAttendeeActionLogEntries resolves actor_user_id. Also
+ * resolves each author's role (see resolveNoteAuthorRoles) so the UI can show who added a note
+ * in terms of their actual staff role, not just their name - distinguishes an operator's
+ * check-in note from an admin's own. */
+async function loadAttendeeNotes(
+  db: PrismaClient,
+  eventId: string,
+  attendeeId: string,
+  page: number,
+): Promise<{ items: AttendeeNoteDto[]; total: number }> {
+  const where = { attendee_id: attendeeId, event_id: eventId };
+  const [notes, total] = await Promise.all([
+    db.attendeeNote.findMany({
+      where,
+      orderBy: { created_at: "desc" },
+      skip: (page - 1) * ATTENDEE_NOTES_PAGE_SIZE,
+      take: ATTENDEE_NOTES_PAGE_SIZE,
+      select: { id: true, body: true, author_user_id: true, created_at: true },
+    }),
+    db.attendeeNote.count({ where }),
+  ]);
+  if (notes.length === 0) return { items: [], total };
+
+  const authorIds = [...new Set(notes.map((note) => note.author_user_id))];
+  const authorsPromise = db.user.findMany({
+    where: { id: { in: authorIds } },
+    select: { id: true, display_name: true },
+  });
+  const rolesPromise = db.event
+    .findUniqueOrThrow({ where: { id: eventId }, select: { organization_id: true } })
+    .then((event) => resolveNoteAuthorRoles(db, eventId, event.organization_id, authorIds));
+  const [authors, rolesByAuthor] = await Promise.all([authorsPromise, rolesPromise]);
+  const authorById = new Map(authors.map((author) => [author.id, author]));
+
+  return {
+    items: notes.map((note) => ({
+      id: note.id,
+      body: note.body,
+      author_display: authorById.get(note.author_user_id)?.display_name ?? NOTE_AUTHOR_FALLBACK,
+      author_user_id: note.author_user_id,
+      author_role: rolesByAuthor.get(note.author_user_id) ?? null,
+      created_at: note.created_at.toISOString(),
+    })),
+    total,
+  };
 }
 
 /** Serialize a list row with derived check-in and last-mail status. */
@@ -779,11 +921,13 @@ async function buildAttendeeDetailDto(
     token_enc: string | null;
     public_ref: string | null;
   },
+  notesPage = 1,
 ): Promise<AttendeeDetailDto> {
-  const [deliveriesResult, action_log, event_items] = await Promise.all([
+  const [deliveriesResult, action_log, event_items, notes] = await Promise.all([
     listDeliveries({ eventId, filters: { attendeeId: row.id } }, db),
     loadAttendeeActionLogEntries(db, row.id),
     loadAttendeeItemsSummary(db, eventId, row.id),
+    loadAttendeeNotes(db, eventId, row.id, notesPage),
   ]);
   const { company, department } = resolveCompanyDepartment(row);
 
@@ -808,6 +952,10 @@ async function buildAttendeeDetailDto(
     deliveries: deliveriesResult.items.map(toDeliveryDto),
     action_log,
     event_items,
+    notes: notes.items,
+    notes_total: notes.total,
+    notes_page: notesPage,
+    notes_page_size: ATTENDEE_NOTES_PAGE_SIZE,
   };
 }
 
@@ -1025,7 +1173,8 @@ export async function handleGetEventAttendee(c: Context, db: PrismaClient): Prom
   const row = await loadAttendeeInEvent(db, eventId, attendeeId);
   if (!row) return c.json({ error: "forbidden" }, 403);
 
-  const dto = await buildAttendeeDetailDto(db, eventId, row);
+  const notesPage = positiveIntQuery(c.req.query("notes_page"), 1, ATTENDEE_NOTES_MAX_PAGE);
+  const dto = await buildAttendeeDetailDto(db, eventId, row, notesPage);
   c.header("Cache-Control", "no-store");
   return c.json(dto);
 }
@@ -2692,6 +2841,141 @@ export async function handleRevokeAttendeeItem(c: Context, db: PrismaClient): Pr
     // e.g. unknown/disabled item key, blocked pass — mirrors the operator item-action route.
     return itemTransitionErrorResponse(c, err, "handleRevokeAttendeeItem");
   }
+}
+
+/**
+ * POST /api/admin/events/:eventId/attendees/:id/notes
+ * Admin/superadmin only (assertEventManageAccess) — adds a note shown on the attendee detail
+ * page's Notes tab. Shares the same AttendeeNote model and addAttendeeNote() domain function
+ * as the check-in operator note composer (POST /api/checkin/notes): a note added here also
+ * appears on the check-in card, and vice versa.
+ */
+export async function handleAddAttendeeNote(c: Context, db: PrismaClient): Promise<Response> {
+  const attendeeContextOrRes = await requireManagedEventAttendee(c, db);
+  if (attendeeContextOrRes instanceof Response) return attendeeContextOrRes;
+  const { attendee: existing, attendeeId, eventId } = attendeeContextOrRes;
+
+  const noteBodyOrRes = await requireNoteBody(c);
+  if (noteBodyOrRes instanceof Response) return noteBodyOrRes;
+  const noteBody = noteBodyOrRes;
+
+  try {
+    await addAttendeeNote(
+      { attendeeId, eventId, body: noteBody, audit: adminAuditFromContext(c) },
+      db,
+    );
+  } catch (err) {
+    if (err instanceof NoteTooLongError) return c.json({ error: "Note too long" }, 400);
+    console.error("handleAddAttendeeNote failed:", err);
+    return c.json({ error: "server error" }, 500);
+  }
+
+  const dto = await buildAttendeeDetailDto(db, eventId, existing);
+  return c.json(dto);
+}
+
+/**
+ * PATCH /api/admin/events/:eventId/attendees/:id/notes/:noteId
+ * Admin/superadmin only (assertEventManageAccess), and only the note's own author may edit it,
+ * regardless of role — updateAttendeeNote() enforces this authoritatively even though the
+ * frontend already hides Edit on notes the signed-in user didn't write.
+ */
+export async function handlePatchAttendeeNote(c: Context, db: PrismaClient): Promise<Response> {
+  const attendeeContextOrRes = await requireManagedEventAttendee(c, db);
+  if (attendeeContextOrRes instanceof Response) return attendeeContextOrRes;
+  const { attendee: existing, attendeeId, eventId } = attendeeContextOrRes;
+
+  const noteIdOrRes = requireNoteId(c);
+  const noteId = noteIdOrRes;
+
+  const noteBodyOrRes = await requireNoteBody(c);
+  if (noteBodyOrRes instanceof Response) return noteBodyOrRes;
+  const noteBody = noteBodyOrRes;
+
+  try {
+    await updateAttendeeNote(
+      { attendeeId, eventId, noteId, body: noteBody, audit: adminAuditFromContext(c) },
+      db,
+    );
+  } catch (err) {
+    if (err instanceof NoteTooLongError) return c.json({ error: "Note too long" }, 400);
+    if (err instanceof NoteNotFoundError) return c.json({ error: "not found" }, 404);
+    if (err instanceof NoteForbiddenError) return c.json({ error: "forbidden" }, 403);
+    console.error("handlePatchAttendeeNote failed:", err);
+    return c.json({ error: "server error" }, 500);
+  }
+
+  const dto = await buildAttendeeDetailDto(db, eventId, existing);
+  return c.json(dto);
+}
+
+/** Resolve whether the actor may delete a note they did not author. Own-note deletion remains
+ * the domain function's responsibility; this only grants the elevated paths: superadmin for any
+ * author, or an event's admin for a current event-scoped operator author. */
+async function canDeleteAnyAttendeeNote(
+  db: PrismaClient,
+  eventId: string,
+  attendeeId: string,
+  noteId: string,
+  actorUserId: string,
+): Promise<boolean> {
+  if (await canManageInstance(db, actorUserId)) return true;
+
+  const note = await db.attendeeNote.findFirst({
+    where: { id: noteId, attendee_id: attendeeId, event_id: eventId },
+    select: { author_user_id: true },
+  });
+  if (!note || note.author_user_id === actorUserId) return false;
+
+  const event = await db.event.findUniqueOrThrow({
+    where: { id: eventId },
+    select: { organization_id: true },
+  });
+  const roles = await resolveNoteAuthorRoles(db, eventId, event.organization_id, [
+    note.author_user_id,
+  ]);
+  return roles.get(note.author_user_id) === "operator";
+}
+
+/**
+ * DELETE /api/admin/events/:eventId/attendees/:id/notes/:noteId
+ * Admin/superadmin only (assertEventManageAccess). Within that: a superadmin may delete any
+ * note; a plain (org-scoped) admin may delete their own note or one written by an operator, but
+ * not another admin's or a superadmin's — resolved here via resolveNoteAuthorRoles before
+ * calling deleteAttendeeNote(), which re-checks authoritatively (own note is always allowed
+ * regardless of canDeleteAnyNote).
+ */
+export async function handleDeleteAttendeeNote(c: Context, db: PrismaClient): Promise<Response> {
+  const attendeeContextOrRes = await requireManagedEventAttendee(c, db);
+  if (attendeeContextOrRes instanceof Response) return attendeeContextOrRes;
+  const { attendee: existing, attendeeId, eventId } = attendeeContextOrRes;
+
+  const noteIdOrRes = requireNoteId(c);
+  const noteId = noteIdOrRes;
+
+  const auth = c.get("auth");
+  const canDeleteAnyNote = await canDeleteAnyAttendeeNote(
+    db,
+    eventId,
+    attendeeId,
+    noteId,
+    auth.userId,
+  );
+
+  try {
+    await deleteAttendeeNote(
+      { attendeeId, eventId, noteId, canDeleteAnyNote, audit: adminAuditFromContext(c) },
+      db,
+    );
+  } catch (err) {
+    if (err instanceof NoteNotFoundError) return c.json({ error: "not found" }, 404);
+    if (err instanceof NoteForbiddenError) return c.json({ error: "forbidden" }, 403);
+    console.error("handleDeleteAttendeeNote failed:", err);
+    return c.json({ error: "server error" }, 500);
+  }
+
+  const dto = await buildAttendeeDetailDto(db, eventId, existing);
+  return c.json(dto);
 }
 
 /** Best-effort bulk send audit — must not fail the HTTP response after mail is queued. */

@@ -1231,6 +1231,7 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
     // own filter-field list here - safe because TFilters is a fixed, flat shape of primitive
     // strings at every real call site, never gaining/losing keys at runtime. fetchPage/
     // loadErrorMessage are stable module-level values (see fetchAuditLogPage/fetchSecurityLogPage).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `filters` intentionally spread above, not listed by reference; see comment block above.
     [page, pageSize, ...Object.values(filters), fetchPage, loadErrorMessage],
   );
 

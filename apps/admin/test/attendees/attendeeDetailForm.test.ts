@@ -79,6 +79,15 @@ describe("loadAttendeeDetailData", () => {
     expect(result.attributeFields).toEqual([]);
     expect(result.itemsWarning).toBe(ITEMS_LOAD_WARNING);
   });
+
+  it("passes an explicitly selected notes page to the detail request", async () => {
+    mockFetchAttendeeDetail.mockResolvedValueOnce(detail());
+    mockFetchAttendeeCustomFields.mockResolvedValueOnce([]);
+
+    await loadAttendeeDetailData("evt-1", "att-1", 3);
+
+    expect(mockFetchAttendeeDetail).toHaveBeenCalledWith("evt-1", "att-1", undefined, 3);
+  });
 });
 
 describe("mergeFormAfterReload", () => {
