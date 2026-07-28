@@ -258,4 +258,42 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
       );
     });
   });
+
+  it("clears a cancelled capacity override before Restore pass is reopened", async () => {
+    mockAssignments = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
+    mockLoad(baseDetail({ status: "revoked" }));
+    mockLoad(baseDetail({ status: "registered" }));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    const { ApiError } = await import("../../src/api/client.js");
+    updateAttendee
+      .mockRejectedValueOnce(new ApiError(409, "event_full", "event_full", { current: 5, capacity: 5 }))
+      .mockResolvedValueOnce(baseDetail({ status: "registered" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Restore pass/ }));
+    let dialog = screen.getByRole("dialog", { name: "Restore pass?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restore pass" }));
+    await within(dialog).findByText(/Event is at capacity/);
+
+    fireEvent.click(within(dialog).getByLabelText(/Override capacity limit/));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Restore pass/ }));
+    dialog = screen.getByRole("dialog", { name: "Restore pass?" });
+    expect(within(dialog).queryByLabelText(/Override capacity limit/)).toBeNull();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restore pass" }));
+    await waitFor(() => {
+      expect(updateAttendee).toHaveBeenLastCalledWith(
+        "evt-1",
+        "att-1",
+        expect.objectContaining({ status: "registered" }),
+        { force: false },
+      );
+    });
+  });
 });

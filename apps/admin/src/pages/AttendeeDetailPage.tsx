@@ -1248,6 +1248,8 @@ export function AttendeeDetailPage() {
               }}
               onRestorePass={() => {
                 setRevokeError(null);
+                setRestoreCapacityBlocked(null);
+                setRestoreForceCapacity(false);
                 setActiveRevoke("restore");
               }}
               onRevokePass={() => {
