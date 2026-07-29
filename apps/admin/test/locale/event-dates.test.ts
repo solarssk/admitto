@@ -92,6 +92,12 @@ describe("formatEventDateTime and formatUtcDateTime", () => {
     expect(result).toMatch(/15:00/);
     expect(result).toMatch(/UTC\+2/);
   });
+
+  it("defaults event date and time formatting to UTC when no event timezone is supplied", () => {
+    setPreferredLocale("en-GB");
+    expect(formatEventDateTime("2026-06-28T13:00:00.000Z")).toMatch(/UTC$/);
+    expect(formatEventTime("2026-06-28T13:00:00.000Z")).toMatch(/UTC$/);
+  });
 });
 
 describe("timezone offset labels", () => {

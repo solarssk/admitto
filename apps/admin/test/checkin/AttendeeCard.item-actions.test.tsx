@@ -36,6 +36,23 @@ describe("AttendeeCard — item action button (review finding)", () => {
     expect(onItemAction).toHaveBeenCalledWith("badge", "issued");
   });
 
+  it("uses the canonical issued label for a gift bag action", () => {
+    render(
+      <AttendeeCard
+        card={{
+          ...cardWithItem,
+          items: [{ key: "gift_bag", label: "Gift bag", icon: null, state: "pending", actions: ["issued"] }],
+        }}
+        eventTimezone="UTC"
+        canAct={true}
+        onItemAction={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Mark issued")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Mark gift bag issued" })).toBeTruthy();
+  });
+
   it("a same-tick double-click on the item action button only calls onItemAction once", () => {
     const onItemAction = vi.fn().mockResolvedValue(true);
     render(

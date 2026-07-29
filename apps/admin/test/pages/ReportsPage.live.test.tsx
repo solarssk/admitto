@@ -312,4 +312,31 @@ describe("ReportsPage — live SSE updates (ADR 0014)", () => {
     expect(within(table!).getByText("No Device Guest")).toBeTruthy();
     expect(within(table!).getAllByText("-").length).toBeGreaterThanOrEqual(2);
   });
+
+  it("uses the same empty-state markers in the mobile admission cards", async () => {
+    mockMatchMedia(false);
+    fetchEventReports.mockResolvedValue(
+      reportFixture(1, {
+        admission_log: [
+          {
+            attendee_id: "att-mobile-empty",
+            name: "Mobile Guest",
+            email: "mobile@example.com",
+            ticket_type: null,
+            admitted_at: "2026-06-01T10:00:00.000Z",
+            device_id: null,
+            items: [],
+          },
+        ],
+        admission_log_total: 1,
+      }),
+    );
+
+    renderPage();
+
+    await screen.findByText("Mobile Guest");
+    const cards = document.querySelector(".reports-log-cards");
+    expect(cards).not.toBeNull();
+    expect(within(cards as HTMLElement).getAllByText("-")).toHaveLength(2);
+  });
 });
