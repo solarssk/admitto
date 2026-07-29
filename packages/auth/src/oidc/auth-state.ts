@@ -73,6 +73,23 @@ interface ConsumedOidcAuthStateRow {
 
 /**
  * Atomically consume OAuth state (single-use). Returns null if missing, expired, or already consumed.
+ *
+ * `expires_at`/`consumed_at` are `timestamp` (no tz) columns holding naive UTC wall-clock
+ * values (matching how Prisma's typed API writes/reads `DateTime` elsewhere in this module).
+ * Comparing them against bare `NOW()` (`timestamptz`) makes Postgres cast `NOW()` down to
+ * `timestamp` using the *session* `TimeZone` GUC, reinterpreting the naive value as local
+ * wall-clock time in that zone before converting back to an absolute instant — silently
+ * shifting the comparison by the zone's UTC offset, in whichever direction that zone points:
+ *   - Positive offset (session zone ahead of UTC, e.g. Europe/Warsaw, +2h) shifts the
+ *     effective instant *earlier*, past the 10-minute TTL, so every row looks already
+ *     expired and OIDC login fails closed immediately.
+ *   - Negative offset (session zone behind UTC, e.g. America/New_York, -4h/-5h) shifts it
+ *     *later* instead, so a row keeps validating as "not yet expired" for TTL + |offset| —
+ *     hours past its intended lifetime. Login still works, but the single-use
+ *     state/nonce/PKCE-verifier row stays replayable far longer than intended: a
+ *     security-relevant lifetime extension, not just a cosmetic delay.
+ * `NOW() AT TIME ZONE 'utc'` yields a naive UTC timestamp that lines up with the stored
+ * values regardless of session timezone, closing both cases.
  */
 export async function consumeOidcAuthState(
   prisma: PrismaClient | Prisma.TransactionClient,
@@ -80,10 +97,10 @@ export async function consumeOidcAuthState(
 ): Promise<ConsumedOidcAuthState | null> {
   const rows = await prisma.$queryRaw<ConsumedOidcAuthStateRow[]>`
     UPDATE "OidcAuthState"
-    SET "consumed_at" = NOW()
+    SET "consumed_at" = (NOW() AT TIME ZONE 'utc')
     WHERE "state" = ${state}
       AND "consumed_at" IS NULL
-      AND "expires_at" > NOW()
+      AND "expires_at" > (NOW() AT TIME ZONE 'utc')
     RETURNING "id", "provider_id", "nonce", "code_verifier", "redirect_next", "link_user_id", "link_step_up_at"
   `;
   return rows[0] ?? null;
