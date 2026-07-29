@@ -616,7 +616,7 @@ export function GraphCard({
             This is app-only (client-credentials) authentication. Settings never opens an
             interactive Microsoft sign-in, and there's no consent screen to click through here; a
             tenant admin grants consent once, in Entra. After saving, use{" "}
-            <strong>Send test email</strong> below to confirm delivery.
+            <strong>Send test</strong> below to confirm delivery.
           </p>
         </details>
         <div className="mail-transport-section">
@@ -1018,8 +1018,8 @@ function isPlausibleEmail(value: string): boolean {
   return dot > 0 && dot < domain.length - 1;
 }
 
-/** Validates the recipient, sends via `send`, and resolves the result into `TestResult`
- * — shared tail of "Send test email" between the org and event panels. Only the actual
+/** Validates the recipient, sends via `send`, and resolves the result into `TestResult` -
+ * shared tail of the "Send test" flow between the org and event panels. Only the actual
  * send call (org- vs event-scoped) differs per caller. */
 export async function runTestSend(params: {
   testEmail: string;

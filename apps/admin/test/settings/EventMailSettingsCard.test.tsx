@@ -491,7 +491,7 @@ describe("EventMailSettingsCard — test send", () => {
     fireEvent.change(screen.getByLabelText("Recipient"), {
       target: { value: "tester@example.com" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /Send test email/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Send test/ }));
 
     await waitFor(() => expect(mockTest).toHaveBeenCalledWith("evt-1", "tester@example.com"));
     await screen.findByText(/Sent successfully via SMTP/);
@@ -506,7 +506,7 @@ describe("EventMailSettingsCard — test send", () => {
     fireEvent.change(screen.getByLabelText("Recipient"), {
       target: { value: "tester@example.com" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /Send test email/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Send test/ }));
 
     await waitFor(() => expect(mockTest).toHaveBeenCalledWith("evt-1", "tester@example.com"));
     await screen.findByText("Mailbox");
@@ -522,7 +522,7 @@ describe("EventMailSettingsCard — test send", () => {
     fireEvent.change(screen.getByLabelText("Recipient"), {
       target: { value: "tester@example.com" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /Send test email/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Send test/ }));
 
     await waitFor(() => expect(mockTest).toHaveBeenCalled());
     await waitFor(() => expect(screen.getAllByText("Send failed.").length).toBeGreaterThan(0));
@@ -535,7 +535,7 @@ describe("EventMailSettingsCard — test send", () => {
 
     fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
 
-    expect(isDisabled(screen.getByRole("button", { name: /Send test email/ }))).toBe(true);
+    expect(isDisabled(screen.getByRole("button", { name: /Send test/ }))).toBe(true);
   });
 });
 
@@ -554,7 +554,7 @@ describe("EventMailSettingsCard — archived event", () => {
     await screen.findByText(SMTP_SUMMARY_TEXT);
 
     expect(isDisabled(screen.getByRole("radio", { name: "Dedicated for this event" }))).toBe(true);
-    expect(isDisabled(screen.getByRole("button", { name: /Send test email/ }))).toBe(true);
+    expect(isDisabled(screen.getByRole("button", { name: /Send test/ }))).toBe(true);
   });
 });
 

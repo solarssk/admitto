@@ -387,7 +387,7 @@ function MailTestControl({
   ) : (
     <i className="ti ti-send" aria-hidden="true" />
   );
-  const pendingTestLabel = testSending ? "Sending…" : "Send test email";
+  const pendingTestLabel = testSending ? "Sending…" : "Send test";
   return (
     <div className="setup-wizard__mail-test-cluster">
       <Button

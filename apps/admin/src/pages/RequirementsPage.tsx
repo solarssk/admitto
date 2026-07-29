@@ -154,8 +154,8 @@ function EventBehaviourContent({
         <div className="requirements-behaviour-row__text">
           <strong>Issue badge at entry</strong>
           <p>
-            Auto-issues the badge item when an attendee is admitted. Requires the badge
-            item to exist, be active, and have "Issue on check-in" enabled.
+            Automatically issues the badge item when an attendee is admitted. The badge item
+            must exist, be active, and have "Issue on check-in" turned on.
           </p>
         </div>
         <ArchivedGuard
@@ -204,9 +204,9 @@ function EventBehaviourContent({
         <div className="requirements-behaviour-row__text">
           <strong>Allow manual lookup</strong>
           <p>
-            When off, operators can only check in via QR scan. Name and short-query
-            search are blocked in the check-in screen. Does not affect the admin Attendees
-            page.
+            When off, operators can only check in by scanning a QR code. Searching by name
+            or partial text is blocked on the check-in screen (the admin Attendees page is
+            unaffected).
           </p>
         </div>
         <ArchivedGuard
@@ -339,7 +339,7 @@ function AddItemModal({
             variant="primary"
             disabled={adding || !addLabel.trim()}
           >
-            {adding ? "Creating…" : "Create item"}
+            {adding ? "Creating…" : "Create"}
           </Button>
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancel
@@ -590,7 +590,7 @@ export function RequirementsPage() {
                     else setAddOpen(true);
                   }}
                 >
-                  Add item
+                  Add
                 </Button>
               )}
             </ArchivedGuard>

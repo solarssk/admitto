@@ -480,11 +480,11 @@ describe("RequirementsPage operator errors", () => {
     vi.mocked(createEventItem).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderRequirements();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Add item" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Add" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add item" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
     fireEvent.change(screen.getByLabelText("Item name"), { target: { value: "Lanyard" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create item" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
     await waitFor(() => {
       expect(screen.getByText(/Failed to create item/)).toBeTruthy();
     });
@@ -501,11 +501,11 @@ describe("RequirementsPage operator errors", () => {
     });
     renderRequirements();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Add item" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Add" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add item" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
     fireEvent.change(screen.getByLabelText("Item name"), { target: { value: "Headset" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create item" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
     await waitFor(() => {
       expect(createEventItem).toHaveBeenCalledWith("evt-1", {
         key: "headset",
@@ -523,11 +523,11 @@ describe("RequirementsPage operator errors", () => {
     });
     renderRequirements();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Add item" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Add" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add item" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
     fireEvent.change(screen.getByLabelText("Item name"), { target: { value: "Badge" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create item" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
     await waitFor(() => {
       expect(createEventItem).toHaveBeenCalledWith("evt-1", {
         key: "badge",

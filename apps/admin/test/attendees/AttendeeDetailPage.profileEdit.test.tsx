@@ -613,8 +613,8 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
 
-    expect(screen.getByText("Event-day items")).toBeTruthy();
-    expect(screen.getByText("No event-day items")).toBeTruthy();
+    expect(screen.getByText("Event items")).toBeTruthy();
+    expect(screen.getByText("No event items")).toBeTruthy();
   });
 
   it("lists event-day items with their hand-out state, without a content_fields detail (PO review)", async () => {
@@ -659,7 +659,7 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
 
-    expect(screen.getByText("Mail delivery history")).toBeTruthy();
+    expect(screen.getByText("Delivery history")).toBeTruthy();
     expect(screen.getByText("Your ticket")).toBeTruthy();
     expect(screen.queryByText("No delivery attempts yet")).toBeNull();
   });
@@ -669,7 +669,7 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
 
-    expect(screen.getByText("Mail delivery history")).toBeTruthy();
+    expect(screen.getByText("Delivery history")).toBeTruthy();
     expect(screen.getByText("No delivery attempts yet")).toBeTruthy();
   });
 });

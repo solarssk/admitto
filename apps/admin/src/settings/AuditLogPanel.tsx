@@ -317,8 +317,8 @@ function buildRowSummary(entry: AuditLogEntryDto, eventTitleById: Map<string, st
     `Time: ${formatAuditPrimaryTime(entry.created_at)} UTC${localTimeSuffix}`,
     `Action: ${actionLabel(entry.action_type)}`,
     `Scope: ${scopeLabel(entry, eventTitleById)}`,
-    `Actor: ${actorDisplay(entry)}${actorEmailSuffix}`,
-    `IP: ${entry.ip ?? "-"}`,
+    `User: ${actorDisplay(entry)}${actorEmailSuffix}`,
+    `IP address: ${entry.ip ?? "-"}`,
   ];
   if (hasVisibleMetadata(entry.metadata)) {
     lines.push("Details:");
@@ -657,7 +657,7 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
     },
     {
       key: "actor",
-      header: "Actor",
+      header: "User",
       title: (entry) => actorTitle(entry),
       cell: (entry) => (
         <>
@@ -670,7 +670,7 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
     },
     {
       key: "ip",
-      header: "IP",
+      header: "IP address",
       cell: (entry) => entry.ip ?? "-",
     },
   ];
@@ -762,7 +762,7 @@ function buildSecurityRowSummary(entry: SecurityAuditLogEntryDto): string {
     `Time: ${formatAuditPrimaryTime(entry.created_at)} UTC (${viewerLocalTime(entry.created_at)})`,
     `Event: ${securityEventLabel(entry.event_type)}`,
     `User: ${securityUserDisplay(entry)}${userEmailSuffix}`,
-    `IP: ${entry.ip ?? "-"}`,
+    `IP address: ${entry.ip ?? "-"}`,
   ];
   if (hasVisibleMetadata(entry.metadata)) {
     lines.push("Details:");
@@ -814,7 +814,7 @@ const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
   },
   {
     key: "ip",
-    header: "IP",
+    header: "IP address",
     cell: (entry) => entry.ip ?? "-",
   },
 ];
@@ -1931,8 +1931,8 @@ export function AuditLogPanel() {
         auditView={
           <LogView
             idPrefix="audit-log"
-            searchAriaLabel="Search actor or event"
-            searchPlaceholder="Search actor or event…"
+            searchAriaLabel="Search user or event"
+            searchPlaceholder="Search user or event…"
             isDesktop={isDesktop}
             rootRef={rootRef}
             searchInput={searchInput}

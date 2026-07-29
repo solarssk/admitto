@@ -520,7 +520,7 @@ export const EventMailSettingsCard = forwardRef<
               aria-describedby={testSendReason ? "event-mail-test-send-reason" : undefined}
               onClick={() => void handleTestSend()}
             >
-              {testSending ? "Sending…" : "Send test email"}
+              {testSending ? "Sending…" : "Send test"}
             </Button>
           </Tooltip>
         </div>

@@ -435,7 +435,7 @@ describe("AuditLogPanel rendering", () => {
       expect(writeText).toHaveBeenCalledTimes(1);
       const [summary] = writeText.mock.calls[0]!;
       expect(summary).toContain("Action: Event created");
-      expect(summary).toContain("Actor: Alice Admin (alice@example.com)");
+      expect(summary).toContain("User: Alice Admin (alice@example.com)");
       expect(summary).toMatch(/Time: 2026-01-01 12:00:00 UTC \(13:00 \(Europe\/Warsaw, UTC\+1\)\)/);
       expect(summary).toContain("Details:");
       expect(summary).toContain("Note: hello");
@@ -512,7 +512,7 @@ describe("AuditLogPanel rendering", () => {
     await screen.findByText("No audit log entries yet");
 
     vi.useFakeTimers();
-    fireEvent.change(screen.getByPlaceholderText("Search actor or event…"), { target: { value: "jane" } });
+    fireEvent.change(screen.getByPlaceholderText("Search user or event…"), { target: { value: "jane" } });
     act(() => {
       vi.advanceTimersByTime(300);
     });
@@ -532,7 +532,7 @@ describe("AuditLogPanel rendering", () => {
     renderAuditPanel();
     await screen.findByText("No audit log entries yet");
 
-    const searchInput = screen.getByPlaceholderText("Search actor or event…") as HTMLInputElement;
+    const searchInput = screen.getByPlaceholderText("Search user or event…") as HTMLInputElement;
     fireEvent.change(searchInput, { target: { value: "jane" } });
     expect(searchInput.value).toBe("jane");
 
@@ -1000,7 +1000,7 @@ describe("AuditLogPanel rendering", () => {
     // The Audit side stays mounted underneath (only its wrapper's display toggles, so switching
     // back doesn't re-fetch/flash) - queryByRole respects that hidden state, unlike a raw DOM
     // query, so this confirms it's inaccessible rather than merely absent.
-    expect(screen.queryByRole("textbox", { name: "Search actor or event" })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Search user or event" })).toBeNull();
     expect(screen.getByText("System logs")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("radio", { name: "Audit" }));

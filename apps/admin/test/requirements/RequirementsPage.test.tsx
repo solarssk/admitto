@@ -258,9 +258,9 @@ describe("RequirementsPage — Add item and Edit item", () => {
     fetchOpsConfig.mockResolvedValue(makeOpsConfig());
 
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "Add item" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add" }));
     fireEvent.change(screen.getByLabelText("Item name"), { target: { value: "!!!" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create item" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     await waitFor(() => {
       expect(screen.getByText("Enter a name using letters or numbers.")).toBeTruthy();
@@ -274,10 +274,10 @@ describe("RequirementsPage — Add item and Edit item", () => {
     fetchOpsConfig.mockResolvedValue(makeOpsConfig());
 
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "Add item" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add" }));
     const input = screen.getByLabelText("Item name");
     fireEvent.change(input, { target: { value: "!!!" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create item" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
     await waitFor(() => {
       expect(screen.getByText("Enter a name using letters or numbers.")).toBeTruthy();
     });
@@ -294,9 +294,9 @@ describe("RequirementsPage — Add item and Edit item", () => {
     createEventItem.mockRejectedValueOnce(new ApiError(409, "key_conflict", "key_conflict"));
 
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "Add item" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add" }));
     fireEvent.change(screen.getByLabelText("Item name"), { target: { value: "Gift bag" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create item" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith("An item with this name already exists.", "warning");
@@ -308,14 +308,14 @@ describe("RequirementsPage — Add item and Edit item", () => {
     fetchOpsConfig.mockResolvedValue(makeOpsConfig());
 
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "Add item" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add" }));
     fireEvent.change(screen.getByLabelText("Item name"), { target: { value: "Lanyard" } });
     const backdrop = screen.getByRole("button", { name: "Close add item dialog" });
     expect(backdrop).toHaveProperty("type", "button");
     fireEvent.click(backdrop);
     expect(screen.queryByLabelText("Item name")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Add item" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
     expect(screen.getByLabelText("Item name")).toHaveProperty("value", "");
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByLabelText("Item name")).toBeNull();
@@ -338,7 +338,7 @@ describe("RequirementsPage — Add item and Edit item", () => {
     fetchOpsConfig.mockResolvedValue(makeOpsConfig());
 
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "Add item" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add" }));
     expect(screen.getByLabelText("Item name")).toBeTruthy();
 
     fireEvent.keyDown(document, { key: "Escape" });
@@ -372,7 +372,7 @@ describe("RequirementsPage — Add item and Edit item", () => {
     fetchOpsConfig.mockResolvedValue(makeOpsConfig());
 
     renderPage();
-    const addItemButton = await screen.findByRole("button", { name: "Add item" });
+    const addItemButton = await screen.findByRole("button", { name: "Add" });
     fireEvent.click(addItemButton);
     expect(screen.getByLabelText("Item name")).toBeTruthy();
 
@@ -386,7 +386,7 @@ describe("RequirementsPage — Add item and Edit item", () => {
     fetchOpsConfig.mockResolvedValue(makeOpsConfig());
 
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "Add item" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add" }));
     fireEvent.change(screen.getByLabelText("Item name"), { target: { value: "Gift bag" } });
 
     expect(await screen.findByText(/unique suffix added/)).toBeTruthy();

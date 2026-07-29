@@ -273,7 +273,7 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
             disabled={submitting || !email.trim() || password.length < 8}
             onClick={() => void handleSubmit()}
           >
-            {submitting ? "Sending…" : "Send invite"}
+            {submitting ? "Sending…" : "Send"}
           </Button>
         </div>
       </div>

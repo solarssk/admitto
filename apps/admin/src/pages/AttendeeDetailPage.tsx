@@ -460,8 +460,8 @@ function resolveOrphanedTicketType(ticketType: string, ticketTypes: TicketTypeDt
   return ticketTypes.some((type) => type.key === ticketType) ? null : ticketType;
 }
 
-/** Overview tab: read-only profile, additional info, wallet placeholder, event-day items, and
- * mail delivery history — extracted out of the component (SonarCloud S3776: keeps this tab's own
+/** Overview tab: read-only profile, additional info, wallet placeholder, event items, and
+ * delivery history - extracted out of the component (SonarCloud S3776: keeps this tab's own
  * conditional rendering out of the component's cognitive-complexity count). */
 function AttendeeOverviewTab({
   detail,
@@ -543,11 +543,11 @@ function AttendeeOverviewTab({
       </div>
 
       <div className="attendee-detail-side">
-        <Card title="Event-day items">
+        <Card title="Event items">
           {eventItems.length === 0 ? (
             <EmptyState
               icon={<i className="ti ti-package" aria-hidden="true" />}
-              title="No event-day items"
+              title="No event items"
               description="This event has no hand-out items configured yet."
             />
           ) : (
@@ -580,7 +580,7 @@ function AttendeeOverviewTab({
           )}
         </Card>
 
-        <Card title="Mail delivery history">
+        <Card title="Delivery history">
           {detail.deliveries.length === 0 ? (
             <EmptyState
               icon={<i className="ti ti-mail-off" aria-hidden="true" />}

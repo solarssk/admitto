@@ -289,7 +289,7 @@ export function MailTransportPanel() {
               aria-describedby={testSendReason ? "mail-test-send-reason" : undefined}
               onClick={() => void handleTestSend()}
             >
-              {testSending ? "Sending…" : "Send test email"}
+              {testSending ? "Sending…" : "Send test"}
             </Button>
           </Tooltip>
         </div>

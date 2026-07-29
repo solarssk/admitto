@@ -123,7 +123,7 @@ describe("WizardStep2Mail test-send feedback", () => {
     );
 
     renderStep();
-    fireEvent.click(await screen.findByRole("button", { name: "Send test email" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Send test" }));
 
     const sending = await screen.findByRole("button", { name: "Sending…" });
     expect((sending as HTMLButtonElement).disabled).toBe(true);

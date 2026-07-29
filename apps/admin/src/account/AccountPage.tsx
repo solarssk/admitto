@@ -16,7 +16,7 @@ import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-er
 import type { AccountDto, MfaEnrollResponse, SessionListDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
-import { formatUtcDateTime } from "../utils/event-dates.js";
+import { formatRelativeTime, formatUtcDateTime } from "../utils/event-dates.js";
 import { LOCALE_OPTIONS, setPreferredLocale as setPreferredLocaleStore } from "../utils/locale-store.js";
 import { TotpDigitInput } from "./TotpDigitInput.js";
 import { TotpQrCode } from "./TotpQrCode.js";
@@ -644,7 +644,7 @@ export function AccountPage() {
         {!sessionsLoading && !sessionsError && sessions.length > 0 && (
           <div className="sessions-table-wrap">
             <table className="table">
-              <thead><tr><th>Device</th><th>IP</th><th>Login at</th><th>Last seen</th><th>Auth method</th><th>Action</th></tr></thead>
+              <thead><tr><th>Device</th><th>IP address</th><th>Login at</th><th>Last seen</th><th>Auth method</th><th>Action</th></tr></thead>
               <tbody>
                 {sessions.map((s) => (
                   <tr key={s.id}>
@@ -654,7 +654,7 @@ export function AccountPage() {
                     </td>
                     <td>{s.ip ?? "-"}</td>
                     <td>{formatDate(s.loginAt)}</td>
-                    <td>{formatDate(s.lastSeenAt)}</td>
+                    <td>{formatRelativeTime(s.lastSeenAt)}</td>
                     <td>{s.authMethod === "oidc" ? "OIDC" : "Local"}</td>
                     <td>
                       {s.isCurrent ? (
@@ -757,7 +757,7 @@ export function AccountPage() {
 
       {renderSessionsCard()}
 
-      <ConfirmDialog open={!!revokeTarget} title="Revoke session" message={revokeTarget ? `Revoke this session? Last active ${formatDate(revokeTarget.lastSeenAt)}.` : ""} confirmLabel="Revoke" confirmVariant="danger" loading={revoking} errorMessage={revokeError ?? undefined} onConfirm={async () => {
+      <ConfirmDialog open={!!revokeTarget} title="Revoke session" message={revokeTarget ? `Revoke this session? Last active ${formatRelativeTime(revokeTarget.lastSeenAt)}.` : ""} confirmLabel="Revoke" confirmVariant="danger" loading={revoking} errorMessage={revokeError ?? undefined} onConfirm={async () => {
         if (!revokeTarget) return;
         setRevoking(true); setRevokeError(null);
         try { await deleteAccountSession(revokeTarget.id); setRevokeTarget(null); await loadSessions(); }

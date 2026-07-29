@@ -6,6 +6,7 @@ import {
   type BadgeProps,
 } from "@admitto/ui";
 import type { UserListItemDto } from "../../api/types.js";
+import { formatRelativeTime as formatRelativeTimeShared } from "../../utils/event-dates.js";
 
 function roleBadgeVariant(role: string): BadgeProps["variant"] {
   if (role === "superadmin") return "error";
@@ -21,18 +22,11 @@ function roleShort(role: string): string {
   return role.slice(0, 2).toUpperCase();
 }
 
+/** Thin null handling wrapper ("Never" for a user who hasn't logged in) around the shared
+ * canonical implementation in event-dates.ts (previously a full duplicate here). */
 function formatRelativeTime(iso: string | null): string {
   if (!iso) return "Never";
-  const diffMs = Date.now() - new Date(iso).getTime();
-  if (diffMs < 60_000) return "Just now";
-  const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 48) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 60) return `${days} day${days === 1 ? "" : "s"} ago`;
-  const months = Math.floor(days / 30);
-  return `${months} month${months === 1 ? "" : "s"} ago`;
+  return formatRelativeTimeShared(iso);
 }
 
 type StaffUserListItemProps = {

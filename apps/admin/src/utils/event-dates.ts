@@ -412,3 +412,26 @@ export function formatUtcDateTime(iso: string): string {
   });
   return `${base} UTC`;
 }
+
+/**
+ * Compact "N min/hours/days ago" for recency-focused UI (session/staff activity, live feeds) -
+ * an alternative to formatUtcDateTime's absolute timestamp for contexts where how recent
+ * something was matters more than the exact instant. Canonical version: previously duplicated
+ * with slightly different hour/day thresholds in StaffUserListItem.tsx (hours < 48, days < 60)
+ * and EventOverviewPage.tsx (hours < 24, days < 30) - both now delegate here. The hours < 24 /
+ * days < 30 thresholds are the more common convention (avoids ever showing e.g. "47 hours ago").
+ * Callers decide their own fallback text for a missing/null timestamp; this only formats a
+ * known instant.
+ */
+export function formatRelativeTime(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  if (diffMs < 60_000) return "Just now";
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days} day${days === 1 ? "" : "s"} ago`;
+  const months = Math.floor(days / 30);
+  return `${months} month${months === 1 ? "" : "s"} ago`;
+}
