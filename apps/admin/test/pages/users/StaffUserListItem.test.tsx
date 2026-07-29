@@ -30,4 +30,25 @@ describe("StaffUserTableRow", () => {
     expect(screen.getByText("Never")).toBeTruthy();
     expect(screen.getAllByText("-")).toHaveLength(1);
   });
+
+  it("uses the shared relative-time format for staff who have signed in", () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(new Date("2026-01-01T13:00:00.000Z").getTime());
+    try {
+      render(
+        <table>
+          <tbody>
+            <StaffUserTableRow
+              user={{ ...user, last_login_at: "2026-01-01T12:30:00.000Z" }}
+              onEdit={vi.fn()}
+              onRevokeSessions={vi.fn()}
+            />
+          </tbody>
+        </table>,
+      );
+
+      expect(screen.getByText("30 min ago")).toBeTruthy();
+    } finally {
+      now.mockRestore();
+    }
+  });
 });
