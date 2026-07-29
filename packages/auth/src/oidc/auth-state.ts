@@ -73,6 +73,13 @@ interface ConsumedOidcAuthStateRow {
 
 /**
  * Atomically consume OAuth state (single-use). Returns null if missing, expired, or already consumed.
+ *
+ * `expires_at`/`consumed_at` are `timestamp` (no tz) columns holding naive UTC wall-clock
+ * values (matching how Prisma's typed API writes/reads `DateTime` elsewhere in this module).
+ * Comparing them against bare `NOW()` (`timestamptz`) makes Postgres cast `NOW()` down to
+ * `timestamp` using the *session* `TimeZone` GUC, silently shifting it by that zone's UTC
+ * offset — on a non-UTC server this makes every row look already expired. `NOW() AT TIME ZONE
+ * 'utc'` yields a naive UTC timestamp that lines up with the stored values instead.
  */
 export async function consumeOidcAuthState(
   prisma: PrismaClient | Prisma.TransactionClient,
@@ -80,10 +87,10 @@ export async function consumeOidcAuthState(
 ): Promise<ConsumedOidcAuthState | null> {
   const rows = await prisma.$queryRaw<ConsumedOidcAuthStateRow[]>`
     UPDATE "OidcAuthState"
-    SET "consumed_at" = NOW()
+    SET "consumed_at" = (NOW() AT TIME ZONE 'utc')
     WHERE "state" = ${state}
       AND "consumed_at" IS NULL
-      AND "expires_at" > NOW()
+      AND "expires_at" > (NOW() AT TIME ZONE 'utc')
     RETURNING "id", "provider_id", "nonce", "code_verifier", "redirect_next", "link_user_id", "link_step_up_at"
   `;
   return rows[0] ?? null;
