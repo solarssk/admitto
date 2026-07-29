@@ -193,7 +193,7 @@ describe("CameraOverlay item issuing (#434)", () => {
     expect(screen.getByText("Item 2 of 2")).toBeTruthy();
     expect(screen.getByText("Gift bag")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Mark gift bag given" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mark gift bag issued" }));
     expect(onItemAction).toHaveBeenCalledWith("gift_bag", "issued");
     // onItemAction is a bare spy here (doesn't update `card`), so the
     // `items` prop still shows both as pending — the summary reads them as
@@ -263,7 +263,7 @@ describe("CameraOverlay item issuing (#434)", () => {
     render(<Harness />);
 
     fireEvent.click(screen.getByRole("button", { name: "Mark badge issued" }));
-    fireEvent.click(screen.getByRole("button", { name: "Mark gift bag given" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mark gift bag issued" }));
 
     expect(screen.getByText("All items issued")).toBeTruthy();
     expect(document.querySelector(".ck-items--incomplete")).toBeNull();
