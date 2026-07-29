@@ -32,4 +32,16 @@ describe("CustomDataFieldInput", () => {
     fireEvent.change(input, { target: { value: type === "select" ? "Vegan" : "true" } });
     expect(onChange).toHaveBeenCalledWith(type === "select" ? "Vegan" : "true");
   });
+
+  it.each(["select", "boolean"] as const)("prompts before selecting a required %s field", (type) => {
+    render(
+      <CustomDataFieldInput
+        field={{ ...baseField, type, required: true, options: type === "select" ? ["Vegan"] : null }}
+        value=""
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect((screen.getByLabelText("Diet *") as HTMLSelectElement).options[0]?.text).toBe("Choose…");
+  });
 });

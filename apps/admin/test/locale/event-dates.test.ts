@@ -107,6 +107,8 @@ describe("timezone offset labels", () => {
     expect(zonedTimeLabel("2026-06-28T13:00:00.000Z")).toBe("(UTC)");
     expect(zonedTimeLabel("2026-06-28T13:00:00.000Z", "Asia/Kolkata")).toBe("(Asia/Kolkata, UTC+5:30)");
     expect(zonedTimeLabel("not-a-date", "Europe/Warsaw")).toBe("(Europe/Warsaw)");
+    expect(formatEventDateTime("not-a-date", "Europe/Warsaw")).toBe("Invalid Date");
+    expect(formatEventTime("not-a-date", "Europe/Warsaw")).toBe("Invalid Date");
   });
 });
 
