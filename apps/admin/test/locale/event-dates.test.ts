@@ -51,12 +51,12 @@ describe("formatEventDate with preferred locale", () => {
 describe("formatEventDateTime and formatUtcDateTime", () => {
   afterEach(() => setPreferredLocale(null));
 
-  it("formatEventDateTime shows event TZ abbreviation", () => {
+  it("formatEventDateTime shows event TZ as a locale-independent UTC offset", () => {
     setPreferredLocale("en-GB");
     const result = formatEventDateTime("2026-06-28T13:00:00.000Z", "Europe/Warsaw");
     expect(result).toMatch(/28 Jun 2026/);
     expect(result).toMatch(/15:00/);
-    expect(result).toMatch(/CEST|GMT\+2/);
+    expect(result).toMatch(/UTC\+2/);
   });
 
   it("formatUtcDateTime always shows UTC regardless of input TZ", () => {
@@ -82,12 +82,12 @@ describe("formatEventDateTime and formatUtcDateTime", () => {
     expect(result).toMatch(/2026/);
   });
 
-  it("formatEventTime shows time and TZ abbreviation only", () => {
+  it("formatEventTime shows time and UTC offset only", () => {
     setPreferredLocale("en-GB");
     const result = formatEventTime("2026-06-28T13:00:00.000Z", "Europe/Warsaw");
     expect(result).not.toMatch(/Jun 2026/);
     expect(result).toMatch(/15:00/);
-    expect(result).toMatch(/CEST|GMT\+2/);
+    expect(result).toMatch(/UTC\+2/);
   });
 });
 

@@ -285,7 +285,7 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
     ).toBe("Email: old@example.com → new@example.com, Company: Old Co → New Co");
   });
 
-  it("shows an em dash for a null before/after value in a captured change (e.g. company set for the first time)", () => {
+  it("shows a dash for a null before/after value in a captured change (e.g. company set for the first time)", () => {
     expect(
       getTimelineDetail(
         entry({
@@ -296,7 +296,7 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
           },
         }),
       ),
-    ).toBe("Company: — → New Co");
+    ).toBe("Company: - → New Co");
   });
 
   it("falls back to the field name alone for a malformed field_changes shape, instead of throwing (Codecov review, fieldValueChange defensive branches)", () => {
@@ -455,11 +455,13 @@ describe("formatActivityTimestamp (PO review, round 2 — actor's timezone at wr
 
   it("uses the entry's captured timezone over the event's, when both are known", () => {
     setPreferredLocale("en-GB");
-    // An admin managing a Bangalore event from Zurich should see that edit as CEST, not
-    // IST — the entry's own captured timezone wins over the event's.
+    // An admin managing a Bangalore event from Zurich should see that edit in Warsaw's
+    // offset (UTC+2), not Kolkata's — the entry's own captured timezone wins over the
+    // event's. A single numeric offset (not a locale-dependent "CEST"/"GMT+2" split) is
+    // deterministic regardless of the viewer's own locale.
     const result = formatActivityTimestamp(ISO, "Europe/Warsaw", "Asia/Kolkata");
     expect(result).toMatch(/15:00/);
-    expect(result).toMatch(/CEST|GMT\+2/);
+    expect(result).toMatch(/UTC\+2/);
   });
 
   it("falls back to the event's timezone when the entry has none captured", () => {
@@ -468,7 +470,7 @@ describe("formatActivityTimestamp (PO review, round 2 — actor's timezone at wr
     // those keep displaying in the event's own timezone, same as before this feature.
     const result = formatActivityTimestamp(ISO, null, "Europe/Warsaw");
     expect(result).toMatch(/15:00/);
-    expect(result).toMatch(/CEST|GMT\+2/);
+    expect(result).toMatch(/UTC\+2/);
   });
 });
 

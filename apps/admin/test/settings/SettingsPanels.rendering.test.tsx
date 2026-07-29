@@ -275,7 +275,7 @@ describe("AuditLogPanel rendering", () => {
     renderAuditPanel();
 
     const table = await screen.findByRole("table");
-    expect(within(table).getAllByText("—")).toHaveLength(2);
+    expect(within(table).getAllByText("-")).toHaveLength(2);
     expect(within(table).queryByText("View")).toBeNull();
   });
 
@@ -341,7 +341,7 @@ describe("AuditLogPanel rendering", () => {
 
     const table = await screen.findByRole("table");
     expect(within(table).getByText("2026-06-15 12:00:00 UTC")).toBeTruthy();
-    expect(within(table).getByText(/Warsaw, Poland/)).toBeTruthy();
+    expect(within(table).getByText(/Europe\/Warsaw, UTC\+2/)).toBeTruthy();
   });
 
   it("humanizes the mail provider metadata value instead of showing the raw enum", async () => {
@@ -403,7 +403,7 @@ describe("AuditLogPanel rendering", () => {
     const table = await screen.findByRole("table");
     fireEvent.click(within(table).getByText("View"));
     expect(within(table).getByText("Note")).toBeTruthy();
-    expect(within(table).getByText("—")).toBeTruthy();
+    expect(within(table).getByText("-")).toBeTruthy();
     expect(within(table).getByText("Fields changed")).toBeTruthy();
     expect(within(table).getByText("From address")).toBeTruthy();
     expect(within(table).getByText("Removed ids")).toBeTruthy();
@@ -436,7 +436,7 @@ describe("AuditLogPanel rendering", () => {
       const [summary] = writeText.mock.calls[0]!;
       expect(summary).toContain("Action: Event created");
       expect(summary).toContain("Actor: Alice Admin (alice@example.com)");
-      expect(summary).toMatch(/Time: 2026-01-01 12:00:00 UTC \(.*Warsaw, Poland.*\)/);
+      expect(summary).toMatch(/Time: 2026-01-01 12:00:00 UTC \(13:00 \(Europe\/Warsaw, UTC\+1\)\)/);
       expect(summary).toContain("Details:");
       expect(summary).toContain("Note: hello");
       expect(await screen.findByText("Row copied to clipboard")).toBeTruthy();
@@ -463,7 +463,7 @@ describe("AuditLogPanel rendering", () => {
       const table = await screen.findByRole("table");
       fireEvent.click(within(table).getByRole("button", { name: "Copy row" }));
 
-      expect(await screen.findByText("Could not copy — clipboard access was blocked.")).toBeTruthy();
+      expect(await screen.findByText("Could not copy. Clipboard access was blocked.")).toBeTruthy();
     } finally {
       Object.assign(navigator, { clipboard: originalClipboard });
     }
@@ -493,7 +493,7 @@ describe("AuditLogPanel rendering", () => {
       expect(cards).toHaveLength(2);
       const firstCard = cards[0] as HTMLElement;
       expect(within(firstCard).getByText("Alice Admin")).toBeTruthy();
-      expect(within(firstCard).getByText(/Warsaw, Poland/)).toBeTruthy();
+      expect(within(firstCard).getByText(/Europe\/Warsaw, UTC\+1/)).toBeTruthy();
       expect(within(firstCard).getByText("alice@example.com")).toBeTruthy();
       const secondCard = cards[1] as HTMLElement;
       expect(within(secondCard).getByText("Deleted user")).toBeTruthy();
@@ -1234,7 +1234,7 @@ describe("AuditLogPanel Security view rendering", () => {
 
       const table = await screen.findByRole("table");
       expect(within(table).getByText("2026-01-01 12:00:00 UTC")).toBeTruthy();
-      expect(within(table).getByText(/Warsaw, Poland/)).toBeTruthy();
+      expect(within(table).getByText(/Europe\/Warsaw, UTC\+1/)).toBeTruthy();
     } finally {
       resolvedOptionsSpy.mockRestore();
     }
@@ -1290,7 +1290,7 @@ describe("AuditLogPanel Security view rendering", () => {
     expect(within(rows[0]!).getByText("bob@example.com")).toBeTruthy();
     expect(within(rows[1]!).getByText("Unknown")).toBeTruthy();
     expect(within(rows[1]!).getByText("Login failed")).toBeTruthy();
-    expect(within(rows[1]!).getByText("—")).toBeTruthy();
+    expect(within(rows[1]!).getByText("-")).toBeTruthy();
     const deletedCell = within(rows[2]!).getByText("Unknown").closest("td");
     expect(deletedCell?.getAttribute("title")).toBe("deleted-user");
   });
@@ -1381,7 +1381,7 @@ describe("AuditLogPanel Security view rendering", () => {
 
       expect(writeText).toHaveBeenCalledTimes(1);
       const [summary] = writeText.mock.calls[0]!;
-      expect(summary).toMatch(/Time: 2026-01-01 12:00:00 UTC \(.*Warsaw, Poland.*\)/);
+      expect(summary).toMatch(/Time: 2026-01-01 12:00:00 UTC \(13:00 \(Europe\/Warsaw, UTC\+1\)\)/);
       expect(summary).toContain("Event: Login succeeded");
       expect(summary).toContain("User: Alice Admin");
       expect(summary).toContain("Details:");
@@ -1923,7 +1923,7 @@ describe("SystemLogsPanel rendering", () => {
       await screen.findByText("http_request");
 
       fireEvent.click(screen.getByRole("button", { name: "Copy" }));
-      expect(await screen.findByText("Could not copy — clipboard access was blocked.")).toBeTruthy();
+      expect(await screen.findByText("Could not copy. Clipboard access was blocked.")).toBeTruthy();
     } finally {
       Object.assign(navigator, { clipboard: originalClipboard });
     }

@@ -30,23 +30,68 @@ export function formatEventCalendarDate(iso: string): string {
   return formatEventDate(iso, "UTC");
 }
 
-/** Category 1 — event operational timestamps in event timezone with TZ abbreviation. */
-export function formatEventDateTime(iso: string, timezone?: string): string {
-  return new Date(iso).toLocaleString(getPreferredLocale(), {
-    ...DATETIME_OPTS,
-    timeZone: timezone ?? "UTC",
-    timeZoneName: "short",
-  });
+/**
+ * Numeric UTC offset for `timezone` at the instant `iso`, e.g. "UTC+2" or "UTC+5:30" ("UTC"
+ * with no offset for the UTC zone itself, which has none). Resolved for the given instant
+ * (not the zone's year-round standard offset) so DST is reflected correctly — a Warsaw event
+ * in July reads "UTC+2", the same event in January reads "UTC+1".
+ *
+ * Deliberately locale-independent (always "en-US" internally, regardless of the viewer's own
+ * `getPreferredLocale()`): `timeZoneName: "short"` used to render this same offset as a letter
+ * abbreviation ("CEST", "IST") or a numeric one ("GMT+2") depending on the *viewer's* locale,
+ * not the event's zone — two admins looking at the same event time could see different formats.
+ * A fixed numeric offset removes that ambiguity for every locale and every zone (e.g. India's
+ * GMT+5:30 has no short letter abbreviation at all).
+ *
+ * Returns "" for an invalid/unparseable `iso` rather than throwing, so callers that build a
+ * "base + offset" string (e.g. formatEventDateTime) degrade to the base's own "Invalid Date"
+ * text instead of crashing - `Intl.DateTimeFormat.formatToParts` throws on an invalid Date,
+ * unlike `Date.prototype.toLocaleString`, which silently renders "Invalid Date".
+ */
+export function utcOffsetLabel(iso: string, timezone?: string): string {
+  const zone = timezone ?? "UTC";
+  if (zone === "UTC") return "UTC";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: zone,
+    timeZoneName: "shortOffset",
+  }).formatToParts(date);
+  const gmtOffset = parts.find((p) => p.type === "timeZoneName")?.value ?? "GMT+0";
+  return gmtOffset.replace("GMT", "UTC");
 }
 
-/** Category 1 — time-only with timezone abbreviation (e.g. admitted_at in tables). */
+/**
+ * Full zone label for contexts where the IANA zone name itself must also be shown next to the
+ * offset — audit trails and attendee-facing mail, where the event's zone isn't otherwise visible
+ * on the page/screen — e.g. "(Europe/Warsaw, UTC+2)", or bare "(UTC)" for the UTC zone.
+ */
+export function zonedTimeLabel(iso: string, timezone?: string): string {
+  const zone = timezone ?? "UTC";
+  if (zone === "UTC") return "(UTC)";
+  const offset = utcOffsetLabel(iso, zone);
+  return offset ? `(${zone}, ${offset})` : `(${zone})`;
+}
+
+/** Category 1 — event operational timestamps in event timezone with a numeric UTC offset. */
+export function formatEventDateTime(iso: string, timezone?: string): string {
+  const base = new Date(iso).toLocaleString(getPreferredLocale(), {
+    ...DATETIME_OPTS,
+    timeZone: timezone ?? "UTC",
+  });
+  const offset = utcOffsetLabel(iso, timezone);
+  return offset ? `${base} ${offset}` : base;
+}
+
+/** Category 1 — time-only with a numeric UTC offset (e.g. admitted_at in tables). */
 export function formatEventTime(iso: string, timezone?: string): string {
-  return new Date(iso).toLocaleString(getPreferredLocale(), {
+  const base = new Date(iso).toLocaleString(getPreferredLocale(), {
     hour: "2-digit",
     minute: "2-digit",
     timeZone: timezone ?? "UTC",
-    timeZoneName: "short",
   });
+  const offset = utcOffsetLabel(iso, timezone);
+  return offset ? `${base} ${offset}` : base;
 }
 
 /** Start of a calendar day in UTC as ISO string (for audit log date filters). */
@@ -361,9 +406,9 @@ export function formatAdmissionDisplayParts(
 
 /** Category 2 — admin/system timestamps always in UTC with explicit label. */
 export function formatUtcDateTime(iso: string): string {
-  return new Date(iso).toLocaleString(getPreferredLocale(), {
+  const base = new Date(iso).toLocaleString(getPreferredLocale(), {
     ...DATETIME_OPTS,
     timeZone: "UTC",
-    timeZoneName: "short",
   });
+  return `${base} UTC`;
 }
