@@ -568,7 +568,7 @@ export function BrandingSettingsPanel() {
           Instance-wide accent colour and font for staff UI and public ticket pages. Ticket logos
           are set in Organisation branding above, not here.
         </p>
-        <span className="at-label" id="branding-primary-label">
+        <span className="overline" id="branding-primary-label">
           Primary colour
         </span>
         <div aria-labelledby="branding-primary-label">
@@ -586,7 +586,7 @@ export function BrandingSettingsPanel() {
             {themeFieldErrors.primary}
           </p>
         )}
-        <p className="at-hint" style={{ marginTop: 8 }}>
+        <p className="at-hint branding-scope-hint" style={{ marginTop: 8 }}>
           {colorMode === "custom" ? (
             <>
               Custom colour: <code>{customHex}</code>
@@ -596,7 +596,7 @@ export function BrandingSettingsPanel() {
           )}
         </p>
 
-        <span className="at-label" id="branding-font-label" style={{ marginTop: 20, display: "block" }}>
+        <span className="overline" id="branding-font-label" style={{ marginTop: 20, display: "block" }}>
           Font
         </span>
         <div aria-labelledby="branding-font-label">

@@ -3135,8 +3135,13 @@
   }
 }
 
+/* Branding's own standalone description paragraphs read a size smaller than the rest of the
+   app's equivalent descriptive text (e.g. .mail-field-hint) since they use the generic .at-hint
+   component class (--fs-xs) instead - bumped here to match, scoped to just this panel so the
+   many other, unrelated .at-hint call sites elsewhere keep their own existing size. */
 .branding-scope-hint {
   margin: 0 0 var(--space-4);
+  font-size: var(--fs-sm);
 }
 
 .foot-actions {
@@ -3306,13 +3311,6 @@
   border-color: var(--primary);
 }
 
-/* Saved custom font tiles additionally host a remove IconButton, so they need extra top room:
-   .font-option-card__remove (a 28px --control-h-sm icon button at top: 6px, so it occupies
-   6-34px) would otherwise overlap the "Aa" sample below it. */
-.font-option-card--custom {
-  padding-top: 40px;
-}
-
 .font-option-card__select {
   all: unset;
   display: flex;
@@ -3323,10 +3321,18 @@
   cursor: pointer;
 }
 
+/* Floats half outside the card's own top-right corner, like a chip's remove badge - this way a
+   saved custom tile needs no reserved top padding of its own and stays exactly the same height
+   as every built-in tile (a reserved-padding approach previously pushed the tile's own content
+   down relative to its siblings and left an uneven gap above the styles pill). */
 .font-option-card__remove {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: -8px;
+  right: -8px;
+  background: var(--surface-card);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-sm);
 }
 
 .font-styles-pill-wrap {
@@ -3641,7 +3647,10 @@
   margin-top: 10px;
   padding-top: 10px;
   border-top: var(--border-width) dashed var(--border);
-  font-size: var(--fs-sm);
+  /* Larger than the app's usual body text on purpose - this row exists specifically to let
+     someone see the Regular/Bold/Italic weight contrast at a glance, and that contrast is much
+     harder to judge at normal body size. */
+  font-size: var(--fs-h2);
   color: var(--text-primary);
 }
 
