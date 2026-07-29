@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EventDto, UserListItemDto } from "../../src/api/types.js";
 import { UserEditModal } from "../../src/pages/users/UserEditModal.js";
@@ -22,11 +22,15 @@ import {
   fetchAdminEvents,
   fetchAdminOrganizations,
   grantUserRole,
+  resetUserMfa,
+  resetUserPassword,
 } from "../../src/api/client.js";
 
 const mockFetchAdminEvents = vi.mocked(fetchAdminEvents);
 const mockFetchAdminOrganizations = vi.mocked(fetchAdminOrganizations);
 const mockGrantUserRole = vi.mocked(grantUserRole);
+const mockResetUserMfa = vi.mocked(resetUserMfa);
+const mockResetUserPassword = vi.mocked(resetUserPassword);
 
 const event: EventDto = {
   id: "evt-1",
@@ -68,6 +72,8 @@ beforeEach(() => {
   mockGrantUserRole.mockResolvedValue({
     assignment: { id: "role-1", role: "superadmin", scope_type: "instance", scope_id: null },
   });
+  mockResetUserMfa.mockResolvedValue(undefined);
+  mockResetUserPassword.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -130,5 +136,37 @@ describe("UserEditModal role scope controls", () => {
     const organizationSelect = screen.getByLabelText("Organization scope for admin role");
     expect(organizationSelect.hasAttribute("disabled")).toBe(true);
     expect(screen.getByRole("option", { name: "No organizations available" })).toBeTruthy();
+  });
+});
+
+describe("UserEditModal reset actions", () => {
+  it("confirms a 2FA reset with the compact action label and reports why the user must sign in again", async () => {
+    const { onClose, onUpdated } = renderModal();
+    await screen.findByRole("button", { name: "Reset 2FA" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset 2FA" }));
+    const dialog = await screen.findByRole("dialog", { name: "Reset 2FA" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reset" }));
+
+    await waitFor(() => {
+      expect(mockResetUserMfa).toHaveBeenCalledWith("usr-1");
+    });
+    expect(onUpdated).toHaveBeenCalledWith(user, "2FA reset. User must sign in again.");
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("resets a password and reports that existing sessions were revoked", async () => {
+    const { onClose, onUpdated } = renderModal();
+    await screen.findByRole("button", { name: "Reset password" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset password" }));
+    fireEvent.change(screen.getByLabelText("New temporary password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Reset password" }).at(-1)!);
+
+    await waitFor(() => {
+      expect(mockResetUserPassword).toHaveBeenCalledWith("usr-1", { new_password: "long-enough-password" });
+    });
+    expect(onUpdated).toHaveBeenCalledWith(user, "Password reset. Sessions revoked.");
+    expect(onClose).toHaveBeenCalled();
   });
 });

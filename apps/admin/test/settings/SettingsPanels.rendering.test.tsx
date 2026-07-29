@@ -2249,4 +2249,21 @@ describe("SessionsPanel rendering", () => {
     const withoutDeviceDialog = await screen.findByRole("dialog");
     expect(withoutDeviceDialog.textContent).toContain("plain@example.com? Last active");
   });
+
+  it("labels IP addresses explicitly and keeps a missing address distinct from relative activity", async () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(new Date("2026-01-01T13:00:00.000Z").getTime());
+    try {
+      vi.mocked(fetchSessions).mockResolvedValue({
+        sessions: [makeSession({ ip: null, lastSeenAt: "2026-01-01T12:30:00.000Z" })],
+      });
+      renderWithToast(<SessionsPanel />);
+
+      const table = await screen.findByRole("table");
+      expect(within(table).getByRole("columnheader", { name: "IP address" })).toBeTruthy();
+      expect(within(table).getByText("-")).toBeTruthy();
+      expect(within(table).getByText("30 min ago")).toBeTruthy();
+    } finally {
+      now.mockRestore();
+    }
+  });
 });
