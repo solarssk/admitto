@@ -3240,6 +3240,10 @@
   margin-top: var(--space-2);
 }
 
+/* A plain, non-interactive container for both built-in and custom font tiles - clicking to pick
+   a font, opening the styles popover, and removing a custom family are each their own focusable
+   control inside it (a <button> can't validly contain another interactive descendant, and this
+   card also needs room for up to three: select, styles pill, remove). */
 .font-option-card {
   display: flex;
   flex-direction: column;
@@ -3249,7 +3253,6 @@
   border-radius: var(--radius-md);
   border: var(--border-width) solid var(--border);
   background: var(--surface-card);
-  cursor: pointer;
   text-align: center;
   position: relative;
 }
@@ -3293,22 +3296,20 @@
 }
 
 .font-option-card--upload {
+  /* The only remaining variant that's a real, whole-tile <button> - it has no separate
+     sub-controls to leave room for, so the full card itself is the click target. */
   border-style: dashed;
+  cursor: pointer;
 }
 
 .font-option-card--upload:hover {
   border-color: var(--primary);
 }
 
-/* Saved custom font tiles (font-option-card--custom): the card itself is a plain <div> here
-   instead of a <button>, since it also hosts a separate remove IconButton - a <button> can't
-   validly contain another interactive descendant. .font-option-card__select is the invisible
-   full-size "pick this font" control, reset to blend into the card's own flex layout. */
+/* Saved custom font tiles additionally host a remove IconButton, so they need extra top room:
+   .font-option-card__remove (a 28px --control-h-sm icon button at top: 6px, so it occupies
+   6-34px) would otherwise overlap the "Aa" sample below it. */
 .font-option-card--custom {
-  /* Not clickable itself, only its .font-option-card__select child is - and extra top room so
-     .font-option-card__remove (a 28px --control-h-sm icon button at top: 6px, so it occupies
-     6-34px) never overlaps the "Aa" sample below it. */
-  cursor: default;
   padding-top: 40px;
 }
 

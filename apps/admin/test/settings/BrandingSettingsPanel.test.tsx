@@ -255,7 +255,7 @@ describe("BrandingSettingsPanel — colour palette", () => {
     fireEvent.click(screen.getByRole("button", { name: "Restore defaults" }));
 
     expect(screen.getByRole("button", { name: "Admitto blue" }).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByRole("button", { name: /Admitto Sans/ }).className).toContain("font-option-card--active");
+    expect(screen.getByRole("button", { name: /Admitto Sans/ }).closest(".font-option-card")!.className).toContain("font-option-card--active");
     expect(document.querySelector("code")).toBeNull();
     expect(screen.getByLabelText("Organisation name")).toHaveProperty("value", "Acme Corp");
     expect(screen.getByAltText(/organisation logo preview/i)).toBeTruthy();
@@ -268,7 +268,7 @@ describe("BrandingSettingsPanel — font picker", () => {
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
     renderWithToast(<BrandingSettingsPanel />);
     await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
-    expect(screen.getByRole("button", { name: /Admitto Sans/ }).className).toContain("font-option-card--active");
+    expect(screen.getByRole("button", { name: /Admitto Sans/ }).closest(".font-option-card")!.className).toContain("font-option-card--active");
   });
 
   it("selects a built-in font as active without deleting a previously-saved custom family from the library", async () => {
@@ -285,7 +285,7 @@ describe("BrandingSettingsPanel — font picker", () => {
     await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
 
     fireEvent.click(screen.getByRole("button", { name: /IBM Plex Sans/ }));
-    expect(screen.getByRole("button", { name: /IBM Plex Sans/ }).className).toContain("font-option-card--active");
+    expect(screen.getByRole("button", { name: /IBM Plex Sans/ }).closest(".font-option-card")!.className).toContain("font-option-card--active");
     expect(screen.getByText(/Unsaved changes/)).toBeTruthy();
     // Still shown in the picker (not deleted) even though it's no longer the active pick.
     expect(screen.getByText("Old Font")).toBeTruthy();
@@ -407,7 +407,7 @@ describe("BrandingSettingsPanel — font picker", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove Acme Sans" }));
 
     expect(screen.queryByText("Acme Sans")).toBeNull();
-    expect(screen.getByRole("button", { name: /Admitto Sans/ }).className).toContain("font-option-card--active");
+    expect(screen.getByRole("button", { name: /Admitto Sans/ }).closest(".font-option-card")!.className).toContain("font-option-card--active");
     expect(screen.getByText(/Unsaved changes/)).toBeTruthy();
   });
 
@@ -427,7 +427,7 @@ describe("BrandingSettingsPanel — font picker", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove Acme Sans" }));
 
     expect(screen.queryByText("Acme Sans")).toBeNull();
-    expect(screen.getByRole("button", { name: /Manrope/ }).className).toContain("font-option-card--active");
+    expect(screen.getByRole("button", { name: /Manrope/ }).closest(".font-option-card")!.className).toContain("font-option-card--active");
   });
 
   it("shows a faked-style hint in the live preview when the custom family has no bold/italic variant", async () => {

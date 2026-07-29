@@ -147,7 +147,7 @@ function FontStylesPill({ styles, active }: Readonly<{ styles: readonly string[]
         {styles.length} style{styles.length === 1 ? "" : "s"} <i className="ti ti-chevron-down" aria-hidden="true" />
       </button>
       {open && (
-        <div className="font-styles-popover" role="menu" onClick={(e) => e.stopPropagation()}>
+        <div className="font-styles-popover" role="menu">
           {styles.map((s) => (
             <span key={s} className="font-styles-popover__item">
               {s}
@@ -183,20 +183,21 @@ function FontPickerField({
   return (
     <div className="font-option-grid">
       {FONT_OPTIONS.map((f) => (
-        <button
-          key={f.key}
-          type="button"
-          className={`font-option-card${activeName === f.name ? " font-option-card--active" : ""}`}
-          disabled={disabled}
-          onClick={() => onPickBuiltIn(f.name)}
-        >
-          <span className="font-option-card__sample" style={{ fontFamily: f.previewStack }}>
-            Aa
-          </span>
-          <span className="font-option-card__label">{f.label}</span>
-          <span className="font-option-card__hint">{f.hint}</span>
+        <div key={f.key} className={`font-option-card${activeName === f.name ? " font-option-card--active" : ""}`}>
+          <button
+            type="button"
+            className="font-option-card__select"
+            disabled={disabled}
+            onClick={() => onPickBuiltIn(f.name)}
+          >
+            <span className="font-option-card__sample" style={{ fontFamily: f.previewStack }}>
+              Aa
+            </span>
+            <span className="font-option-card__label">{f.label}</span>
+            <span className="font-option-card__hint">{f.hint}</span>
+          </button>
           <FontStylesPill styles={f.styles} active={activeName === f.name} />
-        </button>
+        </div>
       ))}
       {customFamilies.map((fam) => {
         const active = activeName === fam.name;
@@ -353,9 +354,10 @@ export function BrandingSettingsPanel() {
     return () => {
       for (const face of registered) document.fonts.delete(face);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on customFamiliesKey (a
-    // content fingerprint), not themeDraft.custom_font_families itself, which is a fresh array
-    // every render and would re-register every FontFace on every unrelated keystroke in the form.
+    // Keyed on customFamiliesKey (a content fingerprint), not themeDraft.custom_font_families
+    // itself, which is a fresh array every render and would re-register every FontFace on every
+    // unrelated keystroke in the form.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see comment above
   }, [customFamiliesKey]);
 
   const handlePickColor = (key: string, hex: string) => {
