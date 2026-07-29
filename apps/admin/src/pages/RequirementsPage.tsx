@@ -154,8 +154,8 @@ function EventBehaviourContent({
         <div className="requirements-behaviour-row__text">
           <strong>Issue badge at entry</strong>
           <p>
-            Auto-issues the badge item when an attendee is admitted. Requires the badge
-            item to exist, be active, and have "Issue on check-in" enabled.
+            Automatically issues the badge item when an attendee is admitted. The badge item
+            must exist, be active, and have "Issue on check-in" turned on.
           </p>
         </div>
         <ArchivedGuard
@@ -164,7 +164,7 @@ function EventBehaviourContent({
           disabled={opsTogglingIds.has("badge_at_entry") || badgeInactive}
           tooltip={
             badgeInactive
-              ? "Can't enable this — the badge item is disabled or has \"Issue on check-in\" turned off."
+              ? "Can't enable this. The badge item is disabled or has \"Issue on check-in\" turned off."
               : undefined
           }
         >
@@ -204,9 +204,9 @@ function EventBehaviourContent({
         <div className="requirements-behaviour-row__text">
           <strong>Allow manual lookup</strong>
           <p>
-            When off, operators can only check in via QR scan — name and short-query
-            search are blocked in the check-in screen. Does not affect the admin Attendees
-            page.
+            When off, operators can only check in by scanning a QR code. Searching by name
+            or partial text is blocked on the check-in screen (the admin Attendees page is
+            unaffected).
           </p>
         </div>
         <ArchivedGuard
@@ -230,7 +230,7 @@ function EventBehaviourContent({
           <strong>Auto-advance after valid check-in</strong>
           <p>
             After a valid scan, the check-in screen clears automatically for the next
-            attendee — without tapping Next.
+            attendee, without tapping Next.
           </p>
         </div>
         <ArchivedGuard
@@ -285,7 +285,7 @@ function AddItemModal({
           <div>
             <h2 className="event-item-modal__title">Add item</h2>
             <p className="event-item-modal__subtitle">
-              A physical item or resource issued or tracked at check-in — for example a gift
+              A physical item or resource issued or tracked at check-in, for example a gift
               bag, badge, or headset. You can configure rules after creating it.
             </p>
           </div>
@@ -302,7 +302,7 @@ function AddItemModal({
               </label>
               {addLabel.trim() && (
                 <span className="at-hint">
-                  ID: <code>{addKeyPreview || slugifyItemKey(addLabel) || "—"}</code>
+                  ID: <code>{addKeyPreview || slugifyItemKey(addLabel) || "-"}</code>
                   {addKeyPreview && addKeyPreview !== slugifyItemKey(addLabel) && (
                     <> (unique suffix added)</>
                   )}
@@ -322,7 +322,7 @@ function AddItemModal({
               aria-describedby={addNameError ? "add-item-name-error" : undefined}
             />
             <span className="at-hint">
-              The name shown to staff during check-in. Keep it short and clear — e.g. "Gift
+              The name shown to staff during check-in. Keep it short and clear, e.g. "Gift
               bag", "Name badge", "T-shirt".
             </span>
             {addNameError && (
@@ -339,7 +339,7 @@ function AddItemModal({
             variant="primary"
             disabled={adding || !addLabel.trim()}
           >
-            {adding ? "Creating…" : "Create item"}
+            {adding ? "Creating…" : "Create"}
           </Button>
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancel
@@ -464,7 +464,7 @@ export function RequirementsPage() {
     try {
       const updated = await updateEventItem(eventId, item.id, { enabled: !item.enabled });
       setItems((rows) => rows.map((r) => (r.id === updated.id ? updated : r)));
-      addToast(updated.enabled ? "Item enabled — saved" : "Item disabled — saved", "success");
+      addToast(updated.enabled ? "Item enabled" : "Item disabled", "success");
       if (updated.key === "badge" && !updated.enabled) {
         // Server auto-disables badge_at_entry when the badge item is turned
         // off — refresh so the Event behaviour toggle doesn't show stale ON.
@@ -480,7 +480,7 @@ export function RequirementsPage() {
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "item_in_use")) {
         addToast(
-          "This item has been issued to attendees — record returns before disabling it.",
+          "This item has been issued to attendees. Record returns before disabling it.",
           "warning",
         );
       } else {
@@ -541,7 +541,7 @@ export function RequirementsPage() {
       setOpsConfig(prev);
       if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "badge_item_inactive")) {
         addToast(
-          "Can't enable this — the badge item is disabled or has \"Issue on check-in\" turned off.",
+          "Can't enable this. The badge item is disabled or has \"Issue on check-in\" turned off.",
           "warning",
         );
       } else {
@@ -590,7 +590,7 @@ export function RequirementsPage() {
                     else setAddOpen(true);
                   }}
                 >
-                  Add item
+                  Add
                 </Button>
               )}
             </ArchivedGuard>

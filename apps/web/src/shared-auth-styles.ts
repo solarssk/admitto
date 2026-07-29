@@ -379,7 +379,7 @@ export function renderAuthDocument(options: AuthDocumentOptions): string {
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;");
   const description = step
-    ? `${AUTH_PRODUCT_NAME} staff portal — ${step}`
+    ? `${AUTH_PRODUCT_NAME} staff portal - ${step}`
     : `${AUTH_PRODUCT_NAME} staff portal`;
   return `<!DOCTYPE html>
 <html lang="en">
@@ -391,7 +391,7 @@ export function renderAuthDocument(options: AuthDocumentOptions): string {
   <meta property="og:site_name" content="${esc(AUTH_PRODUCT_NAME)}">
   <meta name="description" content="${esc(description)}">
   ${renderAdmittoFaviconLink()}
-  <title>${esc(AUTH_PRODUCT_NAME)}${step ? ` — ${esc(step)}` : ""}</title>
+  <title>${esc(AUTH_PRODUCT_NAME)}${step ? ` - ${esc(step)}` : ""}</title>
   <style>${css}</style>
 </head>
 <body>

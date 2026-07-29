@@ -154,7 +154,7 @@ async function checkInstanceUrl(
     return {
       ok: true,
       warn: true,
-      detail: "Instance URL optional in development — set in Settings → General or BASE_URL env",
+      detail: "Instance URL optional in development; set in Settings → General or BASE_URL env",
     };
   }
 

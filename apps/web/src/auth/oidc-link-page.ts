@@ -38,7 +38,7 @@ export function renderOidcLinkForm(options: RenderOidcLinkFormOptions): string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Link ${esc(providerName)} — Admitto</title>
+  <title>Link ${esc(providerName)} - Admitto</title>
   <style>
     body { font-family: system-ui, sans-serif; max-width: 420px; margin: 2rem auto; padding: 0 1rem; color: #111; }
     h1 { font-size: 1.25rem; }

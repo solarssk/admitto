@@ -246,7 +246,7 @@ function attendeeEditedDetail(
       const key = String(f);
       const label = fieldChangeLabel(key, customFieldLabels);
       const change = fieldValueChange(meta.field_changes, key);
-      return change ? `${label}: ${change.from ?? "—"} → ${change.to ?? "—"}` : label;
+      return change ? `${label}: ${change.from ?? "-"} → ${change.to ?? "-"}` : label;
     })
     .join(", ");
 }
@@ -262,7 +262,7 @@ function passChangeDetail(
   return `${formatPassStatus(from)} → ${formatPassStatus(to)}`;
 }
 
-/** `eventItems` is the same registry-backed list the Event-day items card renders
+/** `eventItems` is the same registry-backed list the Event items card renders
  * (detail.event_items) - an item's real configured label (e.g. "Gratis") beats humanizing its
  * raw key, same reasoning as fieldChangeLabel for custom_data fields. */
 function itemStateDetail(

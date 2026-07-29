@@ -132,7 +132,7 @@ export function CameraOverlayManualSearch({
         {!allowManualLookup && (
           <div className="ms__empty">
             <i className="ti ti-ban" aria-hidden="true" />
-            <span>Manual lookup is disabled for this event — use QR scan only.</span>
+            <span>Manual lookup is disabled for this event. Use QR scan only.</span>
           </div>
         )}
 
@@ -152,7 +152,7 @@ export function CameraOverlayManualSearch({
                     <span>
                       {[a.company, resolveTicketTypeLabel(a.ticket_type, ticketTypes)]
                         .filter(Boolean)
-                        .join(" · ") || "—"}
+                        .join(" · ") || "-"}
                     </span>
                   </div>
                   {a.check_in_status === "admitted" && (

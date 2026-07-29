@@ -18,7 +18,7 @@ export type AttendeeFormState = {
 };
 
 export const ITEMS_LOAD_WARNING =
-  "Attribute fields could not be loaded — core fields are still editable.";
+  "Attribute fields could not be loaded. Core fields are still editable.";
 
 function customFieldsFromDetail(
   detail: AttendeeDetailDto,
@@ -106,6 +106,6 @@ export async function loadAttendeeDetailData(
 }
 
 export function formatDateTime(iso: string | null, timezone?: string): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   return formatEventDateTime(iso, timezone);
 }

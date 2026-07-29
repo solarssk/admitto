@@ -30,23 +30,66 @@ export function formatEventCalendarDate(iso: string): string {
   return formatEventDate(iso, "UTC");
 }
 
-/** Category 1 — event operational timestamps in event timezone with TZ abbreviation. */
-export function formatEventDateTime(iso: string, timezone?: string): string {
-  return new Date(iso).toLocaleString(getPreferredLocale(), {
-    ...DATETIME_OPTS,
-    timeZone: timezone ?? "UTC",
-    timeZoneName: "short",
-  });
+/**
+ * Numeric UTC offset for `timezone` at the instant `iso`, e.g. "UTC+2" or "UTC+5:30" ("UTC"
+ * with no offset for the UTC zone itself, which has none). Resolved for the given instant
+ * (not the zone's year-round standard offset) so DST is reflected correctly — a Warsaw event
+ * in July reads "UTC+2", the same event in January reads "UTC+1".
+ *
+ * Deliberately locale-independent (always "en-US" internally, regardless of the viewer's own
+ * `getPreferredLocale()`): `timeZoneName: "short"` used to render this same offset as a letter
+ * abbreviation ("CEST", "IST") or a numeric one ("GMT+2") depending on the *viewer's* locale,
+ * not the event's zone — two admins looking at the same event time could see different formats.
+ * A fixed numeric offset removes that ambiguity for every locale and every zone (e.g. India's
+ * GMT+5:30 has no short letter abbreviation at all).
+ *
+ * Returns "" for an invalid/unparseable `iso` rather than throwing, so callers that build a
+ * "base + offset" string (e.g. formatEventDateTime) degrade to the base's own "Invalid Date"
+ * text instead of crashing - `Intl.DateTimeFormat.formatToParts` throws on an invalid Date,
+ * unlike `Date.prototype.toLocaleString`, which silently renders "Invalid Date".
+ */
+export function utcOffsetLabel(iso: string, timezone = "UTC"): string {
+  if (timezone === "UTC") return "UTC";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    timeZoneName: "shortOffset",
+  }).formatToParts(date);
+  const gmtOffset = parts.find((p) => p.type === "timeZoneName")?.value ?? "GMT+0";
+  return gmtOffset.replace("GMT", "UTC");
 }
 
-/** Category 1 — time-only with timezone abbreviation (e.g. admitted_at in tables). */
+/**
+ * Full zone label for contexts where the IANA zone name itself must also be shown next to the
+ * offset — audit trails and attendee-facing mail, where the event's zone isn't otherwise visible
+ * on the page/screen — e.g. "(Europe/Warsaw, UTC+2)", or bare "(UTC)" for the UTC zone.
+ */
+export function zonedTimeLabel(iso: string, timezone = "UTC"): string {
+  if (timezone === "UTC") return "(UTC)";
+  const offset = utcOffsetLabel(iso, timezone);
+  return offset ? `(${timezone}, ${offset})` : `(${timezone})`;
+}
+
+/** Category 1 — event operational timestamps in event timezone with a numeric UTC offset. */
+export function formatEventDateTime(iso: string, timezone?: string): string {
+  const base = new Date(iso).toLocaleString(getPreferredLocale(), {
+    ...DATETIME_OPTS,
+    timeZone: timezone ?? "UTC",
+  });
+  const offset = utcOffsetLabel(iso, timezone);
+  return offset ? `${base} ${offset}` : base;
+}
+
+/** Category 1 — time-only with a numeric UTC offset (e.g. admitted_at in tables). */
 export function formatEventTime(iso: string, timezone?: string): string {
-  return new Date(iso).toLocaleString(getPreferredLocale(), {
+  const base = new Date(iso).toLocaleString(getPreferredLocale(), {
     hour: "2-digit",
     minute: "2-digit",
     timeZone: timezone ?? "UTC",
-    timeZoneName: "short",
   });
+  const offset = utcOffsetLabel(iso, timezone);
+  return offset ? `${base} ${offset}` : base;
 }
 
 /** Start of a calendar day in UTC as ISO string (for audit log date filters). */
@@ -361,9 +404,32 @@ export function formatAdmissionDisplayParts(
 
 /** Category 2 — admin/system timestamps always in UTC with explicit label. */
 export function formatUtcDateTime(iso: string): string {
-  return new Date(iso).toLocaleString(getPreferredLocale(), {
+  const base = new Date(iso).toLocaleString(getPreferredLocale(), {
     ...DATETIME_OPTS,
     timeZone: "UTC",
-    timeZoneName: "short",
   });
+  return `${base} UTC`;
+}
+
+/**
+ * Compact "N min/hours/days ago" for recency-focused UI (session/staff activity, live feeds) -
+ * an alternative to formatUtcDateTime's absolute timestamp for contexts where how recent
+ * something was matters more than the exact instant. Canonical version: previously duplicated
+ * with slightly different hour/day thresholds in StaffUserListItem.tsx (hours < 48, days < 60)
+ * and EventOverviewPage.tsx (hours < 24, days < 30) - both now delegate here. The hours < 24 /
+ * days < 30 thresholds are the more common convention (avoids ever showing e.g. "47 hours ago").
+ * Callers decide their own fallback text for a missing/null timestamp; this only formats a
+ * known instant.
+ */
+export function formatRelativeTime(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  if (diffMs < 60_000) return "Just now";
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days} day${days === 1 ? "" : "s"} ago`;
+  const months = Math.floor(days / 30);
+  return `${months} month${months === 1 ? "" : "s"} ago`;
 }

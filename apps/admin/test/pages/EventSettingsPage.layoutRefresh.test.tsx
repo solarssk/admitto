@@ -95,7 +95,7 @@ describe("EventSettingsPage layout refresh after mutations", () => {
     const titleInput = await screen.findByLabelText("Event title");
     fireEvent.change(titleInput, { target: { value: "Summit 2026" } });
 
-    const saveButton = screen.getByRole("button", { name: "Save changes" });
+    const saveButton = screen.getByRole("button", { name: "Save" });
     fireEvent.click(saveButton);
 
     await waitFor(() => {
@@ -124,7 +124,7 @@ describe("EventSettingsPage layout refresh after mutations", () => {
     fireEvent.click(screen.getByRole("button", { name: "Archive event" }));
 
     const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Archive event" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Archive" }));
 
     await waitFor(() => {
       expect(archiveEvent).toHaveBeenCalledWith("evt-1");

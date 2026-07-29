@@ -10,7 +10,6 @@ import {
   type RefObject,
   type SetStateAction,
 } from "react";
-import { getCountryForTimezone } from "countries-and-timezones";
 import { Badge, Button, Card, EmptyState, Input, Tooltip, useToast, type BadgeVariant } from "@admitto/ui";
 import { exportAuditLog, exportSecurityAuditLog, fetchAdminEvents, fetchAuditLog, fetchSecurityAuditLog } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -21,7 +20,7 @@ import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { useClickOutside } from "../components/useClickOutside.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
-import { localeDateInputPattern, utcDayEndIso, utcDayStartIso } from "../utils/event-dates.js";
+import { localeDateInputPattern, utcDayEndIso, utcDayStartIso, zonedTimeLabel } from "../utils/event-dates.js";
 import { getPreferredLocale } from "../utils/locale-store.js";
 import { MAIL_PROVIDER_LABELS } from "./mailProviderOptions.js";
 import { POLL_DEGRADED_THRESHOLD, POLL_INTERVAL_MS, SystemLogsPanel, type SystemLogsPanelHandle } from "./SystemLogsPanel.js";
@@ -163,77 +162,53 @@ const SECURITY_EVENT_TYPE_OPTIONS = Object.keys(SECURITY_EVENT_LABELS).sort((a, 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 const SEARCH_DEBOUNCE_MS = 300;
 
-/** Short label for an IANA timezone (e.g. "Warsaw" from "Europe/Warsaw"). */
-function tzShortLabel(tz: string): string {
-  return tz.split("/").pop()?.replaceAll("_", " ") ?? tz;
-}
-
-/** "Warsaw, Poland" when the timezone resolves to a single country (almost always true for a
- * real IANA zone), otherwise just the city - a bare city name alone doesn't tell a non-local
- * reader which country it's in. */
-function tzPlaceLabel(tz: string): string {
-  const city = tzShortLabel(tz);
-  const country = getCountryForTimezone(tz)?.name;
-  return country ? `${city}, ${country}` : city;
-}
-
 /** UTC instant as "YYYY-MM-DD HH:MM:SS" - `created_at` is already an ISO string in UTC, so this
  * is just trimming it, matching the mockup's compact monospace time format exactly. */
 function formatAuditPrimaryTime(iso: string): string {
   return iso.slice(0, 19).replace("T", " ");
 }
 
-/** Entry's own local time, for rows written from a browser request (the `X-Client-Timezone`
- * header) - null for rows predating the column or written from a non-browser path (CLI), which
- * have no timezone to show. Same locale + `timeZoneName: "short"` as formatEventTime/
- * formatEventDateTime (event-dates.ts) - the app has one standard for tz abbreviations
- * (CEST/EST, not a raw GMT offset), and this should read the same way as everywhere else. */
-function actorLocalTime(entry: AuditLogEntryDto): string | null {
-  if (!entry.actor_timezone) return null;
-  const parts = new Intl.DateTimeFormat(getPreferredLocale(), {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone: entry.actor_timezone,
-    timeZoneName: "short",
-  }).formatToParts(new Date(entry.created_at));
-  const hhmm = `${parts.find((p) => p.type === "hour")?.value}:${parts.find((p) => p.type === "minute")?.value}`;
-  const abbr = parts.find((p) => p.type === "timeZoneName")?.value ?? entry.actor_timezone;
-  return `${hhmm} ${abbr} (${tzPlaceLabel(entry.actor_timezone)})`;
-}
+/** Cached formatter for the hour/minute part of actorLocalTime/viewerLocalTime below -
+ * SECURITY_COLUMNS calls these once per visible row on every live poll (~1.75s), so constructing
+ * a fresh Intl.DateTimeFormat per cell per tick was measurable churn on a tab left open all day.
+ * Keyed by locale + zone so both the actor's own zone (varies per row) and the viewer's fixed
+ * browser zone share the same small cache. */
+const hourMinuteFormatCache = new Map<string, Intl.DateTimeFormat>();
 
-/** Cached formatter for viewerLocalTime below - SECURITY_COLUMNS calls it once per visible row on
- * every live poll (~1.75s), so constructing a fresh Intl.DateTimeFormat per cell per tick was
- * measurable churn on a tab left open all day. Invalidated when locale or browser timezone changes. */
-let viewerLocalTimeFormat: Intl.DateTimeFormat | null = null;
-let viewerLocalTimeFormatKey: string | null = null;
-
-function viewerLocalTimeFormatForNow(): { format: Intl.DateTimeFormat; timeZone: string } {
+function hourMinuteFormat(timeZone: string): Intl.DateTimeFormat {
   const locale = getPreferredLocale();
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const key = `${locale}\0${timeZone}`;
-  if (!viewerLocalTimeFormat || viewerLocalTimeFormatKey !== key) {
-    viewerLocalTimeFormatKey = key;
-    viewerLocalTimeFormat = new Intl.DateTimeFormat(locale, {
+  let format = hourMinuteFormatCache.get(key);
+  if (!format) {
+    format = new Intl.DateTimeFormat(locale, {
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,
       timeZone,
-      timeZoneName: "short",
     });
+    hourMinuteFormatCache.set(key, format);
   }
-  return { format: viewerLocalTimeFormat, timeZone };
+  return format;
+}
+
+/** Entry's own local time, for rows written from a browser request (the `X-Client-Timezone`
+ * header) - null for rows predating the column or written from a non-browser path (CLI), which
+ * have no timezone to show. Shares `zonedTimeLabel` (event-dates.ts) with every other zoned
+ * timestamp in the app - one "(IANA, UTC±offset)" convention, not a separate abbreviation +
+ * city/country lookup just for this panel. */
+function actorLocalTime(entry: AuditLogEntryDto): string | null {
+  if (!entry.actor_timezone) return null;
+  const hhmm = hourMinuteFormat(entry.actor_timezone).format(new Date(entry.created_at));
+  return `${hhmm} ${zonedTimeLabel(entry.created_at, entry.actor_timezone)}`;
 }
 
 /** The instant, converted to whoever is currently reading the log's own browser timezone - unlike
  * actorLocalTime above, this is never null: Security rows (e.g. a failed login) don't always have
  * a known actor to show a local time *for*, but the superadmin viewing the table always has one. */
 function viewerLocalTime(iso: string): string {
-  const { format, timeZone } = viewerLocalTimeFormatForNow();
-  const parts = format.formatToParts(new Date(iso));
-  const hhmm = `${parts.find((p) => p.type === "hour")?.value}:${parts.find((p) => p.type === "minute")?.value}`;
-  const abbr = parts.find((p) => p.type === "timeZoneName")?.value ?? timeZone;
-  return `${hhmm} ${abbr} (${tzPlaceLabel(timeZone)})`;
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const hhmm = hourMinuteFormat(timeZone).format(new Date(iso));
+  return `${hhmm} ${zonedTimeLabel(iso, timeZone)}`;
 }
 
 /** Primary actor label; deleted users show a readable fallback (id in cell title). */
@@ -290,7 +265,7 @@ const ARRAY_ITEMS_ARE_FIELD_NAMES = new Set(["fields_changed", "secrets_rotated"
  * reduced to whichever field a human would recognize (name/email/id), everything else falls
  * back to compact JSON rather than guessing at a structure this can't know about. */
 function formatMetadataValue(key: string, value: unknown): string {
-  if (value === null || value === undefined) return "—";
+  if (value === null || value === undefined) return "-";
   // "provider" here is always the mail transport enum (mail_settings_updated/
   // event_mail_settings_updated) - show the same label the Mail settings picker itself uses
   // (e.g. "export_only" -> "Export only") instead of the raw config value.
@@ -342,8 +317,8 @@ function buildRowSummary(entry: AuditLogEntryDto, eventTitleById: Map<string, st
     `Time: ${formatAuditPrimaryTime(entry.created_at)} UTC${localTimeSuffix}`,
     `Action: ${actionLabel(entry.action_type)}`,
     `Scope: ${scopeLabel(entry, eventTitleById)}`,
-    `Actor: ${actorDisplay(entry)}${actorEmailSuffix}`,
-    `IP: ${entry.ip ?? "—"}`,
+    `User: ${actorDisplay(entry)}${actorEmailSuffix}`,
+    `IP address: ${entry.ip ?? "-"}`,
   ];
   if (hasVisibleMetadata(entry.metadata)) {
     lines.push("Details:");
@@ -408,7 +383,7 @@ function DetailsCell({ metadata }: Readonly<{ metadata: Record<string, unknown> 
     };
   }, [open]);
 
-  if (!hasVisibleMetadata(metadata)) return <>—</>;
+  if (!hasVisibleMetadata(metadata)) return <>-</>;
   const rows = Object.entries(metadata!).filter(([key]) => !METADATA_KEYS_SHOWN_ELSEWHERE.has(key));
   return (
     <div ref={rootRef} className="audit-log-details">
@@ -682,7 +657,7 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
     },
     {
       key: "actor",
-      header: "Actor",
+      header: "User",
       title: (entry) => actorTitle(entry),
       cell: (entry) => (
         <>
@@ -695,8 +670,8 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
     },
     {
       key: "ip",
-      header: "IP",
-      cell: (entry) => entry.ip ?? "—",
+      header: "IP address",
+      cell: (entry) => entry.ip ?? "-",
     },
   ];
 }
@@ -787,7 +762,7 @@ function buildSecurityRowSummary(entry: SecurityAuditLogEntryDto): string {
     `Time: ${formatAuditPrimaryTime(entry.created_at)} UTC (${viewerLocalTime(entry.created_at)})`,
     `Event: ${securityEventLabel(entry.event_type)}`,
     `User: ${securityUserDisplay(entry)}${userEmailSuffix}`,
-    `IP: ${entry.ip ?? "—"}`,
+    `IP address: ${entry.ip ?? "-"}`,
   ];
   if (hasVisibleMetadata(entry.metadata)) {
     lines.push("Details:");
@@ -839,8 +814,8 @@ const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
   },
   {
     key: "ip",
-    header: "IP",
-    cell: (entry) => entry.ip ?? "—",
+    header: "IP address",
+    cell: (entry) => entry.ip ?? "-",
   },
 ];
 
@@ -1048,7 +1023,7 @@ async function copyRowToClipboard(
     await navigator.clipboard.writeText(summary);
     addToast("Row copied to clipboard", "success");
   } catch {
-    addToast("Could not copy — clipboard access was blocked.", "error");
+    addToast("Could not copy. Clipboard access was blocked.", "error");
   }
 }
 
@@ -1818,7 +1793,7 @@ export function AuditLogPanel() {
           rowKey={(entry) => entry.id}
           renderTop={renderAuditCardTop}
           renderMeta={(entry) => renderAuditCardMeta(entry, eventTitleById)}
-          renderFootLeft={(entry) => entry.ip ?? "—"}
+          renderFootLeft={(entry) => entry.ip ?? "-"}
           metadataOf={(entry) => entry.metadata}
           onCopyRow={handleCopyRow}
         />
@@ -1868,7 +1843,7 @@ export function AuditLogPanel() {
           rowKey={(entry) => entry.id}
           renderTop={renderSecurityCardTop}
           renderMeta={renderSecurityCardMeta}
-          renderFootLeft={(entry) => entry.ip ?? "—"}
+          renderFootLeft={(entry) => entry.ip ?? "-"}
           metadataOf={(entry) => entry.metadata}
           onCopyRow={handleCopySecurityRow}
         />
@@ -1956,8 +1931,8 @@ export function AuditLogPanel() {
         auditView={
           <LogView
             idPrefix="audit-log"
-            searchAriaLabel="Search actor or event"
-            searchPlaceholder="Search actor or event…"
+            searchAriaLabel="Search user or event"
+            searchPlaceholder="Search user or event…"
             isDesktop={isDesktop}
             rootRef={rootRef}
             searchInput={searchInput}

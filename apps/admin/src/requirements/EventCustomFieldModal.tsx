@@ -52,7 +52,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
 
   let submitLabel = "Create field";
   if (saving) submitLabel = "Saving…";
-  else if (isEdit) submitLabel = "Save changes";
+  else if (isEdit) submitLabel = "Save";
 
   function updateLabel(value: string) {
     setError(null);

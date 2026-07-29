@@ -70,32 +70,24 @@ function statusIcon(status: CheckInStatus): string {
   }
 }
 
-// The one item-specific fact both labels below need: a gift bag is *given*,
-// everything else uses the raw action verb ("issued"/"returned"). Encoded once
-// here instead of re-listing every key in both functions (only gift_bag ever
-// diverged; the other per-key branches produced byte-identical output to the
-// generic fallback).
-function itemActionVerb(key: string, action: string): string {
-  // Item keys are slugified from the label (spaces → underscores, see
-  // itemKey.ts) — "Gift bag" is stored as "gift_bag", never "giftbag".
-  return action === "issued" && key === "gift_bag" ? "given" : action;
-}
-
-// "Mark issued/given/returned", not "Issue X" — the operator is confirming a
+// "Mark issued/returned", not "Issue X" — the operator is confirming a
 // physical hand-over that already happened, not instructing the system to
 // perform one; the button reads as an attestation (Jadzia review). The item's
 // own name isn't repeated — it's already the row label next to this button
 // (desktop) or the heading above it (mobile), and including it made the button
-// too wide (PO review, round 3).
+// too wide (PO review, round 3). Every item uses the same verb regardless of
+// key. A gift bag used to read "given" here, but that was a display-only
+// synonym for the same "issued" state everywhere else (badge, DB, API), and
+// having two words for one action was confusing (round-2 review).
 export function itemActionLabel(key: string, action: string): string {
-  return `Mark ${itemActionVerb(key, action)}`;
+  return `Mark ${action}`;
 }
 
 // Full accessible name for the same button — a screen reader navigating by a
 // flat list of buttons won't see the visual proximity to the item's own label,
 // so its aria-label needs the item name the short visible text above drops.
 export function itemActionAriaLabel(key: string, action: string): string {
-  return `Mark ${key.replaceAll("_", " ")} ${itemActionVerb(key, action)}`;
+  return `Mark ${key.replaceAll("_", " ")} ${action}`;
 }
 
 export function itemBadgeVariant(state: string): BadgeVariant {
@@ -223,7 +215,7 @@ export function AttendeeCard({
               {(card.company || card.department) && (
                 <span>{[card.company, card.department].filter(Boolean).join(" · ")}</span>
               )}
-              {pending && <span className="checkin-card__status-note">Pending — not confirmed</span>}
+              {pending && <span className="checkin-card__status-note">Pending, not confirmed</span>}
               {confirmed === false && !pending && !isPreview && resolvedStatus !== "INVALID" && resolvedStatus !== "REVOKED" && (
                 <span className="checkin-card__status-note">Awaiting server confirmation</span>
               )}
@@ -418,8 +410,8 @@ export function AttendeeCard({
         <ConfirmDialog
           open={revokeOpen}
           title="Revoke check-in?"
-          message={`This un-admits ${card.name} — they'll show as not checked in and will need to be scanned or admitted again to re-enter. This works regardless of when or how they were originally checked in.`}
-          confirmLabel={revokeBusy ? "Revoking…" : "Revoke check-in"}
+          message={`This un-admits ${card.name}. They'll show as not checked in and will need to be scanned or admitted again to re-enter. This works regardless of when or how they were originally checked in.`}
+          confirmLabel={revokeBusy ? "Revoking…" : "Revoke"}
           confirmVariant="danger"
           loading={revokeBusy}
           errorMessage={revokeError}

@@ -103,12 +103,12 @@ describe("extractSmtpCode", () => {
 });
 
 describe("sanitizeProviderErrorForLog", () => {
-  it("returns the message unchanged when there is no ' — ' separator", () => {
+  it("returns the message unchanged when there is no ' - ' separator", () => {
     expect(sanitizeProviderErrorForLog("Power Automate: HTTP 500")).toBe("Power Automate: HTTP 500");
   });
 
-  it("drops everything after the ' — ' separator", () => {
-    expect(sanitizeProviderErrorForLog("Graph sendMail: ErrorAccessDenied — no send-as permission for bob@example.com")).toBe(
+  it("drops everything after the ' - ' separator", () => {
+    expect(sanitizeProviderErrorForLog("Graph sendMail: ErrorAccessDenied - no send-as permission for bob@example.com")).toBe(
       "Graph sendMail: ErrorAccessDenied",
     );
   });

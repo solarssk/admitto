@@ -233,7 +233,7 @@ describe("AttendeesTable bulk revoke check-in (PO review, #522 follow-up)", () =
     );
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     expect(getTooltipText(screen.getByRole("menuitem", { name: /Revoke check-in/ }))).toBe(
-      "This event is archived — editing is disabled.",
+      "This event is archived. Editing is disabled.",
     );
   });
 
@@ -418,7 +418,7 @@ describe("AttendeesTable bulk revoke pass (PO review, #549)", () => {
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     const item = screen.getByRole("menuitem", { name: /Revoke pass/ }) as HTMLButtonElement;
     expect(item.disabled).toBe(true);
-    expect(getTooltipText(item)).toBe("This event is archived — editing is disabled.");
+    expect(getTooltipText(item)).toBe("This event is archived. Editing is disabled.");
   });
 
   it("fires onBulkRevokePass and closes the menu when the item is clicked", () => {
@@ -487,7 +487,7 @@ describe("AttendeesTable mobile bulk bar — 'More' menu's Send tickets item", (
 
     fireEvent.click(screen.getByRole("button", { name: "More" }));
     expect(getTooltipText(screen.getByRole("menuitem", { name: /Send tickets/ }))).toBe(
-      "This event is archived — editing is disabled.",
+      "This event is archived. Editing is disabled.",
     );
   });
 

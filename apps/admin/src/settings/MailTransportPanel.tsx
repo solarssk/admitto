@@ -156,7 +156,7 @@ export function MailTransportPanel() {
   } else if (hasUnsavedChanges) {
     testSendReason = "Save your changes before sending a test email.";
     testSendHint =
-      "Save your changes first — the test uses the saved configuration from the database, not unsaved form values.";
+      "Save your changes first. The test uses the saved configuration from the database, not unsaved form values.";
   } else {
     testSendReason = undefined;
     testSendHint = "Verifies transport credentials with a trivial message (not an event template).";
@@ -289,7 +289,7 @@ export function MailTransportPanel() {
               aria-describedby={testSendReason ? "mail-test-send-reason" : undefined}
               onClick={() => void handleTestSend()}
             >
-              {testSending ? "Sending…" : "Send test email"}
+              {testSending ? "Sending…" : "Send test"}
             </Button>
           </Tooltip>
         </div>

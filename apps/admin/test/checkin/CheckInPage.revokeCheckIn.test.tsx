@@ -179,7 +179,7 @@ describe("CheckInPage — admin Revoke check-in (#379/#380/#381 follow-up)", () 
     expect(within(dialog).getByText("Revoke check-in?")).toBeTruthy();
     expect(revokeAttendeeCheckIn).not.toHaveBeenCalled();
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke check-in" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
     await waitFor(() => {
       expect(revokeAttendeeCheckIn).toHaveBeenCalledWith("evt-live", "att-1");
     });
@@ -199,7 +199,7 @@ describe("CheckInPage — admin Revoke check-in (#379/#380/#381 follow-up)", () 
 
     fireEvent.click(screen.getByRole("button", { name: "Revoke check-in" }));
     const dialog = screen.getByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke check-in" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
     await waitFor(() => {
       expect(within(dialog).getByText("Failed to revoke check-in. Try again.")).toBeTruthy();
@@ -276,7 +276,7 @@ describe("CheckInPage — admin per-item Revoke wiring (item revocation feature)
     await waitFor(() => expect(revokeItemState).toHaveBeenCalledWith("evt-live", "att-1", "gift_bag"));
     // Card refreshed to the pending state — the operator-facing Mark button
     // comes back and the Revoke button is gone.
-    await screen.findByRole("button", { name: "Mark gift bag given" });
+    await screen.findByRole("button", { name: "Mark gift bag issued" });
     expect(screen.queryByRole("button", { name: "Revoke Gift bag" })).toBeNull();
   });
 

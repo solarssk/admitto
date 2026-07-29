@@ -217,6 +217,20 @@ describe("GraphAdapter", () => {
     expect(res.error).not.toContain("[object Object]");
   });
 
+  it("keeps a token error useful when the provider gives no description", async () => {
+    const fetchFn = vi.fn(async () => ({
+      ok: false,
+      status: 401,
+      text: async () => "",
+      headers: { get: () => null },
+    }));
+    const adapter = new GraphAdapter(config, fetchFn as unknown as typeof fetch);
+
+    const res = await adapter.send({ to: "a@example.com", subject: "x", html: "<p>x</p>" });
+
+    expect(res.error).toBe("Graph token error: HTTP 401");
+  });
+
   it("returns failed+retryable when token fetch throws (network)", async () => {
     const fetchFn = vi.fn(async (url: string) => {
       if (url.includes("/oauth2/v2.0/token")) throw new Error("ENOTFOUND");
@@ -311,7 +325,19 @@ describe("GraphAdapter", () => {
     expect(res).toMatchObject({
       status: "rejected",
       retryable: false,
-      error: "Graph sendMail: HTTP 400 — Malformed Graph request",
+      error: "Graph sendMail: HTTP 400 - Malformed Graph request",
     });
+  });
+
+  it("does not append a delimiter when sendMail returns an empty error body", async () => {
+    const fetchFn = vi.fn(async (url: string) => {
+      if (url.includes("/oauth2/v2.0/token")) return tokenResponse();
+      return { ok: false, status: 400, text: async () => "", headers: { get: () => null } };
+    });
+    const adapter = new GraphAdapter(config, fetchFn as unknown as typeof fetch);
+
+    const res = await adapter.send({ to: "a@example.com", subject: "x", html: "<p>x</p>" });
+
+    expect(res.error).toBe("Graph sendMail: HTTP 400");
   });
 });

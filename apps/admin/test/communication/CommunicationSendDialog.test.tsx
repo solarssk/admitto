@@ -150,6 +150,19 @@ describe("CommunicationSendDialog", () => {
     });
   });
 
+  it("summarizes a completed batch after polling, including both sent and failed counts", async () => {
+    sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 2, skipped: 0, failed: 0 });
+    fetchBulkSendStatus.mockResolvedValue({ queued: 0, sent: 1, failed: 1 });
+
+    render(
+      <CommunicationSendDialog open eventId="evt-1" templateId="tpl-1" onClose={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("Send complete: 1 sent, 1 failed.")).toBeTruthy();
+    expect(fetchBulkSendStatus).toHaveBeenCalledWith("evt-1", "batch-1", expect.any(AbortSignal));
+  });
+
   it("shows an error and stops polling when the status check fails", async () => {
     sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 2, skipped: 0, failed: 0 });
     fetchBulkSendStatus.mockRejectedValue(new Error("network down"));

@@ -213,7 +213,7 @@ describe("IdentityProviderEditor — edit", () => {
 
     fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google SSO" } });
     // Leave client secret blank → must NOT be sent (kept).
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
       expect(mockUpdate).toHaveBeenCalledWith("p1", expect.objectContaining({ display_name: "Google SSO" }));
@@ -248,7 +248,7 @@ describe("IdentityProviderEditor — edit", () => {
     router.navigate("/admin/settings/identity/providers/p2");
 
     await screen.findByDisplayValue("Okta");
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith("p2", expect.anything()));
   });
 
@@ -263,7 +263,7 @@ describe("IdentityProviderEditor — edit", () => {
     // (blank = keep stored) and the save body must NOT send an empty secret.
     fireEvent.change(screen.getByLabelText(/client secret/i), { target: { value: "x" } });
     fireEvent.change(screen.getByLabelText(/client secret/i), { target: { value: "" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
     expect(mockUpdate.mock.calls[0][1].client_secret).toBeUndefined();
@@ -384,7 +384,7 @@ describe("IdentityProviderEditor — dirty guard", () => {
 
     // Trigger a validation error on p1 by clearing a required field and submitting.
     fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await screen.findByText("Display name is required.");
 
     // Dirty (cleared field) → confirm discard → nav to p2 loads clean, no stale error.
@@ -458,7 +458,7 @@ describe("IdentityProviderEditor — coverage", () => {
     fireEvent.change(screen.getByLabelText("SSO login button label"), { target: { value: "Sign in with Google" } });
     // Toggle Enabled off (loaded as true).
     fireEvent.click(screen.getByRole("switch", { name: "Enabled" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
     const body = mockUpdate.mock.calls[0][1];

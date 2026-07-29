@@ -96,7 +96,7 @@ export function renderLoginForm(
   const ssoFailed = error === "oidc_failed";
   const loginError = !ssoFailed ? loginErrorMessage(error) : undefined;
   const ssoFallbackBlock = ssoFailed
-    ? `<div class="auth-sso-fallback" role="alert">SSO unavailable — use your local password below</div>`
+    ? `<div class="auth-sso-fallback" role="alert">SSO unavailable. Use your local password below.</div>`
     : "";
   const errorBlock = loginError ? `<div class="auth-error" role="alert">${esc(loginError)}</div>` : "";
   const nextField = next ? `<input type="hidden" name="next" value="${esc(next)}">` : "";
@@ -150,7 +150,7 @@ export function renderOperatorLanding(email: string, events: OperatorEventRow[])
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Signed in — Admitto</title>
+  <title>Signed in - Admitto</title>
   <style>
     body { font-family: system-ui, sans-serif; max-width: 480px; margin: 2rem auto; padding: 0 1rem; color: #111; }
     h1 { font-size: 1.25rem; }

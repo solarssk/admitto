@@ -112,6 +112,20 @@ describe("PowerAutomateAdapter", () => {
     expect(logs.some((entry) => entry.message === "mail_send_failed" && entry.level === "error")).toBe(true);
   });
 
+  it("does not append a delimiter when a failed workflow response has no body", async () => {
+    const fetchFn = vi.fn(async () => ({
+      ok: false,
+      status: 500,
+      text: async () => "",
+      headers: { get: () => null },
+    }));
+    const adapter = new PowerAutomateAdapter(config, fetchFn as unknown as typeof fetch);
+
+    const res = await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
+
+    expect(res.error).toBe("Power Automate: HTTP 500");
+  });
+
   it("catches network exception => failed+retryable", async () => {
     const fetchFn = vi.fn(async () => {
       throw new Error("ECONNREFUSED");

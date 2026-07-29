@@ -79,7 +79,7 @@ const SUGGEST_DEBOUNCE_MS = 300;
 const WEDGE_MAX_INTER_KEY_GAP_MS = 30;
 const HISTORY_CAP = 8;
 const LOOKUP_DISABLED_MSG =
-  "Manual lookup is disabled for this event — use QR scan only.";
+  "Manual lookup is disabled for this event. Use QR scan only.";
 const LOOKUP_NO_MATCH_MSG = "No attendees matched that search.";
 
 /** Build a sidebar history row from a live SSE check-in event. */
@@ -182,7 +182,7 @@ function CheckInStreamBanners({
     <>
       {canAct && streamStatus === "auth_error" && (
         <output className="check-in__offline-banner">
-          Live updates unavailable — check access
+          Live updates unavailable. Check access
         </output>
       )}
       {canAct && streamStatus === "reconnecting" && (
@@ -293,7 +293,7 @@ function CheckInScanBar({
             onKeyDown={onKeyDown}
             autoFocus
             inputMode="none"
-            placeholder="Scan QR · type name or email…"
+            placeholder="Scan QR code or type name/email…"
             aria-label="QR scan or search"
             aria-describedby="ck-scan-hint"
             disabled={!canAct}
@@ -324,7 +324,7 @@ function CheckInScanBar({
                     <span className="ck-suggest__meta">
                       {[r.company, resolveTicketTypeLabel(r.ticket_type, ticketTypes)]
                         .filter(Boolean)
-                        .join(" · ") || "—"}
+                        .join(" · ") || "-"}
                     </span>
                   </span>
                   {r.check_in_status === "admitted" && (
@@ -339,7 +339,7 @@ function CheckInScanBar({
         )}
       </div>
       <p id="ck-scan-hint" className="ck-hint">
-        Scan a code — it submits itself · type a name, then press Enter · Esc clears the field
+        Scan a code (it submits itself), type a name then press Enter, or Esc to clear
       </p>
     </>
   );
@@ -1098,7 +1098,7 @@ export function CheckInPage({
       reportApiError(err.status);
       setTransportError(
         err.status === 401
-          ? "Session expired — sign in again."
+          ? "Session expired. Sign in again."
           : operatorApiErrorMessage(err, "Request failed."),
       );
     } else {
@@ -1326,7 +1326,7 @@ export function CheckInPage({
     if (!(err instanceof ApiError)) return "Request failed. Try again.";
     reportApiError(err.status);
     return err.status === 401
-      ? "Session expired — sign in again."
+      ? "Session expired. Sign in again."
       : operatorApiErrorMessage(err, "Request failed.");
   };
 
@@ -1344,7 +1344,7 @@ export function CheckInPage({
     if (results.length === 0) {
       reportManualIssue(LOOKUP_NO_MATCH_MSG);
     } else if (showMobileOverlay) {
-      setOverlayManualError("Multiple matches — narrow your search.");
+      setOverlayManualError("Multiple matches. Narrow your search.");
     } else {
       // Desktop: show the matches as scan-bar suggestions to pick from.
       setSuggestions(results);
@@ -1550,7 +1550,7 @@ export function CheckInPage({
       // opening the dialog and clicking its Confirm, so this must throw
       // rather than silently resolve, or the dialog closes as if the
       // revoke succeeded when nothing was actually sent (bugbot).
-      if (!canAct) throw new Error("Offline — check your connection and try again.");
+      if (!canAct) throw new Error("Offline. Check your connection and try again.");
       setBusy(true);
       try {
         const { card: updated } = await revokeAttendeeCheckIn(eventId, attendeeId);

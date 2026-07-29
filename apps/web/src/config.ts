@@ -90,7 +90,7 @@ export function validateCheckinBootConfig(env: EnvLike = process.env): void {
 
   if (allowBearer && env["NODE_ENV"] !== "development") {
     console.warn(
-      "WARNING: ALLOW_CHECKIN_BEARER is enabled outside development — emergency break-glass only",
+      "WARNING: ALLOW_CHECKIN_BEARER is enabled outside development. Emergency break-glass only.",
     );
   }
 }
@@ -123,7 +123,7 @@ export function validateRedisBootConfig(env: EnvLike = process.env): void {
   const url = env["REDIS_URL"]?.trim();
   if (!url) {
     throw new Error(
-      "REDIS_URL is required in non-development environments (set REDIS_PASSWORD in deploy/.env — compose wires redis://:password@redis:6379)",
+      "REDIS_URL is required in non-development environments (set REDIS_PASSWORD in deploy/.env; compose wires redis://:password@redis:6379)",
     );
   }
   let parsed: URL;

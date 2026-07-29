@@ -590,7 +590,7 @@ describe("AccountPage toasts", () => {
     await waitFor(() => {
       expect(screen.getByLabelText("Authenticator code")).toBeTruthy();
     });
-    expect(screen.queryByText("Backup codes — save all 10, shown once")).toBeNull();
+    expect(screen.queryByText("Backup codes: save all 10, shown once")).toBeNull();
     expect(screen.queryByLabelText("I've saved my backup codes")).toBeNull();
   });
 
@@ -723,7 +723,7 @@ describe("AccountPage toasts", () => {
 
     const dialog = await screen.findByRole("dialog");
     expect(dialog.textContent).toMatch(/stay signed in on this device/i);
-    fireEvent.click(within(dialog).getByRole("button", { name: "Reset 2FA" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reset" }));
 
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(
@@ -751,7 +751,7 @@ describe("AccountPage toasts", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reset 2FA" }));
 
     const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Reset 2FA" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reset" }));
 
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(
@@ -775,7 +775,7 @@ describe("AccountPage toasts", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Set up" }));
     await waitFor(() => {
-      expect(screen.getByText("Backup codes — save all 10, shown once")).toBeTruthy();
+      expect(screen.getByText("Backup codes: save all 10, shown once")).toBeTruthy();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
@@ -817,7 +817,7 @@ describe("AccountPage toasts", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Revoke all other sessions" }));
     const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke all" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
     await waitFor(() => {
       expect(mockDeleteSession).toHaveBeenCalledWith("sess-2");
@@ -1263,7 +1263,7 @@ describe("AccountPage toasts", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Revoke all other sessions" }));
     const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke all" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
     await waitFor(() => {
       expect(within(dialog).getByText(/Failed to revoke sessions/)).toBeTruthy();
     });
@@ -1284,7 +1284,7 @@ describe("AccountPage toasts", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Reset 2FA" }));
     const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Reset 2FA" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reset" }));
     await waitFor(() => {
       expect(within(dialog).getByText(/Failed to reset 2FA/)).toBeTruthy();
     });
@@ -1305,7 +1305,7 @@ describe("AccountPage toasts", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Reset 2FA" }));
     const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Reset 2FA" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reset" }));
 
     // The dialog closes (progressive disclosure reveals the code field instead), so the
     // explanation must reach the user via toast, not the now-unmounted dialog's inline error.
@@ -1340,7 +1340,7 @@ describe("AccountPage toasts", () => {
     // Reset button stays disabled once the code field appears, until a code is entered.
     fireEvent.click(screen.getByRole("button", { name: "Reset 2FA" }));
     let dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Reset 2FA" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reset" }));
     await waitFor(() => {
       expect(screen.getByLabelText("Authenticator or backup code")).toBeTruthy();
     });
@@ -1351,7 +1351,7 @@ describe("AccountPage toasts", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Reset 2FA" }));
     dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Reset 2FA" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reset" }));
 
     await waitFor(() => {
       expect(screen.getByText(/Two-factor authentication reset\./)).toBeTruthy();
@@ -1375,7 +1375,7 @@ describe("AccountPage toasts", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reset 2FA" }));
 
     let dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Reset 2FA" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reset" }));
     await waitFor(() => {
       expect(within(dialog).getByText(/Failed to reset 2FA/)).toBeTruthy();
     });

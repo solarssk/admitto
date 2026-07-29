@@ -180,7 +180,7 @@ describe("CommunicationPage delivery log", () => {
     expect(await screen.findByText("Failed to load deliveries.")).toBeTruthy();
   });
 
-  it("renders explicit fallbacks for delivery rows without recipient or subject", async () => {
+  it("renders explicit fallbacks for delivery rows without display values or timestamps", async () => {
     fetchEventTemplate.mockResolvedValue(templatePayload);
     fetchEventOverview.mockResolvedValue({
       email_bounced: 0,
@@ -189,7 +189,15 @@ describe("CommunicationPage delivery log", () => {
       email_queued: 0,
     });
     fetchEventDeliveries.mockResolvedValue({
-      items: [{ ...acceptedRow, recipient_email: null, rendered_subject: null }],
+      items: [
+        {
+          ...acceptedRow,
+          recipient_email: null,
+          rendered_subject: null,
+          queued_at: null,
+          accepted_at: null,
+        },
+      ],
       total: 1,
     });
 
@@ -197,7 +205,7 @@ describe("CommunicationPage delivery log", () => {
     fireEvent.click(await screen.findByRole("tab", { name: /Delivery log/i }));
 
     const table = await screen.findByRole("table");
-    expect(within(table).getAllByText("—")).toHaveLength(3);
+    expect(within(table).getAllByText("-")).toHaveLength(5);
   });
 
   it("filters the log and resets its page when a filter changes", async () => {

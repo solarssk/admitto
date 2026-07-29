@@ -85,7 +85,7 @@ describe("EventItemDrawer", () => {
       config: { issue_on_checkin: true, requires_return: false },
     });
     renderDrawer(badgeWithNullConfig);
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(updateEventItem).toHaveBeenCalledWith(
         "evt-1",
@@ -122,7 +122,7 @@ describe("EventItemDrawer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith(
-        expect.stringMatching(/can't be deleted — turn off Active instead/),
+        expect.stringMatching(/can't be deleted\. Turn off Active instead/),
         "warning",
       );
     });
@@ -137,11 +137,11 @@ describe("EventItemDrawer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith(
-        expect.stringMatching(/issued to attendees — disable it instead of deleting/),
+        expect.stringMatching(/issued to attendees\. Disable it instead of deleting/),
         "warning",
       );
     });
-    expect(screen.queryByText(/issued to attendees — disable it instead of deleting/)).toBeNull();
+    expect(screen.queryByText(/issued to attendees\. Disable it instead of deleting/)).toBeNull();
   });
 
   it("fires warning toast when save returns item_in_use", async () => {
@@ -149,10 +149,10 @@ describe("EventItemDrawer", () => {
       new ApiError(409, "item_in_use", "item_in_use"),
     );
     renderDrawer(giftbagItem);
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith(
-        expect.stringMatching(/issued to attendees — record returns before disabling/),
+        expect.stringMatching(/issued to attendees\. Record returns before disabling/),
         "warning",
       );
     });
@@ -162,7 +162,7 @@ describe("EventItemDrawer", () => {
   it("fires error toast for generic save failure", async () => {
     vi.mocked(updateEventItem).mockRejectedValueOnce(new Error("network error"));
     renderDrawer(giftbagItem);
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith(
         expect.stringMatching(/Failed to save item/),
@@ -205,7 +205,7 @@ describe("EventItemDrawer", () => {
 
     fireEvent.click(screen.getByRole("checkbox", { name: /Shirt size/ }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
       expect(updateEventItem).toHaveBeenCalledWith("evt-1", "item-gift", {
@@ -234,7 +234,7 @@ describe("EventItemDrawer", () => {
     fireEvent.click(checkbox);
     expect(checkbox).toHaveProperty("checked", false);
 
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
       expect(updateEventItem).toHaveBeenCalledWith(
@@ -254,7 +254,7 @@ describe("EventItemDrawer", () => {
     renderDrawer(badgeIssueOnCheckin);
 
     fireEvent.click(screen.getByRole("switch", { name: "Issue on check-in" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
       expect(updateEventItem).toHaveBeenCalledWith(

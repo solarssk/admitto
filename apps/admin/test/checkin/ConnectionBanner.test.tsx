@@ -33,7 +33,7 @@ describe("CheckinConnectionBanner", () => {
     mockState("offline");
     render(<CheckinConnectionBanner />);
     expect(
-      screen.getByText("Offline — new check-ins are blocked until connection returns"),
+      screen.getByText("Offline. New check-ins are blocked until connection returns"),
     ).toBeTruthy();
   });
 });
@@ -44,7 +44,7 @@ describe("CheckinConnectionLiveRegion", () => {
     render(<CheckinConnectionLiveRegion />);
     const region = screen.getByTestId("checkin-connection-live");
     expect(region.getAttribute("aria-live")).toBe("polite");
-    expect(region.textContent).toContain("Connected — all scans confirmed by server");
+    expect(region.textContent).toContain("Connected. All scans confirmed by server");
   });
 
   it("updates the live region message when connection recovers", () => {
@@ -55,7 +55,7 @@ describe("CheckinConnectionLiveRegion", () => {
     mockState("connected");
     rerender(<CheckinConnectionLiveRegion />);
     expect(screen.getByTestId("checkin-connection-live").textContent).toContain(
-      "Connected — all scans confirmed by server",
+      "Connected. All scans confirmed by server",
     );
   });
 });

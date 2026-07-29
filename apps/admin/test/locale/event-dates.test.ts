@@ -5,6 +5,7 @@ import {
   formatEventDate,
   formatEventDateTime,
   formatEventTime,
+  formatRelativeTime,
   formatRelativeAdmissionDisplay,
   formatUtcDateTime,
   calendarDateValidationHint,
@@ -14,6 +15,8 @@ import {
   utcDayStartIso,
   zonedDayEndIso,
   zonedDayStartIso,
+  utcOffsetLabel,
+  zonedTimeLabel,
 } from "../../src/utils/event-dates.js";
 import { setPreferredLocale } from "../../src/utils/locale-store.js";
 
@@ -51,12 +54,12 @@ describe("formatEventDate with preferred locale", () => {
 describe("formatEventDateTime and formatUtcDateTime", () => {
   afterEach(() => setPreferredLocale(null));
 
-  it("formatEventDateTime shows event TZ abbreviation", () => {
+  it("formatEventDateTime shows event TZ as a locale-independent UTC offset", () => {
     setPreferredLocale("en-GB");
     const result = formatEventDateTime("2026-06-28T13:00:00.000Z", "Europe/Warsaw");
     expect(result).toMatch(/28 Jun 2026/);
     expect(result).toMatch(/15:00/);
-    expect(result).toMatch(/CEST|GMT\+2/);
+    expect(result).toMatch(/UTC\+2/);
   });
 
   it("formatUtcDateTime always shows UTC regardless of input TZ", () => {
@@ -82,12 +85,53 @@ describe("formatEventDateTime and formatUtcDateTime", () => {
     expect(result).toMatch(/2026/);
   });
 
-  it("formatEventTime shows time and TZ abbreviation only", () => {
+  it("formatEventTime shows time and UTC offset only", () => {
     setPreferredLocale("en-GB");
     const result = formatEventTime("2026-06-28T13:00:00.000Z", "Europe/Warsaw");
     expect(result).not.toMatch(/Jun 2026/);
     expect(result).toMatch(/15:00/);
-    expect(result).toMatch(/CEST|GMT\+2/);
+    expect(result).toMatch(/UTC\+2/);
+  });
+
+  it("defaults event date and time formatting to UTC when no event timezone is supplied", () => {
+    setPreferredLocale("en-GB");
+    expect(formatEventDateTime("2026-06-28T13:00:00.000Z")).toMatch(/UTC$/);
+    expect(formatEventTime("2026-06-28T13:00:00.000Z")).toMatch(/UTC$/);
+  });
+});
+
+describe("timezone offset labels", () => {
+  it("uses UTC by default and calculates a DST-aware numeric offset", () => {
+    expect(utcOffsetLabel("2026-06-28T13:00:00.000Z")).toBe("UTC");
+    expect(utcOffsetLabel("2026-06-28T13:00:00.000Z", "Europe/Warsaw")).toBe("UTC+2");
+    expect(utcOffsetLabel("2026-01-28T13:00:00.000Z", "Europe/Warsaw")).toBe("UTC+1");
+    expect(utcOffsetLabel("2026-06-28T13:00:00.000Z", "Asia/Kolkata")).toBe("UTC+5:30");
+  });
+
+  it("does not throw for an invalid date and keeps the IANA zone visible", () => {
+    expect(utcOffsetLabel("not-a-date", "Europe/Warsaw")).toBe("");
+    expect(zonedTimeLabel("2026-06-28T13:00:00.000Z")).toBe("(UTC)");
+    expect(zonedTimeLabel("2026-06-28T13:00:00.000Z", "Asia/Kolkata")).toBe("(Asia/Kolkata, UTC+5:30)");
+    expect(zonedTimeLabel("not-a-date", "Europe/Warsaw")).toBe("(Europe/Warsaw)");
+    expect(formatEventDateTime("not-a-date", "Europe/Warsaw")).toBe("Invalid Date");
+    expect(formatEventTime("not-a-date", "Europe/Warsaw")).toBe("Invalid Date");
+  });
+});
+
+describe("formatRelativeTime", () => {
+  it("uses stable singular and plural labels at every threshold", () => {
+    const dateNow = vi.spyOn(Date, "now").mockReturnValue(new Date("2026-06-28T13:00:00.000Z").getTime());
+
+    expect(formatRelativeTime("2026-06-28T12:59:30.000Z")).toBe("Just now");
+    expect(formatRelativeTime("2026-06-28T12:59:00.000Z")).toBe("1 min ago");
+    expect(formatRelativeTime("2026-06-28T12:00:00.000Z")).toBe("1 hour ago");
+    expect(formatRelativeTime("2026-06-28T10:00:00.000Z")).toBe("3 hours ago");
+    expect(formatRelativeTime("2026-06-27T11:00:00.000Z")).toBe("1 day ago");
+    expect(formatRelativeTime("2026-06-26T13:00:00.000Z")).toBe("2 days ago");
+    expect(formatRelativeTime("2026-05-29T13:00:00.000Z")).toBe("1 month ago");
+    expect(formatRelativeTime("2026-04-29T13:00:00.000Z")).toBe("2 months ago");
+
+    dateNow.mockRestore();
   });
 });
 

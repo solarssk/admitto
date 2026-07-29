@@ -37,6 +37,7 @@ import {
   formatEventCalendarDate,
   formatEventDate,
   formatEventDateTime,
+  formatRelativeTime as formatRelativeTimeShared,
   formatUtcDateTime,
 } from "../utils/event-dates.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
@@ -81,20 +82,13 @@ function isValidResourceUrl(value: string): boolean {
   }
 }
 
-/** Compact "N min/hours/days ago" for glance stats and the activity timeline — not a shared
- * export, mirrors the local helper StaffUserListItem.tsx already uses for the same purpose. */
+/** Compact "N min/hours/days ago" for glance stats and the activity timeline - thin null
+ * handling wrapper (this file's own "-" fallback) around the shared canonical implementation
+ * in event-dates.ts (previously duplicated here with a different hour/day threshold; also
+ * duplicated, with its own null fallback, in StaffUserListItem.tsx). */
 function formatRelativeTime(iso: string | null): string {
-  if (!iso) return "—";
-  const diffMs = Date.now() - new Date(iso).getTime();
-  if (diffMs < 60_000) return "Just now";
-  const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days} day${days === 1 ? "" : "s"} ago`;
-  const months = Math.floor(days / 30);
-  return `${months} month${months === 1 ? "" : "s"} ago`;
+  if (!iso) return "-";
+  return formatRelativeTimeShared(iso);
 }
 
 /** "13:00" -> "13:00–14:00" for the check-in progress card's busiest-hour glance stat. */
@@ -206,7 +200,7 @@ function buildReadinessItems(overview: EventOverviewDto): ReadinessItem[] {
       detail: ticketsSent.detail,
     },
     {
-      label: "Delivery healthy",
+      label: "Email delivery",
       status: failed === 0 ? "ok" : "error",
       detail: deliveryHealthyDetail,
     },
@@ -433,7 +427,7 @@ function CheckInProgressCard({
               <i className="ti ti-trending-up" aria-hidden="true" /> Busiest hour
             </span>
             <span className="overview-glance__value">
-              {overview.busiest_hour ? formatBusiestHourRange(overview.busiest_hour.hour) : "—"}
+              {overview.busiest_hour ? formatBusiestHourRange(overview.busiest_hour.hour) : "-"}
             </span>
           </div>
         </div>
@@ -1413,7 +1407,7 @@ function NotesAndContactsCard(props: Readonly<{
 function kpiCountText(value: number | null, loading: boolean, showLoading: boolean): string {
   if (value != null) return String(value);
   if (loading) return showLoading ? "…" : "";
-  return "—";
+  return "-";
 }
 
 /** Event-scoped dashboard — event command center with KPIs, a setup checklist, check-in progress,

@@ -44,7 +44,7 @@ export function daysUntilEvent(iso: string | null, timezone: string): number | n
  * Event day comes from the stored UTC calendar date; “today” is evaluated in event TZ.
  */
 export function computeLabel(iso: string | null, timezone: string): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   const diff = new Date(iso).getTime() - Date.now();
 
   const eventDay = eventCalendarDay(iso);

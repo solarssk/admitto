@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RouterProvider } from "react-router/dom";
 import { createMemoryRouter, MemoryRouter, Route, Routes } from "react-router";
@@ -287,8 +287,8 @@ describe("ImportPage upload → preview → commit flow", () => {
     const mealRow = screen.getByText("meal").closest("tr");
     const newsletterRow = screen.getByText("newsletter").closest("tr");
     expect(mealRow?.textContent).toContain("Yes");
-    expect(mealRow?.textContent).toContain("Meal preference — select: Vegetarian, Standard");
-    expect(newsletterRow?.textContent).toContain("Newsletter consent — Yes/No or true/false");
+    expect(mealRow?.textContent).toContain("Meal preference (select: Vegetarian, Standard)");
+    expect(newsletterRow?.textContent).toContain("Newsletter consent (Yes/No or true/false)");
   });
 
   it("lists parse warnings on the validation summary", async () => {
@@ -319,7 +319,7 @@ describe("ImportPage upload → preview → commit flow", () => {
           skipped: [
             {
               email: "existing@example.com",
-              reason: 'Attendee already exists — turn on "Overwrite existing attendees" to update it instead of skipping',
+              reason: 'Attendee already exists. Turn on "Overwrite existing attendees" to update it instead of skipping',
             },
           ],
         },
@@ -335,7 +335,7 @@ describe("ImportPage upload → preview → commit flow", () => {
     expect(screen.getByText("existing@example.com")).toBeTruthy();
     expect(
       screen.getByText(
-        'Attendee already exists — turn on "Overwrite existing attendees" to update it instead of skipping',
+        'Attendee already exists. Turn on "Overwrite existing attendees" to update it instead of skipping',
       ),
     ).toBeTruthy();
   });
@@ -364,8 +364,8 @@ describe("ImportPage upload → preview → commit flow", () => {
     selectFile();
     fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
 
-    expect(await screen.findByText("Invalid rows — showing first 1 of 5")).toBeTruthy();
-    expect(screen.getByText("Skipped rows — showing first 1 of 5")).toBeTruthy();
+    expect(await screen.findByText("Invalid rows (showing first 1 of 5)")).toBeTruthy();
+    expect(screen.getByText("Skipped rows (showing first 1 of 5)")).toBeTruthy();
   });
 
   it("shows a plain heading with no count note when every skipped/invalid row detail is returned", async () => {
@@ -407,7 +407,49 @@ describe("ImportPage upload → preview → commit flow", () => {
     selectFile();
     fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
 
-    expect(await screen.findByText("Row preview — showing first 1 of 5 valid rows")).toBeTruthy();
+    expect(await screen.findByText("Row preview (showing first 1 of 5 valid rows)")).toBeTruthy();
+  });
+
+  it("renders dash fallbacks for empty optional values when their preview columns are present", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(
+      samplePreview({
+        parse: { validCount: 2, invalidRows: [], invalidCount: 0, warnings: [] },
+        sampleRows: [
+          {
+            rowIndex: 1,
+            name: "",
+            email: "blank-values@example.com",
+            ticket_type: "",
+            company: "",
+            department: "",
+            external_uuid: "",
+            custom_data: {},
+          },
+          {
+            rowIndex: 2,
+            name: "Sam",
+            email: "sam@example.com",
+            ticket_type: "vip",
+            company: "Admitto",
+            department: "Events",
+            external_uuid: "external-2",
+            custom_data: { dietary: "Vegetarian" },
+          },
+        ],
+        attributeFieldLabels: [{ source_field: "dietary", label: "Dietary requirements" }],
+      }),
+    );
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+
+    await screen.findByText("Dietary requirements");
+    const previewTable = document.querySelector(".import-sample-table");
+    expect(previewTable).not.toBeNull();
+    expect(within(previewTable as HTMLElement).getAllByText("-")).toHaveLength(6);
   });
 
   it("shows rows the commit-time re-parse invalidated (e.g. a ticket type deleted between preview and commit)", async () => {
@@ -756,8 +798,8 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }));
 
     expect(await screen.findByText("Import complete")).toBeTruthy();
-    expect(screen.getByText("Skipped rows — showing first 1 of 5")).toBeTruthy();
-    expect(screen.getByText("Invalid rows — showing first 1 of 5")).toBeTruthy();
+    expect(screen.getByText("Skipped rows (showing first 1 of 5)")).toBeTruthy();
+    expect(screen.getByText("Invalid rows (showing first 1 of 5)")).toBeTruthy();
   });
 
   it("resets to the loading state when navigating directly from one event's import page to another, so the previous event's history can't flash under the new event's timezone (CodeRabbit review)", async () => {

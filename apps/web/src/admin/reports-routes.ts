@@ -614,7 +614,7 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
   const logRows = aggregates.admission_log
     .map(
       (r) =>
-        `<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.email)}</td><td>${escapeHtml(resolveTicketTypeLabel(aggregates.ticketTypeCatalog, r.ticket_type))}</td><td>${escapeHtml(formatAdmittedAtExport(new Date(r.admitted_at), timeZone))}</td><td>${escapeHtml(r.device_id ?? "—")}</td><td>${escapeHtml(r.items.join(", ") || "—")}</td></tr>`,
+        `<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.email)}</td><td>${escapeHtml(resolveTicketTypeLabel(aggregates.ticketTypeCatalog, r.ticket_type))}</td><td>${escapeHtml(formatAdmittedAtExport(new Date(r.admitted_at), timeZone))}</td><td>${escapeHtml(r.device_id ?? "-")}</td><td>${escapeHtml(r.items.join(", ") || "-")}</td></tr>`,
     )
     .join("");
 
@@ -622,7 +622,7 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>${escapeHtml(event.title)} — Admission report</title>
+  <title>${escapeHtml(event.title)} - Admission report</title>
   <style>
     body { font-family: system-ui, sans-serif; margin: 2rem; color: #111; }
     h1 { margin-bottom: 0.25rem; }

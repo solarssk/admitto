@@ -408,6 +408,12 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  /* Room for .at-input's focus box-shadow ring (--ring, spreads var(--ring-width) beyond the
+     input's own border): this element has no horizontal padding of its own, so the ring was
+     clipped flush against a focused input's edges. Bleed out by the ring width and pad back
+     in by the same amount so field content still lines up with the header/footer above/below. */
+  margin: 0 calc(-1 * var(--ring-width));
+  padding: 0 var(--ring-width);
 }
 
 .event-item-modal__section-title {

@@ -234,7 +234,7 @@ function CheckInCell({
   admittedAt: string | null;
   eventTimezone: string;
 }>) {
-  if (!admittedAt) return <span className="attendee-readonly">—</span>;
+  if (!admittedAt) return <span className="attendee-readonly">-</span>;
   const parts = formatAdmissionDisplayParts(admittedAt, eventTimezone);
   return (
     <span className="attendees-table-v2__checkin">
@@ -703,7 +703,7 @@ function BulkMoreActionsMenu({
 /** "Change ticket type" menu item's disabled-title (Sonar S3358: was a nested ternary). */
 function bulkChangeTicketTypeReason(archived: boolean, ticketTypesError?: string | null): string {
   if (archived) return ARCHIVED_ACTION_TOOLTIP;
-  if (ticketTypesError) return "Couldn't load ticket types — try again from the Type filter above.";
+  if (ticketTypesError) return "Couldn't load ticket types. Try again from the Type filter above.";
   return "No ticket types configured for this event. Add some in Event Settings → Ticket types.";
 }
 
@@ -718,7 +718,7 @@ function bulkRevokeItemsTooltip(
   canRevokeItems: boolean,
 ): string | undefined {
   if (archived) return ARCHIVED_ACTION_TOOLTIP;
-  if (itemsError) return "Couldn't load items — try again.";
+  if (itemsError) return "Couldn't load items. Try again.";
   if (itemCount === 0) return "No items configured for this event. Add some in Requirements.";
   if (!canRevokeItems) return "None of the selected attendees have anything issued.";
   return undefined;
@@ -1223,7 +1223,7 @@ function AttendeesListContent({
               </td>
               <td>
                 <div className="attendees-table-v2__company">
-                  <span>{row.company ?? "—"}</span>
+                  <span>{row.company ?? "-"}</span>
                   {row.department ? (
                     <span className="attendees-table-v2__department">{row.department}</span>
                   ) : null}

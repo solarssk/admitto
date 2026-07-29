@@ -60,7 +60,7 @@ export function DeviceLabelStep({ onSaved, onSkip }: Readonly<DeviceLabelStepPro
                 className="at-input"
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
-                placeholder="Tablet 1 — main entrance"
+                placeholder="Tablet 1, main entrance"
                 maxLength={120}
                 autoComplete="off"
                 disabled={busy}

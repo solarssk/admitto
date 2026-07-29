@@ -135,7 +135,7 @@ export class PowerAutomateAdapter implements MailerAdapter {
         ...base,
         status: mapped.status,
         retryable: mapped.retryable,
-        error: `Power Automate: HTTP ${res.status}${text ? " — " + text : ""}`,
+        error: `Power Automate: HTTP ${res.status}${text ? " - " + text : ""}`,
       };
     };
 

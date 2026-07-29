@@ -217,7 +217,7 @@ function testButtonLabel(testing: boolean): string {
 
 function submitButtonLabel(saving: boolean, mode: EditorMode): string {
   if (saving) return "Saving…";
-  return mode === "create" ? "Create provider" : "Save changes";
+  return mode === "create" ? "Create provider" : "Save";
 }
 
 /** True while any async editor action (discover/test/save) is in flight. */

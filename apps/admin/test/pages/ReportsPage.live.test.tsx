@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryRouter, MemoryRouter, Route, RouterProvider, Routes } from "react-router";
 import { ReportsPage } from "../../src/pages/ReportsPage.js";
@@ -285,5 +285,58 @@ describe("ReportsPage — live SSE updates (ADR 0014)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("uses clear empty-state markers when an admission has no device or issued items", async () => {
+    const data = reportFixture(1, {
+      admission_log: [{
+        attendee_id: "att-empty",
+        name: "No Device Guest",
+        email: "guest@example.com",
+        ticket_type: null,
+        admitted_at: "2026-06-01T10:00:00.000Z",
+        device_id: null,
+        items: [],
+      }],
+      admission_log_total: 1,
+    });
+    data.summary.peak_hour = null;
+    data.summary.peak_hour_count = 0;
+    fetchEventReports.mockResolvedValue(data);
+
+    renderPage();
+
+    await screen.findByText("No Device Guest");
+    const table = document.querySelector(".reports-log-table");
+    expect(table).toBeTruthy();
+    expect(within(table!).getByText("No Device Guest")).toBeTruthy();
+    expect(within(table!).getAllByText("-").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("uses the same empty-state markers in the mobile admission cards", async () => {
+    mockMatchMedia(false);
+    fetchEventReports.mockResolvedValue(
+      reportFixture(1, {
+        admission_log: [
+          {
+            attendee_id: "att-mobile-empty",
+            name: "Mobile Guest",
+            email: "mobile@example.com",
+            ticket_type: null,
+            admitted_at: "2026-06-01T10:00:00.000Z",
+            device_id: null,
+            items: [],
+          },
+        ],
+        admission_log_total: 1,
+      }),
+    );
+
+    renderPage();
+
+    await screen.findByText("Mobile Guest");
+    const cards = document.querySelector(".reports-log-cards");
+    expect(cards).not.toBeNull();
+    expect(within(cards as HTMLElement).getAllByText("-")).toHaveLength(2);
   });
 });

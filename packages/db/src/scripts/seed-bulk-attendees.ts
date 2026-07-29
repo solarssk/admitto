@@ -265,7 +265,7 @@ async function main(): Promise<void> {
   });
   if (ticketTypes.length === 0) {
     throw new Error(
-      `Event "${EVENT_SLUG}" has no ticket types configured — create at least one before running this script`,
+      `Event "${EVENT_SLUG}" has no ticket types configured. Create at least one before running this script`,
     );
   }
   const ticketTypeWeights = buildTicketTypeWeights(ticketTypes.map((t) => t.key));

@@ -409,11 +409,19 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     fetchEventOverview.mockImplementationOnce(() => new Promise(() => {}));
     renderPage();
 
-    expect(within(statsRow()).queryAllByText("—")).toHaveLength(0);
+    expect(within(statsRow()).queryAllByText("-")).toHaveLength(0);
     expect(screen.queryAllByText("Unavailable")).toHaveLength(0);
     expect(screen.queryByText("Add a pinned note for staff")).toBeNull();
     expect(screen.queryByText("Add a key contact")).toBeNull();
     expect(screen.queryByText("Add a link or file")).toBeNull();
+  });
+
+  it("shows KPI dashes only after an initial stats request has actually failed", async () => {
+    fetchEventOverview.mockRejectedValueOnce(new Error("network unavailable"));
+    renderPage();
+
+    await screen.findByText("Failed to load event stats.");
+    expect(within(statsRow()).getAllByText("-")).toHaveLength(3);
   });
 
   it("replaces the duplicate-date Event date tile with a Failed delivery tile and labels the KPI row per the mockup (#350)", async () => {
@@ -550,7 +558,12 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
 
   it("merges Needs attention + Event readiness into a single Setup checklist card (#348)", async () => {
     fetchEventOverview.mockResolvedValue(
-      overviewFixture(5, { checkin_staff_count: 0, attendee_count: 0, attendees_with_ticket: 0 }),
+      overviewFixture(5, {
+        checkin_staff_count: 0,
+        attendee_count: 0,
+        attendees_with_ticket: 0,
+        email_failed: 1,
+      }),
     );
 
     renderPage();
@@ -560,6 +573,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     });
     expect(screen.queryByText("Needs attention")).toBeNull();
     expect(screen.queryByText("Event readiness")).toBeNull();
+    expect(screen.getByText("Email delivery")).toBeTruthy();
     expect(screen.getByText("View full checklist in Event settings")).toBeTruthy();
   });
 
@@ -593,7 +607,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(screen.getByText("13:00–14:00")).toBeTruthy();
   });
 
-  it("shows an honest em-dash placeholder for Last check-in and Busiest hour with zero check-ins, not a fabricated value (#F1)", async () => {
+  it("shows an honest dash placeholder for Last check-in and Busiest hour with zero check-ins, not a fabricated value (#F1)", async () => {
     // last_check_in_at/busiest_hour both null is the default overviewFixture() shape - the
     // zero-check-ins case - so this also guards against a stale hardcoded demo fallback (the
     // mockup source had literal "2 min ago" / "13:00-14:00" strings) leaking into these tiles.
@@ -607,7 +621,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     const glanceTiles = document.querySelectorAll(".overview-glance__tile");
     expect(glanceTiles).toHaveLength(2);
     glanceTiles.forEach((tile) => {
-      expect(within(tile as HTMLElement).getByText("—")).toBeTruthy();
+      expect(within(tile as HTMLElement).getByText("-")).toBeTruthy();
     });
     expect(screen.queryByText("2 min ago")).toBeNull();
     expect(screen.queryByText("13:00–14:00")).toBeNull();

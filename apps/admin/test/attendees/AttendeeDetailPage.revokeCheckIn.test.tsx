@@ -137,7 +137,7 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
     fireEvent.click(within(openMoreActionsMenu()).getByRole("menuitem", { name: /^Edit/ }));
 
     expect(screen.queryByRole("menu")).toBeNull();
-    expect(await screen.findByRole("button", { name: "Save changes" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Save" })).toBeTruthy();
   });
 
   it("keeps Revoke check-in visible but disabled with a tooltip when not admitted", async () => {
@@ -200,7 +200,7 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText("Revoke check-in?")).toBeTruthy();
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke check-in" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
     await waitFor(() => {
       expect(revokeAttendeeCheckIn).toHaveBeenCalledWith("evt-1", "att-1");
     });
@@ -224,7 +224,7 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
     const menu = openMoreActionsMenu();
     fireEvent.click(within(menu).getByRole("menuitem", { name: /Revoke check-in/ }));
     const dialog = screen.getByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke check-in" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
     await waitFor(() => {
       expect(within(dialog).getByText("Could not revoke check-in.")).toBeTruthy();
@@ -265,7 +265,7 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
 
     fireEvent.click(within(openMoreActionsMenu()).getByRole("menuitem", { name: /Revoke items/ }));
     const dialog = screen.getByRole("dialog", { name: "Revoke items?" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke items" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
     await waitFor(() => {
       expect(bulkRevokeItems).toHaveBeenCalledWith("evt-1", ["att-1"]);
@@ -285,7 +285,7 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
     await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(within(openMoreActionsMenu()).getByRole("menuitem", { name: /Revoke items/ }));
-    fireEvent.click(within(screen.getByRole("dialog", { name: "Revoke items?" })).getByRole("button", { name: "Revoke items" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Revoke items?" })).getByRole("button", { name: "Revoke" }));
 
     await waitFor(() => expect(screen.getByTestId("at-toast").textContent).toContain(message));
   });
@@ -298,7 +298,7 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
 
     fireEvent.click(within(openMoreActionsMenu()).getByRole("menuitem", { name: /Revoke items/ }));
     const dialog = screen.getByRole("dialog", { name: "Revoke items?" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke items" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
     expect(await within(dialog).findByText("Could not revoke items.")).toBeTruthy();
   });
@@ -333,7 +333,7 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
       await screen.findByRole("heading", { name: "Anna" });
 
       fireEvent.click(within(openMoreActionsMenu()).getByRole("menuitem", { name: /Revoke items/ }));
-      fireEvent.click(within(screen.getByRole("dialog", { name: "Revoke items?" })).getByRole("button", { name: "Revoke items" }));
+      fireEvent.click(within(screen.getByRole("dialog", { name: "Revoke items?" })).getByRole("button", { name: "Revoke" }));
       await waitFor(() => expect(bulkRevokeItems).toHaveBeenCalled());
 
       fireEvent.click(screen.getByRole("button", { name: "Switch attendee" }));
@@ -360,7 +360,7 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
 
     fireEvent.click(within(openMoreActionsMenu()).getByRole("menuitem", { name: /Revoke items/ }));
     const dialog = screen.getByRole("dialog", { name: "Revoke items?" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke items" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
     await waitFor(() => expect(bulkRevokeItems).toHaveBeenCalledOnce());
 
     fireEvent.click(document.querySelector(".confirm-dialog__backdrop")!);

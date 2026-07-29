@@ -10,7 +10,10 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto, SessionListDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
-import { formatUtcDateTime } from "../utils/event-dates.js";
+import {
+  formatRelativeTime,
+  formatUtcDateTime,
+} from "../utils/event-dates.js";
 
 const BROWSER_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
   [/Edg\//, "Edge"],
@@ -180,7 +183,7 @@ export function SessionsPanel() {
                   <th>User</th>
                   <th>Role</th>
                   <th>Device</th>
-                  <th>IP</th>
+                  <th>IP address</th>
                   <th>Logged in</th>
                   <th>Last active</th>
                   <th>Auth</th>
@@ -209,9 +212,9 @@ export function SessionsPanel() {
                         ? s.deviceLabel
                         : parseUserAgent(s.userAgent)}
                     </td>
-                    <td>{s.ip ?? "—"}</td>
+                    <td>{s.ip ?? "-"}</td>
                     <td>{formatDate(s.loginAt)}</td>
-                    <td>{formatDate(s.lastSeenAt)}</td>
+                    <td>{formatRelativeTime(s.lastSeenAt)}</td>
                     <td>{s.authMethod === "oidc" ? "OIDC" : "Local"}</td>
                     <td>
                       {s.isCurrent ? (
@@ -281,7 +284,7 @@ export function SessionsPanel() {
         title="Revoke session"
         message={
           confirmTarget
-            ? `Revoke session for ${confirmTarget.userEmail}${confirmDeviceSuffix}? Last active ${formatDate(confirmTarget.lastSeenAt)}.`
+            ? `Revoke session for ${confirmTarget.userEmail}${confirmDeviceSuffix}? Last active ${formatRelativeTime(confirmTarget.lastSeenAt)}.`
             : ""
         }
         confirmLabel="Revoke"
@@ -301,7 +304,7 @@ export function SessionsPanel() {
             ? `This will immediately end all active operator sessions for "${selectedEvent.title}". This cannot be undone.`
             : "This will immediately end all active operator sessions for the selected event."
         }
-        confirmLabel="Revoke all"
+        confirmLabel="Revoke"
         confirmVariant="danger"
         loading={bulkRevoking}
         onConfirm={() => void handleBulkRevoke()}

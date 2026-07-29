@@ -14,7 +14,7 @@ const SKELETON_ROWS = 4;
 function scopeLabel(row: RoleAssignmentListItemDto): string {
   if (row.scope_type === "event" && row.event) return row.event.title;
   if (row.scope_type === "organization" && row.organization) return row.organization.name;
-  return row.scope_id ?? "—";
+  return row.scope_id ?? "-";
 }
 
 type AssignmentRowProps = {
@@ -46,7 +46,7 @@ function AssignmentTableRow({ row, canRevoke, onRevoke }: Readonly<AssignmentRow
             Revoke
           </Button>
         ) : (
-          <span className="form-hint">—</span>
+          <span className="form-hint">-</span>
         )}
       </td>
     </tr>

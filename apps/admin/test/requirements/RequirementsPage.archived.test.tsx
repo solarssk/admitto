@@ -107,7 +107,7 @@ describe("RequirementsPage archived lockdown", () => {
       expect(screen.getByText("Badge")).toBeTruthy();
     });
 
-    expectArchivedLock(screen.getByRole("button", { name: "Add item" }));
+    expectArchivedLock(screen.getByRole("button", { name: "Add" }));
     expectArchivedLock(screen.getByRole("switch", { name: "Disable Badge" }));
     expectArchivedLock(screen.getByRole("button", { name: "Edit item" }));
 

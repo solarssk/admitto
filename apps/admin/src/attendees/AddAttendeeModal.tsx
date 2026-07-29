@@ -271,7 +271,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
               setError(null);
             }}
           >
-            <option value="">—</option>
+            <option value="">-</option>
             {ticketTypes.map((type) => (
               <option key={type.key} value={type.key}>
                 {type.label}

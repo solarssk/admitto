@@ -124,7 +124,7 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     fireEvent.change(screen.getByLabelText("Ticket type"), { target: { value: "standard" } });
     fireEvent.change(screen.getByLabelText("Dietary"), { target: { value: "vegetarian" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     // While the save is in flight, every profile field (including custom
     // attributes) stays disabled — not just the Save button.
@@ -164,7 +164,7 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "taken@example.com" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(
       await screen.findByText("This email is already used by another attendee in this event."),
@@ -180,14 +180,14 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna B." } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByText("Could not save changes.")).toBeTruthy();
   });
 
   it.each([
-    ["unknown_custom_data_field", "Event configuration changed — reload this page to edit attributes."],
-    ["required_custom_data_field_missing", "Could not save attribute fields — check required values and options."],
+    ["unknown_custom_data_field", "Event configuration changed. Reload this page to edit attributes."],
+    ["required_custom_data_field_missing", "Could not save attribute fields. Check required values and options."],
   ])("explains the %s custom-data validation response inline", async (code, message) => {
     const { ApiError } = await import("../../src/api/client.js");
     mockLoad(baseDetail());
@@ -197,7 +197,7 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("Dietary"), { target: { value: "vegetarian" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByText(message)).toBeTruthy();
   });
@@ -249,7 +249,7 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     });
     expect(updateAttendee).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
       expect(updateAttendee).toHaveBeenCalledWith(
@@ -283,7 +283,7 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     // Reassigning to a real catalog entry still works and submits normally.
     updateAttendee.mockResolvedValueOnce(baseDetail({ ticket_type: "standard" }));
     fireEvent.change(select, { target: { value: "standard" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
       expect(updateAttendee).toHaveBeenCalledWith(
@@ -302,13 +302,13 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     await screen.findByRole("heading", { name: "Anna" });
 
     expect(screen.queryByLabelText("Email")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
     expect(screen.getByText("anna@example.com")).toBeTruthy();
     expect(screen.getByText("Acme")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     expect(screen.getByLabelText("Email")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Save changes" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Save" })).toBeTruthy();
   });
 
   it("Cancel with no changes exits edit mode immediately, without a confirm dialog", async () => {
@@ -348,10 +348,10 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna B." } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(
-      await screen.findByText("Someone else updated this attendee — reload and reapply your edits."),
+      await screen.findByText("Someone else updated this attendee. Reload and reapply your edits."),
     ).toBeTruthy();
     const reloadButton = (await screen.findByRole("button", { name: "Reload" })) as HTMLButtonElement;
     expect(reloadButton.disabled).toBe(false);
@@ -361,7 +361,7 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
 
     await waitFor(() =>
       expect(
-        screen.queryByText("Someone else updated this attendee — reload and reapply your edits."),
+        screen.queryByText("Someone else updated this attendee. Reload and reapply your edits."),
       ).toBeNull(),
     );
   });
@@ -372,7 +372,7 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(screen.queryByLabelText("Email")).toBeNull());
     expect(screen.getByRole("button", { name: "Edit" })).toBeTruthy();
@@ -430,7 +430,7 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna B." } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(screen.queryByLabelText("Email")).toBeNull());
     expect(screen.getByRole("button", { name: "Edit" })).toBeTruthy();
@@ -445,7 +445,7 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna B." } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText("Failed to save changes.")).toBeTruthy();
 
     // Field reverted back to its saved value -> no longer dirty -> Cancel takes the
@@ -469,11 +469,11 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna B." } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText("Failed to save changes.")).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(screen.queryByLabelText("Email")).toBeNull());
     expect(screen.queryByText("Failed to save changes.")).toBeNull();
@@ -488,7 +488,7 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna B." } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("Failed to save changes.")).toBeTruthy();
@@ -506,7 +506,7 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "taken@example.com" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(
       await screen.findByText("This email is already used by another attendee in this event."),
     ).toBeTruthy();
@@ -613,8 +613,8 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
 
-    expect(screen.getByText("Event-day items")).toBeTruthy();
-    expect(screen.getByText("No event-day items")).toBeTruthy();
+    expect(screen.getByText("Event items")).toBeTruthy();
+    expect(screen.getByText("No event items")).toBeTruthy();
   });
 
   it("lists event-day items with their hand-out state, without a content_fields detail (PO review)", async () => {
@@ -659,7 +659,7 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
 
-    expect(screen.getByText("Mail delivery history")).toBeTruthy();
+    expect(screen.getByText("Delivery history")).toBeTruthy();
     expect(screen.getByText("Your ticket")).toBeTruthy();
     expect(screen.queryByText("No delivery attempts yet")).toBeNull();
   });
@@ -669,7 +669,7 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
 
-    expect(screen.getByText("Mail delivery history")).toBeTruthy();
+    expect(screen.getByText("Delivery history")).toBeTruthy();
     expect(screen.getByText("No delivery attempts yet")).toBeTruthy();
   });
 });

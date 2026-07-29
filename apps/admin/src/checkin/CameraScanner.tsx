@@ -106,7 +106,7 @@ export function CameraScanner({ enabled, wedgeActive, onScan }: Readonly<CameraS
         aria-label="Live camera preview for QR scanning"
       />
       {wedgeActive && (
-        <p className="at-hint">Camera paused — scan field has input (wedge priority).</p>
+        <p className="at-hint">Camera paused. Scan field has input (wedge priority).</p>
       )}
       {error && (
         <p className="checkin-surface__transport-error" role="alert">

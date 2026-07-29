@@ -64,7 +64,7 @@ export function IdentityMappingRepeater({
               >
                 {roleInvalid && (
                   <option value={row.role}>
-                    {row.role} (invalid — pick a role)
+                    {row.role} (invalid, pick a role)
                   </option>
                 )}
                 {MAPPING_ROLES.map((role) => (
@@ -92,7 +92,7 @@ export function IdentityMappingRepeater({
               >
                 {scopeInvalid && (
                   <option value={row.scope_type}>
-                    {row.scope_type} (invalid — pick a scope)
+                    {row.scope_type} (invalid, pick a scope)
                   </option>
                 )}
                 {MAPPING_SCOPES.map((scope) => (

@@ -251,7 +251,7 @@ function classifyExistingRow(
     return {
       type: "skip",
       email: row.email,
-      reason: 'Attendee already exists — turn on "Overwrite existing attendees" to update it instead of skipping',
+      reason: 'Attendee already exists. Turn on "Overwrite existing attendees" to update it instead of skipping',
     };
   }
   const pendingUpdate = updatesById.get(found.id);

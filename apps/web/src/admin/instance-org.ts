@@ -3,7 +3,7 @@ import type { PrismaClient } from "@prisma/client";
 /** Stable default organization id from tenant_foundation migration / seed. */
 export const INSTANCE_ORG_DEFAULT_ID = "org_default";
 
-const NO_ORG_MESSAGE = "No organization found — run seed or set INSTANCE_ORG_ID";
+const NO_ORG_MESSAGE = "No organization found. Run seed or set INSTANCE_ORG_ID.";
 
 /**
  * Resolves the deployment's instance organization id.

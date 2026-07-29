@@ -32,7 +32,7 @@ describe("parseAttendees — basic valid rows", () => {
     const result = parseAttendees(`name,email\nCher,cher@example.com`);
 
     expect(result.validRows[0]).toMatchObject({ first_name: "Cher", last_name: "" });
-    expect(result.warnings).toContain('Row 1: single-word name "Cher" — last_name stored as empty string');
+    expect(result.warnings).toContain('Row 1: single-word name "Cher", last_name stored as empty string');
   });
 
   it("normalises email to lower-case", () => {
@@ -71,6 +71,11 @@ describe("parseAttendees — header normalisation", () => {
     const result = parseAttendees(`first_name,last_name,email,unknown_col\nJan,K,jan@example.com,ignored`);
     expect(result.warnings.some((w) => w.includes("unknown_col"))).toBe(true);
     expect(result.validRows).toHaveLength(1);
+  });
+
+  it("warns when the required email column is absent", () => {
+    const result = parseAttendees("first_name,last_name\nJan,Kowalski");
+    expect(result.warnings).toContain("CSV has no 'email' column. All rows will be invalid");
   });
 });
 

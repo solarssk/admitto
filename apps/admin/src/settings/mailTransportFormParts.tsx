@@ -106,7 +106,7 @@ export const PROVIDER_GUIDE: Record<MailProvider | "", string> = {
   smtp: "External SMTP relay. Port 587 + STARTTLS, or 465 + implicit TLS.",
   graph: "Entra app-only Graph send (Mail.Send). Mailbox may differ from From.",
   powerautomate: "HTTP fallback when SMTP/Graph are unavailable.",
-  export_only: "No network send — message export only (non-production).",
+  export_only: "No network send. Message export only (non-production).",
 };
 
 const TRANSPORT_ICON: Record<MailProvider | "", string> = {
@@ -168,7 +168,7 @@ export function SecretFieldRow({
         <div className="mail-secret-field__label-row">
           <span className="at-label">{label}</span>
           {editing && !confirmed && (
-            <span className="mail-secret-field__inline-hint">Saves with Save changes below.</span>
+            <span className="mail-secret-field__inline-hint">Saves when you select Save below.</span>
           )}
         </div>
         <div className="mail-secret-field__display">
@@ -209,7 +209,7 @@ export function SecretFieldRow({
             <>
               <span className="mail-secret-field__display-value">
                 <i className="ti ti-lock" aria-hidden="true" />
-                {edit.mode === "clear" ? "Will be cleared" : "New value"} — pending save
+                {edit.mode === "clear" ? "Will be cleared" : "New value"}, pending save
               </span>
               <div className="mail-secret-field__display-actions">
                 <button
@@ -461,7 +461,7 @@ export function SmtpConnectionCard({
           <div className="settings-row">
             <div className="settings-row__text">
               <strong>Use TLS (secure)</strong>
-              <p>Implicit TLS on connect — typically port 465.</p>
+              <p>Implicit TLS on connect, typically port 465.</p>
             </div>
             <Switch
               aria-label="Use TLS (secure)"
@@ -473,7 +473,7 @@ export function SmtpConnectionCard({
           <div className="settings-row">
             <div className="settings-row__text">
               <strong>Require STARTTLS</strong>
-              <p>Upgrade a plaintext connection — typically port 587.</p>
+              <p>Upgrade a plaintext connection, typically port 587.</p>
             </div>
             <Switch
               aria-label="Require STARTTLS"
@@ -600,11 +600,11 @@ export function GraphCard({
               Grant <strong>admin consent</strong> for the tenant.
             </li>
             <li>
-              Create a <strong>client secret</strong> and copy the value immediately — it's shown
+              Create a <strong>client secret</strong> and copy the value immediately. It's shown
               once.
             </li>
             <li>
-              Enter the sending mailbox's address into <strong>Mailbox</strong> below — it can
+              Enter the sending mailbox's address into <strong>Mailbox</strong> below. It can
               differ from <strong>From address</strong> above.
             </li>
             <li>
@@ -613,10 +613,10 @@ export function GraphCard({
             </li>
           </ol>
           <p>
-            This is app-only (client-credentials) authentication — Settings never opens an
+            This is app-only (client-credentials) authentication. Settings never opens an
             interactive Microsoft sign-in, and there's no consent screen to click through here; a
             tenant admin grants consent once, in Entra. After saving, use{" "}
-            <strong>Send test email</strong> below to confirm delivery.
+            <strong>Send test</strong> below to confirm delivery.
           </p>
         </details>
         <div className="mail-transport-section">
@@ -768,7 +768,7 @@ export function TestResultPreview({ testResult }: Readonly<{ testResult: TestRes
         )}
       </div>
       {testResult.kind === "ok" && (
-        <p className="test-mail-footnote">Automated message from Admitto — no reply needed.</p>
+        <p className="test-mail-footnote">Automated message from Admitto. No reply needed.</p>
       )}
     </output>
   );
@@ -812,7 +812,7 @@ export function MailTransportCard({
         />
         {provider === "export_only" && (
           <output className="mail-dev-warning">
-            Dev/test only — cannot send real mail in production.
+            Dev/test only. Cannot send real mail in production.
           </output>
         )}
       </div>
@@ -856,14 +856,7 @@ export function SettingsFooter({
   onReset: () => void;
   onSave: () => void;
 }>) {
-  let saveLabel: string;
-  if (saving) {
-    saveLabel = "Saving…";
-  } else if (hasUnsavedChanges) {
-    saveLabel = "Save changes";
-  } else {
-    saveLabel = "Save";
-  }
+  const saveLabel = saving ? "Saving…" : "Save";
 
   return (
     <div className="settings-footer">
@@ -1025,8 +1018,8 @@ function isPlausibleEmail(value: string): boolean {
   return dot > 0 && dot < domain.length - 1;
 }
 
-/** Validates the recipient, sends via `send`, and resolves the result into `TestResult`
- * — shared tail of "Send test email" between the org and event panels. Only the actual
+/** Validates the recipient, sends via `send`, and resolves the result into `TestResult` -
+ * shared tail of the "Send test" flow between the org and event panels. Only the actual
  * send call (org- vs event-scoped) differs per caller. */
 export async function runTestSend(params: {
   testEmail: string;

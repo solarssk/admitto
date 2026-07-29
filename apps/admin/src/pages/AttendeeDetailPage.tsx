@@ -460,8 +460,8 @@ function resolveOrphanedTicketType(ticketType: string, ticketTypes: TicketTypeDt
   return ticketTypes.some((type) => type.key === ticketType) ? null : ticketType;
 }
 
-/** Overview tab: read-only profile, additional info, wallet placeholder, event-day items, and
- * mail delivery history — extracted out of the component (SonarCloud S3776: keeps this tab's own
+/** Overview tab: read-only profile, additional info, wallet placeholder, event items, and
+ * delivery history - extracted out of the component (SonarCloud S3776: keeps this tab's own
  * conditional rendering out of the component's cognitive-complexity count). */
 function AttendeeOverviewTab({
   detail,
@@ -493,11 +493,11 @@ function AttendeeOverviewTab({
             </div>
             <div className="attendee-detail-row">
               <span>Company</span>
-              <span>{detail.company ?? "—"}</span>
+              <span>{detail.company ?? "-"}</span>
             </div>
             <div className="attendee-detail-row">
               <span>Department</span>
-              <span>{detail.department ?? "—"}</span>
+              <span>{detail.department ?? "-"}</span>
             </div>
             {attendeeSource && (
               <div className="attendee-detail-row">
@@ -543,11 +543,11 @@ function AttendeeOverviewTab({
       </div>
 
       <div className="attendee-detail-side">
-        <Card title="Event-day items">
+        <Card title="Event items">
           {eventItems.length === 0 ? (
             <EmptyState
               icon={<i className="ti ti-package" aria-hidden="true" />}
-              title="No event-day items"
+              title="No event items"
               description="This event has no hand-out items configured yet."
             />
           ) : (
@@ -580,7 +580,7 @@ function AttendeeOverviewTab({
           )}
         </Card>
 
-        <Card title="Mail delivery history">
+        <Card title="Delivery history">
           {detail.deliveries.length === 0 ? (
             <EmptyState
               icon={<i className="ti ti-mail-off" aria-hidden="true" />}
@@ -950,8 +950,8 @@ function classifySaveError(err: unknown): SaveErrorOutcome {
     return {
       kind: "message",
       message: hasApiErrorCode(err, "unknown_custom_data_field")
-        ? "Event configuration changed — reload this page to edit attributes."
-        : "Could not save attribute fields — check required values and options.",
+        ? "Event configuration changed. Reload this page to edit attributes."
+        : "Could not save attribute fields. Check required values and options.",
     };
   }
   return { kind: "message", message: operatorApiErrorMessage(err, "Failed to save changes.") };
@@ -1207,7 +1207,7 @@ export function AttendeeDetailPage() {
       setItemsWarning(warn);
     } catch (err) {
       if (!isStillSelected(target)) return;
-      setError(operatorApiErrorMessage(err, "Failed to reload — please try again."));
+      setError(operatorApiErrorMessage(err, "Failed to reload. Please try again."));
     } finally {
       if (isStillSelected(target)) setReloading(false);
     }
@@ -1335,7 +1335,7 @@ export function AttendeeDetailPage() {
           `Event is at capacity (${current}/${capacity}). Free a slot or increase capacity before restoring this pass.`,
         );
       } else if (outcome.kind === "stale_write") {
-        addToast("Someone else updated this attendee — page will reload", "warning");
+        addToast("Someone else updated this attendee. Page will reload.", "warning");
         void handleReload();
       } else {
         setRevokeError(outcome.message);
@@ -1532,9 +1532,11 @@ export function AttendeeDetailPage() {
     checkInStatus: detail.check_in_status,
     blocked: isRevoked,
   });
-  // Stacked day/time (e.g. "Today" / "14:51 CEST"), same shape as the Attendees list's check-in
+  // Stacked day/time (e.g. "Today" / "14:51 UTC+2"), same shape as the Attendees list's check-in
   // cell - a single truncated line hid the time on narrow chips (PO report: "godziny na mobile
-  // nie widzimy"), and each line here is short enough on its own to never need truncating.
+  // nie widzimy"). Usually short enough to never truncate, but the numeric UTC offset can push a
+  // same-day fallback ("28 Jul 2026" / "04:30 PM UTC+5:30") past the chip's width for a
+  // half-hour-offset zone like India's - title carries the untruncated text as a hover fallback.
   const admissionParts = detail.admitted_at
     ? formatAdmissionDisplayParts(detail.admitted_at, event.timezone)
     : null;
@@ -1651,7 +1653,7 @@ export function AttendeeDetailPage() {
           <div className="attendee-status-chip__body">
             <strong>Check-in</strong>
             {admissionParts ? (
-              <span className="attendee-status-chip__checkin">
+              <span className="attendee-status-chip__checkin" title={`${admissionParts.day}, ${admissionParts.time}`}>
                 <span className="attendee-status-chip__checkin-day">{admissionParts.day}</span>
                 <span className="attendee-status-chip__checkin-time">{admissionParts.time}</span>
               </span>
@@ -1747,7 +1749,7 @@ export function AttendeeDetailPage() {
             )}
             {staleWrite && (
               <div className="attendee-form__warn">
-                <p>Someone else updated this attendee — reload and reapply your edits.</p>
+                <p>Someone else updated this attendee. Reload and reapply your edits.</p>
                 <Button type="button" variant="secondary" size="sm" onClick={() => void handleReload()} disabled={reloading}>
                   {reloading ? "Reloading…" : "Reload"}
                 </Button>
@@ -1812,11 +1814,11 @@ export function AttendeeDetailPage() {
                   value={form.ticket_type}
                   onChange={(e) => setForm({ ...form, ticket_type: e.target.value })}
                 >
-                  <option value="">—</option>
+                  <option value="">-</option>
                   {orphanedTicketType && (
                     <option
                       value={orphanedTicketType}
-                      title="Not in this event's ticket-type catalog — it may have been deleted after being assigned. Picking another option here replaces it."
+                      title="Not in this event's ticket-type catalog. It may have been deleted after being assigned, and picking another option here replaces it."
                     >
                       {orphanedTicketType} (not in catalog)
                     </option>
@@ -1862,7 +1864,7 @@ export function AttendeeDetailPage() {
               >
                 {(guard) => (
                   <Button type="submit" variant="primary" {...guard}>
-                    {saving ? "Saving…" : "Save changes"}
+                    {saving ? "Saving…" : "Save"}
                   </Button>
                 )}
               </ArchivedGuard>
@@ -1930,7 +1932,7 @@ export function AttendeeDetailPage() {
         open={activeRevoke === "pass"}
         title="Revoke pass?"
         message="This attendee will no longer be able to check in. You can restore the pass later if capacity allows."
-        confirmLabel="Revoke pass"
+        confirmLabel="Revoke"
         confirmVariant="danger"
         loading={revokeBusy}
         errorMessage={revokeError ?? undefined}
@@ -1947,7 +1949,7 @@ export function AttendeeDetailPage() {
         open={activeRevoke === "restore"}
         title="Restore pass?"
         message={`This re-enables check-in for ${detail.name}.`}
-        confirmLabel="Restore pass"
+        confirmLabel="Restore"
         confirmVariant="primary"
         loading={revokeBusy}
         errorMessage={revokeError ?? undefined}
@@ -1977,8 +1979,8 @@ export function AttendeeDetailPage() {
       <ConfirmDialog
         open={activeRevoke === "checkin"}
         title="Revoke check-in?"
-        message={`This un-admits ${detail.name} — they'll show as not checked in and will need to be scanned or admitted again to re-enter. This works regardless of when or how they were originally checked in.`}
-        confirmLabel="Revoke check-in"
+        message={`This un-admits ${detail.name}. They'll show as not checked in and will need to be scanned or admitted again to re-enter. This works regardless of when or how they were originally checked in.`}
+        confirmLabel="Revoke"
         confirmVariant="danger"
         loading={revokeBusy}
         errorMessage={revokeError ?? undefined}
@@ -1995,7 +1997,7 @@ export function AttendeeDetailPage() {
         open={activeRevoke === "items"}
         title="Revoke items?"
         message={`Every issued item (badge, wristband, giftbag, …) for ${detail.name} is reset to pending. Items can be re-issued from the check-in screen at any time.`}
-        confirmLabel="Revoke items"
+        confirmLabel="Revoke"
         confirmVariant="warning"
         loading={revokeBusy}
         errorMessage={revokeError ?? undefined}
@@ -2012,7 +2014,7 @@ export function AttendeeDetailPage() {
         open={noteDeleteId !== null}
         title="Delete this note?"
         message="This permanently removes the note. This cannot be undone."
-        confirmLabel="Delete note"
+        confirmLabel="Delete"
         confirmVariant="danger"
         loading={noteDeleting}
         errorMessage={noteDeleteError ?? undefined}
@@ -2030,7 +2032,7 @@ export function AttendeeDetailPage() {
         title="Permanently delete this attendee?"
         message={`This cannot be undone. Deleting ${detail.name} permanently removes:`}
         errorMessage={deleteError}
-        confirmLabel="Delete attendee"
+        confirmLabel="Delete"
         confirmVariant="danger"
         loading={deleting}
         confirmationValue={detail.name}

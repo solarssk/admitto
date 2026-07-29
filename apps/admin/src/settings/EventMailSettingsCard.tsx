@@ -311,7 +311,7 @@ export const EventMailSettingsCard = forwardRef<
   let testSendReason: string | undefined;
   let testSendHint: string;
   if (isArchived) {
-    testSendReason = "This event is archived — mail settings cannot be tested.";
+    testSendReason = "This event is archived. Mail settings cannot be tested.";
     testSendHint = testSendReason;
   } else if (!transportConfigured) {
     testSendReason = "Select and save a transport (SMTP, Graph, or Power Automate) first.";
@@ -319,7 +319,7 @@ export const EventMailSettingsCard = forwardRef<
   } else if (hasUnsavedChanges) {
     testSendReason = "Save your changes before sending a test email.";
     testSendHint =
-      "Save your changes first — the test uses the saved configuration, not unsaved form values.";
+      "Save your changes first. The test uses the saved configuration, not unsaved form values.";
   } else {
     testSendReason = undefined;
     testSendHint =
@@ -426,7 +426,7 @@ export const EventMailSettingsCard = forwardRef<
         {mode === "dedicated" && (
           <div className="mail-transport-form">
             <p className="mail-transport__desc">
-              This event sends its own mail instead of the organization&apos;s — useful for a
+              This event sends its own mail instead of the organization&apos;s. Useful for a
               co-branded event or a separate mailbox.
             </p>
             {fieldLocked("provider") && (
@@ -520,7 +520,7 @@ export const EventMailSettingsCard = forwardRef<
               aria-describedby={testSendReason ? "event-mail-test-send-reason" : undefined}
               onClick={() => void handleTestSend()}
             >
-              {testSending ? "Sending…" : "Send test email"}
+              {testSending ? "Sending…" : "Send test"}
             </Button>
           </Tooltip>
         </div>

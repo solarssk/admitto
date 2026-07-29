@@ -574,7 +574,7 @@ describe("AttendeeDetailPage — Notes tab", () => {
     await screen.findByText("Delete this note?");
     let resolveRequest!: (value: ReturnType<typeof baseDetail>) => void;
     deleteAttendeeNote.mockReturnValueOnce(new Promise((resolve) => { resolveRequest = resolve; }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete note" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(deleteAttendeeNote).toHaveBeenCalledOnce());
 
     fireEvent.click(screen.getByRole("button", { name: "Switch attendee" }));
@@ -595,7 +595,7 @@ describe("AttendeeDetailPage — Notes tab", () => {
     fireEvent.click(within(notesList()).getByRole("button", { name: /^Delete note by/ }));
     let rejectRequest!: (reason: Error) => void;
     deleteAttendeeNote.mockReturnValueOnce(new Promise((_, reject) => { rejectRequest = reject; }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete note" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(deleteAttendeeNote).toHaveBeenCalledOnce());
 
     fireEvent.click(screen.getByRole("button", { name: "Switch attendee" }));
@@ -766,7 +766,7 @@ describe("AttendeeDetailPage — Notes tab", () => {
       await screen.findByText("Delete this note?");
 
       deleteAttendeeNote.mockResolvedValueOnce(baseDetail({ notes: [] }));
-      fireEvent.click(screen.getByRole("button", { name: "Delete note" }));
+      fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
       await waitFor(() => {
         expect(deleteAttendeeNote).toHaveBeenCalledWith("evt-1", "att-1", "n1");
@@ -798,7 +798,7 @@ describe("AttendeeDetailPage — Notes tab", () => {
       fireEvent.click(screen.getByRole("button", { name: /^Delete note by/ }));
       let resolveRequest!: (value: ReturnType<typeof baseDetail>) => void;
       deleteAttendeeNote.mockReturnValueOnce(new Promise((resolve) => { resolveRequest = resolve; }));
-      fireEvent.click(screen.getByRole("button", { name: "Delete note" }));
+      fireEvent.click(screen.getByRole("button", { name: "Delete" }));
       await waitFor(() => expect(deleteAttendeeNote).toHaveBeenCalledOnce());
       fireEvent.click(document.querySelector(".confirm-dialog__backdrop")!);
 
@@ -816,7 +816,7 @@ describe("AttendeeDetailPage — Notes tab", () => {
       fireEvent.click(screen.getByRole("button", { name: /^Delete note by/ }));
       await screen.findByText("Delete this note?");
       deleteAttendeeNote.mockRejectedValueOnce(new Error("boom"));
-      fireEvent.click(screen.getByRole("button", { name: "Delete note" }));
+      fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
       expect((await screen.findByRole("alert")).textContent).toBe("Could not delete note.");
       expect(screen.getByText("Delete this note?")).toBeTruthy();

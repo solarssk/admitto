@@ -18,7 +18,7 @@ export function getEncryptionKey(): Buffer {
       process.env["NODE_ENV"] === "development" || process.env["NODE_ENV"] === "test";
     throw new Error(
       isDev
-        ? "ENCRYPTION_KEY is not set — add it to your .env file: openssl rand -base64 32"
+        ? "ENCRYPTION_KEY is not set. Add it to your .env file: openssl rand -base64 32"
         : "ENCRYPTION_KEY is required",
     );
   }

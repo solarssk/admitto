@@ -132,7 +132,7 @@ describe("CfAccessEditor (slice 4)", () => {
     const teamInput = await screen.findByDisplayValue("https://old");
     fireEvent.change(teamInput, { target: { value: "https://new" } });
     fireEvent.change(screen.getByDisplayValue("a"), { target: { value: "a, b" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
     expect(mockUpdate.mock.calls[0][0]).toMatchObject({
       teamDomain: "https://new",
@@ -148,7 +148,7 @@ describe("CfAccessEditor (slice 4)", () => {
     const { router } = renderEditorAt();
     const teamInput = await screen.findByDisplayValue("https://old");
     fireEvent.change(teamInput, { target: { value: "https://new" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(router.state.location.pathname).toBe("/admin/settings/identity/providers"));
   });
@@ -162,7 +162,7 @@ describe("CfAccessEditor (slice 4)", () => {
     const { router } = renderEditorAt();
     const teamInput = await screen.findByDisplayValue("https://old");
     fireEvent.change(teamInput, { target: { value: "https://new" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
 
     const closeButton = screen.getByRole("button", { name: "Close" });
@@ -182,7 +182,7 @@ describe("CfAccessEditor (slice 4)", () => {
     renderEditorAt();
     await screen.findByRole("switch", { name: "Enabled" });
     fireEvent.click(screen.getByRole("switch", { name: "Enabled" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await screen.findByText("Please fix the highlighted fields.");
     expect(mockUpdate).not.toHaveBeenCalled();
     expect(screen.getByText(/Team URL is required/)).toBeTruthy();
@@ -196,7 +196,7 @@ describe("CfAccessEditor (slice 4)", () => {
     await screen.findByPlaceholderText("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
     fireEvent.change(screen.getByPlaceholderText("a1b2c3d4-e5f6-7890-abcd-ef1234567890"), { target: { value: "x, y" } });
     fireEvent.change(screen.getByPlaceholderText("/admin, /api/admin"), { target: { value: "/admin, /api/admin" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
     expect(mockUpdate.mock.calls[0][0]).toMatchObject({
       audience: ["x", "y"],
@@ -210,7 +210,7 @@ describe("CfAccessEditor (slice 4)", () => {
     renderEditorAt();
     const audInput = await screen.findByPlaceholderText("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
     fireEvent.change(audInput, { target: { value: '["aud-1","aud-2"]' } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
     expect(mockUpdate.mock.calls[0][0]).toMatchObject({ audience: ["aud-1", "aud-2"] });
   });
@@ -276,7 +276,7 @@ describe("CfAccessEditor (slice 4)", () => {
     try {
       renderEditorAt();
       await screen.findByDisplayValue("https://t");
-      fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
       await waitFor(() =>
         expect(assignSpy).toHaveBeenCalledWith(expect.stringContaining("/login?next=")),
       );
@@ -381,7 +381,7 @@ describe("CfAccessEditor (slice 4)", () => {
     mockUpdate.mockRejectedValueOnce(new ApiError(400, "Invalid configuration"));
     renderEditorAt();
     await screen.findByDisplayValue("https://t");
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText("Invalid configuration")).toBeTruthy();
   });
 
@@ -422,7 +422,7 @@ describe("CfAccessEditor (slice 4)", () => {
     mockUpdate.mockRejectedValueOnce(new Error("network down"));
     renderEditorAt();
     await screen.findByDisplayValue("https://t");
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText("Failed to save settings.")).toBeTruthy();
   });
 
@@ -487,7 +487,7 @@ describe("CfAccessEditor (slice 4)", () => {
     const teamInput = await screen.findByDisplayValue("https://t");
     fireEvent.change(teamInput, { target: { value: "http://team.cloudflareaccess.com" } });
     fireEvent.click(screen.getByRole("switch", { name: "Enabled" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await screen.findByText("Please fix the highlighted fields.");
     expect(screen.getByText(/Team URL must use https/)).toBeTruthy();
     expect(mockUpdate).not.toHaveBeenCalled();
@@ -511,7 +511,7 @@ describe("CfAccessEditor (slice 4)", () => {
     // Team domain input is disabled (env-locked) and seeded with the schemeless host.
     expect(screen.getByDisplayValue("team.cloudflareaccess.com").hasAttribute("disabled")).toBe(true);
     fireEvent.click(screen.getByRole("switch", { name: "Enabled" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
     // Locked team domain is omitted from the body; the server keeps the env value.
     expect(mockUpdate.mock.calls[0][0]).toMatchObject({ enabled: true });

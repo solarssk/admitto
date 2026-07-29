@@ -90,13 +90,13 @@ export function mapSmtpError(err: unknown): MappedFailure {
 
 /** Drop the free-text suffix from a provider send-failure message before it reaches
  * System logs (stdout + the live buffer). `buildSendErrorResult` (Graph) and the
- * Power Automate non-2xx branch both format errors as "<safe prefix> — <raw response
+ * Power Automate non-2xx branch both format errors as "<safe prefix> - <raw response
  * body, up to 200 chars>" - the raw suffix can echo back the message we just posted
  * (recipient address, subject) if the provider/flow reflects request content in its
  * error response. Only the stable "<provider>: <code>" prefix is safe to log; the
  * full message (including the suffix) still reaches the caller via SendResult.error
  * for admin-facing diagnostics. */
 export function sanitizeProviderErrorForLog(error: string): string {
-  const sepIndex = error.indexOf(" — ");
+  const sepIndex = error.indexOf(" - ");
   return sepIndex === -1 ? error : error.slice(0, sepIndex);
 }

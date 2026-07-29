@@ -270,7 +270,7 @@ describe("EventSettingsPage operator errors", () => {
       expect(screen.getByLabelText("Event title")).toBeTruthy();
     });
     fireEvent.change(screen.getByLabelText("Event title"), { target: { value: "Summit 2026" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to save settings/);
     });
@@ -282,7 +282,7 @@ describe("EventSettingsPage operator errors", () => {
     await screen.findByLabelText("Capacity");
 
     fireEvent.change(screen.getByLabelText("Capacity"), { target: { value: "0" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(
@@ -300,7 +300,7 @@ describe("EventSettingsPage operator errors", () => {
       expect(screen.getByLabelText("Event title")).toBeTruthy();
     });
     fireEvent.change(screen.getByLabelText("Event title"), { target: { value: "Summit 2026" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Cannot edit archived event/);
     });
@@ -319,7 +319,7 @@ describe("EventSettingsPage operator errors", () => {
     });
     fireEvent.click(screen.getAllByRole("button", { name: "Archive event" })[0]!);
     const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Archive event" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Archive" }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Action failed/);
     });
@@ -459,7 +459,7 @@ describe("RequirementsPage operator errors", () => {
     });
     fireEvent.click(screen.getByRole("switch", { name: "Disable Badge" }));
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Item disabled — saved/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Item disabled/);
     });
   });
 
@@ -480,11 +480,11 @@ describe("RequirementsPage operator errors", () => {
     vi.mocked(createEventItem).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderRequirements();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Add item" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Add" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add item" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
     fireEvent.change(screen.getByLabelText("Item name"), { target: { value: "Lanyard" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create item" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
     await waitFor(() => {
       expect(screen.getByText(/Failed to create item/)).toBeTruthy();
     });
@@ -501,11 +501,11 @@ describe("RequirementsPage operator errors", () => {
     });
     renderRequirements();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Add item" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Add" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add item" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
     fireEvent.change(screen.getByLabelText("Item name"), { target: { value: "Headset" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create item" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
     await waitFor(() => {
       expect(createEventItem).toHaveBeenCalledWith("evt-1", {
         key: "headset",
@@ -523,11 +523,11 @@ describe("RequirementsPage operator errors", () => {
     });
     renderRequirements();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Add item" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Add" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add item" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
     fireEvent.change(screen.getByLabelText("Item name"), { target: { value: "Badge" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create item" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
     await waitFor(() => {
       expect(createEventItem).toHaveBeenCalledWith("evt-1", {
         key: "badge",
@@ -1168,7 +1168,7 @@ describe("ReportsPage admission log", () => {
     if (!noItemsRow) throw new Error("admission log row not found");
     const itemsCell = noItemsRow.querySelectorAll("td")[4];
     if (!itemsCell) throw new Error("items cell not found");
-    expect(itemsCell.textContent).toBe("—");
+    expect(itemsCell.textContent).toBe("-");
   });
 
   it("links the admission log's attendee name/email to that attendee's detail page", async () => {
@@ -1246,7 +1246,7 @@ describe("ReportsPage admission log", () => {
     // The Attendees table's shared badge renders "-" for a null ticket_type - this cell must show
     // the same "(none)" label the breakdown/filter above it already use instead.
     expect(within(typeCell).getByText("(none)")).toBeTruthy();
-    expect(within(typeCell).queryByText("—")).toBeNull();
+    expect(within(typeCell).queryByText("-")).toBeNull();
   });
 
   it("does not conflate a genuinely untyped admission with one whose raw ticket_type is literally the filter's internal sentinel string (Codex review)", async () => {

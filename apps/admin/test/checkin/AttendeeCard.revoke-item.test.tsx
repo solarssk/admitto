@@ -49,7 +49,7 @@ describe("AttendeeCard — admin per-item Revoke (item revocation feature)", () 
       />,
     );
     expect(screen.queryByRole("button", { name: "Revoke Gift bag" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Mark gift bag given" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Mark gift bag issued" })).toBeTruthy();
   });
 
   it("hides Revoke on a blocked (revoked/invalid) pass", () => {
@@ -127,7 +127,7 @@ describe("AttendeeCard — admin per-item Revoke (item revocation feature)", () 
       />,
     );
     expect(screen.queryByRole("button", { name: "Revoke Gift bag" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Mark gift bag given" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Mark gift bag issued" })).toBeTruthy();
   });
 
   it("shows Revoke alongside the Mark returned action for an issued item that still requires return (bot review, #457)", () => {

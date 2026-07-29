@@ -1307,7 +1307,7 @@
   text-align: right;
 }
 
-/* Event-day items list — matches the design mockup's .att-item-row exactly (values pulled
+/* Event items list - matches the design mockup's .att-item-row exactly (values pulled
    from ui_kits/admin/index.html, not eyeballed: 8px icon radius not a circle, 500-weight
    body-sized label, 600-weight xs-sized state, muted/disabled text tokens for "not yet"). */
 .attendee-items-list {

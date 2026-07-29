@@ -186,7 +186,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
     try {
       await resetUserMfa(user.id);
       setResetMfaOpen(false);
-      onUpdated(user, "2FA reset — user must sign in again");
+      onUpdated(user, "2FA reset. User must sign in again.");
       onClose();
     } catch (err) {
       setError(operatorApiErrorMessage(err, "Failed to reset 2FA."));
@@ -203,7 +203,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
       await resetUserPassword(user.id, { new_password: newPassword });
       setResetPasswordOpen(false);
       setNewPassword("");
-      onUpdated(user, "Password reset — sessions revoked");
+      onUpdated(user, "Password reset. Sessions revoked.");
       onClose();
     } catch (err) {
       setError(operatorApiErrorMessage(err, "Failed to reset password."));
@@ -402,7 +402,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
               Cancel
             </Button>
             <Button type="button" variant="primary" disabled={submitting} onClick={() => void handleSave()}>
-              {submitting ? "Saving…" : "Save changes"}
+              {submitting ? "Saving…" : "Save"}
             </Button>
           </div>
         </div>
@@ -428,7 +428,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
         open={resetMfaOpen}
         title="Reset 2FA"
         message="This will remove all 2FA methods and revoke all sessions for this user."
-        confirmLabel="Reset 2FA"
+        confirmLabel="Reset"
         confirmVariant="danger"
         loading={resetMfaBusy}
         onConfirm={() => void handleResetMfa()}

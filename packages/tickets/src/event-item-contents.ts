@@ -50,7 +50,7 @@ export function buildItemDetail(
     if (value) {
       parts.push(`${displayLabel}: ${formatContentValue(type, value)}`);
     } else if (required) {
-      parts.push(`${displayLabel}: —`);
+      parts.push(`${displayLabel}: -`);
     }
   }
   return parts.length > 0 ? parts.join(DETAIL_SEPARATOR) : undefined;

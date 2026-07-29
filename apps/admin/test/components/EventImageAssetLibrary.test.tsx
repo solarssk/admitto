@@ -214,7 +214,7 @@ describe("EventImageAssetLibrary", () => {
     const dialog = await screen.findByRole("dialog");
     expect(
       within(dialog).getByText(
-        'Delete "sponsor.png"? If its {{sponsor_logo}} placeholder is still used in this event\'s email template, deletion will be blocked until you remove it from the template.',
+        'Delete "sponsor.png"? If its {{sponsor_logo}} placeholder is still used in this event\'s email template, remove it from the template first.',
       ),
     ).toBeTruthy();
     expect(within(dialog).queryByText(/will stop working/)).toBeNull();
