@@ -416,6 +416,14 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(screen.queryByText("Add a link or file")).toBeNull();
   });
 
+  it("shows KPI dashes only after an initial stats request has actually failed", async () => {
+    fetchEventOverview.mockRejectedValueOnce(new Error("network unavailable"));
+    renderPage();
+
+    await screen.findByText("Failed to load event stats.");
+    expect(within(statsRow()).getAllByText("-")).toHaveLength(3);
+  });
+
   it("replaces the duplicate-date Event date tile with a Failed delivery tile and labels the KPI row per the mockup (#350)", async () => {
     fetchEventOverview.mockResolvedValue(
       overviewFixture(5, { email_failed: 2, email_bounced: 1 }),
