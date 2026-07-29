@@ -5,6 +5,7 @@ import {
   formatEventDate,
   formatEventDateTime,
   formatEventTime,
+  formatRelativeTime,
   formatRelativeAdmissionDisplay,
   formatUtcDateTime,
   calendarDateValidationHint,
@@ -14,6 +15,8 @@ import {
   utcDayStartIso,
   zonedDayEndIso,
   zonedDayStartIso,
+  utcOffsetLabel,
+  zonedTimeLabel,
 } from "../../src/utils/event-dates.js";
 import { setPreferredLocale } from "../../src/utils/locale-store.js";
 
@@ -88,6 +91,39 @@ describe("formatEventDateTime and formatUtcDateTime", () => {
     expect(result).not.toMatch(/Jun 2026/);
     expect(result).toMatch(/15:00/);
     expect(result).toMatch(/UTC\+2/);
+  });
+});
+
+describe("timezone offset labels", () => {
+  it("uses UTC by default and calculates a DST-aware numeric offset", () => {
+    expect(utcOffsetLabel("2026-06-28T13:00:00.000Z")).toBe("UTC");
+    expect(utcOffsetLabel("2026-06-28T13:00:00.000Z", "Europe/Warsaw")).toBe("UTC+2");
+    expect(utcOffsetLabel("2026-01-28T13:00:00.000Z", "Europe/Warsaw")).toBe("UTC+1");
+    expect(utcOffsetLabel("2026-06-28T13:00:00.000Z", "Asia/Kolkata")).toBe("UTC+5:30");
+  });
+
+  it("does not throw for an invalid date and keeps the IANA zone visible", () => {
+    expect(utcOffsetLabel("not-a-date", "Europe/Warsaw")).toBe("");
+    expect(zonedTimeLabel("2026-06-28T13:00:00.000Z")).toBe("(UTC)");
+    expect(zonedTimeLabel("2026-06-28T13:00:00.000Z", "Asia/Kolkata")).toBe("(Asia/Kolkata, UTC+5:30)");
+    expect(zonedTimeLabel("not-a-date", "Europe/Warsaw")).toBe("(Europe/Warsaw)");
+  });
+});
+
+describe("formatRelativeTime", () => {
+  it("uses stable singular and plural labels at every threshold", () => {
+    const dateNow = vi.spyOn(Date, "now").mockReturnValue(new Date("2026-06-28T13:00:00.000Z").getTime());
+
+    expect(formatRelativeTime("2026-06-28T12:59:30.000Z")).toBe("Just now");
+    expect(formatRelativeTime("2026-06-28T12:59:00.000Z")).toBe("1 min ago");
+    expect(formatRelativeTime("2026-06-28T12:00:00.000Z")).toBe("1 hour ago");
+    expect(formatRelativeTime("2026-06-28T10:00:00.000Z")).toBe("3 hours ago");
+    expect(formatRelativeTime("2026-06-27T11:00:00.000Z")).toBe("1 day ago");
+    expect(formatRelativeTime("2026-06-26T13:00:00.000Z")).toBe("2 days ago");
+    expect(formatRelativeTime("2026-05-29T13:00:00.000Z")).toBe("1 month ago");
+    expect(formatRelativeTime("2026-04-29T13:00:00.000Z")).toBe("2 months ago");
+
+    dateNow.mockRestore();
   });
 });
 

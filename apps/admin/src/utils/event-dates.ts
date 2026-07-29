@@ -48,13 +48,12 @@ export function formatEventCalendarDate(iso: string): string {
  * text instead of crashing - `Intl.DateTimeFormat.formatToParts` throws on an invalid Date,
  * unlike `Date.prototype.toLocaleString`, which silently renders "Invalid Date".
  */
-export function utcOffsetLabel(iso: string, timezone?: string): string {
-  const zone = timezone ?? "UTC";
-  if (zone === "UTC") return "UTC";
+export function utcOffsetLabel(iso: string, timezone = "UTC"): string {
+  if (timezone === "UTC") return "UTC";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: zone,
+    timeZone: timezone,
     timeZoneName: "shortOffset",
   }).formatToParts(date);
   const gmtOffset = parts.find((p) => p.type === "timeZoneName")?.value ?? "GMT+0";
@@ -66,11 +65,10 @@ export function utcOffsetLabel(iso: string, timezone?: string): string {
  * offset — audit trails and attendee-facing mail, where the event's zone isn't otherwise visible
  * on the page/screen — e.g. "(Europe/Warsaw, UTC+2)", or bare "(UTC)" for the UTC zone.
  */
-export function zonedTimeLabel(iso: string, timezone?: string): string {
-  const zone = timezone ?? "UTC";
-  if (zone === "UTC") return "(UTC)";
-  const offset = utcOffsetLabel(iso, zone);
-  return offset ? `(${zone}, ${offset})` : `(${zone})`;
+export function zonedTimeLabel(iso: string, timezone = "UTC"): string {
+  if (timezone === "UTC") return "(UTC)";
+  const offset = utcOffsetLabel(iso, timezone);
+  return offset ? `(${timezone}, ${offset})` : `(${timezone})`;
 }
 
 /** Category 1 — event operational timestamps in event timezone with a numeric UTC offset. */
