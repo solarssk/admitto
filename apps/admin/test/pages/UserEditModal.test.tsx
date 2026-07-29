@@ -22,6 +22,7 @@ import {
   fetchAdminEvents,
   fetchAdminOrganizations,
   grantUserRole,
+  patchAdminUser,
   resetUserMfa,
   resetUserPassword,
 } from "../../src/api/client.js";
@@ -29,6 +30,7 @@ import {
 const mockFetchAdminEvents = vi.mocked(fetchAdminEvents);
 const mockFetchAdminOrganizations = vi.mocked(fetchAdminOrganizations);
 const mockGrantUserRole = vi.mocked(grantUserRole);
+const mockPatchAdminUser = vi.mocked(patchAdminUser);
 const mockResetUserMfa = vi.mocked(resetUserMfa);
 const mockResetUserPassword = vi.mocked(resetUserPassword);
 
@@ -168,5 +170,24 @@ describe("UserEditModal reset actions", () => {
     });
     expect(onUpdated).toHaveBeenCalledWith(user, "Password reset. Sessions revoked.");
     expect(onClose).toHaveBeenCalled();
+  });
+});
+
+describe("UserEditModal save state", () => {
+  it("keeps profile controls disabled while the update is in progress", async () => {
+    mockPatchAdminUser.mockImplementationOnce(() => new Promise(() => {}));
+    renderModal();
+    await screen.findByRole("button", { name: "Save" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockPatchAdminUser).toHaveBeenCalledWith("usr-1", {
+        display_name: "Staff User",
+        is_active: true,
+      });
+    });
+    expect(screen.getByRole("button", { name: "Saving…" })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveProperty("disabled", true);
   });
 });

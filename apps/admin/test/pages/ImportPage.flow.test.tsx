@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RouterProvider } from "react-router/dom";
 import { createMemoryRouter, MemoryRouter, Route, Routes } from "react-router";
@@ -408,6 +408,48 @@ describe("ImportPage upload → preview → commit flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
 
     expect(await screen.findByText("Row preview (showing first 1 of 5 valid rows)")).toBeTruthy();
+  });
+
+  it("renders dash fallbacks for empty optional values when their preview columns are present", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(
+      samplePreview({
+        parse: { validCount: 2, invalidRows: [], invalidCount: 0, warnings: [] },
+        sampleRows: [
+          {
+            rowIndex: 1,
+            name: "",
+            email: "blank-values@example.com",
+            ticket_type: "",
+            company: "",
+            department: "",
+            external_uuid: "",
+            custom_data: {},
+          },
+          {
+            rowIndex: 2,
+            name: "Sam",
+            email: "sam@example.com",
+            ticket_type: "vip",
+            company: "Admitto",
+            department: "Events",
+            external_uuid: "external-2",
+            custom_data: { dietary: "Vegetarian" },
+          },
+        ],
+        attributeFieldLabels: [{ source_field: "dietary", label: "Dietary requirements" }],
+      }),
+    );
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+
+    await screen.findByText("Dietary requirements");
+    const previewTable = document.querySelector(".import-sample-table");
+    expect(previewTable).not.toBeNull();
+    expect(within(previewTable as HTMLElement).getAllByText("-")).toHaveLength(6);
   });
 
   it("shows rows the commit-time re-parse invalidated (e.g. a ticket type deleted between preview and commit)", async () => {

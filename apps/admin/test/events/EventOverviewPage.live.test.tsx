@@ -550,7 +550,12 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
 
   it("merges Needs attention + Event readiness into a single Setup checklist card (#348)", async () => {
     fetchEventOverview.mockResolvedValue(
-      overviewFixture(5, { checkin_staff_count: 0, attendee_count: 0, attendees_with_ticket: 0 }),
+      overviewFixture(5, {
+        checkin_staff_count: 0,
+        attendee_count: 0,
+        attendees_with_ticket: 0,
+        email_failed: 1,
+      }),
     );
 
     renderPage();
@@ -560,6 +565,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     });
     expect(screen.queryByText("Needs attention")).toBeNull();
     expect(screen.queryByText("Event readiness")).toBeNull();
+    expect(screen.getByText("Email delivery")).toBeTruthy();
     expect(screen.getByText("View full checklist in Event settings")).toBeTruthy();
   });
 
