@@ -179,7 +179,7 @@ describe("CheckInPage — admin Revoke check-in (#379/#380/#381 follow-up)", () 
     expect(within(dialog).getByText("Revoke check-in?")).toBeTruthy();
     expect(revokeAttendeeCheckIn).not.toHaveBeenCalled();
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke check-in" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
     await waitFor(() => {
       expect(revokeAttendeeCheckIn).toHaveBeenCalledWith("evt-live", "att-1");
     });
@@ -199,7 +199,7 @@ describe("CheckInPage — admin Revoke check-in (#379/#380/#381 follow-up)", () 
 
     fireEvent.click(screen.getByRole("button", { name: "Revoke check-in" }));
     const dialog = screen.getByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke check-in" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
     await waitFor(() => {
       expect(within(dialog).getByText("Failed to revoke check-in. Try again.")).toBeTruthy();

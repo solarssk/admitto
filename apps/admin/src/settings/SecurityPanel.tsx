@@ -292,7 +292,7 @@ export function SecurityPanel() {
 
         {draft.mfaRoles.length === 0 && (
           <p role="alert" className="text-warning">
-            2FA is disabled for all roles — this is not recommended for production.
+            2FA is disabled for all roles. This is not recommended for production.
           </p>
         )}
       </div>

@@ -280,7 +280,7 @@ export function AccountPage() {
       return (
         <div className="account-auth-backup">
           <div className="account-auth-backup__head">
-            <strong>Backup codes — save all 10, shown once</strong>
+            <strong>Backup codes: save all 10, shown once</strong>
             <button
               type="button"
               className="account-uri-copy-btn"
@@ -652,7 +652,7 @@ export function AccountPage() {
                       {s.deviceLabel || parseUserAgent(s.userAgent)}
                       {s.isCurrent && <Badge variant="neutral" className="sessions-current-badge">Current</Badge>}
                     </td>
-                    <td>{s.ip ?? "—"}</td>
+                    <td>{s.ip ?? "-"}</td>
                     <td>{formatDate(s.loginAt)}</td>
                     <td>{formatDate(s.lastSeenAt)}</td>
                     <td>{s.authMethod === "oidc" ? "OIDC" : "Local"}</td>
@@ -716,7 +716,7 @@ export function AccountPage() {
             >
               {LOCALE_OPTIONS.map((opt) => (
                 <option key={opt.value ?? "_system"} value={opt.value ?? ""}>
-                  {opt.label} — {opt.example}
+                  {opt.label}: {opt.example}
                 </option>
               ))}
             </Select>
@@ -765,7 +765,7 @@ export function AccountPage() {
         finally { setRevoking(false); }
       }} onCancel={() => { if (!revoking) { setRevokeTarget(null); setRevokeError(null); } }} />
 
-      <ConfirmDialog open={revokeAllOpen} title="Revoke all other sessions" message={`This will end ${otherSessions.length} other active session${otherSessions.length === 1 ? "" : "s"}.`} confirmLabel="Revoke all" confirmVariant="danger" loading={revokeAllBusy} errorMessage={revokeError ?? undefined} onConfirm={async () => {
+      <ConfirmDialog open={revokeAllOpen} title="Revoke all other sessions" message={`This will end ${otherSessions.length} other active session${otherSessions.length === 1 ? "" : "s"}.`} confirmLabel="Revoke" confirmVariant="danger" loading={revokeAllBusy} errorMessage={revokeError ?? undefined} onConfirm={async () => {
         setRevokeAllBusy(true); setRevokeError(null);
         try {
           for (const s of otherSessions) await deleteAccountSession(s.id);
@@ -778,7 +778,7 @@ export function AccountPage() {
         } finally { setRevokeAllBusy(false); }
       }} onCancel={() => { if (!revokeAllBusy) { setRevokeAllOpen(false); setRevokeError(null); } }} />
 
-      <ConfirmDialog open={resetConfirmOpen} title="Reset two-factor authentication" message="This removes your authenticator app and all backup codes, and ends your other active sessions. You will stay signed in on this device." confirmLabel="Reset 2FA" confirmVariant="danger" loading={resetting} errorMessage={resetError ?? undefined} onConfirm={async () => {
+      <ConfirmDialog open={resetConfirmOpen} title="Reset two-factor authentication" message="This removes your authenticator app and all backup codes, and ends your other active sessions. You will stay signed in on this device." confirmLabel="Reset" confirmVariant="danger" loading={resetting} errorMessage={resetError ?? undefined} onConfirm={async () => {
         setResetting(true); setResetError(null);
         try {
           const { sessions_revoked } = await resetMfa({ password: resetPassword, code: resetCode || undefined });

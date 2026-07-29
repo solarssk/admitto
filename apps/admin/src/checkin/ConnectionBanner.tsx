@@ -24,15 +24,15 @@ export function mapConnectionState(state: ConnectionState): CheckinConnectionVis
 export const CONNECTION_COPY: Record<CheckinConnectionVisual, { icon: string; message: string }> = {
   connected: {
     icon: "ti-circle-check",
-    message: "Connected — all scans confirmed by server",
+    message: "Connected. All scans confirmed by server",
   },
   offline: {
     icon: "ti-wifi-off",
-    message: "Offline — new check-ins are blocked until connection returns",
+    message: "Offline. New check-ins are blocked until connection returns",
   },
   degraded: {
     icon: "ti-alert-circle",
-    message: "Connection error — check network",
+    message: "Connection error. Check network",
   },
   session_ended: {
     icon: "ti-logout",

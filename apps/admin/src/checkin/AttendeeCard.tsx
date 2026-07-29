@@ -223,7 +223,7 @@ export function AttendeeCard({
               {(card.company || card.department) && (
                 <span>{[card.company, card.department].filter(Boolean).join(" · ")}</span>
               )}
-              {pending && <span className="checkin-card__status-note">Pending — not confirmed</span>}
+              {pending && <span className="checkin-card__status-note">Pending, not confirmed</span>}
               {confirmed === false && !pending && !isPreview && resolvedStatus !== "INVALID" && resolvedStatus !== "REVOKED" && (
                 <span className="checkin-card__status-note">Awaiting server confirmation</span>
               )}
@@ -418,8 +418,8 @@ export function AttendeeCard({
         <ConfirmDialog
           open={revokeOpen}
           title="Revoke check-in?"
-          message={`This un-admits ${card.name} — they'll show as not checked in and will need to be scanned or admitted again to re-enter. This works regardless of when or how they were originally checked in.`}
-          confirmLabel={revokeBusy ? "Revoking…" : "Revoke check-in"}
+          message={`This un-admits ${card.name}. They'll show as not checked in and will need to be scanned or admitted again to re-enter. This works regardless of when or how they were originally checked in.`}
+          confirmLabel={revokeBusy ? "Revoking…" : "Revoke"}
           confirmVariant="danger"
           loading={revokeBusy}
           errorMessage={revokeError}

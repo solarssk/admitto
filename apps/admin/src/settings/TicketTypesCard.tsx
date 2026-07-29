@@ -248,7 +248,7 @@ export function TicketTypesCard({
       // "in use" case in particular is retryable once attendees are reassigned, without having to
       // find and re-click the same row's delete button again (CodeRabbit review).
       if (err instanceof ApiError && hasApiErrorCode(err, "type_in_use")) {
-        setDeleteError(`Can't remove "${deleteTarget.label}" — attendees still have this type.`);
+        setDeleteError(`Can't remove "${deleteTarget.label}" because attendees still have this type.`);
       } else {
         setDeleteError(operatorApiErrorMessage(err, "Failed to remove ticket type."));
       }
@@ -299,7 +299,7 @@ export function TicketTypesCard({
         ) : (
           <>
             <p className="field-hint">
-              Set each ticket type's name and color here — every other screen in the app uses this
+              Set each ticket type's name and color here. Every other screen in the app uses this
               list.
             </p>
             {loading ? (

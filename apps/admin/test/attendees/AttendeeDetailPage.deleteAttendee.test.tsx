@@ -123,7 +123,7 @@ describe("AttendeeDetailPage — Delete attendee (GDPR erasure, #356)", () => {
     renderPage();
     await openDeleteDialog();
 
-    const confirmButton = screen.getByRole("button", { name: "Delete attendee" });
+    const confirmButton = screen.getByRole("button", { name: "Delete" });
     expect((confirmButton as HTMLButtonElement).disabled).toBe(true);
 
     const input = screen.getByLabelText('Type the attendee\'s name to confirm: "Anna Alpha"');
@@ -143,7 +143,7 @@ describe("AttendeeDetailPage — Delete attendee (GDPR erasure, #356)", () => {
     fireEvent.change(screen.getByLabelText('Type the attendee\'s name to confirm: "Anna Alpha"'), {
       target: { value: "Anna Alpha" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Delete attendee" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
     await screen.findByText("Attendees list marker");
     expect(deleteAttendee).toHaveBeenCalledWith("evt-1", "att-1");
@@ -160,7 +160,7 @@ describe("AttendeeDetailPage — Delete attendee (GDPR erasure, #356)", () => {
     fireEvent.change(screen.getByLabelText('Type the attendee\'s name to confirm: "Anna Alpha"'), {
       target: { value: "Anna Alpha" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Delete attendee" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
     await screen.findByText("You do not have access.");
     expect(screen.getByText("Permanently delete this attendee?")).toBeTruthy();
@@ -200,7 +200,7 @@ describe("AttendeeDetailPage — Delete attendee (GDPR erasure, #356)", () => {
     fireEvent.change(screen.getByLabelText('Type the attendee\'s name to confirm: "Anna Alpha"'), {
       target: { value: "Anna Alpha" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Delete attendee" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
     // Navigate to a different attendee while the delete request is still in flight — the
     // completion below must not toast or navigate on behalf of a selection that's gone stale.
@@ -240,7 +240,7 @@ describe("AttendeeDetailPage — Delete attendee (GDPR erasure, #356)", () => {
     fireEvent.change(screen.getByLabelText('Type the attendee\'s name to confirm: "Anna Alpha"'), {
       target: { value: "Anna Alpha" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Delete attendee" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
     // Navigate away before the delete request rejects — the failure below must not set the
     // (now unmounted-for-this-attendee) delete dialog's inline error on behalf of Anna Alpha.

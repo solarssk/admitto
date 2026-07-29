@@ -209,7 +209,7 @@ export function SessionsPanel() {
                         ? s.deviceLabel
                         : parseUserAgent(s.userAgent)}
                     </td>
-                    <td>{s.ip ?? "—"}</td>
+                    <td>{s.ip ?? "-"}</td>
                     <td>{formatDate(s.loginAt)}</td>
                     <td>{formatDate(s.lastSeenAt)}</td>
                     <td>{s.authMethod === "oidc" ? "OIDC" : "Local"}</td>
@@ -301,7 +301,7 @@ export function SessionsPanel() {
             ? `This will immediately end all active operator sessions for "${selectedEvent.title}". This cannot be undone.`
             : "This will immediately end all active operator sessions for the selected event."
         }
-        confirmLabel="Revoke all"
+        confirmLabel="Revoke"
         confirmVariant="danger"
         loading={bulkRevoking}
         onConfirm={() => void handleBulkRevoke()}

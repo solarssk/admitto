@@ -84,7 +84,7 @@ function isValidResourceUrl(value: string): boolean {
 /** Compact "N min/hours/days ago" for glance stats and the activity timeline — not a shared
  * export, mirrors the local helper StaffUserListItem.tsx already uses for the same purpose. */
 function formatRelativeTime(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   const diffMs = Date.now() - new Date(iso).getTime();
   if (diffMs < 60_000) return "Just now";
   const minutes = Math.floor(diffMs / 60_000);
@@ -433,7 +433,7 @@ function CheckInProgressCard({
               <i className="ti ti-trending-up" aria-hidden="true" /> Busiest hour
             </span>
             <span className="overview-glance__value">
-              {overview.busiest_hour ? formatBusiestHourRange(overview.busiest_hour.hour) : "—"}
+              {overview.busiest_hour ? formatBusiestHourRange(overview.busiest_hour.hour) : "-"}
             </span>
           </div>
         </div>
@@ -1413,7 +1413,7 @@ function NotesAndContactsCard(props: Readonly<{
 function kpiCountText(value: number | null, loading: boolean, showLoading: boolean): string {
   if (value != null) return String(value);
   if (loading) return showLoading ? "…" : "";
-  return "—";
+  return "-";
 }
 
 /** Event-scoped dashboard — event command center with KPIs, a setup checklist, check-in progress,

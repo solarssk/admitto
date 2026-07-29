@@ -372,7 +372,7 @@ export function UsersPage() {
             : ""
         }
         errorMessage={revokeError}
-        confirmLabel="Revoke sessions"
+        confirmLabel="Revoke"
         confirmVariant="danger"
         loading={revoking}
         onConfirm={() => void handleRevokeSessions()}

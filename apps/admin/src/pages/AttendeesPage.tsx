@@ -231,14 +231,14 @@ function notifyBulkAssignResult(
   addToast: (message: string, variant?: ToastVariant) => void,
 ) {
   const { updatedCount, alreadySetCount, conflictCount = 0 } = result;
-  const conflictNote = conflictCount > 0 ? ` (${conflictCount} skipped — changed by someone else just now)` : "";
+  const conflictNote = conflictCount > 0 ? ` (${conflictCount} skipped, changed by someone else just now)` : "";
 
   if (updatedCount === 0 && alreadySetCount === 0 && conflictCount === 0) {
     // None of the selected ids resolved to an attendee in this event — most likely they were
     // deleted by someone else between opening the picker and clicking Apply (code review: this
     // used to fall into the "already had it" branch below, which is wrong — nothing was found
     // at all, let alone already set to the type).
-    addToast("None of the selected attendees could be found — they may have been removed.", "error");
+    addToast("None of the selected attendees could be found. They may have been removed.", "error");
     return;
   }
 
@@ -790,11 +790,11 @@ interface PassStatusErrorContext {
 function reportPassStatusConflict(err: ApiError, ctx: PassStatusErrorContext): void {
   const { addToast, revokeOpen, setRevokeOpen, setRevokeTarget, setRevokeError, setReloadToken } = ctx;
   if (err.code === "event_full") {
-    addToast("Event is at capacity — pass cannot be restored.", "error");
+    addToast("Event is at capacity. Pass cannot be restored.", "error");
     return;
   }
   if (err.code === "stale_write") {
-    addToast("Someone else updated this attendee — reloading list", "warning");
+    addToast("Someone else updated this attendee. Reloading list.", "warning");
     setRevokeOpen(false);
     setRevokeTarget(null);
     setRevokeError(null);
@@ -1284,7 +1284,7 @@ export function AttendeesPage() {
       genericFallback: "Failed to change ticket type.",
       mapErrorMessage: (err) =>
         hasApiErrorCode(err, "unknown_ticket_type")
-          ? "That ticket type no longer exists — it may have just been deleted. Close and try again."
+          ? "That ticket type no longer exists. It may have just been deleted. Close and try again."
           : operatorApiErrorMessage(err, "Change failed."),
       action: (id) => bulkChangeTicketType(id, [...selectedIds], changeTypeValue),
       onSuccess: (result) => {
@@ -1666,7 +1666,7 @@ export function AttendeesPage() {
             ? `Revoke the pass for ${revokeTarget.name}? They will no longer be able to check in until the pass is restored.`
             : ""
         }
-        confirmLabel="Revoke pass"
+        confirmLabel="Revoke"
         confirmVariant="danger"
         loading={revokeTarget ? passActionBusyIds.has(revokeTarget.id) : false}
         errorMessage={revokeError ?? undefined}
@@ -1686,7 +1686,7 @@ export function AttendeesPage() {
         open={bulkSendConfirmOpen}
         title="Send tickets?"
         message={`Send tickets to ${selectedIds.size} selected attendee${selectedIds.size === 1 ? "" : "s"}?`}
-        confirmLabel="Send tickets"
+        confirmLabel="Send"
         loading={bulkSendBusy}
         onConfirm={() => {
           setBulkSendConfirmOpen(false);
@@ -1702,7 +1702,7 @@ export function AttendeesPage() {
         title={`Permanently delete ${selectedIds.size} attendee${selectedIds.size === 1 ? "" : "s"}?`}
         message="This cannot be undone. For each selected attendee, this permanently removes:"
         errorMessage={bulkDeleteError}
-        confirmLabel="Delete attendees"
+        confirmLabel="Delete"
         confirmVariant="danger"
         loading={bulkDeleteBusy}
         confirmDelaySeconds={BULK_DELETE_CONFIRM_DELAY_SECONDS}
@@ -1727,7 +1727,7 @@ export function AttendeesPage() {
         title={`Revoke check-in for ${revokableCheckInCount} attendee${revokableCheckInCount === 1 ? "" : "s"}?`}
         message="They will be marked as not checked in. They can check in again at any time."
         errorMessage={bulkRevokeCheckInError}
-        confirmLabel="Revoke check-in"
+        confirmLabel="Revoke"
         confirmVariant="warning"
         confirmDelaySeconds={BULK_REVOKE_CONFIRM_DELAY_SECONDS}
         loading={bulkRevokeCheckInBusy}
@@ -1745,7 +1745,7 @@ export function AttendeesPage() {
         title={`Revoke items for ${revokableItemsCount} attendee${revokableItemsCount === 1 ? "" : "s"}?`}
         message="Every issued item (badge, wristband, giftbag, …) for the selected attendees is reset to pending. Items can be re-issued from the check-in screen at any time."
         errorMessage={bulkRevokeItemsError}
-        confirmLabel="Revoke items"
+        confirmLabel="Revoke"
         confirmVariant="warning"
         confirmDelaySeconds={BULK_REVOKE_CONFIRM_DELAY_SECONDS}
         loading={bulkRevokeItemsBusy}
@@ -1763,7 +1763,7 @@ export function AttendeesPage() {
         title={`Revoke the pass for ${revokablePassCount} attendee${revokablePassCount === 1 ? "" : "s"}?`}
         message="They will no longer be able to check in until the pass is restored. Already revoked or cancelled attendees are left untouched."
         errorMessage={bulkRevokePassError}
-        confirmLabel="Revoke pass"
+        confirmLabel="Revoke"
         confirmVariant="danger"
         confirmDelaySeconds={BULK_REVOKE_CONFIRM_DELAY_SECONDS}
         loading={bulkRevokePassBusy}

@@ -22,7 +22,7 @@ function readHttpsCerts(certDir: string): HttpsServerOptions | undefined {
     };
   } catch (err) {
     console.warn(
-      `Ignoring local dev cert at ${certDir} (unreadable) — falling back to HTTP:`,
+      `Ignoring local dev cert at ${certDir} (unreadable), falling back to HTTP:`,
       err instanceof Error ? err.message : err,
     );
     return undefined;

@@ -559,8 +559,8 @@ function AdmissionLog({
                   <td className="reports-mono">
                     {formatAdmittedTime(row.admitted_at, timeZone, includeAdmissionDate)}
                   </td>
-                  <td className="reports-muted">{row.device_id ?? "—"}</td>
-                  <td className="reports-muted">{row.items.length > 0 ? row.items.join(", ") : "—"}</td>
+                  <td className="reports-muted">{row.device_id ?? "-"}</td>
+                  <td className="reports-muted">{row.items.length > 0 ? row.items.join(", ") : "-"}</td>
                 </tr>
               ))}
               {paged.length === 0 && (
@@ -598,11 +598,11 @@ function AdmissionLog({
                     marking where the device label ends and the issued items begin (PO review). */}
                 <span className="reports-log-card__meta-item">
                   <i className="ti ti-device-desktop" aria-hidden="true" />
-                  {row.device_id ?? "—"}
+                  {row.device_id ?? "-"}
                 </span>
                 <span className="reports-log-card__meta-item">
                   <i className="ti ti-package" aria-hidden="true" />
-                  {row.items.length > 0 ? row.items.join(", ") : "—"}
+                  {row.items.length > 0 ? row.items.join(", ") : "-"}
                 </span>
               </div>
             </Link>
@@ -990,7 +990,7 @@ export function ReportsPage() {
               <ReportStat
                 variant="info"
                 icon={<i className="ti ti-clock" aria-hidden="true" />}
-                value={data.summary.peak_hour ?? "—"}
+                value={data.summary.peak_hour ?? "-"}
                 label="Peak hour"
                 sub={
                   data.summary.peak_hour

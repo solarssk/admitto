@@ -1,6 +1,6 @@
 /** Emergency CLI help text (stdout). */
 export function printUsage(): void {
-  console.log(`Admitto emergency ops CLI — for use when the admin UI is unreachable during an event.
+  console.log(`Admitto emergency ops CLI: for use when the admin UI is unreachable during an event.
 
 Usage: admitto <namespace> <command> [options]
 

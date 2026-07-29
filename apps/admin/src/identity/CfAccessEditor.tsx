@@ -331,7 +331,7 @@ export function CfAccessEditor() {
             {testing ? "Testing…" : "Test connection"}
           </Button>
           <Button type="submit" variant="primary" disabled={saving}>
-            {saving ? "Saving…" : "Save changes"}
+            {saving ? "Saving…" : "Save"}
           </Button>
         </div>
       </form>

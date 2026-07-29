@@ -135,7 +135,7 @@ const TRANSPORT_ERROR_RULES: ReadonlyArray<{ pattern: RegExp; message: string }>
   {
     pattern: /wrong version number|SSL routines|ssl3_get_record|packet length too long/i,
     message:
-      "TLS handshake failed — port and TLS mode may not match. Use port 587 with STARTTLS on, or port 465 with implicit TLS (confirm with IT).",
+      "TLS handshake failed. Port and TLS mode may not match. Use port 587 with STARTTLS on, or port 465 with implicit TLS (confirm with IT).",
   },
   {
     pattern: /STARTTLS not supported|STARTTLS command failed|must issue a STARTTLS/i,

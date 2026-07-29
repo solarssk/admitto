@@ -96,7 +96,7 @@ async function resolveCreateEventOrgId(
     return new Response(
       JSON.stringify({
         error:
-          "Multiple organization admin assignments — organization selection is not supported yet.",
+          "Multiple organization admin assignments. Organization selection is not supported yet.",
       }),
       { status: 422 },
     );

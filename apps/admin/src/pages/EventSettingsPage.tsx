@@ -35,7 +35,6 @@ import { ScrollFadeTabs } from "../components/ScrollFadeTabs.js";
 import { TimezoneSelect } from "../components/TimezoneSelect.js";
 import { DatePicker } from "../components/DatePicker.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
-import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { formatUtcDateTime } from "../utils/event-dates.js";
 import {
   EVENT_SETTINGS_TABS,
@@ -77,7 +76,7 @@ const BULK_REVOKE_CONFIRM_DELAY_SECONDS = 10;
 // which silently discards any unsaved edits elsewhere on the page (e.g. a title/date change on
 // the General tab not yet saved) - warn inline in the confirm dialog rather than let it vanish
 // with no trace (bot review).
-const UNSAVED_CHANGES_WARNING = " You also have unsaved changes elsewhere on this page — they'll be lost when this finishes.";
+const UNSAVED_CHANGES_WARNING = " You also have unsaved changes elsewhere on this page. They'll be lost when this finishes.";
 
 /** English plural suffix for a count — used by the Danger Zone's toasts and row descriptions. */
 function pluralSuffix(count: number): string {
@@ -128,10 +127,10 @@ function eventOverviewPath(eventId: string | undefined): string {
   return eventId ? `/admin/events/${eventId}/overview` : "/admin";
 }
 
-function computeSaveButtonLabel(saving: boolean, logoUploading: boolean, isDesktop: boolean): string {
+function computeSaveButtonLabel(saving: boolean, logoUploading: boolean): string {
   if (saving) return "Saving…";
   if (logoUploading) return "Uploading…";
-  return isDesktop ? "Save changes" : "Save";
+  return "Save";
 }
 
 /** Tooltip shared by the Danger Zone's superadmin-gated actions: superadmin restriction wins
@@ -188,14 +187,14 @@ function getArchiveDialogCopy(archiveMode: "archive" | "unarchive"): ArchiveDial
       title: "Archive this event?",
       message:
         "This event will become fully read-only, including check-in. Attendee data is kept. Only a superadmin can undo this.",
-      confirmLabel: "Archive event",
+      confirmLabel: "Archive",
       confirmVariant: "danger",
     };
   }
   return {
     title: "Unarchive this event?",
     message: "This event will become active again and editable in admin.",
-    confirmLabel: "Unarchive event",
+    confirmLabel: "Unarchive",
     confirmVariant: "primary",
   };
 }
@@ -519,7 +518,6 @@ export function EventSettingsPage() {
   const { addToast } = useToast();
   const { assignments } = useAuth();
   const isSa = isSuperadmin(assignments);
-  const isDesktop = useIsDesktop();
   // Optional: this page renders under the same event layout as Attendees/
   // Requirements/Communication/Import/Check-in and, like them, could in
   // principle be reached without that layout (e.g. in isolation in tests) —
@@ -591,7 +589,7 @@ export function EventSettingsPage() {
   // running a page action that reloads state (archive, revoke) would otherwise silently
   // discard unsaved mail transport edits and pending secret replacements (CodeRabbit review).
   const pageDirty = dirty || mailDirty;
-  const saveButtonLabel = computeSaveButtonLabel(saving, logoUploading, isDesktop);
+  const saveButtonLabel = computeSaveButtonLabel(saving, logoUploading);
   // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
   // these "Loading…" placeholders on and off faster than they can register as loading —
   // show them only once the fetch has genuinely taken a moment.
@@ -819,7 +817,7 @@ export function EventSettingsPage() {
                     disabled={!mailDirty || mailSaving}
                     onClick={() => void mailCardRef.current?.save()}
                   >
-                    {computeSaveButtonLabel(mailSaving, false, isDesktop)}
+                    {computeSaveButtonLabel(mailSaving, false)}
                   </Button>
                 </>
               ) : (
@@ -1033,7 +1031,7 @@ export function EventSettingsPage() {
         >
           <EmptyState
             icon={<i className="ti ti-plug-connected" aria-hidden="true" />}
-            title="Ingest and RSVP API tokens are on the roadmap"
+            title="Automatic attendee import and RSVP tools are on the roadmap"
             description="Each event will get its own API token for automatic attendee imports and RSVP replies, with the option to generate a new one anytime. Not built yet - superadmin-only, and kept separate from the everyday settings other admins use."
           />
         </EventSettingsTabPanel>
@@ -1208,7 +1206,7 @@ export function EventSettingsPage() {
           `This will revoke check-in for ${event.admitted_count} attendee${pluralSuffix(event.admitted_count)}. They can check in again afterwards.`,
           pageDirty,
         )}
-        confirmLabel="Revoke all check-ins"
+        confirmLabel="Revoke"
         confirmVariant="danger"
         confirmDelaySeconds={BULK_REVOKE_CONFIRM_DELAY_SECONDS}
         loading={revokingCheckins}
@@ -1222,7 +1220,7 @@ export function EventSettingsPage() {
           `This will reset ${event.issued_items_count} issued item${pluralSuffix(event.issued_items_count)} back to pending. They can be handed out again afterwards.`,
           pageDirty,
         )}
-        confirmLabel="Revoke all items issued"
+        confirmLabel="Revoke"
         confirmVariant="danger"
         confirmDelaySeconds={BULK_REVOKE_CONFIRM_DELAY_SECONDS}
         loading={revokingItems}
@@ -1244,7 +1242,7 @@ export function EventSettingsPage() {
         title="Permanently delete this event?"
         message={`This permanently deletes "${event.title}" and all its configuration. This cannot be undone.`}
         errorMessage={deleteError}
-        confirmLabel="Delete event"
+        confirmLabel="Delete"
         confirmVariant="danger"
         loading={deleting}
         confirmationValue={event.title}

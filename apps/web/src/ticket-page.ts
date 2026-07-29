@@ -80,7 +80,7 @@ export function renderTicket(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Ticket — ${esc(event.title)}</title>
+  <title>Ticket - ${esc(event.title)}</title>
   <style>${styles}</style>
 </head>
 <body class="ticket-page">
@@ -107,8 +107,8 @@ export function renderTicket(
     </div>
     <div class="ticket__perf" role="presentation"></div>
     <div class="ticket__wallets">
-      <span class="wallet-cta" aria-disabled="true">Apple Wallet — coming soon</span>
-      <span class="wallet-cta" aria-disabled="true">Google Wallet — coming soon</span>
+      <span class="wallet-cta" aria-disabled="true">Apple Wallet (coming soon)</span>
+      <span class="wallet-cta" aria-disabled="true">Google Wallet (coming soon)</span>
     </div>
     <footer class="ticket__foot">Present this QR code at the entrance.</footer>
   </article>

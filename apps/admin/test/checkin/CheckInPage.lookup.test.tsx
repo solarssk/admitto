@@ -194,7 +194,7 @@ describe("CheckInPage scan-bar lookup", () => {
 
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith(
-        "Manual lookup is disabled for this event — use QR scan only.",
+        "Manual lookup is disabled for this event. Use QR scan only.",
         "warning",
       );
     });
@@ -226,7 +226,7 @@ describe("CheckInPage scan-bar lookup", () => {
 
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith(
-        "Manual lookup is disabled for this event — use QR scan only.",
+        "Manual lookup is disabled for this event. Use QR scan only.",
         "warning",
       );
     });

@@ -140,7 +140,7 @@ describe("operatorApiErrorMessage", () => {
         new ApiError(403, "manual_lookup_disabled", "manual_lookup_disabled"),
         "Request failed.",
       ),
-    ).toBe("Manual lookup is disabled for this event — use QR scan only.");
+    ).toBe("Manual lookup is disabled for this event. Use QR scan only.");
     expect(
       operatorApiErrorMessage(new ApiError(409, "asset_in_use", "asset_in_use"), "Failed."),
     ).toBe("This image is still used in this event's email template. Remove it from the template first.");

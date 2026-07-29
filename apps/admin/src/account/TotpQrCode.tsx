@@ -41,7 +41,7 @@ export function TotpQrCode({ uri, onRenderFailed, onRenderSuccess }: Readonly<To
           Could not render QR code. Use the raw URI below to set up your authenticator.
         </p>
       ) : (
-        <canvas ref={canvasRef} aria-label="TOTP QR code — scan with authenticator app" />
+        <canvas ref={canvasRef} aria-label="Two-factor authentication QR code" />
       )}
     </div>
   );

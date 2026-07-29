@@ -259,7 +259,7 @@ describe("MailTransportPanel — secret field behavior (#407)", () => {
     expect(screen.getByPlaceholderText("New value")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Confirm" })).toBeTruthy();
-    expect(screen.getByText("Saves with Save changes below.")).toBeTruthy();
+    expect(screen.getByText("Saves when you select Save below.")).toBeTruthy();
   });
 
   it("gives each secret editor a field-specific accessible name", async () => {
@@ -693,7 +693,7 @@ describe("MailTransportPanel — toast vs inline consistency (#4)", () => {
       expect(screen.getByLabelText("From address")).toBeTruthy();
     });
     fireEvent.change(screen.getByLabelText("From address"), { target: { value: "" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(screen.getByRole("alert").textContent).toMatch(/From address must be a valid email/);
     });
@@ -710,7 +710,7 @@ describe("MailTransportPanel — toast vs inline consistency (#4)", () => {
       expect(screen.getByLabelText("From name")).toBeTruthy();
     });
     fireEvent.change(screen.getByLabelText("From name"), { target: { value: "New Name" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Mail settings saved/);
     });
@@ -724,7 +724,7 @@ describe("MailTransportPanel — toast vs inline consistency (#4)", () => {
       expect(screen.getByLabelText("From name")).toBeTruthy();
     });
     fireEvent.change(screen.getByLabelText("From name"), { target: { value: "New Name" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to save mail settings/);
     });
@@ -803,7 +803,7 @@ describe("MailTransportPanel — field wiring (save payload)", () => {
     fireEvent.change(screen.getByLabelText("Greeting timeout (ms)"), { target: { value: "5000" } });
     fireEvent.change(screen.getByLabelText("Socket timeout (ms)"), { target: { value: "20000" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(mockSave).toHaveBeenCalled();
     });
@@ -845,7 +845,7 @@ describe("MailTransportPanel — field wiring (save payload)", () => {
       target: { value: "44444444-4444-4444-4444-444444444444" },
     });
     fireEvent.click(screen.getByRole("switch", { name: "Save to Sent Items" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
       expect(mockSave).toHaveBeenCalled();

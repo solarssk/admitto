@@ -246,7 +246,7 @@ function attendeeEditedDetail(
       const key = String(f);
       const label = fieldChangeLabel(key, customFieldLabels);
       const change = fieldValueChange(meta.field_changes, key);
-      return change ? `${label}: ${change.from ?? "—"} → ${change.to ?? "—"}` : label;
+      return change ? `${label}: ${change.from ?? "-"} → ${change.to ?? "-"}` : label;
     })
     .join(", ");
 }

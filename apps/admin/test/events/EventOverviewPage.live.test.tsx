@@ -409,7 +409,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     fetchEventOverview.mockImplementationOnce(() => new Promise(() => {}));
     renderPage();
 
-    expect(within(statsRow()).queryAllByText("—")).toHaveLength(0);
+    expect(within(statsRow()).queryAllByText("-")).toHaveLength(0);
     expect(screen.queryAllByText("Unavailable")).toHaveLength(0);
     expect(screen.queryByText("Add a pinned note for staff")).toBeNull();
     expect(screen.queryByText("Add a key contact")).toBeNull();
@@ -593,7 +593,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(screen.getByText("13:00–14:00")).toBeTruthy();
   });
 
-  it("shows an honest em-dash placeholder for Last check-in and Busiest hour with zero check-ins, not a fabricated value (#F1)", async () => {
+  it("shows an honest dash placeholder for Last check-in and Busiest hour with zero check-ins, not a fabricated value (#F1)", async () => {
     // last_check_in_at/busiest_hour both null is the default overviewFixture() shape - the
     // zero-check-ins case - so this also guards against a stale hardcoded demo fallback (the
     // mockup source had literal "2 min ago" / "13:00-14:00" strings) leaking into these tiles.
@@ -607,7 +607,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     const glanceTiles = document.querySelectorAll(".overview-glance__tile");
     expect(glanceTiles).toHaveLength(2);
     glanceTiles.forEach((tile) => {
-      expect(within(tile as HTMLElement).getByText("—")).toBeTruthy();
+      expect(within(tile as HTMLElement).getByText("-")).toBeTruthy();
     });
     expect(screen.queryByText("2 min ago")).toBeNull();
     expect(screen.queryByText("13:00–14:00")).toBeNull();

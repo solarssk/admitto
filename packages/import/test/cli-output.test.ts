@@ -8,7 +8,7 @@ describe("formatSkippedImportRow", () => {
       reason: "duplicate",
     });
 
-    expect(output).toBe("  a***@example.com — duplicate");
+    expect(output).toBe("  a***@example.com: duplicate");
     expect(output).not.toContain("attendee@example.com");
   });
 });

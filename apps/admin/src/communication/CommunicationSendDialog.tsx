@@ -108,7 +108,7 @@ export function CommunicationSendDialog({
         setBatchStatus({ queued: status.queued, sent: status.sent, failed: status.failed });
         if (status.queued === 0) {
           setPhase("done");
-          setResultMessage(`Send complete — ${status.sent} sent, ${status.failed} failed.`);
+          setResultMessage(`Send complete: ${status.sent} sent, ${status.failed} failed.`);
           return;
         }
         timeoutId = window.setTimeout(() => {
@@ -206,7 +206,7 @@ export function CommunicationSendDialog({
       setBatchId(body.batchId);
       setBatchStatus({ queued: body.queued, sent: 0, failed: body.failed });
       setPhase("polling");
-      setResultMessage(`Queued ${body.queued} — sending in progress…`);
+      setResultMessage(`Queued ${body.queued}, sending in progress…`);
     } catch (err) {
       if (runId !== runIdRef.current || !openRef.current) return;
       setError(operatorApiErrorMessage(err, "Send failed."));

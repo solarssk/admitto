@@ -73,7 +73,7 @@ async function main() {
 
   let exitCode = 0;
   try {
-    const subject = arg("subject", "Admitto — test (@admitto/mailer)")!;
+    const subject = arg("subject", "Admitto test (@admitto/mailer)")!;
     const csv = arg("csv");
 
     if (csv) {
@@ -88,7 +88,7 @@ async function main() {
         concurrency: 3,
         onResult: (res, msg, i) =>
           console.log(
-            `  [${i + 1}/${messages.length}] ${isSendSuccess(res.status) ? "✅" : "❌"} ${msg.to}${res.error ? " — " + res.error : ""}`,
+            `  [${i + 1}/${messages.length}] ${isSendSuccess(res.status) ? "✅" : "❌"} ${msg.to}${res.error ? ": " + res.error : ""}`,
           ),
       });
       console.log(`\nSummary: sent=${summary.sent} failed=${summary.failed} total=${summary.total}`);
@@ -104,7 +104,7 @@ async function main() {
     }
     const result = await mailer.send({ to, subject, html: renderHtml(arg("name")) });
     if (isSendSuccess(result.status)) {
-      console.log(`✅ accepted (id: ${result.providerMessageId ?? "—"})`);
+      console.log(`✅ accepted (id: ${result.providerMessageId ?? "-"})`);
     } else {
       console.error(`❌ error: ${result.error}`);
       exitCode = 1;

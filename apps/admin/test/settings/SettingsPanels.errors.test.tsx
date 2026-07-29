@@ -163,7 +163,7 @@ describe("SessionsPanel operator errors", () => {
     });
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "evt-1" } });
     fireEvent.click(screen.getByRole("button", { name: "Revoke all operator sessions" }));
-    fireEvent.click(screen.getByRole("button", { name: "Revoke all" }));
+    fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to revoke sessions/);
     });

@@ -197,7 +197,7 @@ describe("CommunicationPage delivery log", () => {
     fireEvent.click(await screen.findByRole("tab", { name: /Delivery log/i }));
 
     const table = await screen.findByRole("table");
-    expect(within(table).getAllByText("—")).toHaveLength(3);
+    expect(within(table).getAllByText("-")).toHaveLength(3);
   });
 
   it("filters the log and resets its page when a filter changes", async () => {

@@ -94,7 +94,7 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "item_in_use")) {
         addToast(
-          "This item has been issued to attendees — record returns before disabling it.",
+          "This item has been issued to attendees. Record returns before disabling it.",
           "warning",
         );
       } else {
@@ -114,12 +114,12 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "item_in_use")) {
         addToast(
-          "This item has been issued to attendees — disable it instead of deleting.",
+          "This item has been issued to attendees. Disable it instead of deleting.",
           "warning",
         );
       } else if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "default_item")) {
         addToast(
-          "“Badge” is a default item and can't be deleted — turn off Active instead.",
+          "“Badge” is a default item and can't be deleted. Turn off Active instead.",
           "warning",
         );
       } else {
@@ -203,7 +203,7 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
             <div>
               <h3 className="event-item-modal__section-title">Attendee data field</h3>
               <p className="requirements-section-hint">
-                Show one or more custom attendee fields next to this item at check-in — useful when
+                Show one or more custom attendee fields next to this item at check-in. Useful when
                 the item varies per person (e.g. shirt size on a gift bag). Manage the fields
                 themselves in the "Custom attendee fields" card above.
               </p>
@@ -273,18 +273,18 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
           </form>
           <div className="event-item-modal__footer">
             <Button type="submit" form="item-edit-form" variant="primary" disabled={saving}>
-              {saving ? "Saving…" : "Save changes"}
+              {saving ? "Saving…" : "Save"}
             </Button>
             <Tooltip
               content={
                 isDefaultItem
-                  ? "Default item — required for “Issue badge at entry”. Turn off Active instead."
+                  ? "Default item required for “Issue badge at entry”. Turn off Active instead."
                   : undefined
               }
             >
               {isDefaultItem && (
                 <span id="delete-item-reason" className="sr-only">
-                  Default item — required for "Issue badge at entry". Turn off Active instead.
+                  Default item required for "Issue badge at entry". Turn off Active instead.
                 </span>
               )}
               <Button

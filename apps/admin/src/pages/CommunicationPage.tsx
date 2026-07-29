@@ -74,7 +74,7 @@ const HIDDEN_PLACEHOLDERS = new Set(["header_image_url"]);
 
 /** Format an ISO timestamp for the delivery log table. */
 function formatDateTime(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   return formatUtcDateTime(iso);
 }
 
@@ -379,7 +379,7 @@ async function recoverTicketAfterDelete({
   setValidationErrors([]);
   setPreviewSubject(null);
   setPreviewHtml(null);
-  addToast("Template deleted. Could not load ticket template — reload the page.", "warning");
+  addToast("Template deleted. Could not load ticket template. Reload the page.", "warning");
 }
 
 /** Refetches the inherited (legacy) ticket template after a delete leaves no explicit "ticket"
@@ -407,12 +407,12 @@ async function recoverLegacyAfterDelete({
       applyLegacyTemplate(legacyTemplateRef.current);
       setActiveKey("virtual-ticket");
       addToast(
-        "Template deleted. Inherited ticket could not be refreshed — showing last known copy.",
+        "Template deleted. Inherited ticket could not be refreshed. Showing last known copy.",
         "warning",
       );
     } else {
       setActiveKey("virtual-ticket");
-      addToast("Template deleted. Could not load inherited ticket — reload the page.", "warning");
+      addToast("Template deleted. Could not load inherited ticket. Reload the page.", "warning");
     }
   }
 }
@@ -467,7 +467,7 @@ function EmailBounceBanner({ count, onViewLog }: Readonly<{ count: number; onVie
         <strong>
           {count} email{count !== 1 ? "s" : ""} bounced
         </strong>
-        {" — these addresses will not receive future mail. "}
+        {". These addresses will not receive future mail. "}
         <button type="button" className="bounce-banner__link" onClick={onViewLog}>
           View delivery log
         </button>
@@ -488,7 +488,7 @@ function DefaultTemplateBanner({
   if (activeKey !== "virtual-ticket" || source === "event") return null;
   return (
     <div className="communication-default-banner">
-      Using default template — save to customize for this event.
+      Using default template. Save to customize for this event.
     </div>
   );
 }
@@ -1602,15 +1602,15 @@ export function CommunicationPage() {
         <tbody>
           {deliveries.map((row) => (
             <tr key={row.id}>
-              <td className="mono">{row.recipient_email ?? "—"}</td>
-              <td>{row.rendered_subject ?? "—"}</td>
+              <td className="mono">{row.recipient_email ?? "-"}</td>
+              <td>{row.rendered_subject ?? "-"}</td>
               <td>{row.purpose === "resend" ? "Resend" : "Initial"}</td>
               <td>
                 <StatusBadge status={row.status} />
               </td>
               <td className="mono muted">{formatDateTime(row.queued_at)}</td>
               <td className="mono muted">{formatDateTime(row.sent_at ?? row.accepted_at ?? row.failed_at)}</td>
-              <td className="muted">{row.error_code ?? "—"}</td>
+              <td className="muted">{row.error_code ?? "-"}</td>
             </tr>
           ))}
         </tbody>

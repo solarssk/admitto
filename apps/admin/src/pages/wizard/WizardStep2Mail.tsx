@@ -408,7 +408,7 @@ function MailTestControl({
         {testSent ? "Test sent" : pendingTestLabel}
       </Button>
       <span className="setup-wizard__mail-test-hint">
-        {testSent ? "Check your inbox." : "Optional — to your login email."}
+        {testSent ? "Check your inbox." : "Optional, sent to your login email."}
       </span>
     </div>
   );

@@ -117,7 +117,7 @@ export function ConnectionBanner() {
 
   const messages: Record<Exclude<ConnectionState, "connected" | "reconnecting">, string> = {
     offline: "You are offline. Changes are not being saved.",
-    server_unavailable: "Server unavailable. Not connected — scans are NOT being confirmed by the server.",
+    server_unavailable: "Server unavailable. Not connected. Scans are NOT being confirmed by the server.",
     session_ended: "Your session has ended. Redirecting to sign in…",
   };
 

@@ -100,7 +100,7 @@ export function EventArchivingPanel() {
                 </td>
                 <td>{formatEventCalendarDate(event.date)}</td>
                 {mode === "archived" && (
-                  <td>{event.archived_at ? formatUtcDateTime(event.archived_at) : "—"}</td>
+                  <td>{event.archived_at ? formatUtcDateTime(event.archived_at) : "-"}</td>
                 )}
                 <td>
                   {mode === "active" ? (

@@ -173,9 +173,9 @@ beforeEach(() => {
   vi.mocked(fetchTicketTypes).mockResolvedValue([]);
   vi.mocked(fetchEventMailSettings).mockResolvedValue(inheritedMailSettingsResponse());
   mockBlocker = { state: "unblocked", proceed: vi.fn(), reset: vi.fn() };
-  // The page's Save button label shortens on mobile via useIsDesktop(), which reads
-  // window.matchMedia - jsdom doesn't implement it. Default to desktop so existing
-  // "Save changes" label assertions keep working unchanged.
+  // window.matchMedia isn't implemented by jsdom; default to desktop so any component on
+  // this page relying on useIsDesktop() (elsewhere in the app, not this page's Save button)
+  // gets a stable result instead of throwing.
   mockMatchMedia(true);
 });
 
@@ -198,14 +198,13 @@ function renderSettings(entry = "/admin/events/evt-1/settings") {
   );
 }
 
-describe("EventSettingsPage responsive save label", () => {
-  it("uses the short Save label on mobile", async () => {
+describe("EventSettingsPage save label", () => {
+  it("uses the same Save label regardless of viewport", async () => {
     mockMatchMedia(false);
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
 
     expect(await screen.findByRole("button", { name: "Save" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
   });
 });
 
@@ -414,7 +413,7 @@ describe("EventSettingsPage tabs", () => {
     // Dirty the page via an unrelated field first — this is what makes the button
     // enabled-except-for-upload-state observable (it isn't just `!dirty` gating it).
     fireEvent.change(screen.getByLabelText("Event title"), { target: { value: "Summit 2027" } });
-    expect(screen.getByRole("button", { name: "Save changes" }).hasAttribute("disabled")).toBe(
+    expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(
       false,
     );
 
@@ -433,7 +432,7 @@ describe("EventSettingsPage tabs", () => {
 
     resolveLogo({ url: "/uploads/default/logo.png" });
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Save changes" }).hasAttribute("disabled")).toBe(
+      expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(
         false,
       );
     });
@@ -462,7 +461,7 @@ describe("EventSettingsPage tabs", () => {
     // The alt-text preview and the Save button's label flip in separate React commits
     // (the button label only updates once LogoUploadZone's onUploadingChange effect fires
     // one tick later) — wait for the button itself rather than assuming it's already there.
-    const saveButton = await screen.findByRole("button", { name: "Save changes" });
+    const saveButton = await screen.findByRole("button", { name: "Save" });
     fireEvent.click(saveButton);
 
     await waitFor(() => {
@@ -524,7 +523,7 @@ describe("EventSettingsPage tabs", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Unarchive event/ }));
 
     const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Unarchive event" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Unarchive" }));
 
     await waitFor(() => {
       expect(unarchiveEvent).toHaveBeenCalledWith("evt-2");
@@ -557,7 +556,7 @@ describe("EventSettingsPage tabs", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Danger zone" }));
     fireEvent.click(await screen.findByRole("button", { name: /Archive event/ }));
     const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Archive event" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Archive" }));
 
     await waitFor(() => expect(archiveEvent).toHaveBeenCalledWith("evt-1"));
     // The card remounted and re-fetched — proof its old in-memory draft was discarded
@@ -604,7 +603,7 @@ describe("EventSettingsPage Integrations tab (superadmin-only)", () => {
     await screen.findByRole("tab", { name: "Integrations" });
     fireEvent.click(screen.getByRole("tab", { name: "Integrations" }));
     expect(
-      await screen.findByText("Ingest and RSVP API tokens are on the roadmap"),
+      await screen.findByText("Automatic attendee import and RSVP tools are on the roadmap"),
     ).toBeTruthy();
   });
 
@@ -623,7 +622,7 @@ describe("EventSettingsPage Integrations tab (superadmin-only)", () => {
     await screen.findByLabelText("Event title");
     expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
     expect(
-      screen.queryByText("Ingest and RSVP API tokens are on the roadmap"),
+      screen.queryByText("Automatic attendee import and RSVP tools are on the roadmap"),
     ).toBeNull();
   });
 });
@@ -672,7 +671,7 @@ describe("EventSettingsPage Mail tab — single hoisted Save/Reset pair", () => 
     renderSettings();
     await openMailTab();
 
-    expect(screen.getAllByRole("button", { name: "Save changes" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Save" })).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "Reset" })).toHaveLength(1);
   });
 
@@ -681,12 +680,12 @@ describe("EventSettingsPage Mail tab — single hoisted Save/Reset pair", () => 
     renderSettings();
     await openMailTab();
 
-    expect(screen.getByRole("button", { name: "Save changes" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByRole("button", { name: "Reset" }).hasAttribute("disabled")).toBe(true);
 
     fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
 
-    expect(screen.getByRole("button", { name: "Save changes" }).hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(false);
     expect(screen.getByRole("button", { name: "Reset" }).hasAttribute("disabled")).toBe(false);
   });
 
@@ -704,7 +703,7 @@ describe("EventSettingsPage Mail tab — single hoisted Save/Reset pair", () => 
     // immediate save — proof the header button reaches the card's real handleSave, not a
     // no-op stub.
     fireEvent.click(screen.getByRole("radio", { name: "Organization mail" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByRole("dialog")).toBeTruthy();
     expect(screen.getByText(/Revert to organization mail/)).toBeTruthy();
@@ -732,9 +731,9 @@ describe("EventSettingsPage Mail tab — single hoisted Save/Reset pair", () => 
     renderSettings();
     await screen.findByLabelText("Event title");
 
-    expect(screen.getByRole("button", { name: "Save changes" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(true);
     fireEvent.change(screen.getByLabelText("Event title"), { target: { value: "Summit 2" } });
-    expect(screen.getByRole("button", { name: "Save changes" }).hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(false);
   });
 });
 
@@ -863,7 +862,7 @@ describe("EventSettingsPage — delete event (#395)", () => {
     expect(within(dialog).getByText(/Permanently delete this event/)).toBeTruthy();
 
     const confirmButton = within(dialog).getByRole("button", {
-      name: "Delete event",
+      name: "Delete",
     }) as HTMLButtonElement;
     const input = within(dialog).getByLabelText('Type the event title to confirm: "Summit 2026"');
     expect(confirmButton.disabled).toBe(true);
@@ -902,7 +901,7 @@ describe("EventSettingsPage — delete event (#395)", () => {
     const dialog = await screen.findByRole("dialog");
     const input = within(dialog).getByLabelText('Type the event title to confirm: "Summit 2026"');
     fireEvent.change(input, { target: { value: "Summit 2026" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Delete event" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
 
     await waitFor(() => {
       expect(deleteEvent).toHaveBeenCalledTimes(1);
@@ -931,7 +930,7 @@ describe("EventSettingsPage — delete event (#395)", () => {
     fireEvent.change(within(dialog).getByLabelText('Type the event title to confirm: "Summit 2026"'), {
       target: { value: "Summit 2026" },
     });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Delete event" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
     await waitFor(() => {
       expect(within(screen.getByRole("dialog")).getByRole("alert")).toBeTruthy();
     });
@@ -1097,7 +1096,7 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
         "This will revoke check-in for 3 attendees. They can check in again afterwards.",
       ),
     ).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke all check-ins" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
     await waitFor(() => {
       expect(revokeAllCheckIns).toHaveBeenCalledWith("evt-1");
@@ -1131,7 +1130,7 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
     renderSettings();
     await openDangerZone();
     const dialog = await openAndArmRevokeDialog("Revoke all check-ins");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke all check-ins" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/No check-ins to revoke/);
@@ -1145,7 +1144,7 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
     renderSettings();
     await openDangerZone();
     const dialog = await openAndArmRevokeDialog("Revoke all check-ins");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke all check-ins" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to revoke check-ins/);
@@ -1166,7 +1165,7 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
         "This will reset 5 issued items back to pending. They can be handed out again afterwards.",
       ),
     ).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke all items issued" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
     await waitFor(() => {
       expect(revokeAllItemsIssued).toHaveBeenCalledWith("evt-1");
@@ -1186,7 +1185,7 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
     renderSettings();
     await openDangerZone();
     const dialog = await openAndArmRevokeDialog("Revoke all items issued");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke all items issued" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to revoke items/);

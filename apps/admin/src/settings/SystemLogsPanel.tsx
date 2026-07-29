@@ -289,7 +289,7 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
       await navigator.clipboard.writeText(lines.join("\n"));
       addToast("Log lines copied to clipboard", "success");
     } catch {
-      addToast("Could not copy — clipboard access was blocked.", "error");
+      addToast("Could not copy. Clipboard access was blocked.", "error");
     }
   };
 
@@ -441,7 +441,7 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
           would undersell how easy it is to mistake this for a durable, retention-configurable
           log store. It isn't - see DATA-PROTECTION.md's "System logs (live tail)" section. */}
       <p className="system-log-panel__notice">
-        <i className="ti ti-info-circle" aria-hidden="true" /> Live view only — keeps the last
+        <i className="ti ti-info-circle" aria-hidden="true" /> Live view only. Keeps the last
         1,000 entries and resets on restart. For durable history, use the Audit log or Security
         audit log instead.
       </p>

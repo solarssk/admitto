@@ -328,7 +328,7 @@ function SetupWizardContent({ onComplete }: Readonly<SetupWizardPageProps>) {
                   <span className="setup-wizard__step-label">
                     {STEP_LABELS[name]}
                     {isComplete && !isActive ? (
-                      <span className="setup-wizard__sr-only"> — completed</span>
+                      <span className="setup-wizard__sr-only">, completed</span>
                     ) : null}
                   </span>
                 </div>
@@ -347,7 +347,7 @@ function SetupWizardContent({ onComplete }: Readonly<SetupWizardPageProps>) {
           {unsavedRefreshNotice && (
             <output className="setup-wizard__refresh-notice">
               Unsaved form changes were lost after refresh. Settings you already saved (mail, branding)
-              are still kept — continue from here.
+              are still kept. Continue from here.
             </output>
           )}
 

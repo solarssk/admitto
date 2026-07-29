@@ -123,7 +123,7 @@ describe("AttendeeDetailPage archived lockdown", () => {
     expectArchivedLock(screen.getByRole("button", { name: "Edit" }));
     expect(screen.queryByLabelText("Email")).toBeNull();
     expect(screen.queryByRole("combobox", { name: "Attendance" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
 
     // Back is read-only navigation and must stay usable.
     expect((screen.getByRole("button", { name: "Back" }) as HTMLButtonElement).disabled).toBe(false);

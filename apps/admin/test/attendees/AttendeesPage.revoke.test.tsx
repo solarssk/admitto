@@ -224,7 +224,7 @@ describe("AttendeesPage revoke/restore", () => {
 
     fireEvent.click(tableActions().getByRole("button", { name: "Revoke pass" }));
     const dialog = screen.getByRole("dialog", { name: "Revoke pass?" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
     await waitFor(() => {
       expect(updateAttendee).toHaveBeenCalledWith("evt-1", "att-1", {
@@ -278,7 +278,7 @@ describe("AttendeesPage revoke/restore", () => {
     });
     fireEvent.click(tableActions().getByRole("button", { name: "Revoke pass" }));
     const dialog = screen.getByRole("dialog", { name: "Revoke pass?" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
     await waitFor(() => {
       expect(updateAttendee).toHaveBeenNthCalledWith(2, "evt-1", "att-1", {
@@ -305,7 +305,7 @@ describe("AttendeesPage revoke/restore", () => {
 
     fireEvent.click(findRowByName("Jane Doe").getByRole("button", { name: "Revoke pass" }));
     const dialog = screen.getByRole("dialog", { name: "Revoke pass?" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
     await waitFor(() => {
       expect(findRowByName("Jane Doe").getByText("Revoked")).toBeTruthy();
@@ -328,7 +328,7 @@ describe("AttendeesPage revoke/restore", () => {
 
     fireEvent.click(tableActions().getByRole("button", { name: "Revoke pass" }));
     const dialog = screen.getByRole("dialog", { name: "Revoke pass?" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
     await waitFor(() => {
       expect(updateAttendee).toHaveBeenCalledWith("evt-1", "att-1", {
@@ -336,7 +336,7 @@ describe("AttendeesPage revoke/restore", () => {
         expected_updated_at: sampleRow.updated_at,
       });
       expect(addToast).toHaveBeenCalledWith(
-        "Someone else updated this attendee — reloading list",
+        "Someone else updated this attendee. Reloading list.",
         "warning",
       );
       expect(fetchEventAttendees.mock.calls.length).toBeGreaterThan(callsBeforeConflict);
@@ -364,7 +364,7 @@ describe("AttendeesPage revoke/restore", () => {
         expected_updated_at: revokedRow.updated_at,
       });
       expect(addToast).toHaveBeenCalledWith(
-        "Event is at capacity — pass cannot be restored.",
+        "Event is at capacity. Pass cannot be restored.",
         "error",
       );
     });
@@ -381,7 +381,7 @@ describe("AttendeesPage revoke/restore", () => {
     });
     fireEvent.click(tableActions().getByRole("button", { name: "Revoke pass" }));
     const dialog = screen.getByRole("dialog", { name: "Revoke pass?" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
     await waitFor(() => {
       expect(reportApiError).toHaveBeenCalledWith(409);
@@ -514,7 +514,7 @@ describe("AttendeesPage revoke/restore", () => {
     });
     fireEvent.click(tableActions().getByRole("button", { name: "Revoke pass" }));
     const dialog = screen.getByRole("dialog", { name: "Revoke pass?" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
     await waitFor(() => {
       expect(within(dialog).getByText(/Could not update pass status/)).toBeTruthy();
     });

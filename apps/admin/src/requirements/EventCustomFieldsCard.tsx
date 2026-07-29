@@ -95,7 +95,7 @@ export function EventCustomFieldsCard({ eventId, event, fields, loading, showLoa
       onChanged();
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "field_in_use")) {
-        addToast("This field is used as a hint on an item — remove it there first.", "warning");
+        addToast("This field is used as a hint on an item. Remove it there first.", "warning");
       } else {
         addToast(operatorApiErrorMessage(err, "Failed to delete field."), "error");
       }

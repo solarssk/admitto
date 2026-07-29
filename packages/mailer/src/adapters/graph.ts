@@ -85,7 +85,7 @@ export class GraphAdapter implements MailerAdapter {
       const desc =
         typeof errorDescriptionField === "string" ? errorDescriptionField.split("\n")[0] : "";
       const detail = desc || raw.slice(0, 200);
-      throw new TokenError(`Graph token error: ${code}${detail ? " — " + detail : ""}`, mapped);
+      throw new TokenError(`Graph token error: ${code}${detail ? " - " + detail : ""}`, mapped);
     }
     const accessTokenField = data["access_token"];
     const accessToken = typeof accessTokenField === "string" ? accessTokenField : "";
@@ -232,7 +232,7 @@ export class GraphAdapter implements MailerAdapter {
       ...base,
       status: mapped.status,
       retryable: mapped.retryable,
-      error: `Graph sendMail: ${code}${msg ? " — " + msg : ""}`,
+      error: `Graph sendMail: ${code}${msg ? " - " + msg : ""}`,
     };
   }
 }

@@ -177,7 +177,7 @@ describe("EventCustomFieldModal — edit", () => {
       target: { value: "Dietary needs" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Required" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-dietary", {
         label: "Dietary needs",
@@ -202,7 +202,7 @@ describe("EventCustomFieldModal — edit", () => {
     expect(screen.getByLabelText("Description")).toHaveProperty("value", "Old description");
 
     fireEvent.change(screen.getByLabelText("Description"), { target: { value: "New description" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-dietary", {
         label: "Dietary requirements",
@@ -226,7 +226,7 @@ describe("EventCustomFieldModal — edit", () => {
     vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...shirtField, type: "text", options: null });
     renderModal(shirtField);
     fireEvent.click(screen.getByRole("button", { name: "Text" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-shirt", {
         label: "Shirt size",

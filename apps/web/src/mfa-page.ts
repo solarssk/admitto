@@ -28,7 +28,7 @@ interface AuthOtpCodeFieldOptions {
 
 /** Visible enrollment progress for multi-step MFA setup. */
 function renderAuthStepIndicator(step: number, total: number, label: string): string {
-  return `<p class="auth-step-indicator" aria-current="step"><span class="auth-step-indicator__meta">Step ${step} of ${total}</span> — ${escapeHtml(label)}</p>`;
+  return `<p class="auth-step-indicator" aria-current="step"><span class="auth-step-indicator__meta">Step ${step} of ${total}</span> - ${escapeHtml(label)}</p>`;
 }
 
 /** Six centered digit boxes + hidden `code` field for form POST. */
@@ -170,24 +170,24 @@ export function renderMfaEnrollBackupCodesPage(options: MfaEnrollBackupCodesPage
   const codesBlock =
     backupCodes.length > 0
       ? `<div class="auth-backup">
-    <strong>Backup codes</strong> — save these now; they will not be shown again:
+    <strong>Backup codes.</strong> Save these now; they will not be shown again:
     <ul>${backupCodes.map((c) => `<li><code>${escapeHtml(c)}</code></li>`).join("")}</ul>
     ${downloadForm}
   </div>`
       : `<div class="auth-backup auth-backup-muted">
-    <strong>Backup codes</strong> — use the codes you already saved. They cannot be shown again from Admitto.
+    <strong>Backup codes.</strong> Use the codes you already saved. They cannot be shown again from Admitto.
   </div>`;
 
   const card = `${renderAuthBrand()}
     ${renderAuthStepIndicator(3, 3, "Save backup codes")}
     <h2 class="auth-page-action">Save your backup codes</h2>
-    <p class="subtitle">Store these recovery codes somewhere safe — you will need them if you lose access to your authenticator.</p>
+    <p class="subtitle">Store these recovery codes somewhere safe. You will need them if you lose access to your authenticator.</p>
     ${codesUnavailable ? `<p class="auth-muted">This server session no longer has your codes in memory. If you did not save them, contact an administrator for MFA reset.</p>` : ""}
     ${codesBlock}
     ${err}
     <form method="post" action="/mfa/enroll/backup-codes">
       ${nextField}
-      <button class="auth-btn-primary" type="submit">I saved my backup codes — continue</button>
+      <button class="auth-btn-primary" type="submit">I saved my backup codes</button>
     </form>`;
 
   return renderAuthDocument({

@@ -384,7 +384,7 @@ export async function handlePostMfaEnrollBackupCodes(
     const scriptNonce = createAuthPageScriptNonce();
     return htmlEnrollResponse(
       c,
-      renderBackupCodesPageForSession(scriptNonce, partial.sessionId, "Backup codes are no longer available — please log in again to restart enrollment.", next),
+      renderBackupCodesPageForSession(scriptNonce, partial.sessionId, "Backup codes are no longer available. Please log in again to restart enrollment.", next),
       scriptNonce,
       401,
     );

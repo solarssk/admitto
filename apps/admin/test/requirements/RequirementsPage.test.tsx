@@ -173,7 +173,7 @@ describe("RequirementsPage badge/ops-config sync", () => {
     fireEvent.click(screen.getByRole("switch", { name: "Disable Badge" }));
 
     await waitFor(() => {
-      expect(addToast).toHaveBeenCalledWith("Item disabled — saved", "success");
+      expect(addToast).toHaveBeenCalledWith("Item disabled", "success");
     });
     expect(addToast).not.toHaveBeenCalledWith(
       expect.stringMatching(/Failed to update item/),
@@ -197,7 +197,7 @@ describe("RequirementsPage badge/ops-config sync", () => {
     fireEvent.click(await screen.findByRole("switch", { name: "Enable Gift bag" }));
 
     await waitFor(() => {
-      expect(addToast).toHaveBeenCalledWith("Item enabled — saved", "success");
+      expect(addToast).toHaveBeenCalledWith("Item enabled", "success");
     });
   });
 

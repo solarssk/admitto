@@ -322,7 +322,7 @@ async function buildExportPdfBuffer(
   doc.on("data", (chunk: Buffer) => chunks.push(chunk));
 
   const eventDateStr = formatEventDate(eventMeta.date, "UTC");
-  doc.fontSize(14).font(PDF_FONT_BOLD).text(`${eventMeta.title} — ${eventDateStr}`);
+  doc.fontSize(14).font(PDF_FONT_BOLD).text(`${eventMeta.title} - ${eventDateStr}`);
   doc.moveDown(0.5);
 
   let y = doc.y;

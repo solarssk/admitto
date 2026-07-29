@@ -58,7 +58,7 @@ function parseHeaderLine(
   }
 
   if (!rawHeaders.includes("email")) {
-    warnings.push("CSV has no 'email' column — all rows will be invalid");
+    warnings.push("CSV has no 'email' column. All rows will be invalid");
   }
 
   return rawHeaders;
@@ -92,7 +92,7 @@ function resolveIdentity(
   } else if (rawName) {
     const spaceIdx = rawName.indexOf(" ");
     if (spaceIdx === -1) {
-      warnings.push(`Row ${rowIdx}: single-word name "${rawName}" — last_name stored as empty string`);
+      warnings.push(`Row ${rowIdx}: single-word name "${rawName}", last_name stored as empty string`);
       firstName = rawName;
       lastName = "";
     } else {

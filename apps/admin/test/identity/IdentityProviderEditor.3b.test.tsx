@@ -105,7 +105,7 @@ describe("IdentityProviderEditor — mapping repeater (slice 3b)", () => {
     expect(groupInputs).toHaveLength(2);
     fireEvent.change(groupInputs[1], { target: { value: "ops" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
     const body = mockUpdate.mock.calls[0][1];
@@ -129,7 +129,7 @@ describe("IdentityProviderEditor — mapping repeater (slice 3b)", () => {
 
     await screen.findByDisplayValue("admins");
     fireEvent.change(screen.getByDisplayValue("admins"), { target: { value: "" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await screen.findByText("Group is required.");
     expect(mockUpdate).not.toHaveBeenCalled();
@@ -142,7 +142,7 @@ describe("IdentityProviderEditor — mapping repeater (slice 3b)", () => {
     await screen.findByDisplayValue("admins");
     // Switch the row's Scope select to "organization".
     fireEvent.change(screen.getByLabelText("Scope"), { target: { value: "organization" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await screen.findByText("Scope ID is required for this scope.");
     expect(mockUpdate).not.toHaveBeenCalled();
@@ -567,7 +567,7 @@ describe("IdentityProviderEditor — repeater onChange coverage", () => {
     renderEditorAt("/admin/settings/identity/providers/p1");
     await screen.findByDisplayValue("admins");
     fireEvent.change(screen.getByLabelText("Role"), { target: { value: "operator" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
     expect(mockUpdate.mock.calls[0][1].mappings[0].role).toBe("operator");
   });
@@ -579,7 +579,7 @@ describe("IdentityProviderEditor — repeater onChange coverage", () => {
     await screen.findByDisplayValue("admins");
     fireEvent.change(screen.getByLabelText("Scope"), { target: { value: "organization" } });
     fireEvent.change(screen.getByLabelText("Organization ID"), { target: { value: "org-1" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
     expect(mockUpdate.mock.calls[0][1].mappings[0]).toMatchObject({
       scope_type: "organization",
@@ -604,7 +604,7 @@ describe("IdentityProviderEditor — repeater onChange coverage", () => {
     expect(screen.queryByLabelText("Event ID")).toBeNull();
     expect(screen.queryByLabelText("Organization ID")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
     expect(mockUpdate.mock.calls[0][1].mappings[0]).toMatchObject({
       scope_type: "instance",
@@ -631,7 +631,7 @@ describe("IdentityProviderEditor — legacy invalid mapping scope_type (Codex P2
     // Any non-"instance" scope_type (valid or not) still requires a scope_id.
     expect(screen.getByLabelText("Event ID")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await screen.findByText("Pick a scope.");
     expect(screen.getByText("Scope ID is required for this scope.")).toBeTruthy();
@@ -741,7 +741,7 @@ describe("IdentityProviderEditor — submit error paths", () => {
     try {
       renderEditorAt("/admin/settings/identity/providers/p1");
       await screen.findByDisplayValue("Google");
-      fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
       await waitFor(() =>
         expect(assignSpy).toHaveBeenCalledWith(expect.stringContaining("/login?next=")),
       );
@@ -768,7 +768,7 @@ describe("IdentityProviderEditor — legacy invalid mapping role (Codex P2)", ()
     const roleSelect = screen.getByLabelText("Role") as HTMLSelectElement;
     expect(roleSelect.className).toContain("at-select--invalid");
 
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await screen.findByText("Pick a role.");
     expect(mockUpdate).not.toHaveBeenCalled();

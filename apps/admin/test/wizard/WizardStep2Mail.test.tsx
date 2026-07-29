@@ -128,7 +128,7 @@ describe("WizardStep2Mail test-send feedback", () => {
     const sending = await screen.findByRole("button", { name: "Sending…" });
     expect((sending as HTMLButtonElement).disabled).toBe(true);
     expect(sending.querySelector(".ti-loader-2")).toBeTruthy();
-    expect(screen.getByText("Optional — to your login email.")).toBeTruthy();
+    expect(screen.getByText("Optional, sent to your login email.")).toBeTruthy();
 
     resolveTestSend({ status: "sent", provider: "smtp" });
 

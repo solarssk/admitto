@@ -6,8 +6,8 @@ describe("computeLabel", () => {
 
   afterEach(() => vi.useRealTimers());
 
-  it('returns "—" for null input', () => {
-    expect(computeLabel(null, TZ)).toBe("—");
+  it('returns "-" for null input', () => {
+    expect(computeLabel(null, TZ)).toBe("-");
   });
 
   it('returns "Starting soon" when event is on the same calendar day', () => {

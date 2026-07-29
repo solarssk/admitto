@@ -906,7 +906,7 @@ describe("CommunicationPage templates", () => {
     await waitFor(() => {
       expect(deleteEventTemplate).toHaveBeenCalledWith("evt-comm", "tpl-rem");
       expect(
-        screen.getByText("Template deleted. Could not load ticket template — reload the page."),
+        screen.getByText("Template deleted. Could not load ticket template. Reload the page."),
       ).toBeTruthy();
       expect(screen.queryByDisplayValue("Reminder subject")).toBeNull();
       expect(screen.getByRole("button", { name: "Ticket email" })).toBeTruthy();
@@ -1040,7 +1040,7 @@ describe("CommunicationPage templates", () => {
       expect(screen.getByDisplayValue("Hello")).toBeTruthy();
       expect(
         screen.getByText(
-          "Template deleted. Inherited ticket could not be refreshed — showing last known copy.",
+          "Template deleted. Inherited ticket could not be refreshed. Showing last known copy.",
         ),
       ).toBeTruthy();
       expect(screen.queryByText("Delete failed.")).toBeNull();

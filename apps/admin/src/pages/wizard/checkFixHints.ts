@@ -4,9 +4,9 @@ const FIX_HINTS: Record<SetupCheckKey, string> = {
   database: `Verify DATABASE_URL in your .env or Docker environment points to a running PostgreSQL instance.
 If the database is up but migrations are pending, run:
   npx prisma migrate deploy
-In Docker Compose, migrations run automatically on app container start — restart the web service after fixing DATABASE_URL.`,
+In Docker Compose, migrations run automatically on app container start. Restart the web service after fixing DATABASE_URL.`,
   redis: `If you use Redis for rate limiting or sessions, set REDIS_URL and ensure the Redis service is reachable.
-For single-node dev without Redis, the in-memory store is acceptable — check your deployment docs.`,
+For single-node dev without Redis, the in-memory store is acceptable. Check your deployment docs.`,
   encryption: `Set ENCRYPTION_KEY in your .env file or Docker environment (32 bytes, base64-encoded):
   ENCRYPTION_KEY=$(openssl rand -base64 32)
 Then restart the server.`,

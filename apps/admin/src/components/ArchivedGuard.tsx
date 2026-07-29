@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Tooltip } from "@admitto/ui";
 
 /** Standard tooltip copy shown on any control disabled because its event is archived. */
-export const ARCHIVED_ACTION_TOOLTIP = "This event is archived — editing is disabled.";
+export const ARCHIVED_ACTION_TOOLTIP = "This event is archived. Editing is disabled.";
 
 export interface ArchivedGuardEvent {
   archived_at?: string | Date | null;

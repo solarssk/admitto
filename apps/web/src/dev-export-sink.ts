@@ -38,6 +38,6 @@ export function warnExportOnlyProductionEnv(env: NodeJS.ProcessEnv = process.env
   if (env.EMAIL_PROVIDER?.trim() !== "export_only") return;
   console.warn(
     "[admitto] EMAIL_PROVIDER=export_only cannot send in production (no exportSink); " +
-      "configure smtp, graph, or powerautomate — sends will fail until changed",
+      "configure smtp, graph, or powerautomate; sends will fail until changed",
   );
 }

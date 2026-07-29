@@ -279,12 +279,12 @@ export function validateGroupRoleMappingInput(mapping: GroupRoleMappingInput): v
   }
   if (!ALLOWED_MAPPING_ROLES.has(mapping.role)) {
     throw new Error(
-      `Invalid role "${mapping.role}" — must be one of: superadmin, admin, operator`,
+      `Invalid role "${mapping.role}"; must be one of: superadmin, admin, operator`,
     );
   }
   if (!ALLOWED_MAPPING_SCOPE_TYPES.has(mapping.scope_type)) {
     throw new Error(
-      `Invalid scope_type "${mapping.scope_type}" — must be one of: instance, organization, event`,
+      `Invalid scope_type "${mapping.scope_type}"; must be one of: instance, organization, event`,
     );
   }
   mappingStorageScopeId(mapping.scope_type, mapping.scope_id);

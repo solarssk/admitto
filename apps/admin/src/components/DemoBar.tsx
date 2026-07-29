@@ -22,7 +22,7 @@ export function DemoBar() {
       </button>
       <button
         type="button"
-        onClick={() => addToast("3 tickets pending delivery — check mail log", "warning")}
+        onClick={() => addToast("3 tickets pending delivery. Check the mail log.", "warning")}
       >
         △ Warn toast
       </button>

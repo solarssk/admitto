@@ -311,7 +311,7 @@ describe("GraphAdapter", () => {
     expect(res).toMatchObject({
       status: "rejected",
       retryable: false,
-      error: "Graph sendMail: HTTP 400 — Malformed Graph request",
+      error: "Graph sendMail: HTTP 400 - Malformed Graph request",
     });
   });
 });

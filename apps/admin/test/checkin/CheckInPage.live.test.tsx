@@ -218,7 +218,7 @@ describe("CheckInPage live feed", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText(/Live updates unavailable — check access/i)).toBeTruthy();
+      expect(screen.getByText(/Live updates unavailable\. Check access/i)).toBeTruthy();
     });
   });
 
@@ -231,7 +231,7 @@ describe("CheckInPage live feed", () => {
 
     await waitFor(() => {
       expect(document.querySelector(".ck-connection--degraded")?.textContent).toContain(
-        "Connection error — check network",
+        "Connection error. Check network",
       );
     });
     expect(screen.queryByText(/Reconnecting live updates/i)).toBeNull();
@@ -258,7 +258,7 @@ describe("CheckInPage live feed", () => {
     await waitFor(() => {
       expect(document.querySelector(".ck-connection--degraded")).not.toBeNull();
     });
-    expect(screen.queryByText(/Live updates unavailable — check access/i)).toBeNull();
+    expect(screen.queryByText(/Live updates unavailable\. Check access/i)).toBeNull();
   });
 
   it("sidebar refresh replaces optimistic count with authoritative server stats", async () => {

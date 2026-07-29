@@ -15,7 +15,7 @@ export function feedbackCopy(status: CheckInStatus): string {
     case "VALID":
       return "Check-in recorded.";
     case "PREVIEW":
-      return "Attendee found — confirm check-in below.";
+      return "Attendee found. Confirm check-in below.";
     default:
       return "";
   }

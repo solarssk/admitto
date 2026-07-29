@@ -260,7 +260,7 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
         <div className="users-modal__switch-row users-modal__disabled-switch">
           <div>
             <Switch label="Send invite email" checked={false} disabled />
-            <span className="form-hint">Coming soon — share the password manually for now.</span>
+            <span className="form-hint">Coming soon. Share the password manually for now.</span>
           </div>
         </div>
         <div className="users-modal__actions">

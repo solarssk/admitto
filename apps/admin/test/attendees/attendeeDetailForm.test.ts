@@ -135,7 +135,7 @@ describe("mergeFormAfterReload", () => {
 });
 
 describe("formatDateTime", () => {
-  it("returns an em dash placeholder for a null timestamp", () => {
-    expect(formatDateTime(null)).toBe("—");
+  it("returns a dash placeholder for a null timestamp", () => {
+    expect(formatDateTime(null)).toBe("-");
   });
 });

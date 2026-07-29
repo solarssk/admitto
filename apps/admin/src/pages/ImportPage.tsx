@@ -49,7 +49,7 @@ function pluralize(count: number, singular: string): string {
  * folds the "showing first N of M" note into the section heading when the response was capped,
  * matching the Row preview card's own count note. */
 function rowDetailHeading(label: string, shown: number, total: number): string {
-  return total > shown ? `${label} — showing first ${shown} of ${total}` : label;
+  return total > shown ? `${label} (showing first ${shown} of ${total})` : label;
 }
 
 interface ImportSampleTableProps {
@@ -94,27 +94,27 @@ function ImportSampleTable({ rows, attributeFieldLabels }: Readonly<ImportSample
             {displayRows.map((row) => (
               <tr key={row.rowIndex}>
                 <td className="import-sample__row-num">{row.rowIndex}</td>
-                <td>{row.name || <span className="import-sample__empty">—</span>}</td>
+                <td>{row.name || <span className="import-sample__empty">-</span>}</td>
                 <td>{row.email}</td>
                 {hasTicketType && (
-                  <td>{row.ticket_type || <span className="import-sample__empty">—</span>}</td>
+                  <td>{row.ticket_type || <span className="import-sample__empty">-</span>}</td>
                 )}
                 {hasCompany && (
-                  <td>{row.company || <span className="import-sample__empty">—</span>}</td>
+                  <td>{row.company || <span className="import-sample__empty">-</span>}</td>
                 )}
                 {hasDepartment && (
-                  <td>{row.department || <span className="import-sample__empty">—</span>}</td>
+                  <td>{row.department || <span className="import-sample__empty">-</span>}</td>
                 )}
                 {hasExtUuid && (
                   <td className="import-sample__uuid">
-                    {row.external_uuid || <span className="import-sample__empty">—</span>}
+                    {row.external_uuid || <span className="import-sample__empty">-</span>}
                   </td>
                 )}
                 {hasCustom &&
                   attributeFieldLabels.map((f) => (
                     <td key={f.source_field}>
                       {row.custom_data[f.source_field] || (
-                        <span className="import-sample__empty">—</span>
+                        <span className="import-sample__empty">-</span>
                       )}
                     </td>
                   ))}
@@ -177,7 +177,7 @@ function renderImportHistoryBody({ history, error, eventTimezone, onRetry, showL
                 {formatEventDateTime(entry.created_at, eventTimezone)}
               </td>
               <td className="import-history__file">
-                {entry.filename ?? <span className="import-sample__empty">—</span>}
+                {entry.filename ?? <span className="import-sample__empty">-</span>}
               </td>
               <td className="import-history__num import-history__num--ok">{entry.created}</td>
               <td className="import-history__num import-history__num--warn">{entry.updated}</td>
@@ -430,10 +430,10 @@ function UploadFileControl({
  * nested ternary (Sonar S3776: kept this branching out of ImportPage's own complexity count). */
 function attributeFieldNote(field: CustomDataFieldDef): string {
   if (field.type === "select" && field.options?.length) {
-    return ` — select: ${field.options.join(", ")}`;
+    return ` (select: ${field.options.join(", ")})`;
   }
   if (field.type === "boolean") {
-    return " — Yes/No or true/false";
+    return " (Yes/No or true/false)";
   }
   return "";
 }
@@ -890,7 +890,7 @@ export function ImportPage() {
                         <td>No</td>
                         <td>
                           Only needed if your ticketing agency already assigns each attendee a
-                          unique ID — add it here so re-importing the same file updates that
+                          unique ID. Add it here so re-importing the same file updates that
                           person instead of creating a duplicate
                         </td>
                       </tr>
@@ -898,7 +898,7 @@ export function ImportPage() {
                         <td><code>qr_payload</code></td>
                         <td>No</td>
                         <td>
-                          Leave empty — Admitto generates a secure ticket code automatically. Only
+                          Leave empty. Admitto generates a secure ticket code automatically. Only
                           fill this in if attendees already have a ticket code from elsewhere that
                           needs to match
                         </td>
@@ -910,7 +910,7 @@ export function ImportPage() {
                 {attributeFields.length > 0 ? (
                   <p className="import-hint">
                     Event attribute columns use the <code>source_field</code> slug (included in the
-                    downloadable template). Export files may use human-readable labels — re-import accepts
+                    downloadable template). Export files may use human-readable labels; re-import accepts
                     those too.
                   </p>
                 ) : null}
@@ -921,7 +921,7 @@ export function ImportPage() {
               <Card
                 title={
                   preview.parse.validCount > preview.sampleRows.length
-                    ? `Row preview — showing first ${preview.sampleRows.length} of ${preview.parse.validCount} valid rows`
+                    ? `Row preview (showing first ${preview.sampleRows.length} of ${preview.parse.validCount} valid rows)`
                     : "Row preview"
                 }
                 className="import-card"

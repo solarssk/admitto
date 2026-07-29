@@ -124,7 +124,7 @@ describe("mobile manual-entry overlay — closes only once the real outcome is k
 
     await waitFor(() =>
       expect(document.querySelector("#ck-overlay-manual-error")?.textContent).toBe(
-        "Multiple matches — narrow your search.",
+        "Multiple matches. Narrow your search.",
       ),
     );
     expect(screen.getByLabelText("Search by name or email")).toBeTruthy();

@@ -42,7 +42,7 @@ type StaffUserListItemProps = {
 };
 
 function UserRoles({ user }: Readonly<{ user: UserListItemDto }>) {
-  if (user.roles.length === 0) return <>—</>;
+  if (user.roles.length === 0) return <>-</>;
   return (
     <div className="users-page__roles">
       {user.roles.map((role) => (

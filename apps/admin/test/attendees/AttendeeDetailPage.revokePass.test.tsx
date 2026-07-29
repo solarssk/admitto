@@ -142,7 +142,7 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /Restore pass/ }));
     const dialog = screen.getByRole("dialog", { name: "Restore pass?" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Restore pass" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restore" }));
     await waitFor(() => expect(updateAttendee).toHaveBeenCalledOnce());
 
     fireEvent.click(document.querySelector(".confirm-dialog__backdrop")!);
@@ -167,7 +167,7 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText("Revoke pass?")).toBeTruthy();
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).toBeNull();
     });
@@ -190,7 +190,7 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /Restore pass/ }));
     const dialog = screen.getByRole("dialog", { name: "Restore pass?" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Restore pass" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restore" }));
 
     await waitFor(() => {
       expect(within(dialog).getByText(/Event is at capacity/)).toBeTruthy();
@@ -209,7 +209,7 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
 
     clickRevokePassMenuItem();
     const dialog = screen.getByRole("dialog", { name: "Revoke pass?" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
     expect(await within(dialog).findByText("Could not update pass status.")).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
@@ -226,7 +226,7 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
 
     clickRevokePassMenuItem();
     const dialog = screen.getByRole("dialog", { name: "Revoke pass?" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
     expect(await within(dialog).findByText("Could not update pass status.")).toBeTruthy();
   });
@@ -242,7 +242,7 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
 
     clickRevokePassMenuItem();
     const dialog = screen.getByRole("dialog", { name: "Revoke pass?" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Someone else updated this attendee/);
@@ -266,14 +266,14 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /Restore pass/ }));
     const dialog = screen.getByRole("dialog", { name: "Restore pass?" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Restore pass" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restore" }));
 
     await waitFor(() => {
       expect(within(dialog).getByText(/Event is at capacity/)).toBeTruthy();
     });
 
     fireEvent.click(within(dialog).getByLabelText(/Override capacity limit/));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Restore pass" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restore" }));
 
     await waitFor(() => {
       expect(updateAttendee).toHaveBeenLastCalledWith(
@@ -300,7 +300,7 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /Restore pass/ }));
     let dialog = screen.getByRole("dialog", { name: "Restore pass?" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Restore pass" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restore" }));
     await within(dialog).findByText(/Event is at capacity/);
 
     fireEvent.click(within(dialog).getByLabelText(/Override capacity limit/));
@@ -312,7 +312,7 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
     dialog = screen.getByRole("dialog", { name: "Restore pass?" });
     expect(within(dialog).queryByLabelText(/Override capacity limit/)).toBeNull();
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Restore pass" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restore" }));
     await waitFor(() => {
       expect(updateAttendee).toHaveBeenLastCalledWith(
         "evt-1",

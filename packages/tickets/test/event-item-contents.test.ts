@@ -26,7 +26,7 @@ describe("buildItemDetail", () => {
     const sizeRequired = new Map<string, EventItemContent>([
       ["size", { label: "Size", source_field: "size", required: true }],
     ]);
-    expect(buildItemDetail({ content_fields: ["size"] }, {}, sizeRequired)).toBe("Size*: —");
+    expect(buildItemDetail({ content_fields: ["size"] }, {}, sizeRequired)).toBe("Size*: -");
   });
 
   it("joins multiple attributes with middle dot", () => {
