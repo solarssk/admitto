@@ -820,10 +820,9 @@ export function MailTransportCard({
   );
 }
 
-/** Inline validation error list shown near a mail settings form — shared by SettingsFooter
- * (Instance Settings' own save/reset bar) and EventMailSettingsCard (which hoists its actual
- * Save/Reset buttons to the page header, but still needs to surface these errors where the
- * form itself is). Renders nothing when there's nothing to report. */
+/** Inline validation error list rendered inside SettingsFooter, shared by both the
+ * instance-level Mail transport panel and EventMailSettingsCard. Renders nothing when
+ * there's nothing to report. */
 export function ValidationErrorList({
   errors,
   errorsRef,

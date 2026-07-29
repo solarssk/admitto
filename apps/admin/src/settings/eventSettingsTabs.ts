@@ -1,9 +1,9 @@
-/** Event Settings tab ids — General/Ticket types/Branding/Wallet/Integrations/Danger zone
+/** Event Settings tab ids — General/Ticket types/Images/Wallet/Integrations/Danger zone
  * (single in-page tab row, no nested routes). */
 export type EventSettingsTab =
   | "general"
   | "ticket-types"
-  | "branding"
+  | "images"
   | "mail"
   | "wallet"
   | "integrations"
@@ -12,7 +12,7 @@ export type EventSettingsTab =
 export const EVENT_SETTINGS_TABS = [
   { id: "general", label: "General" },
   { id: "ticket-types", label: "Ticket types" },
-  { id: "branding", label: "Branding" },
+  { id: "images", label: "Images" },
   { id: "mail", label: "Mailing" },
   { id: "wallet", label: "Wallet" },
   { id: "integrations", label: "Integrations" },

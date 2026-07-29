@@ -6,9 +6,25 @@
    ============================================================ */
 
 @import '@fontsource/inter/400.css';
+@import '@fontsource/inter/400-italic.css';
 @import '@fontsource/inter/500.css';
 @import '@fontsource/inter/600.css';
 @import '@fontsource/inter/700.css';
+@import '@fontsource/inter/700-italic.css';
+
+/* Branding → Theme font picker's other built-in options (BrandingSettingsPanel.tsx). Self-hosted
+   the same way as Inter above, so they render identically for every visitor regardless of what's
+   installed on their own OS - none of these are real "web-safe" OS fonts. Manrope and Space
+   Grotesk ship no italic style at all (neither exists on Google Fonts) - the picker's "N styles"
+   count reflects that honestly rather than claiming a synthesized/faked italic is real. */
+@import '@fontsource/manrope/400.css';
+@import '@fontsource/manrope/700.css';
+@import '@fontsource/space-grotesk/400.css';
+@import '@fontsource/space-grotesk/700.css';
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/400-italic.css';
+@import '@fontsource/ibm-plex-sans/700.css';
+@import '@fontsource/ibm-plex-sans/700-italic.css';
 
 /* Monospace (tokens, IDs, QR payloads, serial numbers) uses a
    system mono stack — no webfont needed. See typography.css. */

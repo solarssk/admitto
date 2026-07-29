@@ -2,7 +2,12 @@ import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { canManageInstance } from "@admitto/auth";
 import { writeAdminAuditLogBestEffort } from "@admitto/tickets";
-import { BrandingUploadError, saveBrandingUpload, saveEventUpload } from "./branding-upload.js";
+import {
+  BrandingUploadError,
+  saveBrandingUpload,
+  saveEventUpload,
+  saveThemeFontUpload,
+} from "./branding-upload.js";
 import { assertEventManageAccess, adminAuditFromContext, requireEventId } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { logger } from "../logger.js";
@@ -106,6 +111,50 @@ export async function handlePostEventBrandingUpload(c: Context, db: PrismaClient
       return c.json({ error: err.code, ...err.details }, err.status as 400 | 413 | 415);
     }
     logger.error("handlePostEventBrandingUpload failed", { err });
+    return c.json({ error: "server error" }, 500);
+  }
+}
+
+/** POST /api/admin/theme-font-upload — superadmin only, multipart custom brand font. */
+export async function handlePostThemeFontUpload(c: Context, db: PrismaClient): Promise<Response> {
+  const auth = c.get("auth");
+  if (!(await canManageInstance(db, auth.userId))) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+
+  // TODO(multi-org): same single-tenant assumption as handlePostUpload above.
+  const orgId = "default";
+
+  let body: Record<string, string | File>;
+  try {
+    body = await c.req.parseBody();
+  } catch {
+    return c.json({ error: "invalid_form_data" }, 400);
+  }
+
+  const fileField = body.file;
+  if (!(fileField instanceof File)) {
+    return c.json({ error: "file_required" }, 400);
+  }
+
+  try {
+    const result = await saveThemeFontUpload(fileField, orgId);
+    const realOrgId = await resolveInstanceOrganizationId(db);
+    const audit = adminAuditFromContext(c);
+    await writeAdminAuditLogBestEffort(db, {
+      organizationId: realOrgId,
+      actorUserId: auth.userId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      timezone: audit.timezone,
+      actionType: "branding_font_uploaded",
+    });
+    return c.json(result, 201);
+  } catch (err) {
+    if (err instanceof BrandingUploadError) {
+      return c.json({ error: err.code, ...err.details }, err.status as 400 | 413 | 415);
+    }
+    logger.error("handlePostThemeFontUpload failed", { err });
     return c.json({ error: "server error" }, 500);
   }
 }

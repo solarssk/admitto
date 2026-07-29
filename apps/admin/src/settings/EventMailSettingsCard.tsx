@@ -30,11 +30,11 @@ import {
   PowerAutomateCard,
   runTestSend,
   SenderCard,
+  SettingsFooter,
   SmtpConnectionCard,
   TestResultPreview,
   TransportTileGrid,
   useMailSettingsFormState,
-  ValidationErrorList,
   type FieldLocked,
 } from "./mailTransportFormParts.js";
 
@@ -92,8 +92,9 @@ function OrgMailSummary({
   );
 }
 
-/** Imperative actions exposed to EventSettingsPage, which hosts the single page-level
- * Save changes/Reset button pair — this card no longer renders its own footer. */
+/** Imperative save()/reset(), kept for tests that drive the form directly — the real
+ * Save/Reset buttons end users click sit in this card's own bottom SettingsFooter,
+ * matching the instance-level Mail transport panel's layout. */
 export type EventMailSettingsCardHandle = {
   save: () => Promise<void>;
   reset: () => void;
@@ -388,20 +389,25 @@ export const EventMailSettingsCard = forwardRef<
 
   return (
     <div className="settings-sections">
-      <Card title="Mail transport">
+      <Card
+        title="Mail transport"
+        actions={
+          <Segmented
+            ariaLabel="Mail source"
+            className="mail-source-toggle"
+            value={mode}
+            disabled={isArchived || saving}
+            onChange={handleModeChange}
+            options={[
+              { value: "org", label: "Organization" },
+              { value: "dedicated", label: "Dedicated" },
+            ]}
+          />
+        }
+      >
         <p className="mail-transport__desc">
           Which mailbox and provider send this event&apos;s tickets and reminders.
         </p>
-        <Segmented
-          ariaLabel="Mail source"
-          value={mode}
-          disabled={isArchived || saving}
-          onChange={handleModeChange}
-          options={[
-            { value: "org", label: "Organization mail" },
-            { value: "dedicated", label: "Dedicated for this event" },
-          ]}
-        />
 
         {mode === "org" &&
           (orgSummaryTrustworthy ? (
@@ -532,7 +538,14 @@ export const EventMailSettingsCard = forwardRef<
           This event is archived - mail settings cannot be changed.
         </p>
       ) : (
-        <ValidationErrorList errors={validationErrors} errorsRef={validationErrorsRef} />
+        <SettingsFooter
+          validationErrors={validationErrors}
+          validationErrorsRef={validationErrorsRef}
+          hasUnsavedChanges={hasUnsavedChanges}
+          saving={saving}
+          onReset={handleReset}
+          onSave={() => void handleSave()}
+        />
       )}
 
       <ConfirmDialog

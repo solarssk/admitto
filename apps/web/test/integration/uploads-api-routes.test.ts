@@ -200,6 +200,51 @@ describe("POST /api/admin/uploads", () => {
   });
 });
 
+describe("POST /api/admin/theme-font-upload", () => {
+  it("accepts WOFF2 and returns public URL, served back with the correct font MIME type", async () => {
+    const woff2 = new Uint8Array([0x77, 0x4f, 0x46, 0x32, 0x00, 0x00, 0x00, 0x00]);
+    const res = await app.request("/api/admin/theme-font-upload", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: uploadForm(new Blob([woff2], { type: "font/woff2" }), "Brand-Sans.woff2"),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { url: string };
+    expect(body.url).toMatch(/^\/uploads\/default\/theme\/[0-9a-f-]+\.woff2$/);
+
+    const getRes = await app.request(body.url);
+    expect(getRes.status).toBe(200);
+    expect(getRes.headers.get("content-type")).toBe("font/woff2");
+
+    const superUser = await prisma.user.findUniqueOrThrow({ where: { email: EMAIL_SUPER } });
+    expect(
+      await prisma.adminAuditLog.findFirst({
+        where: { action_type: "branding_font_uploaded", actor_user_id: superUser.id },
+        orderBy: { created_at: "desc" },
+      }),
+    ).not.toBeNull();
+  });
+
+  it("rejects a file whose bytes don't match a font signature with 415", async () => {
+    const res = await app.request("/api/admin/theme-font-upload", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: uploadForm(new Blob(["MZ"], { type: "font/woff2" }), "bad.woff2"),
+    });
+    expect(res.status).toBe(415);
+  });
+
+  it("returns 403 for non-superadmin", async () => {
+    const woff2 = new Uint8Array([0x77, 0x4f, 0x46, 0x32, 0x00, 0x00, 0x00, 0x00]);
+    const res = await app.request("/api/admin/theme-font-upload", {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin },
+      body: uploadForm(new Blob([woff2], { type: "font/woff2" }), "Brand-Sans.woff2"),
+    });
+    expect(res.status).toBe(403);
+  });
+});
+
 describe("POST /api/admin/events/:eventId/branding-upload", () => {
   const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
 

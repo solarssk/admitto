@@ -1,0 +1,202 @@
+import { describe, expect, it } from "vitest";
+import { sanitizeBrandingThemeForTests as sanitizeTheme } from "../src/settings/branding.js";
+
+describe("sanitizeTheme (branding theme storage validation)", () => {
+  it("keeps a valid hex primary", () => {
+    expect(sanitizeTheme({ primary: "#123abc" }).primary).toBe("#123abc");
+  });
+
+  it("drops an invalid primary", () => {
+    expect(sanitizeTheme({ primary: "not-a-color" }).primary).toBeUndefined();
+  });
+
+  it("keeps a validated local /uploads/.../theme/ font path", () => {
+    const result = sanitizeTheme({
+      font_family_name: "Brand Sans",
+      custom_font_families: [
+        { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/abc123.woff2" }] },
+      ],
+    });
+    expect(result.custom_font_families).toEqual([
+      { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/abc123.woff2" }] },
+    ]);
+    expect(result.font_family_name).toBe("Brand Sans");
+  });
+
+  it("keeps a valid external https font URL", () => {
+    const result = sanitizeTheme({
+      font_family_name: "Brand Sans",
+      custom_font_families: [
+        { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/fonts/brand.woff2" }] },
+      ],
+    });
+    expect(result.custom_font_families).toEqual([
+      { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/fonts/brand.woff2" }] },
+    ]);
+  });
+
+  it("drops a variant with a plain http font URL, keeping the rest of the family", () => {
+    const result = sanitizeTheme({
+      font_family_name: "Brand Sans",
+      custom_font_families: [
+        {
+          name: "Brand Sans",
+          variants: [
+            { weight: 400, style: "normal", url: "http://cdn.example.com/fonts/brand.woff2" },
+            { weight: 700, style: "normal", url: "https://cdn.example.com/fonts/brand-bold.woff2" },
+          ],
+        },
+      ],
+    });
+    expect(result.custom_font_families).toEqual([
+      {
+        name: "Brand Sans",
+        variants: [{ weight: 700, style: "normal", url: "https://cdn.example.com/fonts/brand-bold.woff2" }],
+      },
+    ]);
+  });
+
+  it("drops a whole family whose variant path is outside the theme upload namespace (zero valid variants left)", () => {
+    const result = sanitizeTheme({
+      font_family_name: "Brand Sans",
+      custom_font_families: [
+        { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/events/evt-1/abc123.woff2" }] },
+      ],
+    });
+    expect(result.custom_font_families).toBeUndefined();
+  });
+
+  it("drops a whole family whose only variant has directory traversal", () => {
+    const result = sanitizeTheme({
+      font_family_name: "Brand Sans",
+      custom_font_families: [
+        { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/../../etc/passwd.woff2" }] },
+      ],
+    });
+    expect(result.custom_font_families).toBeUndefined();
+  });
+
+  it("drops a whole family whose only variant has an out-of-range weight", () => {
+    const result = sanitizeTheme({
+      font_family_name: "Brand Sans",
+      custom_font_families: [
+        { name: "Brand Sans", variants: [{ weight: 950, style: "normal", url: "https://cdn.example.com/fonts/brand.woff2" }] },
+      ],
+    });
+    expect(result.custom_font_families).toBeUndefined();
+  });
+
+  it("drops a whole family whose only variant has an invalid style", () => {
+    const result = sanitizeTheme({
+      font_family_name: "Brand Sans",
+      custom_font_families: [
+        { name: "Brand Sans", variants: [{ weight: 400, style: "oblique", url: "https://cdn.example.com/fonts/brand.woff2" }] },
+      ],
+    });
+    expect(result.custom_font_families).toBeUndefined();
+  });
+
+  it("keeps multiple valid variants under one family", () => {
+    const result = sanitizeTheme({
+      font_family_name: "Brand Sans",
+      custom_font_families: [
+        {
+          name: "Brand Sans",
+          variants: [
+            { weight: 400, style: "normal", url: "https://cdn.example.com/regular.woff2" },
+            { weight: 700, style: "normal", url: "https://cdn.example.com/bold.woff2" },
+          ],
+        },
+      ],
+    });
+    expect(result.custom_font_families?.[0]?.variants).toHaveLength(2);
+  });
+
+  it("keeps multiple distinct saved families", () => {
+    const result = sanitizeTheme({
+      font_family_name: "First",
+      custom_font_families: [
+        { name: "First", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/a.woff2" }] },
+        { name: "Second", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/b.woff2" }] },
+      ],
+    });
+    expect(result.custom_font_families).toHaveLength(2);
+  });
+
+  it("drops a family whose name sanitizes to empty, keeping the others", () => {
+    const result = sanitizeTheme({
+      custom_font_families: [
+        { name: "<<<>>>", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/a.woff2" }] },
+        { name: "Good Name", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/b.woff2" }] },
+      ],
+    });
+    expect(result.custom_font_families).toEqual([
+      { name: "Good Name", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/b.woff2" }] },
+    ]);
+  });
+
+  it("dedupes families by (sanitized) name, keeping only the first occurrence", () => {
+    const result = sanitizeTheme({
+      custom_font_families: [
+        { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/first.woff2" }] },
+        { name: "Brand Sans", variants: [{ weight: 700, style: "normal", url: "https://cdn.example.com/second.woff2" }] },
+      ],
+    });
+    expect(result.custom_font_families).toEqual([
+      { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/first.woff2" }] },
+    ]);
+  });
+
+  it("caps the number of variants persisted per family", () => {
+    const variants = Array.from({ length: 20 }, (_, i) => ({
+      weight: 400,
+      style: i % 2 === 0 ? ("normal" as const) : ("italic" as const),
+      url: `https://cdn.example.com/font-${i}.woff2`,
+    }));
+    const result = sanitizeTheme({
+      font_family_name: "Brand Sans",
+      custom_font_families: [{ name: "Brand Sans", variants }],
+    });
+    expect(result.custom_font_families?.[0]?.variants.length).toBeLessThanOrEqual(12);
+  });
+
+  it("caps the number of saved families", () => {
+    const families = Array.from({ length: 15 }, (_, i) => ({
+      name: `Family ${i}`,
+      variants: [{ weight: 400, style: "normal" as const, url: `https://cdn.example.com/font-${i}.woff2` }],
+    }));
+    const result = sanitizeTheme({ custom_font_families: families });
+    expect(result.custom_font_families?.length).toBeLessThanOrEqual(8);
+  });
+
+  it("ignores a non-array custom_font_families value", () => {
+    const result = sanitizeTheme({ font_family_name: "Brand Sans", custom_font_families: "not-an-array" });
+    expect(result.custom_font_families).toBeUndefined();
+    expect(result.font_family_name).toBe("Brand Sans");
+  });
+
+  it("sanitizes an unsafe font family name instead of rejecting the whole theme", () => {
+    const result = sanitizeTheme({ font_family_name: "</style><script>1</script>" });
+    expect(result.font_family_name).toBe("stylescript1script");
+  });
+
+  it("truncates a long font name to 128 characters", () => {
+    const result = sanitizeTheme({ font_family_name: "X".repeat(200) });
+    expect(result.font_family_name?.length).toBe(128);
+  });
+
+  it("drops a whole family whose only variant's URL is longer than 2048 characters", () => {
+    const longUrl = `https://fonts.example/${"a".repeat(2100)}.woff2`;
+    const result = sanitizeTheme({
+      font_family_name: "Brand Sans",
+      custom_font_families: [{ name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: longUrl }] }],
+    });
+    expect(result.custom_font_families).toBeUndefined();
+  });
+
+  it("returns an empty object for non-object input", () => {
+    expect(sanitizeTheme(null)).toEqual({});
+    expect(sanitizeTheme(undefined)).toEqual({});
+    expect(sanitizeTheme("garbage")).toEqual({});
+  });
+});

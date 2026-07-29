@@ -65,7 +65,7 @@ type TemplateFormat = "mjml" | "html";
 
 /** Placeholders that stay valid (already-saved templates using them keep rendering) but are no
  * longer offered as an insertable chip: `header_image_url` has no organisation-level branding
- * field to fall back to (org branding only manages a logo, see OrganisationBrandingPanel) and
+ * field to fall back to (org branding only manages a logo, see BrandingSettingsPanel) and
  * the per-event header image override was intentionally dropped in favour of the general-purpose
  * image asset library — inserting it would always produce a permanently empty image with no way
  * to fill it in. Filtered client-side, not removed from the server's ALLOWED_PLACEHOLDERS

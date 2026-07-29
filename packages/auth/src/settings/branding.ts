@@ -2,11 +2,33 @@ import type { PrismaClient, Prisma } from "@prisma/client";
 import { getSetting } from "./resolver.js";
 import { SETTING_BRANDING_THEME } from "./keys.js";
 
+/** Mirror @admitto/ui's BrandingFontVariant — auth must not depend on @admitto/ui. */
+export interface BrandingFontVariant {
+  weight: number;
+  style: "normal" | "italic";
+  url: string;
+}
+
+/** Mirror @admitto/ui's BrandingCustomFontFamily — a saved custom family's name + every
+ * weight/style file uploaded for it, kept as a library so switching back to a previously-
+ * uploaded family doesn't need re-uploading. */
+export interface BrandingCustomFontFamily {
+  name: string;
+  variants: BrandingFontVariant[];
+}
+
 export interface BrandingTheme {
   primary?: string;
-  font_family_url?: string;
+  /** The active pick - either a built-in name (e.g. "Manrope") or one of custom_font_families[].name. */
   font_family_name?: string;
+  custom_font_families?: BrandingCustomFontFamily[];
 }
+
+// Matches the admin UI's own weight (100-900 in six 100-800 presets) x style (normal/italic)
+// combo space - a generous upper bound on how many @font-face variants one family can have.
+const MAX_FONT_VARIANTS = 12;
+// How many distinct custom families an org can keep saved at once - generous, but bounded.
+const MAX_CUSTOM_FAMILIES = 8;
 
 const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
 
@@ -16,8 +38,17 @@ function sanitizeBrandingFontFamilyName(name: string): string | undefined {
   return cleaned || undefined;
 }
 
+// Mirror @admitto/ui's BRANDING_FONT_UPLOAD_PATH — auth must not depend on @admitto/ui.
+// eslint-disable-next-line security/detect-unsafe-regex -- bounded input; validated pattern
+const BRANDING_FONT_UPLOAD_PATH = /^\/uploads\/[a-z0-9][a-z0-9_-]{0,63}\/theme\/[^/]+\.(woff2?|ttf|otf)$/i;
+
+function isLocalBrandingFontPath(url: string): boolean {
+  return url.startsWith("/uploads/") && !url.includes("..") && BRANDING_FONT_UPLOAD_PATH.test(url);
+}
+
 /** Mirror @admitto/ui isSafeBrandingFontUrl — auth must not depend on @admitto/ui. */
 function isSafeBrandingFontUrl(url: string): boolean {
+  if (isLocalBrandingFontPath(url)) return true;
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== "https:") return false;
@@ -29,19 +60,58 @@ function isSafeBrandingFontUrl(url: string): boolean {
   }
 }
 
+function isValidFontWeight(weight: unknown): weight is number {
+  return typeof weight === "number" && Number.isInteger(weight) && weight >= 100 && weight <= 900;
+}
+
+/** Drop malformed entries rather than rejecting the whole array - one bad variant (e.g. from a
+ * hand-edited request) shouldn't take down every other valid one. */
+function sanitizeFontVariants(raw: unknown): BrandingFontVariant[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const variants: BrandingFontVariant[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const e = entry as Record<string, unknown>;
+    if (!isValidFontWeight(e.weight)) continue;
+    if (e.style !== "normal" && e.style !== "italic") continue;
+    if (typeof e.url !== "string" || !isSafeBrandingFontUrl(e.url)) continue;
+    variants.push({ weight: e.weight, style: e.style, url: e.url });
+    if (variants.length >= MAX_FONT_VARIANTS) break;
+  }
+  return variants.length > 0 ? variants : undefined;
+}
+
+/** Drop malformed families and dedupe by (sanitized) name - a family with zero valid variants
+ * left after sanitizing isn't a usable family, so it's dropped entirely rather than kept empty. */
+function sanitizeCustomFontFamilies(raw: unknown): BrandingCustomFontFamily[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const families: BrandingCustomFontFamily[] = [];
+  const seenNames = new Set<string>();
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const e = entry as Record<string, unknown>;
+    if (typeof e.name !== "string") continue;
+    const name = sanitizeBrandingFontFamilyName(e.name);
+    if (!name || seenNames.has(name)) continue;
+    const variants = sanitizeFontVariants(e.variants);
+    if (!variants) continue;
+    seenNames.add(name);
+    families.push({ name, variants });
+    if (families.length >= MAX_CUSTOM_FAMILIES) break;
+  }
+  return families.length > 0 ? families : undefined;
+}
+
 function sanitizeTheme(raw: unknown): BrandingTheme {
   if (!raw || typeof raw !== "object") return {};
   const o = raw as Record<string, unknown>;
   const primary = typeof o.primary === "string" && HEX_RE.test(o.primary) ? o.primary : undefined;
-  const font_family_url =
-    typeof o.font_family_url === "string" && isSafeBrandingFontUrl(o.font_family_url)
-      ? o.font_family_url
-      : undefined;
   const font_family_name =
     typeof o.font_family_name === "string"
       ? sanitizeBrandingFontFamilyName(o.font_family_name)
       : undefined;
-  return { primary, font_family_url, font_family_name };
+  const custom_font_families = sanitizeCustomFontFamilies(o.custom_font_families);
+  return { primary, font_family_name, custom_font_families };
 }
 
 /** Load branding theme from SystemSettings (env > DB > default). */

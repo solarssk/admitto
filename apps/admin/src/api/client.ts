@@ -313,6 +313,12 @@ export async function uploadFile(formData: FormData): Promise<{ url: string }> {
   return parseJson<{ url: string }>(res);
 }
 
+/** Upload a custom brand font (superadmin); returns public `/uploads/...` URL. */
+export async function uploadThemeFont(formData: FormData): Promise<{ url: string }> {
+  const res = await fetch("/api/admin/theme-font-upload", multipartPostInit(formData));
+  return parseJson<{ url: string }>(res);
+}
+
 export async function fetchMe(signal?: AbortSignal): Promise<MeResponse> {
   const url = isAdminAppPath() ? "/api/admin/me" : "/api/auth/me";
   const res = await fetch(url, { credentials: "same-origin", signal });

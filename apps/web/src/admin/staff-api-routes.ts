@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
-import { canManageInstance, getBrandingTheme, setBrandingTheme } from "@admitto/auth";
+import { canManageInstance, getBrandingTheme, setBrandingTheme, type BrandingCustomFontFamily } from "@admitto/auth";
 import { resolveThemeVars } from "@admitto/ui";
 
 /** GET /api/staff/theme — any authenticated staff. */
@@ -31,8 +31,13 @@ export async function handlePutStaffTheme(c: Context, db: PrismaClient): Promise
   const raw = body as Record<string, unknown>;
   await setBrandingTheme(db, {
     primary: typeof raw.primary === "string" ? raw.primary : undefined,
-    font_family_url: typeof raw.font_family_url === "string" ? raw.font_family_url : undefined,
     font_family_name: typeof raw.font_family_name === "string" ? raw.font_family_name : undefined,
+    // Shape-cast only - setBrandingTheme's own sanitizeTheme() is the real validation boundary
+    // and re-checks every family's name and every variant's weight/style/url at runtime
+    // regardless of what's cast here.
+    custom_font_families: Array.isArray(raw.custom_font_families)
+      ? (raw.custom_font_families as BrandingCustomFontFamily[])
+      : undefined,
   });
 
   const theme = await getBrandingTheme(db);

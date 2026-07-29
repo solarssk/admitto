@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { isAdminRoleAssignment, resolvePostAuthPath } from "../src/post-auth.js";
-import { sanitizeBrandingThemeForTests } from "../src/settings/branding.js";
 
 describe("isAdminRoleAssignment", () => {
   it("accepts instance superadmin and scoped org admin", () => {
@@ -64,48 +63,5 @@ describe("resolvePostAuthPath", () => {
     expect(
       resolvePostAuthPath([{ role: "superadmin", scope_type: "event", scope_id: "ev-1" }]),
     ).toBe("/login");
-  });
-});
-
-describe("sanitizeBrandingTheme", () => {
-  it("rejects invalid primary", () => {
-    expect(sanitizeBrandingThemeForTests({ primary: "red" }).primary).toBeUndefined();
-  });
-
-  it("accepts valid primary", () => {
-    expect(sanitizeBrandingThemeForTests({ primary: "#066fd1" }).primary).toBe("#066fd1");
-  });
-
-  it("rejects non-https font URL", () => {
-    expect(
-      sanitizeBrandingThemeForTests({ font_family_url: "http://evil.example/font.woff2" })
-        .font_family_url,
-    ).toBeUndefined();
-  });
-
-  it("strips unsafe characters from font family name", () => {
-    expect(
-      sanitizeBrandingThemeForTests({
-        font_family_name: 'test</style><script>evil</script>',
-      }).font_family_name,
-    ).toBe("teststylescriptevilscript");
-  });
-
-  it("rejects credentialed HTTPS font URL", () => {
-    expect(
-      sanitizeBrandingThemeForTests({
-        font_family_url: "https://user:pass@example.com/font.woff2",
-      }).font_family_url,
-    ).toBeUndefined();
-  });
-
-  it("rejects font URL longer than 2048 characters", () => {
-    const longUrl = `https://fonts.example/${"a".repeat(2100)}.woff2`;
-    expect(sanitizeBrandingThemeForTests({ font_family_url: longUrl }).font_family_url).toBeUndefined();
-  });
-
-  it("truncates long font name", () => {
-    const result = sanitizeBrandingThemeForTests({ font_family_name: "X".repeat(200) });
-    expect(result.font_family_name?.length).toBe(128);
   });
 });
