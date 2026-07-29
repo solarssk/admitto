@@ -72,6 +72,11 @@ describe("parseAttendees — header normalisation", () => {
     expect(result.warnings.some((w) => w.includes("unknown_col"))).toBe(true);
     expect(result.validRows).toHaveLength(1);
   });
+
+  it("warns when the required email column is absent", () => {
+    const result = parseAttendees("first_name,last_name\nJan,Kowalski");
+    expect(result.warnings).toContain("CSV has no 'email' column. All rows will be invalid");
+  });
 });
 
 describe("parseAttendees — event attribute columns", () => {

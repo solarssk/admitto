@@ -299,6 +299,20 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
     ).toBe("Company: - → New Co");
   });
 
+  it("shows a dash when a captured value is cleared", () => {
+    expect(
+      getTimelineDetail(
+        entry({
+          action_type: "attendee_edited",
+          metadata: {
+            fields: ["company"],
+            field_changes: { company: { from: "Old Co", to: null } },
+          },
+        }),
+      ),
+    ).toBe("Company: Old Co → -");
+  });
+
   it("falls back to the field name alone for a malformed field_changes shape, instead of throwing (Codecov review, fieldValueChange defensive branches)", () => {
     // field_changes itself isn't an object.
     expect(

@@ -1,0 +1,35 @@
+// @vitest-environment jsdom
+
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { CustomDataFieldInput } from "../../src/attendees/CustomDataFieldInput.js";
+
+const baseField = {
+  id: "field-1",
+  source_field: "diet",
+  label: "Diet",
+  required: false,
+  options: null,
+  created_at: "2026-01-01T00:00:00.000Z",
+};
+
+describe("CustomDataFieldInput", () => {
+  afterEach(cleanup);
+
+  it.each(["select", "boolean"] as const)("uses a plain dash for an optional %s field", (type) => {
+    const onChange = vi.fn();
+    render(
+      <CustomDataFieldInput
+        field={{ ...baseField, type, options: type === "select" ? ["Vegan"] : null }}
+        value=""
+        onChange={onChange}
+      />,
+    );
+
+    const input = screen.getByLabelText("Diet") as HTMLSelectElement;
+    expect(input.options[0]?.text).toBe("-");
+
+    fireEvent.change(input, { target: { value: type === "select" ? "Vegan" : "true" } });
+    expect(onChange).toHaveBeenCalledWith(type === "select" ? "Vegan" : "true");
+  });
+});
