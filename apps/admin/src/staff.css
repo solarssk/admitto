@@ -3551,12 +3551,12 @@
   background: var(--primary-tint);
 }
 
+/* No card-within-a-card chrome (border/background/padding) - it read as a separate box and,
+   since that padding wasn't shared by "Primary colour"/"Font" above it, put "Live preview"
+   slightly out of horizontal alignment with them. Sits directly in the Theme card's own flow
+   instead, at the same 20px section gap as Font. */
 .theme-preview {
-  margin-top: 22px;
-  padding: var(--space-4);
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface-sunken);
+  margin-top: 20px;
   display: flex;
   flex-direction: column;
   gap: 10px;
