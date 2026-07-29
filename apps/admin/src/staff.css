@@ -552,6 +552,10 @@
   color: var(--status-error-fg, #b42318);
 }
 
+.mono {
+  font-family: var(--font-mono);
+}
+
 .checkin-placeholder {
   min-height: 240px;
 }
