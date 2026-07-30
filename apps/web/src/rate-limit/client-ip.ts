@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import { getConnInfo } from "@hono/node-server/conninfo";
 import { isIP } from "node:net";
-import { resolveTrustProxy } from "../env-flags.js";
+import { shouldTrustForwardedHeaders } from "./trust-proxy.js";
 
 /**
  * First X-Forwarded-For hop — safe only behind a reverse proxy that
@@ -29,9 +29,9 @@ function socketRemoteAddress(c: Context): string {
   return "unknown";
 }
 
-/** Client IP for rate limiting and audit: direct socket unless TRUST_PROXY is set. */
+/** Client IP for rate limiting and audit: direct socket unless request came from a trusted proxy. */
 export function resolveClientIp(c: Context): string {
-  if (resolveTrustProxy()) {
+  if (shouldTrustForwardedHeaders(c)) {
     const forwarded = c.req.header("x-forwarded-for");
     const fromHeader = clientIpFromHeaders(forwarded);
     if (fromHeader) return fromHeader;

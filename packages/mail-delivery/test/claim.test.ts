@@ -65,6 +65,22 @@ describe("claimInitialDelivery", () => {
     expect(row?.id).toBe(result.deliveryId);
     expect(row?.batch_id).toBe("fresh-batch");
     expect(row?.status).toBe("queued");
+    expect(row?.actor_user_id).toBeNull();
+    expect(row?.session_id).toBeNull();
+  });
+
+  it("persists actor_user_id and session_id when provided", async () => {
+    const result = await claimInitialDelivery(
+      { ...claimInput, batchId: "fresh-batch", actorUserId: "user-claim-actor", sessionId: "session-claim-actor" },
+      prisma,
+    );
+
+    expect(result.action).toBe("send");
+    const row = await prisma.emailDelivery.findFirst({
+      where: { attendee_id: ATT_ID, purpose: "initial" },
+    });
+    expect(row?.actor_user_id).toBe("user-claim-actor");
+    expect(row?.session_id).toBe("session-claim-actor");
   });
 
   it("skips when initial delivery is already sent", async () => {
@@ -137,7 +153,7 @@ describe("claimInitialDelivery", () => {
     });
 
     const result = await claimInitialDelivery(
-      { ...claimInput, batchId: "new-batch" },
+      { ...claimInput, batchId: "new-batch", actorUserId: "user-retry-actor", sessionId: "session-retry-actor" },
       prisma,
     );
 
@@ -147,6 +163,8 @@ describe("claimInitialDelivery", () => {
     });
     expect(row?.batch_id).toBe("new-batch");
     expect(row?.status).toBe("queued");
+    expect(row?.actor_user_id).toBe("user-retry-actor");
+    expect(row?.session_id).toBe("session-retry-actor");
   });
 
   it("returns skip when a concurrent retry claim wins the update", async () => {

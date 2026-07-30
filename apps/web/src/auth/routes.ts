@@ -37,7 +37,7 @@ import {
 import { ensureEnrollmentBackupCodesStashed } from "./ensure-backup-codes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
-import { resolveTrustProxy } from "../config.js";
+import { shouldTrustForwardedHeaders } from "../rate-limit/trust-proxy.js";
 
 const AUTH_ERROR = { error: "unauthorized" } as const;
 
@@ -47,11 +47,11 @@ function firstForwardedValue(raw: string | undefined): string | undefined {
   return first || undefined;
 }
 
-/** Whether the incoming request arrived over HTTPS (honours X-Forwarded-Proto when TRUST_PROXY). */
+/** Whether the incoming request arrived over HTTPS (honours X-Forwarded-Proto from a trusted proxy peer). */
 export function isSecureRequest(c: Context): boolean {
   const requestUrl = new URL(c.req.url);
   let proto = requestUrl.protocol.replace(/:$/, "").toLowerCase();
-  if (resolveTrustProxy()) {
+  if (shouldTrustForwardedHeaders(c)) {
     const forwarded = firstForwardedValue(c.req.header("x-forwarded-proto"));
     if (forwarded) proto = forwarded.toLowerCase();
   }

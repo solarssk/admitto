@@ -5,6 +5,7 @@ import {
   ensureCloudflareAccessProvider,
 } from "@admitto/auth";
 import { parseEnvFlag } from "./env-flags.js";
+import { parseTrustedProxyCidrs } from "./rate-limit/trust-proxy.js";
 
 export { resolveTrustProxy } from "./env-flags.js";
 
@@ -137,6 +138,13 @@ export function validateRedisBootConfig(env: EnvLike = process.env): void {
       `REDIS_URL must include a password of at least ${MIN_REDIS_PASSWORD_LENGTH} characters in non-development environments`,
     );
   }
+}
+
+/** Fail fast when TRUSTED_PROXY_CIDRS is set but has no valid CIDR entry (unset is fine — loopback default). */
+export function validateTrustedProxyCidrsBootConfig(env: EnvLike = process.env): void {
+  const raw = env["TRUSTED_PROXY_CIDRS"]?.trim();
+  if (!raw) return;
+  parseTrustedProxyCidrs(raw);
 }
 
 /** Fail fast when production encryption key is missing or wrong size. */

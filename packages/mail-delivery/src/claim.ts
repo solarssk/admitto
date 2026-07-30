@@ -25,6 +25,9 @@ export interface ClaimInitialInput {
   renderedHtml: string;
   /** Triggering admin's IANA timezone at send time, when known. */
   timezone?: string;
+  /** Triggering admin's user id and session id at send time, when known. */
+  actorUserId?: string;
+  sessionId?: string;
 }
 
 function frozenFromRow(row: {
@@ -94,6 +97,8 @@ export async function claimInitialDelivery(
         rendered_html: input.renderedHtml,
         queued_at: now,
         client_timezone: input.timezone ?? null,
+        actor_user_id: input.actorUserId ?? null,
+        session_id: input.sessionId ?? null,
       },
     });
     return {
@@ -135,6 +140,8 @@ export async function claimInitialDelivery(
         queued_at: new Date(),
         batch_id: input.batchId,
         client_timezone: input.timezone ?? null,
+        actor_user_id: input.actorUserId ?? null,
+        session_id: input.sessionId ?? null,
       },
     });
     if (claimed.count === 0) {
@@ -181,6 +188,8 @@ export async function createResendDelivery(
       rendered_html: input.renderedHtml,
       queued_at: now,
       client_timezone: input.timezone ?? null,
+      actor_user_id: input.actorUserId ?? null,
+      session_id: input.sessionId ?? null,
     },
   });
   return {

@@ -34,6 +34,7 @@ import {
   validateOpsHealthBootConfig,
   validateRedisBootConfig,
   validateEncryptionKeyBootConfig,
+  validateTrustedProxyCidrsBootConfig,
 } from "./config.js";
 import {
   handleGetAppleTouchIcon,
@@ -347,6 +348,7 @@ export function createApp(options: CreateAppOptions = {}) {
     validateOpsHealthBootConfig(process.env);
     validateRedisBootConfig(process.env);
     validateEncryptionKeyBootConfig(process.env);
+    validateTrustedProxyCidrsBootConfig(process.env);
   }
 
   const checkinGateConfig: CheckinGateConfig = {

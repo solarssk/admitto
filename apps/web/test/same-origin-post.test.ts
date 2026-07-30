@@ -1,6 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
+import { getConnInfo } from "@hono/node-server/conninfo";
 import { rejectCrossSitePost } from "../src/auth/same-origin-post.js";
+
+vi.mock("@hono/node-server/conninfo", () => ({
+  getConnInfo: vi.fn(),
+}));
+
+const mockedGetConnInfo = vi.mocked(getConnInfo);
+
+/** Trusted by default (matches TRUSTED_PROXY_CIDRS' loopback default) unless a test overrides it. */
+function setPeer(address: string) {
+  mockedGetConnInfo.mockReturnValue({
+    remote: { address, port: 1234 },
+  } as ReturnType<typeof getConnInfo>);
+}
 
 function makeApp() {
   const app = new Hono();
@@ -15,10 +29,12 @@ function makeApp() {
 describe("rejectCrossSitePost", () => {
   beforeEach(() => {
     vi.unstubAllEnvs();
+    setPeer("127.0.0.1");
   });
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.clearAllMocks();
   });
 
   it.each([
@@ -133,6 +149,23 @@ describe("rejectCrossSitePost", () => {
         Origin: "http://tickets.example.com",
         "X-Forwarded-Proto": "https",
         "X-Forwarded-Host": "tickets.example.com",
+      },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("ignores spoofed X-Forwarded-Host/Proto from an untrusted peer even when TRUST_PROXY=true", async () => {
+    // Reproduces xfh-csrf-bypass-01: an attacker reaching the app directly (bypassing the
+    // reverse proxy) must not be able to forge the CSRF origin check via these headers.
+    vi.stubEnv("TRUST_PROXY", "true");
+    setPeer("203.0.113.99");
+    const app = makeApp();
+    const res = await app.request("http://127.0.0.1/login", {
+      method: "POST",
+      headers: {
+        Origin: "https://evil.example",
+        "X-Forwarded-Proto": "https",
+        "X-Forwarded-Host": "evil.example",
       },
     });
     expect(res.status).toBe(403);
