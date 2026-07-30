@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Badge, Button, Card, Input, Notice, useToast } from "@admitto/ui";
+import { Badge, Button, Card, Input, Notice, useToast, type ToastVariant } from "@admitto/ui";
 import {
   fetchSecuritySettings,
   fetchSupportContact,
@@ -50,6 +50,26 @@ function isValidInstanceUrl(value: string): boolean {
 
 function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@.]+\.[^\s@]+$/.test(value);
+}
+
+/** Both/neither rejected are the unambiguous cases; when exactly one side failed, "reject" is
+ * whichever settled result wasn't fulfilled - there's no third option once the first two are
+ * ruled out. */
+function describeSaveOutcome(
+  urlResult: PromiseSettledResult<SystemSettingsDto>,
+  contactResult: PromiseSettledResult<SetupSupportContactDto>,
+): { message: string; variant: ToastVariant } {
+  if (urlResult.status === "fulfilled" && contactResult.status === "fulfilled") {
+    return { message: "Settings saved.", variant: "success" };
+  }
+  if (urlResult.status === "rejected" && contactResult.status === "rejected") {
+    return { message: "Failed to save settings.", variant: "error" };
+  }
+  const rejected = urlResult.status === "rejected" ? urlResult : (contactResult as PromiseRejectedResult);
+  return {
+    message: operatorApiErrorMessage(rejected.reason, "Part of your settings failed to save - the rest was saved."),
+    variant: "error",
+  };
 }
 
 /** General tab: Instance URL + Support contact, one shared Save/Reset (mirrors
@@ -110,7 +130,6 @@ export function GeneralSettingsPanel() {
     JSON.stringify(supportContactDraft) !== JSON.stringify(supportContactSavedRef.current);
 
   const handleClearInstanceUrl = async () => {
-    if (!settings || urlLocked) return;
     setClearing(true);
     try {
       const updated = await patchSecuritySettings({ instance_url: null });
@@ -126,13 +145,14 @@ export function GeneralSettingsPanel() {
   };
 
   const handleReset = () => {
-    if (!settings) return;
     setInstanceUrlDraft(instanceUrlSavedRef.current);
     setSupportContactDraft(supportContactSavedRef.current);
     setEmailError(null);
   };
 
   const handleSave = async () => {
+    // Unreachable via the UI (Save only renders once settings is loaded), but settings is
+    // referenced below for the locked-field save, so this stays for narrowing.
     if (!settings) return;
 
     const trimmedUrl = instanceUrlDraft.trim();
@@ -174,21 +194,8 @@ export function GeneralSettingsPanel() {
         supportContactSavedRef.current = contactResult.value;
       }
 
-      if (urlResult.status === "fulfilled" && contactResult.status === "fulfilled") {
-        addToast("Settings saved.", "success");
-      } else if (urlResult.status === "rejected" && contactResult.status === "rejected") {
-        addToast("Failed to save settings.", "error");
-      } else if (urlResult.status === "rejected") {
-        addToast(
-          operatorApiErrorMessage(urlResult.reason, "Part of your settings failed to save - the rest was saved."),
-          "error",
-        );
-      } else if (contactResult.status === "rejected") {
-        addToast(
-          operatorApiErrorMessage(contactResult.reason, "Part of your settings failed to save - the rest was saved."),
-          "error",
-        );
-      }
+      const outcome = describeSaveOutcome(urlResult, contactResult);
+      addToast(outcome.message, outcome.variant);
     } finally {
       setSaving(false);
     }
@@ -209,7 +216,7 @@ export function GeneralSettingsPanel() {
     return (
       <Card title="Instance URL">
         <div className="sessions-status">
-          <p>{loadError ?? "Unexpected error."}</p>
+          <p>{loadError}</p>
           <Button type="button" variant="secondary" onClick={() => void load()}>
             Retry
           </Button>

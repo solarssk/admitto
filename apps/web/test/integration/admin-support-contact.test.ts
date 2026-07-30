@@ -179,6 +179,51 @@ describe("PATCH /api/admin/setup/support-contact", () => {
     expect(body.support_contact_email).toBeNull();
   });
 
+  it("empty string clears support_contact_name to null too", async () => {
+    await app.request("/api/admin/setup/support-contact", {
+      method: "PATCH",
+      headers: { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ support_contact_name: "Acme Events" }),
+    });
+
+    const res = await app.request("/api/admin/setup/support-contact", {
+      method: "PATCH",
+      headers: { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ support_contact_name: "" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SupportContactDto;
+    expect(body.support_contact_name).toBeNull();
+  });
+
+  it("an empty patch body is a no-op (200, nothing changed)", async () => {
+    await app.request("/api/admin/setup/support-contact", {
+      method: "PATCH",
+      headers: { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ support_contact_name: "Acme Events" }),
+    });
+
+    const res = await app.request("/api/admin/setup/support-contact", {
+      method: "PATCH",
+      headers: { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SupportContactDto;
+    expect(body.support_contact_name).toBe("Acme Events");
+  });
+
+  it("malformed JSON body returns 400 invalid JSON", async () => {
+    const res = await app.request("/api/admin/setup/support-contact", {
+      method: "PATCH",
+      headers: { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: "{not valid json",
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("invalid JSON");
+  });
+
   it("rejects an invalid email with 400 validation_error", async () => {
     const res = await app.request("/api/admin/setup/support-contact", {
       method: "PATCH",

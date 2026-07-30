@@ -78,6 +78,61 @@ describe("GeneralSettingsPanel", () => {
     expect(screen.queryByText("secret_internal")).toBeNull();
   });
 
+  it("reloads after clicking Retry from the load-error state", async () => {
+    mockFetch.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderWithToast(<GeneralSettingsPanel />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    });
+    mockFetch.mockResolvedValueOnce(emptySettings);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => {
+      expect(screen.getByLabelText("Instance URL")).toBeTruthy();
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("toasts full save failure when both mutations reject", async () => {
+    mockFetch.mockResolvedValueOnce(emptySettings);
+    mockPatch.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    mockPatchContact.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderWithToast(<GeneralSettingsPanel />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Instance URL")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText("Instance URL"), {
+      target: { value: "https://tickets.example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toContain("Failed to save settings.");
+    });
+    expect(screen.queryByText("secret_internal")).toBeNull();
+  });
+
+  it("toasts partial save failure when only the support contact save fails", async () => {
+    mockFetch.mockResolvedValueOnce(emptySettings);
+    mockPatch.mockResolvedValueOnce({
+      ...emptySettings,
+      instance_url: { value: "https://tickets.example.com", source: "db" },
+    });
+    mockPatchContact.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderWithToast(<GeneralSettingsPanel />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Instance URL")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText("Instance URL"), {
+      target: { value: "https://tickets.example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(
+        /Part of your settings failed to save/,
+      );
+    });
+    expect(screen.queryByText("secret_internal")).toBeNull();
+  });
+
   it("toasts partial save failure without leaking server detail", async () => {
     mockFetch.mockResolvedValueOnce(emptySettings);
     mockPatch.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
@@ -207,6 +262,62 @@ describe("GeneralSettingsPanel", () => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/credentials/i);
     });
     expect(mockPatch).not.toHaveBeenCalled();
+  });
+
+  it("rejects a trailing slash on save without calling API", async () => {
+    mockFetch.mockResolvedValueOnce(emptySettings);
+    renderWithToast(<GeneralSettingsPanel />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Instance URL")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText("Instance URL"), {
+      target: { value: "https://tickets.example.com/" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/trailing slash/i);
+    });
+    expect(mockPatch).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed HTTPS URL on save without calling API", async () => {
+    mockFetch.mockResolvedValueOnce(emptySettings);
+    renderWithToast(<GeneralSettingsPanel />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Instance URL")).toBeTruthy();
+    });
+    // Passes the https:// prefix and trailing-slash checks, but a space makes it fail to parse
+    // as a URL at all - exercises the isValidInstanceUrl try/catch, not just its early returns.
+    fireEvent.change(screen.getByLabelText("Instance URL"), {
+      target: { value: "https://exa mple.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/must use https/i);
+    });
+    expect(mockPatch).not.toHaveBeenCalled();
+  });
+
+  it("saves support contact without calling the URL patch when Instance URL is locked", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ...emptySettings,
+      instance_url: { value: "https://env.example.com", source: "env" },
+    });
+    mockPatchContact.mockResolvedValueOnce({
+      support_contact_name: "Acme Events",
+      support_contact_email: null,
+    });
+    renderWithToast(<GeneralSettingsPanel />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Contact name")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText("Contact name"), { target: { value: "Acme Events" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(mockPatchContact).toHaveBeenCalled();
+    });
+    expect(mockPatch).not.toHaveBeenCalled();
+    expect(screen.getByTestId("at-toast").textContent).toContain("Settings saved.");
   });
 
   it("clears instance URL via the Clear action", async () => {
