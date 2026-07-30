@@ -3794,46 +3794,15 @@ describe("Attendees v2 — RSVP and manual create", () => {
     });
   });
 
-  it("detail includes rsvp fields, action_log, and ticket_ref without raw token", async () => {
+  it("detail response omits ticket_ref, token_enc, and token_hash", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A1}`, {
       headers: { Cookie: adminCookie },
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      rsvp_status: string;
-      ticket_ref: string | null;
-      action_log: unknown[];
-    };
-    expect(body.rsvp_status).toBe("none");
-    expect(body.ticket_ref).toBeTruthy();
+    const body = await res.json();
+    expect(body).not.toHaveProperty("ticket_ref");
     expect(body).not.toHaveProperty("token_enc");
-    expect(Array.isArray(body.action_log)).toBe(true);
-  });
-
-  it("detail omits the ticket preview when the stored token cannot be decrypted", async () => {
-    const attendee = await prisma.attendee.findUniqueOrThrow({
-      where: { id: ATT_A1 },
-      select: { token_enc: true },
-    });
-    await prisma.attendee.update({
-      where: { id: ATT_A1 },
-      data: { token_enc: "invalid-encrypted-token" },
-    });
-
-    try {
-      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A1}`, {
-        headers: { Cookie: adminCookie },
-      });
-      expect(res.status).toBe(200);
-      expect((await res.json()) as { ticket_ref: string | null }).toMatchObject({
-        ticket_ref: null,
-      });
-    } finally {
-      await prisma.attendee.update({
-        where: { id: ATT_A1 },
-        data: { token_enc: attendee.token_enc },
-      });
-    }
+    expect(body).not.toHaveProperty("token_hash");
   });
 
   it("PATCH rsvp_status writes rsvp_status_changed audit log", async () => {
