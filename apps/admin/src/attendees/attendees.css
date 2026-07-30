@@ -1203,7 +1203,6 @@
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
   align-items: start;
-  margin-top: 16px;
 }
 
 .attendee-detail-main {
@@ -1334,7 +1333,6 @@
      kick in (bot review). */
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
-  margin-top: 16px;
 }
 
 .attendee-status-chip {
@@ -1466,10 +1464,6 @@
   .attendee-status-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-}
-
-.attendee-detail-skeleton {
-  margin-top: 16px;
 }
 
 .at-timeline {
@@ -1608,25 +1602,12 @@
   color: var(--primary);
 }
 
-/* Notes tab (attendee detail) */
-/* Plain informational context, not a caution/danger - same neutral "well" treatment as the
-   shared Notice component's info variant (@admitto/ui), the deliberate non-alarming counterpart
-   to the red danger-zone-notice. */
+/* Notes tab (attendee detail) - now rendered via the shared Notice component (@admitto/ui,
+   info variant), which owns the border/background/color/icon. Only the bottom spacing to the
+   note-composer form below survives here, since Notice itself is margin: 0 (its layout
+   contract expects a flex/grid gap parent, which .at-card__body doesn't provide). */
 .at-notes-hint {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  margin: 0 0 var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface-sunken);
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-}
-
-.at-notes-hint i {
-  margin-top: 2px;
+  margin-bottom: var(--space-3);
 }
 
 .at-notes-form {

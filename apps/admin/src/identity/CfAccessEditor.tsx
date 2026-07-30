@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useBlocker, useLocation, useNavigate, type BlockerFunction } from "react-router";
-import { Badge, Button, Card, Input, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
+import { Badge, Button, Card, Input, Notice, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
 import { ApiError, fetchCfAccessSummary, testCfAccess, updateCfAccess } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { CfAccessSummaryDto } from "../api/types.js";
@@ -212,27 +212,25 @@ export function CfAccessEditor() {
   // config, not enabling it, so the pre-enable caution is misleading.
   const enabledWarning =
     draft.enabled && !locks.enabled && !baseline.enabled ? (
-      <div className="cf-editor__warn" role="alert">
+      <Notice variant="warning" role="alert">
         <strong>Before you enable:</strong> run <strong>Test connection</strong> with your team
         URL. A wrong application token or team URL can block staff sign-in until you fix the
         values or use a local break-glass account.
-      </div>
+      </Notice>
     ) : null;
 
   const envLockedInfo =
     draft.enabled && locks.enabled ? (
-      <div className="cf-editor__info">
-        Cloudflare Access is enabled and locked by environment configuration.
-      </div>
+      <Notice variant="info">Cloudflare Access is enabled and locked by environment configuration.</Notice>
     ) : null;
 
   const fallthroughInfo = (
-    <div className="cf-editor__info">
+    <Notice variant="info">
       <strong>How staff sign-in works:</strong> When Cloudflare sends a valid Access JWT, Admitto
       trusts it for protected admin paths. When no JWT is present (direct URL, local network, or
       break-glass), Admitto shows the normal email/password login. Local superadmin accounts
       always remain available as a fallback.
-    </div>
+    </Notice>
   );
 
   let content: ReactNode;

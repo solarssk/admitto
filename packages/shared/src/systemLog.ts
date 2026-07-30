@@ -2,7 +2,7 @@
  * In-memory, per-process live-tail buffer for the admin "System logs" viewer. This is a
  * convenience layer for watching activity while the app is up, not a durability mechanism -
  * every entry is also written to stdout via console.*, which Docker already captures to disk
- * independent of this buffer (see docs/SECURITY-CONTROLS.md's "forward container logs if
+ * independent of this buffer (see docs/security/SECURITY-CONTROLS.md's "forward container logs if
  * required" stance for external/SIEM shipping). Deliberately not re-exported from "./index.js":
  * this module holds real mutable module-level state, and that barrel is also consumed by the
  * browser bundle (apps/admin) - import from "@admitto/shared/system-log" instead.
