@@ -60,7 +60,7 @@ function reportFixture(
     admission_log_total: 0,
     by_rsvp_status: [],
     by_checkin_method: [],
-    by_device: [],
+    by_operator: [],
     ...overrides,
   };
 }
@@ -206,6 +206,9 @@ describe("ReportsPage — live SSE updates (ADR 0014)", () => {
         email: `guest-${i + 1}@example.com`,
         ticket_type: null,
         admitted_at: "2026-06-01T10:00:00.000Z",
+        operator_user_id: null,
+        operator_display_name: null,
+        operator_email: null,
         device_id: null,
         items: [],
       }));
@@ -295,6 +298,9 @@ describe("ReportsPage — live SSE updates (ADR 0014)", () => {
         email: "guest@example.com",
         ticket_type: null,
         admitted_at: "2026-06-01T10:00:00.000Z",
+        operator_user_id: null,
+        operator_display_name: null,
+        operator_email: null,
         device_id: null,
         items: [],
       }],
@@ -310,7 +316,11 @@ describe("ReportsPage — live SSE updates (ADR 0014)", () => {
     const table = document.querySelector(".reports-log-table");
     expect(table).toBeTruthy();
     expect(within(table!).getByText("No Device Guest")).toBeTruthy();
-    expect(within(table!).getAllByText("-").length).toBeGreaterThanOrEqual(2);
+    // Operator is never blank - it shows "(No operator)" instead of "-" - so only the empty
+    // Items cell renders the "-" marker now (Device, when unset, renders no fallback at all;
+    // it's just omitted as a secondary annotation next to the operator label).
+    expect(within(table!).getByText("(No operator)")).toBeTruthy();
+    expect(within(table!).getAllByText("-")).toHaveLength(1);
   });
 
   it("uses the same empty-state markers in the mobile admission cards", async () => {
@@ -324,6 +334,9 @@ describe("ReportsPage — live SSE updates (ADR 0014)", () => {
             email: "mobile@example.com",
             ticket_type: null,
             admitted_at: "2026-06-01T10:00:00.000Z",
+            operator_user_id: null,
+            operator_display_name: null,
+            operator_email: null,
             device_id: null,
             items: [],
           },
@@ -337,6 +350,9 @@ describe("ReportsPage — live SSE updates (ADR 0014)", () => {
     await screen.findByText("Mobile Guest");
     const cards = document.querySelector(".reports-log-cards");
     expect(cards).not.toBeNull();
-    expect(within(cards as HTMLElement).getAllByText("-")).toHaveLength(2);
+    // Same reasoning as the desktop table test above - operator always shows "(No operator)"
+    // instead of "-", so only the empty Items marker remains.
+    expect(within(cards as HTMLElement).getByText("(No operator)")).toBeTruthy();
+    expect(within(cards as HTMLElement).getAllByText("-")).toHaveLength(1);
   });
 });

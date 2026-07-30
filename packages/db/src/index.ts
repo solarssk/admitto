@@ -69,3 +69,7 @@ export {
 export {
   backfillEventCustomFields,
 } from './backfill-event-custom-fields.js';
+
+export {
+  backfillCheckInSessionIds,
+} from './backfill-checkin-session-id.js';

@@ -255,7 +255,7 @@ fieldset:disabled .import-dropzone {
 
 .import-columns-table code {
   font-family: ui-monospace, monospace;
-  background: var(--surface-muted, var(--border));
+  background: var(--surface-muted);
   padding: 0.1rem 0.3rem;
   border-radius: var(--radius-sm, 3px);
 }

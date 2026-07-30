@@ -10,7 +10,7 @@ import {
   type RefObject,
   type SetStateAction,
 } from "react";
-import { Badge, Button, Card, EmptyState, Input, Tooltip, useToast, type BadgeVariant } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, Input, Notice, Tooltip, useToast, type BadgeVariant } from "@admitto/ui";
 import { exportAuditLog, exportSecurityAuditLog, fetchAdminEvents, fetchAuditLog, fetchSecurityAuditLog } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AuditLogEntryDto, EventDto, SecurityAuditLogEntryDto } from "../api/types.js";
@@ -1400,12 +1400,12 @@ function LogView({
       </div>
 
       {pollDegraded && (
-        <output className="audit-log-poll-warning">
+        <Notice variant="warning" as="output" className="audit-log-poll-warning">
           Live updates stopped coming through - the rows below may be out of date.{" "}
           <button type="button" className="audit-log-poll-warning-retry" onClick={onRetryNow}>
             Retry now
           </button>
-        </output>
+        </Notice>
       )}
 
       {listContent}
