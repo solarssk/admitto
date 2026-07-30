@@ -1750,11 +1750,22 @@ export function AttendeeDetailPage() {
               </p>
             )}
             {staleWrite && (
-              <Notice variant="warning" className="attendee-form__warn">
-                Someone else updated this attendee. Reload and reapply your edits.{" "}
-                <Button type="button" variant="secondary" size="sm" onClick={() => void handleReload()} disabled={reloading}>
-                  {reloading ? "Reloading…" : "Reload"}
-                </Button>
+              <Notice
+                variant="warning"
+                className="attendee-form__warn"
+                action={
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void handleReload()}
+                    disabled={reloading}
+                  >
+                    {reloading ? "Reloading…" : "Reload"}
+                  </Button>
+                }
+              >
+                Someone else updated this attendee. Reload and reapply your edits.
               </Notice>
             )}
             <Tooltip
