@@ -33,6 +33,17 @@ Anything intentionally left out, deferred, or still transitional.
 Mention follow-up milestones/prompts when relevant.
 -->
 
+## Documentation impact
+
+<!--
+Choose exactly one option. Update the Wiki when the PR changes a user-visible workflow, role,
+terminology, feature availability, or recovery step. "No Wiki update needed" requires a specific
+reason. The CI documentation check verifies this declaration and the Wiki source diff.
+-->
+
+- [ ] Wiki updated
+- [ ] No Wiki update needed — explain why
+
 ---
 
 ## Checklist
