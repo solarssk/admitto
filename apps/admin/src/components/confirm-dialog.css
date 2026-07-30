@@ -20,12 +20,6 @@
   color: inherit;
 }
 
-.confirm-dialog__backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.45);
-}
-
 .confirm-dialog__panel {
   position: relative;
   background: var(--surface-card);

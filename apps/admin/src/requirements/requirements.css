@@ -348,6 +348,10 @@
   color: inherit;
 }
 
+/* Only RequirementsPage's "add item" dialog still uses this - a real <button> (keyboard-focusable
+   "Close add item dialog"), not the role="presentation" div the other event-item modals used to
+   render here before they switched to the shared ModalBackdrop component. Padding/border reset
+   the button's browser default chrome. */
 .event-item-modal__backdrop {
   position: absolute;
   inset: 0;

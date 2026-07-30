@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, Switch } from "@admitto/ui";
+import { Button, ModalBackdrop, Switch } from "@admitto/ui";
 import {
   ApiError,
   createAdminUser,
@@ -147,7 +147,7 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
 
   return (
     <dialog className="users-modal" aria-modal="true" aria-labelledby={titleId} open>
-      <div className="users-modal__backdrop" role="presentation" onClick={handleClose} />
+      <ModalBackdrop onClose={handleClose} />
       <div ref={panelRef} className="users-modal__panel">
         <h2 className="users-modal__title" id={titleId}>
           Invite a new team member

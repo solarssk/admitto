@@ -944,12 +944,6 @@
   color: inherit;
 }
 
-.attendee-resend-modal__backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.45);
-}
-
 .attendee-resend-modal__panel {
   position: relative;
   background: var(--surface-card);
@@ -1020,12 +1014,6 @@
   border: none;
   background: transparent;
   color: inherit;
-}
-
-.attendee-edit-modal__backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.45);
 }
 
 .attendee-edit-modal__panel {

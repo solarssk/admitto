@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Button, IconButton, Tooltip, useToast } from "@admitto/ui";
+import { Button, IconButton, ModalBackdrop, Tooltip, useToast } from "@admitto/ui";
 import { createEventCustomField, updateEventCustomField } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventCustomFieldDto } from "../api/types.js";
@@ -120,7 +120,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
       aria-modal="true"
       aria-labelledby="custom-field-modal-title"
     >
-      <div className="event-item-modal__backdrop" role="presentation" onClick={onClose} />
+      <ModalBackdrop onClose={onClose} />
       <div ref={panelRef} className="event-item-modal__panel">
         <div className="event-item-modal__header">
           <div>

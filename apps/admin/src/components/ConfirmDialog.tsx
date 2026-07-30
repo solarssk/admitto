@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import { Button, Input, Spinner, Tooltip } from "@admitto/ui";
+import { Button, Input, ModalBackdrop, Spinner, Tooltip } from "@admitto/ui";
 import { useModalFocusTrap } from "./useModalFocusTrap.js";
 import "./confirm-dialog.css";
 
@@ -96,7 +96,7 @@ export function ConfirmDialog({
       aria-labelledby={titleId}
       aria-describedby={descriptionId}
     >
-      <div className="confirm-dialog__backdrop" role="presentation" onClick={onCancel} />
+      <ModalBackdrop onClose={onCancel} />
       <div ref={panelRef} className="confirm-dialog__panel">
         <h3 id={titleId} className="confirm-dialog__title">
           {title}

@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, Input, Select } from "@admitto/ui";
+import { Button, Input, ModalBackdrop, Select } from "@admitto/ui";
 import { ApiError, createAttendee, fetchTicketTypes } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AttendeeDetailDto, TicketTypeDto } from "../api/types.js";
@@ -186,7 +186,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
 
   return (
     <dialog className="add-attendee-modal" open aria-modal="true" aria-labelledby={titleId}>
-      <div className="add-attendee-modal__backdrop" role="presentation" onClick={handleClose} />
+      <ModalBackdrop onClose={handleClose} />
       <div ref={panelRef} className="add-attendee-modal__panel">
         <h2 className="add-attendee-modal__title" id={titleId}>
           <i className="ti ti-user-plus" aria-hidden="true" /> Add attendee
