@@ -373,7 +373,7 @@ describe("PUT /api/admin/theme", () => {
     expect(res.status).toBe(403);
   });
 
-  it("degrades invalid primary and non-HTTPS font URL on save", async () => {
+  it("degrades invalid primary and non-HTTPS variant URL on save", async () => {
     const res = await app.request("/api/admin/theme", {
       method: "PUT",
       headers: {
@@ -383,33 +383,33 @@ describe("PUT /api/admin/theme", () => {
       },
       body: JSON.stringify({
         primary: "not-hex",
-        font_family_url: "http://evil",
         font_family_name: "Evil",
+        custom_font_families: [{ name: "Evil", variants: [{ weight: 400, style: "normal", url: "http://evil" }] }],
       }),
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      theme: { primary?: string; font_family_url?: string; font_family_name?: string };
+      theme: { primary?: string; font_family_name?: string; custom_font_families?: unknown[] };
       vars: Record<string, string>;
     };
     expect(body.theme.primary).toBeUndefined();
-    expect(body.theme.font_family_url).toBeUndefined();
+    expect(body.theme.custom_font_families).toBeUndefined();
     expect(body.theme.font_family_name).toBe("Evil");
     expect(body.vars["--primary"]).toBe("#066fd1");
-    expect(body.vars["--font-sans"]).toBeUndefined();
+    expect(body.vars["--font-sans"]).toBe('"Evil", Inter, system-ui, sans-serif');
 
     const getRes = await app.request("/api/admin/theme", {
       headers: { Cookie: await sessionCookieFor(superId) },
     });
     const persisted = (await getRes.json()) as {
-      theme: { primary?: string; font_family_url?: string; font_family_name?: string };
+      theme: { primary?: string; font_family_name?: string; custom_font_families?: unknown[] };
     };
     expect(persisted.theme.primary).toBeUndefined();
-    expect(persisted.theme.font_family_url).toBeUndefined();
+    expect(persisted.theme.custom_font_families).toBeUndefined();
     expect(persisted.theme.font_family_name).toBe("Evil");
   });
 
-  it("rejects credentialed HTTPS font URL on save", async () => {
+  it("rejects a credentialed HTTPS variant URL on save, keeping the rest of the family", async () => {
     const res = await app.request("/api/admin/theme", {
       method: "PUT",
       headers: {
@@ -418,30 +418,48 @@ describe("PUT /api/admin/theme", () => {
         ...sameOrigin,
       },
       body: JSON.stringify({
-        font_family_url: "https://user:pass@example.com/font.woff2",
         font_family_name: "Brand Sans",
+        custom_font_families: [
+          {
+            name: "Brand Sans",
+            variants: [
+              { weight: 400, style: "normal", url: "https://user:pass@example.com/font.woff2" },
+              { weight: 700, style: "normal", url: "https://cdn.example.com/font-bold.woff2" },
+            ],
+          },
+        ],
       }),
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      theme: { font_family_url?: string; font_family_name?: string };
+      theme: { font_family_name?: string; custom_font_families?: Array<{ name: string; variants: unknown[] }> };
       vars: Record<string, string>;
     };
-    expect(body.theme.font_family_url).toBeUndefined();
+    expect(body.theme.custom_font_families).toEqual([
+      {
+        name: "Brand Sans",
+        variants: [{ weight: 700, style: "normal", url: "https://cdn.example.com/font-bold.woff2" }],
+      },
+    ]);
     expect(body.theme.font_family_name).toBe("Brand Sans");
-    expect(body.vars["--font-sans"]).toBeUndefined();
+    expect(body.vars["--font-sans"]).toBe('"Brand Sans", Inter, system-ui, sans-serif');
 
     const getRes = await app.request("/api/admin/theme", {
       headers: { Cookie: await sessionCookieFor(superId) },
     });
     const persisted = (await getRes.json()) as {
-      theme: { font_family_url?: string; font_family_name?: string };
+      theme: { font_family_name?: string; custom_font_families?: Array<{ name: string; variants: unknown[] }> };
     };
-    expect(persisted.theme.font_family_url).toBeUndefined();
+    expect(persisted.theme.custom_font_families).toEqual([
+      {
+        name: "Brand Sans",
+        variants: [{ weight: 700, style: "normal", url: "https://cdn.example.com/font-bold.woff2" }],
+      },
+    ]);
     expect(persisted.theme.font_family_name).toBe("Brand Sans");
   });
 
-  it("strips HTML from font family name on save", async () => {
+  it("persists multiple weight/style variants under one family and emits one @font-face per variant", async () => {
     const res = await app.request("/api/admin/theme", {
       method: "PUT",
       headers: {
@@ -450,13 +468,67 @@ describe("PUT /api/admin/theme", () => {
         ...sameOrigin,
       },
       body: JSON.stringify({
-        font_family_url: "https://cdn.example.com/font.woff2",
-        font_family_name: 'Evil</style><script>alert(1)</script>',
+        font_family_name: "Brand Sans",
+        custom_font_families: [
+          {
+            name: "Brand Sans",
+            variants: [
+              { weight: 400, style: "normal", url: "https://cdn.example.com/regular.woff2" },
+              { weight: 700, style: "normal", url: "https://cdn.example.com/bold.woff2" },
+            ],
+          },
+        ],
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { vars: { fontFaceCss?: string } };
+    expect(body.vars.fontFaceCss?.match(/@font-face/g)).toHaveLength(2);
+    expect(body.vars.fontFaceCss).toContain("regular.woff2");
+    expect(body.vars.fontFaceCss).toContain("bold.woff2");
+  });
+
+  it("only saved custom families keep their own name matched against the active pick", async () => {
+    const res = await app.request("/api/admin/theme", {
+      method: "PUT",
+      headers: {
+        Cookie: await sessionCookieFor(superId),
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({
+        font_family_name: "Second Family",
+        custom_font_families: [
+          { name: "First Family", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/first.woff2" }] },
+          { name: "Second Family", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/second.woff2" }] },
+        ],
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { theme: { custom_font_families?: unknown[] }; vars: { fontFaceCss?: string } };
+    expect(body.theme.custom_font_families).toHaveLength(2);
+    expect(body.vars.fontFaceCss).toContain("second.woff2");
+    expect(body.vars.fontFaceCss).not.toContain("first.woff2");
+  });
+
+  it("strips HTML from font family name on save", async () => {
+    const maliciousName = 'Evil</style><script>alert(1)</script>';
+    const res = await app.request("/api/admin/theme", {
+      method: "PUT",
+      headers: {
+        Cookie: await sessionCookieFor(superId),
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({
+        font_family_name: maliciousName,
+        custom_font_families: [
+          { name: maliciousName, variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/font.woff2" }] },
+        ],
       }),
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      theme: { font_family_url?: string; font_family_name?: string };
+      theme: { font_family_name?: string };
       vars: { fontFaceCss?: string };
     };
     expect(body.theme.font_family_name).toBe("Evilstylescriptalert1script");

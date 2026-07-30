@@ -5,11 +5,8 @@ import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes, useNavigate, useLocation } from "react-router";
 import { render } from "@testing-library/react";
 
-vi.mock("../../src/settings/BrandingPanel.js", () => ({
-  BrandingPanel: () => <div data-testid="branding-panel" />,
-}));
-vi.mock("../../src/settings/OrganisationBrandingPanel.js", () => ({
-  OrganisationBrandingPanel: () => <div data-testid="organisation-branding-panel" />,
+vi.mock("../../src/settings/BrandingSettingsPanel.js", () => ({
+  BrandingSettingsPanel: () => <div data-testid="branding-settings-panel" />,
 }));
 vi.mock("../../src/settings/InstanceUrlPanel.js", () => ({
   InstanceUrlPanel: () => <div data-testid="instance-url-panel" />,
@@ -83,9 +80,17 @@ describe("SettingsLayout Identity tab", () => {
     });
   });
 
+  it("renders the Branding panel when the Branding tab is clicked", async () => {
+    renderAt("/admin/settings");
+    fireEvent.click(screen.getByRole("tab", { name: "Branding" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("branding-settings-panel")).toBeTruthy();
+    });
+  });
+
   it("renders the General panel by default and switches to Mail", async () => {
     renderAt("/admin/settings");
-    expect(screen.getByTestId("branding-panel")).toBeTruthy();
+    expect(screen.getByTestId("instance-url-panel")).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Mail" }));
     await waitFor(() => {
       expect(screen.getByTestId("mail-panel")).toBeTruthy();
@@ -169,18 +174,18 @@ describe("SettingsLayout Identity tab", () => {
     expect(screen.getByTestId("security-panel").getAttribute("hidden")).toBeNull();
   });
 
-  it("does not mount the General panels on a non-General deep link", async () => {
+  it("does not mount the General or Branding panels on a non-General deep link", async () => {
     renderAt("/admin/settings?tab=security");
     await waitFor(() => {
       expect(screen.getByTestId("security-panel")).toBeTruthy();
     });
-    expect(screen.queryByTestId("branding-panel")).toBeNull();
+    expect(screen.queryByTestId("branding-settings-panel")).toBeNull();
     expect(screen.queryByTestId("instance-url-panel")).toBeNull();
   });
 
   it("ignores an unknown ?tab= value and falls back to General", async () => {
     renderAt("/admin/settings?tab=nonsense");
-    expect(screen.getByTestId("branding-panel")).toBeTruthy();
+    expect(screen.getByTestId("instance-url-panel")).toBeTruthy();
   });
 
   it("restores the active tab after navigating to Identity and Back", async () => {

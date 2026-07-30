@@ -127,8 +127,8 @@ describe("getTicketPageSecurityHeaders", () => {
   it("allows custom font origin in CSP when theme provides HTTPS font URL", () => {
     const fontUrl = "https://cdn.example.com/fonts/brand.woff2";
     const headers = getTicketPageSecurityHeaders({
-      font_family_url: fontUrl,
       font_family_name: "Brand Sans",
+      custom_font_families: [{ name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: fontUrl }] }],
     });
     const csp = headers["Content-Security-Policy"] ?? "";
     expect(csp).toContain("font-src 'self' https://cdn.example.com");
@@ -157,7 +157,10 @@ describe("getTicketPageSecurityHeaders", () => {
         },
       },
       "data:image/png;base64,abc",
-      { font_family_url: fontUrl, font_family_name: "Brand Sans" },
+      {
+        font_family_name: "Brand Sans",
+        custom_font_families: [{ name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: fontUrl }] }],
+      },
     );
     expect(html).toContain("@font-face");
     expect(html).toContain(fontUrl);
@@ -176,7 +179,6 @@ describe("getTicketPageSecurityHeaders", () => {
   });
 
   it("does not break out of the ticket style block via font family name", () => {
-    const fontUrl = "https://cdn.example.com/fonts/brand.woff2";
     const html = renderTicket(
       {
         mode: "internal",
@@ -201,7 +203,6 @@ describe("getTicketPageSecurityHeaders", () => {
       },
       "data:image/png;base64,abc",
       {
-        font_family_url: fontUrl,
         font_family_name: 'test</style><script>document.location="https://evil.example"</script><style>',
       },
     );
@@ -213,7 +214,26 @@ describe("getTicketPageSecurityHeaders", () => {
 
 describe("buildTicketFontSrc", () => {
   it("rejects non-https font origins", () => {
-    expect(buildTicketFontSrc({ font_family_url: "http://evil.example/x.woff2" })).toBe("'self'");
+    expect(
+      buildTicketFontSrc({
+        font_family_name: "Brand Sans",
+        custom_font_families: [
+          { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: "http://evil.example/x.woff2" }] },
+        ],
+      }),
+    ).toBe("'self'");
+  });
+
+  it("only allowlists the active family's origin, ignoring other saved-but-unselected families", () => {
+    expect(
+      buildTicketFontSrc({
+        font_family_name: "Active Sans",
+        custom_font_families: [
+          { name: "Active Sans", variants: [{ weight: 400, style: "normal", url: "https://active.example/a.woff2" }] },
+          { name: "Other Sans", variants: [{ weight: 400, style: "normal", url: "https://other.example/b.woff2" }] },
+        ],
+      }),
+    ).toBe("'self' https://active.example");
   });
 });
 
