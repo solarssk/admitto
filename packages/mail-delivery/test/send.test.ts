@@ -324,6 +324,43 @@ describe("resendTicketEmail", () => {
     });
     expect(resendRow?.client_timezone).toBeNull();
   });
+
+  it("records the triggering admin's actor_user_id and session_id when provided", async () => {
+    exported.length = 0;
+
+    await resendTicketEmail(
+      "att-mode-a",
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+      { actorUserId: "user-resend-actor", sessionId: "session-resend-actor" },
+    );
+
+    const resendRow = await prisma.emailDelivery.findFirst({
+      where: { attendee_id: "att-mode-a", purpose: "resend" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(resendRow?.actor_user_id).toBe("user-resend-actor");
+    expect(resendRow?.session_id).toBe("session-resend-actor");
+  });
+
+  it("leaves actor_user_id and session_id null when none is provided", async () => {
+    exported.length = 0;
+
+    await resendTicketEmail(
+      "att-mode-a",
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
+
+    const resendRow = await prisma.emailDelivery.findFirst({
+      where: { attendee_id: "att-mode-a", purpose: "resend" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(resendRow?.actor_user_id).toBeNull();
+    expect(resendRow?.session_id).toBeNull();
+  });
 });
 
 describe("retryDelivery", () => {

@@ -163,7 +163,12 @@ services:
       - internal
 
 networks:
+  # Fixed subnet (Compose otherwise auto-assigns one) so TRUSTED_PROXY_CIDRS in .env can name it —
+  # the app trusts X-Forwarded-* only from a peer inside this range (see deploy/README.md).
   internal:
+    ipam:
+      config:
+        - subnet: 172.28.238.0/24
 
 volumes:
   postgres_data:

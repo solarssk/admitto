@@ -183,15 +183,23 @@ Docker `HEALTHCHECK` uses `/healthz` only. With shared Redis, the limit is scope
 
 ## Reverse proxy and client IP (`TRUST_PROXY`)
 
-When `TRUST_PROXY=true` (default in [`deploy/.env.example`](../deploy/.env.example)):
+`X-Forwarded-*` headers are honoured only when **both** are true: `TRUST_PROXY=true`, **and** the
+request's direct TCP peer is inside `TRUSTED_PROXY_CIDRS` (default in
+[`deploy/.env.example`](../deploy/.env.example), loopback-only if unset). `TRUST_PROXY` alone is
+not a trust boundary — anything that can reach the app directly could otherwise set these headers
+itself.
 
 | Header | Used for |
 |--------|----------|
 | `X-Forwarded-For` (first hop) | Rate limits, audit IP, login throttling |
 | `X-Forwarded-Proto`, `X-Forwarded-Host` | CSRF origin check on mutating POSTs |
+| `X-Forwarded-Proto` | Session cookie `Secure` flag |
 
-Implementation: [`apps/web/src/rate-limit/client-ip.ts`](../apps/web/src/rate-limit/client-ip.ts),
-[`apps/web/src/auth/same-origin-post.ts`](../apps/web/src/auth/same-origin-post.ts).
+Implementation: [`apps/web/src/rate-limit/trust-proxy.ts`](../apps/web/src/rate-limit/trust-proxy.ts)
+(the `TRUSTED_PROXY_CIDRS` peer check), consumed by
+[`client-ip.ts`](../apps/web/src/rate-limit/client-ip.ts),
+[`same-origin-post.ts`](../apps/web/src/auth/same-origin-post.ts), and `isSecureRequest` in
+[`auth/routes.ts`](../apps/web/src/auth/routes.ts).
 
 **Operator requirement:** the edge proxy must set a **single** trusted client IP (e.g. nginx
 `proxy_set_header X-Forwarded-For $remote_addr`). If the proxy **appends** to a client-sent
@@ -201,8 +209,18 @@ misconfiguration risk, not bypassable from the app alone.
 **Hardening (v0.4.5+):** malformed or non-IP first hops fall back to the TCP remote address instead
 of a shared `"unknown"` bucket (which previously allowed cross-client rate-limit interference).
 
-When `TRUST_PROXY` is unset/false, forwarded headers are ignored for IP and CSRF origin (direct
-socket / request URL used).
+**Hardening (v0.4.13+):** `TRUSTED_PROXY_CIDRS` peer allowlist — previously `TRUST_PROXY=true`
+trusted forwarded headers from **any** direct connection, so a client that reached the app
+directly (misconfigured port exposure, or from elsewhere on the same network) could forge its own
+rate-limit IP, CSRF origin, and cookie `Secure` flag. **Residual:** the default deploy topology
+pins `TRUSTED_PROXY_CIDRS` to the whole `internal` compose network subnet, not just the `proxy`
+container's individual address — a compromise of another container on that same network (`db`,
+`redis`, `migrate`, `retention`) could still inject these headers. Narrowing to a single pinned
+container IP was judged not worth the added operational fragility (static IPs in Compose); this
+subnet-level allowlist is still a materially smaller trust boundary than "any direct connection."
+
+When `TRUST_PROXY` is unset/false, forwarded headers are ignored for IP, CSRF origin, and cookie
+`Secure` flag (direct socket / request URL used) regardless of peer.
 
 ---
 
@@ -304,7 +322,9 @@ Be explicit with auditors about what is **out of product scope** today:
 Useful when repeating internal or vendor PEN tests against a staging instance:
 
 1. **Proxy trust:** confirm NPM/nginx uses `$remote_addr` for `X-Forwarded-For`, not
-   `$proxy_add_x_forwarded_for`, when `TRUST_PROXY=true`.
+   `$proxy_add_x_forwarded_for`, when `TRUST_PROXY=true`. Separately, confirm a request sent
+   directly to the app (bypassing compose nginx, spoofed `X-Forwarded-*`) is **not** trusted —
+   its peer address falls outside `TRUSTED_PROXY_CIDRS`.
 2. **Rate limits:** unauthenticated login → 429 on 11th attempt/minute; `/healthz` → 429 after
    sustained flood; MFA enroll requires partial session and throttles repeated secret fetches.
 3. **CSRF:** cross-origin `POST /api/auth/login` without matching `Origin` → 403.

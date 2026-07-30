@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { INLINE_RATE_LIMITS, RATE_POLICIES } from "../src/rate-limit/policies.js";
+
+vi.mock("@hono/node-server/conninfo", () => ({
+  getConnInfo: vi.fn(() => ({ remote: { address: "127.0.0.1", port: 1234 } })),
+}));
 
 /** Regression guard — middleware policies: limits and check counts must match production wiring. */
 const EXPECTED_POLICIES: Record<
