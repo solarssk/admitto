@@ -583,6 +583,7 @@ describe("EventSettingsPage tabs", () => {
 
     const notice = document.querySelector(".danger-zone-notice");
     expect(notice).toBeTruthy();
+    expect(notice?.classList.contains("at-notice--error")).toBe(true);
     expect(notice?.textContent).toMatch(/These actions can affect this event's data/);
     expect(document.querySelector(".danger-zone-panel")?.contains(notice)).toBe(false);
   });
