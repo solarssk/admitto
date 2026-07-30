@@ -144,7 +144,7 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
     fireEvent.click(within(dialog).getByRole("button", { name: "Restore" }));
     await waitFor(() => expect(updateAttendee).toHaveBeenCalledOnce());
 
-    fireEvent.click(document.querySelector(".confirm-dialog__backdrop")!);
+    fireEvent.click(document.querySelector(".at-modal-backdrop")!);
     expect(screen.getByRole("dialog", { name: "Restore pass?" })).toBeTruthy();
 
     rejectRequest(new Error("request failed"));

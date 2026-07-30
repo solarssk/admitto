@@ -111,4 +111,18 @@ describe("AttendeeDetailPage — Resend ticket modal", () => {
     fireEvent.click(within(dialog).getByRole("radio", { name: /Other address/ }));
     expect(within(dialog).getByLabelText("Recipient email")).toBeTruthy();
   });
+
+  it("closes when the backdrop is clicked", async () => {
+    mockLoad(baseDetail());
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Resend ticket/ }));
+    screen.getByRole("dialog", { name: "Resend ticket" });
+
+    fireEvent.click(document.querySelector(".at-modal-backdrop")!);
+
+    expect(screen.queryByRole("dialog", { name: "Resend ticket" })).toBeNull();
+  });
 });

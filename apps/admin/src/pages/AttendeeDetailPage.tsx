@@ -7,6 +7,7 @@ import {
   Card,
   EmptyState,
   Input,
+  ModalBackdrop,
   PageHeader,
   resolveStatusMeta,
   Select,
@@ -1734,7 +1735,7 @@ export function AttendeeDetailPage() {
 
       {editMode && (
         <dialog className="attendee-edit-modal" open aria-modal="true" aria-labelledby={editTitleId}>
-          <div className="attendee-edit-modal__backdrop" role="presentation" onClick={handleCancelEdit} />
+          <ModalBackdrop onClose={handleCancelEdit} />
           <form ref={editPanelRef} className="attendee-edit-modal__panel" onSubmit={handleSave}>
             <h2 id={editTitleId} className="attendee-edit-modal__title">
               <i className="ti ti-pencil" aria-hidden="true" /> Edit attendee
@@ -1875,7 +1876,7 @@ export function AttendeeDetailPage() {
 
       {resendOpen && (
         <dialog className="attendee-resend-modal" open aria-modal="true" aria-labelledby={resendTitleId}>
-          <div className="attendee-resend-modal__backdrop" role="presentation" onClick={() => setResendOpen(false)} />
+          <ModalBackdrop onClose={() => setResendOpen(false)} />
           <form ref={resendPanelRef} className="attendee-resend-modal__panel" onSubmit={handleResend}>
             <h3 id={resendTitleId} className="attendee-resend-modal__title">Resend ticket</h3>
             {resendError && (

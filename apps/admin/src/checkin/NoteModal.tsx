@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Button } from "@admitto/ui";
+import { Button, ModalBackdrop } from "@admitto/ui";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import "./note-modal.css";
 
@@ -37,7 +37,7 @@ export function NoteModal({ open, onClose, onSubmit }: Readonly<NoteModalProps>)
 
   return (
     <dialog open className="note-modal" aria-modal="true" aria-label="Add note">
-      <div className="note-modal__backdrop" role="presentation" onClick={handleClose} />
+      <ModalBackdrop onClose={handleClose} />
       <div ref={panelRef} className="note-modal__panel">
         <p id="note-modal-hint" className="note-modal__hint">
           Do not record medical, dietary, or other sensitive personal data.

@@ -7,6 +7,7 @@ import {
   Card,
   EmptyState,
   Input,
+  ModalBackdrop,
   PageHeader,
   Select,
   ticketTypeChartColor,
@@ -728,7 +729,7 @@ function OverviewModal({
 
   return (
     <dialog open className="overview-modal" aria-modal="true" aria-labelledby={titleId}>
-      <div className="overview-modal__backdrop" role="presentation" onClick={onClose} />
+      <ModalBackdrop onClose={onClose} />
       <div ref={panelRef} className="overview-modal__panel">
         <h2 id={titleId} className="overview-modal__title">
           {title}

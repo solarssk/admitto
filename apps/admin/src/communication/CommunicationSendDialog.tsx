@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, Select } from "@admitto/ui";
+import { Button, ModalBackdrop, Select } from "@admitto/ui";
 import { fetchBulkSendStatus, fetchTicketTypes, sendEventBulk } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { BulkSendFilter, RsvpStatus, TicketTypeDto } from "../api/types.js";
@@ -219,11 +219,7 @@ export function CommunicationSendDialog({
 
   return (
     <dialog open className="add-attendee-modal" aria-modal="true" aria-labelledby={titleId}>
-      <div
-        className="add-attendee-modal__backdrop"
-        role="presentation"
-        onClick={closeIfAllowed}
-      />
+      <ModalBackdrop onClose={closeIfAllowed} />
       <div className="add-attendee-modal__panel" ref={panelRef}>
         <h2 className="add-attendee-modal__title" id={titleId}>
           Send email

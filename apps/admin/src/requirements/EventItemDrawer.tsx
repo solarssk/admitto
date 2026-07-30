@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from "react";
-import { Button, IconButton, Input, Switch, Tooltip, useToast } from "@admitto/ui";
+import { Button, IconButton, Input, ModalBackdrop, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
   ApiError,
   deleteEventItem,
@@ -148,7 +148,7 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
         aria-modal="true"
         aria-labelledby="item-modal-title"
       >
-        <div className="event-item-modal__backdrop" role="presentation" onClick={onClose} />
+        <ModalBackdrop onClose={onClose} />
         <div ref={panelRef} className="event-item-modal__panel">
           <div className="event-item-modal__header">
             <div>

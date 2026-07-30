@@ -10,7 +10,7 @@ import {
   type RefObject,
 } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router";
-import { Button, EmptyState, PageHeader, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
+import { Button, EmptyState, ModalBackdrop, PageHeader, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
 import {
   ApiError,
   bulkChangeRsvpStatus,
@@ -375,7 +375,7 @@ function SendTicketsDialog({
 
   return (
     <dialog open className="add-attendee-modal" aria-modal="true" aria-labelledby={titleId}>
-      <div className="add-attendee-modal__backdrop" role="presentation" onClick={onClose} />
+      <ModalBackdrop onClose={onClose} />
       <div className="add-attendee-modal__panel" ref={panelRef}>
         <h2 className="add-attendee-modal__title" id={titleId}>
           Send tickets
@@ -507,7 +507,7 @@ function CardPickerDialog<T>({
 
   return (
     <dialog open className="add-attendee-modal" aria-modal="true" aria-labelledby={titleId}>
-      <div className="add-attendee-modal__backdrop" role="presentation" onClick={onClose} />
+      <ModalBackdrop onClose={onClose} />
       <div className="add-attendee-modal__panel" ref={panelRef}>
         <h2 className="add-attendee-modal__title" id={titleId}>
           {title}

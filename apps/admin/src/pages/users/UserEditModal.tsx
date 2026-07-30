@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Badge, Button, Switch } from "@admitto/ui";
+import { Badge, Button, ModalBackdrop, Switch } from "@admitto/ui";
 import {
   fetchAdminEvents,
   fetchAdminOrganizations,
@@ -263,7 +263,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
   return (
     <>
       <dialog open className="users-modal" aria-modal="true" aria-labelledby={titleId}>
-        <div className="users-modal__backdrop" role="presentation" onClick={handleClose} />
+        <ModalBackdrop onClose={handleClose} />
         <div ref={panelRef} className="users-modal__panel">
           <h2 className="users-modal__title" id={titleId}>
             Edit {displayTitle}
