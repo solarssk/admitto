@@ -2684,6 +2684,15 @@
   padding-top: 0;
 }
 
+/* Branding's Font-by-surface rows pair a two-line label+description with a single-line <select> -
+   .settings-row's own flex-start (correct for its other users, e.g. Mail transport's Switch rows,
+   where the control is meant to line up with the label specifically) left the select sitting flush
+   at the top instead of centered against the full two-line block beside it. Scoped here rather
+   than changed on .settings-row itself, which those other rows still rely on unchanged. */
+.font-surface-rows .settings-row {
+  align-items: center;
+}
+
 .settings-row__text strong {
   display: block;
   margin-bottom: var(--space-1);

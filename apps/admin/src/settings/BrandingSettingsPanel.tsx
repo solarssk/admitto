@@ -719,7 +719,7 @@ export function BrandingSettingsPanel() {
         <p className="at-hint branding-scope-hint" style={{ marginBottom: 8 }}>
           Use a different font for each surface, or the same one everywhere.
         </p>
-        <div aria-labelledby="branding-font-surface-label">
+        <div aria-labelledby="branding-font-surface-label" className="font-surface-rows">
           <div className="settings-row">
             <div className="settings-row__text">
               <strong>Admin panel</strong>
