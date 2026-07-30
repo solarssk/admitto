@@ -461,7 +461,8 @@ describe("CfAccessEditor (slice 4)", () => {
     await screen.findByRole("switch", { name: "Enabled" });
     expect(screen.queryByText(/Before you enable/)).toBeNull();
     fireEvent.click(screen.getByRole("switch", { name: "Enabled" }));
-    await screen.findByText(/Before you enable/);
+    const warning = await screen.findByText(/Before you enable/);
+    expect(warning.closest(".at-notice--warning")).toBeTruthy();
   });
 
   it("does not show the before-enable warning for an already-active config", async () => {
