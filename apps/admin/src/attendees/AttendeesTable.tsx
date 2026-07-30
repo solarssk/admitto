@@ -269,7 +269,7 @@ export interface AttendeesTableProps {
   ticketTypesError?: string | null;
   onRetryTicketTypes?: () => void;
   onSearchChange: (value: string) => void;
-  onStatusFilterChange: (value: "all" | "admitted" | "not_admitted") => void;
+  onStatusFilterChange: (value: AttendeeStatusFilter) => void;
   onTicketTypeFilterChange: (value: string) => void;
   onRsvpStatusFilterChange: (value: "" | RsvpStatus) => void;
   onMailStatusFilterChange: (value: "" | AttendeeMailStatusFilter) => void;

@@ -23,7 +23,7 @@ export class ExportOnlyAdapter implements MailerAdapter {
   ) {}
 
   async close(): Promise<void> {
-    return Promise.resolve();
+    return;
   }
 
   async send(message: MailMessage): Promise<SendResult> {

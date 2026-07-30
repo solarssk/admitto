@@ -1452,8 +1452,8 @@ function buildPatchUpdateData(
   statusChange: PatchAttendeeStatusChange,
 ): Prisma.AttendeeUpdateInput {
   return {
-    ...(profileChanges?.data ?? {}),
-    ...(rsvpChange?.data ?? {}),
+    ...profileChanges?.data,
+    ...rsvpChange?.data,
     ...(statusChange !== undefined ? { status: statusChange } : {}),
   };
 }

@@ -7,7 +7,7 @@ function extractTicketTokenFromUrl(input: string): string | null {
 
 /** Strip wedge suffix noise, extract ticket token from URLs, trim whitespace. */
 export function normalizeScannedInput(raw: string): string {
-  const trimmed = raw.replace(/[\r\n\t]+$/g, "").trim();
+  const trimmed = raw.trim();
   return extractTicketTokenFromUrl(trimmed) ?? trimmed;
 }
 
