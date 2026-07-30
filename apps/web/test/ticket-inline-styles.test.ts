@@ -23,4 +23,42 @@ describe("buildTicketPageStyles", () => {
     const bareVarRefs = [...css.matchAll(/var\((--[a-z-]+)\)/g)].map((m) => m[1]);
     expect(bareVarRefs).toEqual(["--primary"]);
   });
+
+  it("self-hosts Inter's @font-face for the default (unset) font pick", () => {
+    // The ticket page has no bundler and never loads packages/ui's fonts.css - without this, the
+    // --font-sans fallback naming "Inter" would resolve to nothing and silently render system-ui.
+    const css = buildTicketPageStyles();
+    expect(css).toContain("@font-face");
+    expect(css).toContain("font-family: 'Inter'");
+    expect(css).toContain("url(/vendor/fontsource/inter/");
+  });
+
+  it("self-hosts the active built-in font's @font-face (e.g. Manrope)", () => {
+    const css = buildTicketPageStyles({ font_family_name: "Manrope" });
+    expect(css).toContain("font-family: 'Manrope'");
+    expect(css).toContain("url(/vendor/fontsource/manrope/");
+    // Only the active family is inlined, not all 4 built-ins.
+    expect(css).not.toContain("font-family: 'Space Grotesk'");
+    expect(css).not.toContain("font-family: 'IBM Plex Sans'");
+  });
+
+  it("does not duplicate a self-hosted built-in face when a custom uploaded family is active", () => {
+    const fontUrl = "https://cdn.example.com/fonts/brand.woff2";
+    const css = buildTicketPageStyles({
+      font_family_name: "Brand Sans",
+      custom_font_families: [{ name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: fontUrl }] }],
+    });
+    expect(css).toContain("@font-face");
+    expect(css).toContain(fontUrl);
+    expect(css).not.toContain("/vendor/fontsource/");
+  });
+
+  it("falls back to self-hosted Inter when font_family_name matches neither a built-in nor a saved custom family", () => {
+    // e.g. stale data left over from a deleted custom family - fonts.css imports Inter
+    // unconditionally regardless of the active pick, so the admin SPA always has a real face to
+    // fall back to; this mirrors that instead of silently rendering with no font-face at all.
+    const css = buildTicketPageStyles({ font_family_name: "Some Deleted Family" });
+    expect(css).toContain("font-family: 'Inter'");
+    expect(css).toContain("url(/vendor/fontsource/inter/");
+  });
 });
