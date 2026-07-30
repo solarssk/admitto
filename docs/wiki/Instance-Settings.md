@@ -9,6 +9,8 @@
 
 Use the supported instance settings without confusing them with event-level settings.
 
+Admitto shows this area as **Organisation settings**. These settings are available only to Superadmins, and some of them affect the whole instance.
+
 ## Before you start
 
 Use a named Superadmin account, record the intended change, and prepare a synthetic test account or event.

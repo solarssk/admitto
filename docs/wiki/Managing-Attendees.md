@@ -60,6 +60,6 @@ Saved attendee details become available to templates, ticket rendering, filters,
 ## Related pages
 
 - [Importing Attendees](Importing-Attendees)
-- [Ticket Types and Requirements](Ticket-Types-and-Requirements)
-- [Sending Tickets and Delivery](Sending-Tickets-and-Delivery)
+- [Requirements and Fulfilment](Requirements-and-Fulfilment)
+- [Sending Messages and Delivery](Sending-Tickets-and-Delivery)
 - [Manual Lookup and Corrections](Manual-Lookup-and-Corrections)

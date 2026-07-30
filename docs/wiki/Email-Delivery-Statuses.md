@@ -26,5 +26,5 @@ Filters show recorded facts; they do not guarantee that a person read the email.
 
 ## Related pages
 
-- [Sending Tickets and Delivery](Sending-Tickets-and-Delivery)
+- [Sending Messages and Delivery](Sending-Tickets-and-Delivery)
 - [Mail Delivery Administration](Mail-Delivery-Administration)

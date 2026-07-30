@@ -51,4 +51,4 @@ Saving changes the source used for later previews, tests, initial sends, and res
 
 - [Advanced: Editing MJML and HTML](Advanced-Email-Templates)
 - [Template Variables](Template-Variables)
-- [Sending Tickets and Delivery](Sending-Tickets-and-Delivery)
+- [Sending Messages and Delivery](Sending-Tickets-and-Delivery)

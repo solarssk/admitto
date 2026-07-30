@@ -53,5 +53,5 @@ Changes to the event title, date, time zone, location, capacity, or images becom
 
 - [Create an Event](Create-an-Event)
 - [First Event Checklist](First-Event-Checklist)
-- [Ticket Types and Requirements](Ticket-Types-and-Requirements)
+- [Requirements and Fulfilment](Requirements-and-Fulfilment)
 - [Reports and Archiving](Reports-and-Archiving)

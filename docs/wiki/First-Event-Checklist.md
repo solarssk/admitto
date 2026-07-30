@@ -11,7 +11,8 @@ Use this checklist before an event. It is a practical starting point, not a repl
 
 - [ ] [Create the event](Create-an-Event) with the correct title, permanent URL slug, date, time zone, and optional location.
 - [ ] Open [Event Overview and Settings](Event-Overview-and-Settings) and set capacity if the event has a limit.
-- [ ] Add the [ticket types, custom attendee fields, items, and check-in requirements](Ticket-Types-and-Requirements) that staff need.
+- [ ] Add the [ticket types](Ticket-Types) and [custom attendee fields](Custom-Attendee-Fields) that attendee data needs.
+- [ ] Configure [event items and check-in behaviour](Event-Items-and-Check-in-Behaviour) for operators.
 - [ ] Confirm that managers and operators have the right organisation and event access.
 
 ## Prepare attendees and tickets

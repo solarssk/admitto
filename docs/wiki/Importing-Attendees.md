@@ -58,4 +58,5 @@ A committed import changes the attendee list and records an import-history entry
 
 - [Import File Reference](Import-File-Reference)
 - [Managing Attendees](Managing-Attendees)
-- [Ticket Types and Requirements](Ticket-Types-and-Requirements)
+- [Ticket Types](Ticket-Types)
+- [Custom Attendee Fields](Custom-Attendee-Fields)

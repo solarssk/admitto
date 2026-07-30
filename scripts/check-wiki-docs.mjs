@@ -12,7 +12,12 @@ const requiredPages = [
   "Event-Overview-and-Settings.md",
   "Managing-Attendees.md",
   "Importing-Attendees.md",
-  "Ticket-Types-and-Requirements.md",
+  "Ticket-Types.md",
+  "Custom-Attendee-Fields.md",
+  "Requirements-and-Fulfilment.md",
+  "Event-Items-and-Check-in-Behaviour.md",
+  "QR-Tickets.md",
+  "Pass-Statuses.md",
   "Email-Templates.md",
   "Advanced-Email-Templates.md",
   "Template-Variables.md",
@@ -39,12 +44,30 @@ const requiredPages = [
 ];
 const metadataLabels = ["Audience", "Required role", "Feature status", "Last verified"];
 const validStatuses = new Set(["Available", "Preview", "Planned", "Deprecated"]);
+const requiredSidebarSections = [
+  "Start Here",
+  "Event Management",
+  "Registration and Attendees",
+  "Requirements and Fulfilment",
+  "Tickets and Passes",
+  "Communication",
+  "Check-in Operations",
+  "Organisation Administration",
+  "System Administration",
+  "Integrations",
+  "Reference",
+  "Help",
+  "Technical Documentation",
+];
 const workflowPages = new Set([
   "Create-an-Event.md",
   "Event-Overview-and-Settings.md",
   "Managing-Attendees.md",
   "Importing-Attendees.md",
-  "Ticket-Types-and-Requirements.md",
+  "Ticket-Types.md",
+  "Custom-Attendee-Fields.md",
+  "Event-Items-and-Check-in-Behaviour.md",
+  "QR-Tickets.md",
   "Email-Templates.md",
   "Advanced-Email-Templates.md",
   "Sending-Tickets-and-Delivery.md",
@@ -189,6 +212,9 @@ if (!existsSync(wikiRoot) || !statSync(wikiRoot).isDirectory()) {
   }
 
   const sidebar = readFileSync(resolve(wikiRoot, "_Sidebar.md"), "utf8");
+  for (const section of requiredSidebarSections) {
+    if (!sidebar.includes(`**${section}**`)) fail(`_Sidebar.md is missing the ${section} section.`);
+  }
   for (const page of requiredPages.filter((page) => page !== "_Sidebar.md")) {
     const slug = page.slice(0, -3);
     if (!sidebar.includes(`](${slug})`)) fail(`_Sidebar.md does not link to ${slug}.`);

@@ -49,4 +49,4 @@ Manual admission records the manual method. Undo or administrative revoke adds a
 ## Related pages
 
 - [Scanning Tickets and Check-in Results](Scanning-Tickets-and-Results)
-- [Ticket Types and Requirements](Ticket-Types-and-Requirements)
+- [Event Items and Check-in Behaviour](Event-Items-and-Check-in-Behaviour)

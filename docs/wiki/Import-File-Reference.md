@@ -41,4 +41,5 @@ With **Overwrite existing attendees** off, a matching attendee is skipped. With 
 ## Related pages
 
 - [Importing Attendees](Importing-Attendees)
-- [Ticket Types and Requirements](Ticket-Types-and-Requirements)
+- [Ticket Types](Ticket-Types)
+- [Custom Attendee Fields](Custom-Attendee-Fields)

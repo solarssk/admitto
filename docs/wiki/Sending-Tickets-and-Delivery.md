@@ -1,4 +1,4 @@
-# Sending Tickets and Delivery
+# Sending Messages and Delivery
 
 > **Audience:** Event Managers
 > **Required role:** Organisation Admin
@@ -7,7 +7,7 @@
 
 ## What this page helps you do
 
-Choose the intended recipients, count them before sending, and investigate delivery results.
+Choose the intended recipients for a ticket or named template, count them before sending, and investigate delivery results.
 
 ## Before you start
 

@@ -11,7 +11,7 @@ Choose the guide that matches your work:
 
 - I organise an event: start with [First Event Checklist](First-Event-Checklist).
 - I prepare attendee data: read [Importing Attendees](Importing-Attendees) and the [Import File Reference](Import-File-Reference).
-- I create event messages: read [Email Templates](Email-Templates) and [Sending Tickets and Delivery](Sending-Tickets-and-Delivery).
+- I create event messages: read [Email Templates](Email-Templates) and [Sending Messages and Delivery](Sending-Tickets-and-Delivery).
 - I work at the entrance: read [Operator Quick Start](Operator-Quick-Start).
 - I administer an organisation: read [Organisation Administration](Organisation-Administration).
 - I manage the Admitto instance: read [Superadmin Quick Start](Superadmin-Quick-Start).

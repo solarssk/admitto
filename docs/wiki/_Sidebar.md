@@ -12,16 +12,32 @@
 
 - [Create an Event](Create-an-Event)
 - [Event Overview and Settings](Event-Overview-and-Settings)
+- [Reports and Archiving](Reports-and-Archiving)
+
+**Registration and Attendees**
+
 - [Managing Attendees](Managing-Attendees)
 - [Importing Attendees](Importing-Attendees)
-- [Reports and Archiving](Reports-and-Archiving)
+- [Ticket Types](Ticket-Types)
+- [Custom Attendee Fields](Custom-Attendee-Fields)
+
+**Requirements and Fulfilment**
+
+- [Requirements and Fulfilment](Requirements-and-Fulfilment)
+- [Event Items and Check-in Behaviour](Event-Items-and-Check-in-Behaviour)
 
 **Tickets and Passes**
 
-- [Ticket Types and Requirements](Ticket-Types-and-Requirements)
+- [QR Tickets](QR-Tickets)
+- [Pass Statuses](Pass-Statuses)
+
+**Communication**
+
 - [Email Templates](Email-Templates)
 - [Advanced Email Templates](Advanced-Email-Templates)
-- [Sending Tickets and Delivery](Sending-Tickets-and-Delivery)
+- [Template Variables](Template-Variables)
+- [Sending Messages and Delivery](Sending-Tickets-and-Delivery)
+- [Email Delivery Statuses](Email-Delivery-Statuses)
 
 **Check-in Operations**
 
@@ -51,8 +67,6 @@
 - [Reference Hub](Reference-and-Troubleshooting)
 - [Glossary](Glossary)
 - [Import File Reference](Import-File-Reference)
-- [Template Variables](Template-Variables)
-- [Email Delivery Statuses](Email-Delivery-Statuses)
 
 **Help**
 

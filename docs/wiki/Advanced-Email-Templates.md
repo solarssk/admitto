@@ -52,4 +52,4 @@ Saving replaces the event template source used by later previews, tests, initial
 
 - [Email Templates](Email-Templates)
 - [Template Variables](Template-Variables)
-- [Sending Tickets and Delivery](Sending-Tickets-and-Delivery)
+- [Sending Messages and Delivery](Sending-Tickets-and-Delivery)
