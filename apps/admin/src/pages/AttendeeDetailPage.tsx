@@ -1481,7 +1481,7 @@ export function AttendeeDetailPage() {
   if (loading && !detail) {
     return whenShown(
       showLoadingSkeleton,
-      <div className="attendee-detail-page">
+      <div className="attendee-detail-page screen">
         <Skeleton variant="text" lines={2} />
         <Skeleton variant="rect" height={240} className="attendee-detail-skeleton" />
       </div>,
@@ -1490,7 +1490,7 @@ export function AttendeeDetailPage() {
 
   if (notFound) {
     return (
-      <div className="attendee-detail-page">
+      <div className="attendee-detail-page screen">
         <PageHeader title="Attendee not found" actions={<Button variant="secondary" onClick={goBack}>Back</Button>} />
         <p>The attendee could not be found or you do not have access.</p>
       </div>
@@ -1499,7 +1499,7 @@ export function AttendeeDetailPage() {
 
   if (!detail || !form) {
     return (
-      <div className="attendee-detail-page">
+      <div className="attendee-detail-page screen">
         <PageHeader title="Attendee" actions={<Button variant="secondary" onClick={goBack}>Back</Button>} />
         {error && <p className="text-error">{error}</p>}
       </div>
@@ -1543,7 +1543,7 @@ export function AttendeeDetailPage() {
     : null;
 
   return (
-    <div className="attendee-detail-page">
+    <div className="attendee-detail-page screen">
       <PageHeader
         title={detail.name}
         subtitle="Manage this attendee's profile, ticket, and check-in status."
