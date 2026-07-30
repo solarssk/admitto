@@ -49,8 +49,8 @@ export function SettingsLayout() {
   return (
     <div className="settings-page">
       <PageHeader
-        title="Settings"
-        subtitle="Instance configuration, security policies, and identity providers."
+        title="Organisation settings"
+        subtitle="Organisation configuration, security policies, and identity providers."
         actions={
           <a
             href="https://github.com/solarssk/admitto/wiki"

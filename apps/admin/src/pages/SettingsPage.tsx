@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
 import { BrandingSettingsPanel } from "../settings/BrandingSettingsPanel.js";
 import { MailTransportPanel } from "../settings/MailTransportPanel.js";
-import { InstanceUrlPanel } from "../settings/InstanceUrlPanel.js";
+import { GeneralSettingsPanel } from "../settings/GeneralSettingsPanel.js";
 import { SessionsPanel } from "../settings/SessionsPanel.js";
 import { EventArchivingPanel } from "../settings/EventArchivingPanel.js";
 import { SecurityPanel } from "../settings/SecurityPanel.js";
@@ -65,7 +65,7 @@ export function SettingsTabContent() {
         label="General"
         className="settings-sections"
       >
-        <InstanceUrlPanel />
+        <GeneralSettingsPanel />
       </SettingsTabPanel>
       <SettingsTabPanel
         tab="branding"
