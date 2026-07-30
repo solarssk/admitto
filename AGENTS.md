@@ -141,6 +141,16 @@ new file. Avoid hardcoding "current milestone/version" callouts in prose here â€
 `CHANGELOG.md`'s `[Unreleased]` section or the open GitHub milestone instead, so this file can't
 drift out of date.
 
+**User Wiki documentation gate:** `docs/wiki/` is the sole, versioned source for the published
+GitHub Wiki and is the deliberate exception to the fixed-document-set rule above. For every
+human- or AI-authored PR, assess whether a user-visible workflow, role, terminology, availability
+status, or recovery step changed. Update the relevant Wiki source page when it did; otherwise
+complete the `No Wiki update needed` declaration in the PR template with a specific reason. Run
+`npm run docs:check` after changing Wiki source. Do not edit the GitHub Wiki directly: the publish
+workflow replaces it from `docs/wiki/` after merge. Write user guidance in clear English, use only
+synthetic examples, and never publish customer names, personal data, environments, credentials,
+or unsupported operational workarounds.
+
 ## Claude Code
 
 Claude-specific workflow (plan gate, split guidelines): [CLAUDE.md](CLAUDE.md).

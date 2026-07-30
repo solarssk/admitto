@@ -102,6 +102,7 @@ More detail: [infra/README.md](infra/README.md) · [apps/web/README.md](apps/web
 
 | You are… | Start here |
 |----------|------------|
+| **Event Manager, check-in operator, or Superadmin** (using Admitto) | [User guide Wiki](https://github.com/solarssk/admitto/wiki) |
 | **Developer** (local setup, tests) | This README · [infra/README.md](infra/README.md) · [AGENTS.md](AGENTS.md) |
 | **Operator** (production deploy) | [deploy/README.md](deploy/README.md) |
 | **Security / privacy reviewer** | [SECURITY.md](SECURITY.md) · [docs/SECURITY-CONTROLS.md](docs/SECURITY-CONTROLS.md) · [docs/ARCHITECTURE-FOR-AUDITORS.md](docs/ARCHITECTURE-FOR-AUDITORS.md) |

@@ -20,6 +20,27 @@ env:
   ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
 
 jobs:
+  wiki-docs:
+    # Dependabot pull requests are generated without the human/agent PR template. Dependency
+    # updates still receive the normal build and security checks; this gate applies to authored PRs.
+    if: github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: "24.17.0"
+      - name: Validate Wiki source
+        run: npm run docs:check
+      - name: Validate pull request documentation impact
+        if: github.event_name == 'pull_request'
+        run: npm run docs:pr-check
+
   # build-test used to be one sequential job (~7-8 min, mostly the coverage step across all 14
   # workspaces). Split into 4 parallel jobs so they run concurrently instead of one after another
   # - free on this public repo (unlimited Actions minutes), only wall-clock time is at stake.

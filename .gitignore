@@ -8,6 +8,8 @@ _reference/
 docs/*
 !docs/assets/
 !docs/assets/**
+!docs/wiki/
+!docs/wiki/**
 !docs/SECURITY-CONTROLS.md
 !docs/CORPORATE-DEPLOYMENT.md
 !docs/ARCHITECTURE-FOR-AUDITORS.md
