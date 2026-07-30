@@ -527,10 +527,32 @@ describe("BrandingSettingsPanel — font picker", () => {
     await screen.findByLabelText("Organisation name");
 
     fireEvent.click(screen.getByRole("button", { name: "Remove Acme Sans" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove", exact: true }));
 
     expect(screen.queryByText("Acme Sans")).toBeNull();
     expect(screen.getByRole("button", { name: /Admitto Sans/ }).closest(".font-option-card")!.className).toContain("font-option-card--active");
     expect(screen.getByText(/Unsaved changes/)).toBeTruthy();
+  });
+
+  it("clicking Remove asks for confirmation first - Cancel keeps the family", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce({
+      theme: {
+        font_family_name: "Acme Sans",
+        custom_font_families: [
+          { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
+        ],
+      },
+    });
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove Acme Sans" }));
+    expect(screen.getByText('Remove "Acme Sans"?')).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByText('Remove "Acme Sans"?')).toBeNull();
+    expect(screen.getByText("Acme Sans")).toBeTruthy();
   });
 
   it("deleting a saved-but-inactive custom family leaves the active pick untouched", async () => {
@@ -547,6 +569,7 @@ describe("BrandingSettingsPanel — font picker", () => {
     await screen.findByLabelText("Organisation name");
 
     fireEvent.click(screen.getByRole("button", { name: "Remove Acme Sans" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove", exact: true }));
 
     expect(screen.queryByText("Acme Sans")).toBeNull();
     expect(screen.getByRole("button", { name: /Manrope/ }).closest(".font-option-card")!.className).toContain("font-option-card--active");

@@ -3359,8 +3359,23 @@
   right: -8px;
 }
 
+.font-option-card__remove:hover:not(:disabled) {
+  background: var(--status-error-tint);
+  border-color: var(--status-error);
+  color: var(--status-error);
+}
+
 .font-option-card__edit {
   left: -8px;
+}
+
+.font-option-card__edit:hover:not(:disabled) {
+  /* --primary-tint (--at-blue-050) reads as barely-there next to --status-error-tint on the
+     remove button beside it - a pale blue is harder to see against a white card than a pale red
+     at the same shade depth, so this one goes one shade darker to read as equally "filled". */
+  background: var(--at-blue-100);
+  border-color: var(--primary);
+  color: var(--primary);
 }
 
 .font-styles-pill-wrap {

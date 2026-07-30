@@ -3,6 +3,7 @@ import { applyThemeVars, Button, Card, IconButton, Input, useToast } from "@admi
 import { fetchOrgBranding, fetchStaffTheme, patchOrgBranding, saveStaffTheme } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { BrandingCustomFontFamilyDto, BrandingThemeDto, SetupOrgBrandingDto } from "../api/types.js";
+import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { LogoUploadZone } from "../components/LogoUploadZone.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { safeBrandingLogoHref } from "../utils/safeBrandingLogoHref.js";
@@ -293,6 +294,11 @@ export function BrandingSettingsPanel() {
   // one. Kept separate from familyModalOpen since the modal's own prefill data (initialFamily)
   // is looked up by this name each render, not stored as a snapshot here.
   const [editingFamilyName, setEditingFamilyName] = useState<string | null>(null);
+  // Name of the saved family a Remove click is asking to confirm, or null when no confirmation
+  // is pending - deleting a saved family isn't undoable from here (its uploaded files stay on
+  // disk but the org would need to re-upload them to use it again), so it goes through the same
+  // ConfirmDialog pattern as other destructive actions instead of firing on the icon click alone.
+  const [pendingDeleteFamilyName, setPendingDeleteFamilyName] = useState<string | null>(null);
 
   const syncColorUiState = useCallback((theme: BrandingThemeDto) => {
     const primary = theme.primary;
@@ -456,6 +462,7 @@ export function BrandingSettingsPanel() {
         custom_font_families: remaining.length > 0 ? remaining : undefined,
       };
     });
+    setPendingDeleteFamilyName(null);
   };
 
   /** Restores the Theme card's draft to Admitto's own factory defaults (blue, Admitto Sans) -
@@ -668,7 +675,7 @@ export function BrandingSettingsPanel() {
             onPickBuiltIn={handlePickBuiltInFont}
             onSelectCustom={handleSelectCustomFamily}
             onEditCustom={handleEditCustomFamily}
-            onDeleteCustom={handleDeleteCustomFamily}
+            onDeleteCustom={setPendingDeleteFamilyName}
             onOpenFamilyModal={() => setFamilyModalOpen(true)}
           />
         </div>
@@ -688,6 +695,16 @@ export function BrandingSettingsPanel() {
           onClose={closeFamilyModal}
           onSaved={handleFamilySaved}
           initialFamily={editingFamilyName ? (customFamilies.find((f) => f.name === editingFamilyName) ?? null) : null}
+        />
+
+        <ConfirmDialog
+          open={pendingDeleteFamilyName !== null}
+          title={`Remove "${pendingDeleteFamilyName}"?`}
+          message="This removes the saved font family from this list. To use it again later, you'll need to upload its files again."
+          confirmLabel="Remove"
+          confirmVariant="danger"
+          onConfirm={() => handleDeleteCustomFamily(pendingDeleteFamilyName!)}
+          onCancel={() => setPendingDeleteFamilyName(null)}
         />
 
         <div className="theme-preview">
