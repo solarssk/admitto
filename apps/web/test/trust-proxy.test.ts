@@ -60,7 +60,7 @@ describe("parseTrustedProxyCidrs", () => {
   });
 
   it("skips malformed entries but keeps valid ones", () => {
-    const list = parseTrustedProxyCidrs("not-an-ip, 127.0.0.1/32, 10.0.0.0/99");
+    const list = parseTrustedProxyCidrs("not-an-ip, 127.0.0.1/32, 10.0.0.0/99, /24");
     expect(list.check("127.0.0.1", "ipv4")).toBe(true);
   });
 
@@ -103,6 +103,21 @@ describe("isTrustedProxyPeer / shouldTrustForwardedHeaders", () => {
   it("does not trust when the socket peer cannot be determined", async () => {
     const res = await probeWithPeer(undefined);
     expect(await res.json()).toEqual({ trustedPeer: false, trustForwarded: false });
+  });
+
+  it("does not trust when the reported peer address is not a valid IP", async () => {
+    mockedGetConnInfo.mockReturnValue({
+      remote: { address: "not-an-ip", port: 1234 },
+    } as ReturnType<typeof getConnInfo>);
+    const app = new Hono();
+    app.get("/probe", (c) => c.json({ trustedPeer: isTrustedProxyPeer(c) }));
+    const res = await app.request("/probe");
+    expect(await res.json()).toEqual({ trustedPeer: false });
+  });
+
+  it("trusts an IPv6 loopback peer under the default allowlist", async () => {
+    const res = await probeWithPeer("::1");
+    expect(await res.json()).toEqual({ trustedPeer: true, trustForwarded: true });
   });
 });
 
