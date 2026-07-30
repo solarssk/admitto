@@ -1136,9 +1136,8 @@ describe("AuditLogPanel rendering", () => {
     renderAuditPanel();
     await screen.findByText("No audit log entries yet");
 
-    expect(
-      await screen.findByText(/Live updates stopped coming through/, {}, { timeout: 12000 }),
-    ).toBeTruthy();
+    const pollWarning = await screen.findByText(/Live updates stopped coming through/, {}, { timeout: 12000 });
+    expect(pollWarning.closest(".at-notice--warning")).toBeTruthy();
 
     await waitFor(
       () => expect(screen.queryByText(/Live updates stopped coming through/)).toBeNull(),
@@ -1730,9 +1729,8 @@ describe("AuditLogPanel Security view rendering", () => {
     renderSecurityPanel();
     await screen.findByText("No security events yet");
 
-    expect(
-      await screen.findByText(/Live updates stopped coming through/, {}, { timeout: 12000 }),
-    ).toBeTruthy();
+    const pollWarning = await screen.findByText(/Live updates stopped coming through/, {}, { timeout: 12000 });
+    expect(pollWarning.closest(".at-notice--warning")).toBeTruthy();
 
     await waitFor(
       () => expect(screen.queryByText(/Live updates stopped coming through/)).toBeNull(),
@@ -2039,9 +2037,8 @@ describe("SystemLogsPanel rendering", () => {
     openSystemLogsView();
     await screen.findByText("No log activity yet");
 
-    expect(
-      await screen.findByText(/Live updates stopped coming through/, {}, { timeout: 12000 }),
-    ).toBeTruthy();
+    const pollWarning = await screen.findByText(/Live updates stopped coming through/, {}, { timeout: 12000 });
+    expect(pollWarning.closest(".at-notice--warning")).toBeTruthy();
 
     await waitFor(
       () => expect(screen.queryByText(/Live updates stopped coming through/)).toBeNull(),
