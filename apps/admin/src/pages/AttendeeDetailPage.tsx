@@ -8,6 +8,7 @@ import {
   EmptyState,
   Input,
   ModalBackdrop,
+  Notice,
   PageHeader,
   resolveStatusMeta,
   Select,
@@ -1617,7 +1618,7 @@ export function AttendeeDetailPage() {
           itself instead, otherwise it's stuck behind the modal's opaque backdrop, invisible
           (bot review), and duplicated in the DOM behind it if left unconditional here. */}
       {error && !editMode && <p className="text-error">{error}</p>}
-      {itemsWarning && <p className="attendee-form__warn">{itemsWarning}</p>}
+      {itemsWarning && <Notice variant="warning" className="attendee-form__warn">{itemsWarning}</Notice>}
 
       <div className="attendee-status-strip">
         <div className="attendee-status-chip">
@@ -1749,12 +1750,12 @@ export function AttendeeDetailPage() {
               </p>
             )}
             {staleWrite && (
-              <div className="attendee-form__warn">
-                <p>Someone else updated this attendee. Reload and reapply your edits.</p>
+              <Notice variant="warning" className="attendee-form__warn">
+                Someone else updated this attendee. Reload and reapply your edits.{" "}
                 <Button type="button" variant="secondary" size="sm" onClick={() => void handleReload()} disabled={reloading}>
                   {reloading ? "Reloading…" : "Reload"}
                 </Button>
-              </div>
+              </Notice>
             )}
             <Tooltip
               content={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
@@ -1783,9 +1784,9 @@ export function AttendeeDetailPage() {
                   {...NO_AUTOFILL_PROPS}
                 />
                 {emailChanged && (
-                  <p className="attendee-form__warn">
+                  <Notice variant="warning" className="attendee-form__warn">
                     This changes the attendee&apos;s primary address. To send a ticket elsewhere, use Resend ticket.
-                  </p>
+                  </Notice>
                 )}
                 {emailConflict && (
                   <p className="attendee-form__error">This email is already used by another attendee in this event.</p>
