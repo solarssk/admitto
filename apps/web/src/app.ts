@@ -222,6 +222,10 @@ import {
   handleGetSetupOrgBranding,
   handlePatchSetupOrgBranding,
 } from "./admin/setup-org-branding-routes.js";
+import {
+  handleGetSetupSupportContact,
+  handlePatchSetupSupportContact,
+} from "./admin/setup-support-contact-routes.js";
 import { handleGetSetup, handlePostSetup, resolveStaffEntryPath } from "./setup-routes.js";
 import {
   handleGetSessions,
@@ -958,6 +962,12 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/api/admin/setup/org-branding", staffAdminGate, (c) => handleGetSetupOrgBranding(c, db));
   app.patch("/api/admin/setup/org-branding", jsonPostCsrf, staffAdminGate, (c) =>
     handlePatchSetupOrgBranding(c, db),
+  );
+  app.get("/api/admin/setup/support-contact", staffAdminGate, (c) =>
+    handleGetSetupSupportContact(c, db),
+  );
+  app.patch("/api/admin/setup/support-contact", jsonPostCsrf, staffAdminGate, (c) =>
+    handlePatchSetupSupportContact(c, db),
   );
   app.post("/api/admin/setup/complete", jsonPostCsrf, staffAdminGate, (c) =>
     handlePostSetupComplete(c, db, rateLimitStore, mailInjectedBaseUrl),

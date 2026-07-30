@@ -60,6 +60,8 @@ import type {
   SetupChecksResponse,
   SetupOrgBrandingDto,
   PatchSetupOrgBrandingBody,
+  SetupSupportContactDto,
+  PatchSetupSupportContactBody,
   AuditLogResponse,
   SecurityAuditLogResponse,
   SystemLogResponse,
@@ -1627,6 +1629,20 @@ export async function patchOrgBranding(
 ): Promise<SetupOrgBrandingDto> {
   const res = await fetch("/api/admin/setup/org-branding", jsonPatchInit(body));
   return parseJson<SetupOrgBrandingDto>(res);
+}
+
+/** Load the support-contact identity fields — Settings → General. */
+export async function fetchSupportContact(signal?: AbortSignal): Promise<SetupSupportContactDto> {
+  const res = await fetch("/api/admin/setup/support-contact", { credentials: "same-origin", signal });
+  return parseJson<SetupSupportContactDto>(res);
+}
+
+/** Save the support-contact identity fields — Settings → General. */
+export async function patchSupportContact(
+  body: PatchSetupSupportContactBody,
+): Promise<SetupSupportContactDto> {
+  const res = await fetch("/api/admin/setup/support-contact", jsonPatchInit(body));
+  return parseJson<SetupSupportContactDto>(res);
 }
 
 /** Mark first-run onboarding wizard complete (superadmin, POST setup/complete). */

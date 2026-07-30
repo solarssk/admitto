@@ -917,6 +917,16 @@ export interface PatchSetupOrgBrandingBody {
   logo_url?: string | null;
 }
 
+export interface SetupSupportContactDto {
+  support_contact_name: string | null;
+  support_contact_email: string | null;
+}
+
+export interface PatchSetupSupportContactBody {
+  support_contact_name?: string;
+  support_contact_email?: string;
+}
+
 /** One row from GET /api/admin/audit-log. */
 export interface AuditLogEntryDto {
   id: string;

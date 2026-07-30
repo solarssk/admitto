@@ -26,7 +26,7 @@ export function InstanceSidebarFoot() {
           {isSuperadmin(assignments) && (
             <NavLink to="/admin/settings" className={navClass}>
               <i className="ti ti-settings" aria-hidden="true" />
-              <span>Settings</span>
+              <span>Organisation settings</span>
             </NavLink>
           )}
         </>

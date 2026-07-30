@@ -1632,9 +1632,9 @@
 }
 
 /* Notes tab (attendee detail) */
-/* Plain informational context, not a caution/danger - same neutral "well" treatment as
-   system-log-panel__notice (Settings > System logs), the deliberate non-alarming counterpart to
-   the red danger-zone-notice. */
+/* Plain informational context, not a caution/danger - same neutral "well" treatment as the
+   shared Notice component's info variant (@admitto/ui), the deliberate non-alarming counterpart
+   to the red danger-zone-notice. */
 .at-notes-hint {
   display: flex;
   align-items: flex-start;

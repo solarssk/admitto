@@ -32,6 +32,7 @@ export {
   type ToastItem,
   type ToastVariant,
 } from "./components/Toast.js";
+export { Notice, type NoticeProps, type NoticeVariant } from "./components/Notice.js";
 export {
   STATUS_MAP,
   resolveStatusMeta,
