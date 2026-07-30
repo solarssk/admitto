@@ -16,13 +16,23 @@
    the same way as Inter above, so they render identically for every visitor regardless of what's
    installed on their own OS - none of these are real "web-safe" OS fonts. Manrope and Space
    Grotesk ship no italic style at all (neither exists on Google Fonts) - the picker's "N styles"
-   count reflects that honestly rather than claiming a synthesized/faked italic is real. */
+   count reflects that honestly rather than claiming a synthesized/faked italic is real. 500/600
+   are included alongside 400/700 (unlike the picker's own Regular/Bold-only style model) because
+   the app's own UI text uses font-weight: 500/600 in many places (staff.css, shell.css) - without
+   these, that text would silently render via the nearest available face (700) instead of its
+   actual weight whenever one of these fonts is the active pick. */
 @import '@fontsource/manrope/400.css';
+@import '@fontsource/manrope/500.css';
+@import '@fontsource/manrope/600.css';
 @import '@fontsource/manrope/700.css';
 @import '@fontsource/space-grotesk/400.css';
+@import '@fontsource/space-grotesk/500.css';
+@import '@fontsource/space-grotesk/600.css';
 @import '@fontsource/space-grotesk/700.css';
 @import '@fontsource/ibm-plex-sans/400.css';
 @import '@fontsource/ibm-plex-sans/400-italic.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
 @import '@fontsource/ibm-plex-sans/700.css';
 @import '@fontsource/ibm-plex-sans/700-italic.css';
 

@@ -264,7 +264,7 @@ import {
 } from "./admin/system-settings-routes.js";
 import { handlePostClientError } from "./admin/client-error-routes.js";
 import { createStaffSpaHandlers } from "./staff-spa.js";
-import { serveTablerIcons } from "./vendor-assets.js";
+import { serveFontsourceFonts, serveTablerIcons } from "./vendor-assets.js";
 import {
   handleApiListProviders,
   handleApiGetProvider,
@@ -1204,6 +1204,7 @@ export function createApp(options: CreateAppOptions = {}) {
     return c.body(new Uint8Array(buf));
   });
   app.get("/vendor/tabler-icons/*", serveTablerIcons);
+  app.get("/vendor/fontsource/*", serveFontsourceFonts);
   app.get("/admin", staffAdminGate, staffSpa.serveSpaIndex);
   app.get("/admin/*", staffAdminGate, staffSpa.serveSpaIndex);
   app.get("/account", requireSessionHtml, staffSpa.serveSpaIndex);

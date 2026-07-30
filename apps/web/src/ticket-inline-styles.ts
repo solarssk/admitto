@@ -1,5 +1,6 @@
 import type { BrandingThemeInput } from "@admitto/ui";
-import { resolveThemeVars, themeVarsToStyleBlock } from "@admitto/ui";
+import { resolveThemeVars, sanitizeBrandingFontFamilyName, themeVarsToStyleBlock } from "@admitto/ui";
+import { builtInFontFaceCss } from "./vendor-assets.js";
 
 const TICKET_LAYOUT_CSS = `
 body.ticket-page { margin: 0; background: var(--surface-page, #f1f5f9); min-height: 100vh; display: grid; place-items: center; padding: 32px 16px; font-family: var(--font-sans, Inter, system-ui, sans-serif); color: var(--text-primary, #1d273b); }
@@ -81,6 +82,18 @@ body.ticket-page { margin: 0; background: var(--surface-page, #f1f5f9); min-heig
 `;
 
 export function buildTicketPageStyles(theme?: BrandingThemeInput | null): string {
-  const vars = themeVarsToStyleBlock(resolveThemeVars(theme));
-  return `${vars}\n${TICKET_LAYOUT_CSS}`;
+  const vars = resolveThemeVars(theme);
+  // resolveThemeVars only sets fontFaceCss for a *custom* uploaded family - the ticket page has no
+  // bundler and so never gets the admin SPA's own @fontsource CSS imports (fonts.css) for a
+  // built-in pick (Inter/Manrope/Space Grotesk/IBM Plex Sans). Self-host that one here instead; an
+  // unset font_family_name (the default pick) means Inter, matching the CSS fallback below. A name
+  // that matches neither a built-in nor a saved custom family (e.g. stale data from a deleted
+  // custom family) falls back to Inter too - fonts.css imports Inter unconditionally regardless of
+  // the active pick, so the admin SPA always has it as a working base; mirror that here rather
+  // than silently rendering with no self-hosted face at all.
+  if (!vars.fontFaceCss) {
+    const fontName = sanitizeBrandingFontFamilyName(theme?.font_family_name ?? "") ?? "Inter";
+    vars.fontFaceCss = builtInFontFaceCss(fontName) ?? builtInFontFaceCss("Inter");
+  }
+  return `${themeVarsToStyleBlock(vars)}\n${TICKET_LAYOUT_CSS}`;
 }
