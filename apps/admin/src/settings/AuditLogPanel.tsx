@@ -66,6 +66,7 @@ const ACTION_LABELS: Record<string, string> = {
   mail_transport_tested: "Mail transport tested",
   operator_sessions_bulk_revoked: "Operator sessions revoked",
   org_branding_logo_uploaded: "Organization branding logo uploaded",
+  branding_font_uploaded: "Branding font uploaded",
   retention_run: "Retention job run",
   role_granted: "Role granted",
   role_revoked: "Role revoked",

@@ -5,7 +5,7 @@ import { ApiError } from "../../src/api/client.js";
 import { SessionsPanel } from "../../src/settings/SessionsPanel.js";
 import { SecurityPanel } from "../../src/settings/SecurityPanel.js";
 import { AuditLogPanel } from "../../src/settings/AuditLogPanel.js";
-import { BrandingPanel } from "../../src/settings/BrandingPanel.js";
+import { BrandingSettingsPanel } from "../../src/settings/BrandingSettingsPanel.js";
 import { EventArchivingPanel } from "../../src/settings/EventArchivingPanel.js";
 import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 
@@ -64,6 +64,8 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchSystemLogs: vi.fn(),
     fetchStaffTheme: vi.fn(),
     saveStaffTheme: vi.fn(),
+    fetchOrgBranding: vi.fn(),
+    patchOrgBranding: vi.fn(),
     archiveEvent: vi.fn(),
     unarchiveEvent: vi.fn(),
   };
@@ -73,10 +75,12 @@ import {
   archiveEvent,
   fetchAdminEvents,
   fetchAuditLog,
+  fetchOrgBranding,
   fetchSecuritySettings,
   fetchSessions,
   fetchStaffTheme,
   fetchSystemLogs,
+  patchOrgBranding,
   patchSecuritySettings,
   revokeAllOperatorSessions,
   revokeSessionById,
@@ -102,14 +106,15 @@ describe("Settings panels delayed loading", () => {
     expect(screen.getByText("Loading…")).toBeTruthy();
   });
 
-  it("BrandingPanel shows the loading placeholder once the fetch has genuinely taken a moment", () => {
+  it("BrandingSettingsPanel shows the loading placeholder once the fetch has genuinely taken a moment", () => {
+    vi.mocked(fetchOrgBranding).mockResolvedValueOnce({ org_name: "Acme", logo_url: null });
     vi.mocked(fetchStaffTheme).mockImplementationOnce(() => new Promise(() => {}));
     vi.useFakeTimers();
-    renderWithToast(<BrandingPanel />);
+    renderWithToast(<BrandingSettingsPanel />);
     act(() => {
       vi.advanceTimersByTime(200);
     });
-    expect(screen.getByText("Loading branding…")).toBeTruthy();
+    expect(screen.getByText("Loading branding settings…")).toBeTruthy();
   });
 
   it("EventArchivingPanel shows the loading placeholder once the fetch has genuinely taken a moment", () => {
@@ -227,18 +232,37 @@ describe("AuditLogPanel operator errors", () => {
   });
 });
 
-describe("BrandingPanel operator errors", () => {
-  it("toasts operator-safe save failure", async () => {
+describe("BrandingSettingsPanel operator errors", () => {
+  it("toasts operator-safe save failure when both org branding and theme fail to save", async () => {
+    vi.mocked(fetchOrgBranding).mockResolvedValueOnce({ org_name: "Acme", logo_url: null });
     vi.mocked(fetchStaffTheme).mockResolvedValueOnce({ theme: { primary: "#112233" } });
+    vi.mocked(patchOrgBranding).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     vi.mocked(saveStaffTheme).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    renderWithToast(<BrandingPanel />);
+    renderWithToast(<BrandingSettingsPanel />);
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Save branding" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Save" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save branding" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to save branding/);
     });
+    expect(screen.queryByText("secret_internal")).toBeNull();
+  });
+
+  it("toasts a partial-failure message when only the theme save fails", async () => {
+    vi.mocked(fetchOrgBranding).mockResolvedValueOnce({ org_name: "Acme", logo_url: null });
+    vi.mocked(fetchStaffTheme).mockResolvedValueOnce({ theme: { primary: "#112233" } });
+    vi.mocked(patchOrgBranding).mockResolvedValueOnce({ org_name: "Acme", logo_url: null });
+    vi.mocked(saveStaffTheme).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderWithToast(<BrandingSettingsPanel />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Save" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/the rest was saved/);
+    });
+    expect(screen.queryByText("secret_internal")).toBeNull();
   });
 });
 

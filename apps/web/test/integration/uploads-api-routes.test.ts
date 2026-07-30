@@ -181,6 +181,25 @@ describe("POST /api/admin/uploads", () => {
     ).not.toBeNull();
   });
 
+  it("returns 500 server error when an unexpected (non-validation) error occurs after a successful upload", async () => {
+    const saved = process.env.INSTANCE_ORG_ID;
+    process.env.INSTANCE_ORG_ID = "org-that-does-not-exist";
+    try {
+      const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
+      const res = await app.request("/api/admin/uploads", {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin },
+        body: uploadForm(new Blob([png], { type: "image/png" }), "logo.png"),
+      });
+      expect(res.status).toBe(500);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("server error");
+    } finally {
+      if (saved === undefined) delete process.env.INSTANCE_ORG_ID;
+      else process.env.INSTANCE_ORG_ID = saved;
+    }
+  });
+
   it("rejects unsupported file type with 415", async () => {
     const res = await app.request("/api/admin/uploads", {
       method: "POST",
@@ -198,10 +217,115 @@ describe("POST /api/admin/uploads", () => {
     });
     expect(res.status).toBe(403);
   });
+
+  it("returns 400 file_required when the multipart body has no file field", async () => {
+    const fd = new FormData();
+    fd.append("not_a_file", "hello");
+    const res = await app.request("/api/admin/uploads", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: fd,
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("file_required");
+  });
+
+  it("returns 400 invalid_form_data for a body that fails to parse as multipart", async () => {
+    const res = await app.request("/api/admin/uploads", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "multipart/form-data" },
+      body: "not actually multipart",
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("invalid_form_data");
+  });
+});
+
+describe("POST /api/admin/theme-font-upload", () => {
+  it("returns 400 file_required when the multipart body has no file field", async () => {
+    const fd = new FormData();
+    fd.append("not_a_file", "hello");
+    const res = await app.request("/api/admin/theme-font-upload", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: fd,
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("file_required");
+  });
+
+  it("accepts WOFF2 and returns public URL, served back with the correct font MIME type", async () => {
+    const woff2 = new Uint8Array([0x77, 0x4f, 0x46, 0x32, 0x00, 0x00, 0x00, 0x00]);
+    const res = await app.request("/api/admin/theme-font-upload", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: uploadForm(new Blob([woff2], { type: "font/woff2" }), "Brand-Sans.woff2"),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { url: string };
+    expect(body.url).toMatch(/^\/uploads\/default\/theme\/[0-9a-f-]+\.woff2$/);
+
+    const getRes = await app.request(body.url);
+    expect(getRes.status).toBe(200);
+    expect(getRes.headers.get("content-type")).toBe("font/woff2");
+
+    const superUser = await prisma.user.findUniqueOrThrow({ where: { email: EMAIL_SUPER } });
+    expect(
+      await prisma.adminAuditLog.findFirst({
+        where: { action_type: "branding_font_uploaded", actor_user_id: superUser.id },
+        orderBy: { created_at: "desc" },
+      }),
+    ).not.toBeNull();
+  });
+
+  it("rejects a file whose bytes don't match a font signature with 415", async () => {
+    const res = await app.request("/api/admin/theme-font-upload", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: uploadForm(new Blob(["MZ"], { type: "font/woff2" }), "bad.woff2"),
+    });
+    expect(res.status).toBe(415);
+  });
+
+  it("returns 403 for non-superadmin", async () => {
+    const woff2 = new Uint8Array([0x77, 0x4f, 0x46, 0x32, 0x00, 0x00, 0x00, 0x00]);
+    const res = await app.request("/api/admin/theme-font-upload", {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin },
+      body: uploadForm(new Blob([woff2], { type: "font/woff2" }), "Brand-Sans.woff2"),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 413 when the raw request body exceeds the font upload size limit", async () => {
+    const oversized = new Uint8Array(6 * 1024 * 1024);
+    const res = await app.request("/api/admin/theme-font-upload", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: uploadForm(new Blob([oversized], { type: "font/woff2" }), "big.woff2"),
+    });
+    expect(res.status).toBe(413);
+  });
 });
 
 describe("POST /api/admin/events/:eventId/branding-upload", () => {
   const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
+
+  it("returns 400 file_required when the multipart body has no file field", async () => {
+    const fd = new FormData();
+    fd.append("not_a_file", "hello");
+    const res = await app.request(`/api/admin/events/${EVENT_OWN}/branding-upload`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: fd,
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("file_required");
+  });
 
   it("accepts PNG for superadmin and scopes the URL under the event", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_OWN}/branding-upload`, {
