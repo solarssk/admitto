@@ -340,4 +340,9 @@ describe("GraphAdapter", () => {
 
     expect(res.error).toBe("Graph sendMail: HTTP 400");
   });
+
+  it("close() resolves (no persistent connection to release)", async () => {
+    const adapter = new GraphAdapter(config, vi.fn() as unknown as typeof fetch);
+    await expect(adapter.close()).resolves.toBeUndefined();
+  });
 });

@@ -242,4 +242,9 @@ describe("PowerAutomateAdapter", () => {
       expect(addresses).toEqual([{ address: "93.184.216.34", family: 4 }]);
     });
   });
+
+  it("close() resolves (no persistent connection to release)", async () => {
+    const adapter = new PowerAutomateAdapter(config);
+    await expect(adapter.close()).resolves.toBeUndefined();
+  });
 });

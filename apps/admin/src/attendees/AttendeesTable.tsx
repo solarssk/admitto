@@ -930,8 +930,8 @@ function FilterToolbar({
 }: Readonly<{
   searchInput: string;
   onSearchChange: (value: string) => void;
-  statusFilter: "all" | "admitted" | "not_admitted";
-  onStatusFilterChange: (value: "all" | "admitted" | "not_admitted") => void;
+  statusFilter: AttendeeStatusFilter;
+  onStatusFilterChange: (value: AttendeeStatusFilter) => void;
   ticketTypeFilter: string;
   onTicketTypeFilterChange: (value: string) => void;
   ticketTypes: TicketTypeDto[];
@@ -1032,7 +1032,7 @@ function FilterToolbar({
             name="attendees-filter-checkin"
             aria-label="Filter by check-in status"
             value={statusFilter}
-            onChange={(e) => onStatusFilterChange(e.target.value as "all" | "admitted" | "not_admitted")}
+            onChange={(e) => onStatusFilterChange(e.target.value as AttendeeStatusFilter)}
           >
             <option value="all">All check-ins</option>
             <option value="admitted">Checked in</option>
