@@ -347,7 +347,6 @@
 }
 
 .setup-wizard__check-retry {
-  flex: none;
   border-color: var(--status-error) !important;
   color: var(--status-error) !important;
 }

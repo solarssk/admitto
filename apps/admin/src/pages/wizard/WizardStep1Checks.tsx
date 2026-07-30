@@ -76,11 +76,23 @@ export function WizardStep1Checks({ onChecksOk }: Readonly<WizardStep1ChecksProp
       )}
 
       {!loading && checks && hasCheckErrors && (
-        <Notice variant="error" role="alert" className="setup-wizard__check-error-banner">
-          Fix the issues above, then use Retry to run checks again.{" "}
-          <Button type="button" variant="secondary" size="sm" onClick={retry} className="setup-wizard__check-retry">
-            Retry
-          </Button>
+        <Notice
+          variant="error"
+          role="alert"
+          className="setup-wizard__check-error-banner"
+          action={
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={retry}
+              className="setup-wizard__check-retry"
+            >
+              Retry
+            </Button>
+          }
+        >
+          Fix the issues above, then use Retry to run checks again.
         </Notice>
       )}
 
