@@ -149,22 +149,32 @@ describe("BrandingSettingsPanel — loading and errors", () => {
     let resolveOrg!: (v: typeof defaultOrg) => void;
     mockFetchOrg.mockImplementationOnce(() => new Promise((resolve) => (resolveOrg = resolve)));
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const { unmount } = renderWithToast(<BrandingSettingsPanel />);
 
     unmount();
+    // Resolving after unmount races the abort guard - a broken one would surface as React's
+    // "state update on an unmounted component" console.error.
     resolveOrg(defaultOrg);
     await new Promise((r) => setTimeout(r, 0));
+
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
   });
 
   it("ignores a load that rejects after the component has already unmounted", async () => {
     let rejectOrg!: (err: Error) => void;
     mockFetchOrg.mockImplementationOnce(() => new Promise((_, reject) => (rejectOrg = reject)));
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const { unmount } = renderWithToast(<BrandingSettingsPanel />);
 
     unmount();
     rejectOrg(new Error("network"));
     await new Promise((r) => setTimeout(r, 0));
+
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
   });
 });
 
