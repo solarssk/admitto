@@ -96,7 +96,6 @@ function asDetail(row: AttendeeRowDto, patch: Partial<AttendeeDetailDto> = {}): 
     rsvp_status: row.rsvp_status,
     rsvp_updated_at: null,
     rsvp_source: null,
-    ticket_ref: null,
     custom_data: null,
     deliveries: [],
     action_log: [],

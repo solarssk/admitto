@@ -252,7 +252,6 @@ export interface AttendeeDetailDto {
   rsvp_status: RsvpStatus;
   rsvp_updated_at: string | null;
   rsvp_source: string | null;
-  ticket_ref: string | null;
   custom_data: unknown;
   deliveries: DeliveryDto[];
   action_log: AttendeeActionLogEntryDto[];
