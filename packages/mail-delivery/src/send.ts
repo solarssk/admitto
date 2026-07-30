@@ -9,7 +9,6 @@ import {
   resolveEventImageAssetVars,
   resolveTemplateForEvent,
   resolveTemplateById,
-  TemplateNotFoundError,
   type BrandingUrls,
   type EventImageAssetPlaceholders,
   type ResolvedTemplate,

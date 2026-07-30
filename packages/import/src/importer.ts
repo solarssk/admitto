@@ -271,7 +271,7 @@ function classifyExistingRow(
     type: "update",
     id: found.id,
     data: {
-      ...(pendingUpdate?.data ?? {}),
+      ...pendingUpdate?.data,
       name,
       ...(ticketTypeResult.value !== undefined && { ticket_type: ticketTypeResult.value }),
       ...(row.company !== undefined && { company: row.company }),

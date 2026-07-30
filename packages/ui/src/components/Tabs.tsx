@@ -25,7 +25,7 @@ export function Tabs({ tabs = [], value, defaultValue, onChange }: Readonly<Tabs
   }, [tabs, value, internal]);
 
   const fallbackActive = tabs.some((tab) => tab.id === internal) ? internal : (tabs[0]?.id ?? internal);
-  const active = value !== undefined ? value : fallbackActive;
+  const active = value ?? fallbackActive;
 
   const select = useCallback(
     (id: string) => {

@@ -87,7 +87,7 @@ async function handleCfAccessToken(
   try {
     const payload = await validateAccessJwt(token, config);
     const provider = await findCloudflareAccessProvider(prisma);
-    if (!provider || !provider.enabled) {
+    if (!provider?.enabled) {
       return rejectInvalidJwt(c, "provider_not_configured");
     }
     const subject = payload.sub;

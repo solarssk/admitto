@@ -217,7 +217,7 @@ export async function handleOidcCallback(c: Context, db: PrismaClient, baseUrl: 
   }
 
   const provider = await findOidcProviderById(db, providerId);
-  if (!provider || !provider.enabled) {
+  if (!provider?.enabled) {
     logOidcError("callback", "provider missing or disabled");
     return oidcFailedRedirect(c);
   }

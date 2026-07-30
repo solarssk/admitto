@@ -42,34 +42,18 @@ describe("SecurityPanel delayed loading", () => {
 });
 
 describe("SecurityPanel — session/trust duration inputs", () => {
-  it("clamps a non-numeric operator session lifetime to the 1h floor instead of NaN", async () => {
+  it.each([
+    { label: "Operator session lifetime (hours)", floor: "1" },
+    { label: "Admin session lifetime (hours)", floor: "1" },
+    { label: '"Remember device" duration (days, 0 = off)', floor: "0" },
+  ])("clamps a non-numeric $label to the $floor floor instead of NaN", async ({ label, floor }) => {
     vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
     renderWithToast(<SecurityPanel />);
 
-    const input = await screen.findByLabelText<HTMLInputElement>("Operator session lifetime (hours)");
+    const input = await screen.findByLabelText<HTMLInputElement>(label);
     fireEvent.change(input, { target: { value: "abc" } });
 
-    expect(input.value).toBe("1");
-  });
-
-  it("clamps a non-numeric admin session lifetime to the 1h floor instead of NaN", async () => {
-    vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
-    renderWithToast(<SecurityPanel />);
-
-    const input = await screen.findByLabelText<HTMLInputElement>("Admin session lifetime (hours)");
-    fireEvent.change(input, { target: { value: "abc" } });
-
-    expect(input.value).toBe("1");
-  });
-
-  it("clamps a non-numeric trusted-device duration to the 0-day floor instead of NaN", async () => {
-    vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
-    renderWithToast(<SecurityPanel />);
-
-    const input = await screen.findByLabelText<HTMLInputElement>('"Remember device" duration (days, 0 = off)');
-    fireEvent.change(input, { target: { value: "abc" } });
-
-    expect(input.value).toBe("0");
+    expect(input.value).toBe(floor);
   });
 });
 

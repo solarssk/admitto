@@ -57,4 +57,9 @@ describe("ExportOnlyAdapter", () => {
     expect(mailer.provider).toBe("export_only");
     expect(mailer.capabilities.supportsTestConnection).toBe(true);
   });
+
+  it("close() resolves (no persistent connection to release)", async () => {
+    const adapter = new ExportOnlyAdapter({ provider: "export_only", fromAddress: "a@example.com" });
+    await expect(adapter.close()).resolves.toBeUndefined();
+  });
 });
