@@ -309,6 +309,13 @@
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
+  width: 100%;
+  /* Always spans every column when placed directly in a CSS grid (e.g. the 2-column
+     .mail-transport-section) instead of just filling one cell - a short message would
+     otherwise sit at roughly half width. Inert (ignored) in flex/block parents, so this is
+     safe to set unconditionally rather than something every call site has to opt into. */
+  grid-column: 1 / -1;
+  box-sizing: border-box;
   margin: 0;
   padding: var(--space-2) var(--space-3);
   border: 1px solid transparent;

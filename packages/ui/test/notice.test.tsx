@@ -50,4 +50,20 @@ describe("Notice", () => {
     const icon = screen.getByText("Message").closest("p")?.querySelector("i");
     expect(icon?.getAttribute("aria-hidden")).toBe("true");
   });
+
+  it("renders as a <p> by default", () => {
+    render(<Notice variant="success">Message</Notice>);
+    expect(screen.getByText("Message").closest("p")).not.toBeNull();
+  });
+
+  it("renders as an <output> when as=\"output\" is given, e.g. a derived success state", () => {
+    render(
+      <Notice variant="success" as="output">
+        Message
+      </Notice>,
+    );
+    const notice = screen.getByText("Message").closest("output");
+    expect(notice).not.toBeNull();
+    expect(notice?.className).toContain("at-notice--success");
+  });
 });

@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
@@ -25,6 +25,7 @@ let adminCookie = "";
 let prevInstanceOrgId: string | undefined;
 
 async function seed(client: PrismaClient) {
+  await client.adminAuditLog.deleteMany({ where: { organization_id: ORG_SUPPORT_CONTACT } });
   await client.session.deleteMany({
     where: { user: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN] } } },
   });
@@ -86,6 +87,10 @@ beforeAll(async () => {
   const adminSession = await createSession(prisma, { userId: adminId, stage: SESSION_STAGE.FULL });
   superCookie = `admitto_session=${superSession.rawToken}`;
   adminCookie = `admitto_session=${adminSession.rawToken}`;
+});
+
+afterEach(async () => {
+  await prisma.adminAuditLog.deleteMany({ where: { organization_id: ORG_SUPPORT_CONTACT } });
 });
 
 afterAll(async () => {
@@ -260,5 +265,45 @@ describe("PATCH /api/admin/setup/support-contact", () => {
       body: JSON.stringify({ support_contact_name: "Acme Events" }),
     });
     expect(res.status).toBe(403);
+  });
+});
+
+describe("PATCH /api/admin/setup/support-contact — admin audit log", () => {
+  it("writes a durable AdminAuditLog entry recording only the changed field names", async () => {
+    const res = await app.request("/api/admin/setup/support-contact", {
+      method: "PATCH",
+      headers: { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        support_contact_name: "Acme Events",
+        support_contact_email: "support@acme.example.com",
+      }),
+    });
+    expect(res.status).toBe(200);
+
+    const log = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_SUPPORT_CONTACT, action_type: "support_contact_updated" },
+    });
+    expect(log).not.toBeNull();
+    expect(log?.actor_user_id).toBe(superId);
+    const meta = log?.metadata as Record<string, unknown>;
+    expect(meta?.fields).toEqual(
+      expect.arrayContaining(["support_contact_name", "support_contact_email"]),
+    );
+    expect(JSON.stringify(meta)).not.toContain("Acme Events");
+    expect(JSON.stringify(meta)).not.toContain("support@acme.example.com");
+  });
+
+  it("does not write an audit log entry for an empty (no-op) patch", async () => {
+    const res = await app.request("/api/admin/setup/support-contact", {
+      method: "PATCH",
+      headers: { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+
+    const log = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_SUPPORT_CONTACT, action_type: "support_contact_updated" },
+    });
+    expect(log).toBeNull();
   });
 });

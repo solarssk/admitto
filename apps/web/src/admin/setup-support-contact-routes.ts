@@ -2,8 +2,9 @@ import { z } from "zod";
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { canManageInstance } from "@admitto/auth";
+import { writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog } from "@admitto/shared/system-log";
-import { resolveActorEmailForLog } from "./admin-helpers.js";
+import { adminAuditFromContext, resolveActorEmailForLog } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 
 export type SetupSupportContactDto = {
@@ -73,14 +74,30 @@ export async function handlePatchSetupSupportContact(c: Context, db: PrismaClien
   if (body.support_contact_email !== undefined) {
     data.support_contact_email = body.support_contact_email === "" ? null : body.support_contact_email;
   }
+  const fields = Object.keys(data);
 
-  if (Object.keys(data).length > 0) {
-    await db.organization.update({ where: { id: orgId }, data });
+  if (fields.length === 0) {
+    return handleGetSetupSupportContact(c, db);
   }
+
+  const audit = adminAuditFromContext(c);
+  await db.$transaction(async (tx) => {
+    await tx.organization.update({ where: { id: orgId }, data });
+    // Field names only, never values - support_contact_name/email are personal data.
+    await writeAdminAuditLog(tx, {
+      organizationId: orgId,
+      actorUserId: auth.userId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      timezone: audit.timezone,
+      actionType: "support_contact_updated",
+      metadata: { fields },
+    });
+  });
 
   emitSystemLog("admin", "info", "support_contact_updated", {
     orgId,
-    fields: Object.keys(data),
+    fields,
     actorUserId: auth.userId,
     actorEmail: await resolveActorEmailForLog(db, auth.userId),
   });

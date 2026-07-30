@@ -151,10 +151,6 @@ export function GeneralSettingsPanel() {
   };
 
   const handleSave = async () => {
-    // Unreachable via the UI (Save only renders once settings is loaded), but settings is
-    // referenced below for the locked-field save, so this stays for narrowing.
-    if (!settings) return;
-
     const trimmedUrl = instanceUrlDraft.trim();
     if (!urlLocked && trimmedUrl && !isValidInstanceUrl(trimmedUrl)) {
       addToast(
@@ -175,12 +171,16 @@ export function GeneralSettingsPanel() {
     setSaving(true);
     try {
       const urlSave: Promise<SystemSettingsDto> = urlLocked
-        ? Promise.resolve(settings)
+        // Save only renders once settings has loaded, so this is never actually null here -
+        // asserted rather than an unreachable `if (!settings) return` guard up top.
+        ? Promise.resolve(settings!)
         : patchSecuritySettings({ instance_url: trimmedUrl.length > 0 ? trimmedUrl : null } satisfies PatchSystemSettingsBody);
-      const contactSave = patchSupportContact({
-        support_contact_name: contactName,
-        support_contact_email: contactEmail,
-      });
+      const contactChanged =
+        contactName !== (supportContactSavedRef.current.support_contact_name ?? "") ||
+        contactEmail !== (supportContactSavedRef.current.support_contact_email ?? "");
+      const contactSave: Promise<SetupSupportContactDto> = contactChanged
+        ? patchSupportContact({ support_contact_name: contactName, support_contact_email: contactEmail })
+        : Promise.resolve(supportContactSavedRef.current);
 
       const [urlResult, contactResult] = await Promise.allSettled([urlSave, contactSave]);
 
@@ -262,10 +262,10 @@ export function GeneralSettingsPanel() {
           </div>
 
           {hasConfiguredUrl && (
-            <output className="mail-field-hint instance-url-hint text-success">
+            <Notice variant="success" as="output">
               Instance URL is configured
               {settings.instance_url.source === "env" ? " via environment" : ""}.
-            </output>
+            </Notice>
           )}
 
           {showUrlWarning && (

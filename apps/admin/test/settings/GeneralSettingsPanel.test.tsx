@@ -103,6 +103,9 @@ describe("GeneralSettingsPanel", () => {
     fireEvent.change(screen.getByLabelText("Instance URL"), {
       target: { value: "https://tickets.example.com" },
     });
+    // Contact fields also need a real change - patchSupportContact is skipped otherwise, and the
+    // mocked rejection below would never fire.
+    fireEvent.change(screen.getByLabelText("Contact name"), { target: { value: "Acme Events" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toContain("Failed to save settings.");
@@ -124,6 +127,9 @@ describe("GeneralSettingsPanel", () => {
     fireEvent.change(screen.getByLabelText("Instance URL"), {
       target: { value: "https://tickets.example.com" },
     });
+    // Contact fields also need a real change - patchSupportContact is skipped otherwise, and the
+    // mocked rejection below would never fire.
+    fireEvent.change(screen.getByLabelText("Contact name"), { target: { value: "Acme Events" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(
@@ -186,10 +192,9 @@ describe("GeneralSettingsPanel", () => {
     await waitFor(() => {
       expect(screen.getByText("Managed by environment")).toBeTruthy();
     });
-    const status = screen.getByText("Instance URL is configured via environment.");
-    expect(status.tagName).toBe("OUTPUT");
-    expect(status.classList.contains("mail-field-hint")).toBe(true);
-    expect(status.classList.contains("text-success")).toBe(true);
+    const status = screen.getByText("Instance URL is configured via environment.").closest("output");
+    expect(status).not.toBeNull();
+    expect(status?.className).toContain("at-notice--success");
     // Clear acts on the locked field directly, so it's hidden - but Save is page-level and
     // still needed for Support contact, so it must stay.
     expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
@@ -213,6 +218,26 @@ describe("GeneralSettingsPanel", () => {
     await waitFor(() => {
       expect(mockPatch).toHaveBeenCalledWith({ instance_url: "https://tickets.example.com" });
     });
+  });
+
+  it("does not call patchSupportContact when only the Instance URL changed", async () => {
+    mockFetch.mockResolvedValueOnce(emptySettings);
+    mockPatch.mockResolvedValueOnce({
+      ...emptySettings,
+      instance_url: { value: "https://tickets.example.com", source: "db" },
+    });
+    renderWithToast(<GeneralSettingsPanel />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Instance URL")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText("Instance URL"), {
+      target: { value: "https://tickets.example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(mockPatch).toHaveBeenCalled();
+    });
+    expect(mockPatchContact).not.toHaveBeenCalled();
   });
 
   it("rejects HTTP URL on save without calling either API", async () => {
