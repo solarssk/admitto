@@ -130,4 +130,17 @@ describe("AttendeeDetailPage operator errors", () => {
 
     await waitFor(() => expect(screen.queryByText("Failed to load ticket types.")).toBeNull());
   });
+
+  it("shows the items-load-warning Notice when custom attribute fields fail to load", async () => {
+    loadAttendeeDetailData.mockResolvedValueOnce({
+      detail,
+      attributeFields: [],
+      itemsWarning: "Attribute fields could not be loaded. Core fields are still editable.",
+    });
+    renderPage();
+
+    await screen.findByRole("heading", { name: "Anna" });
+    const notice = await screen.findByText("Attribute fields could not be loaded. Core fields are still editable.");
+    expect(notice.closest(".at-notice--warning")).toBeTruthy();
+  });
 });
