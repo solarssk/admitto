@@ -18,12 +18,6 @@
   color: inherit;
 }
 
-.create-event-modal__backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.45);
-}
-
 .create-event-modal__panel {
   position: relative;
   background: var(--surface-card);

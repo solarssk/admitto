@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button } from "@admitto/ui";
+import { Button, ModalBackdrop } from "@admitto/ui";
 import { ApiError, createEvent } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto } from "../api/types.js";
@@ -88,11 +88,7 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
 
   return (
     <dialog className="create-event-modal" open aria-modal="true" aria-labelledby={titleId}>
-      <div
-        className="create-event-modal__backdrop"
-        role="presentation"
-        onClick={handleClose}
-      />
+      <ModalBackdrop onClose={handleClose} />
       <div ref={panelRef} className="create-event-modal__panel">
         <h2 className="create-event-modal__title" id={titleId}>
           New event

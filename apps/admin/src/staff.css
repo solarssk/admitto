@@ -6343,12 +6343,6 @@ select.system-log-panel__field {
   max-height: none;
 }
 
-.overview-modal__backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.45);
-}
-
 .overview-modal__panel {
   position: relative;
   width: min(480px, 100%);

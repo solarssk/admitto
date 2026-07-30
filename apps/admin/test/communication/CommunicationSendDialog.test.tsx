@@ -118,7 +118,7 @@ describe("CommunicationSendDialog", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    fireEvent.click(document.querySelector(".add-attendee-modal__backdrop")!);
+    fireEvent.click(document.querySelector(".at-modal-backdrop")!);
 
     expect(onClose).not.toHaveBeenCalled();
 
@@ -127,7 +127,7 @@ describe("CommunicationSendDialog", () => {
       await Promise.resolve();
     });
 
-    fireEvent.click(document.querySelector(".add-attendee-modal__backdrop")!);
+    fireEvent.click(document.querySelector(".at-modal-backdrop")!);
     expect(onClose).toHaveBeenCalled();
   });
 
