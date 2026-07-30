@@ -3,7 +3,6 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
-const ALLOWED_MIME = new Set(["image/png", "image/jpeg", "image/webp"]);
 const ALLOWED_EXT = new Map([
   ["image/png", ".png"],
   ["image/jpeg", ".jpg"],
@@ -101,34 +100,58 @@ function detectFontMime(buf: Buffer): string | null {
   return null;
 }
 
-/** Validate image bytes and write to `dir`; returns generated filename with extension. */
-async function validateAndWriteImage(file: File, dir: string): Promise<string> {
-  if (file.size > MAX_UPLOAD_BYTES) {
-    throw new BrandingUploadError("file_too_large", 413, { maxBytes: MAX_UPLOAD_BYTES });
+interface WriteValidatedUploadOptions {
+  readonly maxBytes: number;
+  readonly detectMime: (buf: Buffer) => string | null;
+  readonly allowedExt: ReadonlyMap<string, string>;
+  /** Also reject when the client-declared Content-Type disagrees with the detected MIME.
+   * Image-only — see validateAndWriteFont for why fonts skip this. */
+  readonly crossCheckDeclaredMime?: boolean;
+}
+
+/** Shared validate-then-write sequence for both branding image and font uploads: size limit,
+ * magic-byte MIME detection (never the client-declared Content-Type alone), extension lookup, and
+ * a UUID-named write. What differs between callers (size limit, detector, allowed types, and
+ * whether the declared Content-Type is also cross-checked) is passed in, not duplicated. */
+async function writeValidatedUpload(file: File, dir: string, opts: WriteValidatedUploadOptions): Promise<string> {
+  if (file.size > opts.maxBytes) {
+    throw new BrandingUploadError("file_too_large", 413, { maxBytes: opts.maxBytes });
   }
 
   const buf = Buffer.from(await file.arrayBuffer());
-  const detectedMime = detectImageMime(buf);
-  if (!detectedMime || !ALLOWED_MIME.has(detectedMime)) {
+  const detectedMime = opts.detectMime(buf);
+  if (!detectedMime || !opts.allowedExt.has(detectedMime)) {
     throw new BrandingUploadError("unsupported_file_type", 415, {
-      allowedTypes: [...ALLOWED_MIME],
+      allowedTypes: [...opts.allowedExt.keys()],
     });
   }
 
-  const declaredMime = file.type.split(";")[0]?.trim() ?? "";
-  if (declaredMime && declaredMime !== detectedMime) {
-    throw new BrandingUploadError("unsupported_file_type", 415, {
-      allowedTypes: [...ALLOWED_MIME],
-    });
+  if (opts.crossCheckDeclaredMime) {
+    const declaredMime = file.type.split(";")[0]?.trim() ?? "";
+    if (declaredMime && declaredMime !== detectedMime) {
+      throw new BrandingUploadError("unsupported_file_type", 415, {
+        allowedTypes: [...opts.allowedExt.keys()],
+      });
+    }
   }
 
-  const ext = ALLOWED_EXT.get(detectedMime)!;
+  const ext = opts.allowedExt.get(detectedMime)!;
   const filename = `${randomUUID()}${ext}`;
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
   await mkdir(dir, { recursive: true });
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
   await writeFile(join(dir, filename), buf);
   return filename;
+}
+
+/** Validate image bytes and write to `dir`; returns generated filename with extension. */
+async function validateAndWriteImage(file: File, dir: string): Promise<string> {
+  return writeValidatedUpload(file, dir, {
+    maxBytes: MAX_UPLOAD_BYTES,
+    detectMime: detectImageMime,
+    allowedExt: ALLOWED_EXT,
+    crossCheckDeclaredMime: true,
+  });
 }
 
 /** Local filesystem branding upload (ADR 0008 — future StorageAdapter swap). */
@@ -162,25 +185,11 @@ export async function saveEventUpload(
  * string, `application/font-woff2`, `application/octet-stream`, …), so the magic-byte check
  * alone is both the meaningful security boundary and the only reliable one here. */
 async function validateAndWriteFont(file: File, dir: string): Promise<string> {
-  if (file.size > MAX_FONT_UPLOAD_BYTES) {
-    throw new BrandingUploadError("file_too_large", 413, { maxBytes: MAX_FONT_UPLOAD_BYTES });
-  }
-
-  const buf = Buffer.from(await file.arrayBuffer());
-  const detectedMime = detectFontMime(buf);
-  if (!detectedMime) {
-    throw new BrandingUploadError("unsupported_file_type", 415, {
-      allowedTypes: [...ALLOWED_FONT_EXT.keys()],
-    });
-  }
-
-  const ext = ALLOWED_FONT_EXT.get(detectedMime)!;
-  const filename = `${randomUUID()}${ext}`;
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
-  await mkdir(dir, { recursive: true });
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
-  await writeFile(join(dir, filename), buf);
-  return filename;
+  return writeValidatedUpload(file, dir, {
+    maxBytes: MAX_FONT_UPLOAD_BYTES,
+    detectMime: detectFontMime,
+    allowedExt: ALLOWED_FONT_EXT,
+  });
 }
 
 /** Instance-wide theme font upload (superadmin only) — stored separately from per-org/per-event

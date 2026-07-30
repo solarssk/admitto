@@ -38,9 +38,11 @@ function sanitizeBrandingFontFamilyName(name: string): string | undefined {
   return cleaned || undefined;
 }
 
-// Mirror @admitto/ui's BRANDING_FONT_UPLOAD_PATH — auth must not depend on @admitto/ui.
-// eslint-disable-next-line security/detect-unsafe-regex -- bounded input; validated pattern
-const BRANDING_FONT_UPLOAD_PATH = /^\/uploads\/[a-z0-9][a-z0-9_-]{0,63}\/theme\/[^/]+\.(woff2?|ttf|otf)$/i;
+// Mirror @admitto/ui's BRANDING_FONT_UPLOAD_PATH — auth must not depend on @admitto/ui. Filename
+// stem restricted to a safe charset (not just "no slash") - this is the real server-side
+// boundary a crafted PUT /api/staff/theme has to go through, and @admitto/ui's fontFaceRuleFor
+// later interpolates whatever this accepts as "local" straight into @font-face CSS unescaped.
+const BRANDING_FONT_UPLOAD_PATH = /^\/uploads\/[a-z0-9][a-z0-9_-]{0,63}\/theme\/[a-zA-Z0-9_-]+\.(woff2?|ttf|otf)$/i;
 
 function isLocalBrandingFontPath(url: string): boolean {
   return url.startsWith("/uploads/") && !url.includes("..") && BRANDING_FONT_UPLOAD_PATH.test(url);
@@ -102,6 +104,20 @@ function sanitizeCustomFontFamilies(raw: unknown): BrandingCustomFontFamily[] | 
   return families.length > 0 ? families : undefined;
 }
 
+/** A record saved by the single-file predecessor of custom_font_families still has
+ * font_family_name + font_family_url and nothing else describing the custom font - converted
+ * into a one-variant family here (matching the old renderer's own implicit weight 400 normal, the
+ * only style it ever supported) so upgrading doesn't silently drop an org's configured font on
+ * its very first read, or lose the file for good the next time the theme is saved through the
+ * new UI (which has no field for the old shape at all). */
+function migrateLegacyFontUrl(o: Record<string, unknown>): BrandingCustomFontFamily[] | undefined {
+  if (Array.isArray(o.custom_font_families)) return undefined;
+  if (typeof o.font_family_url !== "string" || typeof o.font_family_name !== "string") return undefined;
+  const name = sanitizeBrandingFontFamilyName(o.font_family_name);
+  if (!name || !isSafeBrandingFontUrl(o.font_family_url)) return undefined;
+  return [{ name, variants: [{ weight: 400, style: "normal", url: o.font_family_url }] }];
+}
+
 function sanitizeTheme(raw: unknown): BrandingTheme {
   if (!raw || typeof raw !== "object") return {};
   const o = raw as Record<string, unknown>;
@@ -110,7 +126,7 @@ function sanitizeTheme(raw: unknown): BrandingTheme {
     typeof o.font_family_name === "string"
       ? sanitizeBrandingFontFamilyName(o.font_family_name)
       : undefined;
-  const custom_font_families = sanitizeCustomFontFamilies(o.custom_font_families);
+  const custom_font_families = sanitizeCustomFontFamilies(o.custom_font_families) ?? migrateLegacyFontUrl(o);
   return { primary, font_family_name, custom_font_families };
 }
 

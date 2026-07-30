@@ -48,6 +48,11 @@ const FONT_OPTIONS = [
   { key: "ibm-plex-sans", label: "IBM Plex Sans", hint: "Corporate sans", name: "IBM Plex Sans", previewStack: '"IBM Plex Sans", sans-serif', styles: FULL_STYLE_SET },
 ] as const;
 
+// Mirrors packages/auth's MAX_CUSTOM_FAMILIES - the server drops any family past this count
+// rather than persisting it, so the picker has to stop offering "Custom font" at the same limit
+// instead of letting someone upload a family that then silently never gets saved.
+const MAX_CUSTOM_FONT_FAMILIES = 8;
+
 function darken(hex: string, amount: number): string {
   const n = Number.parseInt(hex.slice(1), 16);
   const r = Math.max(0, (n >> 16) - amount);
@@ -147,7 +152,9 @@ function FontStylesPill({ styles, active }: Readonly<{ styles: readonly string[]
         {styles.length} style{styles.length === 1 ? "" : "s"} <i className="ti ti-chevron-down" aria-hidden="true" />
       </button>
       {open && (
-        <div className="font-styles-popover" role="menu">
+        /* A plain list of style labels, not commands - no role="menu"/"menuitem", since that
+           implies keyboard-navigable actions this popover doesn't have. */
+        <div className="font-styles-popover">
           {styles.map((s) => (
             <span key={s} className="font-styles-popover__item">
               {s}
@@ -165,6 +172,7 @@ interface FontPickerFieldProps {
   readonly disabled: boolean;
   readonly onPickBuiltIn: (name: string | undefined) => void;
   readonly onSelectCustom: (name: string) => void;
+  readonly onEditCustom: (name: string) => void;
   readonly onDeleteCustom: (name: string) => void;
   readonly onOpenFamilyModal: () => void;
 }
@@ -177,6 +185,7 @@ function FontPickerField({
   disabled,
   onPickBuiltIn,
   onSelectCustom,
+  onEditCustom,
   onDeleteCustom,
   onOpenFamilyModal,
 }: Readonly<FontPickerFieldProps>) {
@@ -209,13 +218,21 @@ function FontPickerField({
               disabled={disabled}
               onClick={() => onSelectCustom(fam.name)}
             >
-              <span className="font-option-card__sample" style={{ fontFamily: `"${fam.name}"`, fontSize: 22 }}>
+              <span className="font-option-card__sample" style={{ fontFamily: `"${fam.name}"` }}>
                 Aa
               </span>
               <span className="font-option-card__label">{fam.name}</span>
               <span className="font-option-card__hint">Custom</span>
             </button>
             <FontStylesPill styles={fam.variants.map((v) => styleLabel(v.weight, v.style))} active={active} />
+            <IconButton
+              icon={<i className="ti ti-pencil" aria-hidden="true" />}
+              label={`Edit ${fam.name}`}
+              size="sm"
+              className="font-option-card__edit"
+              disabled={disabled}
+              onClick={() => onEditCustom(fam.name)}
+            />
             <IconButton
               icon={<i className="ti ti-trash" aria-hidden="true" />}
               label={`Remove ${fam.name}`}
@@ -227,11 +244,19 @@ function FontPickerField({
           </div>
         );
       })}
-      <button type="button" className="font-option-card font-option-card--upload" disabled={disabled} onClick={onOpenFamilyModal}>
-        <i className="ti ti-upload font-option-card__uploadicon" aria-hidden="true" />
-        <span className="font-option-card__label">Custom font</span>
-        <span className="font-option-card__hint">Upload files</span>
-      </button>
+      {customFamilies.length < MAX_CUSTOM_FONT_FAMILIES ? (
+        <button type="button" className="font-option-card font-option-card--upload" disabled={disabled} onClick={onOpenFamilyModal}>
+          <i className="ti ti-upload font-option-card__uploadicon" aria-hidden="true" />
+          <span className="font-option-card__label">Custom font</span>
+          <span className="font-option-card__hint">Upload files</span>
+        </button>
+      ) : (
+        <div className="font-option-card font-option-card--upload font-option-card--upload-limit">
+          <i className="ti ti-lock font-option-card__uploadicon" aria-hidden="true" />
+          <span className="font-option-card__label">Limit reached</span>
+          <span className="font-option-card__hint">Remove one to add another</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -264,6 +289,10 @@ export function BrandingSettingsPanel() {
   const [colorKey, setColorKey] = useState<string>("blue");
   const [customHex, setCustomHex] = useState("#066fd1");
   const [familyModalOpen, setFamilyModalOpen] = useState(false);
+  // Name of the saved family currently being edited, or null when the modal is creating a new
+  // one. Kept separate from familyModalOpen since the modal's own prefill data (initialFamily)
+  // is looked up by this name each render, not stored as a snapshot here.
+  const [editingFamilyName, setEditingFamilyName] = useState<string | null>(null);
 
   const syncColorUiState = useCallback((theme: BrandingThemeDto) => {
     const primary = theme.primary;
@@ -383,18 +412,34 @@ export function BrandingSettingsPanel() {
     setThemeDraft((prev) => ({ ...prev, font_family_name: name }));
   };
 
-  /** Saving a family upserts it into the library by name (so re-saving under an existing name
-   * replaces that entry rather than duplicating it) and makes it the active pick. */
+  const handleEditCustomFamily = (name: string) => {
+    setEditingFamilyName(name);
+    setFamilyModalOpen(true);
+  };
+
+  const closeFamilyModal = () => {
+    setFamilyModalOpen(false);
+    setEditingFamilyName(null);
+  };
+
+  /** Saving upserts the family into the library by its (possibly new) name - re-saving under an
+   * existing name replaces that entry rather than duplicating it, and renaming one mid-edit drops
+   * its old name entirely rather than leaving both around. A brand new family always becomes the
+   * active pick; editing an existing one only keeps that status if it already had it, so fixing
+   * up a saved-but-inactive family's files doesn't switch the org's live font out from under it. */
   const handleFamilySaved = ({ familyName, variants }: { familyName: string; variants: BrandingCustomFontFamilyDto["variants"] }) => {
     setThemeDraft((prev) => {
-      const withoutSameName = (prev.custom_font_families ?? []).filter((f) => f.name !== familyName);
+      const wasActive = editingFamilyName !== null && prev.font_family_name === editingFamilyName;
+      const withoutOldEntry = (prev.custom_font_families ?? []).filter(
+        (f) => f.name !== familyName && f.name !== editingFamilyName,
+      );
       return {
         ...prev,
-        font_family_name: familyName,
-        custom_font_families: [...withoutSameName, { name: familyName, variants }],
+        font_family_name: editingFamilyName === null || wasActive ? familyName : prev.font_family_name,
+        custom_font_families: [...withoutOldEntry, { name: familyName, variants }],
       };
     });
-    setFamilyModalOpen(false);
+    closeFamilyModal();
     addToast(`Saved "${familyName}" with ${variants.length} variant${variants.length === 1 ? "" : "s"}.`, "success");
   };
 
@@ -499,16 +544,26 @@ export function BrandingSettingsPanel() {
     JSON.stringify(themeDraft) !== JSON.stringify(themeSavedRef.current);
 
   const showLoading = useDelayedLoading(loading);
-  const activeHex = colorMode === "custom" ? (isValidHex(customHex) ? customHex : "#066fd1") : primaryForColorInput(
-    THEME_COLORS.find((c) => c.key === colorKey)?.hex,
-  );
+  const paletteHex = primaryForColorInput(THEME_COLORS.find((c) => c.key === colorKey)?.hex);
+  const customHexOrFallback = isValidHex(customHex) ? customHex : "#066fd1";
+  const activeHex = colorMode === "custom" ? customHexOrFallback : paletteHex;
   const activeFontStack = themeDraft.font_family_name
     ? `"${themeDraft.font_family_name}", Inter, system-ui, sans-serif`
     : "var(--font-sans)";
   const customFamilies = themeDraft.custom_font_families ?? [];
   const activeCustomFamily = customFamilies.find((f) => f.name === themeDraft.font_family_name);
-  const hasBoldVariant = !activeCustomFamily || activeCustomFamily.variants.some((v) => v.weight >= 700);
-  const hasItalicVariant = !activeCustomFamily || activeCustomFamily.variants.some((v) => v.style === "italic");
+  const activeBuiltIn = FONT_OPTIONS.find((f) => f.name === themeDraft.font_family_name);
+  const activeFontLabel = activeBuiltIn?.label ?? themeDraft.font_family_name ?? "Admitto Sans";
+  // A built-in pick without a custom family active still needs its own real styles checked -
+  // Manrope/Space Grotesk have no italic file at all, so defaulting to true here (as if every
+  // built-in had all four styles) would hide the "browser is faking it" hint exactly where it's
+  // most needed, the same dishonesty FONT_OPTIONS.styles exists to avoid in the picker itself.
+  const hasBoldVariant = activeCustomFamily
+    ? activeCustomFamily.variants.some((v) => v.weight >= 700)
+    : (activeBuiltIn?.styles.includes("Bold") ?? true);
+  const hasItalicVariant = activeCustomFamily
+    ? activeCustomFamily.variants.some((v) => v.style === "italic")
+    : (activeBuiltIn?.styles.some((s) => s.toLowerCase().includes("italic")) ?? true);
 
   if (loading) {
     return showLoading ? (
@@ -568,9 +623,21 @@ export function BrandingSettingsPanel() {
           Instance-wide accent colour and font for staff UI and public ticket pages. Ticket logos
           are set in Organisation branding above, not here.
         </p>
-        <span className="overline" id="branding-primary-label">
+        <span className="at-label" id="branding-primary-label">
           Primary colour
         </span>
+        {/* Sits directly before its own control (like Organisation logo's own description), not
+            before a whole new section like the card's other .branding-scope-hint paragraphs -
+            same smaller gap as that one, not the bigger between-sections default. */}
+        <p className="at-hint branding-scope-hint" style={{ marginBottom: 8 }}>
+          {colorMode === "custom" ? (
+            <>
+              Custom colour: <code>{customHex}</code>
+            </>
+          ) : (
+            `${THEME_COLORS.find((c) => c.key === colorKey)?.label ?? "Admitto blue"}. Used on buttons, links, and badges across the staff app and ticket page.`
+          )}
+        </p>
         <div aria-labelledby="branding-primary-label">
           <ColorPaletteField
             mode={colorMode}
@@ -586,19 +653,13 @@ export function BrandingSettingsPanel() {
             {themeFieldErrors.primary}
           </p>
         )}
-        <p className="at-hint branding-scope-hint" style={{ marginTop: 8 }}>
-          {colorMode === "custom" ? (
-            <>
-              Custom colour: <code>{customHex}</code>
-            </>
-          ) : (
-            `${THEME_COLORS.find((c) => c.key === colorKey)?.label ?? "Admitto blue"}. Used on buttons, links, and badges across the staff app and ticket page.`
-          )}
-        </p>
 
-        <span className="overline" id="branding-font-label" style={{ marginTop: 20, display: "block" }}>
+        <span className="at-label" id="branding-font-label" style={{ marginTop: 20, display: "block" }}>
           Font
         </span>
+        <p className="at-hint branding-scope-hint" style={{ marginBottom: 8 }}>
+          {activeFontLabel}. Used across the staff app and public ticket pages.
+        </p>
         <div aria-labelledby="branding-font-label">
           <FontPickerField
             activeName={themeDraft.font_family_name}
@@ -606,6 +667,7 @@ export function BrandingSettingsPanel() {
             disabled={formDisabled}
             onPickBuiltIn={handlePickBuiltInFont}
             onSelectCustom={handleSelectCustomFamily}
+            onEditCustom={handleEditCustomFamily}
             onDeleteCustom={handleDeleteCustomFamily}
             onOpenFamilyModal={() => setFamilyModalOpen(true)}
           />
@@ -621,10 +683,16 @@ export function BrandingSettingsPanel() {
           </p>
         )}
 
-        <FontFamilyModal open={familyModalOpen} onClose={() => setFamilyModalOpen(false)} onSaved={handleFamilySaved} />
+        <FontFamilyModal
+          open={familyModalOpen}
+          onClose={closeFamilyModal}
+          onSaved={handleFamilySaved}
+          initialFamily={editingFamilyName ? (customFamilies.find((f) => f.name === editingFamilyName) ?? null) : null}
+        />
 
         <div className="theme-preview">
-          <span className="overline">Live preview</span>
+          <span className="at-label">Live preview</span>
+          <span className="at-hint">How your colour and font choices look together.</span>
           <div className="theme-preview__bar" style={{ background: activeHex, fontFamily: activeFontStack }}>
             <span>Primary</span>
             <span>{colorMode === "custom" ? customHex : "default"}</span>

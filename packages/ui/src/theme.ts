@@ -74,9 +74,13 @@ export function isValidBrandingFontFamilyName(name: string): boolean {
 }
 
 // Mirrors apps/admin/src/utils/safeBrandingLogoHref.ts's BRANDING_UPLOAD_PATH pattern, scoped to
-// this feature's own uploads/{orgId}/theme/{file} storage path and font extensions.
-// eslint-disable-next-line security/detect-unsafe-regex -- bounded input; validated pattern
-const BRANDING_FONT_UPLOAD_PATH = /^\/uploads\/[a-z0-9][a-z0-9_-]{0,63}\/theme\/[^/]+\.(woff2?|ttf|otf)$/i;
+// this feature's own uploads/{orgId}/theme/{file} storage path and font extensions. The filename
+// stem is restricted to a safe charset (not just "no slash") as the primary defense - this path
+// (unlike the PUT /api/staff/theme endpoint it validates for) is never required to be
+// server-generated, so it can't just rely on every upload having gone through the honest upload
+// flow first. fontFaceRuleFor below also escapes the URL before interpolating it into CSS, as a
+// second, independent layer rather than trusting this regex alone.
+const BRANDING_FONT_UPLOAD_PATH = /^\/uploads\/[a-z0-9][a-z0-9_-]{0,63}\/theme\/[a-zA-Z0-9_-]+\.(woff2?|ttf|otf)$/i;
 
 /** True for a validated local `/uploads/.../theme/` upload path (no `..`, matches the pattern). */
 export function isLocalBrandingFontPath(url: string): boolean {
@@ -117,10 +121,17 @@ function fontFormat(url: string): string | undefined {
   return match ? FONT_FORMAT_BY_EXT[match[1].toLowerCase()] : undefined;
 }
 
+/** Escape `\` and `"` for safe interpolation into a double-quoted CSS string - defense in depth
+ * alongside the URL charset validation above, not a substitute for it. */
+function escapeCssString(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
 function fontFaceRuleFor(familyName: string, variant: BrandingFontVariant): string {
   const canonicalUrl = isLocalBrandingFontPath(variant.url) ? variant.url : new URL(variant.url).href;
+  const safeUrl = escapeCssString(canonicalUrl);
   const format = fontFormat(canonicalUrl);
-  const src = format ? `url("${canonicalUrl}") format("${format}")` : `url("${canonicalUrl}")`;
+  const src = format ? `url("${safeUrl}") format("${format}")` : `url("${safeUrl}")`;
   return `@font-face{font-family:"${familyName}";src:${src};font-weight:${variant.weight};font-style:${variant.style};font-display:swap;}`;
 }
 

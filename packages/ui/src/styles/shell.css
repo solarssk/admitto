@@ -85,7 +85,7 @@ html:has(.shell), body:has(.shell) {
 .brand-link__label {
   /* Always the app's own typeface, never the org theme's --font-sans - this is Admitto's own
      wordmark, not customer-branded content, so a staff org's custom font pick must not reach it. */
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   transform: translateY(1px);
 }
 

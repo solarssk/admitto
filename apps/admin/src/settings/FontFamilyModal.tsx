@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Button, IconButton, Input, Select, useToast } from "@admitto/ui";
 import { uploadThemeFont } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { BrandingFontVariantDto } from "../api/types.js";
+import type { BrandingCustomFontFamilyDto, BrandingFontVariantDto } from "../api/types.js";
 import { Segmented } from "../components/Segmented.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import "../attendees/add-attendee-modal.css";
@@ -13,13 +13,19 @@ const FONT_FILE_RE = /\.(woff2?|ttf|otf)$/i;
  * being typed, so renaming the field mid-edit never needs re-registering already-loaded rows. */
 const PREVIEW_FAMILY = "__AdmittoFontFamilyPreview";
 
+// Covers every weight WEIGHT_KEYWORDS below can guess from a filename (100-900 in steps of 100) -
+// a guess outside this list would set a row's weight to a value the Select below has no matching
+// option for, showing the wrong weight selected while silently saving a different one.
 export const WEIGHT_OPTIONS = [
+  { value: 100, label: "Thin 100" },
+  { value: 200, label: "Extralight 200" },
   { value: 300, label: "Light 300" },
   { value: 400, label: "Regular 400" },
   { value: 500, label: "Medium 500" },
   { value: 600, label: "Semibold 600" },
   { value: 700, label: "Bold 700" },
   { value: 800, label: "Extrabold 800" },
+  { value: 900, label: "Black 900" },
 ] as const;
 
 function weightName(weight: number): string {
@@ -39,6 +45,22 @@ interface FontRow {
   url: string | null;
   loading: boolean;
   loaded: boolean;
+}
+
+/** Row ids whose (weight, style) combo is shared with at least one other row - a browser only
+ * ever renders one file per combo, so every extra row sharing a combo is a silently-unused
+ * upload rather than the distinct style its "N styles" count implies. */
+function duplicateRowIds(rows: readonly FontRow[]): ReadonlySet<number> {
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    const key = `${r.weight}:${r.style}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const duplicates = new Set<number>();
+  for (const r of rows) {
+    if ((counts.get(`${r.weight}:${r.style}`) ?? 0) > 1) duplicates.add(r.id);
+  }
+  return duplicates;
 }
 
 function nextVariantCombo(rows: readonly FontRow[]): { weight: number; style: "normal" | "italic" } | null {
@@ -89,21 +111,47 @@ function detectFromFilename(name: string): { weight: number; style: "normal" | "
   return { weight, style, family };
 }
 
+/** Splits a dropped/browsed FileList into usable font files and a count of skipped ones. */
+function partitionFontFiles(fileList: FileList): { files: File[]; skipped: number } {
+  const files = Array.from(fileList).filter((f) => FONT_FILE_RE.test(f.name));
+  return { files, skipped: fileList.length - files.length };
+}
+
+/** One file per (weight, style) combo guessed within a single batch - last one in wins, so
+ * dropping two files that guess the same combo doesn't create two rows for it. */
+function dedupeByCombo(
+  files: readonly File[],
+): Map<string, { file: File; guess: ReturnType<typeof detectFromFilename> }> {
+  const byCombo = new Map<string, { file: File; guess: ReturnType<typeof detectFromFilename> }>();
+  for (const f of files) {
+    const guess = detectFromFilename(f.name);
+    byCombo.set(`${guess.weight}:${guess.style}`, { file: f, guess });
+  }
+  return byCombo;
+}
+
 export interface FontFamilyModalProps {
   readonly open: boolean;
   readonly onClose: () => void;
   readonly onSaved: (result: { familyName: string; variants: BrandingFontVariantDto[] }) => void;
+  /** Pre-fills the form with an existing saved family's name and variants (each already marked
+   * loaded, no re-upload needed) instead of starting blank - editing rather than creating. */
+  readonly initialFamily?: BrandingCustomFontFamilyDto | null;
 }
 
 /** Package multiple weight/style files under one family name - a browser @font-face needs one
  * FontFace per (weight, style) combo to render real bold/italic instead of faking it, so
- * uploading has to be "create a family", not "pick one file". Always starts blank on open,
- * even to replace an already-saved family - re-add whichever files you want to keep. */
-export function FontFamilyModal({ open, onClose, onSaved }: FontFamilyModalProps) {
+ * uploading has to be "create a family", not "pick one file". Starts blank on open unless
+ * `initialFamily` is given, in which case its variants are pre-loaded for editing. */
+export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }: FontFamilyModalProps) {
   const { addToast } = useToast();
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const rowSeqRef = useRef(0);
+  // Bumped whenever a new load starts for a given row id - an in-flight load whose generation has
+  // since moved on (the user picked another file for that row before the first one finished) just
+  // discards its own result instead of overwriting whatever the newer load already produced.
+  const rowGenerationRef = useRef(new Map<number, number>());
   const facesRef = useRef(new Map<number, FontFace>());
 
   const [familyName, setFamilyName] = useState("");
@@ -111,10 +159,50 @@ export function FontFamilyModal({ open, onClose, onSaved }: FontFamilyModalProps
   const [dragOver, setDragOver] = useState(false);
 
   useEffect(() => {
-    if (open) {
+    if (!open) return;
+    if (!initialFamily) {
       setFamilyName("");
       setRows([]);
+      return;
     }
+    setFamilyName(initialFamily.name);
+    const newRows: FontRow[] = initialFamily.variants.map((v) => ({
+      id: ++rowSeqRef.current,
+      weight: v.weight,
+      style: v.style,
+      fileName: v.url.split("/").pop() ?? null,
+      url: v.url,
+      loading: false,
+      loaded: true,
+    }));
+    setRows(newRows);
+    // Register each already-saved variant's own real preview (by URL, since there's no local
+    // File to read anymore), same as BrandingSettingsPanel does for the picker's own tiles -
+    // otherwise every row would show the fallback sample instead of its real font.
+    let cancelled = false;
+    void (async () => {
+      for (const row of newRows) {
+        const face = new FontFace(PREVIEW_FAMILY, `url("${row.url}")`, {
+          weight: String(row.weight),
+          style: row.style,
+        });
+        try {
+          await face.load();
+          if (cancelled) return;
+          document.fonts.add(face);
+          facesRef.current.set(row.id, face);
+        } catch {
+          // Broken/unreachable file - the row still shows as loaded (it's a real saved
+          // variant), just falls back to a system font for this preview only.
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Only re-run when the modal opens or closes, not on every render's fresh initialFamily
+    // object identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const cleanupPreviewFaces = () => {
@@ -158,17 +246,15 @@ export function FontFamilyModal({ open, onClose, onSaved }: FontFamilyModalProps
   }
 
   function changeRowCombo(id: number, patch: { weight?: number; style?: "normal" | "italic" }) {
-    const row = rows.find((r) => r.id === id);
-    if (!row) return;
-    const next = { ...row, ...patch };
-    if (rows.some((r) => r.id !== id && r.weight === next.weight && r.style === next.style)) {
-      addToast(`${styleLabel(next.weight, next.style)} is already used by another row`, "warning");
-    }
     updateRow(id, patch);
   }
 
   async function loadIntoRow(file: File, guess: { weight: number; style: "normal" | "italic" }, existingId: number | null) {
     const id = existingId ?? ++rowSeqRef.current;
+    const generation = (rowGenerationRef.current.get(id) ?? 0) + 1;
+    rowGenerationRef.current.set(id, generation);
+    const isStale = () => rowGenerationRef.current.get(id) !== generation;
+
     if (existingId) {
       updateRow(id, { weight: guess.weight, style: guess.style, fileName: file.name, url: null, loaded: false, loading: true });
     } else {
@@ -181,6 +267,13 @@ export function FontFamilyModal({ open, onClose, onSaved }: FontFamilyModalProps
       const buf = await file.arrayBuffer();
       const face = new FontFace(PREVIEW_FAMILY, buf, { weight: String(guess.weight), style: guess.style });
       await face.load();
+      // A newer load for this same row started (and possibly already finished) while this one
+      // was still reading/decoding its file - that one is authoritative now, so this one's own
+      // preview is discarded instead of clobbering it.
+      if (isStale()) {
+        document.fonts.delete(face);
+        return;
+      }
       const oldFace = facesRef.current.get(id);
       if (oldFace) document.fonts.delete(oldFace);
       document.fonts.add(face);
@@ -189,8 +282,10 @@ export function FontFamilyModal({ open, onClose, onSaved }: FontFamilyModalProps
       const formData = new FormData();
       formData.append("file", file);
       const { url } = await uploadThemeFont(formData);
+      if (isStale()) return;
       updateRow(id, { loaded: true, loading: false, url });
     } catch (err) {
+      if (isStale()) return;
       const oldFace = facesRef.current.get(id);
       if (oldFace) {
         document.fonts.delete(oldFace);
@@ -219,18 +314,13 @@ export function FontFamilyModal({ open, onClose, onSaved }: FontFamilyModalProps
   // already-added row - replaces in place instead of duplicating, so re-dropping a corrected
   // file just overwrites the old one.
   function handleDropzoneFiles(fileList: FileList) {
-    const files = Array.from(fileList).filter((f) => FONT_FILE_RE.test(f.name));
-    const skipped = fileList.length - files.length;
+    const { files, skipped } = partitionFontFiles(fileList);
     if (skipped > 0) {
       addToast(`Skipped ${skipped} file${skipped === 1 ? "" : "s"} - use .woff, .woff2, .ttf, or .otf`, "error");
     }
     if (files.length === 0) return;
 
-    const byCombo = new Map<string, { file: File; guess: ReturnType<typeof detectFromFilename> }>();
-    for (const f of files) {
-      const guess = detectFromFilename(f.name);
-      byCombo.set(`${guess.weight}:${guess.style}`, { file: f, guess });
-    }
+    const byCombo = dedupeByCombo(files);
     if (!familyName) {
       const first = [...byCombo.values()][0];
       if (first?.guess.family) setFamilyName(first.guess.family);
@@ -247,7 +337,10 @@ export function FontFamilyModal({ open, onClose, onSaved }: FontFamilyModalProps
   }
 
   const loadedRows = rows.filter((r) => r.loaded && r.url);
-  const canSave = familyName.trim().length > 0 && loadedRows.length > 0;
+  // Only rows that actually have a file count - two still-empty rows sharing a combo don't
+  // affect what gets saved, and would otherwise block Save over nothing.
+  const duplicateRowIdSet = duplicateRowIds(loadedRows);
+  const canSave = familyName.trim().length > 0 && loadedRows.length > 0 && duplicateRowIdSet.size === 0;
   const anyUploading = rows.some((r) => r.loading);
 
   function save() {
@@ -263,7 +356,7 @@ export function FontFamilyModal({ open, onClose, onSaved }: FontFamilyModalProps
       <div className="add-attendee-modal__backdrop" role="presentation" onClick={handleClose} />
       <div ref={panelRef} className="add-attendee-modal__panel" style={{ width: "min(94vw, 640px)" }}>
         <h2 className="add-attendee-modal__title" id={titleId}>
-          Create font family
+          {initialFamily ? `Edit "${initialFamily.name}"` : "Create font family"}
         </h2>
         <div className="fontfam-modal-body">
           <Input
@@ -313,7 +406,10 @@ export function FontFamilyModal({ open, onClose, onSaved }: FontFamilyModalProps
           {rows.length > 0 && (
             <div className="fontfam-rows">
               {rows.map((row) => (
-                <div className="fontfam-row" key={row.id}>
+                <div
+                  className={`fontfam-row${duplicateRowIdSet.has(row.id) ? " fontfam-row--duplicate" : ""}`}
+                  key={row.id}
+                >
                   <Select
                     aria-label="Weight"
                     id={`fontfam-row-weight-${row.id}`}
@@ -372,6 +468,12 @@ export function FontFamilyModal({ open, onClose, onSaved }: FontFamilyModalProps
                 </div>
               ))}
             </div>
+          )}
+          {duplicateRowIdSet.size > 0 && (
+            <p className="at-hint at-hint--error" role="alert">
+              A browser only ever shows one file per weight and style. Give each highlighted row
+              its own combination, or remove one, before saving.
+            </p>
           )}
           <button type="button" className="fontfam-add-row" onClick={addEmptyRow}>
             <i className="ti ti-plus" aria-hidden="true" /> Add a variant manually

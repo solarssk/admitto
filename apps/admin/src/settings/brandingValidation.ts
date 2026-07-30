@@ -25,19 +25,9 @@ export interface BrandingValidationResult {
   errors: BrandingFieldErrors;
 }
 
-function variantUrlHasCredentials(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return Boolean(url.username || url.password);
-  } catch {
-    return false;
-  }
-}
-
 function isValidVariant(v: BrandingFontVariantDto): boolean {
   if (!isValidBrandingFontWeight(v.weight)) return false;
   if (v.style !== "normal" && v.style !== "italic") return false;
-  if (variantUrlHasCredentials(v.url)) return false;
   return isSafeBrandingFontUrl(v.url);
 }
 

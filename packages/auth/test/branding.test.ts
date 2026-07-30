@@ -76,6 +76,19 @@ describe("sanitizeTheme (branding theme storage validation)", () => {
     expect(result.custom_font_families).toBeUndefined();
   });
 
+  it("drops a whole family whose only variant's filename carries CSS-breaking characters", () => {
+    // A generated upload filename is always a plain uuid.ext, so this only matters for a
+    // hand-crafted PUT straight to the API - but this is the server-side boundary, so it has to
+    // reject it on its own rather than trusting the admin UI's own upload flow was used.
+    const result = sanitizeTheme({
+      font_family_name: "Brand Sans",
+      custom_font_families: [
+        { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: '/uploads/default/theme/a".woff2' }] },
+      ],
+    });
+    expect(result.custom_font_families).toBeUndefined();
+  });
+
   it("drops a whole family whose only variant has an out-of-range weight", () => {
     const result = sanitizeTheme({
       font_family_name: "Brand Sans",
@@ -198,5 +211,42 @@ describe("sanitizeTheme (branding theme storage validation)", () => {
     expect(sanitizeTheme(null)).toEqual({});
     expect(sanitizeTheme(undefined)).toEqual({});
     expect(sanitizeTheme("garbage")).toEqual({});
+  });
+
+  describe("legacy font_family_url migration", () => {
+    it("converts a pre-existing single-file record into a one-variant custom_font_families entry", () => {
+      const result = sanitizeTheme({
+        primary: "#123456",
+        font_family_name: "Old Font",
+        font_family_url: "/uploads/default/theme/old.woff2",
+      });
+      expect(result.font_family_name).toBe("Old Font");
+      expect(result.custom_font_families).toEqual([
+        { name: "Old Font", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/old.woff2" }] },
+      ]);
+    });
+
+    it("does not migrate when custom_font_families is already present, even alongside a stale font_family_url", () => {
+      const result = sanitizeTheme({
+        font_family_name: "New Font",
+        font_family_url: "/uploads/default/theme/stale.woff2",
+        custom_font_families: [
+          { name: "New Font", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/new.woff2" }] },
+        ],
+      });
+      expect(result.custom_font_families).toEqual([
+        { name: "New Font", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/new.woff2" }] },
+      ]);
+    });
+
+    it("drops an unsafe legacy font_family_url instead of migrating it", () => {
+      const result = sanitizeTheme({ font_family_name: "Old Font", font_family_url: "http://insecure.example/x.woff2" });
+      expect(result.custom_font_families).toBeUndefined();
+    });
+
+    it("does nothing when there's no font_family_name to build a family under", () => {
+      const result = sanitizeTheme({ font_family_url: "/uploads/default/theme/old.woff2" });
+      expect(result.custom_font_families).toBeUndefined();
+    });
   });
 });

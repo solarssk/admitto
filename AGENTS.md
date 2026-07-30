@@ -118,6 +118,13 @@ set `fileParallelism: false`), so cross-file failures there are leftover-state p
 concurrency races — fix them with cleanup in the polluting file, not with `sequence.concurrent`
 (that option only affects tests within one file).
 
+**`eslint-disable-next-line` only covers the literal next line.** When the reason needs 2-3 lines
+of prose, put the plain `//` explanation lines first and the `eslint-disable-next-line` comment
+itself last, directly above the code it's suppressing for — reversing that order (or splitting
+the explanation across lines *after* the directive) silences nothing, since "next line" then
+points at another comment instead of the real target. Grep for `eslint-disable-next-line` mid a
+multi-line comment block if a lint warning appears on a line that already has one right above it.
+
 **Do not create new top-level `.md` documentation files in this repo.** This repo's doc set is
 fixed: `README.md`, `CHANGELOG.md`, `SECURITY.md`, `VERSIONING.md`, `DATA-PROTECTION.md`,
 `AGENTS.md`, `CLAUDE.md`, plus package-level `README.md` files and `docs/*` referenced from them.

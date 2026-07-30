@@ -53,6 +53,14 @@ describe("isLocalBrandingFontPath", () => {
   it("rejects a non-/uploads/ path", () => {
     expect(isLocalBrandingFontPath("/etc/passwd")).toBe(false);
   });
+
+  it("rejects a filename carrying CSS-breaking characters instead of treating it as merely local", () => {
+    // A generated upload filename is always a plain uuid.ext, so this should never occur in
+    // practice - but the check has to reject it on its own, since fontFaceRuleFor interpolates a
+    // "local" path's filename verbatim into @font-face CSS with no further escaping.
+    expect(isLocalBrandingFontPath('/uploads/default/theme/a".woff2')).toBe(false);
+    expect(isLocalBrandingFontPath("/uploads/default/theme/a;}body{color:red}.woff2")).toBe(false);
+  });
 });
 
 describe("isSafeBrandingFontUrl", () => {

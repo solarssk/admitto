@@ -3311,6 +3311,17 @@
   border-color: var(--primary);
 }
 
+/* At MAX_CUSTOM_FONT_FAMILIES, this is a plain (non-button) card again - not clickable, so no
+   hover/cursor affordance either. */
+.font-option-card--upload-limit {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.font-option-card--upload-limit:hover {
+  border-color: var(--border);
+}
+
 .font-option-card__select {
   all: unset;
   display: flex;
@@ -3325,14 +3336,22 @@
    saved custom tile needs no reserved top padding of its own and stays exactly the same height
    as every built-in tile (a reserved-padding approach previously pushed the tile's own content
    down relative to its siblings and left an uneven gap above the styles pill). */
-.font-option-card__remove {
+.font-option-card__remove,
+.font-option-card__edit {
   position: absolute;
   top: -8px;
-  right: -8px;
   background: var(--surface-card);
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-pill);
   box-shadow: var(--shadow-sm);
+}
+
+.font-option-card__remove {
+  right: -8px;
+}
+
+.font-option-card__edit {
+  left: -8px;
 }
 
 .font-styles-pill-wrap {
@@ -3461,6 +3480,14 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  border-radius: var(--radius-sm);
+}
+
+/* Shares its weight+style combo with another row below - only one of the two files will ever
+   actually render, so the extra upload is silently wasted until this is resolved. */
+.fontfam-row--duplicate {
+  outline: var(--border-width) solid var(--status-error);
+  outline-offset: 4px;
 }
 
 .fontfam-row .at-field {
@@ -3559,7 +3586,17 @@
   margin-top: 20px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+}
+
+/* Same reasoning as .logo-upload: a uniform gap would also space the heading from its own
+   description below it - tight there to match Primary colour/Font, every other pair keeps the
+   same 10px rhythm as before. */
+.theme-preview > *:not(:last-child) {
+  margin-bottom: 10px;
+}
+
+.theme-preview > .at-label {
+  margin-bottom: 0;
 }
 
 .theme-preview__bar {

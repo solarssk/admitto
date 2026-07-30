@@ -24,24 +24,37 @@ vi.mock("../../src/settings/FontFamilyModal.js", () => ({
   FontFamilyModal: ({
     open,
     onSaved,
+    initialFamily,
   }: {
     open: boolean;
     onSaved: (result: { familyName: string; variants: Array<{ weight: number; style: string; url: string }> }) => void;
+    initialFamily?: { name: string; variants: Array<{ weight: number; style: string; url: string }> } | null;
   }) =>
     open ? (
       <div>
         mock-font-family-modal
+        {initialFamily && <div>editing: {initialFamily.name}</div>}
         <button
           type="button"
           onClick={() =>
             onSaved({
-              familyName: "Acme Sans",
-              variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/abc123.woff2" }],
+              familyName: initialFamily?.name ?? "Acme Sans",
+              variants: initialFamily?.variants ?? [
+                { weight: 400, style: "normal", url: "/uploads/default/theme/abc123.woff2" },
+              ],
             })
           }
         >
           mock-save-family
         </button>
+        {initialFamily && (
+          <button
+            type="button"
+            onClick={() => onSaved({ familyName: `${initialFamily.name} Renamed`, variants: initialFamily.variants })}
+          >
+            mock-save-family-renamed
+          </button>
+        )}
       </div>
     ) : null,
 }));
@@ -246,7 +259,13 @@ describe("BrandingSettingsPanel — colour palette", () => {
   it("Restore defaults reverts colour and font to Admitto's own defaults without touching organisation name/logo", async () => {
     mockFetchOrg.mockResolvedValueOnce({ org_name: "Acme Corp", logo_url: "https://cdn.example.com/logo.png" });
     mockFetchTheme.mockResolvedValueOnce({
-      theme: { primary: "#123456", font_family_name: "Old Font", font_family_url: "/uploads/default/theme/old.woff2" },
+      theme: {
+        primary: "#123456",
+        font_family_name: "Old Font",
+        custom_font_families: [
+          { name: "Old Font", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/old.woff2" }] },
+        ],
+      },
     });
     renderWithToast(<BrandingSettingsPanel />);
     await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
@@ -327,6 +346,24 @@ describe("BrandingSettingsPanel — font picker", () => {
     expect(screen.getByText("mock-font-family-modal")).toBeTruthy();
   });
 
+  it("replaces the Custom font upload tile with a locked state once 8 families are already saved", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce({
+      theme: {
+        font_family_name: "Family 1",
+        custom_font_families: Array.from({ length: 8 }, (_, i) => ({
+          name: `Family ${i + 1}`,
+          variants: [{ weight: 400, style: "normal", url: `/uploads/default/theme/${i}.woff2` }],
+        })),
+      },
+    });
+    renderWithToast(<BrandingSettingsPanel />);
+    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+
+    expect(screen.queryByRole("button", { name: /^Custom font/ })).toBeNull();
+    expect(screen.getByText("Limit reached")).toBeTruthy();
+  });
+
   it("wires the modal's saved family into the theme draft, active tile, and eventual Save", async () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
@@ -389,6 +426,95 @@ describe("BrandingSettingsPanel — font picker", () => {
 
     expect(screen.getByText("First Family").closest(".font-option-card")!.className).not.toContain("font-option-card--active");
     expect(screen.getByText("Second Family").closest(".font-option-card")!.className).toContain("font-option-card--active");
+  });
+
+  it("clicking Edit on a saved custom family opens the modal pre-filled with that family", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce({
+      theme: {
+        font_family_name: "Acme Sans",
+        custom_font_families: [
+          { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
+        ],
+      },
+    });
+    renderWithToast(<BrandingSettingsPanel />);
+    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+
+    expect(screen.queryByText("mock-font-family-modal")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Edit Acme Sans" }));
+
+    expect(screen.getByText("mock-font-family-modal")).toBeTruthy();
+    expect(screen.getByText("editing: Acme Sans")).toBeTruthy();
+  });
+
+  it("saving an edited family under the same name replaces it in place instead of duplicating it, keeping active status", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce({
+      theme: {
+        font_family_name: "Acme Sans",
+        custom_font_families: [
+          { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
+        ],
+      },
+    });
+    renderWithToast(<BrandingSettingsPanel />);
+    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Acme Sans" }));
+    fireEvent.click(screen.getByText("mock-save-family"));
+
+    expect(screen.getAllByText("Acme Sans")).toHaveLength(1);
+    expect(screen.getByText("Acme Sans").closest(".font-option-card")!.className).toContain(
+      "font-option-card--active",
+    );
+    expect(screen.queryByText("mock-font-family-modal")).toBeNull();
+  });
+
+  it("renaming a family while editing it drops the old name and keeps the new one active, since the old one was active", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce({
+      theme: {
+        font_family_name: "Acme Sans",
+        custom_font_families: [
+          { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
+        ],
+      },
+    });
+    renderWithToast(<BrandingSettingsPanel />);
+    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Acme Sans" }));
+    fireEvent.click(screen.getByText("mock-save-family-renamed"));
+
+    expect(screen.queryByText("Acme Sans")).toBeNull();
+    expect(screen.getByText("Acme Sans Renamed").closest(".font-option-card")!.className).toContain(
+      "font-option-card--active",
+    );
+  });
+
+  it("editing a saved-but-inactive family does not make it active after saving", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce({
+      theme: {
+        font_family_name: "Manrope",
+        custom_font_families: [
+          { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
+        ],
+      },
+    });
+    renderWithToast(<BrandingSettingsPanel />);
+    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Acme Sans" }));
+    fireEvent.click(screen.getByText("mock-save-family"));
+
+    expect(screen.getByText("Acme Sans").closest(".font-option-card")!.className).not.toContain(
+      "font-option-card--active",
+    );
+    expect(screen.getByRole("button", { name: /Manrope/ }).closest(".font-option-card")!.className).toContain(
+      "font-option-card--active",
+    );
   });
 
   it("deleting the active custom family falls back to the default built-in font", async () => {

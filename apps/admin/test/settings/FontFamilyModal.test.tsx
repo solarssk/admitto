@@ -69,6 +69,42 @@ describe("FontFamilyModal", () => {
     expect(screen.queryByText("Create font family")).toBeNull();
   });
 
+  it("pre-fills the family name and rows from initialFamily, each already marked loaded", () => {
+    renderWithToast(
+      <FontFamilyModal
+        open
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+        initialFamily={{
+          name: "Acme Sans",
+          variants: [
+            { weight: 400, style: "normal", url: "/uploads/default/theme/regular.woff2" },
+            { weight: 700, style: "italic", url: "/uploads/default/theme/bold-italic.woff2" },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText('Edit "Acme Sans"')).toBeTruthy();
+    expect(screen.getByLabelText("Family name")).toHaveProperty("value", "Acme Sans");
+    expect(rows()).toHaveLength(2);
+    const [first, second] = rows();
+    expect(within(first!).getByRole("combobox", { name: "Weight" })).toHaveProperty("value", "400");
+    expect(within(first!).getByText("regular.woff2")).toBeTruthy();
+    expect(within(second!).getByRole("combobox", { name: "Weight" })).toHaveProperty("value", "700");
+    expect(within(second!).getByRole("radio", { name: "Italic" }).getAttribute("aria-checked")).toBe("true");
+    // Already-saved variants need no re-upload - Save is enabled immediately.
+    expect(isDisabled(screen.getByRole("button", { name: "Save font family" }))).toBe(false);
+  });
+
+  it("shows the plain create title and starts blank when initialFamily is absent", () => {
+    renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />);
+
+    expect(screen.getByText("Create font family")).toBeTruthy();
+    expect(screen.getByLabelText("Family name")).toHaveProperty("value", "");
+    expect(rows()).toHaveLength(0);
+  });
+
   it("disables Save until a family name and at least one loaded variant are present", async () => {
     mockUploadFont.mockResolvedValueOnce({ url: "/uploads/default/theme/a.woff2" });
     renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />);
@@ -99,6 +135,24 @@ describe("FontFamilyModal", () => {
     expect(within(row).getByRole("combobox", { name: "Weight" })).toHaveProperty("value", "700");
     expect(within(row).getByRole("radio", { name: "Italic" }).getAttribute("aria-checked")).toBe("true");
     await waitFor(() => expect(screen.getByLabelText("Family name")).toHaveProperty("value", "Acme Sans"));
+  });
+
+  it("guesses the out-of-range weights (Thin/Black) too, each with its own matching Select option", async () => {
+    mockUploadFont
+      .mockResolvedValueOnce({ url: "/uploads/default/theme/a.woff2" })
+      .mockResolvedValueOnce({ url: "/uploads/default/theme/b.woff2" });
+    renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText(/Drop font files here/), {
+      target: {
+        files: [new File(["x"], "Acme-Sans-Thin.woff2"), new File(["x"], "Acme-Sans-Black.woff2")],
+      },
+    });
+
+    await waitFor(() => expect(rows()).toHaveLength(2));
+    const [thinRow, blackRow] = rows();
+    expect(within(thinRow!).getByRole("combobox", { name: "Weight" })).toHaveProperty("value", "100");
+    expect(within(blackRow!).getByRole("combobox", { name: "Weight" })).toHaveProperty("value", "900");
   });
 
   it("uploads the dropped file to the server and shows it as loaded", async () => {
@@ -182,12 +236,40 @@ describe("FontFamilyModal", () => {
     expect(rows()).toHaveLength(1);
   });
 
+  it("keeps the newest file's result for a row even if an earlier, still-in-flight upload for it resolves later", async () => {
+    let resolveFirst!: (v: { url: string }) => void;
+    let resolveSecond!: (v: { url: string }) => void;
+    mockUploadFont
+      .mockReturnValueOnce(new Promise((res) => (resolveFirst = res)))
+      .mockReturnValueOnce(new Promise((res) => (resolveSecond = res)));
+    renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText(/Drop font files here/), {
+      target: { files: [new File(["x"], "Acme-Sans-Regular.woff2")] },
+    });
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    const row = rows()[0]!;
+
+    // Pick a different file for the same row before the first upload has resolved.
+    fireEvent.change(fileInputOf(row), { target: { files: [new File(["y"], "Acme-Sans-Bold.woff2")] } });
+    await waitFor(() => expect(mockUploadFont).toHaveBeenCalledTimes(2));
+
+    // Resolve the newer (second) upload, then the stale first one afterwards.
+    resolveSecond({ url: "/uploads/default/theme/second.woff2" });
+    await waitFor(() => expect(within(row).getByText("Acme-Sans-Bold.woff2")).toBeTruthy());
+    resolveFirst({ url: "/uploads/default/theme/first.woff2" });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(within(row).getByText("Acme-Sans-Bold.woff2")).toBeTruthy();
+    expect(rows()).toHaveLength(1);
+  });
+
   it("adds an empty row via 'Add a variant manually', picking the next unused weight/style combo", () => {
     renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />);
 
     fireEvent.click(screen.getByRole("button", { name: /Add a variant manually/ }));
     expect(rows()).toHaveLength(1);
-    expect(within(rows()[0]!).getByRole("combobox", { name: "Weight" })).toHaveProperty("value", "300");
+    expect(within(rows()[0]!).getByRole("combobox", { name: "Weight" })).toHaveProperty("value", "100");
     expect(within(rows()[0]!).getByRole("radio", { name: "Normal" }).getAttribute("aria-checked")).toBe("true");
   });
 
@@ -204,19 +286,33 @@ describe("FontFamilyModal", () => {
     expect(rows()).toHaveLength(0);
   });
 
-  it("warns (without blocking) when manually changing a row to a weight/style combo already used by another row", () => {
+  it("blocks Save and flags both rows when manually changing one to a combo already used by a loaded row", async () => {
+    mockUploadFont
+      .mockResolvedValueOnce({ url: "/uploads/default/theme/regular.woff2" })
+      .mockResolvedValueOnce({ url: "/uploads/default/theme/bold.woff2" });
     renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />);
 
-    const addRow = () => fireEvent.click(screen.getByRole("button", { name: /Add a variant manually/ }));
-    addRow(); // row 1: 300 Light / normal (first unused combo)
-    addRow(); // row 2: 400 Regular / normal (next unused combo)
-    const [, second] = rows();
+    fireEvent.change(screen.getByLabelText(/Drop font files here/), {
+      target: {
+        files: [new File(["x"], "Acme-Sans-Regular.woff2"), new File(["x"], "Acme-Sans-Bold.woff2")],
+      },
+    });
+    await waitFor(() => {
+      expect(isDisabled(screen.getByRole("button", { name: "Save font family" }))).toBe(false);
+    });
+    const [first, second] = rows();
+    expect(within(first!).getByRole("combobox", { name: "Weight" })).toHaveProperty("value", "400");
 
-    fireEvent.change(within(second!).getByRole("combobox", { name: "Weight" }), { target: { value: "300" } });
+    fireEvent.change(within(second!).getByRole("combobox", { name: "Weight" }), { target: { value: "400" } });
 
-    expect(screen.getByTestId("at-toast").textContent).toMatch(/Light is already used by another row/);
-    // Soft warning only - the change still applies, both rows now read 300/normal.
-    expect(within(second!).getByRole("combobox", { name: "Weight" })).toHaveProperty("value", "300");
+    // The change still applies - both rows now read 400/normal...
+    expect(within(second!).getByRole("combobox", { name: "Weight" })).toHaveProperty("value", "400");
+    // ...but a browser can only ever render one file per combo, so this now blocks Save instead
+    // of just a transient, missable toast.
+    expect(first!.className).toContain("fontfam-row--duplicate");
+    expect(second!.className).toContain("fontfam-row--duplicate");
+    expect(screen.getByRole("alert").textContent).toMatch(/only ever shows one file per weight and style/);
+    expect(isDisabled(screen.getByRole("button", { name: "Save font family" }))).toBe(true);
   });
 
   it("calls onSaved with the family name and every loaded variant's weight/style/url, and closes", async () => {
