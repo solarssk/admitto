@@ -1178,13 +1178,6 @@
   width: 88px;
 }
 
-/* Detail page */
-.attendee-detail-page {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
 /* Mirrors .attendees-pageheader's mobile treatment above (row restored beside the title,
    compact buttons, decorative icons dropped except the More menu's own) - was left at the
    shared PageHeader's default (stack below, full desktop button size) until a PO review found
