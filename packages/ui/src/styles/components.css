@@ -323,7 +323,10 @@
   font-size: var(--fs-sm);
 }
 .at-notice__icon {
-  margin-top: 2px;
+  /* Optically centers the icon against the first line of text (--fs-sm/Tabler webfont's own
+     glyph-box metrics leave it ~1px high at 2px - verified empirically across all 4 variants,
+     short and wrapped text, and with embedded interactive children like a Retry button). */
+  margin-top: 3px;
   flex: none;
 }
 /* A permanent fact about the surrounding view, not an alert - a neutral "well" reads as
