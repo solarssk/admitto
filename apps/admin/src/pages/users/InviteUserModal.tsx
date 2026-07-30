@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, ModalBackdrop, Switch } from "@admitto/ui";
+import { Button, ModalBackdrop, Notice, Switch } from "@admitto/ui";
 import {
   ApiError,
   createAdminUser,
@@ -153,9 +153,7 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
           Invite a new team member
         </h2>
         {error && (
-          <p className="users-modal__error" role="alert">
-            {error}
-          </p>
+          <Notice variant="error" role="alert">{error}</Notice>
         )}
         <div className="users-modal__field">
           <label htmlFor="invite-email">Email address</label>

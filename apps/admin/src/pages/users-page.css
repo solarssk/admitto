@@ -319,16 +319,6 @@
   font-weight: 600;
 }
 
-.users-modal__error {
-  margin: 0;
-  font-size: var(--fs-sm);
-  color: var(--status-error-fg);
-  background: var(--status-error-tint);
-  border: 1px solid var(--status-error);
-  border-radius: var(--radius);
-  padding: var(--space-2) var(--space-3);
-}
-
 .users-modal__field label {
   display: block;
   font-size: var(--fs-sm);

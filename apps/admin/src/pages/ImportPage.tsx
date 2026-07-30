@@ -8,7 +8,7 @@ import {
   type RefObject,
 } from "react";
 import { Link, useOutletContext, useParams } from "react-router";
-import { Button, Card, PageHeader, Switch, Tooltip, useToast } from "@admitto/ui";
+import { Button, Card, Notice, PageHeader, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
   ApiError,
   commitImport,
@@ -480,7 +480,7 @@ function CapacityBlockedBanner({
   onForceCapacityChange,
 }: Readonly<CapacityBlockedBannerProps>) {
   return (
-    <div className="import-warn import-capacity-banner" role="alert">
+    <Notice variant="warning" role="alert" className="import-warn">
       <p>
         Event is at capacity ({capacityBlocked.current}/{capacityBlocked.capacity}).
         {capacityBlocked.incoming != null && (
@@ -506,7 +506,7 @@ function CapacityBlockedBanner({
           )}
         </ArchivedGuard>
       )}
-    </div>
+    </Notice>
   );
 }
 
@@ -585,9 +585,9 @@ function ValidationSummaryCard({
       </div>
 
       {preview.parse.validCount === 0 && (
-        <p className="import-warn">
+        <Notice variant="warning" className="import-warn">
           No valid rows to import. Fix the file or choose a different file before committing.
-        </p>
+        </Notice>
       )}
 
       {preview.parse.warnings.length > 0 && (

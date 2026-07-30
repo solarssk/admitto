@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Badge, Button, Card, Checkbox, Input, PasswordStrengthMeter, Select, Spinner, useToast } from "@admitto/ui";
+import { Badge, Button, Card, Checkbox, Input, Notice, PasswordStrengthMeter, Select, Spinner, useToast } from "@admitto/ui";
 import {
   ApiError,
   cancelMfaEnroll,
@@ -324,7 +324,9 @@ export function AccountPage() {
       ) : (
         <>
           {account.must_change_password && (
-            <div className="account-warn-block" role="alert">You are required to change your password.</div>
+            <Notice variant="warning" role="alert" className="account-warn-block">
+              You are required to change your password.
+            </Notice>
           )}
           <form
             className="account-password-form"
