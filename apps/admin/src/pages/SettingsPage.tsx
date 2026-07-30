@@ -1,7 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
-import { BrandingPanel } from "../settings/BrandingPanel.js";
-import { OrganisationBrandingPanel } from "../settings/OrganisationBrandingPanel.js";
+import { BrandingSettingsPanel } from "../settings/BrandingSettingsPanel.js";
 import { MailTransportPanel } from "../settings/MailTransportPanel.js";
 import { InstanceUrlPanel } from "../settings/InstanceUrlPanel.js";
 import { SessionsPanel } from "../settings/SessionsPanel.js";
@@ -66,9 +65,16 @@ export function SettingsTabContent() {
         label="General"
         className="settings-sections"
       >
-        <OrganisationBrandingPanel />
-        <BrandingPanel />
         <InstanceUrlPanel />
+      </SettingsTabPanel>
+      <SettingsTabPanel
+        tab="branding"
+        activeTab={tab}
+        visited={visitedTabs}
+        label="Branding"
+        className="settings-sections"
+      >
+        <BrandingSettingsPanel />
       </SettingsTabPanel>
       <SettingsTabPanel
         tab="mail"

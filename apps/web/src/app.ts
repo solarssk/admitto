@@ -146,7 +146,11 @@ import {
   handleUpdateResource,
   handleDeleteResource,
 } from "./admin/event-context-routes.js";
-import { handlePostEventBrandingUpload, handlePostUpload } from "./admin/uploads-api-routes.js";
+import {
+  handlePostEventBrandingUpload,
+  handlePostThemeFontUpload,
+  handlePostUpload,
+} from "./admin/uploads-api-routes.js";
 import {
   handleListEventImageAssets,
   handleCreateEventImageAsset,
@@ -443,6 +447,11 @@ export function createApp(options: CreateAppOptions = {}) {
   });
   const uploadBodyLimit = bodyLimit({
     maxSize: Math.ceil(2.1 * 1024 * 1024),
+    onError: (c) => c.json({ error: "file too large" }, 413),
+  });
+  // Font files run larger than the branding-image cap above (MAX_FONT_UPLOAD_BYTES, branding-upload.ts).
+  const fontUploadBodyLimit = bodyLimit({
+    maxSize: Math.ceil(5.1 * 1024 * 1024),
     onError: (c) => c.json({ error: "file too large" }, 413),
   });
   const checkInPanelGuard = createCheckInPanelCapabilityGuard(db);
@@ -1007,6 +1016,13 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/api/admin/uploads", jsonPostCsrf, staffAdminGate, uploadBodyLimit, (c) =>
     handlePostUpload(c, db),
   );
+  app.post(
+    "/api/admin/theme-font-upload",
+    jsonPostCsrf,
+    staffAdminGate,
+    fontUploadBodyLimit,
+    (c) => handlePostThemeFontUpload(c, db),
+  );
 
   app.get("/api/account", requireSession, (c) => handleGetAccount(c, db));
   app.patch("/api/account/profile", jsonPostCsrf, requireSession, (c) =>
@@ -1174,6 +1190,10 @@ export function createApp(options: CreateAppOptions = {}) {
       ".jpg": "image/jpeg",
       ".jpeg": "image/jpeg",
       ".webp": "image/webp",
+      ".woff2": "font/woff2",
+      ".woff": "font/woff",
+      ".ttf": "font/ttf",
+      ".otf": "font/otf",
     };
     const ct = contentTypeMap[ext] ?? "application/octet-stream";
     c.header("Content-Type", ct);

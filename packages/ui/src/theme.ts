@@ -2,10 +2,29 @@ const DEFAULT_PRIMARY = "#066fd1";
 
 const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
 
+/** One uploaded/linked font file for a specific weight+style — a real family (e.g. "Acme Sans")
+ * needs one of these per weight/style combo it actually has, since a browser can only render a
+ * true bold/italic from a file declared for that exact combo; anything missing is synthesized
+ * (faked, not the real typeface) from whichever variant IS present. */
+export interface BrandingFontVariant {
+  weight: number;
+  style: "normal" | "italic";
+  url: string;
+}
+
+/** A saved custom font family - a name plus every weight/style file uploaded for it. Kept as a
+ * library (not just "the active one") so switching back to a previously-uploaded family doesn't
+ * need re-uploading its files. */
+export interface BrandingCustomFontFamily {
+  name: string;
+  variants: BrandingFontVariant[];
+}
+
 export interface BrandingThemeInput {
   primary?: string;
+  /** The active pick - either a built-in name (e.g. "Manrope") or one of custom_font_families[].name. */
   font_family_name?: string;
-  font_family_url?: string;
+  custom_font_families?: BrandingCustomFontFamily[];
 }
 
 export interface ResolvedThemeVars {
@@ -54,8 +73,24 @@ export function isValidBrandingFontFamilyName(name: string): boolean {
   return !FONT_FAMILY_NAME_TEST_RE.test(trimmed);
 }
 
-/** HTTPS font URL safe for storage and @font-face (no credentials, max 2048). */
+// Mirrors apps/admin/src/utils/safeBrandingLogoHref.ts's BRANDING_UPLOAD_PATH pattern, scoped to
+// this feature's own uploads/{orgId}/theme/{file} storage path and font extensions. The filename
+// stem is restricted to a safe charset (not just "no slash") as the primary defense - this path
+// (unlike the PUT /api/staff/theme endpoint it validates for) is never required to be
+// server-generated, so it can't just rely on every upload having gone through the honest upload
+// flow first. fontFaceRuleFor below also escapes the URL before interpolating it into CSS, as a
+// second, independent layer rather than trusting this regex alone.
+const BRANDING_FONT_UPLOAD_PATH = /^\/uploads\/[a-z0-9][a-z0-9_-]{0,63}\/theme\/[a-z0-9_-]+\.(woff2?|ttf|otf)$/i;
+
+/** True for a validated local `/uploads/.../theme/` upload path (no `..`, matches the pattern). */
+export function isLocalBrandingFontPath(url: string): boolean {
+  return url.startsWith("/uploads/") && !url.includes("..") && BRANDING_FONT_UPLOAD_PATH.test(url);
+}
+
+/** Font URL safe for storage and @font-face: an uploaded local `/uploads/.../theme/` path, or an
+ * external HTTPS URL (no credentials, max 2048 chars). */
 export function isSafeBrandingFontUrl(url: string): boolean {
+  if (isLocalBrandingFontPath(url)) return true;
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== "https:") return false;
@@ -65,6 +100,52 @@ export function isSafeBrandingFontUrl(url: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** True for a usable CSS font-weight (100-900 per the CSS spec's numeric keyword range). */
+export function isValidBrandingFontWeight(weight: number): boolean {
+  return Number.isInteger(weight) && weight >= 100 && weight <= 900;
+}
+
+/** Names of the self-hosted built-in fonts (see packages/ui/src/styles/tokens/fonts.css) - a
+ * custom family can't be saved under one of these. Both a built-in pick and a custom family write
+ * the same font_family_name string, so a same-named custom family would make the built-in
+ * unreachable (every reader of that string, including the admin picker and resolveThemeVars
+ * above, would always resolve to the custom one instead). */
+export const BUILT_IN_FONT_FAMILY_NAMES = ["Manrope", "Space Grotesk", "IBM Plex Sans"] as const;
+
+/** True when name matches a built-in font name, case-insensitively. */
+export function isReservedBrandingFontFamilyName(name: string): boolean {
+  const trimmed = name.trim().toLowerCase();
+  return BUILT_IN_FONT_FAMILY_NAMES.some((n) => n.toLowerCase() === trimmed);
+}
+
+const FONT_FORMAT_BY_EXT: Record<string, string> = {
+  woff2: "woff2",
+  woff: "woff",
+  ttf: "truetype",
+  otf: "opentype",
+};
+
+/** CSS `format()` hint from a font URL's extension - browsers mostly sniff the bytes directly
+ * regardless, but a correct hint is still the honest thing to declare. */
+function fontFormat(url: string): string | undefined {
+  const match = /\.([a-z0-9]+)$/i.exec(url);
+  return match ? FONT_FORMAT_BY_EXT[match[1].toLowerCase()] : undefined;
+}
+
+/** Escape `\` and `"` for safe interpolation into a double-quoted CSS string - defense in depth
+ * alongside the URL charset validation above, not a substitute for it. */
+function escapeCssString(value: string): string {
+  return value.replaceAll("\\", String.raw`\\`).replaceAll('"', String.raw`\"`);
+}
+
+function fontFaceRuleFor(familyName: string, variant: BrandingFontVariant): string {
+  const canonicalUrl = isLocalBrandingFontPath(variant.url) ? variant.url : new URL(variant.url).href;
+  const safeUrl = escapeCssString(canonicalUrl);
+  const format = fontFormat(canonicalUrl);
+  const src = format ? `url("${safeUrl}") format("${format}")` : `url("${safeUrl}")`;
+  return `@font-face{font-family:"${familyName}";src:${src};font-weight:${variant.weight};font-style:${variant.style};font-display:swap;}`;
 }
 
 /** Resolve theme with anti-lockout fallback to Tabler defaults. */
@@ -83,12 +164,22 @@ export function resolveThemeVars(input?: BrandingThemeInput | null): ResolvedThe
     "--primary-tint": tint,
   };
 
-  const fontUrl = input?.font_family_url?.trim();
+  // A name alone (matching no saved custom family) selects a built-in font that's either
+  // self-hosted via @fontsource or already installed on the reader's system - no @font-face
+  // needed here either way, just the CSS font-family stack below. A name that DOES match a saved
+  // custom family additionally needs one @font-face per weight/style it has (a browser can only
+  // render a true bold/italic from a file declared for that exact combo - anything missing is
+  // synthesized from whichever variant is present, not the real typeface).
   const fontName = sanitizeBrandingFontFamilyName(input?.font_family_name ?? "");
-  if (fontUrl && fontName && isSafeBrandingFontUrl(fontUrl)) {
-    const canonicalUrl = new URL(fontUrl).href;
+  if (fontName) {
     vars["--font-sans"] = `"${fontName}", Inter, system-ui, sans-serif`;
-    vars.fontFaceCss = `@font-face{font-family:"${fontName}";src:url("${canonicalUrl}") format("woff2"),url("${canonicalUrl}") format("woff");font-display:swap;}`;
+    const activeFamily = input?.custom_font_families?.find((f) => f.name === fontName);
+    const variants = (activeFamily?.variants ?? []).filter(
+      (v) => isValidBrandingFontWeight(v.weight) && (v.style === "normal" || v.style === "italic") && isSafeBrandingFontUrl(v.url),
+    );
+    if (variants.length > 0) {
+      vars.fontFaceCss = variants.map((v) => fontFaceRuleFor(fontName, v)).join("");
+    }
   }
 
   return vars;

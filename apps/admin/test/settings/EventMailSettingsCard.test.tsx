@@ -188,7 +188,7 @@ describe("EventMailSettingsCard — inherited (organization) mode", () => {
 
     await screen.findByText(SMTP_SUMMARY_TEXT);
     expect(
-      screen.getByRole("radio", { name: "Organization mail" }).getAttribute("aria-checked"),
+      screen.getByRole("radio", { name: "Organization" }).getAttribute("aria-checked"),
     ).toBe("true");
   });
 
@@ -249,7 +249,7 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
     renderCard();
     await screen.findByText(SMTP_SUMMARY_TEXT);
 
-    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated" }));
 
     expect(screen.getByText(DEDICATED_HINT)).toBeTruthy();
     // No tile selected and no provider-specific card rendered yet — a prefilled-but-
@@ -275,14 +275,14 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
     renderCard();
     await screen.findByText(SMTP_SUMMARY_TEXT);
 
-    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated" }));
     fireEvent.click(screen.getByRole("radio", { name: "SMTP (recommended)" }));
     fireEvent.change(screen.getByLabelText("SMTP host"), {
       target: { value: "smtp.in-progress.example.com" },
     });
 
-    fireEvent.click(screen.getByRole("radio", { name: "Organization mail" }));
-    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Organization" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated" }));
 
     expect((screen.getByLabelText("SMTP host") as HTMLInputElement).value).toBe(
       "smtp.in-progress.example.com",
@@ -294,7 +294,7 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
     renderCard();
     await screen.findByText(SMTP_SUMMARY_TEXT);
 
-    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated" }));
 
     expect(screen.queryByRole("radio", { name: "Not configured" })).toBeNull();
   });
@@ -305,7 +305,7 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
     const { ref } = renderCard();
     await screen.findByText(SMTP_SUMMARY_TEXT);
 
-    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated" }));
     fireEvent.click(screen.getByRole("radio", { name: "SMTP (recommended)" }));
     fireEvent.change(screen.getByLabelText("From address"), {
       target: { value: "dedicated@example.com" },
@@ -324,7 +324,7 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
     expect(mockSave.mock.calls[0][1]).toMatchObject({ host: "smtp.dedicated.example.com" });
     await waitFor(() =>
       expect(
-        screen.getByRole("radio", { name: "Dedicated for this event" }).getAttribute("aria-checked"),
+        screen.getByRole("radio", { name: "Dedicated" }).getAttribute("aria-checked"),
       ).toBe("true"),
     );
   });
@@ -334,14 +334,14 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
     const { ref } = renderCard();
     await screen.findByText(SMTP_SUMMARY_TEXT);
 
-    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated" }));
     expect(screen.getByText(DEDICATED_HINT)).toBeTruthy();
 
     act(() => {
       ref.current?.reset();
     });
     expect(
-      screen.getByRole("radio", { name: "Organization mail" }).getAttribute("aria-checked"),
+      screen.getByRole("radio", { name: "Organization" }).getAttribute("aria-checked"),
     ).toBe("true");
     expect(screen.queryByText(DEDICATED_HINT)).toBeNull();
   });
@@ -351,7 +351,7 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
     const { ref } = renderCard();
     await screen.findByText(SMTP_SUMMARY_TEXT);
 
-    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated" }));
     fireEvent.click(screen.getByRole("radio", { name: "SMTP (recommended)" }));
     await act(async () => {
       await ref.current?.save();
@@ -369,7 +369,7 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
     const { ref } = renderCard();
     await screen.findByText(SMTP_SUMMARY_TEXT);
 
-    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated" }));
     fireEvent.click(screen.getByRole("radio", { name: "SMTP (recommended)" }));
     fireEvent.change(screen.getByLabelText("From address"), {
       target: { value: "dedicated@example.com" },
@@ -394,7 +394,7 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
     renderCard();
     await screen.findByText(SMTP_SUMMARY_TEXT);
 
-    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated" }));
     fireEvent.click(screen.getByRole("radio", { name: "Microsoft Graph" }));
 
     expect(screen.getByLabelText("Mailbox")).toBeTruthy();
@@ -406,7 +406,7 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
     renderCard();
     await screen.findByText(SMTP_SUMMARY_TEXT);
 
-    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated" }));
     fireEvent.click(screen.getByRole("radio", { name: "Power Automate" }));
 
     expect(screen.getByText("Flow URL")).toBeTruthy();
@@ -420,7 +420,7 @@ describe("EventMailSettingsCard — reverting to organization", () => {
     renderCard();
     await screen.findByText(DEDICATED_HINT);
 
-    fireEvent.click(screen.getByRole("radio", { name: "Organization mail" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Organization" }));
 
     expect(screen.getByText(/Reverting will remove this event's dedicated transport/)).toBeTruthy();
   });
@@ -431,7 +431,7 @@ describe("EventMailSettingsCard — reverting to organization", () => {
     const { ref } = renderCard();
     await screen.findByText(DEDICATED_HINT);
 
-    fireEvent.click(screen.getByRole("radio", { name: "Organization mail" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Organization" }));
     await act(async () => {
       await ref.current?.save();
     });
@@ -450,7 +450,7 @@ describe("EventMailSettingsCard — reverting to organization", () => {
     const { ref } = renderCard();
     await screen.findByText(DEDICATED_HINT);
 
-    fireEvent.click(screen.getByRole("radio", { name: "Organization mail" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Organization" }));
     await act(async () => {
       await ref.current?.save();
     });
@@ -466,7 +466,7 @@ describe("EventMailSettingsCard — reverting to organization", () => {
     const { ref } = renderCard();
     await screen.findByText(DEDICATED_HINT);
 
-    fireEvent.click(screen.getByRole("radio", { name: "Organization mail" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Organization" }));
     await act(async () => {
       await ref.current?.save();
     });
@@ -533,7 +533,7 @@ describe("EventMailSettingsCard — test send", () => {
     renderCard();
     await screen.findByText(SMTP_SUMMARY_TEXT);
 
-    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated" }));
 
     expect(isDisabled(screen.getByRole("button", { name: /Send test/ }))).toBe(true);
   });
@@ -553,7 +553,7 @@ describe("EventMailSettingsCard — archived event", () => {
     renderCard(true);
     await screen.findByText(SMTP_SUMMARY_TEXT);
 
-    expect(isDisabled(screen.getByRole("radio", { name: "Dedicated for this event" }))).toBe(true);
+    expect(isDisabled(screen.getByRole("radio", { name: "Dedicated" }))).toBe(true);
     expect(isDisabled(screen.getByRole("button", { name: /Send test/ }))).toBe(true);
   });
 });
