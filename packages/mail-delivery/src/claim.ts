@@ -45,6 +45,27 @@ function frozenFromRow(row: {
   };
 }
 
+function deliveryCreateData(input: ClaimInitialInput, purpose: "initial" | "resend", now: Date) {
+  return {
+    organization_id: input.organizationId,
+    event_id: input.eventId,
+    attendee_id: input.attendeeId,
+    purpose,
+    batch_id: input.batchId,
+    template_id: input.templateId,
+    provider: input.provider,
+    status: "queued" as const,
+    attempts: 1,
+    recipient_email: input.recipientEmail,
+    rendered_subject: input.renderedSubject,
+    rendered_html: input.renderedHtml,
+    queued_at: now,
+    client_timezone: input.timezone ?? null,
+    actor_user_id: input.actorUserId ?? null,
+    session_id: input.sessionId ?? null,
+  };
+}
+
 type ClassifyResult =
   | { action: "skip"; reason: "already_sent" | "in_flight" }
   | { action: "retry_existing"; message: FrozenMessage };
@@ -82,24 +103,7 @@ export async function claimInitialDelivery(
   const now = new Date();
   try {
     const created = await prisma.emailDelivery.create({
-      data: {
-        organization_id: input.organizationId,
-        event_id: input.eventId,
-        attendee_id: input.attendeeId,
-        purpose: "initial",
-        batch_id: input.batchId,
-        template_id: input.templateId,
-        provider: input.provider,
-        status: "queued",
-        attempts: 1,
-        recipient_email: input.recipientEmail,
-        rendered_subject: input.renderedSubject,
-        rendered_html: input.renderedHtml,
-        queued_at: now,
-        client_timezone: input.timezone ?? null,
-        actor_user_id: input.actorUserId ?? null,
-        session_id: input.sessionId ?? null,
-      },
+      data: deliveryCreateData(input, "initial", now),
     });
     return {
       action: "send",
@@ -173,24 +177,7 @@ export async function createResendDelivery(
 ): Promise<{ deliveryId: string; message: FrozenMessage }> {
   const now = new Date();
   const created = await prisma.emailDelivery.create({
-    data: {
-      organization_id: input.organizationId,
-      event_id: input.eventId,
-      attendee_id: input.attendeeId,
-      purpose: "resend",
-      batch_id: input.batchId,
-      template_id: input.templateId,
-      provider: input.provider,
-      status: "queued",
-      attempts: 1,
-      recipient_email: input.recipientEmail,
-      rendered_subject: input.renderedSubject,
-      rendered_html: input.renderedHtml,
-      queued_at: now,
-      client_timezone: input.timezone ?? null,
-      actor_user_id: input.actorUserId ?? null,
-      session_id: input.sessionId ?? null,
-    },
+    data: deliveryCreateData(input, "resend", now),
   });
   return {
     deliveryId: created.id,
