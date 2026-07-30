@@ -185,7 +185,7 @@ docker compose run --rm app node packages/auth/dist/cli.js bootstrap-superadmin 
 From **v0.4.10** onward (drops the single-instance-superadmin index on migrate), additional
 instance superadmins can be assigned in the admin UI (Users) or via OIDC group mappings.
 Before demoting a superadmin in your IdP, ensure at least one other **active** instance superadmin
-remains — see the OIDC offboarding runbook in [SECURITY-CONTROLS.md](../docs/SECURITY-CONTROLS.md).
+remains — see the OIDC offboarding runbook in [SECURITY-CONTROLS.md](../docs/security/SECURITY-CONTROLS.md).
 
 ## Emergency CLI (event-day failover)
 
@@ -242,7 +242,7 @@ proxy_set_header X-Forwarded-Proto $scheme;
 
 Use `$http_host` instead of `$host` when the public URL uses a non-default port (e.g. local smoke on `:8080`) so the CSRF origin check matches the browser `Origin` header.
 
-Do **not** use `$proxy_add_x_forwarded_for` on the NPM vhost that faces the public internet. With `TRUST_PROXY=true`, Admitto reads the **first** `X-Forwarded-For` hop ([`client-ip.ts`](../apps/web/src/rate-limit/client-ip.ts)); an appended chain would let clients pick the rate-limit bucket and pollute audit logs. The first hop must be a **valid IP**; otherwise the app falls back to the TCP remote address (see [SECURITY-CONTROLS.md](../docs/SECURITY-CONTROLS.md)).
+Do **not** use `$proxy_add_x_forwarded_for` on the NPM vhost that faces the public internet. With `TRUST_PROXY=true`, Admitto reads the **first** `X-Forwarded-For` hop ([`client-ip.ts`](../apps/web/src/rate-limit/client-ip.ts)); an appended chain would let clients pick the rate-limit bucket and pollute audit logs. The first hop must be a **valid IP**; otherwise the app falls back to the TCP remote address (see [SECURITY-CONTROLS.md](../docs/security/SECURITY-CONTROLS.md)).
 
 Compose nginx trusts **only `127.0.0.1`** as the RealIP peer (NPM on the host → `127.0.0.1:8080`). If NPM runs in Docker and hits the host via the bridge gateway (often `172.17.0.1`), add that single address to `deploy/nginx/default.conf` — do not widen to whole RFC1918 ranges.
 

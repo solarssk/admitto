@@ -583,6 +583,7 @@ describe("EventSettingsPage tabs", () => {
 
     const notice = document.querySelector(".danger-zone-notice");
     expect(notice).toBeTruthy();
+    expect(notice?.classList.contains("at-notice--error")).toBe(true);
     expect(notice?.textContent).toMatch(/These actions can affect this event's data/);
     expect(document.querySelector(".danger-zone-panel")?.contains(notice)).toBe(false);
   });
@@ -603,7 +604,9 @@ describe("EventSettingsPage Integrations tab (superadmin-only)", () => {
     await screen.findByRole("tab", { name: "Integrations" });
     fireEvent.click(screen.getByRole("tab", { name: "Integrations" }));
     expect(
-      await screen.findByText("Automatic attendee import and RSVP tools are on the roadmap"),
+      await screen.findByText(
+        "Automatic attendee import and attendance response tools are on the roadmap",
+      ),
     ).toBeTruthy();
   });
 

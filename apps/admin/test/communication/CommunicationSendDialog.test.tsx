@@ -26,6 +26,24 @@ afterEach(() => {
 });
 
 describe("CommunicationSendDialog", () => {
+  it("uses attendance labels for the attendance recipient filter", () => {
+    render(
+      <CommunicationSendDialog
+        open
+        eventId="evt-1"
+        templateId="tpl-1"
+        onClose={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Recipients"), { target: { value: "rsvp_status" } });
+
+    expect(screen.getByRole("option", { name: "By attendance status" })).toBeTruthy();
+    expect(screen.getByLabelText("Attendance status")).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Registered" })).toBeTruthy();
+    expect(screen.queryByText("RSVP status")).toBeNull();
+  });
+
   it("disables send until ticket type is non-empty", async () => {
     render(
       <CommunicationSendDialog
