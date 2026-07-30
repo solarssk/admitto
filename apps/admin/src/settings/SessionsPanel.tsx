@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, Card, Input, useToast } from "@admitto/ui";
+import { Badge, Button, Card, useToast } from "@admitto/ui";
 import {
   fetchAdminEvents,
   fetchSessions,
   revokeAllOperatorSessions,
   revokeSessionById,
-  updateSessionDeviceLabel,
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto, SessionListDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { DeviceLabelEditModal } from "./DeviceLabelEditModal.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import {
   formatRelativeTime,
@@ -70,8 +70,6 @@ export function SessionsPanel() {
   const [revoking, setRevoking] = useState(false);
 
   const [editTarget, setEditTarget] = useState<SessionListDto | null>(null);
-  const [editValue, setEditValue] = useState("");
-  const [editSaving, setEditSaving] = useState(false);
 
   const [events, setEvents] = useState<EventDto[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
@@ -121,25 +119,6 @@ export function SessionsPanel() {
     }
   };
 
-  const handleEditSave = async () => {
-    // No `if (!editTarget) return` guard: this is only ever wired to the Edit ConfirmDialog's
-    // onConfirm, and that dialog unmounts entirely (`if (!open) return null`) whenever
-    // editTarget is null, so its Save button can't exist in the DOM to click in the first
-    // place - provably unreachable, not just untested.
-    setEditSaving(true);
-    try {
-      const trimmed = editValue.trim();
-      await updateSessionDeviceLabel(editTarget!.id, trimmed.length > 0 ? trimmed : null);
-      setEditTarget(null);
-      addToast("Device label updated.", "success");
-      await load();
-    } catch (err) {
-      addToast(operatorApiErrorMessage(err, "Failed to update device label."), "error");
-    } finally {
-      setEditSaving(false);
-    }
-  };
-
   const handleBulkRevoke = async () => {
     if (!selectedEventId) return;
     setBulkRevoking(true);
@@ -161,9 +140,6 @@ export function SessionsPanel() {
   const selectedEvent = events.find((e) => e.id === selectedEventId);
   const confirmDeviceSuffix = confirmTarget?.deviceLabel
     ? ` (${confirmTarget.deviceLabel})`
-    : "";
-  const editCurrentLabelSuffix = editTarget?.deviceLabel
-    ? ` (currently "${editTarget.deviceLabel}")`
     : "";
 
   // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
@@ -248,10 +224,7 @@ export function SessionsPanel() {
                         <Button
                           type="button"
                           variant="secondary"
-                          onClick={() => {
-                            setEditTarget(s);
-                            setEditValue(s.deviceLabel ?? "");
-                          }}
+                          onClick={() => setEditTarget(s)}
                         >
                           Edit
                         </Button>
@@ -335,31 +308,15 @@ export function SessionsPanel() {
         }}
       />
 
-      <ConfirmDialog
+      <DeviceLabelEditModal
         open={!!editTarget}
-        title="Edit device label"
-        message={
-          editTarget
-            ? `Correct the device label for ${editTarget.userEmail}${editCurrentLabelSuffix}.`
-            : ""
-        }
-        confirmLabel="Save"
-        loading={editSaving}
-        disableConfirm={editValue.trim() === (editTarget?.deviceLabel ?? "")}
-        onConfirm={() => void handleEditSave()}
-        onCancel={() => {
-          if (!editSaving) setEditTarget(null);
+        session={editTarget}
+        onClose={() => setEditTarget(null)}
+        onSaved={() => {
+          addToast("Device label updated.", "success");
+          void load();
         }}
-      >
-        <Input
-          value={editValue}
-          onChange={(e) => setEditValue(e.target.value)}
-          maxLength={120}
-          placeholder="Tablet 1, main entrance"
-          autoComplete="off"
-          aria-label="Device label"
-        />
-      </ConfirmDialog>
+      />
 
       <ConfirmDialog
         open={bulkConfirmOpen}

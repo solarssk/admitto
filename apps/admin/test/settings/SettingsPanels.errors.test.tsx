@@ -160,7 +160,7 @@ describe("SessionsPanel operator errors", () => {
     expect(screen.queryByText("secret_internal")).toBeNull();
   });
 
-  it("toasts operator-safe message when device label edit fails", async () => {
+  it("shows an operator-safe message inline in the modal when device label edit fails", async () => {
     vi.mocked(fetchSessions).mockResolvedValueOnce({ sessions: [sampleSession] });
     vi.mocked(fetchAdminEvents).mockResolvedValueOnce([]);
     vi.mocked(updateSessionDeviceLabel).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
@@ -175,9 +175,11 @@ describe("SessionsPanel operator errors", () => {
     });
     fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to update device label/);
+      expect(within(dialog).getByRole("alert").textContent).toMatch(/Failed to update device label/);
     });
     expect(screen.queryByText("secret_internal")).toBeNull();
+    // Stays open on failure, same as UserEditModal - the operator can retry or cancel.
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
   it("toasts operator-safe message when bulk revoke fails", async () => {
