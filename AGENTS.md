@@ -151,6 +151,12 @@ workflow replaces it from `docs/wiki/` after merge. Write user guidance in clear
 synthetic examples, and never publish customer names, personal data, environments, credentials,
 or unsupported operational workarounds.
 
+For workflow pages, use the same reader-facing structure: `What this page helps you do`, `Before
+you start`, `Steps`, `Expected result`, `Important decisions`, `What changes after this action`,
+`Common problems`, and `Related pages`. Reference and landing pages may use a structure that fits
+their purpose. Verify factual instructions against the current `main` UI and domain behaviour;
+the documentation check proves structural consistency, not product correctness.
+
 ## Claude Code
 
 Claude-specific workflow (plan gate, split guidelines): [CLAUDE.md](CLAUDE.md).

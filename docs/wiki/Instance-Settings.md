@@ -1,0 +1,55 @@
+# Instance Settings
+
+> **Audience:** Superadmins
+> **Required role:** Superadmin
+> **Feature status:** Available
+> **Last verified:** Admitto 0.4.12
+
+## What this page helps you do
+
+Use the supported instance settings without confusing them with event-level settings.
+
+## Before you start
+
+Use a named Superadmin account, record the intended change, and prepare a synthetic test account or event.
+
+## Steps
+
+1. Open **Organisation settings**.
+2. Use **General** for instance behaviour and base configuration shown by the panel.
+3. Use **Branding** for organisation name, logo, colours, and supported fonts.
+4. Use **Mail** for the organisation-wide transport.
+5. Use **Security** for MFA and session policy, and to review active sessions.
+6. Use **Archiving** for retention and completed-event controls.
+7. Use **Identity** for OIDC providers and Cloudflare Access.
+8. Use **Logs** to review system, administration, and security activity.
+9. Save one area at a time and verify the visible result.
+
+## Expected result
+
+The selected setting is saved, an audit record is created where supported, and the test confirms the intended behaviour.
+
+## Important decisions
+
+- Instance settings can affect every organisation or staff login.
+- Environment-locked values are read-only in the UI and cannot be overridden there.
+- Event-specific mail settings can override the organisation transport for that event.
+- Deployment and emergency recovery are not UI tasks; use the technical documentation.
+
+## What changes after this action
+
+The change can affect future sessions, messages, branding, archiving, or logs depending on the panel. Existing sessions or sent messages are not automatically rewritten unless the UI says so.
+
+## Common problems
+
+- **A field is locked:** it is controlled outside the UI; follow the approved deployment process.
+- **A save succeeds but behaviour is unchanged:** verify the correct scope and whether an event override exists.
+- **A security change blocks a test user:** restore access with another authorised Superadmin, not a shared account.
+
+## Related pages
+
+- [Superadmin Quick Start](Superadmin-Quick-Start)
+- [Mail Delivery Administration](Mail-Delivery-Administration)
+- [Identity and SSO](Identity-and-SSO)
+- [Logs and Audit](Logs-and-Audit)
+- [Technical Documentation](Technical-Documentation)

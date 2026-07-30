@@ -24,8 +24,8 @@ Admitto is a self-hosted tool for internal events. It helps your team work from 
 - **Check-in:** Confirming that an attendee has arrived.
 - **Organisation:** The group that owns an event in Admitto.
 
-For the full list, see [Reference and Troubleshooting](Reference-and-Troubleshooting).
+For the full list, see the [Glossary](Glossary).
 
 ## What Admitto does not replace
 
-Admitto is not a public registration site, payment system, or general customer database. Use the approved process in your organisation for work outside the event lifecycle described here.
+Admitto is not a public registration site, payment system, or general customer database. Use your organisation's approved process for work outside the event lifecycle described here.

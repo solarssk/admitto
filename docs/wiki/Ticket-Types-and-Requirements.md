@@ -1,32 +1,70 @@
 # Ticket Types and Requirements
 
-> **Audience:** Event Manager
+> **Audience:** Event Managers
 > **Required role:** Organisation Admin
 > **Feature status:** Available
 > **Last verified:** Admitto 0.4.12
 
-Ticket types help your team group attendees, for example by admission category or event purpose. Requirements describe what staff should issue or confirm during check-in.
+## What this page helps you do
 
-## Ticket types
+Define attendee categories, collect event-specific data, and configure items and behaviour used during check-in.
 
-Open **Event settings**, then open **Ticket types**.
+## Before you start
 
-Create a ticket type when it changes how your team prepares, communicates with, or reports on a group of attendees. Give it a short, clear name that staff can recognise.
+Decide which distinctions operators and reports genuinely need. Use short labels that remain clear on a busy check-in screen.
 
-Before import, make sure each value in the attendee file matches an approved ticket type. After import, review the attendee list before sending tickets.
+## Steps
 
-## Event items
+### Ticket types
 
-Open **Requirements** to add and manage items issued at check-in, such as a badge or a material for attendees.
+1. Open **Event settings**, then **Ticket types**.
+2. Add a short, recognisable ticket type.
+3. Save it before using the value in an import file.
+4. Review imported attendees to confirm the type was assigned as intended.
 
-For each item, keep the staff-facing name short and clear. Enable the item only when it is ready to be issued. If an item has already been issued, follow your local return process before disabling it.
+### Custom attendee fields
 
-## Check-in behaviour
+1. Open **Requirements** and find custom attendee fields.
+2. Add a label and a stable source field used by imports and exports.
+3. Choose **Text**, **Select**, or **Yes/No**.
+4. Add allowed choices for a Select field.
+5. Mark the field required only when every attendee record must contain it.
+6. Save and test the field with a synthetic attendee.
 
-The same page controls supported event-day behaviour:
+### Event items and check-in behaviour
 
-- Ask staff to confirm a valid scan before admitting an attendee.
-- Allow manual attendee lookup when scanning is not possible.
-- Issue a badge at entry when a usable badge item has been configured.
+1. Add each item operators may issue, such as a badge or event material.
+2. Enable only items that are ready for event use.
+3. Choose whether a valid scan needs operator confirmation.
+4. Choose whether manual attendee lookup is allowed.
+5. Enable badge issue at entry only when a usable badge item is configured.
 
-Choose settings before event day and test them with one sample ticket. Do not change check-in behaviour while operators are actively admitting attendees unless the event lead has agreed the change.
+## Expected result
+
+Attendees can be assigned a clear ticket type and event-specific values, while operators see only the items and confirmation steps prepared for the event.
+
+## Important decisions
+
+- The custom field source name cannot be changed after creation. Choose it before importing data.
+- A required custom field can prevent incomplete attendee data from being saved or imported.
+- Disabling an item does not rewrite its earlier issue and return history.
+- Avoid changing check-in behaviour while operators are actively admitting attendees.
+- Test the complete setup with synthetic data before event day.
+
+## What changes after this action
+
+Ticket types and custom fields become available in attendee records, imports, filters, exports, and supported template contexts. Enabled items and check-in options become visible to operators.
+
+## Common problems
+
+- **An import value is rejected:** match the configured ticket type and custom field format exactly.
+- **A source field cannot be renamed:** create field names carefully; the stable import/export key is intentionally immutable.
+- **Badge issue cannot be enabled:** configure and enable a suitable badge item first.
+- **A field is unexpectedly empty:** check that the import header uses the source field, not only the visible label.
+
+## Related pages
+
+- [Import File Reference](Import-File-Reference)
+- [Importing Attendees](Importing-Attendees)
+- [Scanning Tickets and Results](Scanning-Tickets-and-Results)
+- [Reports and Archiving](Reports-and-Archiving)

@@ -1,42 +1,61 @@
 # Importing Attendees
 
-> **Audience:** Event Manager
+> **Audience:** Event Managers
 > **Required role:** Organisation Admin
 > **Feature status:** Available
 > **Last verified:** Admitto 0.4.12
 
-Import a CSV or XLSX file when you need to add or update many attendee records.
-
 ![Import preview showing only fictional attendees](assets/import-preview.png)
 
-## Prepare the file
+## What this page helps you do
 
-Use one attendee per row. Include `first_name`, `last_name`, and `email` for every row. Add optional event information only when it is needed and approved.
+Validate and import many attendees from CSV or XLSX while controlling duplicates and updates.
 
-Before upload:
+## Before you start
 
-- Remove duplicate rows.
-- Use a valid email address for every attendee.
-- Check that names are in the right columns.
-- Use only the event's approved ticket types.
-- Do not use real data in a practice file.
+- Download the current CSV template from **Import attendees**.
+- Configure ticket types and custom attendee fields before preparing their columns.
+- Read [Import File Reference](Import-File-Reference) for every supported column.
+- Remove practice data and confirm that the source file is approved for this event.
 
-## Import the file
+## Steps
 
-1. Open the event, then open **Attendees**.
-2. Select **More** and choose **Import**.
-3. Upload the CSV or XLSX file.
-4. Read the validation summary and sample rows.
-5. Choose the offered update option only when you intend to update matching attendees.
-6. Resolve invalid rows, warnings, or capacity problems.
-7. Confirm the import when the preview is correct.
+1. Open the event, then **Attendees**.
+2. Select **More**, then **Import**.
+3. Upload a CSV or XLSX file.
+4. Keep **Dry run (validate only, no writes)** enabled and select **Validate file**.
+5. Review valid, invalid, warning, skipped, create, and update counts plus the sample rows.
+6. If needed, change **Overwrite existing attendees**, then select **Re-validate**.
+7. Correct the source file and validate again until the summary is understood.
+8. Turn off **Dry run** only when you intend to write the displayed changes.
+9. Select **Commit import** and review the final result and import history.
 
-## After import
+## Expected result
 
-Review the import history and open the attendee list. Check the total, ticket types, and a small sample of attendee records before sending tickets.
+New attendees are created, permitted fields on matched attendees are updated when overwrite is on, and every skipped or invalid row has a displayed reason.
+
+## Important decisions
+
+- Use `first_name` plus `last_name`, or use the single `name` column. `email` is always required.
+- External UUID and QR values are optional and should be used only when an external ticket source already owns them.
+- Matching uses agency identifiers first when present, then email. Conflicting identifiers are skipped.
+- With overwrite off, matching attendees are skipped.
+- With overwrite on, Admitto can update name, ticket type, company, department, and supplied custom fields. It never overwrites pass status, QR payload, external UUID, or the secure ticket token.
+
+## What changes after this action
+
+A committed import changes the attendee list and records an import-history entry. Validation alone writes nothing.
 
 ## Common problems
 
-- **A row is invalid:** read the reason shown in the validation summary, correct the source file, and upload it again.
-- **An attendee was skipped:** check whether the attendee already exists and whether the selected import option allows an update.
-- **The event is full:** reduce the incoming list or ask a Superadmin to review capacity before retrying.
+- **Invalid row:** correct the displayed data error in the source file.
+- **Warning:** review it; unknown columns are ignored and duplicate headers use the last value.
+- **Skipped attendee:** read the reason, then decide whether overwrite is appropriate.
+- **Unknown ticket type:** use a configured label or key and validate again.
+- **Event is at capacity:** an Organisation Admin can open **Event settings** and review capacity. A Superadmin-only override is offered only when an authorised exception is required.
+
+## Related pages
+
+- [Import File Reference](Import-File-Reference)
+- [Managing Attendees](Managing-Attendees)
+- [Ticket Types and Requirements](Ticket-Types-and-Requirements)

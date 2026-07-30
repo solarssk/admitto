@@ -1,35 +1,57 @@
 # Event Overview and Settings
 
-> **Audience:** Event Manager
+> **Audience:** Event Managers
 > **Required role:** Organisation Admin
 > **Feature status:** Available
 > **Last verified:** Admitto 0.4.12
 
-The event **Overview** is the quickest place to check event readiness. It brings together attendee totals, ticket delivery, check-in progress, recent activity, and readiness prompts.
+## What this page helps you do
 
-## Use the overview before event day
+Check whether an event is ready and maintain its supported event-level settings.
 
-Look for simple questions:
+## Before you start
 
-- Have attendees been added?
-- Have tickets been sent?
-- Are there check-in staff?
-- Are there delivery or setup issues that need attention?
+Open the correct organisation and event. If another manager may be editing the same event, agree who will make each change.
 
-Use the links in the page to move to the right task. The overview is a summary, not the place to edit every detail.
+## Steps
 
-## Event settings
+1. Open **Overview** and review attendee, delivery, check-in, and recent activity information.
+2. Follow a readiness prompt when it points to unfinished setup.
+3. Open **Event settings**, then **General**.
+4. Review the title, event date, time zone, optional location, and capacity.
+5. Leave capacity empty for an unlimited event, or enter the maximum number of attendees that may be added.
+6. Save the General card.
+7. Review **Ticket types** and **Images** when the event needs them.
+8. Return to **Overview** and confirm that the event now shows the intended state.
 
-Open **Event settings** to manage event-level information such as:
+Superadmins can also see event-level **Mailing** and **Integrations** settings. Wallet settings are planned and are not part of the current event workflow.
 
-- Basic event details and capacity.
-- Event status and branding.
-- Ticket types.
-- Mail settings for the event, when your role allows it.
-- Archiving controls.
+## Expected result
 
-Save changes in the card where you made them. Before event day, return to the overview to make sure the change is reflected in the lifecycle.
+The overview reflects the current event lifecycle, and saved settings are used by attendee, communication, reporting, and check-in pages.
 
-## Archiving
+## Important decisions
 
-Archive an event only when it no longer needs changes or check-in. Archiving makes the event read-only. A Superadmin can restore an archived event when there is a valid reason to continue work.
+- The event slug is created once and cannot be edited later.
+- Capacity is managed here, not in the **New event** dialog. A blank capacity means unlimited.
+- Use the event's real time zone. Report and activity times depend on it.
+- Event-specific images override organisation images where the page explains that behaviour.
+- Only a Superadmin can archive or restore an event.
+
+## What changes after this action
+
+Changes to the event title, date, time zone, location, capacity, or images become the current event configuration. A capacity change can affect future attendee additions and imports; it does not remove existing attendees.
+
+## Common problems
+
+- **A setting is missing:** check your role. Some tabs are Superadmin-only.
+- **The capacity blocks an import:** ask an Organisation Admin to correct the event capacity. Use a Superadmin override only when the authorised limit must be exceeded.
+- **The event is read-only:** an archived event cannot be changed or used for check-in. Ask a Superadmin to review its status.
+- **Times look wrong:** verify the event time zone before changing source data.
+
+## Related pages
+
+- [Create an Event](Create-an-Event)
+- [First Event Checklist](First-Event-Checklist)
+- [Ticket Types and Requirements](Ticket-Types-and-Requirements)
+- [Reports and Archiving](Reports-and-Archiving)

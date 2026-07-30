@@ -14,15 +14,63 @@ const requiredPages = [
   "Importing-Attendees.md",
   "Ticket-Types-and-Requirements.md",
   "Email-Templates.md",
+  "Advanced-Email-Templates.md",
+  "Template-Variables.md",
   "Sending-Tickets-and-Delivery.md",
+  "Email-Delivery-Statuses.md",
   "Operator-Quick-Start.md",
+  "Scanning-Tickets-and-Results.md",
+  "Manual-Lookup-and-Corrections.md",
+  "Check-in-Connection-Problems.md",
   "Reports-and-Archiving.md",
+  "Organisation-Administration.md",
+  "Users-and-Roles-Administration.md",
   "Superadmin-Quick-Start.md",
+  "Instance-Settings.md",
+  "Mail-Delivery-Administration.md",
+  "Identity-and-SSO.md",
+  "Logs-and-Audit.md",
+  "Import-File-Reference.md",
+  "Glossary.md",
+  "Help-and-Troubleshooting.md",
+  "Technical-Documentation.md",
   "Reference-and-Troubleshooting.md",
   "_Sidebar.md",
 ];
 const metadataLabels = ["Audience", "Required role", "Feature status", "Last verified"];
 const validStatuses = new Set(["Available", "Preview", "Planned", "Deprecated"]);
+const workflowPages = new Set([
+  "Create-an-Event.md",
+  "Event-Overview-and-Settings.md",
+  "Managing-Attendees.md",
+  "Importing-Attendees.md",
+  "Ticket-Types-and-Requirements.md",
+  "Email-Templates.md",
+  "Advanced-Email-Templates.md",
+  "Sending-Tickets-and-Delivery.md",
+  "Operator-Quick-Start.md",
+  "Scanning-Tickets-and-Results.md",
+  "Manual-Lookup-and-Corrections.md",
+  "Check-in-Connection-Problems.md",
+  "Reports-and-Archiving.md",
+  "Organisation-Administration.md",
+  "Users-and-Roles-Administration.md",
+  "Superadmin-Quick-Start.md",
+  "Instance-Settings.md",
+  "Mail-Delivery-Administration.md",
+  "Identity-and-SSO.md",
+  "Logs-and-Audit.md",
+]);
+const workflowHeadings = [
+  "What this page helps you do",
+  "Before you start",
+  "Steps",
+  "Expected result",
+  "Important decisions",
+  "What changes after this action",
+  "Common problems",
+  "Related pages",
+];
 
 function fail(message) {
   console.error(`docs:check: ${message}`);
@@ -104,6 +152,7 @@ if (!existsSync(wikiRoot) || !statSync(wikiRoot).isDirectory()) {
   for (const filePath of files.filter((path) => path.endsWith(".md"))) {
     const text = readFileSync(filePath, "utf8");
     const relativePath = relative(repositoryRoot, filePath);
+    const fileName = relative(wikiRoot, filePath);
     if (filePath !== resolve(wikiRoot, "_Sidebar.md")) {
       if (!text.startsWith("# ")) fail(`${relativePath} is missing its page title.`);
       for (const label of metadataLabels) {
@@ -112,6 +161,11 @@ if (!existsSync(wikiRoot) || !statSync(wikiRoot).isDirectory()) {
       const status = text.match(/^> \*\*Feature status:\*\* (.+)$/m)?.[1]?.trim();
       if (!status || !validStatuses.has(status)) {
         fail(`${relativePath} has an invalid feature status.`);
+      }
+      if (workflowPages.has(fileName)) {
+        for (const heading of workflowHeadings) {
+          if (!text.includes(`## ${heading}`)) fail(`${relativePath} is missing the ${heading} section.`);
+        }
       }
     }
 

@@ -1,34 +1,54 @@
 # Email Templates
 
-> **Audience:** Event Manager
+> **Audience:** Event Managers
 > **Required role:** Organisation Admin
 > **Feature status:** Available
 > **Last verified:** Admitto 0.4.12
 
-Use **Communication** to prepare the message that attendees receive with their ticket.
+## What this page helps you do
 
-![Email template editor and test message form with fictional data](assets/email-template.png)
+Prepare, preview, save, and test the message sent to attendees.
 
-## Prepare a message
+## Before you start
 
-1. Open the event and select **Communication**.
-2. Select the template you want to work on.
-3. Write a clear subject and message.
-4. Use the available placeholders only where their value makes sense to an attendee.
-5. Review the preview before saving.
+Confirm the event title, date, timezone, location, attendee data, and effective mail transport. Keep the default ticket template available for ticket delivery.
 
-Keep the message short. Tell attendees what the event is, when and where it happens, and what they need to bring or show at entry.
+## Steps
 
-## Send a test
+1. Open **Communication**, then the compose view.
+2. Select the ticket template or another named template.
+3. Edit the **Subject**.
+4. Keep the existing **MJML** or **HTML** format unless you are replacing the whole body with that format.
+5. Insert attendee, event, link, and image variables with the buttons above the source editor.
+6. Select **Preview** and resolve all validation messages.
+7. Save the template.
+8. In **Send test**, enter an approved address such as `docs.test@example.com` and select **Send test**.
+9. Check the message in a normal email client, including links, QR image, event details, and responsive layout.
 
-1. Save the template.
-2. Enter an approved test address.
-3. Select **Send test**.
-4. Read the delivered message on a normal email client.
-5. Check the subject, event details, links, images, and ticket information.
+## Expected result
 
-Fix the template and repeat the test when anything is unclear or missing. A successful test is not the same as sending tickets; use [Sending Tickets and Delivery](Sending-Tickets-and-Delivery) when the message is ready.
+The saved template previews without errors and the test message contains a working ticket link and rendered QR image.
 
-## Manage templates safely
+## Important decisions
 
-Keep the default ticket template available for ticket delivery. Use a clearly named additional template only when your event needs a different approved message. Do not put sensitive attendee information into a subject line or template text.
+- Changing the format button does not convert the source body.
+- Required variables are marked by the editor. Ticket messages require valid ticket and QR URLs.
+- Image-variable buttons insert image markup; a bare image URL token does not display an image by itself.
+- Preview uses safe sample values. A template test validates rendering and mail delivery but does not send to attendees.
+
+## What changes after this action
+
+Saving changes the source used for later previews, tests, initial sends, and resends for this event. Messages already sent are unchanged.
+
+## Common problems
+
+- **MJML or HTML validation failed:** read the listed errors and use [Advanced Email Templates](Advanced-Email-Templates).
+- **A variable is rejected:** use an exact variable offered by the editor.
+- **The QR does not render:** insert `qr_image_url` with the image button and preview again.
+- **Test send fails:** check template validation first, then ask a Superadmin to review the effective mail transport.
+
+## Related pages
+
+- [Advanced: Editing MJML and HTML](Advanced-Email-Templates)
+- [Template Variables](Template-Variables)
+- [Sending Tickets and Delivery](Sending-Tickets-and-Delivery)
