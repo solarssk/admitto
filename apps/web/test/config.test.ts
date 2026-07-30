@@ -7,6 +7,7 @@ import {
   validateCheckinBootConfig,
   validateRedisBootConfig,
   validateEncryptionKeyBootConfig,
+  validateTrustedProxyCidrsBootConfig,
 } from "../src/config.js";
 
 describe("resolveBaseUrl", () => {
@@ -143,6 +144,24 @@ describe("validateRedisBootConfig", () => {
         REDIS_URL: "redis://:smoke-redis-secret@redis:6379",
       }),
     ).not.toThrow();
+  });
+});
+
+describe("validateTrustedProxyCidrsBootConfig", () => {
+  it("allows unset (loopback default)", () => {
+    expect(() => validateTrustedProxyCidrsBootConfig({})).not.toThrow();
+  });
+
+  it("allows a valid CIDR list", () => {
+    expect(() =>
+      validateTrustedProxyCidrsBootConfig({ TRUSTED_PROXY_CIDRS: "172.28.238.0/24" }),
+    ).not.toThrow();
+  });
+
+  it("throws when set but unusable", () => {
+    expect(() =>
+      validateTrustedProxyCidrsBootConfig({ TRUSTED_PROXY_CIDRS: "not-an-ip" }),
+    ).toThrow("TRUSTED_PROXY_CIDRS must contain at least one valid CIDR entry");
   });
 });
 

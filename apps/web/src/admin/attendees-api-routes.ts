@@ -2715,12 +2715,15 @@ export async function handleResendEventAttendeeTicket(
   // personal domain; a hardcoded allowlist would break that use-case without org configuration.
   const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
   if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
+  const resendAudit = adminAuditFromContext(c);
   let sendResult;
   try {
     sendResult = await resendTicketEmail(attendeeId, db, process.env, mailDeps, {
       to,
       baseUrl: baseUrlOrRes,
       timezone: resolveClientTimezone(c) ?? undefined,
+      actorUserId: resendAudit.operator,
+      sessionId: resendAudit.sessionId,
     });
   } catch (err) {
     const mailErr = mailNotConfiguredResponse(c, err);
@@ -2760,7 +2763,7 @@ export async function handleResendEventAttendeeTicket(
       event_id: eventId,
       attendee_id: attendeeId,
       action_type: "ticket_resent",
-      audit: adminAuditFromContext(c),
+      audit: resendAudit,
       metadata: { alternate },
     });
   });
@@ -3051,6 +3054,7 @@ export async function handleBulkResendTickets(
   const mailPurpose = target === "unsent" ? "initial" : "resend";
   const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
   if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
+  const audit = adminAuditFromContext(c);
   let sendResult;
   try {
     sendResult = await sendTicketEmails(
@@ -3060,6 +3064,8 @@ export async function handleBulkResendTickets(
         purpose: mailPurpose,
         baseUrl: baseUrlOrRes,
         timezone: resolveClientTimezone(c) ?? undefined,
+        actorUserId: audit.operator,
+        sessionId: audit.sessionId,
       },
       db,
       process.env,

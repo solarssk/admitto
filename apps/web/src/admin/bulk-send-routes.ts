@@ -321,6 +321,7 @@ async function sendBulkEmailsOrError({
   baseUrl,
   mailDeps,
 }: SendBulkEmailsOptions): Promise<Response | SendTicketEmailsResult> {
+  const audit = adminAuditFromContext(c);
   try {
     return await sendTicketEmails(
       eventId,
@@ -330,6 +331,8 @@ async function sendBulkEmailsOrError({
         purpose,
         baseUrl,
         timezone: resolveClientTimezone(c) ?? undefined,
+        actorUserId: audit.operator,
+        sessionId: audit.sessionId,
       },
       db,
       process.env,
