@@ -188,17 +188,11 @@
 
 .communication-errors {
   margin-top: var(--space-3);
-  padding: var(--space-3);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--status-error, #d63939) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--status-error, #d63939) 30%, transparent);
 }
 
 .communication-errors ul {
   margin: 0;
   padding-left: var(--space-4);
-  font-size: var(--fs-sm);
-  color: var(--status-error, #d63939);
 }
 
 .communication-actions {

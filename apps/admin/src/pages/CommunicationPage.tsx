@@ -731,13 +731,13 @@ function TemplateEditorCard({
       </Tooltip>
 
       {validationErrors.length > 0 && (
-        <div className="communication-errors" role="alert">
+        <Notice variant="error" role="alert" className="communication-errors">
           <ul>
             {validationErrors.map((msg) => (
               <li key={msg}>{msg}</li>
             ))}
           </ul>
-        </div>
+        </Notice>
       )}
 
       <div className="communication-actions">

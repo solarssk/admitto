@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Badge, Button, ModalBackdrop, Switch } from "@admitto/ui";
+import { Badge, Button, ModalBackdrop, Notice, Switch } from "@admitto/ui";
 import {
   fetchAdminEvents,
   fetchAdminOrganizations,
@@ -269,9 +269,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
             Edit {displayTitle}
           </h2>
           {error && (
-            <p className="users-modal__error" role="alert">
-              {error}
-            </p>
+            <Notice variant="error" role="alert">{error}</Notice>
           )}
           <div className="users-modal__field">
             <label htmlFor="edit-display-name">Display name</label>
