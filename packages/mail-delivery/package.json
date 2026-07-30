@@ -32,7 +32,7 @@
     "@admitto/tickets": "*"
   },
   "devDependencies": {
-    "@prisma/client": "^5.17.0",
+    "@prisma/client": "^7.9.1",
     "@types/node": "^24.0.0",
     "prisma": "^5.17.0",
     "typescript": "^7.0.2",
