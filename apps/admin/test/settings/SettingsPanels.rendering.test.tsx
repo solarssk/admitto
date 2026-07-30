@@ -132,7 +132,13 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  vi.clearAllMocks();
+  // resetAllMocks (not clearAllMocks): several tests here queue mockResolvedValueOnce/
+  // mockRejectedValueOnce chains (or a one-off mockImplementation override) sized to an exact
+  // expected call count - but a couple of those counts depend on real setInterval-driven polling
+  // (POLL_INTERVAL_MS), so a slower or faster CI run can leave one unconsumed. clearAllMocks only
+  // wipes call history, not queued/overridden implementations, so a leftover would otherwise
+  // silently answer the next test's first call to that same mocked function instead of it.
+  vi.resetAllMocks();
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
