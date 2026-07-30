@@ -68,6 +68,14 @@ describe("parseTrustedProxyCidrs", () => {
     expect(() => parseTrustedProxyCidrs("not-an-ip, also-bad")).toThrow();
     expect(() => parseTrustedProxyCidrs("")).toThrow();
   });
+
+  it("rejects a partially-numeric prefix instead of silently truncating it", () => {
+    // A mistyped "/2x" (meant "/24") must not be accepted as "/2" - Number.parseInt("2x", 10)
+    // is 2, which would otherwise widen the match to any address starting 128-191 (e.g. 150.1.2.3).
+    const list = parseTrustedProxyCidrs("172.28.238.0/2x, 10.0.0.5/32");
+    expect(list.check("150.1.2.3", "ipv4")).toBe(false);
+    expect(list.check("10.0.0.5", "ipv4")).toBe(true);
+  });
 });
 
 describe("resolveTrustedProxyCidrs", () => {

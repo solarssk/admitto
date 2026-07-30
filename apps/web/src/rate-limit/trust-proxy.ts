@@ -21,7 +21,11 @@ export function parseTrustedProxyCidrs(raw: string): BlockList {
     const family = address ? isIP(address) : 0;
     if (!family) continue;
     const maxPrefix = family === 6 ? 128 : 32;
-    const prefix = prefixRaw !== undefined ? Number.parseInt(prefixRaw, 10) : maxPrefix;
+    // Number.parseInt("2x", 10) === 2 - a mistyped "/2x" (meant "/24") would otherwise silently
+    // widen the trusted range to a /2 instead of being rejected. Require the whole prefix string
+    // to be decimal digits before converting it.
+    const prefix =
+      prefixRaw !== undefined ? (/^\d+$/.test(prefixRaw) ? Number.parseInt(prefixRaw, 10) : NaN) : maxPrefix;
     if (!Number.isInteger(prefix) || prefix < 0 || prefix > maxPrefix) continue;
     list.addSubnet(address!, prefix, family === 6 ? "ipv6" : "ipv4");
     count += 1;
