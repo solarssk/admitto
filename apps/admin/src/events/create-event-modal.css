@@ -38,16 +38,6 @@
   color: var(--text-primary);
 }
 
-.create-event-modal__error {
-  margin: 0;
-  font-size: var(--fs-sm);
-  color: var(--status-error-fg);
-  background: var(--status-error-tint);
-  border: 1px solid var(--status-error);
-  border-radius: var(--radius);
-  padding: var(--space-2) var(--space-3);
-}
-
 .create-event-modal__form {
   display: flex;
   flex-direction: column;

@@ -957,29 +957,6 @@
   font-weight: 600;
 }
 
-.attendee-resend-modal__error {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: var(--status-error-tint);
-  border: 1px solid var(--status-error);
-  border-radius: var(--radius);
-}
-
-.attendee-resend-modal__error > i {
-  color: var(--status-error);
-  font-size: 1.0625rem;
-  flex: none;
-}
-
-.attendee-resend-modal__error p {
-  margin: 0;
-  font-size: var(--fs-sm);
-  color: var(--status-error);
-  line-height: 1.45;
-}
-
 .attendee-resend-options {
   display: flex;
   flex-direction: column;
