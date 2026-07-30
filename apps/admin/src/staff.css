@@ -2684,6 +2684,15 @@
   padding-top: 0;
 }
 
+/* Branding's Font-by-surface rows pair a two-line label+description with a single-line <select> -
+   .settings-row's own flex-start (correct for its other users, e.g. Mail transport's Switch rows,
+   where the control is meant to line up with the label specifically) left the select sitting flush
+   at the top instead of centered against the full two-line block beside it. Scoped here rather
+   than changed on .settings-row itself, which those other rows still rely on unchanged. */
+.font-surface-rows .settings-row {
+  align-items: center;
+}
+
 .settings-row__text strong {
   display: block;
   margin-bottom: var(--space-1);
@@ -3245,10 +3254,10 @@
   margin-top: var(--space-2);
 }
 
-/* A plain, non-interactive container for both built-in and custom font tiles - clicking to pick
-   a font, opening the styles popover, and removing a custom family are each their own focusable
-   control inside it (a <button> can't validly contain another interactive descendant, and this
-   card also needs room for up to three: select, styles pill, remove). */
+/* A plain, non-interactive preview tile for both built-in and custom fonts - it neither picks nor
+   applies anything on its own (see FontPickerField's own comment); opening the styles popover and
+   editing/removing a custom family are each their own focusable control inside it, sized to leave
+   room for up to three: the preview, the styles pill, and remove. */
 .font-option-card {
   display: flex;
   flex-direction: column;
@@ -3261,17 +3270,6 @@
   background: var(--surface-card);
   text-align: center;
   position: relative;
-}
-
-.font-option-card:hover {
-  border-color: var(--border-strong);
-  background: var(--surface-hover);
-}
-
-.font-option-card--active {
-  border-color: var(--primary);
-  background: var(--primary-tint);
-  box-shadow: 0 0 0 1px var(--primary);
 }
 
 .font-option-card__sample {
@@ -3318,6 +3316,7 @@
 
 .font-option-card--upload:hover {
   border-color: var(--primary);
+  background: var(--surface-hover);
 }
 
 /* At MAX_CUSTOM_FONT_FAMILIES, this is a plain (non-button) card again - not clickable, so no
@@ -3338,7 +3337,6 @@
   align-items: center;
   gap: 5px;
   width: 100%;
-  cursor: pointer;
 }
 
 /* Floats half outside the card's own top-right corner, like a chip's remove badge - this way a
@@ -3403,11 +3401,6 @@
 
 .font-styles-pill:hover {
   background: var(--at-gray-200, #e2e8f0);
-}
-
-.font-styles-pill--active {
-  background: var(--primary);
-  color: #fff;
 }
 
 .font-styles-pill--placeholder {

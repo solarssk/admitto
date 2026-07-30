@@ -37,6 +37,21 @@ describe("validateBrandingDraft", () => {
     expect(result.errors.font_family_name).toMatch(/letters, numbers/i);
   });
 
+  it("rejects ticket_font_family_name with HTML/CSS metacharacters independently of font_family_name", () => {
+    const result = validateBrandingDraft({
+      font_family_name: "Brand Sans",
+      ticket_font_family_name: 'test</style><script>evil</script>',
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors.ticket_font_family_name).toMatch(/letters, numbers/i);
+    expect(result.errors.font_family_name).toBeUndefined();
+  });
+
+  it("accepts a valid ticket_font_family_name alongside a valid font_family_name", () => {
+    const result = validateBrandingDraft({ font_family_name: "Admin Sans", ticket_font_family_name: "Ticket Sans" });
+    expect(result.valid).toBe(true);
+  });
+
   it("accepts a saved custom family with a single valid HTTPS variant", () => {
     const result = validateBrandingDraft({
       font_family_name: "Brand Sans",
@@ -115,6 +130,18 @@ describe("validateBrandingDraft", () => {
 describe("brandingDraftForSave", () => {
   it("omits an invalid primary but keeps a valid font name on its own", () => {
     expect(brandingDraftForSave({ primary: "bad", font_family_name: "Evil" })).toEqual({ font_family_name: "Evil" });
+  });
+
+  it("sanitizes and keeps ticket_font_family_name independently of font_family_name", () => {
+    expect(
+      brandingDraftForSave({ font_family_name: "Admin Sans", ticket_font_family_name: "  Ticket Sans  " }),
+    ).toEqual({ font_family_name: "Admin Sans", ticket_font_family_name: "Ticket Sans" });
+  });
+
+  it("omits ticket_font_family_name when it sanitizes to empty, keeping font_family_name", () => {
+    expect(brandingDraftForSave({ font_family_name: "Admin Sans", ticket_font_family_name: "</>" })).toEqual({
+      font_family_name: "Admin Sans",
+    });
   });
 
   it("drops a family whose only variant has a credentialed HTTPS URL", () => {

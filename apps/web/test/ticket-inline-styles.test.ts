@@ -53,6 +53,17 @@ describe("buildTicketPageStyles", () => {
     expect(css).not.toContain("/vendor/fontsource/");
   });
 
+  it("uses ticket_font_family_name instead of font_family_name when set", () => {
+    const css = buildTicketPageStyles({ font_family_name: "Manrope", ticket_font_family_name: "Space Grotesk" });
+    expect(css).toContain("font-family: 'Space Grotesk'");
+    expect(css).not.toContain("font-family: 'Manrope'");
+  });
+
+  it("falls back to font_family_name when ticket_font_family_name is unset", () => {
+    const css = buildTicketPageStyles({ font_family_name: "IBM Plex Sans" });
+    expect(css).toContain("font-family: 'IBM Plex Sans'");
+  });
+
   it("falls back to self-hosted Inter when font_family_name matches neither a built-in nor a saved custom family", () => {
     // e.g. stale data left over from a deleted custom family - fonts.css imports Inter
     // unconditionally regardless of the active pick, so the admin SPA always has a real face to

@@ -235,6 +235,19 @@ describe("buildTicketFontSrc", () => {
       }),
     ).toBe("'self' https://active.example");
   });
+
+  it("allowlists ticket_font_family_name's own origin, not font_family_name's, when both are set", () => {
+    expect(
+      buildTicketFontSrc({
+        font_family_name: "Admin Sans",
+        ticket_font_family_name: "Ticket Sans",
+        custom_font_families: [
+          { name: "Admin Sans", variants: [{ weight: 400, style: "normal", url: "https://admin.example/a.woff2" }] },
+          { name: "Ticket Sans", variants: [{ weight: 400, style: "normal", url: "https://ticket.example/b.woff2" }] },
+        ],
+      }),
+    ).toBe("'self' https://ticket.example");
+  });
 });
 
 describe("buildTicketImgSrc", () => {
