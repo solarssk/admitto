@@ -16,6 +16,43 @@ import { logger } from "../logger.js";
  * Hono's c.json overload, which needs a literal status rather than a plain number. */
 type BrandingUploadStatus = 400 | 413 | 415;
 
+/** Parses the multipart body and extracts the uploaded file, shared by all three upload routes
+ * below. Returns the file, or an error Response to return directly - same `T | Response` pattern
+ * as requireEventId in admin-helpers.js. */
+async function parseUploadedFile(c: Context): Promise<File | Response> {
+  let body: Record<string, string | File>;
+  try {
+    body = await c.req.parseBody();
+  } catch {
+    return c.json({ error: "invalid_form_data" }, 400);
+  }
+  const fileField = body.file;
+  if (!(fileField instanceof File)) {
+    return c.json({ error: "file_required" }, 400);
+  }
+  return fileField;
+}
+
+/** Runs `attempt` (the upload plus its own audit log write) and returns its result as 201 JSON,
+ * mapping a thrown BrandingUploadError (or anything else) to the right response - the common
+ * try/catch tail shared by all three upload routes below. */
+async function respondToUpload(
+  c: Context,
+  handlerName: string,
+  attempt: () => Promise<{ url: string }>,
+): Promise<Response> {
+  try {
+    const result = await attempt();
+    return c.json(result, 201);
+  } catch (err) {
+    if (err instanceof BrandingUploadError) {
+      return c.json({ error: err.code, ...err.details }, err.status as BrandingUploadStatus);
+    }
+    logger.error(`${handlerName} failed`, { err });
+    return c.json({ error: "server error" }, 500);
+  }
+}
+
 /** POST /api/admin/uploads — superadmin only, multipart branding image. */
 export async function handlePostUpload(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");
@@ -28,20 +65,11 @@ export async function handlePostUpload(c: Context, db: PrismaClient): Promise<Re
   // row exists. MUST be replaced before enabling multi-org (would leak uploads cross-tenant).
   const orgId = "default";
 
-  let body: Record<string, string | File>;
-  try {
-    body = await c.req.parseBody();
-  } catch {
-    return c.json({ error: "invalid_form_data" }, 400);
-  }
+  const fileOrRes = await parseUploadedFile(c);
+  if (fileOrRes instanceof Response) return fileOrRes;
 
-  const fileField = body.file;
-  if (!(fileField instanceof File)) {
-    return c.json({ error: "file_required" }, 400);
-  }
-
-  try {
-    const result = await saveBrandingUpload(fileField, orgId);
+  return respondToUpload(c, "handlePostUpload", async () => {
+    const result = await saveBrandingUpload(fileOrRes, orgId);
     const realOrgId = await resolveInstanceOrganizationId(db);
     const audit = adminAuditFromContext(c);
     await writeAdminAuditLogBestEffort(db, {
@@ -52,14 +80,8 @@ export async function handlePostUpload(c: Context, db: PrismaClient): Promise<Re
       timezone: audit.timezone,
       actionType: "org_branding_logo_uploaded",
     });
-    return c.json(result, 201);
-  } catch (err) {
-    if (err instanceof BrandingUploadError) {
-      return c.json({ error: err.code, ...err.details }, err.status as BrandingUploadStatus);
-    }
-    logger.error("handlePostUpload failed", { err });
-    return c.json({ error: "server error" }, 500);
-  }
+    return result;
+  });
 }
 
 /**
@@ -84,20 +106,11 @@ export async function handlePostEventBrandingUpload(c: Context, db: PrismaClient
   // TODO(multi-org): same single-tenant assumption as handlePostUpload above.
   const orgId = "default";
 
-  let body: Record<string, string | File>;
-  try {
-    body = await c.req.parseBody();
-  } catch {
-    return c.json({ error: "invalid_form_data" }, 400);
-  }
+  const fileOrRes = await parseUploadedFile(c);
+  if (fileOrRes instanceof Response) return fileOrRes;
 
-  const fileField = body.file;
-  if (!(fileField instanceof File)) {
-    return c.json({ error: "file_required" }, 400);
-  }
-
-  try {
-    const result = await saveEventUpload(fileField, orgId, eventId);
+  return respondToUpload(c, "handlePostEventBrandingUpload", async () => {
+    const result = await saveEventUpload(fileOrRes, orgId, eventId);
     const realOrgId = await resolveInstanceOrganizationId(db);
     const audit = adminAuditFromContext(c);
     await writeAdminAuditLogBestEffort(db, {
@@ -109,14 +122,8 @@ export async function handlePostEventBrandingUpload(c: Context, db: PrismaClient
       actionType: "event_branding_uploaded",
       metadata: { eventId },
     });
-    return c.json(result, 201);
-  } catch (err) {
-    if (err instanceof BrandingUploadError) {
-      return c.json({ error: err.code, ...err.details }, err.status as BrandingUploadStatus);
-    }
-    logger.error("handlePostEventBrandingUpload failed", { err });
-    return c.json({ error: "server error" }, 500);
-  }
+    return result;
+  });
 }
 
 /** POST /api/admin/theme-font-upload — superadmin only, multipart custom brand font. */
@@ -129,20 +136,11 @@ export async function handlePostThemeFontUpload(c: Context, db: PrismaClient): P
   // NOSONAR — TODO(multi-org): same single-tenant assumption as handlePostUpload above. Tracked on the v0.5+ roadmap, not a forgotten task; safe today since only one Organization row exists.
   const orgId = "default";
 
-  let body: Record<string, string | File>;
-  try {
-    body = await c.req.parseBody();
-  } catch {
-    return c.json({ error: "invalid_form_data" }, 400);
-  }
+  const fileOrRes = await parseUploadedFile(c);
+  if (fileOrRes instanceof Response) return fileOrRes;
 
-  const fileField = body.file;
-  if (!(fileField instanceof File)) {
-    return c.json({ error: "file_required" }, 400);
-  }
-
-  try {
-    const result = await saveThemeFontUpload(fileField, orgId);
+  return respondToUpload(c, "handlePostThemeFontUpload", async () => {
+    const result = await saveThemeFontUpload(fileOrRes, orgId);
     const realOrgId = await resolveInstanceOrganizationId(db);
     const audit = adminAuditFromContext(c);
     await writeAdminAuditLogBestEffort(db, {
@@ -153,12 +151,6 @@ export async function handlePostThemeFontUpload(c: Context, db: PrismaClient): P
       timezone: audit.timezone,
       actionType: "branding_font_uploaded",
     });
-    return c.json(result, 201);
-  } catch (err) {
-    if (err instanceof BrandingUploadError) {
-      return c.json({ error: err.code, ...err.details }, err.status as BrandingUploadStatus);
-    }
-    logger.error("handlePostThemeFontUpload failed", { err });
-    return c.json({ error: "server error" }, 500);
-  }
+    return result;
+  });
 }
