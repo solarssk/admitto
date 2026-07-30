@@ -3022,27 +3022,6 @@
   grid-column: 1 / -1;
 }
 
-.cf-editor__info,
-.cf-editor__warn {
-  margin: 0 0 var(--space-3);
-  padding: var(--space-3);
-  border-radius: var(--radius-md);
-  font-size: var(--fs-sm);
-  line-height: 1.5;
-}
-
-.cf-editor__info {
-  background: var(--surface-sunken);
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-}
-
-.cf-editor__warn {
-  background: var(--status-warn-tint);
-  border: 1px solid var(--status-warn);
-  color: var(--status-warn-fg);
-}
-
 @media (max-width: 720px) {
   .identity-editor__grid {
     grid-template-columns: 1fr;
@@ -4612,18 +4591,13 @@ output.mail-field-hint {
 
 /* Live-refresh degraded banner (Audit/Security "Live" toggle) - same warning treatment as
    SystemLogsPanel's own .system-log-panel__poll-warning, just scoped under audit-log-* since
-   it sits inside AuditLogPanel's own toolbar/list stack instead of System's console shell. */
+   it sits inside AuditLogPanel's own toolbar/list stack instead of System's console shell.
+   Now the shared Notice component (@admitto/ui, warning variant), which owns the border/
+   background/color/icon. Only the bottom spacing to the list/table below survives here, since
+   Notice itself is margin: 0 (its layout contract expects a flex/grid gap parent, which this
+   plain block stack doesn't provide). */
 .audit-log-poll-warning {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
   margin-bottom: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--at-yellow);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--at-yellow) 12%, transparent);
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
 }
 
 .audit-log-poll-warning-retry {
@@ -4763,9 +4737,9 @@ output.mail-field-hint {
   border-radius: var(--radius-sm);
   background: linear-gradient(
     90deg,
-    var(--surface-muted, #f4f4f5) 25%,
-    var(--surface-elevated, #fafafa) 50%,
-    var(--surface-muted, #f4f4f5) 75%
+    var(--surface-muted) 25%,
+    var(--surface-elevated) 50%,
+    var(--surface-muted) 75%
   );
   background-size: 200% 100%;
   animation: audit-log-shimmer 1.2s ease-in-out infinite;
@@ -4837,7 +4811,7 @@ output.mail-field-hint {
   max-height: 12rem;
   overflow: auto;
   font-size: var(--fs-xs, 0.75rem);
-  background: var(--surface-elevated, #fafafa);
+  background: var(--surface-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-md);
@@ -5170,18 +5144,12 @@ select.system-log-panel__field {
 /* Shown when the live poll has failed several times in a row (endpoint down, lost superadmin
    role, network outage) - a caution (amber), not danger (red) banner, since the console below
    still shows genuinely real, just possibly stale, lines - this isn't a hard failure the way the
-   console's own error state is. */
+   console's own error state is. Now the shared Notice component (@admitto/ui, warning variant),
+   which owns the border/background/color/icon. Only the bottom spacing to the console below
+   survives here, since Notice itself is margin: 0 (its layout contract expects a flex/grid gap
+   parent, which this plain block stack doesn't provide). */
 .system-log-panel__poll-warning {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
   margin-bottom: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--at-yellow);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--at-yellow) 12%, transparent);
-  color: var(--at-gray-700);
-  font-size: var(--fs-sm);
 }
 
 .system-log-panel__poll-warning-retry {

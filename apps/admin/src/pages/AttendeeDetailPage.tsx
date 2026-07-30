@@ -8,6 +8,7 @@ import {
   EmptyState,
   Input,
   ModalBackdrop,
+  Notice,
   PageHeader,
   resolveStatusMeta,
   Select,
@@ -763,10 +764,9 @@ function AttendeeNotesTab({
   const pageCount = Math.max(1, Math.ceil(notesTotal / notesPageSize));
   return (
     <Card padded>
-      <p className="at-notes-hint">
-        <i className="ti ti-info-circle" aria-hidden="true" /> Internal notes are visible to
-        staff only and are never shown to the attendee.
-      </p>
+      <Notice variant="info" className="at-notes-hint">
+        Internal notes are visible to staff only and are never shown to the attendee.
+      </Notice>
       <div className="at-notes-form">
         <textarea
           className="at-textarea at-notes-form__textarea"
