@@ -513,7 +513,8 @@ describe("ImportPage upload → preview → commit flow", () => {
     fireEvent.click(screen.getByLabelText(/Dry run/));
     fireEvent.click(screen.getByRole("button", { name: /^Commit import \(2 attendees\)$/ }));
     await waitFor(() => {
-      expect(screen.getByText(/Event is at capacity/)).toBeTruthy();
+      const banner = screen.getByText(/Event is at capacity/);
+      expect(banner.closest(".at-notice--warning")).toBeTruthy();
     });
 
     fireEvent.click(screen.getByLabelText(/Override capacity limit/));
