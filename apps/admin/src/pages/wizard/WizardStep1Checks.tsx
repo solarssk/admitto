@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Button } from "@admitto/ui";
+import { Button, Notice } from "@admitto/ui";
 import { fetchSetupChecks } from "../../api/client.js";
 import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import type { SetupChecksResponse } from "../../api/types.js";
@@ -76,13 +76,12 @@ export function WizardStep1Checks({ onChecksOk }: Readonly<WizardStep1ChecksProp
       )}
 
       {!loading && checks && hasCheckErrors && (
-        <div className="setup-wizard__check-error-banner" role="alert">
-          <i className="ti ti-alert-triangle" aria-hidden="true" />
-          <p>Fix the issues above, then use Retry to run checks again.</p>
+        <Notice variant="error" role="alert" className="setup-wizard__check-error-banner">
+          Fix the issues above, then use Retry to run checks again.{" "}
           <Button type="button" variant="secondary" size="sm" onClick={retry} className="setup-wizard__check-retry">
             Retry
           </Button>
-        </div>
+        </Notice>
       )}
 
       {!loading && loadError && (
