@@ -64,6 +64,30 @@ describe("serveTablerIcons", () => {
   });
 });
 
+/** Duck-typed Context exposing only `req.path` and `notFound()` - the two members
+ * serveTablerIcons/serveFontsourceFonts touch before ever reaching serveVendorFile. Hono's router
+ * never actually calls either handler with a mismatched path (that's the whole point of
+ * registering them at a fixed prefix), so their own defensive prefix check is only reachable by
+ * calling the exported handler directly like this. */
+function fakeContextWithPath(path: string) {
+  return {
+    req: { path },
+    notFound: () => new Response("404 Not Found", { status: 404 }),
+  } as unknown as Context;
+}
+
+describe("prefix mismatch (defensive; unreachable through normal Hono routing)", () => {
+  it("serveTablerIcons 404s for a path outside its own prefix", async () => {
+    const res = await serveTablerIcons(fakeContextWithPath("/not-tabler-icons/x"), (() => Promise.resolve()) as never);
+    expect((res as Response).status).toBe(404);
+  });
+
+  it("serveFontsourceFonts 404s for a path outside its own prefix", async () => {
+    const res = await serveFontsourceFonts(fakeContextWithPath("/not-fontsource/x"), (() => Promise.resolve()) as never);
+    expect((res as Response).status).toBe(404);
+  });
+});
+
 /** Minimal duck-typed Context - serveVendorFile only ever calls these four methods. */
 function fakeContext() {
   const headers: Record<string, string> = {};
