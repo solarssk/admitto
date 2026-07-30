@@ -1,8 +1,16 @@
 /** Shared Settings tab ids for the instance settings shell (#266 slice 7b). */
-export type SettingsTab = "general" | "mail" | "security" | "archiving" | "identity" | "logs";
+export type SettingsTab =
+  | "general"
+  | "branding"
+  | "mail"
+  | "security"
+  | "archiving"
+  | "identity"
+  | "logs";
 
 export const SETTINGS_TABS = [
   { id: "general", label: "General" },
+  { id: "branding", label: "Branding" },
   { id: "mail", label: "Mail" },
   { id: "security", label: "Security" },
   { id: "archiving", label: "Archiving" },

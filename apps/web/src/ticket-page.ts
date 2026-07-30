@@ -28,11 +28,19 @@ function safeHttpsOrigin(url?: string | null): string | null {
   return null;
 }
 
-/** Build CSP font-src allowlist for ticket page custom branding fonts. */
+/** Build CSP font-src allowlist for ticket page custom branding fonts - only the *active* saved
+ * family's own variants are ever actually referenced (resolveThemeVars only emits @font-face for
+ * whichever one matches font_family_name), each independently checked (a local /uploads/... path
+ * needs nothing added here, already covered by 'self', same as buildTicketImgSrc's logo). */
 export function buildTicketFontSrc(theme?: BrandingTheme | null): string {
   const parts = ["'self'"];
-  const origin = safeHttpsOrigin(theme?.font_family_url);
-  if (origin) parts.push(origin);
+  const origins = new Set<string>();
+  const activeFamily = theme?.custom_font_families?.find((f) => f.name === theme.font_family_name);
+  for (const variant of activeFamily?.variants ?? []) {
+    const origin = safeHttpsOrigin(variant.url);
+    if (origin) origins.add(origin);
+  }
+  parts.push(...origins);
   return parts.join(" ");
 }
 

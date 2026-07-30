@@ -41,11 +41,17 @@ export {
 } from "./status-map.js";
 export {
   isSafeBrandingFontUrl,
+  isLocalBrandingFontPath,
   isValidBrandingFontFamilyName,
+  isValidBrandingFontWeight,
+  isReservedBrandingFontFamilyName,
+  BUILT_IN_FONT_FAMILY_NAMES,
   sanitizeBrandingFontFamilyName,
   resolveThemeVars,
   themeVarsToStyleBlock,
   applyThemeVars,
   type BrandingThemeInput,
+  type BrandingFontVariant,
+  type BrandingCustomFontFamily,
   type ResolvedThemeVars,
 } from "./theme.js";

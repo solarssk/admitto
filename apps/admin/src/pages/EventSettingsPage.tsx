@@ -24,7 +24,7 @@ import {
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventSettingsDto, TicketTypeDto } from "../api/types.js";
 import { TicketTypesCard } from "../settings/TicketTypesCard.js";
-import { EventMailSettingsCard, type EventMailSettingsCardHandle } from "../settings/EventMailSettingsCard.js";
+import { EventMailSettingsCard } from "../settings/EventMailSettingsCard.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
@@ -63,7 +63,7 @@ type SettingsPatch = Partial<{
   logo_url: string | null;
 }>;
 
-const EVENT_SETTINGS_SUBTITLE = "Manage this event's details, branding, and access controls.";
+const EVENT_SETTINGS_SUBTITLE = "Manage this event's details, images, and access controls.";
 
 // Extra "don't act on reflex" pause before the confirm button on the bulk revoke dialogs
 // unlocks — these affect every attendee on the event at once, so they get a brief arming
@@ -510,7 +510,7 @@ function EventSettingsTabPanel({ tab, activeTab, visited, label, children }: Eve
   );
 }
 
-/** Event-scoped settings: General / Branding / Wallet / Danger zone tabs. */
+/** Event-scoped settings: General / Images / Wallet / Danger zone tabs. */
 export function EventSettingsPage() {
   const { eventId } = useParams();
   const navigate = useNavigate();
@@ -548,10 +548,6 @@ export function EventSettingsPage() {
   const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
   const [mailDirty, setMailDirty] = useState(false);
   const [mailSaving, setMailSaving] = useState(false);
-  // Card exposes save()/reset() imperatively so this page's single PageHeader Save/Reset
-  // pair can drive the Mail tab's form the same way it drives the General tab's — the card
-  // itself no longer renders its own footer (previously a second, redundant Save button).
-  const mailCardRef = useRef<EventMailSettingsCardHandle>(null);
   // Archiving and the bulk Danger Zone actions below reload `event` but never touch
   // EventMailSettingsCard's own internal draft/secrets state, so a pending mail edit would
   // otherwise survive them despite the confirm dialogs promising unsaved changes are lost
@@ -589,6 +585,9 @@ export function EventSettingsPage() {
   // running a page action that reloads state (archive, revoke) would otherwise silently
   // discard unsaved mail transport edits and pending secret replacements (CodeRabbit review).
   const pageDirty = dirty || mailDirty;
+  // Same combination for "a save request is in flight" - a Danger Zone action firing while the
+  // Mail tab's own save is still in flight would race against it on the same event record.
+  const pageBusy = saving || mailSaving;
   const saveButtonLabel = computeSaveButtonLabel(saving, logoUploading);
   // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
   // these "Loading…" placeholders on and off faster than they can register as loading —
@@ -597,7 +596,7 @@ export function EventSettingsPage() {
   const showTicketTypesLoading = useDelayedLoading(ticketTypesLoading);
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
-      pageDirty && currentLocation.pathname !== nextLocation.pathname,
+      (pageDirty || pageBusy) && currentLocation.pathname !== nextLocation.pathname,
   );
   const isArchived = event?.status === "archived";
 
@@ -646,13 +645,13 @@ export function EventSettingsPage() {
   }, [abortLatestTicketTypes, loadTicketTypes]);
 
   useEffect(() => {
-    if (!pageDirty) return;
+    if (!pageDirty && !pageBusy) return;
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault();
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [pageDirty]);
+  }, [pageDirty, pageBusy]);
 
   const goBack = () => navigate(eventOverviewPath(eventId));
 
@@ -801,36 +800,17 @@ export function EventSettingsPage() {
         subtitle={EVENT_SETTINGS_SUBTITLE}
         className="event-settings-pageheader"
         actions={
-          !isArchived ? (
-            <span className="save-actions">
-              {tab === "mail" ? (
-                <>
-                  <Button
-                    variant="secondary"
-                    disabled={!mailDirty || mailSaving}
-                    onClick={() => mailCardRef.current?.reset()}
-                  >
-                    Reset
-                  </Button>
-                  <Button
-                    variant="primary"
-                    disabled={!mailDirty || mailSaving}
-                    onClick={() => void mailCardRef.current?.save()}
-                  >
-                    {computeSaveButtonLabel(mailSaving, false)}
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  variant="primary"
-                  disabled={!dirty || saving || logoUploading}
-                  onClick={() => void handleSave()}
-                >
-                  {saveButtonLabel}
-                </Button>
-              )}
+          <a
+            href="https://github.com/solarssk/admitto/wiki"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="at-btn at-btn--secondary"
+          >
+            <span className="at-btn__icon" aria-hidden="true">
+              <i className="ti ti-book" aria-hidden="true" />
             </span>
-          ) : undefined
+            <span>Documentation</span>
+          </a>
         }
       />
 
@@ -841,7 +821,22 @@ export function EventSettingsPage() {
       />
 
       <EventSettingsTabPanel tab="general" activeTab={tab} visited={visitedTabs} label="General">
-        <Card title="Basic information" className="event-settings-card">
+        <Card
+          title="Basic information"
+          className="event-settings-card"
+          actions={
+            !isArchived && (
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={!dirty || saving || logoUploading}
+                onClick={() => void handleSave()}
+              >
+                {saveButtonLabel}
+              </Button>
+            )
+          }
+        >
           <div className="settings-field-stack">
             <div className="settings-field-group">
               <Input
@@ -965,8 +960,23 @@ export function EventSettingsPage() {
         />
       </EventSettingsTabPanel>
 
-      <EventSettingsTabPanel tab="branding" activeTab={tab} visited={visitedTabs} label="Branding">
-        <Card title="Event branding" className="event-settings-card">
+      <EventSettingsTabPanel tab="images" activeTab={tab} visited={visitedTabs} label="Images">
+        <Card
+          title="Event logo"
+          className="event-settings-card"
+          actions={
+            !isArchived && (
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={!dirty || saving || logoUploading}
+                onClick={() => void handleSave()}
+              >
+                {saveButtonLabel}
+              </Button>
+            )
+          }
+        >
           <p className="field-hint">
             Use a different logo just for this event, or leave it blank to use the
             organization&apos;s logo.
@@ -983,7 +993,7 @@ export function EventSettingsPage() {
           />
           {isArchived && (
             <p className="field-hint event-settings-archived-note">
-              This event is archived - branding cannot be changed.
+              This event is archived - images cannot be changed.
             </p>
           )}
         </Card>
@@ -1005,7 +1015,6 @@ export function EventSettingsPage() {
         <EventSettingsTabPanel tab="mail" activeTab={tab} visited={visitedTabs} label="Mail">
           <EventMailSettingsCard
             key={mailCardResetKey}
-            ref={mailCardRef}
             eventId={eventId}
             isArchived={isArchived}
             onDirtyChange={setMailDirty}

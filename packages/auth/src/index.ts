@@ -136,6 +136,8 @@ export {
   getBrandingTheme,
   setBrandingTheme,
   type BrandingTheme,
+  type BrandingFontVariant,
+  type BrandingCustomFontFamily,
 } from "./settings/branding.js";
 export { SETTING_BRANDING_THEME } from "./settings/keys.js";
 export {
