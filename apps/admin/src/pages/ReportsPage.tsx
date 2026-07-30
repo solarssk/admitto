@@ -278,10 +278,10 @@ function encodeTypeFilterValue(key: string | null): string {
   return key === null ? NONE_TYPE_KEY : `type:${key}`;
 }
 
-const NONE_DEVICE_KEY = "__none_device__";
+const NONE_OPERATOR_KEY = "__none_operator__";
 
-function encodeDeviceFilterValue(deviceId: string | null): string {
-  return deviceId === null ? NONE_DEVICE_KEY : `device:${deviceId}`;
+function encodeOperatorFilterValue(operatorUserId: string | null): string {
+  return operatorUserId === null ? NONE_OPERATOR_KEY : `operator:${operatorUserId}`;
 }
 
 interface BreakdownRow {
@@ -395,18 +395,30 @@ function checkinMethodBreakdownRows(
   });
 }
 
-/** Ranked by admissions handled, not a fixed category set like the two breakdowns above - device
- * labels are free text an operator chose (DeviceLabelStep), so one consistent color reads better
- * than implying a categorical meaning between rows. */
-function deviceBreakdownRows(
-  byDevice: EventReportsResponse["by_device"],
+/** Primary "who scanned this" label - mirrors AuditLogPanel.tsx's actorDisplay 3-way fallback
+ * (display_name, then email, then "Deleted user"), plus a distinct "(No operator)" case: unlike
+ * AdminAuditLog, a check-in can legitimately have no operator at all (the legacy/emergency
+ * bearer path, ALLOW_CHECKIN_BEARER). */
+function operatorDisplayLabel(row: {
+  operator_user_id: string | null;
+  operator_display_name: string | null;
+  operator_email: string | null;
+}): string {
+  if (!row.operator_user_id) return "(No operator)";
+  return row.operator_display_name ?? row.operator_email ?? "Deleted user";
+}
+
+/** Ranked by admissions handled, not a fixed category set like the two breakdowns above - one
+ * consistent color reads better than implying a categorical meaning between rows. */
+function operatorBreakdownRows(
+  byOperator: EventReportsResponse["by_operator"],
   admitted: number,
 ): BreakdownRow[] {
-  return byDevice.map((row) => {
+  return byOperator.map((row) => {
     const pct = pctOf(row.count, admitted);
     return {
-      id: row.device_id ?? "__unlabeled__",
-      label: row.device_id ?? "(unlabeled device)",
+      id: encodeOperatorFilterValue(row.operator_user_id),
+      label: operatorDisplayLabel(row),
       meta: `${row.count} · ${pct}%`,
       pct,
       color: "var(--primary)",
@@ -418,7 +430,7 @@ interface AdmissionLogProps {
   readonly eventId: string;
   readonly log: EventReportsResponse["admission_log"];
   readonly byTicketType: EventReportsResponse["by_ticket_type"];
-  readonly byDevice: EventReportsResponse["by_device"];
+  readonly byOperator: EventReportsResponse["by_operator"];
   readonly ticketTypes: TicketTypeDto[];
   readonly timeZone: string;
   readonly truncated: boolean;
@@ -429,14 +441,14 @@ function AdmissionLog({
   eventId,
   log,
   byTicketType,
-  byDevice,
+  byOperator,
   ticketTypes,
   timeZone,
   truncated,
   totalAdmitted,
 }: AdmissionLogProps) {
   const [typeFilter, setTypeFilter] = useState("all");
-  const [deviceFilter, setDeviceFilter] = useState("all");
+  const [operatorFilter, setOperatorFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(LOG_PAGE_SIZE_DEFAULT);
   const isDesktop = useIsDesktop();
@@ -456,10 +468,12 @@ function AdmissionLog({
   } else if (typeFilter !== "all") {
     filtered = filtered.filter((row) => encodeTypeFilterValue(row.ticket_type) === typeFilter);
   }
-  if (deviceFilter === NONE_DEVICE_KEY) {
-    filtered = filtered.filter((row) => row.device_id === null);
-  } else if (deviceFilter !== "all") {
-    filtered = filtered.filter((row) => encodeDeviceFilterValue(row.device_id) === deviceFilter);
+  if (operatorFilter === NONE_OPERATOR_KEY) {
+    filtered = filtered.filter((row) => row.operator_user_id === null);
+  } else if (operatorFilter !== "all") {
+    filtered = filtered.filter(
+      (row) => encodeOperatorFilterValue(row.operator_user_id) === operatorFilter,
+    );
   }
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -469,7 +483,7 @@ function AdmissionLog({
   // end and showing "No admissions match the filter" despite matching rows still existing.
   const safePage = Math.min(page, totalPages);
   const paged = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
-  const activeFilterCount = (typeFilter !== "all" ? 1 : 0) + (deviceFilter !== "all" ? 1 : 0);
+  const activeFilterCount = (typeFilter !== "all" ? 1 : 0) + (operatorFilter !== "all" ? 1 : 0);
 
   return (
     <Card
@@ -497,21 +511,21 @@ function AdmissionLog({
           </div>
           <div className="reports-log-filters-menu__field">
             <Select
-              id="reports-log-device-filter"
-              aria-label="Filter by device"
-              value={deviceFilter}
+              id="reports-log-operator-filter"
+              aria-label="Filter by operator"
+              value={operatorFilter}
               onChange={(e) => {
-                setDeviceFilter(e.target.value);
+                setOperatorFilter(e.target.value);
                 setPage(1);
               }}
             >
-              <option value="all">All devices</option>
-              {byDevice.map((row) => (
+              <option value="all">All operators</option>
+              {byOperator.map((row) => (
                 <option
-                  key={encodeDeviceFilterValue(row.device_id)}
-                  value={encodeDeviceFilterValue(row.device_id)}
+                  key={encodeOperatorFilterValue(row.operator_user_id)}
+                  value={encodeOperatorFilterValue(row.operator_user_id)}
                 >
-                  {row.device_id ?? "(unlabeled device)"}
+                  {operatorDisplayLabel(row)}
                 </option>
               ))}
             </Select>
@@ -533,7 +547,7 @@ function AdmissionLog({
                 <th>Attendee</th>
                 <th>Ticket type</th>
                 <th>Admitted at</th>
-                <th>Device</th>
+                <th>Checked in by</th>
                 <th>Items</th>
               </tr>
             </thead>
@@ -559,7 +573,14 @@ function AdmissionLog({
                   <td className="reports-mono">
                     {formatAdmittedTime(row.admitted_at, timeZone, includeAdmissionDate)}
                   </td>
-                  <td className="reports-muted">{row.device_id ?? "-"}</td>
+                  <td>
+                    <div className="reports-log-user">
+                      <span>{operatorDisplayLabel(row)}</span>
+                      {row.device_id && (
+                        <span className="reports-mono reports-muted">{row.device_id}</span>
+                      )}
+                    </div>
+                  </td>
                   <td className="reports-muted">{row.items.length > 0 ? row.items.join(", ") : "-"}</td>
                 </tr>
               ))}
@@ -595,11 +616,19 @@ function AdmissionLog({
                 )}
                 {/* Icon-prefixed, not bare text - two plain <span>s back to back (e.g.
                     "scanner-01 Badge, Gift bag") read as one ambiguous string with nothing
-                    marking where the device label ends and the issued items begin (PO review). */}
+                    marking where one field ends and the next begins (PO review). Operator is
+                    always shown (the always-available, non-spoofable signal); device is a
+                    secondary annotation shown only when a session actually set one. */}
                 <span className="reports-log-card__meta-item">
-                  <i className="ti ti-device-desktop" aria-hidden="true" />
-                  {row.device_id ?? "-"}
+                  <i className="ti ti-user" aria-hidden="true" />
+                  {operatorDisplayLabel(row)}
                 </span>
+                {row.device_id && (
+                  <span className="reports-log-card__meta-item">
+                    <i className="ti ti-device-desktop" aria-hidden="true" />
+                    {row.device_id}
+                  </span>
+                )}
                 <span className="reports-log-card__meta-item">
                   <i className="ti ti-package" aria-hidden="true" />
                   {row.items.length > 0 ? row.items.join(", ") : "-"}
@@ -1027,8 +1056,8 @@ export function ReportsPage() {
                 rows={checkinMethodBreakdownRows(data.by_checkin_method, data.summary.admitted)}
               />
             </Card>
-            <Card title="By device">
-              <BreakdownRows rows={deviceBreakdownRows(data.by_device, data.summary.admitted)} />
+            <Card title="By operator">
+              <BreakdownRows rows={operatorBreakdownRows(data.by_operator, data.summary.admitted)} />
             </Card>
           </div>
 
@@ -1037,7 +1066,7 @@ export function ReportsPage() {
             eventId={eventId}
             log={data.admission_log}
             byTicketType={data.by_ticket_type}
-            byDevice={data.by_device}
+            byOperator={data.by_operator}
             ticketTypes={ticketTypes}
             timeZone={data.timezone}
             truncated={data.admission_log_truncated}

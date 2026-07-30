@@ -230,6 +230,7 @@ import { handleGetSetup, handlePostSetup, resolveStaffEntryPath } from "./setup-
 import {
   handleGetSessions,
   handleRevokeSession,
+  handleUpdateSessionDeviceLabel,
   handleRevokeAllOperatorSessions,
 } from "./admin/sessions-routes.js";
 import { handleExportAuditLog, handleGetAuditLog } from "./admin/audit-routes.js";
@@ -981,6 +982,9 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/api/admin/sessions", staffAdminGate, (c) => handleGetSessions(c, db));
   app.post("/api/admin/sessions/:id/revoke", jsonPostCsrf, staffAdminGate, (c) =>
     handleRevokeSession(c, db),
+  );
+  app.post("/api/admin/sessions/:id/device-label", jsonPostCsrf, staffAdminGate, (c) =>
+    handleUpdateSessionDeviceLabel(c, db),
   );
   app.post(
     "/api/admin/events/:eventId/revoke-all-operator-sessions",
