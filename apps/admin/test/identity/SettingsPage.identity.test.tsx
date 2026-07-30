@@ -8,8 +8,8 @@ import { render } from "@testing-library/react";
 vi.mock("../../src/settings/BrandingSettingsPanel.js", () => ({
   BrandingSettingsPanel: () => <div data-testid="branding-settings-panel" />,
 }));
-vi.mock("../../src/settings/InstanceUrlPanel.js", () => ({
-  InstanceUrlPanel: () => <div data-testid="instance-url-panel" />,
+vi.mock("../../src/settings/GeneralSettingsPanel.js", () => ({
+  GeneralSettingsPanel: () => <div data-testid="general-settings-panel" />,
 }));
 vi.mock("../../src/settings/MailTransportPanel.js", () => ({
   MailTransportPanel: () => <div data-testid="mail-panel" />,
@@ -90,7 +90,7 @@ describe("SettingsLayout Identity tab", () => {
 
   it("renders the General panel by default and switches to Mail", async () => {
     renderAt("/admin/settings");
-    expect(screen.getByTestId("instance-url-panel")).toBeTruthy();
+    expect(screen.getByTestId("general-settings-panel")).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Mail" }));
     await waitFor(() => {
       expect(screen.getByTestId("mail-panel")).toBeTruthy();
@@ -180,12 +180,12 @@ describe("SettingsLayout Identity tab", () => {
       expect(screen.getByTestId("security-panel")).toBeTruthy();
     });
     expect(screen.queryByTestId("branding-settings-panel")).toBeNull();
-    expect(screen.queryByTestId("instance-url-panel")).toBeNull();
+    expect(screen.queryByTestId("general-settings-panel")).toBeNull();
   });
 
   it("ignores an unknown ?tab= value and falls back to General", async () => {
     renderAt("/admin/settings?tab=nonsense");
-    expect(screen.getByTestId("instance-url-panel")).toBeTruthy();
+    expect(screen.getByTestId("general-settings-panel")).toBeTruthy();
   });
 
   it("restores the active tab after navigating to Identity and Back", async () => {

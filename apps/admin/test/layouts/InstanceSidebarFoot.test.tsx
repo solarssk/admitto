@@ -27,7 +27,7 @@ describe("InstanceSidebarFoot", () => {
     expect(screen.getByRole("link", { name: "Users & roles" }).getAttribute("href")).toBe(
       "/admin/users",
     );
-    expect(screen.getByRole("link", { name: "Settings" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: "Organisation settings" }).getAttribute("href")).toBe(
       "/admin/settings",
     );
     expect(screen.getByText(/^v\d/)).toBeTruthy();
@@ -41,7 +41,7 @@ describe("InstanceSidebarFoot", () => {
       </MemoryRouter>,
     );
     expect(screen.queryByRole("link", { name: "Users & roles" })).toBeNull();
-    expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Organisation settings" })).toBeNull();
     expect(screen.getByText(/^v\d/)).toBeTruthy();
   });
 
@@ -53,7 +53,7 @@ describe("InstanceSidebarFoot", () => {
       </MemoryRouter>,
     );
     expect(screen.getByRole("link", { name: "Users & roles" })).toBeTruthy();
-    expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Organisation settings" })).toBeNull();
   });
 
   it("renders no administration links for a role with neither admin nor check-in access", () => {
@@ -64,7 +64,7 @@ describe("InstanceSidebarFoot", () => {
       </MemoryRouter>,
     );
     expect(screen.queryByRole("link", { name: "Users & roles" })).toBeNull();
-    expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Organisation settings" })).toBeNull();
     expect(screen.getByText(/^v\d/)).toBeTruthy();
   });
 
@@ -78,7 +78,7 @@ describe("InstanceSidebarFoot", () => {
     expect(screen.getByRole("link", { name: "Users & roles" }).className).toContain(
       "nav-item--active",
     );
-    expect(screen.getByRole("link", { name: "Settings" }).className).not.toContain(
+    expect(screen.getByRole("link", { name: "Organisation settings" }).className).not.toContain(
       "nav-item--active",
     );
   });
