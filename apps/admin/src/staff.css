@@ -3730,6 +3730,14 @@ output.mail-field-hint {
   display: block;
 }
 
+/* Instance URL's own description/status text reads one size larger than the rest of the
+   app's equivalent field descriptions (e.g. Organisation name's Input-driven hint, .at-hint,
+   --fs-xs) since .mail-field-hint is --fs-sm - scoped override, keeping .mail-field-hint's
+   own margin/grid-column rules intact for every other call site. */
+.instance-url-hint {
+  font-size: var(--fs-xs);
+}
+
 .mail-transport__desc,
 .mail-transport__env-note {
   margin: 0 0 var(--space-3);
@@ -5303,26 +5311,6 @@ select.system-log-panel__field {
 .system-log-panel__footer-actions {
   display: flex;
   gap: var(--space-2);
-}
-
-/* Plain informational context, not a caution (poll-warning above, amber) or a danger
-   (event-settings' danger-zone-notice, red) - this is a permanent fact about the view, so a
-   neutral "well" background reads as documentation rather than an alert. */
-.system-log-panel__notice {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface-sunken);
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-}
-
-.system-log-panel__notice i {
-  margin-top: 2px;
 }
 
 /* Event archiving panel */

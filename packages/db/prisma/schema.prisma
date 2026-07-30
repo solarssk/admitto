@@ -13,15 +13,18 @@ datasource db {
 }
 
 model Organization {
-  id               String          @id @default(cuid())
-  name             String
-  slug             String          @unique
+  id                    String          @id @default(cuid())
+  name                  String
+  slug                  String          @unique
   // Branding URLs (ADR 0008) — external hosted images, not uploads.
-  logo_url         String?
-  header_image_url String?
-  created_at       DateTime        @default(now())
-  events           Event[]
-  email_deliveries EmailDelivery[]
+  logo_url              String?
+  header_image_url      String?
+  // Reserved for future use, e.g. identifying this instance in outbound API requests.
+  support_contact_name  String?
+  support_contact_email String?
+  created_at            DateTime        @default(now())
+  events                Event[]
+  email_deliveries      EmailDelivery[]
 }
 
 model Event {

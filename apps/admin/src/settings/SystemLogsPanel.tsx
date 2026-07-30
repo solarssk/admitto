@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
-import { Button, useToast } from "@admitto/ui";
+import { Button, Notice, useToast } from "@admitto/ui";
 import { fetchSystemLogs } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { SystemLogEntryDto } from "../api/types.js";
@@ -440,11 +440,10 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
           only surfaces it in the empty state (easy to never see once the tail has any activity)
           would undersell how easy it is to mistake this for a durable, retention-configurable
           log store. It isn't - see DATA-PROTECTION.md's "System logs (live tail)" section. */}
-      <p className="system-log-panel__notice">
-        <i className="ti ti-info-circle" aria-hidden="true" /> Live view only. Keeps the last
-        1,000 entries and resets on restart. For durable history, use the Audit log or Security
-        audit log instead.
-      </p>
+      <Notice variant="info">
+        Live view only. Keeps the last 1,000 entries and resets on restart. For durable history,
+        use the Audit log or Security audit log instead.
+      </Notice>
     </div>
   );
 });
