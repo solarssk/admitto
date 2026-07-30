@@ -40,7 +40,6 @@ function detail(partial: Partial<AttendeeDetailDto> = {}): AttendeeDetailDto {
     rsvp_status: "none",
     rsvp_updated_at: null,
     rsvp_source: null,
-    ticket_ref: null,
     custom_data: null,
     deliveries: [],
     action_log: [],
