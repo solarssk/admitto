@@ -4530,6 +4530,12 @@ output.mail-field-hint {
   margin-left: var(--space-1);
 }
 
+.sessions-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
 .sessions-error,
 .sessions-success {
   font-size: var(--fs-sm);
@@ -4606,18 +4612,13 @@ output.mail-field-hint {
 
 /* Live-refresh degraded banner (Audit/Security "Live" toggle) - same warning treatment as
    SystemLogsPanel's own .system-log-panel__poll-warning, just scoped under audit-log-* since
-   it sits inside AuditLogPanel's own toolbar/list stack instead of System's console shell. */
+   it sits inside AuditLogPanel's own toolbar/list stack instead of System's console shell.
+   Now the shared Notice component (@admitto/ui, warning variant), which owns the border/
+   background/color/icon. Only the bottom spacing to the list/table below survives here, since
+   Notice itself is margin: 0 (its layout contract expects a flex/grid gap parent, which this
+   plain block stack doesn't provide). */
 .audit-log-poll-warning {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
   margin-bottom: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--at-yellow);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--at-yellow) 12%, transparent);
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
 }
 
 .audit-log-poll-warning-retry {
@@ -5164,18 +5165,12 @@ select.system-log-panel__field {
 /* Shown when the live poll has failed several times in a row (endpoint down, lost superadmin
    role, network outage) - a caution (amber), not danger (red) banner, since the console below
    still shows genuinely real, just possibly stale, lines - this isn't a hard failure the way the
-   console's own error state is. */
+   console's own error state is. Now the shared Notice component (@admitto/ui, warning variant),
+   which owns the border/background/color/icon. Only the bottom spacing to the console below
+   survives here, since Notice itself is margin: 0 (its layout contract expects a flex/grid gap
+   parent, which this plain block stack doesn't provide). */
 .system-log-panel__poll-warning {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
   margin-bottom: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--at-yellow);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--at-yellow) 12%, transparent);
-  color: var(--at-gray-700);
-  font-size: var(--fs-sm);
 }
 
 .system-log-panel__poll-warning-retry {

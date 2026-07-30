@@ -155,7 +155,7 @@ const emptyReport = {
   admission_log_total: 0,
   by_rsvp_status: [],
   by_checkin_method: [],
-  by_device: [],
+  by_operator: [],
 };
 
 const archivedEvent = {
@@ -945,7 +945,7 @@ describe("ReportsPage stat tiles", () => {
 });
 
 describe("ReportsPage — Check-in details section", () => {
-  it("zero-fills all 5 RSVP buckets, shows only the 2 real check-in methods, and ranks devices by admissions", async () => {
+  it("zero-fills all 5 RSVP buckets, shows only the 2 real check-in methods, and ranks operators by admissions", async () => {
     vi.mocked(fetchEventReports).mockResolvedValue({
       ...emptyReport,
       summary: { ...emptyReport.summary, total_attendees: 3, admitted: 3, admission_rate_pct: 100 },
@@ -954,9 +954,14 @@ describe("ReportsPage — Check-in details section", () => {
         { status: "declined", count: 1 },
       ],
       by_checkin_method: [{ method: "scan", count: 3 }],
-      by_device: [
-        { device_id: "Tablet 1 — main entrance", count: 2 },
-        { device_id: null, count: 1 },
+      by_operator: [
+        {
+          operator_user_id: "user-1",
+          operator_display_name: "Anna Kowalska",
+          operator_email: "anna@example.com",
+          count: 2,
+        },
+        { operator_user_id: null, operator_display_name: null, operator_email: null, count: 1 },
       ],
     });
     renderWithToast(
@@ -979,9 +984,9 @@ describe("ReportsPage — Check-in details section", () => {
     expect(screen.getByText("QR scan")).toBeTruthy();
     expect(screen.getByText("Manual search")).toBeTruthy();
 
-    expect(screen.getByText("By device")).toBeTruthy();
-    expect(screen.getByText("Tablet 1 — main entrance")).toBeTruthy();
-    expect(screen.getByText("(unlabeled device)")).toBeTruthy();
+    expect(screen.getByText("By operator")).toBeTruthy();
+    expect(screen.getByText("Anna Kowalska")).toBeTruthy();
+    expect(screen.getByText("(No operator)")).toBeTruthy();
   });
 
   it("adds a fallback row for an rsvp_status outside the 5 known values, instead of silently dropping it (#587 review)", async () => {
@@ -1239,8 +1244,9 @@ describe("ReportsPage admission log", () => {
     });
     const row = screen.getByText("Jan Kowalski").closest("tr");
     if (!row) throw new Error("admission log row not found");
-    // Second <td> is "Ticket type" (Attendee, Ticket type, Admitted at, Device, Items) - scoped
-    // past the Device cell, which legitimately shows "-" for this row's own null device_id.
+    // Second <td> is "Ticket type" (Attendee, Ticket type, Admitted at, Checked in by, Items) -
+    // scoped past the Checked-in-by cell, which always shows an operator label (never "-") for
+    // this row's unset operator_user_id.
     const typeCell = row.querySelectorAll("td")[1];
     if (!typeCell) throw new Error("ticket-type cell not found");
     // The Attendees table's shared badge renders "-" for a null ticket_type - this cell must show
@@ -1322,14 +1328,24 @@ describe("ReportsPage admission log", () => {
     expect(screen.queryByText("Null Guest")).toBeNull();
   });
 
-  it("filters the admission log by device, including a bucket for admissions with no device", async () => {
+  it("filters the admission log by operator, including a bucket for admissions with no operator", async () => {
     vi.mocked(fetchEventReports).mockResolvedValueOnce({
       ...emptyReport,
       summary: { ...emptyReport.summary, total_attendees: 3, admitted: 3, admission_rate_pct: 100 },
-      by_device: [
-        { device_id: "scanner-01", count: 1 },
-        { device_id: "desk-01", count: 1 },
-        { device_id: null, count: 1 },
+      by_operator: [
+        {
+          operator_user_id: "user-anna",
+          operator_display_name: "Anna Kowalska",
+          operator_email: "anna@example.com",
+          count: 1,
+        },
+        {
+          operator_user_id: "user-marek",
+          operator_display_name: "Marek Nowak",
+          operator_email: "marek@example.com",
+          count: 1,
+        },
+        { operator_user_id: null, operator_display_name: null, operator_email: null, count: 1 },
       ],
       admission_log: [
         {
@@ -1338,6 +1354,9 @@ describe("ReportsPage admission log", () => {
           email: "scanner-guest@example.com",
           ticket_type: null,
           admitted_at: "2026-06-01T10:00:00.000Z",
+          operator_user_id: "user-anna",
+          operator_display_name: "Anna Kowalska",
+          operator_email: "anna@example.com",
           device_id: "scanner-01",
           items: [],
         },
@@ -1347,15 +1366,48 @@ describe("ReportsPage admission log", () => {
           email: "desk-guest@example.com",
           ticket_type: null,
           admitted_at: "2026-06-01T10:05:00.000Z",
+          operator_user_id: "user-marek",
+          operator_display_name: "Marek Nowak",
+          operator_email: "marek@example.com",
           device_id: "desk-01",
           items: [],
         },
         {
-          attendee_id: "att-no-device",
-          name: "No Device Guest",
-          email: "no-device-guest@example.com",
+          attendee_id: "att-no-operator",
+          name: "No Operator Guest",
+          email: "no-operator-guest@example.com",
           ticket_type: null,
           admitted_at: "2026-06-01T10:10:00.000Z",
+          operator_user_id: null,
+          operator_display_name: null,
+          operator_email: null,
+          device_id: null,
+          items: [],
+        },
+        // Not in by_operator/the filter dropdown - these two only exercise operatorDisplayLabel's
+        // remaining fallback rungs (email when no display name is set; "Deleted user" when the
+        // operator id no longer resolves to a user at all), not the filter itself.
+        {
+          attendee_id: "att-no-displayname",
+          name: "No Displayname Guest",
+          email: "no-displayname-guest@example.com",
+          ticket_type: null,
+          admitted_at: "2026-06-01T10:12:00.000Z",
+          operator_user_id: "user-no-displayname",
+          operator_display_name: null,
+          operator_email: "no-displayname-op@example.com",
+          device_id: null,
+          items: [],
+        },
+        {
+          attendee_id: "att-deleted-operator",
+          name: "Deleted Operator Guest",
+          email: "deleted-operator-guest@example.com",
+          ticket_type: null,
+          admitted_at: "2026-06-01T10:14:00.000Z",
+          operator_user_id: "user-deleted",
+          operator_display_name: null,
+          operator_email: null,
           device_id: null,
           items: [],
         },
@@ -1370,29 +1422,35 @@ describe("ReportsPage admission log", () => {
     );
     expect(await screen.findByText("Scanner Guest")).toBeTruthy();
     expect(screen.getByText("Desk Guest")).toBeTruthy();
-    expect(screen.getByText("No Device Guest")).toBeTruthy();
+    expect(screen.getByText("No Operator Guest")).toBeTruthy();
+    // operatorDisplayLabel's remaining two fallback rungs: email when no display name resolved,
+    // then "Deleted user" when the operator id doesn't resolve to a user at all.
+    expect(screen.getByText("no-displayname-op@example.com")).toBeTruthy();
+    expect(screen.getByText("Deleted user")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
-    const deviceSelect = screen.getByLabelText("Filter by device") as HTMLSelectElement;
-    const optionLabels = Array.from(deviceSelect.options).map((o) => o.textContent);
-    expect(optionLabels).toEqual(["All devices", "scanner-01", "desk-01", "(unlabeled device)"]);
+    const operatorSelect = screen.getByLabelText("Filter by operator") as HTMLSelectElement;
+    const optionLabels = Array.from(operatorSelect.options).map((o) => o.textContent);
+    expect(optionLabels).toEqual(["All operators", "Anna Kowalska", "Marek Nowak", "(No operator)"]);
 
-    fireEvent.change(deviceSelect, { target: { value: "device:desk-01" } });
+    fireEvent.change(operatorSelect, { target: { value: "operator:user-marek" } });
     await waitFor(() => {
       expect(screen.queryByText("Scanner Guest")).toBeNull();
     });
     expect(screen.getByText("Desk Guest")).toBeTruthy();
-    expect(screen.queryByText("No Device Guest")).toBeNull();
+    expect(screen.queryByText("No Operator Guest")).toBeNull();
     // The trigger button surfaces how many filters are active - scoped to the trigger itself,
-    // not a bare getByText("1"), since the By device breakdown's own "1 · 33.3%" meta text could
-    // otherwise make this ambiguous depending on the exact counts in play.
+    // not a bare getByText("1"), since the By operator breakdown's own "1 · 33.3%" meta text
+    // could otherwise make this ambiguous depending on the exact counts in play.
     expect(screen.getByRole("button", { name: /Filters/ }).textContent).toMatch(/1/);
 
-    const noDeviceOption = Array.from(deviceSelect.options).find((o) => o.textContent === "(unlabeled device)");
-    if (!noDeviceOption) throw new Error("'(unlabeled device)' option not found");
-    fireEvent.change(deviceSelect, { target: { value: noDeviceOption.value } });
+    const noOperatorOption = Array.from(operatorSelect.options).find(
+      (o) => o.textContent === "(No operator)",
+    );
+    if (!noOperatorOption) throw new Error("'(No operator)' option not found");
+    fireEvent.change(operatorSelect, { target: { value: noOperatorOption.value } });
     await waitFor(() => {
-      expect(screen.getByText("No Device Guest")).toBeTruthy();
+      expect(screen.getByText("No Operator Guest")).toBeTruthy();
     });
     expect(screen.queryByText("Scanner Guest")).toBeNull();
     expect(screen.queryByText("Desk Guest")).toBeNull();
