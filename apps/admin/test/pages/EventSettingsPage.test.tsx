@@ -604,7 +604,9 @@ describe("EventSettingsPage Integrations tab (superadmin-only)", () => {
     await screen.findByRole("tab", { name: "Integrations" });
     fireEvent.click(screen.getByRole("tab", { name: "Integrations" }));
     expect(
-      await screen.findByText("Automatic attendee import and RSVP tools are on the roadmap"),
+      await screen.findByText(
+        "Automatic attendee import and attendance response tools are on the roadmap",
+      ),
     ).toBeTruthy();
   });
 
