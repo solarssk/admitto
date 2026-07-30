@@ -98,6 +98,6 @@ Readiness output is intended for operators — no personal data in responses.
 ## Related documents
 
 - [SECURITY.md](../SECURITY.md)
-- [SECURITY-CONTROLS.md](SECURITY-CONTROLS.md)
+- [SECURITY-CONTROLS.md](security/SECURITY-CONTROLS.md)
 - [DATA-PROTECTION.md](../DATA-PROTECTION.md)
 - [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPLOYMENT.md)

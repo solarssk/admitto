@@ -329,6 +329,18 @@
   margin-top: 3px;
   flex: none;
 }
+.at-notice__body {
+  flex: 1;
+}
+.at-notice__action {
+  flex: none;
+}
+/* The action button is taller than a text line, so centering the row (instead of the
+   default top-alignment tuned for icon-to-first-line-of-text) keeps icon, text, and button
+   visually balanced against the button's own height rather than hugging the row's top. */
+.at-notice--has-action {
+  align-items: center;
+}
 /* A permanent fact about the surrounding view, not an alert - a neutral "well" reads as
    documentation rather than a warning. */
 .at-notice--info {
