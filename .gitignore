@@ -8,7 +8,10 @@ _reference/
 docs/*
 !docs/assets/
 !docs/assets/**
-!docs/SECURITY-CONTROLS.md
+!docs/wiki/
+!docs/wiki/**
+!docs/security/
+!docs/security/**
 !docs/CORPORATE-DEPLOYMENT.md
 !docs/ARCHITECTURE-FOR-AUDITORS.md
 !docs/GDPR-ONE-PAGER.md
