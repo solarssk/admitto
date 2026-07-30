@@ -237,7 +237,7 @@ describe("sanitizeTheme (branding theme storage validation)", () => {
     expect(result.custom_font_families?.[0]?.variants.length).toBe(18);
   });
 
-  it.each(["Manrope", "space grotesk", "IBM PLEX SANS"])(
+  it.each(["Manrope", "space grotesk", "IBM PLEX SANS", "Admitto Sans", "admitto sans"])(
     "drops a custom family named after a built-in font (%s), case-insensitively",
     (name) => {
       const result = sanitizeTheme({

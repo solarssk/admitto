@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { applyThemeVars, Button, Card, IconButton, Input, Select, useToast } from "@admitto/ui";
+import {
+  applyThemeVars,
+  Button,
+  Card,
+  DEFAULT_BRANDING_FONT_FAMILY_NAME,
+  IconButton,
+  Input,
+  Select,
+  useToast,
+} from "@admitto/ui";
 import { fetchOrgBranding, fetchStaffTheme, patchOrgBranding, saveStaffTheme } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { BrandingCustomFontFamilyDto, BrandingThemeDto, SetupOrgBrandingDto } from "../api/types.js";
@@ -256,9 +265,6 @@ function FontPickerField({
 type FontSurface = "admin" | "ticket";
 
 interface ResolvedFontInfo {
-  readonly activeCustomFamily: BrandingCustomFontFamilyDto | undefined;
-  readonly activeBuiltIn: (typeof FONT_OPTIONS)[number] | undefined;
-  readonly activeFontLabel: string;
   readonly fontStack: string;
   readonly hasBoldVariant: boolean;
   readonly hasItalicVariant: boolean;
@@ -271,7 +277,6 @@ function resolveFontInfo(
 ): ResolvedFontInfo {
   const activeCustomFamily = customFamilies.find((f) => f.name === fontFamilyName);
   const activeBuiltIn = FONT_OPTIONS.find((f) => f.name === fontFamilyName);
-  const activeFontLabel = activeBuiltIn?.label ?? fontFamilyName ?? "Admitto Sans";
   const fontStack = fontFamilyName ? `"${fontFamilyName}", Inter, system-ui, sans-serif` : "var(--font-sans)";
   // A built-in pick without a custom family active still needs its own real styles checked -
   // Manrope/Space Grotesk have no italic file at all, so defaulting to true here (as if every
@@ -283,7 +288,7 @@ function resolveFontInfo(
   const hasItalicVariant = activeCustomFamily
     ? activeCustomFamily.variants.some((v) => v.style === "italic")
     : (activeBuiltIn?.styles.some((s) => s.toLowerCase().includes("italic")) ?? true);
-  return { activeCustomFamily, activeBuiltIn, activeFontLabel, fontStack, hasBoldVariant, hasItalicVariant };
+  return { fontStack, hasBoldVariant, hasItalicVariant };
 }
 
 /** Combined Organisation branding (name/logo) + Theme (colour/font) settings, one shared
@@ -774,6 +779,10 @@ export function BrandingSettingsPanel() {
               onChange={(e) => handleSetSurfaceFont("ticket", e.target.value || undefined)}
             >
               <option value="">Same as Admin panel</option>
+              {/* A distinct, reserved value from the fallback above - lets Ticket page be pinned
+                  to the default explicitly (e.g. Admin panel = Manrope, Ticket page = Admitto
+                  Sans) instead of only ever following whatever Admin panel currently is. */}
+              <option value={DEFAULT_BRANDING_FONT_FAMILY_NAME}>{DEFAULT_BRANDING_FONT_FAMILY_NAME}</option>
               {FONT_OPTIONS.filter((f) => f.name !== undefined).map((f) => (
                 <option key={f.key} value={f.name}>
                   {f.label}

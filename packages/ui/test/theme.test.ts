@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isDefaultBrandingFontFamilyName,
   isLocalBrandingFontPath,
   isReservedBrandingFontFamilyName,
   isSafeBrandingFontUrl,
@@ -25,8 +26,25 @@ describe("isReservedBrandingFontFamilyName", () => {
     expect(isReservedBrandingFontFamilyName("  IBM Plex Sans  ")).toBe(true);
   });
 
+  it("also matches the reserved default label, case-insensitively", () => {
+    expect(isReservedBrandingFontFamilyName("Admitto Sans")).toBe(true);
+    expect(isReservedBrandingFontFamilyName("admitto sans")).toBe(true);
+  });
+
   it("does not match an unrelated custom name", () => {
     expect(isReservedBrandingFontFamilyName("Acme Sans")).toBe(false);
+  });
+});
+
+describe("isDefaultBrandingFontFamilyName", () => {
+  it("matches the reserved default label, case-insensitively and trimmed", () => {
+    expect(isDefaultBrandingFontFamilyName("Admitto Sans")).toBe(true);
+    expect(isDefaultBrandingFontFamilyName("  admitto sans  ")).toBe(true);
+  });
+
+  it("does not match a built-in font name or an unrelated custom name", () => {
+    expect(isDefaultBrandingFontFamilyName("Manrope")).toBe(false);
+    expect(isDefaultBrandingFontFamilyName("Acme Sans")).toBe(false);
   });
 });
 
@@ -136,6 +154,17 @@ describe("resolveThemeVars", () => {
       expect(vars.fontFaceCss).toBeUndefined();
     },
   );
+
+  it("treats the reserved default label exactly like an unset font name, not a literal font-family", () => {
+    const vars = resolveThemeVars({
+      font_family_name: "Admitto Sans",
+      custom_font_families: [
+        { name: "Other Sans", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/other.woff2" }] },
+      ],
+    });
+    expect(vars["--font-sans"]).toBeUndefined();
+    expect(vars.fontFaceCss).toBeUndefined();
+  });
 
   it("applies a web-safe font (name only, no saved families at all) with no @font-face", () => {
     const vars = resolveThemeVars({ font_family_name: "Georgia" });

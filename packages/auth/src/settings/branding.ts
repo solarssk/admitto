@@ -42,8 +42,14 @@ const MAX_CUSTOM_FAMILIES = 8;
 // make the built-in unreachable (every reader of that string always resolves to the custom one).
 const BUILT_IN_FONT_FAMILY_NAMES = ["Manrope", "Space Grotesk", "IBM Plex Sans"];
 
+// Mirror @admitto/ui's DEFAULT_BRANDING_FONT_FAMILY_NAME - the reserved label for "no override",
+// same reason as the built-ins above (a custom family under this name would make the reserved
+// default label itself unreachable as a distinct explicit choice for ticket_font_family_name).
+const DEFAULT_BRANDING_FONT_FAMILY_NAME = "Admitto Sans";
+
 function isReservedBrandingFontFamilyName(name: string): boolean {
   const trimmed = name.trim().toLowerCase();
+  if (trimmed === DEFAULT_BRANDING_FONT_FAMILY_NAME.toLowerCase()) return true;
   return BUILT_IN_FONT_FAMILY_NAMES.some((n) => n.toLowerCase() === trimmed);
 }
 

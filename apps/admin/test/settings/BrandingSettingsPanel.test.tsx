@@ -599,6 +599,46 @@ describe("BrandingSettingsPanel — font picker", () => {
     expect(adminFontSelect().value).toBe("");
   });
 
+  it("picking the reserved \"Admitto Sans\" option for Ticket page pins it to the default, decoupled from whatever Admin panel later becomes", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce({ theme: { font_family_name: "Manrope" } });
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    fireEvent.change(ticketFontSelect(), { target: { value: "Admitto Sans" } });
+    expect(ticketFontSelect().value).toBe("Admitto Sans");
+
+    // Unlike "Same as Admin panel" (the "" fallback), this is a real, persisted value - changing
+    // Admin panel afterwards does not drag Ticket page's own pick along with it.
+    fireEvent.change(adminFontSelect(), { target: { value: "Space Grotesk" } });
+    expect(adminFontSelect().value).toBe("Space Grotesk");
+    expect(ticketFontSelect().value).toBe("Admitto Sans");
+  });
+
+  it("resetting Admin panel's select back to Admitto Sans clears font_family_name", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce({ theme: { font_family_name: "Manrope" } });
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    expect(adminFontSelect().value).toBe("Manrope");
+    fireEvent.change(adminFontSelect(), { target: { value: "" } });
+    expect(adminFontSelect().value).toBe("");
+  });
+
+  it("resetting Ticket page's select back to \"Same as Admin panel\" clears its override", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce({
+      theme: { font_family_name: "Manrope", ticket_font_family_name: "Space Grotesk" },
+    });
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    expect(ticketFontSelect().value).toBe("Space Grotesk");
+    fireEvent.change(ticketFontSelect(), { target: { value: "" } });
+    expect(ticketFontSelect().value).toBe("");
+  });
+
   it("clicking a saved custom family's preview tile does nothing - switching between two saved families only happens via the Font-by-surface select, without losing either", async () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce({
@@ -1024,6 +1064,20 @@ describe("BrandingSettingsPanel — save and reset", () => {
   it("blocks save when the loaded theme's active font_family_name itself has invalid characters", async () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce({ theme: { font_family_name: "bad</name>" } });
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByText(/letters, numbers, spaces, hyphens/i)).toBeTruthy();
+    });
+    expect(mockPatchOrg).not.toHaveBeenCalled();
+    expect(mockSaveTheme).not.toHaveBeenCalled();
+  });
+
+  it("blocks save and shows an inline error next to Ticket page when the loaded theme's ticket_font_family_name itself has invalid characters", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce({ theme: { ticket_font_family_name: "bad</name>" } });
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
