@@ -68,7 +68,8 @@ describe("WizardStep1Checks", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Failed")).toBeTruthy();
-      expect(screen.getByText(/Fix the issues above/i)).toBeTruthy();
+      const banner = screen.getByText(/Fix the issues above/i);
+      expect(banner.closest(".at-notice--error")).toBeTruthy();
     });
 
     onChecksOk.mockClear();

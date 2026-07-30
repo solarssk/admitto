@@ -243,19 +243,19 @@ export function CommunicationSendDialog({
             >
               <option value="all">All attendees</option>
               <option value="no_delivery">No delivery for this template</option>
-              <option value="rsvp_status">By RSVP status</option>
+              <option value="rsvp_status">By attendance status</option>
               <option value="ticket_type">By ticket type</option>
             </Select>
             {filterType === "rsvp_status" && (
               <Select
-                label="RSVP status"
+                label="Attendance status"
                 value={rsvpStatus}
                 onChange={(e) => {
                   setRsvpStatus(e.target.value as RsvpStatus);
                   setRecipientCount(null);
                 }}
               >
-                <option value="none">None</option>
+                <option value="none">Registered</option>
                 <option value="confirmed">Confirmed</option>
                 <option value="declined">Declined</option>
                 <option value="tentative">Tentative</option>

@@ -117,7 +117,7 @@ Details in `deploy/README.md`.
 | Topic | Document |
 |-------|----------|
 | CI / supply chain | [SECURITY.md](../SECURITY.md) |
-| Security capabilities | [SECURITY-CONTROLS.md](SECURITY-CONTROLS.md) |
+| Security capabilities | [SECURITY-CONTROLS.md](security/SECURITY-CONTROLS.md) |
 | Architecture | [ARCHITECTURE-FOR-AUDITORS.md](ARCHITECTURE-FOR-AUDITORS.md) |
 | Privacy | [DATA-PROTECTION.md](../DATA-PROTECTION.md), [GDPR-ONE-PAGER.md](GDPR-ONE-PAGER.md) |
 | Incidents | [INCIDENT-RESPONSE.md](INCIDENT-RESPONSE.md) |
