@@ -334,6 +334,8 @@ export function TimezoneSelect({
   );
 
   const optionCount = options.length;
+  const activeDescendantId =
+    optionCount > 0 ? `${listboxId}-option-${highlightIndex}` : undefined;
 
   const selectedEntry = value ? findTzEntry(index, value) : undefined;
 
@@ -475,6 +477,7 @@ export function TimezoneSelect({
             disabled={disabled}
             aria-label="Search timezones"
             aria-controls={listboxId}
+            aria-activedescendant={activeDescendantId}
             autoComplete="off"
           />
           {!searching && (
@@ -502,6 +505,7 @@ export function TimezoneSelect({
                 ) : (
                   <li // NOSONAR — mouse-only click convenience; keyboard selection already works via the search input's onKeyDown (Enter selects the highlighted option, see onSearchKeyDown above)
                     key={item.id}
+                    id={`${listboxId}-option-${item.optionIndex}`}
                     role="option"
                     data-option-index={item.optionIndex}
                     aria-selected={item.entry.iana === value}
