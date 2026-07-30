@@ -78,6 +78,25 @@ function isDisabled(el: HTMLElement): boolean {
   return (el as HTMLInputElement | HTMLButtonElement).disabled;
 }
 
+/** The shared font library tile-grid (Admin panel's font, and the only upload/edit/remove entry
+ * point) - scoped so its tiles' own text ("Acme Sans", button names, etc.) doesn't collide with
+ * unrelated page text. */
+function adminFontPicker(): HTMLElement {
+  return document.querySelector('[aria-labelledby="branding-font-label"]') as HTMLElement;
+}
+
+/** The "Font by surface" row selects are plain <select>s, not tile-grids. Admin panel's select is
+ * a second control over the same font_family_name field the tile-grid above already drives (so
+ * the two always agree); Ticket page's current value is unset ("", "Same as Admin panel") whenever
+ * ticket_font_family_name hasn't been explicitly overridden, even while the resolved font it falls
+ * back to changes live with the Admin panel's own pick. */
+function adminFontSelect(): HTMLSelectElement {
+  return screen.getByLabelText("Admin panel font") as HTMLSelectElement;
+}
+function ticketFontSelect(): HTMLSelectElement {
+  return screen.getByLabelText("Ticket page font") as HTMLSelectElement;
+}
+
 const defaultOrg = { org_name: "Acme Corp", logo_url: "" };
 const defaultTheme = { theme: {} };
 
@@ -105,7 +124,10 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  vi.clearAllMocks();
+  // resetAllMocks, not clearAllMocks - the latter doesn't clear queued mockResolvedValueOnce/
+  // mockRejectedValueOnce chains, so a test whose own queued value goes unconsumed silently leaks
+  // it into the next test that calls the same mock (see reference_vitest4_node24_gotchas).
+  vi.resetAllMocks();
   vi.useRealTimers();
   vi.unstubAllGlobals();
   Reflect.deleteProperty(document, "fonts");
@@ -296,12 +318,13 @@ describe("BrandingSettingsPanel — colour palette", () => {
     expect(document.querySelector("code")?.textContent).toBe("#abcdef");
   });
 
-  it("Restore defaults reverts colour and font to Admitto's own defaults without touching organisation name/logo", async () => {
+  it("Restore defaults reverts colour and font (both surfaces) to Admitto's own defaults without touching organisation name/logo", async () => {
     mockFetchOrg.mockResolvedValueOnce({ org_name: "Acme Corp", logo_url: "https://cdn.example.com/logo.png" });
     mockFetchTheme.mockResolvedValueOnce({
       theme: {
         primary: "#123456",
         font_family_name: "Old Font",
+        ticket_font_family_name: "Manrope",
         custom_font_families: [
           { name: "Old Font", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/old.woff2" }] },
         ],
@@ -314,7 +337,8 @@ describe("BrandingSettingsPanel — colour palette", () => {
     fireEvent.click(screen.getByRole("button", { name: "Restore defaults" }));
 
     expect(screen.getByRole("button", { name: "Admitto blue" }).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByRole("button", { name: /Admitto Sans/ }).closest(".font-option-card")!.className).toContain("font-option-card--active");
+    expect(adminFontSelect().value).toBe("");
+    expect(ticketFontSelect().value).toBe("");
     expect(document.querySelector("code")).toBeNull();
     expect(screen.getByLabelText("Organisation name")).toHaveProperty("value", "Acme Corp");
     expect(screen.getByAltText(/organisation logo preview/i)).toBeTruthy();
@@ -322,15 +346,17 @@ describe("BrandingSettingsPanel — colour palette", () => {
 });
 
 describe("BrandingSettingsPanel — font picker", () => {
-  it("shows Admitto Sans active by default", async () => {
+  it("shows Admitto Sans as the default in both the tile-grid's library and the Font-by-surface selects", async () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
-    expect(screen.getByRole("button", { name: /Admitto Sans/ }).closest(".font-option-card")!.className).toContain("font-option-card--active");
+    expect(within(adminFontPicker()).getByText("Admitto Sans")).toBeTruthy();
+    expect(adminFontSelect().value).toBe("");
+    expect(ticketFontSelect().value).toBe("");
   });
 
-  it("selects a built-in font as active without deleting a previously-saved custom family from the library", async () => {
+  it("clicking a built-in tile in the library does nothing - it's a preview, not a picker", async () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce({
       theme: {
@@ -343,11 +369,26 @@ describe("BrandingSettingsPanel — font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    fireEvent.click(screen.getByRole("button", { name: /IBM Plex Sans/ }));
-    expect(screen.getByRole("button", { name: /IBM Plex Sans/ }).closest(".font-option-card")!.className).toContain("font-option-card--active");
+    // The tile is a plain, non-interactive <div> now - querying by its label text (not role
+    // "button") confirms there's nothing clickable to fire on in the first place.
+    const ibmPlexTile = within(adminFontPicker()).getByText("IBM Plex Sans").closest(".font-option-card__select")!;
+    fireEvent.click(ibmPlexTile);
+
+    expect(screen.queryByText(/Unsaved changes/)).toBeNull();
+    expect(adminFontSelect().value).toBe("Old Font");
+    expect(ticketFontSelect().value).toBe("");
+  });
+
+  it("picking a font from the Admin panel's own Font-by-surface select is the only way to change it", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    fireEvent.change(adminFontSelect(), { target: { value: "Manrope" } });
+
+    expect(adminFontSelect().value).toBe("Manrope");
     expect(screen.getByText(/Unsaved changes/)).toBeTruthy();
-    // Still shown in the picker (not deleted) even though it's no longer the active pick.
-    expect(screen.getByText("Old Font")).toBeTruthy();
   });
 
   it("shows the real uploaded style list on the custom tile for an already-saved family", async () => {
@@ -369,9 +410,8 @@ describe("BrandingSettingsPanel — font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    const customTile = screen.getByText("Acme Sans").closest(".font-option-card");
+    const customTile = within(adminFontPicker()).getByText("Acme Sans").closest(".font-option-card");
     expect(customTile).not.toBeNull();
-    expect(customTile!.className).toContain("font-option-card--active");
     expect(within(customTile as HTMLElement).getByText("2 styles")).toBeTruthy();
   });
 
@@ -394,7 +434,7 @@ describe("BrandingSettingsPanel — font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    const customTile = screen.getByText("Acme Sans").closest(".font-option-card") as HTMLElement;
+    const customTile = within(adminFontPicker()).getByText("Acme Sans").closest(".font-option-card") as HTMLElement;
     fireEvent.click(within(customTile).getByRole("button", { name: /2 styles/ }));
     expect(within(customTile).getByText("400")).toBeTruthy();
     expect(within(customTile).getByText("700")).toBeTruthy();
@@ -413,11 +453,11 @@ describe("BrandingSettingsPanel — font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    fireEvent.click(screen.getByRole("button", { name: /1 style/ }));
-    expect(screen.getByText("400")).toBeTruthy();
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /1 style/ }));
+    expect(within(adminFontPicker()).getByText("400")).toBeTruthy();
 
     fireEvent.mouseDown(document.body);
-    expect(screen.queryByText("400")).toBeNull();
+    expect(within(adminFontPicker()).queryByText("400")).toBeNull();
   });
 
   it("does not close the styles popover when clicking one of its own listed styles", async () => {
@@ -433,18 +473,19 @@ describe("BrandingSettingsPanel — font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    fireEvent.click(screen.getByRole("button", { name: /1 style/ }));
-    const item = screen.getByText("400");
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /1 style/ }));
+    const item = within(adminFontPicker()).getByText("400");
 
     fireEvent.mouseDown(item);
-    expect(screen.getByText("400")).toBeTruthy();
+    expect(within(adminFontPicker()).getByText("400")).toBeTruthy();
   });
 
-  it("shows the active custom family's own name in the Font section's description", async () => {
+  it("reflects each surface's own saved font in its own Font-by-surface select", async () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce({
       theme: {
         font_family_name: "Acme Sans",
+        ticket_font_family_name: "Manrope",
         custom_font_families: [
           { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
         ],
@@ -453,7 +494,8 @@ describe("BrandingSettingsPanel — font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    expect(screen.getByText(/^Acme Sans\. Used across the staff app/)).toBeTruthy();
+    expect(adminFontSelect().value).toBe("Acme Sans");
+    expect(ticketFontSelect().value).toBe("Manrope");
   });
 
   it("assumes a real bold/italic file when the active pick matches neither a built-in nor a saved custom family", async () => {
@@ -474,7 +516,7 @@ describe("BrandingSettingsPanel — font picker", () => {
     await screen.findByLabelText("Organisation name");
 
     expect(screen.queryByText("mock-font-family-modal")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /^Custom font/ }));
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /^Custom font/ }));
     expect(screen.getByText("mock-font-family-modal")).toBeTruthy();
   });
 
@@ -492,11 +534,11 @@ describe("BrandingSettingsPanel — font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    expect(screen.queryByRole("button", { name: /^Custom font/ })).toBeNull();
-    expect(screen.getByText("Limit reached")).toBeTruthy();
+    expect(within(adminFontPicker()).queryByRole("button", { name: /^Custom font/ })).toBeNull();
+    expect(within(adminFontPicker()).getByText("Limit reached")).toBeTruthy();
   });
 
-  it("wires the modal's saved family into the theme draft, active tile, and eventual Save", async () => {
+  it("wires the modal's saved family into the theme draft, active on Admin panel (Ticket page still following it), and eventual Save", async () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
     mockPatchOrg.mockResolvedValueOnce(defaultOrg);
@@ -511,15 +553,18 @@ describe("BrandingSettingsPanel — font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    fireEvent.click(screen.getByRole("button", { name: /^Custom font/ }));
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /^Custom font/ }));
     fireEvent.click(screen.getByText("mock-save-family"));
 
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Saved.*Acme Sans/);
     });
-    const customTile = screen.getByText("Acme Sans").closest(".font-option-card");
-    expect(customTile).not.toBeNull();
-    expect(customTile!.className).toContain("font-option-card--active");
+    expect(adminFontSelect().value).toBe("Acme Sans");
+    // A brand-new family only ever activates for Admin panel (the sole upload entry point) -
+    // Ticket page's own field stays unset, still following whatever Admin panel is.
+    expect(ticketFontSelect().value).toBe("");
+    // But it's now available to explicitly pick for Ticket page too, from the shared library.
+    expect(within(ticketFontSelect()).getByRole("option", { name: "Acme Sans" })).toBeTruthy();
     expect(screen.queryByText("mock-font-family-modal")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -535,7 +580,66 @@ describe("BrandingSettingsPanel — font picker", () => {
     });
   });
 
-  it("switches the active pick between two saved custom families without losing either", async () => {
+  it("picking a saved custom family from the Ticket page dropdown overrides it independently of Admin panel", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce({
+      theme: {
+        custom_font_families: [
+          { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
+        ],
+      },
+    });
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    fireEvent.change(ticketFontSelect(), { target: { value: "Acme Sans" } });
+
+    expect(ticketFontSelect().value).toBe("Acme Sans");
+    // Admin panel's own pick is untouched - still the default.
+    expect(adminFontSelect().value).toBe("");
+  });
+
+  it("picking the reserved \"Admitto Sans\" option for Ticket page pins it to the default, decoupled from whatever Admin panel later becomes", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce({ theme: { font_family_name: "Manrope" } });
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    fireEvent.change(ticketFontSelect(), { target: { value: "Admitto Sans" } });
+    expect(ticketFontSelect().value).toBe("Admitto Sans");
+
+    // Unlike "Same as Admin panel" (the "" fallback), this is a real, persisted value - changing
+    // Admin panel afterwards does not drag Ticket page's own pick along with it.
+    fireEvent.change(adminFontSelect(), { target: { value: "Space Grotesk" } });
+    expect(adminFontSelect().value).toBe("Space Grotesk");
+    expect(ticketFontSelect().value).toBe("Admitto Sans");
+  });
+
+  it("resetting Admin panel's select back to Admitto Sans clears font_family_name", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce({ theme: { font_family_name: "Manrope" } });
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    expect(adminFontSelect().value).toBe("Manrope");
+    fireEvent.change(adminFontSelect(), { target: { value: "" } });
+    expect(adminFontSelect().value).toBe("");
+  });
+
+  it("resetting Ticket page's select back to \"Same as Admin panel\" clears its override", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce({
+      theme: { font_family_name: "Manrope", ticket_font_family_name: "Space Grotesk" },
+    });
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    expect(ticketFontSelect().value).toBe("Space Grotesk");
+    fireEvent.change(ticketFontSelect(), { target: { value: "" } });
+    expect(ticketFontSelect().value).toBe("");
+  });
+
+  it("clicking a saved custom family's preview tile does nothing - switching between two saved families only happens via the Font-by-surface select, without losing either", async () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce({
       theme: {
@@ -549,15 +653,18 @@ describe("BrandingSettingsPanel — font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    const firstTile = screen.getByText("First Family").closest(".font-option-card")!;
-    const secondTile = screen.getByText("Second Family").closest(".font-option-card")!;
-    expect(firstTile.className).toContain("font-option-card--active");
-    expect(secondTile.className).not.toContain("font-option-card--active");
+    expect(adminFontSelect().value).toBe("First Family");
+    const secondTile = within(adminFontPicker()).getByText("Second Family").closest(".font-option-card__select")!;
 
-    fireEvent.click(secondTile.querySelector(".font-option-card__select")!);
+    fireEvent.click(secondTile);
+    expect(adminFontSelect().value).toBe("First Family");
 
-    expect(screen.getByText("First Family").closest(".font-option-card")!.className).not.toContain("font-option-card--active");
-    expect(screen.getByText("Second Family").closest(".font-option-card")!.className).toContain("font-option-card--active");
+    fireEvent.change(adminFontSelect(), { target: { value: "Second Family" } });
+
+    expect(adminFontSelect().value).toBe("Second Family");
+    // Neither saved family was deleted by switching between them.
+    expect(within(adminFontPicker()).getByText("First Family")).toBeTruthy();
+    expect(within(adminFontPicker()).getByText("Second Family")).toBeTruthy();
   });
 
   it("clicking Edit on a saved custom family opens the modal pre-filled with that family", async () => {
@@ -574,13 +681,13 @@ describe("BrandingSettingsPanel — font picker", () => {
     await screen.findByLabelText("Organisation name");
 
     expect(screen.queryByText("mock-font-family-modal")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Edit Acme Sans" }));
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Edit Acme Sans" }));
 
     expect(screen.getByText("mock-font-family-modal")).toBeTruthy();
     expect(screen.getByText("editing: Acme Sans")).toBeTruthy();
   });
 
-  it("saving an edited family under the same name replaces it in place instead of duplicating it, keeping active status", async () => {
+  it("saving an edited family under the same name replaces it in place instead of duplicating it, keeping Admin panel's active status", async () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce({
       theme: {
@@ -593,17 +700,17 @@ describe("BrandingSettingsPanel — font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit Acme Sans" }));
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Edit Acme Sans" }));
     fireEvent.click(screen.getByText("mock-save-family"));
 
-    expect(screen.getAllByText("Acme Sans")).toHaveLength(1);
-    expect(screen.getByText("Acme Sans").closest(".font-option-card")!.className).toContain(
-      "font-option-card--active",
-    );
+    expect(within(adminFontPicker()).getAllByText("Acme Sans")).toHaveLength(1);
+    expect(adminFontSelect().value).toBe("Acme Sans");
+    // Ticket page's field was never set - stays unset (still following Admin panel).
+    expect(ticketFontSelect().value).toBe("");
     expect(screen.queryByText("mock-font-family-modal")).toBeNull();
   });
 
-  it("renaming a family while editing it drops the old name and keeps the new one active, since the old one was active", async () => {
+  it("renaming a family while editing it drops the old name and keeps the new one active for Admin panel", async () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce({
       theme: {
@@ -616,13 +723,37 @@ describe("BrandingSettingsPanel — font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit Acme Sans" }));
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Edit Acme Sans" }));
     fireEvent.click(screen.getByText("mock-save-family-renamed"));
 
     expect(screen.queryByText("Acme Sans")).toBeNull();
-    expect(screen.getByText("Acme Sans Renamed").closest(".font-option-card")!.className).toContain(
-      "font-option-card--active",
-    );
+    expect(within(adminFontPicker()).getByText("Acme Sans Renamed")).toBeTruthy();
+    expect(adminFontSelect().value).toBe("Acme Sans Renamed");
+    expect(ticketFontSelect().value).toBe("");
+  });
+
+  it("renaming a family that was active only for Ticket page updates its override, keeping Admin panel's own pick untouched", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce({
+      theme: {
+        font_family_name: "Manrope",
+        ticket_font_family_name: "Acme Sans",
+        custom_font_families: [
+          { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
+        ],
+      },
+    });
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    // "Acme Sans" is still a saved family, so it's still listed (with its own Edit button) in the
+    // shared library grid even though Admin panel's own active pick is "Manrope".
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Edit Acme Sans" }));
+    fireEvent.click(screen.getByText("mock-save-family-renamed"));
+
+    expect(ticketFontSelect().value).toBe("Acme Sans Renamed");
+    // Admin panel was never active for this family - a rename must not touch it.
+    expect(adminFontSelect().value).toBe("Manrope");
   });
 
   it("editing a saved-but-inactive family does not make it active after saving", async () => {
@@ -638,15 +769,10 @@ describe("BrandingSettingsPanel — font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit Acme Sans" }));
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Edit Acme Sans" }));
     fireEvent.click(screen.getByText("mock-save-family"));
 
-    expect(screen.getByText("Acme Sans").closest(".font-option-card")!.className).not.toContain(
-      "font-option-card--active",
-    );
-    expect(screen.getByRole("button", { name: /Manrope/ }).closest(".font-option-card")!.className).toContain(
-      "font-option-card--active",
-    );
+    expect(adminFontSelect().value).toBe("Manrope");
   });
 
   it("deleting the active custom family falls back to the default built-in font", async () => {
@@ -662,12 +788,38 @@ describe("BrandingSettingsPanel — font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove Acme Sans" }));
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Remove Acme Sans" }));
     fireEvent.click(screen.getByRole("button", { name: "Remove", exact: true }));
 
     expect(screen.queryByText("Acme Sans")).toBeNull();
-    expect(screen.getByRole("button", { name: /Admitto Sans/ }).closest(".font-option-card")!.className).toContain("font-option-card--active");
+    expect(adminFontSelect().value).toBe("");
+    expect(ticketFontSelect().value).toBe("");
     expect(screen.getByText(/Unsaved changes/)).toBeTruthy();
+  });
+
+  it("deleting a family active only for Ticket page clears its override, leaving Admin panel's own pick untouched", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce({
+      theme: {
+        font_family_name: "Manrope",
+        ticket_font_family_name: "Acme Sans",
+        custom_font_families: [
+          { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
+        ],
+      },
+    });
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    // "Acme Sans" is still listed (with its own Remove button) in the shared library grid, even
+    // though it's Ticket page's override, not Admin panel's active pick.
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Remove Acme Sans" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove", exact: true }));
+
+    // ticket_font_family_name clears back to undefined ("Same as Admin panel"), not some
+    // hardcoded default.
+    expect(ticketFontSelect().value).toBe("");
+    expect(adminFontSelect().value).toBe("Manrope");
   });
 
   it("removing a saved-but-inactive family leaves the active pick untouched", async () => {
@@ -684,13 +836,11 @@ describe("BrandingSettingsPanel — font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove Other Family" }));
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Remove Other Family" }));
     fireEvent.click(screen.getByRole("button", { name: "Remove", exact: true }));
 
     expect(screen.queryByText("Other Family")).toBeNull();
-    expect(screen.getByText("Active Family").closest(".font-option-card")!.className).toContain(
-      "font-option-card--active",
-    );
+    expect(adminFontSelect().value).toBe("Active Family");
   });
 
   it("saves the plural 'variants' toast wording for a family with more than one variant", async () => {
@@ -712,7 +862,7 @@ describe("BrandingSettingsPanel — font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit Acme Sans" }));
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Edit Acme Sans" }));
     fireEvent.click(screen.getByText("mock-save-family"));
 
     await waitFor(() => {
@@ -733,15 +883,15 @@ describe("BrandingSettingsPanel — font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove Acme Sans" }));
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Remove Acme Sans" }));
     expect(screen.getByText('Remove "Acme Sans"?')).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(screen.queryByText('Remove "Acme Sans"?')).toBeNull();
-    expect(screen.getByText("Acme Sans")).toBeTruthy();
+    expect(within(adminFontPicker()).getByText("Acme Sans")).toBeTruthy();
   });
 
-  it("deleting a saved-but-inactive custom family leaves the active pick untouched", async () => {
+  it("deleting a saved-but-inactive custom family leaves an active built-in pick untouched", async () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce({
       theme: {
@@ -754,14 +904,38 @@ describe("BrandingSettingsPanel — font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove Acme Sans" }));
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Remove Acme Sans" }));
     fireEvent.click(screen.getByRole("button", { name: "Remove", exact: true }));
 
     expect(screen.queryByText("Acme Sans")).toBeNull();
-    expect(screen.getByRole("button", { name: /Manrope/ }).closest(".font-option-card")!.className).toContain("font-option-card--active");
+    expect(adminFontSelect().value).toBe("Manrope");
   });
 
-  it("shows a faked-style hint in the live preview when the custom family has no bold/italic variant", async () => {
+  it("saving a family under a name that already exists in the library updates that entry in place", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce({
+      theme: {
+        font_family_name: "Acme Sans",
+        custom_font_families: [
+          { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/old.woff2" }] },
+        ],
+      },
+    });
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /^Custom font/ }));
+    fireEvent.click(screen.getByText("mock-save-family"));
+
+    // Exactly one "Acme Sans" entry remains - the upload replaced the existing library entry in
+    // place rather than creating a second one, and it's still the active pick.
+    await waitFor(() => {
+      expect(within(adminFontPicker()).getAllByText("Acme Sans")).toHaveLength(1);
+    });
+    expect(adminFontSelect().value).toBe("Acme Sans");
+  });
+
+  it("shows a faked-style hint in the live preview when the active custom family has no bold/italic variant", async () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce({
       theme: {
@@ -774,8 +948,8 @@ describe("BrandingSettingsPanel — font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    expect(screen.getByTitle("No bold file uploaded. The browser is faking it.")).toBeTruthy();
-    expect(screen.getByTitle("No italic file uploaded. The browser is faking it.")).toBeTruthy();
+    expect(screen.getAllByTitle("No bold file uploaded. The browser is faking it.")).toHaveLength(1);
+    expect(screen.getAllByTitle("No italic file uploaded. The browser is faking it.")).toHaveLength(1);
   });
 
   it("shows no faked-style hint for a web-safe font (a real OS family always has all 4 styles)", async () => {
@@ -785,6 +959,17 @@ describe("BrandingSettingsPanel — font picker", () => {
     await screen.findByLabelText("Organisation name");
 
     expect(screen.queryByTitle(/browser is faking it/)).toBeNull();
+  });
+
+  it("shows a disabled Registration form dropdown placeholder, not a functional picker", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    const registrationSelect = screen.getByLabelText("Registration form font") as HTMLSelectElement;
+    expect(registrationSelect.disabled).toBe(true);
+    expect(within(registrationSelect).getByText("Not available yet")).toBeTruthy();
   });
 });
 
@@ -879,6 +1064,20 @@ describe("BrandingSettingsPanel — save and reset", () => {
   it("blocks save when the loaded theme's active font_family_name itself has invalid characters", async () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce({ theme: { font_family_name: "bad</name>" } });
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByText(/letters, numbers, spaces, hyphens/i)).toBeTruthy();
+    });
+    expect(mockPatchOrg).not.toHaveBeenCalled();
+    expect(mockSaveTheme).not.toHaveBeenCalled();
+  });
+
+  it("blocks save and shows an inline error next to Ticket page when the loaded theme's ticket_font_family_name itself has invalid characters", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce({ theme: { ticket_font_family_name: "bad</name>" } });
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 

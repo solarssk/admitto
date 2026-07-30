@@ -22,8 +22,12 @@ export interface BrandingCustomFontFamily {
 
 export interface BrandingThemeInput {
   primary?: string;
-  /** The active pick - either a built-in name (e.g. "Manrope") or one of custom_font_families[].name. */
+  /** The active pick for the admin staff SPA - either a built-in name (e.g. "Manrope") or one of
+   * custom_font_families[].name. */
   font_family_name?: string;
+  /** The active pick for the public ticket page - same rules as font_family_name, falls back to
+   * it when unset so a single global font remains the default until someone overrides it. */
+  ticket_font_family_name?: string;
   custom_font_families?: BrandingCustomFontFamily[];
 }
 
@@ -114,8 +118,22 @@ export function isValidBrandingFontWeight(weight: number): boolean {
  * above, would always resolve to the custom one instead). */
 export const BUILT_IN_FONT_FAMILY_NAMES = ["Manrope", "Space Grotesk", "IBM Plex Sans"] as const;
 
-/** True when name matches a built-in font name, case-insensitively. */
+/** The label the picker shows for "no custom font" (Admitto's own default, Inter under
+ * `--font-sans`). Reserved for the same reason as the built-ins above, and given the identical
+ * resolution as an unset font_family_name (see resolveThemeVars) - this lets a surface be pinned
+ * to it explicitly, decoupled from another surface's own current pick, without a second sentinel
+ * alongside `undefined`. */
+export const DEFAULT_BRANDING_FONT_FAMILY_NAME = "Admitto Sans";
+
+/** True when name is the reserved default label, case-insensitively - distinct from the other
+ * built-ins below, since (unlike them) it means "no override at all" rather than a real font. */
+export function isDefaultBrandingFontFamilyName(name: string): boolean {
+  return name.trim().toLowerCase() === DEFAULT_BRANDING_FONT_FAMILY_NAME.toLowerCase();
+}
+
+/** True when name matches a built-in font name or the reserved default label, case-insensitively. */
 export function isReservedBrandingFontFamilyName(name: string): boolean {
+  if (isDefaultBrandingFontFamilyName(name)) return true;
   const trimmed = name.trim().toLowerCase();
   return BUILT_IN_FONT_FAMILY_NAMES.some((n) => n.toLowerCase() === trimmed);
 }
@@ -169,8 +187,15 @@ export function resolveThemeVars(input?: BrandingThemeInput | null): ResolvedThe
   // needed here either way, just the CSS font-family stack below. A name that DOES match a saved
   // custom family additionally needs one @font-face per weight/style it has (a browser can only
   // render a true bold/italic from a file declared for that exact combo - anything missing is
-  // synthesized from whichever variant is present, not the real typeface).
-  const fontName = sanitizeBrandingFontFamilyName(input?.font_family_name ?? "");
+  // synthesized from whichever variant is present, not the real typeface). The reserved default
+  // label resolves exactly like an unset name (no override at all) rather than a literal
+  // `font-family: "Admitto Sans"` - it's a persisted "explicitly the default" marker, not a real
+  // loadable font.
+  const rawFontFamilyName = input?.font_family_name;
+  const fontName =
+    rawFontFamilyName && !isDefaultBrandingFontFamilyName(rawFontFamilyName)
+      ? sanitizeBrandingFontFamilyName(rawFontFamilyName)
+      : undefined;
   if (fontName) {
     vars["--font-sans"] = `"${fontName}", Inter, system-ui, sans-serif`;
     const activeFamily = input?.custom_font_families?.find((f) => f.name === fontName);
