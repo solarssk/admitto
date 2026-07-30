@@ -122,11 +122,14 @@ export function SessionsPanel() {
   };
 
   const handleEditSave = async () => {
-    if (!editTarget) return;
+    // No `if (!editTarget) return` guard: this is only ever wired to the Edit ConfirmDialog's
+    // onConfirm, and that dialog unmounts entirely (`if (!open) return null`) whenever
+    // editTarget is null, so its Save button can't exist in the DOM to click in the first
+    // place - provably unreachable, not just untested.
     setEditSaving(true);
     try {
       const trimmed = editValue.trim();
-      await updateSessionDeviceLabel(editTarget.id, trimmed.length > 0 ? trimmed : null);
+      await updateSessionDeviceLabel(editTarget!.id, trimmed.length > 0 ? trimmed : null);
       setEditTarget(null);
       addToast("Device label updated.", "success");
       await load();
