@@ -23,8 +23,6 @@ const requiredPages = [
 ];
 const metadataLabels = ["Audience", "Required role", "Feature status", "Last verified"];
 const validStatuses = new Set(["Available", "Preview", "Planned", "Deprecated"]);
-const markdownLink = /!?\[[^\]]*\]\(([^)\s]+)(?:\s+[^)]*)?\)/g;
-const emailAddress = /[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})/g;
 
 function fail(message) {
   console.error(`docs:check: ${message}`);
@@ -36,6 +34,57 @@ function allFiles(directory) {
     const entryPath = resolve(directory, entry.name);
     return entry.isDirectory() ? allFiles(entryPath) : [entryPath];
   });
+}
+
+function* markdownLinks(text) {
+  let searchFrom = 0;
+  while (searchFrom < text.length) {
+    const labelStart = text.indexOf("[", searchFrom);
+    if (labelStart === -1) return;
+
+    const labelEnd = text.indexOf("]", labelStart + 1);
+    const targetStart = labelEnd === -1 ? -1 : labelEnd + 1;
+    if (targetStart === -1 || text[targetStart] !== "(") {
+      searchFrom = labelStart + 1;
+      continue;
+    }
+
+    const targetEnd = text.indexOf(")", targetStart + 1);
+    if (targetEnd === -1) return;
+
+    const contents = text.slice(targetStart + 1, targetEnd);
+    const separator = [...contents].findIndex((character) => character.trim().length === 0);
+    const target = separator === -1 ? contents : contents.slice(0, separator);
+    yield {
+      target,
+      isImage: labelStart > 0 && text[labelStart - 1] === "!",
+      alternativeText: text.slice(labelStart + 1, labelEnd),
+    };
+    searchFrom = targetEnd + 1;
+  }
+}
+
+function isEmailCharacter(character) {
+  return (character >= "a" && character <= "z")
+    || (character >= "A" && character <= "Z")
+    || (character >= "0" && character <= "9")
+    || "._%+-".includes(character);
+}
+
+function emailDomains(text) {
+  const domains = [];
+  for (let atIndex = text.indexOf("@"); atIndex !== -1; atIndex = text.indexOf("@", atIndex + 1)) {
+    let localStart = atIndex;
+    while (localStart > 0 && isEmailCharacter(text[localStart - 1])) localStart -= 1;
+    let domainEnd = atIndex + 1;
+    while (domainEnd < text.length && isEmailCharacter(text[domainEnd])) domainEnd += 1;
+
+    const localPart = text.slice(localStart, atIndex);
+    const domain = text.slice(atIndex + 1, domainEnd);
+    const topLevelDomain = domain.slice(domain.lastIndexOf(".") + 1);
+    if (localPart && domain.includes(".") && topLevelDomain.length >= 2) domains.push(domain);
+  }
+  return domains;
 }
 
 function localTargetForLink(target, isImage) {
@@ -66,10 +115,9 @@ if (!existsSync(wikiRoot) || !statSync(wikiRoot).isDirectory()) {
       }
     }
 
-    for (const match of text.matchAll(markdownLink)) {
-      const target = match[1];
-      const localTarget = localTargetForLink(target, match[0].startsWith("!"));
-      if (match[0].startsWith("![]")) fail(`${relativePath} has an image without alternative text.`);
+    for (const { target, isImage, alternativeText } of markdownLinks(text)) {
+      const localTarget = localTargetForLink(target, isImage);
+      if (isImage && !alternativeText) fail(`${relativePath} has an image without alternative text.`);
       if (!localTarget) continue;
       if (!localTarget.startsWith(wikiRoot)) {
         fail(`${relativePath} links outside docs/wiki: ${target}`);
@@ -78,8 +126,8 @@ if (!existsSync(wikiRoot) || !statSync(wikiRoot).isDirectory()) {
       }
     }
 
-    for (const match of text.matchAll(emailAddress)) {
-      const domain = match[1].toLowerCase();
+    for (const emailDomain of emailDomains(text)) {
+      const domain = emailDomain.toLowerCase();
       if (!domain.startsWith("example.")) {
         fail(`${relativePath} contains a non-synthetic email address.`);
       }

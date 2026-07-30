@@ -23,7 +23,7 @@ if (wikiUpdated === noWikiUpdate) {
 }
 
 const changedFiles = execFileSync(
-  "git",
+  "/usr/bin/git",
   ["diff", "--name-only", `${event.pull_request.base.sha}...${event.pull_request.head.sha}`],
   { encoding: "utf8" },
 ).split("\n").filter(Boolean);
