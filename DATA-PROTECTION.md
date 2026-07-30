@@ -4,7 +4,7 @@
 > document captures **design intent**, not legal advice.
 
 **Corp pack:** [GDPR-ONE-PAGER.md](docs/GDPR-ONE-PAGER.md) ·
-[SUBPROCESSORS.md](docs/SUBPROCESSORS.md) · [SECURITY-CONTROLS.md](docs/SECURITY-CONTROLS.md)
+[SUBPROCESSORS.md](docs/SUBPROCESSORS.md) · [SECURITY-CONTROLS.md](docs/security/SECURITY-CONTROLS.md)
 
 ## Data processed
 
@@ -67,7 +67,7 @@ compliance record**:
   emptied whenever that process restarts.
 - Everything shown here is also written to the container's own standard output at the same time —
   that is where long-term retention or forwarding to an external log system happens (see
-  [docs/SECURITY-CONTROLS.md](docs/SECURITY-CONTROLS.md)'s "Known scope limits" — Admitto has no
+  [docs/security/SECURITY-CONTROLS.md](docs/security/SECURITY-CONTROLS.md)'s "Known scope limits" — Admitto has no
   built-in SIEM or central log platform). **Exception:** login, MFA, logout, OIDC, and access-denied
   events are also written durably to the database — see **Durable security audit trail** below —
   so those ten event types survive a restart even without external log shipping.

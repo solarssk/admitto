@@ -1040,8 +1040,8 @@ export function EventSettingsPage() {
         >
           <EmptyState
             icon={<i className="ti ti-plug-connected" aria-hidden="true" />}
-            title="Automatic attendee import and RSVP tools are on the roadmap"
-            description="Each event will get its own API token for automatic attendee imports and RSVP replies, with the option to generate a new one anytime. Not built yet - superadmin-only, and kept separate from the everyday settings other admins use."
+            title="Automatic attendee import and attendance response tools are on the roadmap"
+            description="Each event will get its own API token for automatic attendee imports and attendance responses, with the option to generate a new one anytime. Not built yet - superadmin-only, and kept separate from the everyday settings other admins use."
           />
         </EventSettingsTabPanel>
       )}
