@@ -33,7 +33,6 @@ The email opens a valid browser ticket, the QR image renders clearly, and the co
 
 ## Important decisions
 
-- Treat a ticket link and QR code as access credentials. Do not publish or reuse them in documentation.
 - A ticket is event-specific and belongs to one attendee.
 - Active and Confirmed passes can be admitted. Cancelled and Revoked passes cannot.
 - A repeated valid scan returns an already-checked-in result instead of recording a second admission.

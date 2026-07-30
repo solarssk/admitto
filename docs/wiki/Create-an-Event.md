@@ -32,7 +32,6 @@ Admitto creates an active event and opens its **Attendees** page directly.
 
 ## Important decisions
 
-- The URL slug is used in ticket URLs and cannot be changed later.
 - The creation form has a calendar date, not an event start time.
 - Capacity is not part of this modal. New events remain unlimited until capacity is set in **Event settings**.
 - The timezone controls event-day timestamps and reports; do not use the browser default without checking it.

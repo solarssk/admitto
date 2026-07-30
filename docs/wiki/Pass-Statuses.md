@@ -16,7 +16,7 @@ flowchart TD
     pass --> admission[Admission allowed or blocked]
 ```
 
-Only pass status controls admission. Attendance confirmation, delivery, and check-in are recorded separately and do not replace it.
+Pass status controls whether the ticket is eligible for admission. Attendance confirmation and email delivery do not change that eligibility. Check-in status records whether admission has already taken place.
 
 | Displayed status | Meaning | Check-in |
 |---|---|---|

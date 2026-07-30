@@ -19,7 +19,10 @@
 | Ticket | The link and QR information sent to an attendee. |
 | Initial send | The first claimed ticket delivery for an attendee and event. |
 | Resend | A later explicit delivery or a custom-template bulk delivery. |
+| Attendance confirmation | The attendee's response before the event. It is shown as **Attendance** on attendee forms and as **Attendance confirmation** in reports; it does not prove that the person attended. |
+| Attendance (reports) | The recorded number of attendees admitted through check-in. This is different from the attendee's pre-event attendance confirmation. |
 | Check-in | Recording that an attendee was admitted to the event. |
+| Check-in status | The operational result of an admission attempt, such as valid, already checked in, revoked, or invalid. It records what happened at the entrance. |
 | Event item | A physical or tracked requirement, such as a badge or material, handled during check-in. |
 | Custom attendee field | Extra event-specific attendee information defined in **Requirements**. |
 | Archived event | A read-only completed event. Check-in and event mutations are disabled. |
