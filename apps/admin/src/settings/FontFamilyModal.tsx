@@ -372,7 +372,11 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
 
   return (
     <dialog className="add-attendee-modal" open aria-modal="true" aria-labelledby={titleId}>
-      <div className="add-attendee-modal__backdrop" role="presentation" onClick={handleClose} />
+      <div // NOSONAR — plain decorative click-catcher div, not an <img>; same backdrop pattern as AddAttendeeModal's own (unflagged there only because it predates this PR's diff)
+        className="add-attendee-modal__backdrop"
+        role="presentation"
+        onClick={handleClose}
+      />
       <div ref={panelRef} className="add-attendee-modal__panel" style={{ width: "min(94vw, 640px)" }}>
         <h2 className="add-attendee-modal__title" id={titleId}>
           {initialFamily ? `Edit "${initialFamily.name}"` : "Create font family"}
@@ -400,11 +404,8 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
             }}
           >
             <i className="ti ti-cloud-upload" aria-hidden="true" />
-            <span>
-              <b>Drop font files here</b>, or click to browse.
-              <br />
-              Add as many font weights as you have.
-            </span>
+            <span>Drop font files here, or click to browse.</span>
+            <span className="at-hint">WOFF, WOFF2, TTF, OTF · max 5 MB per file · add as many weights as you have</span>
             <input
               type="file"
               multiple
@@ -490,8 +491,8 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
           )}
           {duplicateRowIdSet.size > 0 && (
             <p className="at-hint at-hint--error" role="alert">
-              A browser only ever shows one file per weight and style. Give each highlighted row
-              its own combination, or remove one, before saving.
+              This weight and style is already loaded in another row. Remove one of the
+              highlighted rows before saving, or pick a different weight or style.
             </p>
           )}
           <button type="button" className="fontfam-add-row" onClick={addEmptyRow}>

@@ -124,7 +124,7 @@ function fontFormat(url: string): string | undefined {
 /** Escape `\` and `"` for safe interpolation into a double-quoted CSS string - defense in depth
  * alongside the URL charset validation above, not a substitute for it. */
 function escapeCssString(value: string): string {
-  return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+  return value.replaceAll("\\", String.raw`\\`).replaceAll('"', String.raw`\"`);
 }
 
 function fontFaceRuleFor(familyName: string, variant: BrandingFontVariant): string {

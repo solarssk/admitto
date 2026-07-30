@@ -142,7 +142,7 @@ describe("BrandingSettingsPanel — loading and errors", () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    await screen.findByLabelText("Organisation name");
+    expect(await screen.findByLabelText("Organisation name")).toHaveProperty("value", "Acme Corp");
   });
 });
 

@@ -3253,6 +3253,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  align-self: stretch;
   gap: 5px;
   padding: 16px 10px 12px;
   border-radius: var(--radius-md);
@@ -3296,13 +3297,21 @@
 }
 
 .font-option-card__uploadicon {
-  font-size: 24px;
+  /* Same font-size/line-height box as .font-option-card__sample's "Aa" - the icon takes that
+     text sample's place in this tile, so its label/hint should start at the exact same height. */
+  font-size: 26px;
+  line-height: 1;
   color: var(--text-disabled);
 }
 
 .font-option-card--upload {
   /* The only remaining variant that's a real, whole-tile <button> - it has no separate
-     sub-controls to leave room for, so the full card itself is the click target. */
+     sub-controls to leave room for, so the full card itself is the click target. Every other
+     variant's label/hint sits inside .font-option-card__select (all: unset), which resets the
+     browser's own default button font/line-height - without an equivalent reset here, this one
+     was rendering its label in the browser's UA default font at line-height "normal" instead of
+     the app's own font/rhythm, throwing its label-to-hint gap subtly out of step with the rest. */
+  font: inherit;
   border-style: dashed;
   cursor: pointer;
 }

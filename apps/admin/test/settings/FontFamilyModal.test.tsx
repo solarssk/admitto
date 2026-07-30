@@ -311,7 +311,7 @@ describe("FontFamilyModal", () => {
     // of just a transient, missable toast.
     expect(first!.className).toContain("fontfam-row--duplicate");
     expect(second!.className).toContain("fontfam-row--duplicate");
-    expect(screen.getByRole("alert").textContent).toMatch(/only ever shows one file per weight and style/);
+    expect(screen.getByRole("alert").textContent).toMatch(/already loaded in another row/);
     expect(isDisabled(screen.getByRole("button", { name: "Save font family" }))).toBe(true);
   });
 

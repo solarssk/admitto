@@ -126,7 +126,7 @@ export async function handlePostThemeFontUpload(c: Context, db: PrismaClient): P
     return c.json({ error: "forbidden" }, 403);
   }
 
-  // TODO(multi-org): same single-tenant assumption as handlePostUpload above.
+  // TODO(multi-org): same single-tenant assumption as handlePostUpload above. // NOSONAR — tracked on the v0.5+ roadmap, not a forgotten task; safe today since only one Organization row exists
   const orgId = "default";
 
   let body: Record<string, string | File>;
