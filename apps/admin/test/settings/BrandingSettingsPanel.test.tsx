@@ -127,9 +127,7 @@ describe("BrandingSettingsPanel — loading and errors", () => {
     mockFetchOrg.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
     renderWithToast(<BrandingSettingsPanel />);
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
-    });
+    await screen.findByRole("button", { name: "Retry" });
     expect(screen.getByRole("alert").textContent).toMatch(/Failed to load branding settings/);
     expect(screen.queryByText("secret_internal")).toBeNull();
     expect(screen.queryByTestId("at-toast")).toBeNull();
@@ -139,14 +137,12 @@ describe("BrandingSettingsPanel — loading and errors", () => {
     mockFetchOrg.mockRejectedValueOnce(new Error("network"));
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
     renderWithToast(<BrandingSettingsPanel />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy());
+    await screen.findByRole("button", { name: "Retry" });
 
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    await waitFor(() => {
-      expect(screen.getByLabelText("Organisation name")).toBeTruthy();
-    });
+    await screen.findByLabelText("Organisation name");
   });
 });
 
@@ -165,7 +161,7 @@ describe("BrandingSettingsPanel — organisation fields", () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
     renderWithToast(<BrandingSettingsPanel />);
-    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+    await screen.findByLabelText("Organisation name");
     fireEvent.change(screen.getByLabelText("Organisation name"), { target: { value: "  " } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
@@ -179,7 +175,7 @@ describe("BrandingSettingsPanel — organisation fields", () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
     renderWithToast(<BrandingSettingsPanel />);
-    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+    await screen.findByLabelText("Organisation name");
     fireEvent.click(screen.getByRole("button", { name: "Use a web link instead" }));
     fireEvent.change(screen.getByLabelText("Web link to your logo (must start with https://)"), {
       target: { value: "http://insecure.example.com/logo.png" },
@@ -198,7 +194,7 @@ describe("BrandingSettingsPanel — organisation fields", () => {
     let resolveUpload!: (result: { url: string }) => void;
     mockUploadFile.mockReturnValueOnce(new Promise((resolve) => (resolveUpload = resolve)));
     renderWithToast(<BrandingSettingsPanel />);
-    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+    await screen.findByLabelText("Organisation name");
 
     const [logoInput] = document.querySelectorAll(".logo-upload__file-input");
     fireEvent.change(logoInput!, {
@@ -222,7 +218,7 @@ describe("BrandingSettingsPanel — colour palette", () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
     renderWithToast(<BrandingSettingsPanel />);
-    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+    await screen.findByLabelText("Organisation name");
     expect(screen.getByRole("button", { name: "Admitto blue" }).getAttribute("aria-pressed")).toBe("true");
   });
 
@@ -230,7 +226,7 @@ describe("BrandingSettingsPanel — colour palette", () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
     renderWithToast(<BrandingSettingsPanel />);
-    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+    await screen.findByLabelText("Organisation name");
 
     fireEvent.click(screen.getByRole("button", { name: "Violet" }));
     expect(screen.getByRole("button", { name: "Violet" }).getAttribute("aria-pressed")).toBe("true");
@@ -242,7 +238,7 @@ describe("BrandingSettingsPanel — colour palette", () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce({ theme: { primary: "#123456" } });
     renderWithToast(<BrandingSettingsPanel />);
-    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+    await screen.findByLabelText("Organisation name");
     expect(document.querySelector("code")?.textContent).toBe("#123456");
   });
 
@@ -250,7 +246,7 @@ describe("BrandingSettingsPanel — colour palette", () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
     renderWithToast(<BrandingSettingsPanel />);
-    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+    await screen.findByLabelText("Organisation name");
 
     fireEvent.change(screen.getByLabelText("Custom colour picker"), { target: { value: "#abcdef" } });
     expect(document.querySelector("code")?.textContent).toBe("#abcdef");
@@ -268,7 +264,7 @@ describe("BrandingSettingsPanel — colour palette", () => {
       },
     });
     renderWithToast(<BrandingSettingsPanel />);
-    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+    await screen.findByLabelText("Organisation name");
     expect(document.querySelector("code")?.textContent).toBe("#123456");
 
     fireEvent.click(screen.getByRole("button", { name: "Restore defaults" }));
@@ -286,7 +282,7 @@ describe("BrandingSettingsPanel — font picker", () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
     renderWithToast(<BrandingSettingsPanel />);
-    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+    await screen.findByLabelText("Organisation name");
     expect(screen.getByRole("button", { name: /Admitto Sans/ }).closest(".font-option-card")!.className).toContain("font-option-card--active");
   });
 
@@ -301,7 +297,7 @@ describe("BrandingSettingsPanel — font picker", () => {
       },
     });
     renderWithToast(<BrandingSettingsPanel />);
-    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+    await screen.findByLabelText("Organisation name");
 
     fireEvent.click(screen.getByRole("button", { name: /IBM Plex Sans/ }));
     expect(screen.getByRole("button", { name: /IBM Plex Sans/ }).closest(".font-option-card")!.className).toContain("font-option-card--active");
@@ -327,7 +323,7 @@ describe("BrandingSettingsPanel — font picker", () => {
       },
     });
     renderWithToast(<BrandingSettingsPanel />);
-    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+    await screen.findByLabelText("Organisation name");
 
     const customTile = screen.getByText("Acme Sans").closest(".font-option-card");
     expect(customTile).not.toBeNull();
@@ -339,7 +335,7 @@ describe("BrandingSettingsPanel — font picker", () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
     renderWithToast(<BrandingSettingsPanel />);
-    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+    await screen.findByLabelText("Organisation name");
 
     expect(screen.queryByText("mock-font-family-modal")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /^Custom font/ }));
@@ -358,7 +354,7 @@ describe("BrandingSettingsPanel — font picker", () => {
       },
     });
     renderWithToast(<BrandingSettingsPanel />);
-    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+    await screen.findByLabelText("Organisation name");
 
     expect(screen.queryByRole("button", { name: /^Custom font/ })).toBeNull();
     expect(screen.getByText("Limit reached")).toBeTruthy();
@@ -377,7 +373,7 @@ describe("BrandingSettingsPanel — font picker", () => {
       },
     });
     renderWithToast(<BrandingSettingsPanel />);
-    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+    await screen.findByLabelText("Organisation name");
 
     fireEvent.click(screen.getByRole("button", { name: /^Custom font/ }));
     fireEvent.click(screen.getByText("mock-save-family"));
@@ -415,7 +411,7 @@ describe("BrandingSettingsPanel — font picker", () => {
       },
     });
     renderWithToast(<BrandingSettingsPanel />);
-    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+    await screen.findByLabelText("Organisation name");
 
     const firstTile = screen.getByText("First Family").closest(".font-option-card")!;
     const secondTile = screen.getByText("Second Family").closest(".font-option-card")!;
@@ -439,7 +435,7 @@ describe("BrandingSettingsPanel — font picker", () => {
       },
     });
     renderWithToast(<BrandingSettingsPanel />);
-    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+    await screen.findByLabelText("Organisation name");
 
     expect(screen.queryByText("mock-font-family-modal")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Edit Acme Sans" }));
@@ -459,7 +455,7 @@ describe("BrandingSettingsPanel — font picker", () => {
       },
     });
     renderWithToast(<BrandingSettingsPanel />);
-    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+    await screen.findByLabelText("Organisation name");
 
     fireEvent.click(screen.getByRole("button", { name: "Edit Acme Sans" }));
     fireEvent.click(screen.getByText("mock-save-family"));
@@ -482,7 +478,7 @@ describe("BrandingSettingsPanel — font picker", () => {
       },
     });
     renderWithToast(<BrandingSettingsPanel />);
-    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+    await screen.findByLabelText("Organisation name");
 
     fireEvent.click(screen.getByRole("button", { name: "Edit Acme Sans" }));
     fireEvent.click(screen.getByText("mock-save-family-renamed"));
@@ -504,7 +500,7 @@ describe("BrandingSettingsPanel — font picker", () => {
       },
     });
     renderWithToast(<BrandingSettingsPanel />);
-    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+    await screen.findByLabelText("Organisation name");
 
     fireEvent.click(screen.getByRole("button", { name: "Edit Acme Sans" }));
     fireEvent.click(screen.getByText("mock-save-family"));
@@ -528,7 +524,7 @@ describe("BrandingSettingsPanel — font picker", () => {
       },
     });
     renderWithToast(<BrandingSettingsPanel />);
-    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+    await screen.findByLabelText("Organisation name");
 
     fireEvent.click(screen.getByRole("button", { name: "Remove Acme Sans" }));
 
@@ -548,7 +544,7 @@ describe("BrandingSettingsPanel — font picker", () => {
       },
     });
     renderWithToast(<BrandingSettingsPanel />);
-    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+    await screen.findByLabelText("Organisation name");
 
     fireEvent.click(screen.getByRole("button", { name: "Remove Acme Sans" }));
 
@@ -567,7 +563,7 @@ describe("BrandingSettingsPanel — font picker", () => {
       },
     });
     renderWithToast(<BrandingSettingsPanel />);
-    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+    await screen.findByLabelText("Organisation name");
 
     expect(screen.getByTitle("No bold file uploaded. The browser is faking it.")).toBeTruthy();
     expect(screen.getByTitle("No italic file uploaded. The browser is faking it.")).toBeTruthy();
@@ -577,7 +573,7 @@ describe("BrandingSettingsPanel — font picker", () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
     renderWithToast(<BrandingSettingsPanel />);
-    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+    await screen.findByLabelText("Organisation name");
 
     expect(screen.queryByTitle(/browser is faking it/)).toBeNull();
   });
@@ -590,7 +586,7 @@ describe("BrandingSettingsPanel — save and reset", () => {
     mockPatchOrg.mockResolvedValueOnce({ org_name: "New Name Inc", logo_url: "" });
     mockSaveTheme.mockResolvedValueOnce({ theme: { primary: "#7c3aed" } });
     renderWithToast(<BrandingSettingsPanel />);
-    await waitFor(() => expect(screen.getByLabelText("Organisation name")).toBeTruthy());
+    await screen.findByLabelText("Organisation name");
 
     fireEvent.change(screen.getByLabelText("Organisation name"), { target: { value: "New Name Inc" } });
     fireEvent.click(screen.getByRole("button", { name: "Violet" }));

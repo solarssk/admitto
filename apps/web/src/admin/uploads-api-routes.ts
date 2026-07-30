@@ -12,6 +12,10 @@ import { assertEventManageAccess, adminAuditFromContext, requireEventId } from "
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { logger } from "../logger.js";
 
+/** The only HTTP statuses BrandingUploadError ever carries - narrows its `number` field for
+ * Hono's c.json overload, which needs a literal status rather than a plain number. */
+type BrandingUploadStatus = 400 | 413 | 415;
+
 /** POST /api/admin/uploads — superadmin only, multipart branding image. */
 export async function handlePostUpload(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");
@@ -51,7 +55,7 @@ export async function handlePostUpload(c: Context, db: PrismaClient): Promise<Re
     return c.json(result, 201);
   } catch (err) {
     if (err instanceof BrandingUploadError) {
-      return c.json({ error: err.code, ...err.details }, err.status as 400 | 413 | 415);
+      return c.json({ error: err.code, ...err.details }, err.status as BrandingUploadStatus);
     }
     logger.error("handlePostUpload failed", { err });
     return c.json({ error: "server error" }, 500);
@@ -108,7 +112,7 @@ export async function handlePostEventBrandingUpload(c: Context, db: PrismaClient
     return c.json(result, 201);
   } catch (err) {
     if (err instanceof BrandingUploadError) {
-      return c.json({ error: err.code, ...err.details }, err.status as 400 | 413 | 415);
+      return c.json({ error: err.code, ...err.details }, err.status as BrandingUploadStatus);
     }
     logger.error("handlePostEventBrandingUpload failed", { err });
     return c.json({ error: "server error" }, 500);
@@ -152,7 +156,7 @@ export async function handlePostThemeFontUpload(c: Context, db: PrismaClient): P
     return c.json(result, 201);
   } catch (err) {
     if (err instanceof BrandingUploadError) {
-      return c.json({ error: err.code, ...err.details }, err.status as 400 | 413 | 415);
+      return c.json({ error: err.code, ...err.details }, err.status as BrandingUploadStatus);
     }
     logger.error("handlePostThemeFontUpload failed", { err });
     return c.json({ error: "server error" }, 500);

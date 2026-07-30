@@ -56,35 +56,19 @@ describe("sanitizeTheme (branding theme storage validation)", () => {
     ]);
   });
 
-  it("drops a whole family whose variant path is outside the theme upload namespace (zero valid variants left)", () => {
+  // Each of these leaves the lone variant's URL rejected, so the whole family has zero valid
+  // variants left and is dropped entirely - a generated upload filename is always a plain
+  // uuid.ext, so the CSS-breaking-characters case only matters for a hand-crafted PUT straight to
+  // the API, but this is the server-side boundary, so it has to reject it on its own rather than
+  // trusting the admin UI's own upload flow was used.
+  it.each([
+    ["outside the theme upload namespace", "/uploads/default/events/evt-1/abc123.woff2"],
+    ["directory traversal", "/uploads/default/theme/../../etc/passwd.woff2"],
+    ["CSS-breaking characters in the filename", '/uploads/default/theme/a".woff2'],
+  ])("drops a whole family whose only variant's path is %s", (_label, url) => {
     const result = sanitizeTheme({
       font_family_name: "Brand Sans",
-      custom_font_families: [
-        { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/events/evt-1/abc123.woff2" }] },
-      ],
-    });
-    expect(result.custom_font_families).toBeUndefined();
-  });
-
-  it("drops a whole family whose only variant has directory traversal", () => {
-    const result = sanitizeTheme({
-      font_family_name: "Brand Sans",
-      custom_font_families: [
-        { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/../../etc/passwd.woff2" }] },
-      ],
-    });
-    expect(result.custom_font_families).toBeUndefined();
-  });
-
-  it("drops a whole family whose only variant's filename carries CSS-breaking characters", () => {
-    // A generated upload filename is always a plain uuid.ext, so this only matters for a
-    // hand-crafted PUT straight to the API - but this is the server-side boundary, so it has to
-    // reject it on its own rather than trusting the admin UI's own upload flow was used.
-    const result = sanitizeTheme({
-      font_family_name: "Brand Sans",
-      custom_font_families: [
-        { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: '/uploads/default/theme/a".woff2' }] },
-      ],
+      custom_font_families: [{ name: "Brand Sans", variants: [{ weight: 400, style: "normal", url }] }],
     });
     expect(result.custom_font_families).toBeUndefined();
   });

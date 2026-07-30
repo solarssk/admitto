@@ -42,7 +42,7 @@ function sanitizeBrandingFontFamilyName(name: string): string | undefined {
 // stem restricted to a safe charset (not just "no slash") - this is the real server-side
 // boundary a crafted PUT /api/staff/theme has to go through, and @admitto/ui's fontFaceRuleFor
 // later interpolates whatever this accepts as "local" straight into @font-face CSS unescaped.
-const BRANDING_FONT_UPLOAD_PATH = /^\/uploads\/[a-z0-9][a-z0-9_-]{0,63}\/theme\/[a-zA-Z0-9_-]+\.(woff2?|ttf|otf)$/i;
+const BRANDING_FONT_UPLOAD_PATH = /^\/uploads\/[a-z0-9][a-z0-9_-]{0,63}\/theme\/[a-z0-9_-]+\.(woff2?|ttf|otf)$/i;
 
 function isLocalBrandingFontPath(url: string): boolean {
   return url.startsWith("/uploads/") && !url.includes("..") && BRANDING_FONT_UPLOAD_PATH.test(url);

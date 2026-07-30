@@ -47,6 +47,12 @@ interface FontRow {
   loaded: boolean;
 }
 
+/** Tabler icon suffix for a row's own file-picker button, reflecting its upload state. */
+function rowFileIconName(row: Pick<FontRow, "loading" | "loaded">): string {
+  if (row.loading) return "loader-2";
+  return row.loaded ? "circle-check-filled" : "upload";
+}
+
 /** Row ids whose (weight, style) combo is shared with at least one other row - a browser only
  * ever renders one file per combo, so every extra row sharing a combo is a silently-unused
  * upload rather than the distinct style its "N styles" count implies. */
@@ -128,6 +134,22 @@ function dedupeByCombo(
     byCombo.set(`${guess.weight}:${guess.style}`, { file: f, guess });
   }
   return byCombo;
+}
+
+/** Loads each guessed file into its row - an existing row if that (weight, style) combo is
+ * already present, a new one otherwise - and reports how many replaced an already-added row. */
+function applyDroppedFiles(
+  byCombo: ReadonlyMap<string, { file: File; guess: ReturnType<typeof detectFromFilename> }>,
+  rows: readonly FontRow[],
+  loadIntoRow: (file: File, guess: ReturnType<typeof detectFromFilename>, existingId: number | null) => void,
+): number {
+  let replaced = 0;
+  for (const { file, guess } of byCombo.values()) {
+    const existing = rows.find((r) => r.weight === guess.weight && r.style === guess.style);
+    if (existing) replaced++;
+    loadIntoRow(file, guess, existing ? existing.id : null);
+  }
+  return replaced;
 }
 
 export interface FontFamilyModalProps {
@@ -325,12 +347,9 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
       const first = [...byCombo.values()][0];
       if (first?.guess.family) setFamilyName(first.guess.family);
     }
-    let dupCount = 0;
-    for (const { file, guess } of byCombo.values()) {
-      const existing = rows.find((r) => r.weight === guess.weight && r.style === guess.style);
-      if (existing) dupCount++;
-      void loadIntoRow(file, guess, existing ? existing.id : null);
-    }
+    const dupCount = applyDroppedFiles(byCombo, rows, (file, guess, existingId) => {
+      void loadIntoRow(file, guess, existingId);
+    });
     if (dupCount > 0) {
       addToast(`Replaced ${dupCount} existing variant${dupCount === 1 ? "" : "s"} with the new file${dupCount === 1 ? "" : "s"}`, "info");
     }
@@ -436,7 +455,7 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
                   />
                   <label className={`fontfam-row__file${row.loaded ? " fontfam-row__file--loaded" : ""}`}>
                     <i
-                      className={`ti ti-${row.loading ? "loader-2" : row.loaded ? "circle-check-filled" : "upload"}`}
+                      className={`ti ti-${rowFileIconName(row)}`}
                       aria-hidden="true"
                     />
                     <span>{row.loading ? "Uploading…" : row.fileName || "Choose file"}</span>

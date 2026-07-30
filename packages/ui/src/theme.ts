@@ -80,7 +80,7 @@ export function isValidBrandingFontFamilyName(name: string): boolean {
 // server-generated, so it can't just rely on every upload having gone through the honest upload
 // flow first. fontFaceRuleFor below also escapes the URL before interpolating it into CSS, as a
 // second, independent layer rather than trusting this regex alone.
-const BRANDING_FONT_UPLOAD_PATH = /^\/uploads\/[a-z0-9][a-z0-9_-]{0,63}\/theme\/[a-zA-Z0-9_-]+\.(woff2?|ttf|otf)$/i;
+const BRANDING_FONT_UPLOAD_PATH = /^\/uploads\/[a-z0-9][a-z0-9_-]{0,63}\/theme\/[a-z0-9_-]+\.(woff2?|ttf|otf)$/i;
 
 /** True for a validated local `/uploads/.../theme/` upload path (no `..`, matches the pattern). */
 export function isLocalBrandingFontPath(url: string): boolean {
@@ -124,7 +124,7 @@ function fontFormat(url: string): string | undefined {
 /** Escape `\` and `"` for safe interpolation into a double-quoted CSS string - defense in depth
  * alongside the URL charset validation above, not a substitute for it. */
 function escapeCssString(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
 }
 
 function fontFaceRuleFor(familyName: string, variant: BrandingFontVariant): string {

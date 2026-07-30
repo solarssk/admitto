@@ -585,6 +585,9 @@ export function EventSettingsPage() {
   // running a page action that reloads state (archive, revoke) would otherwise silently
   // discard unsaved mail transport edits and pending secret replacements (CodeRabbit review).
   const pageDirty = dirty || mailDirty;
+  // Same combination for "a save request is in flight" - a Danger Zone action firing while the
+  // Mail tab's own save is still in flight would race against it on the same event record.
+  const pageBusy = saving || mailSaving;
   const saveButtonLabel = computeSaveButtonLabel(saving, logoUploading);
   // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
   // these "Loading…" placeholders on and off faster than they can register as loading —
@@ -593,7 +596,7 @@ export function EventSettingsPage() {
   const showTicketTypesLoading = useDelayedLoading(ticketTypesLoading);
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
-      pageDirty && currentLocation.pathname !== nextLocation.pathname,
+      (pageDirty || pageBusy) && currentLocation.pathname !== nextLocation.pathname,
   );
   const isArchived = event?.status === "archived";
 
@@ -642,13 +645,13 @@ export function EventSettingsPage() {
   }, [abortLatestTicketTypes, loadTicketTypes]);
 
   useEffect(() => {
-    if (!pageDirty) return;
+    if (!pageDirty && !pageBusy) return;
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault();
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [pageDirty]);
+  }, [pageDirty, pageBusy]);
 
   const goBack = () => navigate(eventOverviewPath(eventId));
 
