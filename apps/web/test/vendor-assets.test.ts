@@ -18,18 +18,13 @@ describe("serveFontsourceFonts", () => {
     expect(body.length).toBeGreaterThan(0);
   });
 
-  it("404s for a package outside the built-in allowlist", async () => {
-    const res = await appWithFontsourceRoute().request("/vendor/fontsource/comic-sans/comic-sans-latin-400-normal.woff2");
-    expect(res.status).toBe(404);
-  });
-
-  it("404s when no file segment is given", async () => {
-    const res = await appWithFontsourceRoute().request("/vendor/fontsource/manrope");
-    expect(res.status).toBe(404);
-  });
-
-  it("404s for an unknown file within a known package", async () => {
-    const res = await appWithFontsourceRoute().request("/vendor/fontsource/manrope/does-not-exist.woff2");
+  it.each([
+    ["a package outside the built-in allowlist", "/vendor/fontsource/comic-sans/comic-sans-latin-400-normal.woff2"],
+    ["no file segment given", "/vendor/fontsource/manrope"],
+    ["an unknown file within a known package", "/vendor/fontsource/manrope/does-not-exist.woff2"],
+    ["a disallowed extension even inside a known package's files directory", "/vendor/fontsource/manrope/manrope-latin-400-normal.css"],
+  ])("404s for %s", async (_case, path) => {
+    const res = await appWithFontsourceRoute().request(path);
     expect(res.status).toBe(404);
   });
 
@@ -38,11 +33,6 @@ describe("serveFontsourceFonts", () => {
     expect([403, 404]).toContain(res.status);
     const text = await res.text();
     expect(text).not.toContain("root:");
-  });
-
-  it("404s for a disallowed extension even inside a known package's files directory", async () => {
-    const res = await appWithFontsourceRoute().request("/vendor/fontsource/manrope/manrope-latin-400-normal.css");
-    expect(res.status).toBe(404);
   });
 });
 
