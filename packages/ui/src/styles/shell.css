@@ -426,6 +426,14 @@ html:has(.shell), body:has(.shell) {
   gap: 18px;
 }
 
+/* .screen's own flex `gap` doesn't collapse with a child's margin the way block-flow margins
+   do, so without this the header's margin-bottom and the gap stack instead of landing on one
+   shared value - pushing screen-wrapped pages further down than every other page (which only
+   has the header's own margin, no surrounding gap). */
+.screen > .at-pageheader {
+  margin-bottom: calc(var(--space-5) - 18px); /* 6px, so every page totals the same 24px */
+}
+
 .empty-state {
   text-align: center;
   padding: 48px 24px;
