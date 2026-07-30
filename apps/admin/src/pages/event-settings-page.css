@@ -200,19 +200,10 @@
 }
 
 /* Subtle notice under the panel (not inside the header, so the header stays
-   the same height as every other card's header). */
+   the same height as every other card's header) - now the shared Notice component
+   (@admitto/ui, error variant), which owns the border/background/color/icon. Only the top
+   spacing to the panel above survives here, since Notice itself is margin: 0 (its layout
+   contract expects a flex/grid gap parent, which .event-settings-tabpanel doesn't provide). */
 .danger-zone-notice {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  margin: var(--space-3) 0 0;
-  padding: var(--space-2) var(--space-3);
-  background: var(--status-error-tint);
-  border-radius: var(--radius);
-  font-size: var(--fs-sm);
-  color: var(--status-error-fg);
-}
-
-.danger-zone-notice i {
-  margin-top: 2px;
+  margin-top: var(--space-3);
 }
