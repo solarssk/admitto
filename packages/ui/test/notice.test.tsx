@@ -66,4 +66,24 @@ describe("Notice", () => {
     expect(notice).not.toBeNull();
     expect(notice?.className).toContain("at-notice--success");
   });
+
+  it("does not render an action slot or its modifier class by default", () => {
+    render(<Notice variant="error">Message</Notice>);
+    const notice = screen.getByText("Message").closest("p");
+    expect(notice?.querySelector(".at-notice__action")).toBeNull();
+    expect(notice?.className).not.toContain("at-notice--has-action");
+  });
+
+  it("renders action content as a separate flex item, distinct from the body text", () => {
+    render(
+      <Notice variant="error" action={<button type="button">Retry</button>}>
+        Something failed.
+      </Notice>,
+    );
+    const notice = screen.getByText("Something failed.").closest("p");
+    expect(notice?.className).toContain("at-notice--has-action");
+    const action = notice?.querySelector(".at-notice__action");
+    expect(action?.querySelector("button")?.textContent).toBe("Retry");
+    expect(notice?.querySelector(".at-notice__body")?.textContent).toBe("Something failed.");
+  });
 });

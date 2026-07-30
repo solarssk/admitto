@@ -189,9 +189,10 @@ describe("AttendeeDetailPage — Notes tab", () => {
     await openNotesTab();
 
     expect(screen.getByText("No notes yet.")).toBeTruthy();
-    expect(
-      screen.getByText(/Internal notes are visible to staff only and are never shown to the attendee\./),
-    ).toBeTruthy();
+    const hint = screen.getByText(
+      /Internal notes are visible to staff only and are never shown to the attendee\./,
+    );
+    expect(hint.closest(".at-notice--info")).toBeTruthy();
   });
 
   it("shows a count badge and lists existing notes with their author", async () => {

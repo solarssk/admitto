@@ -79,6 +79,29 @@ export async function resolveActorEmailForLog(
   }
 }
 
+export type UserDisplayRow = { id: string; email: string; display_name: string | null };
+
+/** Batch-resolve user ids to their current email/display_name - an id with no matching row (a
+ * deleted user) is simply absent from the result; callers decide the fallback label. Shared by
+ * every admin route that displays "who did this" for a batch of rows (audit log, reports),
+ * so they never drift on how an actor/operator is resolved. */
+export async function resolveUserDisplayMap(
+  db: PrismaClient,
+  userIds: string[],
+): Promise<Record<string, UserDisplayRow>> {
+  const ids = [...new Set(userIds)];
+  const users =
+    ids.length > 0
+      ? await db.user.findMany({
+          where: { id: { in: ids } },
+          select: { id: true, email: true, display_name: true },
+        })
+      : [];
+  const map: Record<string, UserDisplayRow> = Object.create(null);
+  for (const u of users) map[u.id] = u;
+  return map;
+}
+
 /** Self-audits a CSV export action into AdminAuditLog and the System-logs Admin source - shared
  * tail of handleExportAuditLog/handleExportSecurityAuditLog (audit-routes.ts/
  * security-audit-routes.ts), which otherwise duplicated this write+emit pair verbatim aside from

@@ -2,7 +2,13 @@ import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import { loadEventTicketTypes, writeBulkActionLog, type TicketTypeInfo } from "@admitto/tickets";
-import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
+import {
+  adminAuditFromContext,
+  assertEventManageAccess,
+  requireEventId,
+  resolveUserDisplayMap,
+  type UserDisplayRow,
+} from "./admin-helpers.js";
 import { sanitizeCsvCell } from "./csv-sanitize.js";
 import { attachmentContentDisposition } from "./content-disposition.js";
 
@@ -50,6 +56,14 @@ export interface EventReportsResponse {
     email: string;
     ticket_type: string | null;
     admitted_at: string;
+    /** Attendee.admitted_by, resolved - null covers the legacy/emergency bearer check-in path
+     * (no authenticated session) or a row written outside the normal admit write path. */
+    operator_user_id: string | null;
+    operator_display_name: string | null;
+    operator_email: string | null;
+    /** Session.device_label at check-in time - secondary to operator_*, since it's a
+     * self-declared, optional session attribute (an admin-role check-in never sets one -
+     * DeviceLabelStep only gates the /operator route). */
     device_id: string | null;
     items: string[];
   }>;
@@ -63,10 +77,17 @@ export interface EventReportsResponse {
    * method (mirrors the same filter loadDeviceIdsByAttendee already uses); "undo"/"admin_revoke"
    * are lifecycle events, not admission methods. */
   by_checkin_method: Array<{ method: string; count: number }>;
-  /** Admissions per operator-labeled device (DeviceLabelStep) - same VALID/scan+manual filter as
-   * by_checkin_method. `device_id: null` covers a check-in from a session that skipped labeling,
-   * kept as its own bucket rather than dropped so the total still reconciles. */
-  by_device: Array<{ device_id: string | null; count: number }>;
+  /** Admissions per operator, resolved from Attendee.admitted_by - grouped directly off Attendee
+   * (not CheckIn), so unlike the breakdown above it needs no per-attendee dedup: admitted_at/
+   * admitted_by are already the single current-admission pair, set atomically together in
+   * admit.ts and cleared atomically together in undo.ts. `operator_user_id: null` covers the
+   * same legacy/emergency bearer path as the admission log field above. */
+  by_operator: Array<{
+    operator_user_id: string | null;
+    operator_display_name: string | null;
+    operator_email: string | null;
+    count: number;
+  }>;
 }
 
 /** Display label for a raw ticket_type key/null in server-rendered CSV/PDF exports (the admin
@@ -74,6 +95,27 @@ export interface EventReportsResponse {
 function resolveTicketTypeLabel(catalog: TicketTypeInfo[], key: string | null): string {
   if (!key) return "(none)";
   return catalog.find((t) => t.key === key)?.label ?? key;
+}
+
+/** Display label for a resolved operator in server-rendered CSV/PDF exports (the admin SPA
+ * instead composes its own label client-side from the raw operator_* fields it already has) -
+ * mirrors resolveTicketTypeLabel above for the same reason. */
+function resolveOperatorLabel(fields: OperatorFields): string {
+  if (!fields.operator_user_id) return "(No operator)";
+  return fields.operator_display_name ?? fields.operator_email ?? "Deleted user";
+}
+
+/** Same label as resolveOperatorLabel, plus the device label in parentheses when present - PDF
+ * is a print/share visual artifact matching the on-screen table's merged presentation, unlike
+ * CSV which keeps operator and device as separate raw-data columns. */
+function resolveCheckedInByLabel(row: {
+  operator_user_id: string | null;
+  operator_display_name: string | null;
+  operator_email: string | null;
+  device_id: string | null;
+}): string {
+  const operator = resolveOperatorLabel(row);
+  return row.device_id ? `${operator} (${row.device_id})` : operator;
 }
 
 function oneDecimalPct(numerator: number, denominator: number): number {
@@ -136,12 +178,31 @@ async function loadDeviceIdsByAttendee(
       source: { in: ["scan", "manual"] },
     },
     orderBy: [{ checked_in_at: "desc" }, { id: "desc" }],
-    select: { attendee_id: true, device_id: true },
+    select: { attendee_id: true, device_id: true, session_id: true },
   });
+
+  // A superadmin's later device-label correction (SessionsPanel) should retroactively apply
+  // here too (CodeRabbit review) - device_id is the frozen snapshot taken at check-in time,
+  // but session_id (added after that snapshot existed, so null on older rows) lets a still-live
+  // session's *current* device_label win instead. Falls back to the snapshot when there's no
+  // session_id at all (the legacy/emergency-bearer path) or the session has since been purged
+  // (short post-event retention, AGENTS.md) - a stale snapshot beats showing nothing.
+  const sessionIds = [
+    ...new Set(checkIns.map((row) => row.session_id).filter((id): id is string => id != null)),
+  ];
+  const sessions =
+    sessionIds.length > 0
+      ? await db.session.findMany({
+          where: { id: { in: sessionIds } },
+          select: { id: true, device_label: true },
+        })
+      : [];
+  const labelBySessionId = new Map(sessions.map((s) => [s.id, s.device_label]));
 
   for (const row of checkIns) {
     if (!map.has(row.attendee_id)) {
-      map.set(row.attendee_id, row.device_id);
+      const session = row.session_id ? labelBySessionId.get(row.session_id) : undefined;
+      map.set(row.attendee_id, session !== undefined ? session : row.device_id);
     }
   }
   return map;
@@ -181,10 +242,57 @@ type AdmittedRow = {
   email: string;
   ticket_type: string | null;
   admitted_at: Date;
+  admitted_by: string | null;
 };
+
+type OperatorFields = {
+  operator_user_id: string | null;
+  operator_display_name: string | null;
+  operator_email: string | null;
+};
+
+/** Resolve a raw Attendee.admitted_by id against a batch-fetched user map - null stays null (no
+ * operator, not a lookup miss); a non-null id absent from the map means the user was since
+ * deleted. Both cases leave display_name/email null in the JSON response - callers distinguish
+ * "no operator" (operator_user_id null) from "deleted user" (operator_user_id set, nothing
+ * resolved) themselves; resolveOperatorLabel collapses both to their own string for CSV/PDF. */
+function resolveOperatorFields(
+  admittedBy: string | null,
+  displayMap: Record<string, UserDisplayRow>,
+): OperatorFields {
+  if (!admittedBy) {
+    return { operator_user_id: null, operator_display_name: null, operator_email: null };
+  }
+  const user = displayMap[admittedBy];
+  return {
+    operator_user_id: admittedBy,
+    operator_display_name: user?.display_name ?? null,
+    operator_email: user?.email ?? null,
+  };
+}
+
+/** Ranked by count descending; ties broken by the resolved display label ascending - the
+ * "no operator" null bucket sorts last on a tie, same convention the retired by_device
+ * breakdown used for its unlabeled-device bucket. Exported and unit-testable directly (rather
+ * than only through the full DB+HTTP integration path) because the two null-bucket branches
+ * are each other's mirror image: whichever side of a comparator call a real, unordered `groupBy`
+ * row happens to land on, the other can only be forced by picking the pre-sort array order
+ * directly, which a real query can't guarantee. */
+export function compareByOperatorRow(
+  a: OperatorFields & { count: number },
+  b: OperatorFields & { count: number },
+): number {
+  if (b.count !== a.count) return b.count - a.count;
+  if (a.operator_user_id === null) return 1;
+  if (b.operator_user_id === null) return -1;
+  const labelA = a.operator_display_name ?? a.operator_email ?? "";
+  const labelB = b.operator_display_name ?? b.operator_email ?? "";
+  return labelA.localeCompare(labelB);
+}
 
 function mapAdmissionLogRow(
   row: AdmittedRow,
+  operatorDisplayMap: Record<string, UserDisplayRow>,
   deviceByAttendee: Map<string, string | null>,
   itemsByAttendee: Map<string, string[]>,
 ): EventReportsResponse["admission_log"][number] {
@@ -194,6 +302,7 @@ function mapAdmissionLogRow(
     email: row.email,
     ticket_type: row.ticket_type,
     admitted_at: row.admitted_at.toISOString(),
+    ...resolveOperatorFields(row.admitted_by, operatorDisplayMap),
     device_id: deviceByAttendee.get(row.id) ?? null,
     items: itemsByAttendee.get(row.id) ?? [],
   };
@@ -215,7 +324,7 @@ async function loadReportsAggregates(
   ticketTypeCatalog: TicketTypeInfo[];
   by_rsvp_status: EventReportsResponse["by_rsvp_status"];
   by_checkin_method: EventReportsResponse["by_checkin_method"];
-  by_device: EventReportsResponse["by_device"];
+  by_operator: EventReportsResponse["by_operator"];
 }> {
   const [
     totalAttendees,
@@ -227,6 +336,7 @@ async function loadReportsAggregates(
     catalog,
     byRsvpStatusRaw,
     validCheckIns,
+    byOperatorRaw,
   ] = await Promise.all([
       db.attendee.count({ where: { event_id: eventId } }),
       db.attendee.count({ where: { event_id: eventId, admitted_at: { not: null } } }),
@@ -262,6 +372,7 @@ async function loadReportsAggregates(
           email: true,
           ticket_type: true,
           admitted_at: true,
+          admitted_by: true,
         },
       }),
       loadEventTicketTypes(db, eventId),
@@ -285,7 +396,20 @@ async function loadReportsAggregates(
           attendee: { admitted_at: { not: null } },
         },
         orderBy: [{ checked_in_at: "desc" }, { id: "desc" }],
-        select: { attendee_id: true, source: true, device_id: true },
+        select: { attendee_id: true, source: true },
+      }),
+      // Grouped directly off Attendee (not CheckIn), same shape as by_ticket_type/by_rsvp_status
+      // above - admitted_at/admitted_by are already the single current-admission pair (admit.ts
+      // sets both atomically, undo.ts clears both atomically), so this needs no per-attendee
+      // dedup the way the CheckIn-sourced breakdowns above do. orderBy makes the groupBy's own
+      // row order deterministic - the .sort() below already fully orders the response, but
+      // without this a fully tied pair (same count AND same resolved label) would otherwise come
+      // back in whatever arbitrary order the query planner happened to produce that run.
+      db.attendee.groupBy({
+        by: ["admitted_by"],
+        where: { event_id: eventId, admitted_at: { not: null } },
+        _count: { _all: true },
+        orderBy: { admitted_by: { sort: "asc", nulls: "first" } },
       }),
     ]);
 
@@ -336,13 +460,21 @@ async function loadReportsAggregates(
   }
 
   const attendeeIds = logRows.map((row) => row.id);
-  const [deviceByAttendee, itemsByAttendee] = await Promise.all([
+  const operatorIds = [
+    ...new Set(
+      [...logRows.map((r) => r.admitted_by), ...byOperatorRaw.map((r) => r.admitted_by)].filter(
+        (id): id is string => id != null,
+      ),
+    ),
+  ];
+  const [deviceByAttendee, itemsByAttendee, operatorDisplayMap] = await Promise.all([
     loadDeviceIdsByAttendee(db, eventId, attendeeIds),
     loadIssuedItemLabelsByAttendee(db, eventId, attendeeIds),
+    resolveUserDisplayMap(db, operatorIds),
   ]);
 
   const admission_log = logRows.map((row) =>
-    mapAdmissionLogRow(row as AdmittedRow, deviceByAttendee, itemsByAttendee),
+    mapAdmissionLogRow(row as AdmittedRow, operatorDisplayMap, deviceByAttendee, itemsByAttendee),
   );
 
   const by_rsvp_status = byRsvpStatusRaw.map((row) => ({
@@ -356,26 +488,20 @@ async function loadReportsAggregates(
   // row-based groupBy counted twice, letting these breakdowns' totals exceed admittedCount.
   const seenAttendees = new Set<string>();
   const methodCounts = new Map<string, number>();
-  const deviceCounts = new Map<string | null, number>();
   for (const row of validCheckIns) {
     if (seenAttendees.has(row.attendee_id)) continue;
     seenAttendees.add(row.attendee_id);
     if (row.source === "scan" || row.source === "manual") {
       methodCounts.set(row.source, (methodCounts.get(row.source) ?? 0) + 1);
     }
-    deviceCounts.set(row.device_id, (deviceCounts.get(row.device_id) ?? 0) + 1);
   }
   const by_checkin_method = Array.from(methodCounts, ([method, count]) => ({ method, count }));
-  // Ranked by count descending; ties broken by device_id ascending - the "(unlabeled device)"
-  // null bucket sorts last on a tie.
-  const by_device = Array.from(deviceCounts, ([device_id, count]) => ({ device_id, count })).sort(
-    (a, b) => {
-      if (b.count !== a.count) return b.count - a.count;
-      if (a.device_id === null) return 1;
-      if (b.device_id === null) return -1;
-      return a.device_id.localeCompare(b.device_id);
-    },
-  );
+  const by_operator: EventReportsResponse["by_operator"] = byOperatorRaw
+    .map((row) => ({
+      ...resolveOperatorFields(row.admitted_by, operatorDisplayMap),
+      count: row._count._all,
+    }))
+    .sort(compareByOperatorRow);
 
   return {
     totalAttendees,
@@ -388,7 +514,7 @@ async function loadReportsAggregates(
     peak_hour_count,
     by_rsvp_status,
     by_checkin_method,
-    by_device,
+    by_operator,
   };
 }
 
@@ -491,7 +617,7 @@ export async function handleGetReports(c: Context, db: PrismaClient): Promise<Re
     admission_log_total: aggregates.admittedCount,
     by_rsvp_status: aggregates.by_rsvp_status,
     by_checkin_method: aggregates.by_checkin_method,
-    by_device: aggregates.by_device,
+    by_operator: aggregates.by_operator,
   };
 
   return c.json(body);
@@ -534,6 +660,7 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
           email: true,
           ticket_type: true,
           admitted_at: true,
+          admitted_by: true,
         },
       }),
       loadEventTicketTypes(db, eventId),
@@ -542,13 +669,17 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
     const truncated = totalAdmitted > CSV_EXPORT_MAX;
 
     const attendeeIds = rows.map((row) => row.id);
-    const [deviceByAttendee, itemsByAttendee] = await Promise.all([
+    const operatorIds = [
+      ...new Set(rows.map((r) => r.admitted_by).filter((id): id is string => id != null)),
+    ];
+    const [deviceByAttendee, itemsByAttendee, operatorDisplayMap] = await Promise.all([
       loadDeviceIdsByAttendee(db, eventId, attendeeIds),
       loadIssuedItemLabelsByAttendee(db, eventId, attendeeIds),
+      resolveUserDisplayMap(db, operatorIds),
     ]);
 
     const admittedAtHeader = `Admitted at (${timeZone})`;
-    const header = ["Name", "Email", "Ticket type", admittedAtHeader, "Device", "Items"]
+    const header = ["Name", "Email", "Ticket type", admittedAtHeader, "Checked in by", "Device", "Items"]
       .map((col) => quoteCsvCell(col))
       .join(",");
     const dataRows = rows.map((row) =>
@@ -557,6 +688,7 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
         row.email,
         resolveTicketTypeLabel(catalog, row.ticket_type),
         formatAdmittedAtExport(row.admitted_at!, timeZone),
+        resolveOperatorLabel(resolveOperatorFields(row.admitted_by, operatorDisplayMap)),
         deviceByAttendee.get(row.id) ?? "",
         (itemsByAttendee.get(row.id) ?? []).join(", "),
       ]
@@ -571,6 +703,7 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
               `Export truncated: first ${CSV_EXPORT_MAX} of ${totalAdmitted} admissions.`,
             ),
           ),
+          quoteCsvCell(""),
           quoteCsvCell(""),
           quoteCsvCell(""),
           quoteCsvCell(""),
@@ -614,7 +747,7 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
   const logRows = aggregates.admission_log
     .map(
       (r) =>
-        `<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.email)}</td><td>${escapeHtml(resolveTicketTypeLabel(aggregates.ticketTypeCatalog, r.ticket_type))}</td><td>${escapeHtml(formatAdmittedAtExport(new Date(r.admitted_at), timeZone))}</td><td>${escapeHtml(r.device_id ?? "-")}</td><td>${escapeHtml(r.items.join(", ") || "-")}</td></tr>`,
+        `<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.email)}</td><td>${escapeHtml(resolveTicketTypeLabel(aggregates.ticketTypeCatalog, r.ticket_type))}</td><td>${escapeHtml(formatAdmittedAtExport(new Date(r.admitted_at), timeZone))}</td><td>${escapeHtml(resolveCheckedInByLabel(r))}</td><td>${escapeHtml(r.items.join(", ") || "-")}</td></tr>`,
     )
     .join("");
 
@@ -657,7 +790,7 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
   </table>
   <h2>Admission log${aggregates.admittedCount > PDF_LOG_MAX ? ` (first ${PDF_LOG_MAX} of ${aggregates.admittedCount})` : ""}</h2>
   <table>
-    <thead><tr><th>Name</th><th>Email</th><th>Ticket type</th><th>Admitted at</th><th>Device</th><th>Items</th></tr></thead>
+    <thead><tr><th>Name</th><th>Email</th><th>Ticket type</th><th>Admitted at</th><th>Checked in by</th><th>Items</th></tr></thead>
     <tbody>${logRows || '<tr><td colspan="6">No admissions yet</td></tr>'}</tbody>
   </table>
 </body>

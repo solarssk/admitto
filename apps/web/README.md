@@ -43,7 +43,7 @@ Path classification for Cloudflare Access: [`_ops/design/deployment-cloudflare-a
 
 Staff entry smoke matrix (manual QA): [`deploy/staff-entry-smoke-matrix.md`](../../deploy/staff-entry-smoke-matrix.md).
 
-**Rate limits and abuse controls** (full matrix for auditors): [`docs/SECURITY-CONTROLS.md`](../../docs/SECURITY-CONTROLS.md#rate-limiting).
+**Rate limits and abuse controls** (full matrix for auditors): [`docs/security/SECURITY-CONTROLS.md`](../../docs/security/SECURITY-CONTROLS.md#rate-limiting).
 
 ## Tests
 

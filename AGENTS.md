@@ -141,6 +141,31 @@ new file. Avoid hardcoding "current milestone/version" callouts in prose here â€
 `CHANGELOG.md`'s `[Unreleased]` section or the open GitHub milestone instead, so this file can't
 drift out of date.
 
+**User Wiki documentation gate:** `docs/wiki/` is the sole, versioned source for the published
+GitHub Wiki and is the deliberate exception to the fixed-document-set rule above. For every
+human- or AI-authored PR, assess whether a user-visible workflow, role, terminology, availability
+status, or recovery step changed. Update the relevant Wiki source page when it did; otherwise
+complete the `No Wiki update needed` declaration in the PR template with a specific reason. Run
+`npm run docs:check` after changing Wiki source. Do not edit the GitHub Wiki directly: the publish
+workflow replaces it from `docs/wiki/` after merge. Write user guidance in clear English, use only
+synthetic examples, and never publish customer names, personal data, environments, credentials,
+or unsupported operational workarounds.
+
+For workflow pages, use the same reader-facing structure: `What this page helps you do`, `Before
+you start`, `Steps`, `Expected result`, `Important decisions`, `What changes after this action`,
+`Common problems`, and `Related pages`. Reference and landing pages may use a structure that fits
+their purpose. Verify factual instructions against the current `main` UI and domain behaviour;
+the documentation check proves structural consistency, not product correctness.
+
+### Visual documentation
+
+- Use tables to compare roles, statuses, fields, providers, or actions.
+- Use Mermaid only to explain a lifecycle, decision path, scope, or relationship that is harder to understand in a short list.
+- Give every Mermaid diagram a nearby text explanation; it must not be the only source of essential guidance.
+- Use at most one main diagram per page. Keep labels short and never include personal data, secrets, ticket URLs, QR values, customer names, or internal environment details.
+- Use GitHub alerts only for important, risky, or irreversible information. Keep to one or two per page.
+- Use collapsed sections only for optional or advanced detail, never for required steps or warnings.
+
 ## Claude Code
 
 Claude-specific workflow (plan gate, split guidelines): [CLAUDE.md](CLAUDE.md).
