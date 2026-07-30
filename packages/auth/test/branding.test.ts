@@ -10,6 +10,26 @@ describe("sanitizeTheme (branding theme storage validation)", () => {
     expect(sanitizeTheme({ primary: "not-a-color" }).primary).toBeUndefined();
   });
 
+  it("sanitizes ticket_font_family_name the same way as font_family_name, independently", () => {
+    const result = sanitizeTheme({
+      font_family_name: "Admin Sans",
+      ticket_font_family_name: "Ticket Sans",
+    });
+    expect(result.font_family_name).toBe("Admin Sans");
+    expect(result.ticket_font_family_name).toBe("Ticket Sans");
+  });
+
+  it("sanitizes an unsafe ticket_font_family_name instead of rejecting the whole theme", () => {
+    const result = sanitizeTheme({ ticket_font_family_name: "</style><script>1</script>" });
+    expect(result.ticket_font_family_name).toBe("stylescript1script");
+  });
+
+  it("leaves ticket_font_family_name undefined when absent, without affecting font_family_name", () => {
+    const result = sanitizeTheme({ font_family_name: "Admin Sans" });
+    expect(result.font_family_name).toBe("Admin Sans");
+    expect(result.ticket_font_family_name).toBeUndefined();
+  });
+
   it("keeps a validated local /uploads/.../theme/ font path", () => {
     const result = sanitizeTheme({
       font_family_name: "Brand Sans",

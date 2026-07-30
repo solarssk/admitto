@@ -22,8 +22,12 @@ export interface BrandingCustomFontFamily {
 
 export interface BrandingThemeInput {
   primary?: string;
-  /** The active pick - either a built-in name (e.g. "Manrope") or one of custom_font_families[].name. */
+  /** The active pick for the admin staff SPA - either a built-in name (e.g. "Manrope") or one of
+   * custom_font_families[].name. */
   font_family_name?: string;
+  /** The active pick for the public ticket page - same rules as font_family_name, falls back to
+   * it when unset so a single global font remains the default until someone overrides it. */
+  ticket_font_family_name?: string;
   custom_font_families?: BrandingCustomFontFamily[];
 }
 

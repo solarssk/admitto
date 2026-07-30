@@ -35,7 +35,8 @@ function safeHttpsOrigin(url?: string | null): string | null {
 export function buildTicketFontSrc(theme?: BrandingTheme | null): string {
   const parts = ["'self'"];
   const origins = new Set<string>();
-  const activeFamily = theme?.custom_font_families?.find((f) => f.name === theme.font_family_name);
+  const ticketFontName = theme?.ticket_font_family_name ?? theme?.font_family_name;
+  const activeFamily = theme?.custom_font_families?.find((f) => f.name === ticketFontName);
   for (const variant of activeFamily?.variants ?? []) {
     const origin = safeHttpsOrigin(variant.url);
     if (origin) origins.add(origin);

@@ -82,7 +82,11 @@ body.ticket-page { margin: 0; background: var(--surface-page, #f1f5f9); min-heig
 `;
 
 export function buildTicketPageStyles(theme?: BrandingThemeInput | null): string {
-  const vars = resolveThemeVars(theme);
+  // The ticket page has its own font pick, falling back to the admin SPA's when unset - resolve it
+  // once here so everything below (resolveThemeVars, the self-hosting fallback) works with a plain
+  // font_family_name the same way it always has, rather than needing to know about two fields.
+  const ticketTheme = theme ? { ...theme, font_family_name: theme.ticket_font_family_name ?? theme.font_family_name } : theme;
+  const vars = resolveThemeVars(ticketTheme);
   // resolveThemeVars only sets fontFaceCss for a *custom* uploaded family - the ticket page has no
   // bundler and so never gets the admin SPA's own @fontsource CSS imports (fonts.css) for a
   // built-in pick (Inter/Manrope/Space Grotesk/IBM Plex Sans). Self-host that one here instead; an
@@ -92,7 +96,7 @@ export function buildTicketPageStyles(theme?: BrandingThemeInput | null): string
   // the active pick, so the admin SPA always has it as a working base; mirror that here rather
   // than silently rendering with no self-hosted face at all.
   if (!vars.fontFaceCss) {
-    const fontName = sanitizeBrandingFontFamilyName(theme?.font_family_name ?? "") ?? "Inter";
+    const fontName = sanitizeBrandingFontFamilyName(ticketTheme?.font_family_name ?? "") ?? "Inter";
     vars.fontFaceCss = builtInFontFaceCss(fontName) ?? builtInFontFaceCss("Inter");
   }
   return `${themeVarsToStyleBlock(vars)}\n${TICKET_LAYOUT_CSS}`;

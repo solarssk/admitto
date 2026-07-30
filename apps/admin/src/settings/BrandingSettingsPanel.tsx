@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { applyThemeVars, Button, Card, IconButton, Input, useToast } from "@admitto/ui";
+import { applyThemeVars, Button, Card, IconButton, Input, Select, useToast } from "@admitto/ui";
 import { fetchOrgBranding, fetchStaffTheme, patchOrgBranding, saveStaffTheme } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { BrandingCustomFontFamilyDto, BrandingThemeDto, SetupOrgBrandingDto } from "../api/types.js";
@@ -53,6 +53,13 @@ const FONT_OPTIONS = [
 // rather than persisting it, so the picker has to stop offering "Custom font" at the same limit
 // instead of letting someone upload a family that then silently never gets saved.
 const MAX_CUSTOM_FONT_FAMILIES = 8;
+
+// `.at-select` defaults to width: 100%, which inside a `.settings-row` flex row would fight the
+// label/hint block on the left for space instead of sitting as a compact, right-aligned control -
+// `width: auto` overrides that (inline styles win over the class), `flexShrink: 0` stops the row's
+// own flex algorithm from squeezing it, and `minWidth` keeps all three rows' controls a consistent
+// size regardless of which option happens to be selected.
+const FONT_SURFACE_SELECT_STYLE = { width: "auto", minWidth: 160, flexShrink: 0 } as const;
 
 function darken(hex: string, amount: number): string {
   const n = Number.parseInt(hex.slice(1), 16);
@@ -127,7 +134,7 @@ function ColorPaletteField({
 
 /** Small "N styles" pill — click reveals the exact list in a popover instead of inlining chips
  * into the card (keeps every font tile the same height). */
-function FontStylesPill({ styles, active }: Readonly<{ styles: readonly string[]; active: boolean }>) {
+function FontStylesPill({ styles }: Readonly<{ styles: readonly string[] }>) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -144,7 +151,7 @@ function FontStylesPill({ styles, active }: Readonly<{ styles: readonly string[]
     <div className="font-styles-pill-wrap" ref={ref}>
       <button
         type="button"
-        className={`font-styles-pill${active ? " font-styles-pill--active" : ""}`}
+        className="font-styles-pill"
         onClick={(e) => {
           e.stopPropagation();
           setOpen((v) => !v);
@@ -168,24 +175,21 @@ function FontStylesPill({ styles, active }: Readonly<{ styles: readonly string[]
 }
 
 interface FontPickerFieldProps {
-  readonly activeName: string | undefined;
   readonly customFamilies: readonly BrandingCustomFontFamilyDto[];
   readonly disabled: boolean;
-  readonly onPickBuiltIn: (name: string | undefined) => void;
-  readonly onSelectCustom: (name: string) => void;
   readonly onEditCustom: (name: string) => void;
   readonly onDeleteCustom: (name: string) => void;
   readonly onOpenFamilyModal: () => void;
 }
 
 /** 4 built-in fonts (each shown rendered in itself) + every saved custom family + a tile that
- * opens the font-family upload modal to add another custom brand font. */
+ * opens the font-family upload modal to add another custom brand font. A pure library: browse,
+ * upload, edit, remove - picking which one applies to which surface happens only via the
+ * Font-by-surface selects below, not by clicking a tile here, so there's exactly one mechanism
+ * for "change the font" instead of two that could disagree. */
 function FontPickerField({
-  activeName,
   customFamilies,
   disabled,
-  onPickBuiltIn,
-  onSelectCustom,
   onEditCustom,
   onDeleteCustom,
   onOpenFamilyModal,
@@ -193,58 +197,45 @@ function FontPickerField({
   return (
     <div className="font-option-grid">
       {FONT_OPTIONS.map((f) => (
-        <div key={f.key} className={`font-option-card${activeName === f.name ? " font-option-card--active" : ""}`}>
-          <button
-            type="button"
-            className="font-option-card__select"
-            disabled={disabled}
-            onClick={() => onPickBuiltIn(f.name)}
-          >
+        <div key={f.key} className="font-option-card">
+          <div className="font-option-card__select">
             <span className="font-option-card__sample" style={{ fontFamily: f.previewStack }}>
               Aa
             </span>
             <span className="font-option-card__label">{f.label}</span>
             <span className="font-option-card__hint">{f.hint}</span>
-          </button>
-          <FontStylesPill styles={f.styles} active={activeName === f.name} />
+          </div>
+          <FontStylesPill styles={f.styles} />
         </div>
       ))}
-      {customFamilies.map((fam) => {
-        const active = activeName === fam.name;
-        return (
-          <div key={fam.name} className={`font-option-card font-option-card--custom${active ? " font-option-card--active" : ""}`}>
-            <button
-              type="button"
-              className="font-option-card__select"
-              disabled={disabled}
-              onClick={() => onSelectCustom(fam.name)}
-            >
-              <span className="font-option-card__sample" style={{ fontFamily: `"${fam.name}"` }}>
-                Aa
-              </span>
-              <span className="font-option-card__label">{fam.name}</span>
-              <span className="font-option-card__hint">Custom</span>
-            </button>
-            <FontStylesPill styles={fam.variants.map((v) => styleLabel(v.weight, v.style))} active={active} />
-            <IconButton
-              icon={<i className="ti ti-pencil" aria-hidden="true" />}
-              label={`Edit ${fam.name}`}
-              size="sm"
-              className="font-option-card__edit"
-              disabled={disabled}
-              onClick={() => onEditCustom(fam.name)}
-            />
-            <IconButton
-              icon={<i className="ti ti-trash" aria-hidden="true" />}
-              label={`Remove ${fam.name}`}
-              size="sm"
-              className="font-option-card__remove"
-              disabled={disabled}
-              onClick={() => onDeleteCustom(fam.name)}
-            />
+      {customFamilies.map((fam) => (
+        <div key={fam.name} className="font-option-card font-option-card--custom">
+          <div className="font-option-card__select">
+            <span className="font-option-card__sample" style={{ fontFamily: `"${fam.name}"` }}>
+              Aa
+            </span>
+            <span className="font-option-card__label">{fam.name}</span>
+            <span className="font-option-card__hint">Custom</span>
           </div>
-        );
-      })}
+          <FontStylesPill styles={fam.variants.map((v) => styleLabel(v.weight, v.style))} />
+          <IconButton
+            icon={<i className="ti ti-pencil" aria-hidden="true" />}
+            label={`Edit ${fam.name}`}
+            size="sm"
+            className="font-option-card__edit"
+            disabled={disabled}
+            onClick={() => onEditCustom(fam.name)}
+          />
+          <IconButton
+            icon={<i className="ti ti-trash" aria-hidden="true" />}
+            label={`Remove ${fam.name}`}
+            size="sm"
+            className="font-option-card__remove"
+            disabled={disabled}
+            onClick={() => onDeleteCustom(fam.name)}
+          />
+        </div>
+      ))}
       {customFamilies.length < MAX_CUSTOM_FONT_FAMILIES ? (
         <button type="button" className="font-option-card font-option-card--upload" disabled={disabled} onClick={onOpenFamilyModal}>
           <i className="ti ti-upload font-option-card__uploadicon" aria-hidden="true" />
@@ -260,6 +251,39 @@ function FontPickerField({
       )}
     </div>
   );
+}
+
+type FontSurface = "admin" | "ticket";
+
+interface ResolvedFontInfo {
+  readonly activeCustomFamily: BrandingCustomFontFamilyDto | undefined;
+  readonly activeBuiltIn: (typeof FONT_OPTIONS)[number] | undefined;
+  readonly activeFontLabel: string;
+  readonly fontStack: string;
+  readonly hasBoldVariant: boolean;
+  readonly hasItalicVariant: boolean;
+}
+
+/** Derives everything the live preview needs for the active (Admin panel) font pick. */
+function resolveFontInfo(
+  fontFamilyName: string | undefined,
+  customFamilies: readonly BrandingCustomFontFamilyDto[],
+): ResolvedFontInfo {
+  const activeCustomFamily = customFamilies.find((f) => f.name === fontFamilyName);
+  const activeBuiltIn = FONT_OPTIONS.find((f) => f.name === fontFamilyName);
+  const activeFontLabel = activeBuiltIn?.label ?? fontFamilyName ?? "Admitto Sans";
+  const fontStack = fontFamilyName ? `"${fontFamilyName}", Inter, system-ui, sans-serif` : "var(--font-sans)";
+  // A built-in pick without a custom family active still needs its own real styles checked -
+  // Manrope/Space Grotesk have no italic file at all, so defaulting to true here (as if every
+  // built-in had all four styles) would hide the "browser is faking it" hint exactly where it's
+  // most needed, the same dishonesty FONT_OPTIONS.styles exists to avoid in the picker itself.
+  const hasBoldVariant = activeCustomFamily
+    ? activeCustomFamily.variants.some((v) => v.weight >= 700)
+    : (activeBuiltIn?.styles.includes("Bold") ?? true);
+  const hasItalicVariant = activeCustomFamily
+    ? activeCustomFamily.variants.some((v) => v.style === "italic")
+    : (activeBuiltIn?.styles.some((s) => s.toLowerCase().includes("italic")) ?? true);
+  return { activeCustomFamily, activeBuiltIn, activeFontLabel, fontStack, hasBoldVariant, hasItalicVariant };
 }
 
 /** Combined Organisation branding (name/logo) + Theme (colour/font) settings, one shared
@@ -407,15 +431,18 @@ export function BrandingSettingsPanel() {
     setThemeDraft((prev) => ({ ...prev, primary: hex }));
   };
 
-  /** Picking a built-in font only ever changes the *active* pick - the saved custom-font library
-   * (custom_font_families) is untouched, so switching back to a custom family later needs no
-   * re-upload. */
-  const handlePickBuiltInFont = (name: string | undefined) => {
-    setThemeDraft((prev) => ({ ...prev, font_family_name: name }));
+  /** Picking a font (built-in or a saved custom family, from a Font-by-surface select) only ever
+   * changes the *active* pick for that one surface - the saved custom-font library
+   * (custom_font_families) is untouched and shared, so switching to it later, on either surface,
+   * needs no re-upload. */
+  const handleSetSurfaceFont = (surface: FontSurface, name: string | undefined) => {
+    setThemeDraft((prev) =>
+      surface === "admin" ? { ...prev, font_family_name: name } : { ...prev, ticket_font_family_name: name },
+    );
   };
 
-  const handleSelectCustomFamily = (name: string) => {
-    setThemeDraft((prev) => ({ ...prev, font_family_name: name }));
+  const handleOpenFamilyModal = () => {
+    setFamilyModalOpen(true);
   };
 
   const handleEditCustomFamily = (name: string) => {
@@ -431,17 +458,22 @@ export function BrandingSettingsPanel() {
   /** Saving upserts the family into the library by its (possibly new) name - re-saving under an
    * existing name replaces that entry rather than duplicating it, and renaming one mid-edit drops
    * its old name entirely rather than leaving both around. A brand new family always becomes the
-   * active pick; editing an existing one only keeps that status if it already had it, so fixing
-   * up a saved-but-inactive family's files doesn't switch the org's live font out from under it. */
+   * Admin panel's active pick (the only upload entry point); editing an existing one keeps each
+   * surface's own active status independently - if the same family was also active for Ticket
+   * page (the common case, since ticket falls back to admin by default), renaming it keeps that
+   * in sync too, not just Admin panel's. */
   const handleFamilySaved = ({ familyName, variants }: { familyName: string; variants: BrandingCustomFontFamilyDto["variants"] }) => {
     setThemeDraft((prev) => {
-      const wasActive = editingFamilyName !== null && prev.font_family_name === editingFamilyName;
+      const isNewFamily = editingFamilyName === null;
+      const wasAdminActive = !isNewFamily && prev.font_family_name === editingFamilyName;
+      const wasTicketActive = !isNewFamily && prev.ticket_font_family_name === editingFamilyName;
       const withoutOldEntry = (prev.custom_font_families ?? []).filter(
         (f) => f.name !== familyName && f.name !== editingFamilyName,
       );
       return {
         ...prev,
-        font_family_name: editingFamilyName === null || wasActive ? familyName : prev.font_family_name,
+        font_family_name: isNewFamily || wasAdminActive ? familyName : prev.font_family_name,
+        ticket_font_family_name: wasTicketActive ? familyName : prev.ticket_font_family_name,
         custom_font_families: [...withoutOldEntry, { name: familyName, variants }],
       };
     });
@@ -449,16 +481,19 @@ export function BrandingSettingsPanel() {
     addToast(`Saved "${familyName}" with ${variants.length} variant${variants.length === 1 ? "" : "s"}.`, "success");
   };
 
-  /** Removing a family that's currently active falls back to the default built-in font, since
-   * its @font-face source is gone. A family that's merely saved (not active) can be removed with
-   * no other effect. */
+  /** Removing a family that's currently active for a surface falls back that surface to its own
+   * default (admin: the built-in Admitto Sans; ticket: back to following admin's own pick), each
+   * checked independently since the same family can be active for both, one, or neither. A family
+   * that's merely saved (not active anywhere) can be removed with no other effect. */
   const handleDeleteCustomFamily = (name: string) => {
     setThemeDraft((prev) => {
       const remaining = (prev.custom_font_families ?? []).filter((f) => f.name !== name);
-      const wasActive = prev.font_family_name === name;
+      const wasAdminActive = prev.font_family_name === name;
+      const wasTicketActive = prev.ticket_font_family_name === name;
       return {
         ...prev,
-        font_family_name: wasActive ? undefined : prev.font_family_name,
+        font_family_name: wasAdminActive ? undefined : prev.font_family_name,
+        ticket_font_family_name: wasTicketActive ? undefined : prev.ticket_font_family_name,
         custom_font_families: remaining.length > 0 ? remaining : undefined,
       };
     });
@@ -478,6 +513,7 @@ export function BrandingSettingsPanel() {
       ...prev,
       primary: undefined,
       font_family_name: undefined,
+      ticket_font_family_name: undefined,
     }));
   };
 
@@ -554,23 +590,8 @@ export function BrandingSettingsPanel() {
   const paletteHex = primaryForColorInput(THEME_COLORS.find((c) => c.key === colorKey)?.hex);
   const customHexOrFallback = isValidHex(customHex) ? customHex : "#066fd1";
   const activeHex = colorMode === "custom" ? customHexOrFallback : paletteHex;
-  const activeFontStack = themeDraft.font_family_name
-    ? `"${themeDraft.font_family_name}", Inter, system-ui, sans-serif`
-    : "var(--font-sans)";
   const customFamilies = themeDraft.custom_font_families ?? [];
-  const activeCustomFamily = customFamilies.find((f) => f.name === themeDraft.font_family_name);
-  const activeBuiltIn = FONT_OPTIONS.find((f) => f.name === themeDraft.font_family_name);
-  const activeFontLabel = activeBuiltIn?.label ?? themeDraft.font_family_name ?? "Admitto Sans";
-  // A built-in pick without a custom family active still needs its own real styles checked -
-  // Manrope/Space Grotesk have no italic file at all, so defaulting to true here (as if every
-  // built-in had all four styles) would hide the "browser is faking it" hint exactly where it's
-  // most needed, the same dishonesty FONT_OPTIONS.styles exists to avoid in the picker itself.
-  const hasBoldVariant = activeCustomFamily
-    ? activeCustomFamily.variants.some((v) => v.weight >= 700)
-    : (activeBuiltIn?.styles.includes("Bold") ?? true);
-  const hasItalicVariant = activeCustomFamily
-    ? activeCustomFamily.variants.some((v) => v.style === "italic")
-    : (activeBuiltIn?.styles.some((s) => s.toLowerCase().includes("italic")) ?? true);
+  const adminFont = resolveFontInfo(themeDraft.font_family_name, customFamilies);
 
   if (loading) {
     return showLoading ? (
@@ -627,8 +648,8 @@ export function BrandingSettingsPanel() {
         }
       >
         <p className="at-hint branding-scope-hint">
-          Instance-wide accent colour and font for staff UI and public ticket pages. Ticket logos
-          are set in Organisation branding above, not here.
+          Instance-wide accent colour, plus a font for each surface below. Ticket logos are set in
+          Organisation branding above, not here.
         </p>
         <span className="at-label" id="branding-primary-label">
           Primary colour
@@ -665,28 +686,110 @@ export function BrandingSettingsPanel() {
           Font
         </span>
         <p className="at-hint branding-scope-hint" style={{ marginBottom: 8 }}>
-          {activeFontLabel}. Used across the staff app and public ticket pages.
+          Built-in fonts, plus any you upload. Assign one to each surface below.
         </p>
         <div aria-labelledby="branding-font-label">
           <FontPickerField
-            activeName={themeDraft.font_family_name}
             customFamilies={customFamilies}
             disabled={formDisabled}
-            onPickBuiltIn={handlePickBuiltInFont}
-            onSelectCustom={handleSelectCustomFamily}
             onEditCustom={handleEditCustomFamily}
             onDeleteCustom={setPendingDeleteFamilyName}
-            onOpenFamilyModal={() => setFamilyModalOpen(true)}
+            onOpenFamilyModal={handleOpenFamilyModal}
           />
         </div>
+        {themeFieldErrors.font_family_name && (
+          <p className="text-error" role="alert">
+            {themeFieldErrors.font_family_name}
+          </p>
+        )}
         {themeFieldErrors.custom_font_families && (
           <p className="text-error" role="alert">
             {themeFieldErrors.custom_font_families}
           </p>
         )}
-        {themeFieldErrors.font_family_name && (
+
+        <span className="at-label" id="branding-font-surface-label" style={{ marginTop: 20, display: "block" }}>
+          Font by surface
+        </span>
+        <p className="at-hint branding-scope-hint" style={{ marginBottom: 8 }}>
+          Use a different font for each surface, or the same one everywhere.
+        </p>
+        <div aria-labelledby="branding-font-surface-label">
+          <div className="settings-row">
+            <div className="settings-row__text">
+              <strong>Admin panel</strong>
+              <p>Staff dashboard, tables, and settings, applied live to this app.</p>
+            </div>
+            <Select
+              id="branding-font-admin-select"
+              name="branding-font-admin"
+              aria-label="Admin panel font"
+              value={themeDraft.font_family_name ?? ""}
+              disabled={formDisabled}
+              style={FONT_SURFACE_SELECT_STYLE}
+              onChange={(e) => handleSetSurfaceFont("admin", e.target.value || undefined)}
+            >
+              {FONT_OPTIONS.map((f) => (
+                <option key={f.key} value={f.name ?? ""}>
+                  {f.label}
+                </option>
+              ))}
+              {customFamilies.map((f) => (
+                <option key={f.name} value={f.name}>
+                  {f.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <div className="settings-row">
+            <div className="settings-row__text">
+              <strong>Registration form</strong>
+              <p>The public sign-up page attendees would fill in.</p>
+            </div>
+            <Select
+              id="branding-font-registration-select"
+              name="branding-font-registration"
+              aria-label="Registration form font"
+              defaultValue=""
+              disabled
+              style={FONT_SURFACE_SELECT_STYLE}
+            >
+              <option value="">Not available yet</option>
+            </Select>
+          </div>
+
+          <div className="settings-row" style={{ borderBottom: 0, paddingBottom: 0 }}>
+            <div className="settings-row__text">
+              <strong>Ticket page</strong>
+              <p>The public ticket page attendees open after check-in.</p>
+            </div>
+            <Select
+              id="branding-font-ticket-select"
+              name="branding-font-ticket"
+              aria-label="Ticket page font"
+              value={themeDraft.ticket_font_family_name ?? ""}
+              disabled={formDisabled}
+              style={FONT_SURFACE_SELECT_STYLE}
+              onChange={(e) => handleSetSurfaceFont("ticket", e.target.value || undefined)}
+            >
+              <option value="">Same as Admin panel</option>
+              {FONT_OPTIONS.filter((f) => f.name !== undefined).map((f) => (
+                <option key={f.key} value={f.name}>
+                  {f.label}
+                </option>
+              ))}
+              {customFamilies.map((f) => (
+                <option key={f.name} value={f.name}>
+                  {f.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </div>
+        {themeFieldErrors.ticket_font_family_name && (
           <p className="text-error" role="alert">
-            {themeFieldErrors.font_family_name}
+            {themeFieldErrors.ticket_font_family_name}
           </p>
         )}
 
@@ -709,48 +812,48 @@ export function BrandingSettingsPanel() {
 
         <div className="theme-preview">
           <span className="at-label">Live preview</span>
-          <span className="at-hint">How your colour and font choices look together.</span>
-          <div className="theme-preview__bar" style={{ background: activeHex, fontFamily: activeFontStack }}>
+          <span className="at-hint branding-scope-hint">How your colour and font choices look together.</span>
+          <div className="theme-preview__bar" style={{ background: activeHex, fontFamily: adminFont.fontStack }}>
             <span>Primary</span>
             <span>{colorMode === "custom" ? customHex : "default"}</span>
           </div>
           <div className="theme-preview__row">
             <div
               className="theme-preview__bar theme-preview__bar--sm"
-              style={{ background: darken(activeHex, 24), fontFamily: activeFontStack }}
+              style={{ background: darken(activeHex, 24), fontFamily: adminFont.fontStack }}
             >
               hover
             </div>
             <div
               className="theme-preview__tint"
-              style={{ background: `${activeHex}1a`, color: activeHex, fontFamily: activeFontStack }}
+              style={{ background: `${activeHex}1a`, color: activeHex, fontFamily: adminFont.fontStack }}
             >
               Tint
             </div>
           </div>
           <div className="theme-preview__controls">
-            <button type="button" className="theme-preview__btn" style={{ background: activeHex, fontFamily: activeFontStack }}>
+            <button type="button" className="theme-preview__btn" style={{ background: activeHex, fontFamily: adminFont.fontStack }}>
               Primary action
             </button>
             <button
               type="button"
               className="theme-preview__btn theme-preview__btn--outline"
-              style={{ fontFamily: activeFontStack }}
+              style={{ fontFamily: adminFont.fontStack }}
             >
               Secondary
             </button>
-            <span className="theme-preview__badge" style={{ fontFamily: activeFontStack }}>
+            <span className="theme-preview__badge" style={{ fontFamily: adminFont.fontStack }}>
               Neutral badge
             </span>
           </div>
-          <p className="theme-preview__sample" style={{ fontFamily: activeFontStack }}>
+          <p className="theme-preview__sample" style={{ fontFamily: adminFont.fontStack }}>
             The quick brown fox jumps over the lazy dog.
           </p>
           <div className="theme-preview__variants">
-            <span style={{ fontFamily: activeFontStack, fontWeight: 400 }}>Regular Aa</span>
-            <span style={{ fontFamily: activeFontStack, fontWeight: 700 }}>
+            <span style={{ fontFamily: adminFont.fontStack, fontWeight: 400 }}>Regular Aa</span>
+            <span style={{ fontFamily: adminFont.fontStack, fontWeight: 700 }}>
               Bold Aa
-              {!hasBoldVariant && (
+              {!adminFont.hasBoldVariant && (
                 <i
                   className="ti ti-info-circle theme-preview__faux"
                   aria-hidden="true"
@@ -758,9 +861,9 @@ export function BrandingSettingsPanel() {
                 />
               )}
             </span>
-            <span style={{ fontFamily: activeFontStack, fontStyle: "italic" }}>
+            <span style={{ fontFamily: adminFont.fontStack, fontStyle: "italic" }}>
               Italic Aa
-              {!hasItalicVariant && (
+              {!adminFont.hasItalicVariant && (
                 <i
                   className="ti ti-info-circle theme-preview__faux"
                   aria-hidden="true"

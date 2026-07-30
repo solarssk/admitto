@@ -19,8 +19,12 @@ export interface BrandingCustomFontFamily {
 
 export interface BrandingTheme {
   primary?: string;
-  /** The active pick - either a built-in name (e.g. "Manrope") or one of custom_font_families[].name. */
+  /** The active pick for the admin staff SPA - either a built-in name (e.g. "Manrope") or one of
+   * custom_font_families[].name. */
   font_family_name?: string;
+  /** The active pick for the public ticket page - same rules as font_family_name, falls back to
+   * it when unset so a single global font remains the default until someone overrides it. */
+  ticket_font_family_name?: string;
   custom_font_families?: BrandingCustomFontFamily[];
 }
 
@@ -139,8 +143,12 @@ function sanitizeTheme(raw: unknown): BrandingTheme {
     typeof o.font_family_name === "string"
       ? sanitizeBrandingFontFamilyName(o.font_family_name)
       : undefined;
+  const ticket_font_family_name =
+    typeof o.ticket_font_family_name === "string"
+      ? sanitizeBrandingFontFamilyName(o.ticket_font_family_name)
+      : undefined;
   const custom_font_families = sanitizeCustomFontFamilies(o.custom_font_families) ?? migrateLegacyFontUrl(o);
-  return { primary, font_family_name, custom_font_families };
+  return { primary, font_family_name, ticket_font_family_name, custom_font_families };
 }
 
 /** Load branding theme from SystemSettings (env > DB > default). */
