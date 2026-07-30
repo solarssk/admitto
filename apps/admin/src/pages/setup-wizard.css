@@ -343,32 +343,10 @@
 }
 
 .setup-wizard__check-error-banner {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
   margin-top: 0.75rem;
-  padding: 0.625rem 0.75rem;
-  background: var(--status-error-tint, #fef2f2);
-  border: 1px solid var(--status-error);
-  border-radius: var(--radius, 0.5rem);
-}
-
-.setup-wizard__check-error-banner > i {
-  color: var(--status-error);
-  font-size: 1.0625rem;
-  flex: none;
-}
-
-.setup-wizard__check-error-banner p {
-  margin: 0;
-  flex: 1;
-  font-size: 0.875rem;
-  color: var(--status-error);
-  line-height: 1.45;
 }
 
 .setup-wizard__check-retry {
-  flex: none;
   border-color: var(--status-error) !important;
   color: var(--status-error) !important;
 }
