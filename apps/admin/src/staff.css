@@ -4758,9 +4758,9 @@ output.mail-field-hint {
   border-radius: var(--radius-sm);
   background: linear-gradient(
     90deg,
-    var(--surface-muted, #f4f4f5) 25%,
-    var(--surface-elevated, #fafafa) 50%,
-    var(--surface-muted, #f4f4f5) 75%
+    var(--surface-muted) 25%,
+    var(--surface-elevated) 50%,
+    var(--surface-muted) 75%
   );
   background-size: 200% 100%;
   animation: audit-log-shimmer 1.2s ease-in-out infinite;
@@ -4832,7 +4832,7 @@ output.mail-field-hint {
   max-height: 12rem;
   overflow: auto;
   font-size: var(--fs-xs, 0.75rem);
-  background: var(--surface-elevated, #fafafa);
+  background: var(--surface-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-md);

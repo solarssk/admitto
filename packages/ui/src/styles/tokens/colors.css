@@ -60,6 +60,8 @@
   --surface-page:      var(--at-gray-100);   /* app background */
   --surface-card:      #ffffff;              /* cards, panels, table rows */
   --surface-sunken:    var(--at-gray-50);    /* table headers, wells */
+  --surface-muted:     var(--at-gray-50);    /* note/hint panels, form-section wells, skeleton shimmer base */
+  --surface-elevated:  var(--surface-card);  /* skeleton shimmer highlight sweep */
   --surface-inverse:   var(--at-ink);        /* dark scan view, tooltips */
   --surface-hover:     var(--at-gray-50);    /* row / item hover */
 
