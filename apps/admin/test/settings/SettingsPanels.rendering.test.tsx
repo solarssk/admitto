@@ -19,6 +19,7 @@ import {
   fetchSecurityAuditLog,
   fetchSessions,
   fetchSystemLogs,
+  updateSessionDeviceLabel,
 } from "../../src/api/client.js";
 import { AuditLogPanel } from "../../src/settings/AuditLogPanel.js";
 import { SessionsPanel } from "../../src/settings/SessionsPanel.js";
@@ -36,6 +37,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     exportSecurityAuditLog: vi.fn(),
     fetchSessions: vi.fn(),
     fetchSystemLogs: vi.fn(),
+    updateSessionDeviceLabel: vi.fn(),
   };
 });
 
@@ -2248,6 +2250,54 @@ describe("SessionsPanel rendering", () => {
     fireEvent.click(within(withoutDeviceRow!).getByRole("button", { name: "Revoke" }));
     const withoutDeviceDialog = await screen.findByRole("dialog");
     expect(withoutDeviceDialog.textContent).toContain("plain@example.com? Last active");
+  });
+
+  it("Edit opens a dialog prefilled with the current device label; Save is disabled until it changes", async () => {
+    vi.mocked(fetchSessions).mockResolvedValue({
+      sessions: [
+        makeSession({ id: "with-device", userEmail: "device@example.com", deviceLabel: "Desk iPad" }),
+      ],
+    });
+
+    renderWithToast(<SessionsPanel />);
+
+    await screen.findByRole("table");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const dialog = await screen.findByRole("dialog");
+    const input = within(dialog).getByLabelText("Device label") as HTMLInputElement;
+    expect(input.value).toBe("Desk iPad");
+    const saveButton = within(dialog).getByRole("button", { name: "Save" }) as HTMLButtonElement;
+    expect(saveButton.disabled).toBe(true);
+
+    fireEvent.change(input, { target: { value: "Desk iPad 2" } });
+    expect(saveButton.disabled).toBe(false);
+  });
+
+  it("saving a changed device label calls the API with the trimmed value and reloads the list", async () => {
+    vi.mocked(fetchSessions).mockResolvedValue({
+      sessions: [
+        makeSession({ id: "with-device", userEmail: "device@example.com", deviceLabel: "Desk iPad" }),
+      ],
+    });
+    vi.mocked(updateSessionDeviceLabel).mockResolvedValueOnce({ deviceLabel: "Fixed Label" });
+
+    renderWithToast(<SessionsPanel />);
+
+    await screen.findByRole("table");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Device label"), {
+      target: { value: "  Fixed Label  " },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(updateSessionDeviceLabel).toHaveBeenCalledWith("with-device", "Fixed Label");
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(fetchSessions).toHaveBeenCalledTimes(2);
   });
 
   it("labels IP addresses explicitly and keeps a missing address distinct from relative activity", async () => {

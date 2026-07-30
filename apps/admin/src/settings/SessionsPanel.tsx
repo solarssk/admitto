@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, Card, useToast } from "@admitto/ui";
+import { Badge, Button, Card, Input, useToast } from "@admitto/ui";
 import {
   fetchAdminEvents,
   fetchSessions,
   revokeAllOperatorSessions,
   revokeSessionById,
+  updateSessionDeviceLabel,
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto, SessionListDto } from "../api/types.js";
@@ -68,6 +69,10 @@ export function SessionsPanel() {
   const [confirmTarget, setConfirmTarget] = useState<SessionListDto | null>(null);
   const [revoking, setRevoking] = useState(false);
 
+  const [editTarget, setEditTarget] = useState<SessionListDto | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+
   const [events, setEvents] = useState<EventDto[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
@@ -113,6 +118,22 @@ export function SessionsPanel() {
       addToast(operatorApiErrorMessage(err, "Failed to revoke session."), "error");
     } finally {
       setRevoking(false);
+    }
+  };
+
+  const handleEditSave = async () => {
+    if (!editTarget) return;
+    setEditSaving(true);
+    try {
+      const trimmed = editValue.trim();
+      await updateSessionDeviceLabel(editTarget.id, trimmed.length > 0 ? trimmed : null);
+      setEditTarget(null);
+      addToast("Device label updated.", "success");
+      await load();
+    } catch (err) {
+      addToast(operatorApiErrorMessage(err, "Failed to update device label."), "error");
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -217,24 +238,36 @@ export function SessionsPanel() {
                     <td>{formatRelativeTime(s.lastSeenAt)}</td>
                     <td>{s.authMethod === "oidc" ? "OIDC" : "Local"}</td>
                     <td>
-                      {s.isCurrent ? (
+                      <div className="sessions-row-actions">
                         <Button
                           type="button"
-                          variant="danger"
-                          disabled
-                          title="You cannot revoke your own session"
+                          variant="secondary"
+                          onClick={() => {
+                            setEditTarget(s);
+                            setEditValue(s.deviceLabel ?? "");
+                          }}
                         >
-                          Revoke
+                          Edit
                         </Button>
-                      ) : (
-                        <Button
-                          type="button"
-                          variant="danger"
-                          onClick={() => setConfirmTarget(s)}
-                        >
-                          Revoke
-                        </Button>
-                      )}
+                        {s.isCurrent ? (
+                          <Button
+                            type="button"
+                            variant="danger"
+                            disabled
+                            title="You cannot revoke your own session"
+                          >
+                            Revoke
+                          </Button>
+                        ) : (
+                          <Button
+                            type="button"
+                            variant="danger"
+                            onClick={() => setConfirmTarget(s)}
+                          >
+                            Revoke
+                          </Button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -295,6 +328,32 @@ export function SessionsPanel() {
           if (!revoking) setConfirmTarget(null);
         }}
       />
+
+      <ConfirmDialog
+        open={!!editTarget}
+        title="Edit device label"
+        message={
+          editTarget
+            ? `Correct the device label for ${editTarget.userEmail}${editTarget.deviceLabel ? ` (currently "${editTarget.deviceLabel}")` : ""}.`
+            : ""
+        }
+        confirmLabel="Save"
+        loading={editSaving}
+        disableConfirm={editValue.trim() === (editTarget?.deviceLabel ?? "")}
+        onConfirm={() => void handleEditSave()}
+        onCancel={() => {
+          if (!editSaving) setEditTarget(null);
+        }}
+      >
+        <Input
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          maxLength={120}
+          placeholder="Tablet 1, main entrance"
+          autoComplete="off"
+          aria-label="Device label"
+        />
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={bulkConfirmOpen}

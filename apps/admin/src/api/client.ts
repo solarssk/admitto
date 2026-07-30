@@ -1451,6 +1451,17 @@ export async function revokeSessionById(sessionId: string): Promise<void> {
   await parseJson<unknown>(res);
 }
 
+export async function updateSessionDeviceLabel(
+  sessionId: string,
+  deviceLabel: string | null,
+): Promise<{ deviceLabel: string | null }> {
+  const res = await fetch(
+    `/api/admin/sessions/${sessionId}/device-label`,
+    jsonPostInit({ deviceLabel }),
+  );
+  return parseJson(res);
+}
+
 export async function revokeAllOperatorSessions(
   eventId: string,
 ): Promise<{ revokedCount: number }> {

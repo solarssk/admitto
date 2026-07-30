@@ -5,6 +5,8 @@ import {
   revokeSession,
   revokeAllOperatorSessionsForEvent,
   runInTransaction,
+  updateSessionDeviceLabel,
+  DEVICE_LABEL_MAX_LEN,
 } from "@admitto/auth";
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog } from "@admitto/shared/system-log";
@@ -128,6 +130,79 @@ export async function handleRevokeSession(c: Context, db: PrismaClient): Promise
   }
 
   return c.json({}, 200);
+}
+
+/** POST /api/admin/sessions/:id/device-label — correct a session's device label (typo fix).
+ * 404 if the session doesn't exist; 409 if it exists but is no longer editable (revoked, expired,
+ * or not full-stage) - updateSessionDeviceLabel's own guard already covers this, this just turns
+ * its boolean into a response the UI can distinguish from success. Superadmin only. */
+export async function handleUpdateSessionDeviceLabel(c: Context, db: PrismaClient): Promise<Response> {
+  const denied = await requireSuperadmin(c, db);
+  if (denied) return denied;
+
+  const id = c.req.param("id") ?? "";
+  if (!id) return c.json({ error: "session id required" }, 400);
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid_json" }, 400);
+  }
+
+  const raw =
+    body && typeof body === "object" && "deviceLabel" in body
+      ? (body as { deviceLabel?: unknown }).deviceLabel
+      : undefined;
+
+  if (raw !== undefined && raw !== null && typeof raw !== "string") {
+    return c.json({ error: "invalid_device_label" }, 400);
+  }
+
+  const label = typeof raw === "string" ? raw.trim() : "";
+  if (label.length > DEVICE_LABEL_MAX_LEN) {
+    return c.json({ error: "device_label_too_long" }, 400);
+  }
+
+  const row = await db.session.findUnique({
+    where: { id },
+    select: { user_id: true, device_label: true, user: { select: { email: true } } },
+  });
+  if (!row) return c.json({ error: "not_found" }, 404);
+
+  const newLabel = label.length > 0 ? label : null;
+  const ok = await updateSessionDeviceLabel(db, id, row.user_id, newLabel);
+  if (!ok) return c.json({ error: "session_not_editable" }, 409);
+
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
+  const actorUserId = audit.operator ?? c.get("auth").userId;
+  await writeAdminAuditLog(db, {
+    organizationId: orgId,
+    actorUserId,
+    sessionId: audit.sessionId,
+    ip: audit.ip,
+    timezone: audit.timezone,
+    actionType: "session_device_label_updated",
+    metadata: {
+      session_id: id,
+      target_user_id: row.user_id,
+      previous_label: row.device_label,
+      new_label: newLabel,
+    },
+  });
+  emitSystemLog("security", "info", "session_device_label_updated", {
+    sessionId: id,
+    targetUserId: row.user_id,
+    targetEmail: row.user.email,
+    previousLabel: row.device_label,
+    newLabel,
+    actorUserId,
+    actorEmail: await resolveActorEmailForLog(db, actorUserId),
+    ip: audit.ip,
+  });
+
+  return c.json({ deviceLabel: newLabel }, 200);
 }
 
 /** POST /api/admin/events/:eventId/revoke-all-operator-sessions — bulk-revoke all operator sessions for an event. Superadmin only. */

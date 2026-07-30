@@ -332,6 +332,148 @@ describe("POST /api/admin/sessions/:id/revoke", () => {
   });
 });
 
+describe("POST /api/admin/sessions/:id/device-label", () => {
+  it("corrects a mistyped device label and audits previous/new values", async () => {
+    const target = await createSession(prisma, {
+      userId: operatorId,
+      stage: SESSION_STAGE.FULL,
+      deviceLabel: "Tabelt 1 - mian entrance",
+    });
+
+    const res = await app.request(`/api/admin/sessions/${target.session.id}/device-label`, {
+      method: "POST",
+      headers: { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ deviceLabel: "Tablet 1 — main entrance" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { deviceLabel: string | null };
+    expect(body.deviceLabel).toBe("Tablet 1 — main entrance");
+
+    const updated = await prisma.session.findUnique({ where: { id: target.session.id } });
+    expect(updated?.device_label).toBe("Tablet 1 — main entrance");
+
+    const log = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_SESSIONS, action_type: "session_device_label_updated" },
+    });
+    expect(log).not.toBeNull();
+    const meta = log?.metadata as Record<string, unknown>;
+    expect(meta?.session_id).toBe(target.session.id);
+    expect(meta?.target_user_id).toBe(operatorId);
+    expect(meta?.previous_label).toBe("Tabelt 1 - mian entrance");
+    expect(meta?.new_label).toBe("Tablet 1 — main entrance");
+
+    const securityLogs = querySystemLogs({ source: "security" });
+    expect(
+      securityLogs.some(
+        (entry) =>
+          entry.message === "session_device_label_updated" &&
+          entry.fields?.sessionId === target.session.id,
+      ),
+    ).toBe(true);
+
+    await prisma.session.delete({ where: { id: target.session.id } });
+  });
+
+  it("clears the label when given an empty string", async () => {
+    const target = await createSession(prisma, {
+      userId: operatorId,
+      stage: SESSION_STAGE.FULL,
+      deviceLabel: "Some Label",
+    });
+
+    const res = await app.request(`/api/admin/sessions/${target.session.id}/device-label`, {
+      method: "POST",
+      headers: { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ deviceLabel: "" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { deviceLabel: string | null };
+    expect(body.deviceLabel).toBeNull();
+
+    const updated = await prisma.session.findUnique({ where: { id: target.session.id } });
+    expect(updated?.device_label).toBeNull();
+
+    await prisma.session.delete({ where: { id: target.session.id } });
+  });
+
+  it("returns 400 for a label longer than 120 characters, leaving it unchanged", async () => {
+    const target = await createSession(prisma, {
+      userId: operatorId,
+      stage: SESSION_STAGE.FULL,
+      deviceLabel: "Original",
+    });
+
+    const res = await app.request(`/api/admin/sessions/${target.session.id}/device-label`, {
+      method: "POST",
+      headers: { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ deviceLabel: "x".repeat(150) }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("device_label_too_long");
+
+    const unchanged = await prisma.session.findUnique({ where: { id: target.session.id } });
+    expect(unchanged?.device_label).toBe("Original");
+
+    await prisma.session.delete({ where: { id: target.session.id } });
+  });
+
+  it("returns 409 and leaves the label unchanged when the session is revoked", async () => {
+    const target = await createSession(prisma, {
+      userId: operatorId,
+      stage: SESSION_STAGE.FULL,
+      deviceLabel: "Still Here",
+    });
+    await prisma.session.update({
+      where: { id: target.session.id },
+      data: { revoked_at: new Date() },
+    });
+
+    const res = await app.request(`/api/admin/sessions/${target.session.id}/device-label`, {
+      method: "POST",
+      headers: { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ deviceLabel: "New Label" }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("session_not_editable");
+
+    const unchanged = await prisma.session.findUnique({ where: { id: target.session.id } });
+    expect(unchanged?.device_label).toBe("Still Here");
+  });
+
+  it("returns 404 for a session id that doesn't exist", async () => {
+    const res = await app.request("/api/admin/sessions/does-not-exist/device-label", {
+      method: "POST",
+      headers: { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ deviceLabel: "x" }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects missing CSRF header", async () => {
+    const target = await createSession(prisma, { userId: operatorId, stage: SESSION_STAGE.FULL });
+    const res = await app.request(`/api/admin/sessions/${target.session.id}/device-label`, {
+      method: "POST",
+      headers: { Cookie: superCookie, "Content-Type": "application/json" },
+      body: JSON.stringify({ deviceLabel: "x" }),
+    });
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    await prisma.session.delete({ where: { id: target.session.id } });
+  });
+
+  it("rejects non-superadmin with 403", async () => {
+    const target = await createSession(prisma, { userId: operatorId, stage: SESSION_STAGE.FULL });
+    const res = await app.request(`/api/admin/sessions/${target.session.id}/device-label`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ deviceLabel: "x" }),
+    });
+    expect(res.status).toBe(403);
+    await prisma.session.delete({ where: { id: target.session.id } });
+  });
+});
+
 describe("POST /api/admin/events/:eventId/revoke-all-operator-sessions", () => {
   it("revokes operator sessions and returns revokedCount", async () => {
     const op1 = await createSession(prisma, { userId: operatorId, stage: SESSION_STAGE.FULL });
