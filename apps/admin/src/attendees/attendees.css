@@ -613,12 +613,7 @@
 }
 
 .attendee-form__warn {
-  padding: var(--space-3);
-  background: var(--status-warn-bg, #fff8e6);
-  border: 1px solid var(--status-warn, #f59e0b);
-  border-radius: var(--radius-md);
-  font-size: var(--fs-sm);
-  color: var(--text);
+  margin-bottom: var(--space-3);
 }
 
 .attendee-restore-force {

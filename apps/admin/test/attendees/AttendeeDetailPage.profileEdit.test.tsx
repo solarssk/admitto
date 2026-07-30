@@ -349,9 +349,10 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna B." } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    expect(
-      await screen.findByText("Someone else updated this attendee. Reload and reapply your edits."),
-    ).toBeTruthy();
+    const staleNotice = await screen.findByText(
+      "Someone else updated this attendee. Reload and reapply your edits.",
+    );
+    expect(staleNotice.closest(".at-notice--warning")).toBeTruthy();
     const reloadButton = (await screen.findByRole("button", { name: "Reload" })) as HTMLButtonElement;
     expect(reloadButton.disabled).toBe(false);
 
