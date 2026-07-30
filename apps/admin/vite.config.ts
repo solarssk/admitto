@@ -16,6 +16,10 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    // Small font subset files (@fontsource ships many per-language ones, some under 4KB) would
+    // otherwise get base64-inlined as data: URIs - blocked outright by the staff SPA's own CSP
+    // (font-src 'self' https:, no data:), so some weights/styles silently failed to load.
+    assetsInlineLimit: 0,
   },
   server: {
     port: 5173,

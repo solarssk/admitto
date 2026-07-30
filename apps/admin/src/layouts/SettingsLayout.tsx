@@ -51,6 +51,19 @@ export function SettingsLayout() {
       <PageHeader
         title="Settings"
         subtitle="Instance configuration, security policies, and identity providers."
+        actions={
+          <a
+            href="https://github.com/solarssk/admitto/wiki"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="at-btn at-btn--secondary"
+          >
+            <span className="at-btn__icon" aria-hidden="true">
+              <i className="ti ti-book" aria-hidden="true" />
+            </span>
+            <span>Documentation</span>
+          </a>
+        }
       />
       <ScrollFadeTabs value={activeTab} onChange={handleTabChange} tabs={[...SETTINGS_TABS]} />
       <Outlet />

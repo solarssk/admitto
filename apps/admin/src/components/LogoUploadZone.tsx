@@ -183,9 +183,9 @@ export function LogoUploadZone({
   return (
     <div className="logo-upload">
       {!hideLabel && <span className="at-label">{label}</span>}
-      <p className="logo-upload__intro">
+      <span className="at-hint">
         Upload an image file below, or use a link to an image that&apos;s already online.
-      </p>
+      </span>
       <div
         className={buildLogoZoneClassName({
           uploading,
@@ -257,9 +257,9 @@ export function LogoUploadZone({
         />
       </div>
       {zoneError ? (
-        <p className="at-hint at-hint--error" role="alert">
+        <span className="at-hint at-hint--error" role="alert">
           {zoneError}
-        </p>
+        </span>
       ) : null}
       <div className="logo-upload__actions">
         {showPreview ? (

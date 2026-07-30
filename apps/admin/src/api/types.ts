@@ -71,10 +71,27 @@ export interface EventSettingsDto {
   resolved_header_image_url: string | null;
 }
 
+/** One uploaded font file for a specific weight+style within a custom font family - a real
+ * family needs one of these per weight/style it has for the browser to render a true bold/
+ * italic instead of a synthesized (faked) one. */
+export interface BrandingFontVariantDto {
+  weight: number;
+  style: "normal" | "italic";
+  url: string;
+}
+
+/** A saved custom font family - a name plus every weight/style file uploaded for it, kept as a
+ * library so switching back to a previously-uploaded family doesn't need re-uploading. */
+export interface BrandingCustomFontFamilyDto {
+  name: string;
+  variants: BrandingFontVariantDto[];
+}
+
 export interface BrandingThemeDto {
   primary?: string;
-  font_family_url?: string;
+  /** The active pick - either a built-in name (e.g. "Manrope") or one of custom_font_families[].name. */
   font_family_name?: string;
+  custom_font_families?: BrandingCustomFontFamilyDto[];
 }
 
 export interface ThemeResponse {

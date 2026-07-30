@@ -3135,8 +3135,13 @@
   }
 }
 
+/* Branding's own standalone description paragraphs read a size smaller than the rest of the
+   app's equivalent descriptive text (e.g. .mail-field-hint) since they use the generic .at-hint
+   component class (--fs-xs) instead - bumped here to match, scoped to just this panel so the
+   many other, unrelated .at-hint call sites elsewhere keep their own existing size. */
 .branding-scope-hint {
   margin: 0 0 var(--space-4);
+  font-size: var(--fs-sm);
 }
 
 .foot-actions {
@@ -3179,81 +3184,542 @@
   gap: var(--space-4);
 }
 
-.branding-form__row {
+/* Branding settings — curated colour palette + font picker (replaces a bare hex box / URL
+   field). Ported from the design system's ui_kits/admin/BrandingTab.jsx mockup. */
+.theme-swatch-grid {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: var(--space-2);
 }
 
-.branding-form__color {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-3);
-}
-
-.branding-form__color input[type="color"] {
-  width: 48px;
-  height: 40px;
-  padding: 2px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--surface-card);
+.theme-swatch {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-md);
+  border: 2px solid transparent;
   cursor: pointer;
-  flex-shrink: 0;
+  padding: 0;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 16px;
+  transition: transform var(--dur-fast);
 }
 
-.branding-form__color .at-field {
-  flex: 1;
-  margin: 0;
+.theme-swatch:hover {
+  transform: scale(1.06);
 }
 
-.branding-preview {
+.theme-swatch--active {
+  border-color: var(--text-primary);
+  box-shadow: 0 0 0 2px var(--surface-card), 0 0 0 4px var(--text-primary);
+}
+
+.theme-swatch--custom {
+  background: conic-gradient(from 180deg, #dc2626, #ea580c, #d97706, #16a34a, #0891b2, #4f46e5, #9333ea, #dc2626);
+  overflow: hidden;
+}
+
+.theme-swatch--custom i {
+  font-size: 15px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.theme-swatch__color-input {
+  opacity: 0;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+.font-option-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+/* A plain, non-interactive container for both built-in and custom font tiles - clicking to pick
+   a font, opening the styles popover, and removing a custom family are each their own focusable
+   control inside it (a <button> can't validly contain another interactive descendant, and this
+   card also needs room for up to three: select, styles pill, remove). */
+.font-option-card {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  align-items: center;
+  align-self: stretch;
+  gap: 5px;
+  padding: 16px 10px 12px;
+  border-radius: var(--radius-md);
+  border: var(--border-width) solid var(--border);
   background: var(--surface-card);
+  text-align: center;
+  position: relative;
 }
 
-.branding-preview__swatch {
+.font-option-card:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+.font-option-card--active {
+  border-color: var(--primary);
+  background: var(--primary-tint);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+
+.font-option-card__sample {
+  font-size: 26px;
+  line-height: 1;
+  color: var(--text-primary);
+}
+
+.font-option-card__label {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.font-option-card__hint {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.font-option-card__uploadicon {
+  /* Same font-size/line-height box as .font-option-card__sample's "Aa" - the icon takes that
+     text sample's place in this tile, so its label/hint should start at the exact same height. */
+  font-size: 26px;
+  line-height: 1;
+  color: var(--text-disabled);
+}
+
+.font-option-card--upload {
+  /* The only remaining variant that's a real, whole-tile <button> - it has no separate
+     sub-controls to leave room for, so the full card itself is the click target. Every other
+     variant's label/hint sits inside .font-option-card__select (all: unset), which resets the
+     browser's own default button font/line-height - without an equivalent reset here, this one
+     was rendering its label in the browser's UA default font at line-height "normal" instead of
+     the app's own font/rhythm, throwing its label-to-hint gap subtly out of step with the rest. */
+  font: inherit;
+  border-style: dashed;
+  cursor: pointer;
+}
+
+.font-option-card--upload:hover {
+  border-color: var(--primary);
+}
+
+/* At MAX_CUSTOM_FONT_FAMILIES, this is a plain (non-button) card again - not clickable, so no
+   hover/cursor affordance either. */
+.font-option-card--upload-limit {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.font-option-card--upload-limit:hover {
+  border-color: var(--border);
+}
+
+.font-option-card__select {
+  all: unset;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  cursor: pointer;
+}
+
+/* Floats half outside the card's own top-right corner, like a chip's remove badge - this way a
+   saved custom tile needs no reserved top padding of its own and stays exactly the same height
+   as every built-in tile (a reserved-padding approach previously pushed the tile's own content
+   down relative to its siblings and left an uneven gap above the styles pill). */
+.font-option-card__remove,
+.font-option-card__edit {
+  position: absolute;
+  top: -8px;
+  background: var(--surface-card);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-sm);
+}
+
+.font-option-card__remove {
+  right: -8px;
+}
+
+.font-option-card__remove:hover:not(:disabled) {
+  background: var(--status-error-tint);
+  border-color: var(--status-error);
+  color: var(--status-error);
+}
+
+.font-option-card__edit {
+  left: -8px;
+}
+
+.font-option-card__edit:hover:not(:disabled) {
+  /* --primary-tint (--at-blue-050) reads as barely-there next to --status-error-tint on the
+     remove button beside it - a pale blue is harder to see against a white card than a pale red
+     at the same shade depth, so this one goes one shade darker to read as equally "filled". */
+  background: var(--at-blue-100);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.font-styles-pill-wrap {
+  position: relative;
+  margin-top: auto;
+}
+
+.font-styles-pill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: var(--at-gray-100, #f1f5f9);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs, 12px);
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+
+.font-styles-pill i {
+  font-size: 13px;
+}
+
+.font-styles-pill:hover {
+  background: var(--at-gray-200, #e2e8f0);
+}
+
+.font-styles-pill--active {
+  background: var(--primary);
+  color: #fff;
+}
+
+.font-styles-pill--placeholder {
+  background: none;
+  color: var(--text-disabled);
+  font-weight: 500;
+  cursor: default;
+}
+
+@keyframes font-styles-popover-in {
+  /* Both endpoints keep translateX(-50%) (the popover's own horizontal centering, set as a
+     static rule below) as part of the animated value - dropping it here would clobber that
+     centering for the animation's duration, then visibly snap back once it ends. */
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%);
+  }
+}
+
+.font-styles-popover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 80;
+  background: var(--surface-card);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg, 0 12px 28px rgba(0, 0, 0, 0.18));
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 160px;
+  /* Comfortably fits all 12 possible weight/style combos (6 weights x 2 styles, the most a
+     family can have) with no scrollbar - a family with fewer styles (most built-in fonts, most
+     uploads) should never look different from one with more. */
+  max-height: 440px;
+  overflow-y: auto;
+  animation: font-styles-popover-in 140ms ease;
+}
+
+.font-styles-popover__item {
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+/* Font family upload modal (FontFamilyModal) */
+.fontfam-modal-body {
+  padding: 4px 20px 4px;
+}
+
+.fontfam-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: 22px 16px;
+  margin-top: 14px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+
+.fontfam-dropzone i {
+  font-size: 26px;
+  color: var(--text-disabled);
+}
+
+.fontfam-dropzone:hover,
+.fontfam-dropzone--over {
+  border-color: var(--primary);
+  background: var(--primary-tint);
+}
+
+.fontfam-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.fontfam-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: var(--radius-sm);
+}
+
+/* Shares its weight+style combo with another row below - only one of the two files will ever
+   actually render, so the extra upload is silently wasted until this is resolved. */
+.fontfam-row--duplicate {
+  outline: var(--border-width) solid var(--status-error);
+  outline-offset: 4px;
+}
+
+.fontfam-row .at-field {
+  margin-bottom: 0;
+}
+
+/* .seg-control's shared margin-bottom is meant for standalone usage above unrelated content,
+   and .seg-btn's own padding is taller than this row's other controls - same fix as
+   .seg-control.mail-source-toggle/.audit-log-view-toggle for the identical reason. */
+.seg-control.fontfam-row-style-toggle {
+  margin-bottom: 0;
+  height: var(--control-h-sm);
+  flex: none;
+}
+
+.seg-control.fontfam-row-style-toggle .seg-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  line-height: 1;
+}
+
+.fontfam-row__file {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  min-width: 140px;
+}
+
+.fontfam-row__file span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fontfam-row__file:hover {
+  border-color: var(--primary);
+  background: var(--primary-tint);
+}
+
+.fontfam-row__file--loaded {
+  border-style: solid;
+  border-color: var(--status-ok);
+  color: var(--text-primary);
+  background: var(--status-ok-tint);
+}
+
+.fontfam-row__file--loaded i {
+  color: var(--status-ok);
+}
+
+.fontfam-row__sample {
+  flex: none;
+  font-size: 20px;
+  width: 32px;
+  text-align: center;
+}
+
+.fontfam-add-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 11px 14px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: none;
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--dur-fast);
+}
+
+.fontfam-add-row:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-tint);
+}
+
+/* No card-within-a-card chrome (border/background/padding) - it read as a separate box and,
+   since that padding wasn't shared by "Primary colour"/"Font" above it, put "Live preview"
+   slightly out of horizontal alignment with them. Sits directly in the Theme card's own flow
+   instead, at the same 20px section gap as Font. */
+.theme-preview {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Same reasoning as .logo-upload: a uniform gap would also space the heading from its own
+   description below it - tight there to match Primary colour/Font, every other pair keeps the
+   same 10px rhythm as before. */
+.theme-preview > *:not(:last-child) {
+  margin-bottom: 10px;
+}
+
+.theme-preview > .at-label {
+  margin-bottom: 0;
+}
+
+.theme-preview__bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-3);
-  border-radius: var(--radius);
+  padding: 11px 16px;
+  border-radius: var(--radius-md);
   color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+}
+
+.theme-preview__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.theme-preview__bar--sm {
+  justify-content: center;
+  padding: 9px;
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.85;
+}
+
+.theme-preview__tint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  padding: 9px;
   font-size: var(--fs-sm);
   font-weight: 600;
 }
 
-.branding-preview__tokens {
+.theme-preview__controls {
   display: flex;
-  gap: var(--space-2);
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
-.branding-preview__token {
-  flex: 1;
-  padding: var(--space-2);
+.theme-preview__btn {
+  border: 0;
+  color: #fff;
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  padding: 9px 18px;
   border-radius: var(--radius);
-  text-align: center;
+  cursor: default;
+}
+
+.theme-preview__btn--outline {
+  background: transparent;
+  border: var(--border-width) solid var(--border-strong);
+  color: var(--text-primary);
+}
+
+.theme-preview__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--at-gray-100, #f1f5f9);
+  color: var(--text-secondary);
   font-size: var(--fs-xs);
+  font-weight: 600;
+  /* No align-self override - .theme-preview__controls' own align-items: center already
+     vertically centers every child; flex-start here fought that and sat the badge flush to
+     the row's top edge instead of level with the buttons beside it. */
+}
+
+.theme-preview__sample {
+  margin: 6px 0 0;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
 }
 
-.branding-preview__components {
+.theme-preview__variants {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
+  gap: 18px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: var(--border-width) dashed var(--border);
+  /* Larger than the app's usual body text on purpose - this row exists specifically to let
+     someone see the Regular/Bold/Italic weight contrast at a glance, and that contrast is much
+     harder to judge at normal body size. */
+  font-size: var(--fs-h2);
+  color: var(--text-primary);
 }
 
-.branding-preview__sample {
-  margin: 0;
-  font-size: var(--fs-body);
-  color: var(--text-primary);
+.theme-preview__faux {
+  font-size: var(--fs-xs);
+  margin-left: 4px;
+  color: var(--text-disabled);
+  vertical-align: middle;
 }
 
 /* Mail transport panel */
@@ -3855,6 +4321,23 @@ output.mail-field-hint {
   color: var(--primary-active);
   font-weight: 700;
   box-shadow: 0 1px 3px rgba(0 0 0 / .08);
+}
+
+/* Mail source toggle (EventMailSettingsCard) — rendered inline in the "Mail transport" card's
+ * header `actions` row rather than a row of its own above the form. Mirrors
+ * .seg-control.audit-log-view-toggle's own fix for the identical reason: .seg-control's shared
+ * margin-bottom (above) is meant for standalone usage above unrelated content, and .seg-btn's
+ * own padding/line-height is taller than the --control-h-sm other header controls use. */
+.seg-control.mail-source-toggle {
+  margin-bottom: 0;
+  height: var(--control-h-sm);
+}
+
+.seg-control.mail-source-toggle .seg-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  line-height: 1;
 }
 
 /* org-mail-summary — read-only preview of the organization's effective transport, shown
