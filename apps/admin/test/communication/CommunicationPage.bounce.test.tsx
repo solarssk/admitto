@@ -105,6 +105,21 @@ describe("CommunicationPage bounce banner", () => {
     expect(within(banner).getByRole("button", { name: "View delivery log" })).toBeTruthy();
   });
 
+  it("uses singular wording when exactly one email bounced", async () => {
+    fetchEventTemplate.mockResolvedValue(templatePayload);
+    fetchEventOverview.mockResolvedValue({
+      email_bounced: 1,
+      email_failed: 0,
+      email_sent: 10,
+      email_queued: 0,
+    });
+
+    renderPage();
+
+    const banner = await screen.findByRole("alert");
+    expect(within(banner).getByText(/^1 email bounced$/i)).toBeTruthy();
+  });
+
   it("hides bounce banner when email_bounced is 0", async () => {
     fetchEventTemplate.mockResolvedValue(templatePayload);
     fetchEventOverview.mockResolvedValue({
