@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router";
-import { Badge, Button, Card, EmptyState, PageHeader, Spinner, Tabs } from "@admitto/ui";
+import { useNavigate } from "react-router";
+import { Button, EmptyState, PageHeader, Spinner, Tabs } from "@admitto/ui";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ApiError, fetchAdminEvents } from "../api/client.js";
 import type { EventDto } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
+import { EventCard, eventGridClassName } from "../components/EventCard.js";
 import { CreateEventModal } from "../events/CreateEventModal.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
-import { formatEventCalendarDate } from "../utils/event-dates.js";
 
 type PickerTab = "active" | "archived";
 
@@ -64,8 +64,7 @@ export function EventsPickerPage() {
   const displayedEvents = tab === "archived" ? archivedEvents : activeEvents;
   const allEventsArchived = events.length > 0 && activeEvents.length === 0;
 
-  const smallGridClass = displayedEvents.length > 0 ? "event-grid event-grid--cols-2" : "event-grid";
-  const gridClass = displayedEvents.length >= 4 ? "event-grid event-grid--cols-3" : smallGridClass;
+  const gridClass = eventGridClassName(displayedEvents.length);
 
   // A fetch that resolves near-instantly (localhost, a warm cache) would
   // otherwise flash the spinner on and off faster than it can register as
@@ -156,54 +155,15 @@ export function EventsPickerPage() {
       )}
 
       <div className={gridClass}>
-        {displayedEvents.map((event) => {
-          const cardBody = (
-            <>
-              <Badge
-                variant={event.archived_at ? "neutral" : "ok"}
-                className="event-card__status"
-              >
-                {event.archived_at ? "Archived" : "Active"}
-              </Badge>
-              <h2 className="event-card__title">{event.title}</h2>
-              <p className="event-card__meta">
-                <i className="ti ti-calendar" aria-hidden="true" />
-                <span>{formatEventCalendarDate(event.date)}</span>
-                {event.location && (
-                  <>
-                    <span aria-hidden="true">·</span>
-                    <i className="ti ti-map-pin" aria-hidden="true" />
-                    <span>{event.location}</span>
-                  </>
-                )}
-              </p>
-              {event.attendee_count != null && (
-                <div className="event-card__stats">
-                  <div className="event-card__stat">
-                    <i className="ti ti-users" aria-hidden="true" />
-                    <strong>{event.attendee_count}</strong>
-                    <span>attendees</span>
-                  </div>
-                </div>
-              )}
-            </>
-          );
-
-          return (
-            <Link
-              key={event.id}
-              to={`/admin/events/${event.id}/overview`}
-              state={{ event }}
-              className="event-card-link"
-            >
-              <Card
-                className={`event-card${event.archived_at ? " event-card--archived" : ""}`}
-              >
-                {cardBody}
-              </Card>
-            </Link>
-          );
-        })}
+        {displayedEvents.map((event) => (
+          <EventCard
+            key={event.id}
+            event={event}
+            href={`/admin/events/${event.id}/overview`}
+            showStatusBadge
+            showAttendeeCount
+          />
+        ))}
       </div>
 
       <CreateEventModal

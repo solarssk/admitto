@@ -56,8 +56,8 @@ function parseEventDateInput(date: string): Date {
   return new Date(date.includes("T") ? date : `${date}T12:00:00.000Z`);
 }
 
-/** Map an event row to the admin picker JSON shape. */
-function serializeEventDto(event: EventJsonRow, count?: number) {
+/** Map an event row to the admin/check-in picker JSON shape. */
+export function serializeEventDto(event: EventJsonRow, count?: number) {
   return {
     id: event.id,
     title: event.title,

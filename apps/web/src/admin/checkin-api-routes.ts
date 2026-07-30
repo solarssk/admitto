@@ -1,6 +1,7 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { listCheckInEvents } from "@admitto/auth";
+import { serializeEventDto } from "./admin-api-routes.js";
 import {
   checkInScan,
   admitAttendee,
@@ -33,16 +34,15 @@ export async function handleGetCheckinEvents(c: Context, db: PrismaClient): Prom
   const auth = c.get("auth");
   const events = await listCheckInEvents(db, auth.userId);
 
+  const counts = await db.attendee.groupBy({
+    by: ["event_id"],
+    where: { event_id: { in: events.map((e) => e.id) } },
+    _count: { _all: true },
+  });
+  const countByEvent = new Map(counts.map((row) => [row.event_id, row._count._all]));
+
   return c.json({
-    events: events.map((e) => ({
-      id: e.id,
-      title: e.title,
-      slug: e.slug,
-      date: e.date.toISOString(),
-      timezone: e.timezone,
-      location: e.location,
-      organization_id: e.organization_id,
-    })),
+    events: events.map((e) => serializeEventDto(e, countByEvent.get(e.id) ?? 0)),
   });
 }
 

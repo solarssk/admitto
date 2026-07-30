@@ -221,16 +221,27 @@ describe("GET /api/checkin/events", () => {
     expect(res.status).toBe(401);
   });
 
-  it("lists check-in events for operator", async () => {
+  it("lists check-in events for operator, including attendee_count", async () => {
+    await prisma.attendee.create({
+      data: {
+        id: "att-staff-foundation-checkin-count",
+        event_id: EVENT_A,
+        email: "staff-foundation-checkin-count@example.com",
+        name: "Count Fixture",
+      },
+    });
+
     const res = await app.request("/api/checkin/events", {
       headers: { Cookie: await sessionCookieFor(opId) },
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      events: Array<{ id: string; timezone: string }>;
+      events: Array<{ id: string; timezone: string; attendee_count: number; archived_at: string | null }>;
     };
     expect(body.events.map((e) => e.id)).toEqual([EVENT_A]);
     expect(body.events[0]!.timezone).toBeTruthy();
+    expect(body.events[0]!.attendee_count).toBe(1);
+    expect(body.events[0]!.archived_at).toBeNull();
   });
 
   it("excludes archived event for operator (archiving ends check-in for it)", async () => {

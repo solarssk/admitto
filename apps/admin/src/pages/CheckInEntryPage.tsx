@@ -1,15 +1,11 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
 import { Card, PageHeader } from "@admitto/ui";
 import { ApiError, fetchCheckInEvents } from "../api/client.js";
 import type { EventDto } from "../api/types.js";
+import { EventCard, eventGridClassName } from "../components/EventCard.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
-import { formatEventCalendarDate } from "../utils/event-dates.js";
-
-function formatDate(iso: string): string {
-  return formatEventCalendarDate(iso);
-}
 
 export function CheckInEntryPage() {
   const navigate = useNavigate();
@@ -70,17 +66,15 @@ export function CheckInEntryPage() {
   return (
     <>
       <PageHeader title="Check-in" subtitle="Choose an event to open the check-in surface." />
-      <div className="event-grid event-grid--touch">
+      <div className={eventGridClassName(events.length)}>
         {events.map((event) => (
-          <Card key={event.id} className="event-card event-card--touch">
-            <h2 className="event-card__title">
-              <Link to={`/operator/events/${event.id}/checkin`}>{event.title}</Link>
-            </h2>
-            <p className="event-card__meta">
-              {formatDate(event.date)}
-              {event.location ? ` · ${event.location}` : ""}
-            </p>
-          </Card>
+          <EventCard
+            key={event.id}
+            event={event}
+            href={`/operator/events/${event.id}/checkin`}
+            touch
+            showAttendeeCount
+          />
         ))}
       </div>
     </>
