@@ -7,7 +7,7 @@ import {
   useSearchParams,
   type NavigateFunction,
 } from "react-router";
-import { Badge, Button, Card, EmptyState, Input, PageHeader, useToast, type ToastVariant } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, Input, Notice, PageHeader, useToast, type ToastVariant } from "@admitto/ui";
 import {
   ApiError,
   archiveEvent,
@@ -1201,11 +1201,10 @@ export function EventSettingsPage() {
           </div>
         </div>
 
-        <p className="danger-zone-notice">
-          <i className="ti ti-alert-triangle" aria-hidden="true" /> These actions can affect this
-          event&apos;s data or availability. Some are limited to superadmins and saved in the
-          history log.
-        </p>
+        <Notice variant="error" className="danger-zone-notice">
+          These actions can affect this event&apos;s data or availability. Some are limited to
+          superadmins and saved in the history log.
+        </Notice>
       </EventSettingsTabPanel>
 
       <ConfirmDialog
