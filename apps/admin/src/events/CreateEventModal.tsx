@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, ModalBackdrop } from "@admitto/ui";
+import { Button, ModalBackdrop, Notice } from "@admitto/ui";
 import { ApiError, createEvent } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto } from "../api/types.js";
@@ -94,9 +94,7 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
           New event
         </h2>
         {error && (
-          <p className="create-event-modal__error" role="alert">
-            {error}
-          </p>
+          <Notice variant="error" role="alert">{error}</Notice>
         )}
         <div className="create-event-modal__form">
           <div className="create-event-modal__field">
