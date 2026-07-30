@@ -107,6 +107,19 @@ export function isValidBrandingFontWeight(weight: number): boolean {
   return Number.isInteger(weight) && weight >= 100 && weight <= 900;
 }
 
+/** Names of the self-hosted built-in fonts (see packages/ui/src/styles/tokens/fonts.css) - a
+ * custom family can't be saved under one of these. Both a built-in pick and a custom family write
+ * the same font_family_name string, so a same-named custom family would make the built-in
+ * unreachable (every reader of that string, including the admin picker and resolveThemeVars
+ * above, would always resolve to the custom one instead). */
+export const BUILT_IN_FONT_FAMILY_NAMES = ["Manrope", "Space Grotesk", "IBM Plex Sans"] as const;
+
+/** True when name matches a built-in font name, case-insensitively. */
+export function isReservedBrandingFontFamilyName(name: string): boolean {
+  const trimmed = name.trim().toLowerCase();
+  return BUILT_IN_FONT_FAMILY_NAMES.some((n) => n.toLowerCase() === trimmed);
+}
+
 const FONT_FORMAT_BY_EXT: Record<string, string> = {
   woff2: "woff2",
   woff: "woff",

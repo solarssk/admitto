@@ -24,11 +24,24 @@ export interface BrandingTheme {
   custom_font_families?: BrandingCustomFontFamily[];
 }
 
-// Matches the admin UI's own weight (100-900 in six 100-800 presets) x style (normal/italic)
-// combo space - a generous upper bound on how many @font-face variants one family can have.
-const MAX_FONT_VARIANTS = 12;
+// Matches the admin UI's own weight (100-900, nine 100-step values) x style (normal/italic) combo
+// space exactly - the editor lets someone add one row per combo, so this must cover all 18 or a
+// family using every weight in both styles gets silently truncated on save (its trailing uploaded
+// files staying on disk but never persisted).
+const MAX_FONT_VARIANTS = 18;
 // How many distinct custom families an org can keep saved at once - generous, but bounded.
 const MAX_CUSTOM_FAMILIES = 8;
+
+// Mirror @admitto/ui's BUILT_IN_FONT_FAMILY_NAMES/isReservedBrandingFontFamilyName - auth must not
+// depend on @admitto/ui. A custom family can't reuse one of these names: both a built-in pick and
+// a custom family write the same font_family_name string, so a same-named custom family would
+// make the built-in unreachable (every reader of that string always resolves to the custom one).
+const BUILT_IN_FONT_FAMILY_NAMES = ["Manrope", "Space Grotesk", "IBM Plex Sans"];
+
+function isReservedBrandingFontFamilyName(name: string): boolean {
+  const trimmed = name.trim().toLowerCase();
+  return BUILT_IN_FONT_FAMILY_NAMES.some((n) => n.toLowerCase() === trimmed);
+}
 
 const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
 
@@ -94,7 +107,7 @@ function sanitizeCustomFontFamilies(raw: unknown): BrandingCustomFontFamily[] | 
     const e = entry as Record<string, unknown>;
     if (typeof e.name !== "string") continue;
     const name = sanitizeBrandingFontFamilyName(e.name);
-    if (!name || seenNames.has(name)) continue;
+    if (!name || seenNames.has(name) || isReservedBrandingFontFamilyName(name)) continue;
     const variants = sanitizeFontVariants(e.variants);
     if (!variants) continue;
     seenNames.add(name);

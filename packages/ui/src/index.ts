@@ -44,6 +44,8 @@ export {
   isLocalBrandingFontPath,
   isValidBrandingFontFamilyName,
   isValidBrandingFontWeight,
+  isReservedBrandingFontFamilyName,
+  BUILT_IN_FONT_FAMILY_NAMES,
   sanitizeBrandingFontFamilyName,
   resolveThemeVars,
   themeVarsToStyleBlock,

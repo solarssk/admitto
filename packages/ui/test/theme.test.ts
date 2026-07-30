@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isLocalBrandingFontPath,
+  isReservedBrandingFontFamilyName,
   isSafeBrandingFontUrl,
   isValidBrandingFontFamilyName,
   isValidBrandingFontWeight,
@@ -13,6 +14,19 @@ describe("isValidBrandingFontFamilyName", () => {
     expect(isValidBrandingFontFamilyName("Brand Sans")).toBe(true);
     expect(isValidBrandingFontFamilyName("</style>evil")).toBe(false);
     expect(isValidBrandingFontFamilyName("Brand Sans")).toBe(true);
+  });
+});
+
+describe("isReservedBrandingFontFamilyName", () => {
+  it("matches a built-in font name case-insensitively", () => {
+    expect(isReservedBrandingFontFamilyName("Manrope")).toBe(true);
+    expect(isReservedBrandingFontFamilyName("manrope")).toBe(true);
+    expect(isReservedBrandingFontFamilyName("SPACE GROTESK")).toBe(true);
+    expect(isReservedBrandingFontFamilyName("  IBM Plex Sans  ")).toBe(true);
+  });
+
+  it("does not match an unrelated custom name", () => {
+    expect(isReservedBrandingFontFamilyName("Acme Sans")).toBe(false);
   });
 });
 

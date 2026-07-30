@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, IconButton, Input, Select, useToast } from "@admitto/ui";
+import { Button, IconButton, Input, isReservedBrandingFontFamilyName, Select, useToast } from "@admitto/ui";
 import { uploadThemeFont } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { BrandingCustomFontFamilyDto, BrandingFontVariantDto } from "../api/types.js";
@@ -359,7 +359,13 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
   // Only rows that actually have a file count - two still-empty rows sharing a combo don't
   // affect what gets saved, and would otherwise block Save over nothing.
   const duplicateRowIdSet = duplicateRowIds(loadedRows);
-  const canSave = familyName.trim().length > 0 && loadedRows.length > 0 && duplicateRowIdSet.size === 0;
+  const trimmedName = familyName.trim();
+  // A custom family named after a built-in (e.g. "Manrope") would write the same
+  // font_family_name as picking the built-in tile - the two picks become indistinguishable, and
+  // the built-in becomes unreachable. Caught here, at the point of naming, rather than only on
+  // the outer panel's Save.
+  const nameIsReserved = trimmedName.length > 0 && isReservedBrandingFontFamilyName(trimmedName);
+  const canSave = trimmedName.length > 0 && !nameIsReserved && loadedRows.length > 0 && duplicateRowIdSet.size === 0;
   const anyUploading = rows.some((r) => r.loading);
 
   function save() {
@@ -387,6 +393,7 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
             placeholder="e.g. Acme Sans"
             value={familyName}
             hint="Guessed from the first file you add - rename if needed."
+            error={nameIsReserved ? `"${trimmedName}" is a built-in font name. Choose a different name.` : undefined}
             onChange={(e) => setFamilyName(e.target.value)}
           />
 

@@ -1,5 +1,6 @@
 import {
   isSafeBrandingFontUrl,
+  isReservedBrandingFontFamilyName,
   isValidBrandingFontFamilyName,
   isValidBrandingFontWeight,
   sanitizeBrandingFontFamilyName,
@@ -32,7 +33,12 @@ function isValidVariant(v: BrandingFontVariantDto): boolean {
 }
 
 function isValidFamily(f: BrandingCustomFontFamilyDto): boolean {
-  return isValidBrandingFontFamilyName(f.name) && f.variants.length > 0 && f.variants.every(isValidVariant);
+  return (
+    isValidBrandingFontFamilyName(f.name) &&
+    !isReservedBrandingFontFamilyName(f.name) &&
+    f.variants.length > 0 &&
+    f.variants.every(isValidVariant)
+  );
 }
 
 /** Client-side validation before PUT — mirrors server rules. */
@@ -84,7 +90,7 @@ export function brandingDraftForSave(draft: BrandingThemeDto): BrandingThemeDto 
   const validFamilies: BrandingCustomFontFamilyDto[] = [];
   for (const family of draft.custom_font_families ?? []) {
     const safeName = sanitizeBrandingFontFamilyName(family.name);
-    if (!safeName) continue;
+    if (!safeName || isReservedBrandingFontFamilyName(safeName)) continue;
     const validVariants = family.variants.filter(isValidVariant);
     if (validVariants.length === 0) continue;
     validFamilies.push({ name: safeName, variants: validVariants });

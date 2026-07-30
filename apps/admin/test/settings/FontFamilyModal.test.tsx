@@ -315,6 +315,23 @@ describe("FontFamilyModal", () => {
     expect(isDisabled(screen.getByRole("button", { name: "Save font family" }))).toBe(true);
   });
 
+  it("blocks Save and shows an inline error when the family name matches a built-in font, case-insensitively", async () => {
+    mockUploadFont.mockResolvedValueOnce({ url: "/uploads/default/theme/regular.woff2" });
+    renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText(/Drop font files here/), {
+      target: { files: [new File(["x"], "Acme-Sans-Regular.woff2")] },
+    });
+    await waitFor(() => {
+      expect(isDisabled(screen.getByRole("button", { name: "Save font family" }))).toBe(false);
+    });
+
+    fireEvent.change(screen.getByLabelText("Family name"), { target: { value: "space grotesk" } });
+
+    expect(screen.getByText(/is a built-in font name/)).toBeTruthy();
+    expect(isDisabled(screen.getByRole("button", { name: "Save font family" }))).toBe(true);
+  });
+
   it("calls onSaved with the family name and every loaded variant's weight/style/url, and closes", async () => {
     mockUploadFont
       .mockResolvedValueOnce({ url: "/uploads/default/theme/regular.woff2" })

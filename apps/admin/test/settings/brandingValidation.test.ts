@@ -136,6 +136,16 @@ describe("validateBrandingDraft", () => {
     });
     expect(result.valid).toBe(true);
   });
+
+  it("rejects a custom family named after a built-in font, case-insensitively", () => {
+    const result = validateBrandingDraft({
+      custom_font_families: [
+        { name: "manrope", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/font.woff2" }] },
+      ],
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors.custom_font_families).toBeTruthy();
+  });
 });
 
 describe("brandingDraftForSave", () => {
@@ -230,6 +240,23 @@ describe("brandingDraftForSave", () => {
       font_family_name: "Brand Sans",
       custom_font_families: [
         { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/abc123.woff2" }] },
+      ],
+    });
+  });
+
+  it("drops a whole family named after a built-in font, keeping the others", () => {
+    expect(
+      brandingDraftForSave({
+        font_family_name: "Good Family",
+        custom_font_families: [
+          { name: "Space Grotesk", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/a.woff2" }] },
+          { name: "Good Family", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/b.woff2" }] },
+        ],
+      }),
+    ).toEqual({
+      font_family_name: "Good Family",
+      custom_font_families: [
+        { name: "Good Family", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/b.woff2" }] },
       ],
     });
   });

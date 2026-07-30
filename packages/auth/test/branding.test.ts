@@ -144,7 +144,7 @@ describe("sanitizeTheme (branding theme storage validation)", () => {
     ]);
   });
 
-  it("caps the number of variants persisted per family", () => {
+  it("caps the number of variants persisted per family at the admin UI's own 9-weight x 2-style limit", () => {
     const variants = Array.from({ length: 20 }, (_, i) => ({
       weight: 400,
       style: i % 2 === 0 ? ("normal" as const) : ("italic" as const),
@@ -154,8 +154,23 @@ describe("sanitizeTheme (branding theme storage validation)", () => {
       font_family_name: "Brand Sans",
       custom_font_families: [{ name: "Brand Sans", variants }],
     });
-    expect(result.custom_font_families?.[0]?.variants.length).toBeLessThanOrEqual(12);
+    expect(result.custom_font_families?.[0]?.variants.length).toBe(18);
   });
+
+  it.each(["Manrope", "space grotesk", "IBM PLEX SANS"])(
+    "drops a custom family named after a built-in font (%s), case-insensitively",
+    (name) => {
+      const result = sanitizeTheme({
+        custom_font_families: [
+          { name, variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/a.woff2" }] },
+          { name: "Good Name", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/b.woff2" }] },
+        ],
+      });
+      expect(result.custom_font_families).toEqual([
+        { name: "Good Name", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/b.woff2" }] },
+      ]);
+    },
+  );
 
   it("caps the number of saved families", () => {
     const families = Array.from({ length: 15 }, (_, i) => ({
