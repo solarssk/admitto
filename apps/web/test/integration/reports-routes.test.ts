@@ -2,7 +2,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient, Prisma } from "@prisma/client";
-import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
+import { createSession, hashPassword, SESSION_STAGE, updateSessionDeviceLabel } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
 import { generateToken, hashToken } from "@admitto/tickets";
@@ -166,6 +166,7 @@ async function seed(client: PrismaClient) {
         name: "VIP One",
         ticket_type: "VIP",
         admitted_at: admittedMorning,
+        admitted_by: adminId,
         ...mkAttendeeToken(),
       },
       {
@@ -348,6 +349,9 @@ describe("GET /api/admin/events/:eventId/reports", () => {
       admission_log: Array<{
         attendee_id: string;
         name: string;
+        operator_user_id: string | null;
+        operator_display_name: string | null;
+        operator_email: string | null;
         device_id: string | null;
       }>;
       admission_log_truncated: boolean;
@@ -383,7 +387,14 @@ describe("GET /api/admin/events/:eventId/reports", () => {
     expect(body.admission_log_total).toBe(5);
     expect(body.admission_log[0]!.attendee_id).toBe(ATT_VIP_1);
     expect(body.admission_log[0]!.device_id).toBe("scanner-01");
+    // ATT_VIP_1 was seeded with admitted_by: adminId (no display_name set) - resolves to the
+    // email fallback, not the "(No operator)"/"Deleted user" cases.
+    expect(body.admission_log[0]!.operator_user_id).toBe(adminId);
+    expect(body.admission_log[0]!.operator_display_name).toBeNull();
+    expect(body.admission_log[0]!.operator_email).toBe(EMAIL_ADMIN);
     expect(body.admission_log[1]!.device_id).toBe("desk-01");
+    // ATT_VIP_2 has no admitted_by - the legacy/emergency-bearer-shaped "no operator" case.
+    expect(body.admission_log[1]!.operator_user_id).toBeNull();
     expect(body.by_ticket_type[0]).toMatchObject({ key: "Standard", color: "gray" });
     expect(body.by_ticket_type[1]).toMatchObject({ key: "VIP", color: "purple" });
   });
@@ -702,7 +713,7 @@ describe("GET /api/admin/events/:eventId/reports", () => {
     }
   });
 
-  it("aggregates check-in method and device from valid scan/manual check-ins only, excluding revoked ones (Reports redesign)", async () => {
+  it("aggregates check-in method from valid scan/manual check-ins only, excluding revoked ones; operator comes from Attendee.admitted_by directly (Reports redesign)", async () => {
     const EVENT_METHOD = "evt-reports-checkin-method";
     await prisma.checkIn.deleteMany({ where: { event_id: EVENT_METHOD } });
     await prisma.attendee.deleteMany({ where: { event_id: EVENT_METHOD } });
@@ -724,6 +735,7 @@ describe("GET /api/admin/events/:eventId/reports", () => {
           email: "method-scan@example.com",
           name: "Scanned Guest",
           admitted_at: new Date("2026-10-01T09:00:00.000Z"),
+          admitted_by: opId,
           ...mkAttendeeToken(),
         },
         {
@@ -732,6 +744,7 @@ describe("GET /api/admin/events/:eventId/reports", () => {
           email: "method-manual@example.com",
           name: "Manually Searched Guest",
           admitted_at: new Date("2026-10-01T09:05:00.000Z"),
+          admitted_by: adminId,
           ...mkAttendeeToken(),
         },
         {
@@ -780,18 +793,25 @@ describe("GET /api/admin/events/:eventId/reports", () => {
       expect(res.status).toBe(200);
       const body = (await res.json()) as {
         by_checkin_method: Array<{ method: string; count: number }>;
-        by_device: Array<{ device_id: string | null; count: number }>;
+        by_operator: Array<{
+          operator_user_id: string | null;
+          operator_email: string | null;
+          count: number;
+        }>;
       };
       const byMethod = new Map(body.by_checkin_method.map((row) => [row.method, row.count]));
+      // The revoked check-in used the same device but must not count - by_checkin_method stays
+      // scoped to CheckIn rows with status: VALID.
       expect(byMethod.get("scan")).toBe(1);
       expect(byMethod.get("manual")).toBe(1);
 
-      // The revoked check-in used the same device but must not count - device totals stay
-      // scoped to the same VALID/scan+manual filter as by_checkin_method.
-      expect(body.by_device).toEqual([
-        { device_id: "Tablet 1 — main entrance", count: 1 },
-        { device_id: null, count: 1 },
-      ]);
+      // by_operator groups Attendee.admitted_by directly, with no CheckIn-status filter of its
+      // own - all three admitted attendees count once each, including the one whose only
+      // CheckIn row is REVOKED (admitted_at is still set, so it's still "currently admitted").
+      const byOperator = new Map(body.by_operator.map((row) => [row.operator_user_id, row]));
+      expect(byOperator.get(opId)).toMatchObject({ operator_email: EMAIL_OP, count: 1 });
+      expect(byOperator.get(adminId)).toMatchObject({ operator_email: EMAIL_ADMIN, count: 1 });
+      expect(byOperator.get(null)).toMatchObject({ operator_email: null, count: 1 });
     } finally {
       await prisma.checkIn.deleteMany({ where: { event_id: EVENT_METHOD } });
       await prisma.attendee.deleteMany({ where: { event_id: EVENT_METHOD } });
@@ -799,7 +819,7 @@ describe("GET /api/admin/events/:eventId/reports", () => {
     }
   });
 
-  it("counts a revoke-then-re-admit cycle once in by_checkin_method/by_device, not once per VALID row (independent PR #587 review)", async () => {
+  it("counts a revoke-then-re-admit cycle once in by_checkin_method, not once per VALID row (independent PR #587 review); by_operator needs no equivalent dedup", async () => {
     const EVENT_REVOKE = "evt-reports-revoke-readmit";
     await prisma.checkIn.deleteMany({ where: { event_id: EVENT_REVOKE } });
     await prisma.attendee.deleteMany({ where: { event_id: EVENT_REVOKE } });
@@ -819,8 +839,10 @@ describe("GET /api/admin/events/:eventId/reports", () => {
         event_id: EVENT_REVOKE,
         email: "revoke-readmit@example.com",
         name: "Revoked Then Readmitted Guest",
-        // Currently admitted, via the second (manual) check-in below.
+        // Currently admitted, via the second (manual) check-in below - admitted_by mirrors what
+        // admit.ts's atomic admitted_at/admitted_by write would have set for that re-admission.
         admitted_at: new Date("2026-10-01T09:10:00.000Z"),
+        admitted_by: opId,
         ...mkAttendeeToken(),
       },
     });
@@ -865,21 +887,26 @@ describe("GET /api/admin/events/:eventId/reports", () => {
       const body = (await res.json()) as {
         summary: { admitted: number };
         by_checkin_method: Array<{ method: string; count: number }>;
-        by_device: Array<{ device_id: string | null; count: number }>;
+        by_operator: Array<{
+          operator_user_id: string | null;
+          operator_display_name: string | null;
+          operator_email: string | null;
+          count: number;
+        }>;
       };
       expect(body.summary.admitted).toBe(1);
       // One attendee, one counted check-in - not two, even though 2 rows are status:VALID.
       const totalMethodCount = body.by_checkin_method.reduce((sum, row) => sum + row.count, 0);
-      const totalDeviceCount = body.by_device.reduce((sum, row) => sum + row.count, 0);
       expect(totalMethodCount).toBe(1);
-      expect(totalDeviceCount).toBe(1);
-      // The latest VALID row wins, matching loadDeviceIdsByAttendee's own dedup convention - the
-      // attendee's admitted_at reflects the re-admission (manual, Tablet 2), not the original scan
-      // that got revoked, so this aggregate attributes to the same row the admission log does.
-      expect(body.by_device).toEqual([{ device_id: "Tablet 2 — side entrance", count: 1 }]);
       const byMethod = new Map(body.by_checkin_method.map((row) => [row.method, row.count]));
       expect(byMethod.get("manual")).toBe(1);
       expect(byMethod.get("scan")).toBeUndefined();
+      // by_operator is grouped directly off Attendee.admitted_by, which admit.ts/undo.ts keep as
+      // a single current value - unlike by_checkin_method above, no per-attendee dedup is needed
+      // to avoid double-counting the revoke-then-re-admit cycle here.
+      expect(body.by_operator).toEqual([
+        { operator_user_id: opId, operator_display_name: null, operator_email: EMAIL_OP, count: 1 },
+      ]);
     } finally {
       await prisma.checkIn.deleteMany({ where: { event_id: EVENT_REVOKE } });
       await prisma.attendee.deleteMany({ where: { event_id: EVENT_REVOKE } });
@@ -944,13 +971,13 @@ describe("GET /api/admin/events/:eventId/reports", () => {
       const body = (await res.json()) as {
         summary: { admitted: number };
         by_checkin_method: Array<{ method: string; count: number }>;
-        by_device: Array<{ device_id: string | null; count: number }>;
+        by_operator: Array<{ operator_user_id: string | null; count: number }>;
       };
       // Not currently admitted - the status:VALID row is a red herring left over from the
       // revoked visit, not evidence this attendee should count anywhere in the report.
       expect(body.summary.admitted).toBe(0);
       expect(body.by_checkin_method).toEqual([]);
-      expect(body.by_device).toEqual([]);
+      expect(body.by_operator).toEqual([]);
     } finally {
       await prisma.checkIn.deleteMany({ where: { event_id: EVENT_REVOKE_ONLY } });
       await prisma.attendee.deleteMany({ where: { event_id: EVENT_REVOKE_ONLY } });
@@ -958,33 +985,51 @@ describe("GET /api/admin/events/:eventId/reports", () => {
     }
   });
 
-  it("sorts by_device by count descending, breaking a tie alphabetically by device_id (Reports redesign)", async () => {
-    const EVENT_TIEBREAK = "evt-reports-device-tiebreak";
-    await prisma.checkIn.deleteMany({ where: { event_id: EVENT_TIEBREAK } });
+  it("sorts by_operator by count descending, breaking a tie alphabetically by the resolved display label (Reports redesign)", async () => {
+    const EVENT_TIEBREAK = "evt-reports-operator-tiebreak";
     await prisma.attendee.deleteMany({ where: { event_id: EVENT_TIEBREAK } });
     await prisma.event.deleteMany({ where: { id: EVENT_TIEBREAK } });
     await prisma.event.create({
       data: {
         id: EVENT_TIEBREAK,
-        title: "Device Tiebreak Reports Event",
-        slug: "reports-event-device-tiebreak",
+        title: "Operator Tiebreak Reports Event",
+        slug: "reports-event-operator-tiebreak",
         date: new Date("2026-10-01T12:00:00.000Z"),
         organization_id: ORG_REP,
       },
     });
-    // "Solo" is the only device with a distinct count (exercises the count-descending branch);
-    // "Alpha" and "Zebra" tie at 2 apiece, so only device_id's own alphabetical order can decide
-    // between them (exercises the tie-break branch, both directions).
+
+    const password_hash = await hashPassword(PASSWORD);
+    const [soloUser, alphaUser, zebraUser] = await Promise.all([
+      prisma.user.create({
+        data: { email: "op-tie-solo@example.com", password_hash, display_name: "Solo Operator" },
+      }),
+      prisma.user.create({
+        data: { email: "op-tie-alpha@example.com", password_hash, display_name: "Alpha Operator" },
+      }),
+      prisma.user.create({
+        data: { email: "op-tie-zebra@example.com", password_hash, display_name: "Zebra Operator" },
+      }),
+    ]);
+
+    // "Solo" is the only operator with a distinct count (exercises the count-descending branch);
+    // "Alpha" and "Zebra" tie at 2 apiece, so only the resolved display label's own alphabetical
+    // order can decide between them (exercises the tie-break branch, both directions). The
+    // no-operator bucket also ties at 2, so it must sort after both named operators purely on
+    // its null operator_user_id, not on count or label (exercises the null-always-last branch
+    // regardless of which side of the comparator it lands on).
     const attendees = [
-      { id: "att-tie-solo-1", device: "Solo", minute: 0 },
-      { id: "att-tie-solo-2", device: "Solo", minute: 1 },
-      { id: "att-tie-solo-3", device: "Solo", minute: 2 },
-      { id: "att-tie-solo-4", device: "Solo", minute: 3 },
-      { id: "att-tie-solo-5", device: "Solo", minute: 4 },
-      { id: "att-tie-zebra-1", device: "Zebra", minute: 5 },
-      { id: "att-tie-zebra-2", device: "Zebra", minute: 6 },
-      { id: "att-tie-alpha-1", device: "Alpha", minute: 7 },
-      { id: "att-tie-alpha-2", device: "Alpha", minute: 8 },
+      { id: "att-optie-solo-1", operator: soloUser.id, minute: 0 },
+      { id: "att-optie-solo-2", operator: soloUser.id, minute: 1 },
+      { id: "att-optie-solo-3", operator: soloUser.id, minute: 2 },
+      { id: "att-optie-solo-4", operator: soloUser.id, minute: 3 },
+      { id: "att-optie-solo-5", operator: soloUser.id, minute: 4 },
+      { id: "att-optie-zebra-1", operator: zebraUser.id, minute: 5 },
+      { id: "att-optie-zebra-2", operator: zebraUser.id, minute: 6 },
+      { id: "att-optie-alpha-1", operator: alphaUser.id, minute: 7 },
+      { id: "att-optie-alpha-2", operator: alphaUser.id, minute: 8 },
+      { id: "att-optie-none-1", operator: null, minute: 9 },
+      { id: "att-optie-none-2", operator: null, minute: 10 },
     ];
     await prisma.attendee.createMany({
       data: attendees.map((a) => ({
@@ -993,17 +1038,8 @@ describe("GET /api/admin/events/:eventId/reports", () => {
         email: `${a.id}@example.com`,
         name: a.id,
         admitted_at: new Date(`2026-10-01T09:${String(a.minute).padStart(2, "0")}:00.000Z`),
+        admitted_by: a.operator,
         ...mkAttendeeToken(),
-      })),
-    });
-    await prisma.checkIn.createMany({
-      data: attendees.map((a) => ({
-        attendee_id: a.id,
-        event_id: EVENT_TIEBREAK,
-        checked_in_at: new Date(`2026-10-01T09:${String(a.minute).padStart(2, "0")}:00.000Z`),
-        status: "VALID",
-        source: "scan",
-        device_id: a.device,
       })),
     });
 
@@ -1013,17 +1049,423 @@ describe("GET /api/admin/events/:eventId/reports", () => {
       });
       expect(res.status).toBe(200);
       const body = (await res.json()) as {
-        by_device: Array<{ device_id: string | null; count: number }>;
+        by_operator: Array<{
+          operator_user_id: string | null;
+          operator_display_name: string | null;
+          operator_email: string | null;
+          count: number;
+        }>;
       };
-      expect(body.by_device).toEqual([
-        { device_id: "Solo", count: 5 },
-        { device_id: "Alpha", count: 2 },
-        { device_id: "Zebra", count: 2 },
+      expect(body.by_operator).toEqual([
+        {
+          operator_user_id: soloUser.id,
+          operator_display_name: "Solo Operator",
+          operator_email: "op-tie-solo@example.com",
+          count: 5,
+        },
+        {
+          operator_user_id: alphaUser.id,
+          operator_display_name: "Alpha Operator",
+          operator_email: "op-tie-alpha@example.com",
+          count: 2,
+        },
+        {
+          operator_user_id: zebraUser.id,
+          operator_display_name: "Zebra Operator",
+          operator_email: "op-tie-zebra@example.com",
+          count: 2,
+        },
+        {
+          operator_user_id: null,
+          operator_display_name: null,
+          operator_email: null,
+          count: 2,
+        },
       ]);
     } finally {
-      await prisma.checkIn.deleteMany({ where: { event_id: EVENT_TIEBREAK } });
       await prisma.attendee.deleteMany({ where: { event_id: EVENT_TIEBREAK } });
       await prisma.event.deleteMany({ where: { id: EVENT_TIEBREAK } });
+      await prisma.user.deleteMany({
+        where: { id: { in: [soloUser.id, alphaUser.id, zebraUser.id] } },
+      });
+    }
+  });
+
+  it("orders a deleted-user bucket and a no-operator bucket deterministically against a named operator, all tied on count (Reports redesign)", async () => {
+    // The groupBy behind by_operator is ordered explicitly (admitted_by asc, nulls first) so its
+    // own row order - and therefore which side of the tie-break comparator each bucket lands on -
+    // is reproducible instead of left to the query planner. Explicit, ordered ids below reproduce
+    // the exact "null, then deleted-user, then named-user" input order this relies on: the
+    // deleted-user bucket resolves to "" for comparison purposes (both operator_display_name and
+    // operator_email are null), which must still sort before the named operator's real label
+    // ("" < "Zzz Named" alphabetically) and after nothing - while the no-operator bucket must
+    // always sort last of all three regardless of its own id.
+    const EVENT_DETBUCKET = "evt-reports-operator-detbucket";
+    await prisma.attendee.deleteMany({ where: { event_id: EVENT_DETBUCKET } });
+    await prisma.event.deleteMany({ where: { id: EVENT_DETBUCKET } });
+    await prisma.user.deleteMany({
+      where: { id: { in: ["rr-detbucket-0-deleted", "rr-detbucket-1-user"] } },
+    });
+    await prisma.event.create({
+      data: {
+        id: EVENT_DETBUCKET,
+        title: "Operator Deleted-Bucket Reports Event",
+        slug: "reports-event-operator-detbucket",
+        date: new Date("2026-10-02T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+    });
+
+    const password_hash = await hashPassword(PASSWORD);
+    const [deletedUser, namedUser] = await Promise.all([
+      prisma.user.create({
+        data: {
+          id: "rr-detbucket-0-deleted",
+          email: "op-detbucket-deleted@example.com",
+          password_hash,
+          display_name: "Soon Deleted Too",
+        },
+      }),
+      prisma.user.create({
+        data: {
+          id: "rr-detbucket-1-user",
+          email: "op-detbucket-named@example.com",
+          password_hash,
+          display_name: "Zzz Named",
+        },
+      }),
+    ]);
+
+    const attendees = [
+      { id: "att-detbucket-deleted-1", operator: deletedUser.id, minute: 0 },
+      { id: "att-detbucket-deleted-2", operator: deletedUser.id, minute: 1 },
+      { id: "att-detbucket-named-1", operator: namedUser.id, minute: 2 },
+      { id: "att-detbucket-named-2", operator: namedUser.id, minute: 3 },
+      { id: "att-detbucket-none-1", operator: null, minute: 4 },
+      { id: "att-detbucket-none-2", operator: null, minute: 5 },
+    ];
+    await prisma.attendee.createMany({
+      data: attendees.map((a) => ({
+        id: a.id,
+        event_id: EVENT_DETBUCKET,
+        email: `${a.id}@example.com`,
+        name: a.id,
+        admitted_at: new Date(`2026-10-02T09:${String(a.minute).padStart(2, "0")}:00.000Z`),
+        admitted_by: a.operator,
+        ...mkAttendeeToken(),
+      })),
+    });
+    // Delete the user row itself so admitted_by keeps pointing at the now-dangling id, matching
+    // the established "Deleted user" fixture pattern used elsewhere in this file.
+    await prisma.user.delete({ where: { id: deletedUser.id } });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_DETBUCKET}/reports`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        by_operator: Array<{
+          operator_user_id: string | null;
+          operator_display_name: string | null;
+          operator_email: string | null;
+          count: number;
+        }>;
+      };
+      expect(body.by_operator).toEqual([
+        {
+          operator_user_id: deletedUser.id,
+          operator_display_name: null,
+          operator_email: null,
+          count: 2,
+        },
+        {
+          operator_user_id: namedUser.id,
+          operator_display_name: "Zzz Named",
+          operator_email: "op-detbucket-named@example.com",
+          count: 2,
+        },
+        {
+          operator_user_id: null,
+          operator_display_name: null,
+          operator_email: null,
+          count: 2,
+        },
+      ]);
+    } finally {
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_DETBUCKET } });
+      await prisma.event.deleteMany({ where: { id: EVENT_DETBUCKET } });
+      await prisma.user.deleteMany({ where: { id: namedUser.id } });
+    }
+  });
+
+  it("retroactively reflects a corrected device label on past check-ins for a still-live session, but falls back to the frozen snapshot once the session is gone (Reports redesign: live device-label join)", async () => {
+    const EVENT_LABELFIX = "evt-reports-device-label-fix";
+    await prisma.checkIn.deleteMany({ where: { event_id: EVENT_LABELFIX } });
+    await prisma.attendee.deleteMany({ where: { event_id: EVENT_LABELFIX } });
+    await prisma.event.deleteMany({ where: { id: EVENT_LABELFIX } });
+    await prisma.user.deleteMany({ where: { email: "reports-labelfix-op@example.com" } });
+    await prisma.event.create({
+      data: {
+        id: EVENT_LABELFIX,
+        title: "Device Label Fix Reports Event",
+        slug: "reports-event-device-label-fix",
+        date: new Date("2026-10-03T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+    });
+
+    const password_hash = await hashPassword(PASSWORD);
+    const operatorUser = await prisma.user.create({
+      data: { email: "reports-labelfix-op@example.com", password_hash },
+    });
+    const { session: liveSession } = await createSession(prisma, {
+      userId: operatorUser.id,
+      stage: SESSION_STAGE.FULL,
+      deviceLabel: "Tabelt 1 - mian entrance",
+    });
+    const { session: goneSession } = await createSession(prisma, {
+      userId: operatorUser.id,
+      stage: SESSION_STAGE.FULL,
+      deviceLabel: "Old Kiosk",
+    });
+
+    await prisma.attendee.createMany({
+      data: [
+        {
+          id: "att-labelfix-live",
+          event_id: EVENT_LABELFIX,
+          email: "labelfix-live@example.com",
+          name: "Labelfix Live Guest",
+          admitted_at: new Date("2026-10-03T09:00:00.000Z"),
+          admitted_by: operatorUser.id,
+          ...mkAttendeeToken(),
+        },
+        {
+          id: "att-labelfix-gone",
+          event_id: EVENT_LABELFIX,
+          email: "labelfix-gone@example.com",
+          name: "Labelfix Gone-Session Guest",
+          admitted_at: new Date("2026-10-03T09:05:00.000Z"),
+          admitted_by: operatorUser.id,
+          ...mkAttendeeToken(),
+        },
+      ],
+    });
+    await prisma.checkIn.createMany({
+      data: [
+        {
+          attendee_id: "att-labelfix-live",
+          event_id: EVENT_LABELFIX,
+          checked_in_at: new Date("2026-10-03T09:00:00.000Z"),
+          status: "VALID",
+          source: "scan",
+          device_id: "Tabelt 1 - mian entrance",
+          session_id: liveSession.id,
+        },
+        {
+          attendee_id: "att-labelfix-gone",
+          event_id: EVENT_LABELFIX,
+          checked_in_at: new Date("2026-10-03T09:05:00.000Z"),
+          status: "VALID",
+          source: "scan",
+          device_id: "Old Kiosk",
+          session_id: goneSession.id,
+        },
+      ],
+    });
+    // The "gone" session is purged (short post-event retention, AGENTS.md) - its check-in must
+    // fall back to its own frozen device_id snapshot rather than showing nothing.
+    await prisma.session.delete({ where: { id: goneSession.id } });
+
+    try {
+      const before = await app.request(`/api/admin/events/${EVENT_LABELFIX}/reports`, {
+        headers: { Cookie: adminCookie },
+      });
+      const beforeBody = (await before.json()) as {
+        admission_log: Array<{ attendee_id: string; device_id: string | null }>;
+      };
+      const liveBefore = beforeBody.admission_log.find((r) => r.attendee_id === "att-labelfix-live");
+      const goneBefore = beforeBody.admission_log.find((r) => r.attendee_id === "att-labelfix-gone");
+      expect(liveBefore?.device_id).toBe("Tabelt 1 - mian entrance");
+      expect(goneBefore?.device_id).toBe("Old Kiosk");
+
+      // Exercises updateSessionDeviceLabel directly (the same @admitto/auth function the
+      // superadmin-only device-label route calls) rather than that route itself - its own
+      // authorization is already covered by admin-sessions.test.ts; this test's concern is
+      // reports-routes.ts's join, not who may trigger the correction.
+      const fixed = await updateSessionDeviceLabel(
+        prisma,
+        liveSession.id,
+        operatorUser.id,
+        "Tablet 1 — main entrance",
+      );
+      expect(fixed).toBe(true);
+
+      // The CheckIn row's own device_id column is untouched - proves the retroactive fix below
+      // comes from the live session join, not a rewrite of the historical row.
+      const rawCheckIn = await prisma.checkIn.findFirst({
+        where: { attendee_id: "att-labelfix-live" },
+      });
+      expect(rawCheckIn?.device_id).toBe("Tabelt 1 - mian entrance");
+
+      const after = await app.request(`/api/admin/events/${EVENT_LABELFIX}/reports`, {
+        headers: { Cookie: adminCookie },
+      });
+      const afterBody = (await after.json()) as {
+        admission_log: Array<{ attendee_id: string; device_id: string | null }>;
+      };
+      const liveAfter = afterBody.admission_log.find((r) => r.attendee_id === "att-labelfix-live");
+      const goneAfter = afterBody.admission_log.find((r) => r.attendee_id === "att-labelfix-gone");
+      expect(liveAfter?.device_id).toBe("Tablet 1 — main entrance");
+      expect(goneAfter?.device_id).toBe("Old Kiosk");
+    } finally {
+      await prisma.checkIn.deleteMany({ where: { event_id: EVENT_LABELFIX } });
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_LABELFIX } });
+      await prisma.event.deleteMany({ where: { id: EVENT_LABELFIX } });
+      await prisma.session.deleteMany({ where: { user_id: operatorUser.id } });
+      await prisma.user.delete({ where: { id: operatorUser.id } });
+    }
+  });
+
+  it("resolves operator display across the admin-check-in-without-device, no-operator (emergency bearer), and deleted-user cases (Reports redesign: operator attribution)", async () => {
+    const EVENT_OPERATOR = "evt-reports-operator-attribution";
+    await prisma.checkIn.deleteMany({ where: { event_id: EVENT_OPERATOR } });
+    await prisma.attendee.deleteMany({ where: { event_id: EVENT_OPERATOR } });
+    await prisma.event.deleteMany({ where: { id: EVENT_OPERATOR } });
+    await prisma.user.deleteMany({ where: { email: "reports-deleted-op@example.com" } });
+    await prisma.event.create({
+      data: {
+        id: EVENT_OPERATOR,
+        title: "Operator Attribution Reports Event",
+        slug: "reports-event-operator-attribution",
+        date: new Date("2026-10-01T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+    });
+
+    const password_hash = await hashPassword(PASSWORD);
+    const deletedUser = await prisma.user.create({
+      data: {
+        email: "reports-deleted-op@example.com",
+        password_hash,
+        display_name: "Soon Deleted",
+      },
+    });
+
+    await prisma.attendee.createMany({
+      data: [
+        {
+          // Mirrors a real admin-SPA check-in (AdminCheckInRoute): operator is always recorded,
+          // but no device label is ever captured on that route (OperatorDeviceGate only gates
+          // /operator) - so device_id stays null while the operator is fully resolved.
+          id: "att-rep-op-admin-no-device",
+          event_id: EVENT_OPERATOR,
+          email: "op-admin-no-device@example.com",
+          name: "Admin Checked In Guest",
+          admitted_at: new Date("2026-10-01T09:00:00.000Z"),
+          admitted_by: adminId,
+          ...mkAttendeeToken(),
+        },
+        {
+          // Mirrors the legacy/emergency bearer path (ALLOW_CHECKIN_BEARER): no authenticated
+          // session, so no operator - but the client-supplied device_id (via the CheckIn row
+          // below) still comes through.
+          id: "att-rep-op-none",
+          event_id: EVENT_OPERATOR,
+          email: "op-none@example.com",
+          name: "Emergency Bearer Guest",
+          admitted_at: new Date("2026-10-01T09:05:00.000Z"),
+          ...mkAttendeeToken(),
+        },
+        {
+          // admitted_by still points at a real (but since-deleted) user id - must resolve to
+          // "Deleted user", not be conflated with the no-operator case above.
+          id: "att-rep-op-deleted-user",
+          event_id: EVENT_OPERATOR,
+          email: "op-deleted-user@example.com",
+          name: "Deleted Operator Guest",
+          admitted_at: new Date("2026-10-01T09:10:00.000Z"),
+          admitted_by: deletedUser.id,
+          ...mkAttendeeToken(),
+        },
+      ],
+    });
+    await prisma.checkIn.create({
+      data: {
+        attendee_id: "att-rep-op-none",
+        event_id: EVENT_OPERATOR,
+        checked_in_at: new Date("2026-10-01T09:05:00.000Z"),
+        status: "VALID",
+        source: "scan",
+        device_id: "emergency-tablet",
+      },
+    });
+    // Delete the user row itself - admitted_by keeps pointing at the now-dangling id (the column
+    // has no FK, matching how a real deleted staff account would leave old admission rows intact).
+    await prisma.user.delete({ where: { id: deletedUser.id } });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_OPERATOR}/reports`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        admission_log: Array<{
+          attendee_id: string;
+          operator_user_id: string | null;
+          operator_display_name: string | null;
+          operator_email: string | null;
+          device_id: string | null;
+        }>;
+      };
+      const byId = new Map(body.admission_log.map((row) => [row.attendee_id, row]));
+
+      expect(byId.get("att-rep-op-admin-no-device")).toMatchObject({
+        operator_user_id: adminId,
+        operator_display_name: null,
+        operator_email: EMAIL_ADMIN,
+        device_id: null,
+      });
+
+      expect(byId.get("att-rep-op-none")).toMatchObject({
+        operator_user_id: null,
+        operator_display_name: null,
+        operator_email: null,
+        device_id: "emergency-tablet",
+      });
+
+      const deletedOperator = byId.get("att-rep-op-deleted-user");
+      expect(deletedOperator?.operator_user_id).toBe(deletedUser.id);
+      expect(deletedOperator?.operator_display_name).toBeNull();
+      expect(deletedOperator?.operator_email).toBeNull();
+
+      // CSV/PDF collapse the same three cases to distinct strings - "Deleted user" must not read
+      // the same as "(No operator)".
+      const csvRes = await app.request(
+        `/api/admin/events/${EVENT_OPERATOR}/reports/export?format=csv`,
+        { headers: { Cookie: adminCookie } },
+      );
+      const csvText = (await csvRes.text()).replace(/^﻿/, "");
+      const csvLines = csvText.split("\r\n");
+      const adminLine = csvLines.find((l) => l.includes("op-admin-no-device@example.com"));
+      const noOpLine = csvLines.find((l) => l.includes("op-none@example.com"));
+      const deletedLine = csvLines.find((l) => l.includes("op-deleted-user@example.com"));
+      expect(adminLine).toContain(`"${EMAIL_ADMIN}"`);
+      expect(noOpLine).toContain('"(No operator)"');
+      expect(deletedLine).toContain('"Deleted user"');
+
+      const pdfRes = await app.request(
+        `/api/admin/events/${EVENT_OPERATOR}/reports/export?format=pdf`,
+        { headers: { Cookie: adminCookie } },
+      );
+      const html = await pdfRes.text();
+      expect(html).toContain("(No operator) (emergency-tablet)");
+      expect(html).toContain("Deleted user");
+    } finally {
+      await prisma.checkIn.deleteMany({ where: { event_id: EVENT_OPERATOR } });
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_OPERATOR } });
+      await prisma.event.deleteMany({ where: { id: EVENT_OPERATOR } });
     }
   });
 
@@ -1187,8 +1629,12 @@ describe("GET /api/admin/events/:eventId/reports/export", () => {
     const text = new TextDecoder().decode(buf);
     const lines = text.replace(/^\uFEFF/, "").split("\r\n");
     expect(lines[0]).toContain('"Admitted at (');
+    expect(lines[0]).toContain('"Checked in by"');
     expect(lines).toHaveLength(6);
     expect(lines[1]).toContain('"VIP One"');
+    // ATT_VIP_1 was seeded with admitted_by: adminId - "Checked in by" and "Device" stay separate
+    // CSV columns (unlike the merged PDF/on-screen presentation).
+    expect(lines[1]).toContain(`"${EMAIL_ADMIN}"`);
     expect(lines[1]).toContain('"scanner-01"');
     expect(lines[1]).not.toMatch(/T\d{2}:\d{2}:\d{2}\.\d{3}Z/);
   });
@@ -1218,6 +1664,10 @@ describe("GET /api/admin/events/:eventId/reports/export", () => {
     expect(html).toContain("Reports Event");
     expect(html).toContain("By ticket type");
     expect(html).toContain("VIP One");
+    expect(html).toContain("<th>Checked in by</th>");
+    // ATT_VIP_1 (admitted_by: adminId, device_id: scanner-01) - PDF merges operator + device
+    // into one cell, unlike CSV's separate columns.
+    expect(html).toContain(`${EMAIL_ADMIN} (scanner-01)`);
   });
 
   it("PDF admission log falls back to a 'No admissions yet' row when there are none", async () => {

@@ -1148,6 +1148,13 @@ export interface EventReportsResponse {
     email: string;
     ticket_type: string | null;
     admitted_at: string;
+    /** Attendee.admitted_by, resolved - null covers the legacy/emergency bearer check-in path or
+     * a row written outside the normal admit write path. */
+    operator_user_id: string | null;
+    operator_display_name: string | null;
+    operator_email: string | null;
+    /** Session.device_label at check-in time - secondary to operator_*, since it's a
+     * self-declared, optional session attribute (an admin-role check-in never sets one). */
     device_id: string | null;
     items: string[];
   }>;
@@ -1161,7 +1168,12 @@ export interface EventReportsResponse {
   by_checkin_method: Array<{ method: "scan" | "manual"; count: number }>;
   /** Sorted by count descending server-side (a ranked leaderboard, not a fixed-order status set
    * like the two breakdowns above). */
-  by_device: Array<{ device_id: string | null; count: number }>;
+  by_operator: Array<{
+    operator_user_id: string | null;
+    operator_display_name: string | null;
+    operator_email: string | null;
+    count: number;
+  }>;
 }
 
 // --- Identity providers & Cloudflare Access (SPA Settings → Identity, #266) ---

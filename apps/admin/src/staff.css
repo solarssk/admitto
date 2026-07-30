@@ -4530,6 +4530,12 @@ output.mail-field-hint {
   margin-left: var(--space-1);
 }
 
+.sessions-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
 .sessions-error,
 .sessions-success {
   font-size: var(--fs-sm);

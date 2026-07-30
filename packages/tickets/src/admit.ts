@@ -51,6 +51,7 @@ export async function admitAttendee(
       event_id: params.eventId,
       checked_in_by: params.audit.operator ?? null,
       device_id: params.audit.deviceId ?? null,
+      session_id: params.audit.sessionId ?? null,
       source: params.method,
       notes: params.notes?.trim() || null,
     };
