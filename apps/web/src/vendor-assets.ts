@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, normalize, sep } from "node:path";
-import type { MiddlewareHandler } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 
 const require = createRequire(import.meta.url);
 
@@ -11,6 +11,35 @@ const MIME: Record<string, string> = {
   ".woff2": "font/woff2",
   ".ttf": "font/ttf",
 };
+
+/** Safely serve `relative` under `baseDir`: path-traversal guard, known-extension MIME lookup,
+ * immutable caching. Shared by every self-hosted vendor asset route below (Tabler Icons,
+ * @fontsource) so this exists in exactly one place - each route only differs in how it derives
+ * `baseDir`/`relative` from its own URL shape. */
+function serveVendorFile(c: Context, baseDir: string, relative: string): Response | Promise<Response> {
+  const target = normalize(join(baseDir, relative));
+
+  // Path traversal guard
+  if (!target.startsWith(baseDir + sep) && target !== baseDir) {
+    return c.text("Forbidden", 403);
+  }
+
+  const ext = target.slice(target.lastIndexOf("."));
+  const contentType = MIME[ext];
+  if (!contentType) return c.notFound();
+
+  let body: Buffer;
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from a trusted, module-resolved dist root
+    body = readFileSync(target);
+  } catch {
+    return c.notFound();
+  }
+
+  c.header("Content-Type", contentType);
+  c.header("Cache-Control", "public, max-age=31536000, immutable");
+  return c.body(new Uint8Array(body));
+}
 
 function resolveTablerIconsDist(): string {
   try {
@@ -37,29 +66,7 @@ export const serveTablerIcons: MiddlewareHandler = async (c) => {
   const PREFIX = "/vendor/tabler-icons/";
   if (!path.startsWith(PREFIX)) return c.notFound();
 
-  const relative = path.slice(PREFIX.length);
-  const target = normalize(join(TABLER_DIST, relative));
-
-  // Path traversal guard
-  if (!target.startsWith(TABLER_DIST + sep) && target !== TABLER_DIST) {
-    return c.text("Forbidden", 403);
-  }
-
-  const ext = target.slice(target.lastIndexOf("."));
-  const contentType = MIME[ext];
-  if (!contentType) return c.notFound();
-
-  let body: Buffer;
-  try {
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
-    body = readFileSync(target);
-  } catch {
-    return c.notFound();
-  }
-
-  c.header("Content-Type", contentType);
-  c.header("Cache-Control", "public, max-age=31536000, immutable");
-  return c.body(new Uint8Array(body));
+  return serveVendorFile(c, TABLER_DIST, path.slice(PREFIX.length));
 };
 
 /** Absolute URL path for the self-hosted Tabler Icons stylesheet. */
@@ -109,28 +116,7 @@ export const serveFontsourceFonts: MiddlewareHandler = async (c) => {
   const filesDir = FONTSOURCE_FILES_DIR[pkg];
   if (!filesDir) return c.notFound();
 
-  const target = normalize(join(filesDir, relative));
-
-  // Path traversal guard
-  if (!target.startsWith(filesDir + sep) && target !== filesDir) {
-    return c.text("Forbidden", 403);
-  }
-
-  const ext = target.slice(target.lastIndexOf("."));
-  const contentType = MIME[ext];
-  if (!contentType) return c.notFound();
-
-  let body: Buffer;
-  try {
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
-    body = readFileSync(target);
-  } catch {
-    return c.notFound();
-  }
-
-  c.header("Content-Type", contentType);
-  c.header("Cache-Control", "public, max-age=31536000, immutable");
-  return c.body(new Uint8Array(body));
+  return serveVendorFile(c, filesDir, relative);
 };
 
 // Weight/style CSS files to pull in per built-in family - kept in lockstep with
