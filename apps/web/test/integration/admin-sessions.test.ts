@@ -472,6 +472,66 @@ describe("POST /api/admin/sessions/:id/device-label", () => {
     expect(res.status).toBe(403);
     await prisma.session.delete({ where: { id: target.session.id } });
   });
+
+  it("returns 400 for a malformed JSON body", async () => {
+    const target = await createSession(prisma, { userId: operatorId, stage: SESSION_STAGE.FULL });
+    const res = await app.request(`/api/admin/sessions/${target.session.id}/device-label`, {
+      method: "POST",
+      headers: { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: "{not json",
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("invalid_json");
+    await prisma.session.delete({ where: { id: target.session.id } });
+  });
+
+  it("returns 400 when deviceLabel is not a string", async () => {
+    const target = await createSession(prisma, { userId: operatorId, stage: SESSION_STAGE.FULL });
+    const res = await app.request(`/api/admin/sessions/${target.session.id}/device-label`, {
+      method: "POST",
+      headers: { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ deviceLabel: 123 }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("invalid_device_label");
+    await prisma.session.delete({ where: { id: target.session.id } });
+  });
+
+  it("treats an explicit null deviceLabel the same as clearing it", async () => {
+    const target = await createSession(prisma, {
+      userId: operatorId,
+      stage: SESSION_STAGE.FULL,
+      deviceLabel: "Some Label",
+    });
+    const res = await app.request(`/api/admin/sessions/${target.session.id}/device-label`, {
+      method: "POST",
+      headers: { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ deviceLabel: null }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { deviceLabel: string | null };
+    expect(body.deviceLabel).toBeNull();
+    await prisma.session.delete({ where: { id: target.session.id } });
+  });
+
+  it("treats a body with no deviceLabel key as clearing it", async () => {
+    const target = await createSession(prisma, {
+      userId: operatorId,
+      stage: SESSION_STAGE.FULL,
+      deviceLabel: "Some Label",
+    });
+    const res = await app.request(`/api/admin/sessions/${target.session.id}/device-label`, {
+      method: "POST",
+      headers: { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { deviceLabel: string | null };
+    expect(body.deviceLabel).toBeNull();
+    await prisma.session.delete({ where: { id: target.session.id } });
+  });
 });
 
 describe("POST /api/admin/events/:eventId/revoke-all-operator-sessions", () => {

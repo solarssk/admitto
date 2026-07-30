@@ -2306,6 +2306,65 @@ describe("SessionsPanel rendering", () => {
     expect(fetchSessions).toHaveBeenCalledTimes(2);
   });
 
+  it("Edit opens with an empty input for a session with no device label yet", async () => {
+    vi.mocked(fetchSessions).mockResolvedValue({
+      sessions: [makeSession({ id: "no-device", userEmail: "plain@example.com", deviceLabel: null })],
+    });
+
+    renderWithToast(<SessionsPanel />);
+
+    await screen.findByRole("table");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const dialog = await screen.findByRole("dialog");
+    const input = within(dialog).getByLabelText("Device label") as HTMLInputElement;
+    expect(input.value).toBe("");
+    expect(dialog.textContent).not.toContain("currently");
+  });
+
+  it("saving a cleared device label sends null, not an empty string", async () => {
+    vi.mocked(fetchSessions).mockResolvedValue({
+      sessions: [
+        makeSession({ id: "with-device", userEmail: "device@example.com", deviceLabel: "Desk iPad" }),
+      ],
+    });
+    vi.mocked(updateSessionDeviceLabel).mockResolvedValueOnce({ deviceLabel: null });
+
+    renderWithToast(<SessionsPanel />);
+
+    await screen.findByRole("table");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Device label"), { target: { value: "   " } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(updateSessionDeviceLabel).toHaveBeenCalledWith("with-device", null);
+    });
+  });
+
+  it("Cancel closes the edit dialog without saving", async () => {
+    vi.mocked(fetchSessions).mockResolvedValue({
+      sessions: [
+        makeSession({ id: "with-device", userEmail: "device@example.com", deviceLabel: "Desk iPad" }),
+      ],
+    });
+
+    renderWithToast(<SessionsPanel />);
+
+    await screen.findByRole("table");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Device label"), {
+      target: { value: "Ignored change" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(updateSessionDeviceLabel).not.toHaveBeenCalled();
+  });
+
   it("labels IP addresses explicitly and keeps a missing address distinct from relative activity", async () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(new Date("2026-01-01T13:00:00.000Z").getTime());
     try {

@@ -1014,7 +1014,10 @@ describe("GET /api/admin/events/:eventId/reports", () => {
 
     // "Solo" is the only operator with a distinct count (exercises the count-descending branch);
     // "Alpha" and "Zebra" tie at 2 apiece, so only the resolved display label's own alphabetical
-    // order can decide between them (exercises the tie-break branch, both directions).
+    // order can decide between them (exercises the tie-break branch, both directions). The
+    // no-operator bucket also ties at 2, so it must sort after both named operators purely on
+    // its null operator_user_id, not on count or label (exercises the null-always-last branch
+    // regardless of which side of the comparator it lands on).
     const attendees = [
       { id: "att-optie-solo-1", operator: soloUser.id, minute: 0 },
       { id: "att-optie-solo-2", operator: soloUser.id, minute: 1 },
@@ -1025,6 +1028,8 @@ describe("GET /api/admin/events/:eventId/reports", () => {
       { id: "att-optie-zebra-2", operator: zebraUser.id, minute: 6 },
       { id: "att-optie-alpha-1", operator: alphaUser.id, minute: 7 },
       { id: "att-optie-alpha-2", operator: alphaUser.id, minute: 8 },
+      { id: "att-optie-none-1", operator: null, minute: 9 },
+      { id: "att-optie-none-2", operator: null, minute: 10 },
     ];
     await prisma.attendee.createMany({
       data: attendees.map((a) => ({
@@ -1068,6 +1073,12 @@ describe("GET /api/admin/events/:eventId/reports", () => {
           operator_user_id: zebraUser.id,
           operator_display_name: "Zebra Operator",
           operator_email: "op-tie-zebra@example.com",
+          count: 2,
+        },
+        {
+          operator_user_id: null,
+          operator_display_name: null,
+          operator_email: null,
           count: 2,
         },
       ]);

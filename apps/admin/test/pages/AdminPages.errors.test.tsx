@@ -1384,6 +1384,33 @@ describe("ReportsPage admission log", () => {
           device_id: null,
           items: [],
         },
+        // Not in by_operator/the filter dropdown - these two only exercise operatorDisplayLabel's
+        // remaining fallback rungs (email when no display name is set; "Deleted user" when the
+        // operator id no longer resolves to a user at all), not the filter itself.
+        {
+          attendee_id: "att-no-displayname",
+          name: "No Displayname Guest",
+          email: "no-displayname-guest@example.com",
+          ticket_type: null,
+          admitted_at: "2026-06-01T10:12:00.000Z",
+          operator_user_id: "user-no-displayname",
+          operator_display_name: null,
+          operator_email: "no-displayname-op@example.com",
+          device_id: null,
+          items: [],
+        },
+        {
+          attendee_id: "att-deleted-operator",
+          name: "Deleted Operator Guest",
+          email: "deleted-operator-guest@example.com",
+          ticket_type: null,
+          admitted_at: "2026-06-01T10:14:00.000Z",
+          operator_user_id: "user-deleted",
+          operator_display_name: null,
+          operator_email: null,
+          device_id: null,
+          items: [],
+        },
       ],
     });
     renderWithToast(
@@ -1396,6 +1423,10 @@ describe("ReportsPage admission log", () => {
     expect(await screen.findByText("Scanner Guest")).toBeTruthy();
     expect(screen.getByText("Desk Guest")).toBeTruthy();
     expect(screen.getByText("No Operator Guest")).toBeTruthy();
+    // operatorDisplayLabel's remaining two fallback rungs: email when no display name resolved,
+    // then "Deleted user" when the operator id doesn't resolve to a user at all.
+    expect(screen.getByText("no-displayname-op@example.com")).toBeTruthy();
+    expect(screen.getByText("Deleted user")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
     const operatorSelect = screen.getByLabelText("Filter by operator") as HTMLSelectElement;

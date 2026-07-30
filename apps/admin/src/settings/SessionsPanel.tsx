@@ -159,6 +159,9 @@ export function SessionsPanel() {
   const confirmDeviceSuffix = confirmTarget?.deviceLabel
     ? ` (${confirmTarget.deviceLabel})`
     : "";
+  const editCurrentLabelSuffix = editTarget?.deviceLabel
+    ? ` (currently "${editTarget.deviceLabel}")`
+    : "";
 
   // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
   // the "Loading…" text on and off faster than it can register as loading — show it only
@@ -334,7 +337,7 @@ export function SessionsPanel() {
         title="Edit device label"
         message={
           editTarget
-            ? `Correct the device label for ${editTarget.userEmail}${editTarget.deviceLabel ? ` (currently "${editTarget.deviceLabel}")` : ""}.`
+            ? `Correct the device label for ${editTarget.userEmail}${editCurrentLabelSuffix}.`
             : ""
         }
         confirmLabel="Save"
