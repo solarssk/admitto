@@ -2,7 +2,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient, Prisma } from "@prisma/client";
-import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
+import { createSession, hashPassword, SESSION_STAGE, updateSessionDeviceLabel } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
 import { generateToken, hashToken } from "@admitto/tickets";
@@ -1103,7 +1103,9 @@ describe("GET /api/admin/events/:eventId/reports", () => {
     const EVENT_DETBUCKET = "evt-reports-operator-detbucket";
     await prisma.attendee.deleteMany({ where: { event_id: EVENT_DETBUCKET } });
     await prisma.event.deleteMany({ where: { id: EVENT_DETBUCKET } });
-    await prisma.user.deleteMany({ where: { id: "rr-detbucket-0-deleted" } });
+    await prisma.user.deleteMany({
+      where: { id: { in: ["rr-detbucket-0-deleted", "rr-detbucket-1-user"] } },
+    });
     await prisma.event.create({
       data: {
         id: EVENT_DETBUCKET,
@@ -1194,6 +1196,135 @@ describe("GET /api/admin/events/:eventId/reports", () => {
       await prisma.attendee.deleteMany({ where: { event_id: EVENT_DETBUCKET } });
       await prisma.event.deleteMany({ where: { id: EVENT_DETBUCKET } });
       await prisma.user.deleteMany({ where: { id: namedUser.id } });
+    }
+  });
+
+  it("retroactively reflects a corrected device label on past check-ins for a still-live session, but falls back to the frozen snapshot once the session is gone (Reports redesign: live device-label join)", async () => {
+    const EVENT_LABELFIX = "evt-reports-device-label-fix";
+    await prisma.checkIn.deleteMany({ where: { event_id: EVENT_LABELFIX } });
+    await prisma.attendee.deleteMany({ where: { event_id: EVENT_LABELFIX } });
+    await prisma.event.deleteMany({ where: { id: EVENT_LABELFIX } });
+    await prisma.user.deleteMany({ where: { email: "reports-labelfix-op@example.com" } });
+    await prisma.event.create({
+      data: {
+        id: EVENT_LABELFIX,
+        title: "Device Label Fix Reports Event",
+        slug: "reports-event-device-label-fix",
+        date: new Date("2026-10-03T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+    });
+
+    const password_hash = await hashPassword(PASSWORD);
+    const operatorUser = await prisma.user.create({
+      data: { email: "reports-labelfix-op@example.com", password_hash },
+    });
+    const { session: liveSession } = await createSession(prisma, {
+      userId: operatorUser.id,
+      stage: SESSION_STAGE.FULL,
+      deviceLabel: "Tabelt 1 - mian entrance",
+    });
+    const { session: goneSession } = await createSession(prisma, {
+      userId: operatorUser.id,
+      stage: SESSION_STAGE.FULL,
+      deviceLabel: "Old Kiosk",
+    });
+
+    await prisma.attendee.createMany({
+      data: [
+        {
+          id: "att-labelfix-live",
+          event_id: EVENT_LABELFIX,
+          email: "labelfix-live@example.com",
+          name: "Labelfix Live Guest",
+          admitted_at: new Date("2026-10-03T09:00:00.000Z"),
+          admitted_by: operatorUser.id,
+          ...mkAttendeeToken(),
+        },
+        {
+          id: "att-labelfix-gone",
+          event_id: EVENT_LABELFIX,
+          email: "labelfix-gone@example.com",
+          name: "Labelfix Gone-Session Guest",
+          admitted_at: new Date("2026-10-03T09:05:00.000Z"),
+          admitted_by: operatorUser.id,
+          ...mkAttendeeToken(),
+        },
+      ],
+    });
+    await prisma.checkIn.createMany({
+      data: [
+        {
+          attendee_id: "att-labelfix-live",
+          event_id: EVENT_LABELFIX,
+          checked_in_at: new Date("2026-10-03T09:00:00.000Z"),
+          status: "VALID",
+          source: "scan",
+          device_id: "Tabelt 1 - mian entrance",
+          session_id: liveSession.id,
+        },
+        {
+          attendee_id: "att-labelfix-gone",
+          event_id: EVENT_LABELFIX,
+          checked_in_at: new Date("2026-10-03T09:05:00.000Z"),
+          status: "VALID",
+          source: "scan",
+          device_id: "Old Kiosk",
+          session_id: goneSession.id,
+        },
+      ],
+    });
+    // The "gone" session is purged (short post-event retention, AGENTS.md) - its check-in must
+    // fall back to its own frozen device_id snapshot rather than showing nothing.
+    await prisma.session.delete({ where: { id: goneSession.id } });
+
+    try {
+      const before = await app.request(`/api/admin/events/${EVENT_LABELFIX}/reports`, {
+        headers: { Cookie: adminCookie },
+      });
+      const beforeBody = (await before.json()) as {
+        admission_log: Array<{ attendee_id: string; device_id: string | null }>;
+      };
+      const liveBefore = beforeBody.admission_log.find((r) => r.attendee_id === "att-labelfix-live");
+      const goneBefore = beforeBody.admission_log.find((r) => r.attendee_id === "att-labelfix-gone");
+      expect(liveBefore?.device_id).toBe("Tabelt 1 - mian entrance");
+      expect(goneBefore?.device_id).toBe("Old Kiosk");
+
+      // Exercises updateSessionDeviceLabel directly (the same @admitto/auth function the
+      // superadmin-only device-label route calls) rather than that route itself - its own
+      // authorization is already covered by admin-sessions.test.ts; this test's concern is
+      // reports-routes.ts's join, not who may trigger the correction.
+      const fixed = await updateSessionDeviceLabel(
+        prisma,
+        liveSession.id,
+        operatorUser.id,
+        "Tablet 1 — main entrance",
+      );
+      expect(fixed).toBe(true);
+
+      // The CheckIn row's own device_id column is untouched - proves the retroactive fix below
+      // comes from the live session join, not a rewrite of the historical row.
+      const rawCheckIn = await prisma.checkIn.findFirst({
+        where: { attendee_id: "att-labelfix-live" },
+      });
+      expect(rawCheckIn?.device_id).toBe("Tabelt 1 - mian entrance");
+
+      const after = await app.request(`/api/admin/events/${EVENT_LABELFIX}/reports`, {
+        headers: { Cookie: adminCookie },
+      });
+      const afterBody = (await after.json()) as {
+        admission_log: Array<{ attendee_id: string; device_id: string | null }>;
+      };
+      const liveAfter = afterBody.admission_log.find((r) => r.attendee_id === "att-labelfix-live");
+      const goneAfter = afterBody.admission_log.find((r) => r.attendee_id === "att-labelfix-gone");
+      expect(liveAfter?.device_id).toBe("Tablet 1 — main entrance");
+      expect(goneAfter?.device_id).toBe("Old Kiosk");
+    } finally {
+      await prisma.checkIn.deleteMany({ where: { event_id: EVENT_LABELFIX } });
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_LABELFIX } });
+      await prisma.event.deleteMany({ where: { id: EVENT_LABELFIX } });
+      await prisma.session.deleteMany({ where: { user_id: operatorUser.id } });
+      await prisma.user.delete({ where: { id: operatorUser.id } });
     }
   });
 

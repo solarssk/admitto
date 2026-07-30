@@ -166,39 +166,49 @@ export async function handleUpdateSessionDeviceLabel(c: Context, db: PrismaClien
 
   const row = await db.session.findUnique({
     where: { id },
-    select: { user_id: true, device_label: true, user: { select: { email: true } } },
+    select: { user_id: true, device_label: true },
   });
   if (!row) return c.json({ error: "not_found" }, 404);
 
   const newLabel = label.length > 0 ? label : null;
-  const ok = await updateSessionDeviceLabel(db, id, row.user_id, newLabel);
-  if (!ok) return c.json({ error: "session_not_editable" }, 409);
-
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
   const actorUserId = audit.operator ?? c.get("auth").userId;
-  await writeAdminAuditLog(db, {
-    organizationId: orgId,
-    actorUserId,
-    sessionId: audit.sessionId,
-    ip: audit.ip,
-    timezone: audit.timezone,
-    actionType: "session_device_label_updated",
-    metadata: {
-      session_id: id,
-      target_user_id: row.user_id,
-      previous_label: row.device_label,
-      new_label: newLabel,
-    },
+
+  // Transactional like handleRevokeSession above (CodeRabbit review): without this, an audit-log
+  // or org-lookup failure after the label already changed would return an error while the label
+  // stays changed - a retry then reads the already-new label as "previous", losing the real one.
+  const updated = await runInTransaction(db, async (tx) => {
+    const ok = await updateSessionDeviceLabel(tx, id, row.user_id, newLabel);
+    if (!ok) return false;
+    await writeAdminAuditLog(tx, {
+      organizationId: orgId,
+      actorUserId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      timezone: audit.timezone,
+      actionType: "session_device_label_updated",
+      metadata: {
+        session_id: id,
+        target_user_id: row.user_id,
+        previous_label: row.device_label,
+        new_label: newLabel,
+      },
+    });
+    return true;
   });
+  if (!updated) return c.json({ error: "session_not_editable" }, 409);
+
+  // Emitted after the transaction has committed (mirrors handleRevokeSession above) - not PII,
+  // unlike the previous version of this log: system logs are readable by any staffAdminGate
+  // admin, not just superadmins, who are the only ones that can reach this endpoint (CodeRabbit
+  // review).
   emitSystemLog("security", "info", "session_device_label_updated", {
     sessionId: id,
     targetUserId: row.user_id,
-    targetEmail: row.user.email,
     previousLabel: row.device_label,
     newLabel,
     actorUserId,
-    actorEmail: await resolveActorEmailForLog(db, actorUserId),
     ip: audit.ip,
   });
 

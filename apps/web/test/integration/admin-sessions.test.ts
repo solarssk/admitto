@@ -354,6 +354,7 @@ describe("POST /api/admin/sessions/:id/device-label", () => {
 
     const log = await prisma.adminAuditLog.findFirst({
       where: { organization_id: ORG_SESSIONS, action_type: "session_device_label_updated" },
+      orderBy: { id: "desc" },
     });
     expect(log).not.toBeNull();
     const meta = log?.metadata as Record<string, unknown>;
@@ -440,6 +441,8 @@ describe("POST /api/admin/sessions/:id/device-label", () => {
 
     const unchanged = await prisma.session.findUnique({ where: { id: target.session.id } });
     expect(unchanged?.device_label).toBe("Still Here");
+
+    await prisma.session.delete({ where: { id: target.session.id } });
   });
 
   it("returns 404 for a session id that doesn't exist", async () => {

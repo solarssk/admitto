@@ -178,12 +178,31 @@ async function loadDeviceIdsByAttendee(
       source: { in: ["scan", "manual"] },
     },
     orderBy: [{ checked_in_at: "desc" }, { id: "desc" }],
-    select: { attendee_id: true, device_id: true },
+    select: { attendee_id: true, device_id: true, session_id: true },
   });
+
+  // A superadmin's later device-label correction (SessionsPanel) should retroactively apply
+  // here too (CodeRabbit review) - device_id is the frozen snapshot taken at check-in time,
+  // but session_id (added after that snapshot existed, so null on older rows) lets a still-live
+  // session's *current* device_label win instead. Falls back to the snapshot when there's no
+  // session_id at all (the legacy/emergency-bearer path) or the session has since been purged
+  // (short post-event retention, AGENTS.md) - a stale snapshot beats showing nothing.
+  const sessionIds = [
+    ...new Set(checkIns.map((row) => row.session_id).filter((id): id is string => id != null)),
+  ];
+  const sessions =
+    sessionIds.length > 0
+      ? await db.session.findMany({
+          where: { id: { in: sessionIds } },
+          select: { id: true, device_label: true },
+        })
+      : [];
+  const labelBySessionId = new Map(sessions.map((s) => [s.id, s.device_label]));
 
   for (const row of checkIns) {
     if (!map.has(row.attendee_id)) {
-      map.set(row.attendee_id, row.device_id);
+      const session = row.session_id ? labelBySessionId.get(row.session_id) : undefined;
+      map.set(row.attendee_id, session !== undefined ? session : row.device_id);
     }
   }
   return map;

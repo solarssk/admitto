@@ -417,7 +417,7 @@ function operatorBreakdownRows(
   return byOperator.map((row) => {
     const pct = pctOf(row.count, admitted);
     return {
-      id: row.operator_user_id ?? "__no_operator__",
+      id: encodeOperatorFilterValue(row.operator_user_id),
       label: operatorDisplayLabel(row),
       meta: `${row.count} · ${pct}%`,
       pct,
