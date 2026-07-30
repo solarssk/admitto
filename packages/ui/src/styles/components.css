@@ -303,3 +303,48 @@
     transition: none;
   }
 }
+
+/* ---------------- Notice ---------------- */
+.at-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  width: 100%;
+  /* Always spans every column when placed directly in a CSS grid (e.g. the 2-column
+     .mail-transport-section) instead of just filling one cell - a short message would
+     otherwise sit at roughly half width. Inert (ignored) in flex/block parents, so this is
+     safe to set unconditionally rather than something every call site has to opt into. */
+  grid-column: 1 / -1;
+  box-sizing: border-box;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  font-size: var(--fs-sm);
+}
+.at-notice__icon {
+  margin-top: 2px;
+  flex: none;
+}
+/* A permanent fact about the surrounding view, not an alert - a neutral "well" reads as
+   documentation rather than a warning. */
+.at-notice--info {
+  border-color: var(--border);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+}
+.at-notice--success {
+  border-color: var(--status-ok);
+  background: var(--status-ok-tint);
+  color: var(--status-ok-fg);
+}
+.at-notice--warning {
+  border-color: var(--status-warn);
+  background: var(--status-warn-tint);
+  color: var(--status-warn-fg);
+}
+.at-notice--error {
+  border-color: var(--status-error);
+  background: var(--status-error-tint);
+  color: var(--status-error-fg);
+}
