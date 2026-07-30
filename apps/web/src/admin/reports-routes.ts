@@ -363,11 +363,15 @@ async function loadReportsAggregates(
       // Grouped directly off Attendee (not CheckIn), same shape as by_ticket_type/by_rsvp_status
       // above - admitted_at/admitted_by are already the single current-admission pair (admit.ts
       // sets both atomically, undo.ts clears both atomically), so this needs no per-attendee
-      // dedup the way the CheckIn-sourced breakdowns above do.
+      // dedup the way the CheckIn-sourced breakdowns above do. orderBy makes the groupBy's own
+      // row order deterministic - the .sort() below already fully orders the response, but
+      // without this a fully tied pair (same count AND same resolved label) would otherwise come
+      // back in whatever arbitrary order the query planner happened to produce that run.
       db.attendee.groupBy({
         by: ["admitted_by"],
         where: { event_id: eventId, admitted_at: { not: null } },
         _count: { _all: true },
+        orderBy: { admitted_by: { sort: "asc", nulls: "first" } },
       }),
     ]);
 

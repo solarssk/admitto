@@ -1091,6 +1091,112 @@ describe("GET /api/admin/events/:eventId/reports", () => {
     }
   });
 
+  it("orders a deleted-user bucket and a no-operator bucket deterministically against a named operator, all tied on count (Reports redesign)", async () => {
+    // The groupBy behind by_operator is ordered explicitly (admitted_by asc, nulls first) so its
+    // own row order - and therefore which side of the tie-break comparator each bucket lands on -
+    // is reproducible instead of left to the query planner. Explicit, ordered ids below reproduce
+    // the exact "null, then deleted-user, then named-user" input order this relies on: the
+    // deleted-user bucket resolves to "" for comparison purposes (both operator_display_name and
+    // operator_email are null), which must still sort before the named operator's real label
+    // ("" < "Zzz Named" alphabetically) and after nothing - while the no-operator bucket must
+    // always sort last of all three regardless of its own id.
+    const EVENT_DETBUCKET = "evt-reports-operator-detbucket";
+    await prisma.attendee.deleteMany({ where: { event_id: EVENT_DETBUCKET } });
+    await prisma.event.deleteMany({ where: { id: EVENT_DETBUCKET } });
+    await prisma.user.deleteMany({ where: { id: "rr-detbucket-0-deleted" } });
+    await prisma.event.create({
+      data: {
+        id: EVENT_DETBUCKET,
+        title: "Operator Deleted-Bucket Reports Event",
+        slug: "reports-event-operator-detbucket",
+        date: new Date("2026-10-02T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+    });
+
+    const password_hash = await hashPassword(PASSWORD);
+    const [deletedUser, namedUser] = await Promise.all([
+      prisma.user.create({
+        data: {
+          id: "rr-detbucket-0-deleted",
+          email: "op-detbucket-deleted@example.com",
+          password_hash,
+          display_name: "Soon Deleted Too",
+        },
+      }),
+      prisma.user.create({
+        data: {
+          id: "rr-detbucket-1-user",
+          email: "op-detbucket-named@example.com",
+          password_hash,
+          display_name: "Zzz Named",
+        },
+      }),
+    ]);
+
+    const attendees = [
+      { id: "att-detbucket-deleted-1", operator: deletedUser.id, minute: 0 },
+      { id: "att-detbucket-deleted-2", operator: deletedUser.id, minute: 1 },
+      { id: "att-detbucket-named-1", operator: namedUser.id, minute: 2 },
+      { id: "att-detbucket-named-2", operator: namedUser.id, minute: 3 },
+      { id: "att-detbucket-none-1", operator: null, minute: 4 },
+      { id: "att-detbucket-none-2", operator: null, minute: 5 },
+    ];
+    await prisma.attendee.createMany({
+      data: attendees.map((a) => ({
+        id: a.id,
+        event_id: EVENT_DETBUCKET,
+        email: `${a.id}@example.com`,
+        name: a.id,
+        admitted_at: new Date(`2026-10-02T09:${String(a.minute).padStart(2, "0")}:00.000Z`),
+        admitted_by: a.operator,
+        ...mkAttendeeToken(),
+      })),
+    });
+    // Delete the user row itself so admitted_by keeps pointing at the now-dangling id, matching
+    // the established "Deleted user" fixture pattern used elsewhere in this file.
+    await prisma.user.delete({ where: { id: deletedUser.id } });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_DETBUCKET}/reports`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        by_operator: Array<{
+          operator_user_id: string | null;
+          operator_display_name: string | null;
+          operator_email: string | null;
+          count: number;
+        }>;
+      };
+      expect(body.by_operator).toEqual([
+        {
+          operator_user_id: deletedUser.id,
+          operator_display_name: null,
+          operator_email: null,
+          count: 2,
+        },
+        {
+          operator_user_id: namedUser.id,
+          operator_display_name: "Zzz Named",
+          operator_email: "op-detbucket-named@example.com",
+          count: 2,
+        },
+        {
+          operator_user_id: null,
+          operator_display_name: null,
+          operator_email: null,
+          count: 2,
+        },
+      ]);
+    } finally {
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_DETBUCKET } });
+      await prisma.event.deleteMany({ where: { id: EVENT_DETBUCKET } });
+      await prisma.user.deleteMany({ where: { id: namedUser.id } });
+    }
+  });
+
   it("resolves operator display across the admin-check-in-without-device, no-operator (emergency bearer), and deleted-user cases (Reports redesign: operator attribution)", async () => {
     const EVENT_OPERATOR = "evt-reports-operator-attribution";
     await prisma.checkIn.deleteMany({ where: { event_id: EVENT_OPERATOR } });

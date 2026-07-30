@@ -2258,6 +2258,22 @@ describe("SessionsPanel rendering", () => {
     expect(withoutDeviceDialog.textContent).toContain("plain@example.com? Last active");
   });
 
+  it("disables Revoke (but not Edit) for the current session", async () => {
+    vi.mocked(fetchSessions).mockResolvedValue({
+      sessions: [makeSession({ id: "self", userEmail: "self@example.com", isCurrent: true })],
+    });
+
+    renderWithToast(<SessionsPanel />);
+
+    const row = (await screen.findByText("self@example.com")).closest("tr");
+    expect(row).toBeTruthy();
+    const revokeButton = within(row!).getByRole("button", { name: "Revoke" }) as HTMLButtonElement;
+    expect(revokeButton.disabled).toBe(true);
+    expect(revokeButton.title).toBe("You cannot revoke your own session");
+    const editButton = within(row!).getByRole("button", { name: "Edit" }) as HTMLButtonElement;
+    expect(editButton.disabled).toBe(false);
+  });
+
   it("Edit opens a dialog prefilled with the current device label; Save is disabled until it changes", async () => {
     vi.mocked(fetchSessions).mockResolvedValue({
       sessions: [
