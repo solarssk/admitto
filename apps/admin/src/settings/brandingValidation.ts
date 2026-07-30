@@ -18,6 +18,7 @@ export function isValidHex(value: string): boolean {
 export interface BrandingFieldErrors {
   primary?: string;
   font_family_name?: string;
+  ticket_font_family_name?: string;
   custom_font_families?: string;
 }
 
@@ -30,6 +31,22 @@ function isValidVariant(v: BrandingFontVariantDto): boolean {
   if (!isValidBrandingFontWeight(v.weight)) return false;
   if (v.style !== "normal" && v.style !== "italic") return false;
   return isSafeBrandingFontUrl(v.url);
+}
+
+const FONT_NAME_CHARSET_ERROR =
+  "Use letters, numbers, spaces, hyphens, underscores, or periods only (max 128 characters).";
+
+/** Error message for a font-family-name field, or undefined when valid (or empty - both surfaces
+ * are optional, falling back to the built-in default when unset). */
+function fontNameFieldError(name: string | undefined): string | undefined {
+  const trimmed = name?.trim() ?? "";
+  return trimmed && !isValidBrandingFontFamilyName(trimmed) ? FONT_NAME_CHARSET_ERROR : undefined;
+}
+
+/** Sanitized font-family-name field ready for save, or undefined when empty/invalid. */
+function sanitizedFontNameField(name: string | undefined): string | undefined {
+  const trimmed = name?.trim();
+  return trimmed ? sanitizeBrandingFontFamilyName(trimmed) : undefined;
 }
 
 function isValidFamily(f: BrandingCustomFontFamilyDto): boolean {
@@ -50,11 +67,11 @@ export function validateBrandingDraft(draft: BrandingThemeDto): BrandingValidati
     errors.primary = "Enter a valid 6-digit hex colour (e.g. #066fd1).";
   }
 
-  const fontName = draft.font_family_name?.trim() ?? "";
-  if (fontName && !isValidBrandingFontFamilyName(fontName)) {
-    errors.font_family_name =
-      "Use letters, numbers, spaces, hyphens, underscores, or periods only (max 128 characters).";
-  }
+  const fontNameError = fontNameFieldError(draft.font_family_name);
+  if (fontNameError) errors.font_family_name = fontNameError;
+
+  const ticketFontNameError = fontNameFieldError(draft.ticket_font_family_name);
+  if (ticketFontNameError) errors.ticket_font_family_name = ticketFontNameError;
 
   const families = draft.custom_font_families ?? [];
   if (families.length > 0 && !families.every(isValidFamily)) {
@@ -81,10 +98,14 @@ export function brandingDraftForSave(draft: BrandingThemeDto): BrandingThemeDto 
     result.primary = primary;
   }
 
-  const fontName = draft.font_family_name?.trim();
-  const safeFontName = fontName ? sanitizeBrandingFontFamilyName(fontName) : undefined;
+  const safeFontName = sanitizedFontNameField(draft.font_family_name);
   if (safeFontName) {
     result.font_family_name = safeFontName;
+  }
+
+  const safeTicketFontName = sanitizedFontNameField(draft.ticket_font_family_name);
+  if (safeTicketFontName) {
+    result.ticket_font_family_name = safeTicketFontName;
   }
 
   const validFamilies: BrandingCustomFontFamilyDto[] = [];

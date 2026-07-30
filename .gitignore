@@ -35,3 +35,4 @@ emergency-exports/
 CLAUDE.local.md
 graphify-out/
 .claude/
+*.rdb

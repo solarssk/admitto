@@ -409,6 +409,31 @@ describe("PUT /api/admin/theme", () => {
     expect(persisted.theme.font_family_name).toBe("Evil");
   });
 
+  it("saves and persists ticket_font_family_name independently of font_family_name", async () => {
+    const res = await app.request("/api/admin/theme", {
+      method: "PUT",
+      headers: {
+        Cookie: await sessionCookieFor(superId),
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ font_family_name: "Admin Sans", ticket_font_family_name: "Ticket Sans" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { theme: { font_family_name?: string; ticket_font_family_name?: string } };
+    expect(body.theme.font_family_name).toBe("Admin Sans");
+    expect(body.theme.ticket_font_family_name).toBe("Ticket Sans");
+
+    const getRes = await app.request("/api/admin/theme", {
+      headers: { Cookie: await sessionCookieFor(superId) },
+    });
+    const persisted = (await getRes.json()) as {
+      theme: { font_family_name?: string; ticket_font_family_name?: string };
+    };
+    expect(persisted.theme.font_family_name).toBe("Admin Sans");
+    expect(persisted.theme.ticket_font_family_name).toBe("Ticket Sans");
+  });
+
   it("rejects a credentialed HTTPS variant URL on save, keeping the rest of the family", async () => {
     const res = await app.request("/api/admin/theme", {
       method: "PUT",
