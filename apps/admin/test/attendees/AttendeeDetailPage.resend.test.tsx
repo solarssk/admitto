@@ -65,7 +65,6 @@ function baseDetail(overrides: Partial<Record<string, unknown>> = {}) {
     rsvp_status: "confirmed" as const,
     rsvp_updated_at: null,
     rsvp_source: null,
-    ticket_ref: null,
     deliveries: [],
     action_log: [],
     event_items: [],

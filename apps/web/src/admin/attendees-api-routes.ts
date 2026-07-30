@@ -83,7 +83,6 @@ import { mailNotConfiguredResponse } from "./mail-settings-shared.js";
 import { assertEventCapacityForIncoming, acquireEventCapacityLock, isCapacityReactivation } from "./event-capacity.js";
 import { attachmentContentDisposition } from "./content-disposition.js";
 import { randomUUID } from "node:crypto";
-import { decryptFromString } from "@admitto/crypto";
 import { optimisticAttendeeUpdate, StaleWriteError, isStaleWrite } from "./optimistic-update.js";
 import { resolveBulkSendAttendeeIds, BULK_SEND_LIMIT } from "./bulk-send-routes.js";
 
@@ -103,8 +102,6 @@ const ATTENDEE_DETAIL_SELECT = {
   rsvp_status: true,
   rsvp_updated_at: true,
   rsvp_source: true,
-  token_enc: true,
-  public_ref: true,
 } as const;
 
 const RSVP_STATUSES = ATTENDEE_EXPORT_RSVP_STATUSES;
@@ -480,7 +477,6 @@ export type AttendeeDetailDto = {
   rsvp_status: RsvpStatus;
   rsvp_updated_at: string | null;
   rsvp_source: string | null;
-  ticket_ref: string | null;
   custom_data: unknown;
   deliveries: DeliveryDto[];
   action_log: AttendeeActionLogEntryDto[];
@@ -689,27 +685,6 @@ async function issuedItemsAttendeeIds(db: PrismaClient, attendeeIds: string[]): 
   return new Set(states.map((s) => s.attendee_id));
 }
 
-
-function truncateTicketRef(value: string): string {
-  if (value.length <= 12) return value;
-  return `${value.slice(0, 8)}…`;
-}
-
-function buildTicketRefPreview(row: {
-  token_enc: string | null;
-  public_ref: string | null;
-}): string | null {
-  if (row.public_ref) return truncateTicketRef(row.public_ref);
-  if (row.token_enc) {
-    try {
-      return truncateTicketRef(decryptFromString(row.token_enc));
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
 /** Shown in activity log when a human actor has no display_name (email is never exposed). */
 const ACTION_LOG_ACTOR_FALLBACK = "Admin";
 
@@ -898,7 +873,7 @@ function serializeAttendeeRow(
   };
 }
 
-/** Build attendee detail DTO including delivery log and activity (ticket_ref is admin-only preview). */
+/** Build attendee detail DTO including delivery log and activity. */
 async function buildAttendeeDetailDto(
   db: PrismaClient,
   eventId: string,
@@ -918,8 +893,6 @@ async function buildAttendeeDetailDto(
     rsvp_status: string;
     rsvp_updated_at: Date | null;
     rsvp_source: string | null;
-    token_enc: string | null;
-    public_ref: string | null;
   },
   notesPage = 1,
 ): Promise<AttendeeDetailDto> {
@@ -947,7 +920,6 @@ async function buildAttendeeDetailDto(
     rsvp_status: row.rsvp_status as RsvpStatus,
     rsvp_updated_at: row.rsvp_updated_at ? row.rsvp_updated_at.toISOString() : null,
     rsvp_source: row.rsvp_source,
-    ticket_ref: buildTicketRefPreview(row),
     custom_data: row.custom_data ?? null,
     deliveries: deliveriesResult.items.map(toDeliveryDto),
     action_log,
