@@ -109,7 +109,7 @@ Privacy detail: [DATA-PROTECTION.md](../DATA-PROTECTION.md), [GDPR-ONE-PAGER.md]
 
 | Topic | Document |
 |-------|----------|
-| Configurable security capabilities | [SECURITY-CONTROLS.md](SECURITY-CONTROLS.md) — includes rate-limit matrix, `TRUST_PROXY` trust model, SSRF controls, PEN retest checklist |
+| Configurable security capabilities | [SECURITY-CONTROLS.md](security/SECURITY-CONTROLS.md) — includes rate-limit matrix, `TRUST_PROXY` trust model, SSRF controls, PEN retest checklist |
 | CI / image provenance | [SECURITY.md](../SECURITY.md) |
 | Hosting | [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPLOYMENT.md) |
 | Incidents | [INCIDENT-RESPONSE.md](INCIDENT-RESPONSE.md) |
