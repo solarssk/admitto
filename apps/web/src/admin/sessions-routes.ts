@@ -169,12 +169,6 @@ export async function handleUpdateSessionDeviceLabel(c: Context, db: PrismaClien
     return c.json({ error: "device_label_too_long" }, 400);
   }
 
-  const row = await db.session.findUnique({
-    where: { id },
-    select: { user_id: true, device_label: true },
-  });
-  if (!row) return c.json({ error: "not_found" }, 404);
-
   const newLabel = label.length > 0 ? label : null;
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
@@ -183,12 +177,31 @@ export async function handleUpdateSessionDeviceLabel(c: Context, db: PrismaClien
   // dead code - c.get("auth").userId is what audit.operator already equals, not a distinct value.
   const actorUserId = c.get("auth").userId;
 
+  type LabelUpdateResult =
+    | { status: "not_found" }
+    | { status: "not_editable" }
+    | { status: "ok"; targetUserId: string };
+
   // Transactional like handleRevokeSession above (CodeRabbit review): without this, an audit-log
   // or org-lookup failure after the label already changed would return an error while the label
   // stays changed - a retry then reads the already-new label as "previous", losing the real one.
-  const updated = await runInTransaction(db, async (tx) => {
+  //
+  // The row itself is fetched here with FOR UPDATE, inside the transaction, rather than before it
+  // starts (CodeRabbit review): two concurrent edits of the same session could otherwise both
+  // read the same starting label before either writes, so the second edit's audit entry would
+  // record that shared stale value as previous_label instead of the first edit's actual result.
+  // The lock makes the second transaction wait for the first to commit, so it reads the
+  // already-updated label as its own "previous" once it resumes.
+  const result = await runInTransaction(db, async (tx): Promise<LabelUpdateResult> => {
+    const locked = await tx.$queryRaw<{ user_id: string; device_label: string | null }[]>`
+      SELECT user_id, device_label FROM "Session" WHERE id = ${id} FOR UPDATE
+    `;
+    const row = locked[0];
+    if (!row) return { status: "not_found" };
+
     const ok = await updateSessionDeviceLabel(tx, id, row.user_id, newLabel);
-    if (!ok) return false;
+    if (!ok) return { status: "not_editable" };
+
     await writeAdminAuditLog(tx, {
       organizationId: orgId,
       actorUserId,
@@ -203,19 +216,19 @@ export async function handleUpdateSessionDeviceLabel(c: Context, db: PrismaClien
         new_label: newLabel,
       },
     });
-    return true;
+    return { status: "ok", targetUserId: row.user_id };
   });
-  if (!updated) return c.json({ error: "session_not_editable" }, 409);
+  if (result.status === "not_found") return c.json({ error: "not_found" }, 404);
+  if (result.status === "not_editable") return c.json({ error: "session_not_editable" }, 409);
 
-  // Emitted after the transaction has committed (mirrors handleRevokeSession above) - not PII,
-  // unlike the previous version of this log: system logs are readable by any staffAdminGate
-  // admin, not just superadmins, who are the only ones that can reach this endpoint (CodeRabbit
-  // review).
+  // Emitted after the transaction has committed (mirrors handleRevokeSession above). IDs only,
+  // no previous/new label: unlike targetUserId/actorUserId, a device label is free-form text an
+  // operator chose (could itself be a person's name) - the durable, superadmin-only audit entry
+  // above already captures both values, so the broader-audience system log doesn't need its own
+  // copy (CodeRabbit review, AGENTS.md "no unnecessary PII in logs").
   emitSystemLog("security", "info", "session_device_label_updated", {
     sessionId: id,
-    targetUserId: row.user_id,
-    previousLabel: row.device_label,
-    newLabel,
+    targetUserId: result.targetUserId,
     actorUserId,
     ip: audit.ip,
   });

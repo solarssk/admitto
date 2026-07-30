@@ -535,6 +535,47 @@ describe("POST /api/admin/sessions/:id/device-label", () => {
     expect(body.deviceLabel).toBeNull();
     await prisma.session.delete({ where: { id: target.session.id } });
   });
+
+  it("records an accurate previous_label chain when two edits race, instead of both auditing the same stale starting value", async () => {
+    const target = await createSession(prisma, {
+      userId: operatorId,
+      stage: SESSION_STAGE.FULL,
+      deviceLabel: "Original",
+    });
+    const post = (deviceLabel: string) =>
+      app.request(`/api/admin/sessions/${target.session.id}/device-label`, {
+        method: "POST",
+        headers: { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin },
+        body: JSON.stringify({ deviceLabel }),
+      });
+
+    const [resA, resB] = await Promise.all([post("Edit A"), post("Edit B")]);
+    expect(resA.status).toBe(200);
+    expect(resB.status).toBe(200);
+
+    const logs = await prisma.adminAuditLog.findMany({
+      where: {
+        organization_id: ORG_SESSIONS,
+        action_type: "session_device_label_updated",
+        metadata: { path: ["session_id"], equals: target.session.id },
+      },
+      orderBy: { id: "asc" },
+    });
+    expect(logs).toHaveLength(2);
+    const [first, second] = logs.map((l) => l.metadata as Record<string, unknown>);
+
+    // Whichever request's transaction committed first, it must have read the real starting
+    // label - and the second must chain from the first's result, not repeat that same starting
+    // value (the bug FOR UPDATE fixes: both reading "Original" as their own previous_label).
+    expect(first?.previous_label).toBe("Original");
+    expect(second?.previous_label).toBe(first?.new_label);
+    expect(new Set([first?.new_label, second?.new_label])).toEqual(new Set(["Edit A", "Edit B"]));
+
+    const finalSession = await prisma.session.findUnique({ where: { id: target.session.id } });
+    expect(finalSession?.device_label).toBe(second?.new_label);
+
+    await prisma.session.delete({ where: { id: target.session.id } });
+  });
 });
 
 describe("POST /api/admin/events/:eventId/revoke-all-operator-sessions", () => {
