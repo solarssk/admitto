@@ -90,17 +90,12 @@
 }
 
 .account-warn-block {
-  background: var(--status-warning-bg, #fff8e1);
-  border: 1px solid var(--status-warning-border, #f59f00);
-  border-radius: var(--radius, 4px);
-  padding: var(--space-3, 0.75rem);
   margin-bottom: var(--space-3, 0.75rem);
-  font-size: var(--fs-sm, 0.875rem);
 }
 
 .account-auth-backup {
-  background: var(--status-warning-bg, #fff8e1);
-  border: 1px solid var(--status-warning-border, #f59f00);
+  background: var(--status-warn-tint);
+  border: 1px solid var(--status-warn);
   border-radius: var(--radius, 4px);
   padding: var(--space-3, 0.75rem);
   font-size: var(--fs-sm, 0.875rem);
