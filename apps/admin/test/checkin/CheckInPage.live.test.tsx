@@ -218,7 +218,8 @@ describe("CheckInPage live feed", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText(/Live updates unavailable\. Check access/i)).toBeTruthy();
+      const banner = screen.getByText(/Live updates unavailable\. Check access/i);
+      expect(banner.closest(".at-notice--warning")).toBeTruthy();
     });
   });
 
@@ -244,7 +245,8 @@ describe("CheckInPage live feed", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText(/Reconnecting live updates/i)).toBeTruthy();
+      const banner = screen.getByText(/Reconnecting live updates/i);
+      expect(banner.closest(".at-notice--warning")).toBeTruthy();
     });
   });
 
