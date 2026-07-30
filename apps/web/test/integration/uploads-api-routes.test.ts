@@ -181,6 +181,25 @@ describe("POST /api/admin/uploads", () => {
     ).not.toBeNull();
   });
 
+  it("returns 500 server error when an unexpected (non-validation) error occurs after a successful upload", async () => {
+    const saved = process.env.INSTANCE_ORG_ID;
+    process.env.INSTANCE_ORG_ID = "org-that-does-not-exist";
+    try {
+      const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
+      const res = await app.request("/api/admin/uploads", {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin },
+        body: uploadForm(new Blob([png], { type: "image/png" }), "logo.png"),
+      });
+      expect(res.status).toBe(500);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("server error");
+    } finally {
+      if (saved === undefined) delete process.env.INSTANCE_ORG_ID;
+      else process.env.INSTANCE_ORG_ID = saved;
+    }
+  });
+
   it("rejects unsupported file type with 415", async () => {
     const res = await app.request("/api/admin/uploads", {
       method: "POST",
@@ -225,6 +244,19 @@ describe("POST /api/admin/uploads", () => {
 });
 
 describe("POST /api/admin/theme-font-upload", () => {
+  it("returns 400 file_required when the multipart body has no file field", async () => {
+    const fd = new FormData();
+    fd.append("not_a_file", "hello");
+    const res = await app.request("/api/admin/theme-font-upload", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: fd,
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("file_required");
+  });
+
   it("accepts WOFF2 and returns public URL, served back with the correct font MIME type", async () => {
     const woff2 = new Uint8Array([0x77, 0x4f, 0x46, 0x32, 0x00, 0x00, 0x00, 0x00]);
     const res = await app.request("/api/admin/theme-font-upload", {
@@ -281,6 +313,19 @@ describe("POST /api/admin/theme-font-upload", () => {
 
 describe("POST /api/admin/events/:eventId/branding-upload", () => {
   const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
+
+  it("returns 400 file_required when the multipart body has no file field", async () => {
+    const fd = new FormData();
+    fd.append("not_a_file", "hello");
+    const res = await app.request(`/api/admin/events/${EVENT_OWN}/branding-upload`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: fd,
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("file_required");
+  });
 
   it("accepts PNG for superadmin and scopes the URL under the event", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_OWN}/branding-upload`, {

@@ -61,6 +61,11 @@ describe("styleLabel", () => {
     expect(styleLabel(700, "normal")).toBe("Bold");
     expect(styleLabel(400, "italic")).toBe("Regular italic");
   });
+
+  it("falls back to the raw numeric weight for a value outside the nine preset options", () => {
+    expect(styleLabel(450, "normal")).toBe("450");
+    expect(styleLabel(450, "italic")).toBe("450 italic");
+  });
 });
 
 describe("FontFamilyModal", () => {
@@ -326,6 +331,31 @@ describe("FontFamilyModal", () => {
     expect(rows()).toHaveLength(1);
   });
 
+  it("silently ignores a stale upload's own rejection once a newer pick has already replaced it", async () => {
+    let rejectFirst!: (err: Error) => void;
+    mockUploadFont
+      .mockReturnValueOnce(new Promise((_, rej) => (rejectFirst = rej)))
+      .mockResolvedValueOnce({ url: "/uploads/default/theme/second.woff2" });
+    renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText(/Drop font files here/), {
+      target: { files: [new File(["x"], "Acme-Sans-Regular.woff2")] },
+    });
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    const row = rows()[0]!;
+
+    fireEvent.change(fileInputOf(row), { target: { files: [new File(["y"], "Acme-Sans-Bold.woff2")] } });
+    await waitFor(() => expect(within(row).getByText("Acme-Sans-Bold.woff2")).toBeTruthy());
+
+    rejectFirst(new Error("stale network failure"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // The stale (superseded) request's own rejection is ignored - no toast, and the row still
+    // shows the newer file rather than being rolled back by the older, abandoned attempt.
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+    expect(within(row).getByText("Acme-Sans-Bold.woff2")).toBeTruthy();
+  });
+
   it("adds an empty row via 'Add a variant manually', picking the next unused weight/style combo", () => {
     renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />);
 
@@ -398,6 +428,98 @@ describe("FontFamilyModal", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Remove variant" }));
     expect(rows()).toHaveLength(0);
+  });
+
+  it("removes an empty (never-uploaded) row cleanly", () => {
+    renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /Add a variant manually/ }));
+    expect(rows()).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove variant" }));
+    expect(rows()).toHaveLength(0);
+  });
+
+  it("stops registering preview faces for a pre-filled family once the modal unmounts mid-load", async () => {
+    let resolveLoad!: () => void;
+    class ControllableFontFace {
+      constructor(
+        public family: string,
+        public source: unknown,
+        public descriptors?: { weight?: string; style?: string },
+      ) {}
+      async load() {
+        await new Promise<void>((resolve) => (resolveLoad = resolve));
+        return this;
+      }
+    }
+    vi.stubGlobal("FontFace", ControllableFontFace);
+    const { unmount } = renderWithToast(
+      <FontFamilyModal
+        open
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+        initialFamily={{
+          name: "Acme Sans",
+          variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }],
+        }}
+      />,
+    );
+
+    unmount();
+    resolveLoad();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.fonts.add).not.toHaveBeenCalled();
+  });
+
+  it("shows plural wording when multiple unsupported files are skipped at once", async () => {
+    renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText(/Drop font files here/), {
+      target: { files: [new File(["x"], "a.exe"), new File(["y"], "b.exe")] },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Skipped 2 files/);
+    });
+  });
+
+  it("leaves the family name blank when nothing but a weight/style keyword can be guessed from the filename", async () => {
+    mockUploadFont.mockResolvedValueOnce({ url: "/uploads/default/theme/a.woff2" });
+    renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText(/Drop font files here/), {
+      target: { files: [new File(["x"], "Bold.woff2")] },
+    });
+
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(screen.getByLabelText("Family name")).toHaveProperty("value", "");
+  });
+
+  it("shows plural wording when multiple dropped files replace existing rows at once", async () => {
+    mockUploadFont
+      .mockResolvedValueOnce({ url: "/uploads/default/theme/first.woff2" })
+      .mockResolvedValueOnce({ url: "/uploads/default/theme/second.woff2" })
+      .mockResolvedValueOnce({ url: "/uploads/default/theme/third.woff2" })
+      .mockResolvedValueOnce({ url: "/uploads/default/theme/fourth.woff2" });
+    renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText(/Drop font files here/), {
+      target: {
+        files: [new File(["x"], "Acme-Sans-Regular.woff2"), new File(["y"], "Acme-Sans-Bold.woff2")],
+      },
+    });
+    await waitFor(() => expect(rows()).toHaveLength(2));
+
+    fireEvent.change(screen.getByLabelText(/Drop font files here/), {
+      target: {
+        files: [new File(["x2"], "Acme-Sans-Regular-v2.woff2"), new File(["y2"], "Acme-Sans-Bold-v2.woff2")],
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Replaced 2 existing variants with the new files/);
+    });
   });
 
   it("blocks Save and flags both rows when manually changing one to a combo already used by a loaded row", async () => {

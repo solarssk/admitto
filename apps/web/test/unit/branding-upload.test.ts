@@ -45,6 +45,13 @@ afterEach(() => {
   rmSync(uploadDir, { recursive: true, force: true });
 });
 
+describe("resolveUploadDir", () => {
+  it("falls back to ./uploads under cwd when UPLOAD_DIR is unset", () => {
+    delete process.env.UPLOAD_DIR;
+    expect(resolveUploadDir()).toBe(join(process.cwd(), "uploads"));
+  });
+});
+
 describe("saveBrandingUpload", () => {
   it("writes org-level files under uploads/{orgId}/", async () => {
     const result = await saveBrandingUpload(pngFile(), "default");
@@ -80,6 +87,12 @@ describe("saveBrandingUpload", () => {
       code: "unsupported_file_type",
       status: 415,
     });
+  });
+
+  it("accepts a file with no declared Content-Type at all, skipping the cross-check entirely", async () => {
+    const noType = new File([PNG_BYTES], "logo.png", { type: "" });
+    const result = await saveBrandingUpload(noType, "default");
+    expect(result.url).toMatch(/\.png$/);
   });
 });
 
