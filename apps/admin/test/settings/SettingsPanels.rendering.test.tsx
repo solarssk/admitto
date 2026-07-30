@@ -2381,6 +2381,43 @@ describe("SessionsPanel rendering", () => {
     expect(updateSessionDeviceLabel).not.toHaveBeenCalled();
   });
 
+  it("blocks a backdrop-click close while a device-label save is in flight", async () => {
+    vi.mocked(fetchSessions).mockResolvedValue({
+      sessions: [
+        makeSession({ id: "with-device", userEmail: "device@example.com", deviceLabel: "Desk iPad" }),
+      ],
+    });
+    let resolveSave: ((value: { deviceLabel: string | null }) => void) | undefined;
+    vi.mocked(updateSessionDeviceLabel).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveSave = resolve; }),
+    );
+
+    renderWithToast(<SessionsPanel />);
+
+    await screen.findByRole("table");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Device label"), {
+      target: { value: "Desk iPad 2" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    // The Cancel button itself is disabled while saving, but the modal backdrop's click-outside
+    // isn't gated the same way - onCancel's own `if (!editSaving)` guard is what actually stops
+    // this from clearing editTarget mid-save (same pattern already covered for
+    // CommunicationSendDialog's send-in-flight case).
+    fireEvent.click(document.querySelector(".at-modal-backdrop")!);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+
+    await act(async () => {
+      resolveSave?.({ deviceLabel: "Desk iPad 2" });
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+  });
+
   it("labels IP addresses explicitly and keeps a missing address distinct from relative activity", async () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(new Date("2026-01-01T13:00:00.000Z").getTime());
     try {

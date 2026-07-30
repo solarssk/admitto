@@ -271,6 +271,25 @@ function resolveOperatorFields(
   };
 }
 
+/** Ranked by count descending; ties broken by the resolved display label ascending - the
+ * "no operator" null bucket sorts last on a tie, same convention the retired by_device
+ * breakdown used for its unlabeled-device bucket. Exported and unit-testable directly (rather
+ * than only through the full DB+HTTP integration path) because the two null-bucket branches
+ * are each other's mirror image: whichever side of a comparator call a real, unordered `groupBy`
+ * row happens to land on, the other can only be forced by picking the pre-sort array order
+ * directly, which a real query can't guarantee. */
+export function compareByOperatorRow(
+  a: OperatorFields & { count: number },
+  b: OperatorFields & { count: number },
+): number {
+  if (b.count !== a.count) return b.count - a.count;
+  if (a.operator_user_id === null) return 1;
+  if (b.operator_user_id === null) return -1;
+  const labelA = a.operator_display_name ?? a.operator_email ?? "";
+  const labelB = b.operator_display_name ?? b.operator_email ?? "";
+  return labelA.localeCompare(labelB);
+}
+
 function mapAdmissionLogRow(
   row: AdmittedRow,
   operatorDisplayMap: Record<string, UserDisplayRow>,
@@ -477,22 +496,12 @@ async function loadReportsAggregates(
     }
   }
   const by_checkin_method = Array.from(methodCounts, ([method, count]) => ({ method, count }));
-  // Ranked by count descending; ties broken by the resolved display label ascending - the
-  // "no operator" null bucket sorts last on a tie, same convention the retired by_device
-  // breakdown used for its unlabeled-device bucket.
   const by_operator: EventReportsResponse["by_operator"] = byOperatorRaw
     .map((row) => ({
       ...resolveOperatorFields(row.admitted_by, operatorDisplayMap),
       count: row._count._all,
     }))
-    .sort((a, b) => {
-      if (b.count !== a.count) return b.count - a.count;
-      if (a.operator_user_id === null) return 1;
-      if (b.operator_user_id === null) return -1;
-      const labelA = a.operator_display_name ?? a.operator_email ?? "";
-      const labelB = b.operator_display_name ?? b.operator_email ?? "";
-      return labelA.localeCompare(labelB);
-    });
+    .sort(compareByOperatorRow);
 
   return {
     totalAttendees,

@@ -140,8 +140,13 @@ export async function handleUpdateSessionDeviceLabel(c: Context, db: PrismaClien
   const denied = await requireSuperadmin(c, db);
   if (denied) return denied;
 
-  const id = c.req.param("id") ?? "";
-  if (!id) return c.json({ error: "session id required" }, 400);
+  // No `?? "" `/`!id` guard here (unlike handleRevokeSession above): confirmed empirically that
+  // Hono's router itself 404s before this handler runs for any request where the `:id` segment
+  // would be empty (a doubled slash, a bare ".") - c.req.param("id") can only ever be a non-empty
+  // string once we're here, so that check can only ever be dead code for this specific route.
+  // The assertion matches the same already-established convention for a route-guaranteed param
+  // (attendees-api-routes.ts, rate-limit/policies.ts).
+  const id = c.req.param("id")!;
 
   let body: unknown;
   try {
@@ -173,7 +178,10 @@ export async function handleUpdateSessionDeviceLabel(c: Context, db: PrismaClien
   const newLabel = label.length > 0 ? label : null;
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
-  const actorUserId = audit.operator ?? c.get("auth").userId;
+  // No `?? c.get("auth").userId` fallback here (unlike handleRevokeSession above):
+  // adminAuditFromContext sets operator: auth.userId directly, so that fallback can only ever be
+  // dead code - c.get("auth").userId is what audit.operator already equals, not a distinct value.
+  const actorUserId = c.get("auth").userId;
 
   // Transactional like handleRevokeSession above (CodeRabbit review): without this, an audit-log
   // or org-lookup failure after the label already changed would return an error while the label
