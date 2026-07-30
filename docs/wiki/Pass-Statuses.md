@@ -5,18 +5,18 @@
 > **Feature status:** Available
 > **Last verified:** Admitto 0.4.12
 
-Pass status controls whether an attendee may use the event ticket. It is separate from email delivery, RSVP, and check-in state.
+Pass status controls whether an attendee may use the event ticket. It is separate from attendance confirmation, email delivery, and check-in state.
 
 ```mermaid
 flowchart TD
     attendee[Attendee record] --> pass[Pass status]
-    attendee --> rsvp[RSVP status]
+    attendee --> attendance[Attendance confirmation]
     attendee --> delivery[Email delivery status]
     attendee --> checkin[Check-in status]
     pass --> admission[Admission allowed or blocked]
 ```
 
-Only pass status controls admission. RSVP, delivery, and check-in are recorded separately and do not replace it.
+Only pass status controls admission. Attendance confirmation, delivery, and check-in are recorded separately and do not replace it.
 
 | Displayed status | Meaning | Check-in |
 |---|---|---|
@@ -39,7 +39,7 @@ Restoring a pass can be blocked by event capacity. A Superadmin can use the disp
 
 - Revoking a pass blocks admission; it is not the same as revoking an earlier check-in.
 - Restoring a pass does not automatically check the attendee in again.
-- RSVP status describes the attendee's response and does not replace pass status.
+- Attendance confirmation describes the attendee's response and does not replace pass status.
 - Delivery status describes a message attempt and does not prove that the pass is active.
 
 ## Related pages

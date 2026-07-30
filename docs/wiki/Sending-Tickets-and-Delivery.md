@@ -11,7 +11,7 @@ Choose the intended recipients for a ticket or named template, count them before
 
 ## Before you start
 
-Save and test the selected template. Review attendee pass status, email addresses, ticket types, and RSVP values used by the recipient filter.
+Save and test the selected template. Review attendee pass status, email addresses, ticket types, and attendance values used by the recipient filter.
 
 ## Steps
 
@@ -33,7 +33,7 @@ The batch completes with a recorded status for every attempted delivery. The del
 |---|---|
 | All attendees | Every attendee in the event. Use carefully because previous delivery does not exclude a person. |
 | No delivery for this template | Attendees without a queued or successful delivery for the selected template. For the ticket template, this means no active initial ticket delivery. Failed, bounced, or rejected attempts do not count as successful delivery. |
-| By RSVP status | Attendees whose current RSVP value matches the selected status. |
+| By attendance status | Attendees whose current attendance status matches the selected status. |
 | By ticket type | Attendees whose stored ticket type matches the selected configured type. |
 
 Custom-template bulk sends are recorded as resends. A recipient count is a dry run and sends nothing.

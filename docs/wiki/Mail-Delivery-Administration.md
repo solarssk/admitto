@@ -17,17 +17,17 @@ Obtain approved provider details through your organisation's secure process. Do 
 
 ```mermaid
 flowchart TD
-    start[Send an event message] --> override{Dedicated event transport configured?}
-    override -- Yes --> event[Use event transport]
-    override -- No --> organisation[Use organisation transport]
-    event --> provider{Selected provider}
-    organisation --> provider
-    provider -- SMTP --> smtp[SMTP delivery]
-    provider -- Microsoft Graph --> graph[Microsoft Graph delivery]
-    provider -- Power Automate --> automate[Power Automate delivery]
-    smtp --> record[Create delivery record]
-    graph --> record
-    automate --> record
+    start["Send an event message"] --> override{"Dedicated event transport configured?"}
+    override -->|Yes| eventTransport["Use event transport"]
+    override -->|No| organisationTransport["Use organisation transport"]
+    eventTransport --> provider{"Selected provider"}
+    organisationTransport --> provider
+    provider -->|SMTP| smtp["SMTP delivery"]
+    provider -->|Microsoft Graph| microsoftGraph["Microsoft Graph delivery"]
+    provider -->|Power Automate| powerAutomate["Power Automate delivery"]
+    smtp --> record["Create delivery record"]
+    microsoftGraph --> record
+    powerAutomate --> record
 ```
 
 An event uses its dedicated transport only when one is configured. Otherwise, it uses the organisation transport. Every send creates a delivery record.
