@@ -176,4 +176,44 @@ describe("TimezoneSelect", () => {
       expect(document.activeElement).toBe(nextField);
     });
   });
+
+  it("wires aria-activedescendant to the highlighted option for screen readers", async () => {
+    render(<TimezoneSelect value="UTC" onChange={() => {}} />);
+    openPicker();
+    const search = screen.getByLabelText("Search timezones");
+
+    await waitFor(() => {
+      expect(search.getAttribute("aria-activedescendant")).toBeTruthy();
+    });
+
+    const initialId = search.getAttribute("aria-activedescendant");
+    const initialOption = document.getElementById(initialId!);
+    expect(initialOption).not.toBeNull();
+    expect(initialOption?.getAttribute("role")).toBe("option");
+    expect(initialOption?.className).toContain("timezone-select__option--highlighted");
+
+    fireEvent.keyDown(search, { key: "ArrowDown" });
+
+    await waitFor(() => {
+      const nextId = search.getAttribute("aria-activedescendant");
+      expect(nextId).not.toBe(initialId);
+      const nextOption = document.getElementById(nextId!);
+      expect(nextOption).not.toBeNull();
+      expect(nextOption?.className).toContain("timezone-select__option--highlighted");
+    });
+  });
+
+  it("omits aria-activedescendant when there are no matching options", async () => {
+    render(<TimezoneSelect value="UTC" onChange={() => {}} />);
+    openPicker();
+    fireEvent.change(screen.getByLabelText("Search timezones"), {
+      target: { value: "zzznomatch" },
+    });
+    await waitFor(() => {
+      expect(screen.getByText("No matching timezones")).toBeTruthy();
+      expect(
+        screen.getByLabelText("Search timezones").hasAttribute("aria-activedescendant"),
+      ).toBe(false);
+    });
+  });
 });

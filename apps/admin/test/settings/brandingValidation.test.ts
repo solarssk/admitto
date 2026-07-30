@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolveThemeVars } from "@admitto/ui";
+import type { BrandingThemeDto } from "../../src/api/types.js";
 import {
   brandingDraftForSave,
   primaryForColorInput,
@@ -24,109 +25,203 @@ describe("validateBrandingDraft", () => {
     expect(result.valid).toBe(true);
   });
 
-  it("requires font name and URL together", () => {
-    const nameOnly = validateBrandingDraft({ font_family_name: "Brand Sans" });
-    expect(nameOnly.valid).toBe(false);
-    expect(nameOnly.errors.font_family_url).toBeTruthy();
-
-    const urlOnly = validateBrandingDraft({
-      font_family_url: "https://cdn.example.com/font.woff2",
-    });
-    expect(urlOnly.valid).toBe(false);
-    expect(urlOnly.errors.font_family_name).toBeTruthy();
-  });
-
-  it("rejects non-HTTPS font URL", () => {
-    const result = validateBrandingDraft({
-      font_family_url: "http://evil.com/font.woff2",
-      font_family_name: "Evil",
-    });
-    expect(result.valid).toBe(false);
-    expect(result.errors.font_family_url).toMatch(/HTTPS/i);
-  });
-
-  it("rejects malformed HTTPS font URL", () => {
-    const result = validateBrandingDraft({
-      font_family_url: "https://",
-      font_family_name: "Brand Sans",
-    });
-    expect(result.valid).toBe(false);
-    expect(result.errors.font_family_url).toBeTruthy();
-    expect(result.errors.font_family_name).toBeUndefined();
-  });
-
-  it("does not add pair error when URL already has its own validation error", () => {
-    const result = validateBrandingDraft({
-      font_family_url: "http://evil.com/font.woff2",
-      font_family_name: "",
-    });
-    expect(result.valid).toBe(false);
-    expect(result.errors.font_family_url).toMatch(/HTTPS/i);
-    expect(result.errors.font_family_name).toBeUndefined();
-  });
-
-  it("rejects credentialed HTTPS font URL", () => {
-    const result = validateBrandingDraft({
-      font_family_url: "https://user:pass@example.com/font.woff2",
-      font_family_name: "Brand Sans",
-    });
-    expect(result.valid).toBe(false);
-    expect(result.errors.font_family_url).toMatch(/credentials/i);
-    expect(result.errors.font_family_name).toBeUndefined();
+  it("accepts a built-in font name alone with no saved custom families", () => {
+    const nameOnly = validateBrandingDraft({ font_family_name: "Georgia" });
+    expect(nameOnly.valid).toBe(true);
+    expect(nameOnly.errors.custom_font_families).toBeUndefined();
   });
 
   it("rejects font family name with HTML/CSS metacharacters", () => {
-    const result = validateBrandingDraft({
-      font_family_url: "https://cdn.example.com/font.woff2",
-      font_family_name: 'test</style><script>evil</script>',
-    });
+    const result = validateBrandingDraft({ font_family_name: 'test</style><script>evil</script>' });
     expect(result.valid).toBe(false);
     expect(result.errors.font_family_name).toMatch(/letters, numbers/i);
   });
 
-  it("accepts valid HTTPS font pair", () => {
+  it("accepts a saved custom family with a single valid HTTPS variant", () => {
     const result = validateBrandingDraft({
-      font_family_url: "https://cdn.example.com/font.woff2",
       font_family_name: "Brand Sans",
+      custom_font_families: [
+        { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/font.woff2" }] },
+      ],
+    });
+    expect(result.valid).toBe(true);
+  });
+
+  it("accepts multiple saved families and multiple weight/style variants under one family", () => {
+    const result = validateBrandingDraft({
+      font_family_name: "Brand Sans",
+      custom_font_families: [
+        {
+          name: "Brand Sans",
+          variants: [
+            { weight: 400, style: "normal", url: "https://cdn.example.com/regular.woff2" },
+            { weight: 700, style: "normal", url: "https://cdn.example.com/bold.woff2" },
+          ],
+        },
+        { name: "Other Family", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/other.woff2" }] },
+      ],
+    });
+    expect(result.valid).toBe(true);
+  });
+
+  it.each([
+    ["an invalid own name", "bad</name>", [{ weight: 400, style: "normal" as const, url: "https://cdn.example.com/font.woff2" }]],
+    ["zero variants", "Brand Sans", []],
+    ["a non-HTTPS variant URL", "Brand Sans", [{ weight: 400, style: "normal" as const, url: "http://evil.com/font.woff2" }]],
+    [
+      "a credentialed HTTPS variant URL",
+      "Brand Sans",
+      [{ weight: 400, style: "normal" as const, url: "https://user:pass@example.com/font.woff2" }],
+    ],
+    ["an out-of-range font weight", "Brand Sans", [{ weight: 950, style: "normal" as const, url: "https://cdn.example.com/font.woff2" }]],
+    [
+      "a variant path outside the theme upload namespace",
+      "Brand Sans",
+      [{ weight: 400, style: "normal" as const, url: "/uploads/default/events/evt-1/abc123.woff2" }],
+    ],
+    [
+      "a name matching a built-in font, case-insensitively",
+      "manrope",
+      [{ weight: 400, style: "normal" as const, url: "https://cdn.example.com/font.woff2" }],
+    ],
+  ])("rejects a family with %s", (_label, name, variants) => {
+    const result = validateBrandingDraft({ custom_font_families: [{ name, variants }] });
+    expect(result.valid).toBe(false);
+    expect(result.errors.custom_font_families).toBeTruthy();
+  });
+
+  it("rejects a family containing a variant whose style is neither normal nor italic", () => {
+    const draft = {
+      custom_font_families: [
+        { name: "Brand Sans", variants: [{ weight: 400, style: "oblique", url: "https://cdn.example.com/font.woff2" }] },
+      ],
+    } as unknown as BrandingThemeDto;
+    const result = validateBrandingDraft(draft);
+    expect(result.valid).toBe(false);
+    expect(result.errors.custom_font_families).toBeTruthy();
+  });
+
+  it("accepts a validated local theme upload path", () => {
+    const result = validateBrandingDraft({
+      font_family_name: "Brand Sans",
+      custom_font_families: [
+        { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/abc123.woff2" }] },
+      ],
     });
     expect(result.valid).toBe(true);
   });
 });
 
 describe("brandingDraftForSave", () => {
-  it("omits invalid fields", () => {
+  it("omits an invalid primary but keeps a valid font name on its own", () => {
+    expect(brandingDraftForSave({ primary: "bad", font_family_name: "Evil" })).toEqual({ font_family_name: "Evil" });
+  });
+
+  it("drops a family whose only variant has a credentialed HTTPS URL", () => {
     expect(
       brandingDraftForSave({
-        primary: "bad",
-        font_family_url: "http://evil",
-        font_family_name: "Evil",
-      }),
-    ).toEqual({});
-    expect(
-      brandingDraftForSave({
-        font_family_url: "https://user:pass@example.com/font.woff2",
         font_family_name: "Brand Sans",
+        custom_font_families: [
+          {
+            name: "Brand Sans",
+            variants: [{ weight: 400, style: "normal", url: "https://user:pass@example.com/font.woff2" }],
+          },
+        ],
       }),
-    ).toEqual({});
+    ).toEqual({ font_family_name: "Brand Sans" });
+  });
+
+  it("drops only the invalid variants within a family, keeping the valid ones", () => {
     expect(
       brandingDraftForSave({
-        font_family_url: "https://",
         font_family_name: "Brand Sans",
+        custom_font_families: [
+          {
+            name: "Brand Sans",
+            variants: [
+              { weight: 400, style: "normal", url: "https://cdn.example.com/regular.woff2" },
+              { weight: 700, style: "normal", url: "http://evil.com/bold.woff2" },
+            ],
+          },
+        ],
       }),
-    ).toEqual({});
+    ).toEqual({
+      font_family_name: "Brand Sans",
+      custom_font_families: [
+        { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/regular.woff2" }] },
+      ],
+    });
+  });
+
+  it("drops a whole family that has zero valid variants left, keeping the others", () => {
+    expect(
+      brandingDraftForSave({
+        font_family_name: "Good Family",
+        custom_font_families: [
+          { name: "Bad Family", variants: [{ weight: 400, style: "normal", url: "http://evil.com/font.woff2" }] },
+          { name: "Good Family", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/font.woff2" }] },
+        ],
+      }),
+    ).toEqual({
+      font_family_name: "Good Family",
+      custom_font_families: [
+        { name: "Good Family", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/font.woff2" }] },
+      ],
+    });
+  });
+
+  it("omits font_family_name when it sanitizes to empty", () => {
+    expect(brandingDraftForSave({ font_family_name: "</>" })).toEqual({});
   });
 
   it("keeps valid fields", () => {
     expect(
       brandingDraftForSave({
         primary: "#112233",
-        font_family_url: "https://cdn.example.com/font.woff2",
         font_family_name: "Brand Sans",
+        custom_font_families: [
+          { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/font.woff2" }] },
+        ],
       }),
     ).toEqual({
       primary: "#112233",
-      font_family_url: "https://cdn.example.com/font.woff2",
       font_family_name: "Brand Sans",
+      custom_font_families: [
+        { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/font.woff2" }] },
+      ],
+    });
+  });
+
+  it("keeps a validated local theme upload path", () => {
+    expect(
+      brandingDraftForSave({
+        font_family_name: "Brand Sans",
+        custom_font_families: [
+          { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/abc123.woff2" }] },
+        ],
+      }),
+    ).toEqual({
+      font_family_name: "Brand Sans",
+      custom_font_families: [
+        { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/abc123.woff2" }] },
+      ],
+    });
+  });
+
+  it("drops a whole family named after a built-in font, keeping the others", () => {
+    expect(
+      brandingDraftForSave({
+        font_family_name: "Good Family",
+        custom_font_families: [
+          { name: "Space Grotesk", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/a.woff2" }] },
+          { name: "Good Family", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/b.woff2" }] },
+        ],
+      }),
+    ).toEqual({
+      font_family_name: "Good Family",
+      custom_font_families: [
+        { name: "Good Family", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/b.woff2" }] },
+      ],
     });
   });
 });
@@ -147,16 +242,19 @@ describe("resolveThemeVars on invalid draft", () => {
     expect(() =>
       resolveThemeVars({
         primary: "not-a-color",
-        font_family_url: "javascript:alert(1)",
         font_family_name: "Evil",
+        custom_font_families: [{ name: "Evil", variants: [{ weight: 400, style: "normal", url: "javascript:alert(1)" }] }],
       }),
     ).not.toThrow();
     const vars = resolveThemeVars({
       primary: "not-a-color",
-      font_family_url: "javascript:alert(1)",
       font_family_name: "Evil",
+      custom_font_families: [{ name: "Evil", variants: [{ weight: 400, style: "normal", url: "javascript:alert(1)" }] }],
     });
     expect(vars["--primary"]).toBe("#066fd1");
-    expect(vars["--font-sans"]).toBeUndefined();
+    // The font name ("Evil") is valid on its own and applies as a web-safe font; only the
+    // unsafe variant URL is dropped (no @font-face for it) — see theme.test.ts for coverage.
+    expect(vars["--font-sans"]).toContain("Evil");
+    expect(vars.fontFaceCss).toBeUndefined();
   });
 });

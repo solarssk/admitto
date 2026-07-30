@@ -1,13 +1,17 @@
 .logo-upload {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
 }
 
-.logo-upload__intro {
-  margin: 0 0 var(--space-2);
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
+/* A uniform gap here would also space the heading from its own description below it - tight
+   there to match Primary colour/Font's own heading-to-description spacing (a plain label with no
+   margin of its own, not a flex gap), while every other pair keeps the same rhythm as before. */
+.logo-upload > *:not(:last-child) {
+  margin-bottom: var(--space-2);
+}
+
+.logo-upload > .at-label {
+  margin-bottom: 0;
 }
 
 .logo-upload__zone {

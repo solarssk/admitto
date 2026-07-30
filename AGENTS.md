@@ -118,6 +118,21 @@ set `fileParallelism: false`), so cross-file failures there are leftover-state p
 concurrency races — fix them with cleanup in the polluting file, not with `sequence.concurrent`
 (that option only affects tests within one file).
 
+**`eslint-disable-next-line` only covers the literal next line.** When the reason needs 2-3 lines
+of prose, put the plain `//` explanation lines first and the `eslint-disable-next-line` comment
+itself last, directly above the code it's suppressing for — reversing that order (or splitting
+the explanation across lines *after* the directive) silences nothing, since "next line" then
+points at another comment instead of the real target. Grep for `eslint-disable-next-line` mid a
+multi-line comment block if a lint warning appears on a line that already has one right above it.
+
+**SonarCloud's `NOSONAR` marker must be the first thing in its own comment on the flagged line**,
+e.g. `code // NOSONAR — reason` or `// NOSONAR — reason` as a whole standalone comment. Appending
+` // NOSONAR — reason` after an *already-open* `//` comment (e.g. after an existing `// TODO: …`)
+does not suppress anything — the whole line is one comment token to the parser either way, but
+Sonar's own marker only registers when NOSONAR leads it. Confirmed by re-checking the PR's issue
+list after pushing, not by assumption — the same file's own `role="presentation"` suppression a
+few lines away (NOSONAR leading its own comment) did clear, this trailing form did not.
+
 **Do not create new top-level `.md` documentation files in this repo.** This repo's doc set is
 fixed: `README.md`, `CHANGELOG.md`, `SECURITY.md`, `VERSIONING.md`, `DATA-PROTECTION.md`,
 `AGENTS.md`, `CLAUDE.md`, plus package-level `README.md` files and `docs/*` referenced from them.

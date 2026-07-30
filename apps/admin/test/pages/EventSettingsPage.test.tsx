@@ -152,8 +152,8 @@ function inheritedMailSettingsResponse(): EventMailSettingsResponse {
 }
 
 /** Same fixture but already saved as this event's own dedicated override, so the Mailing
- * tab's toggle opens on "Dedicated for this event" — used to dirty the draft by switching
- * back to "Organization mail" without having to fill out a full SMTP/Graph form. */
+ * tab's toggle opens on "Dedicated" — used to dirty the draft by switching
+ * back to "Organization" without having to fill out a full SMTP/Graph form. */
 function dedicatedMailSettingsResponse(): EventMailSettingsResponse {
   return { ...inheritedMailSettingsResponse(), hasEventOverride: true };
 }
@@ -165,7 +165,7 @@ beforeEach(() => {
   // ScrollFadeTabs (wrapping this page's own tab strip) scrolls its active tab into view on
   // mount/change - jsdom does not implement scrollIntoView.
   Element.prototype.scrollIntoView = vi.fn();
-  // The Branding tab also mounts EventImageAssetLibrary, which fetches its own list on mount.
+  // The Images tab also mounts EventImageAssetLibrary, which fetches its own list on mount.
   // Default to an empty library so tests that don't care about it never hit a real network
   // call (jsdom's `fetch` is real, not auto-mocked) or leak an unresolved promise into the
   // next test.
@@ -209,7 +209,7 @@ describe("EventSettingsPage save label", () => {
 });
 
 describe("EventSettingsPage subtitle", () => {
-  const SUBTITLE = "Manage this event's details, branding, and access controls.";
+  const SUBTITLE = "Manage this event's details, images, and access controls.";
 
   it("shows the stable purpose subtitle while loading, before the event title is known", () => {
     vi.mocked(fetchEventSettings).mockImplementation(() => new Promise(() => {}));
@@ -305,14 +305,14 @@ describe("EventSettingsPage tabs", () => {
     ).toBeTruthy();
   });
 
-  it("switches to the Branding tab and shows event logo + image library", async () => {
+  it("switches to the Images tab and shows event logo + image library", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: "Branding" })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: "Images" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("tab", { name: "Branding" }));
-    expect(await screen.findByText("Event branding")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Images" }));
+    expect(await screen.findByText("Event logo")).toBeTruthy();
     expect(screen.getByText("Drop logo here or click to browse")).toBeTruthy();
     expect(screen.getByText("Upload images")).toBeTruthy();
     expect(screen.getByText("Your images")).toBeTruthy();
@@ -370,10 +370,10 @@ describe("EventSettingsPage tabs", () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: "Branding" })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: "Images" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("tab", { name: "Branding" }));
-    expect(await screen.findByText("Event branding")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Images" }));
+    expect(await screen.findByText("Event logo")).toBeTruthy();
     // Event logo stays available to any event admin...
     expect(screen.getByText("Drop logo here or click to browse")).toBeTruthy();
     // ...but the image asset library (upload/list/delete routes require superadmin) does not
@@ -387,9 +387,9 @@ describe("EventSettingsPage tabs", () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     vi.mocked(uploadEventBrandingFile).mockResolvedValueOnce({ url: "/uploads/default/logo.png" });
     renderSettings();
-    await screen.findByRole("tab", { name: "Branding" });
-    fireEvent.click(screen.getByRole("tab", { name: "Branding" }));
-    await screen.findByText("Event branding");
+    await screen.findByRole("tab", { name: "Images" });
+    fireEvent.click(screen.getByRole("tab", { name: "Images" }));
+    await screen.findByText("Event logo");
 
     const fileInputs = document.querySelectorAll('.logo-upload input[type="file"]');
     expect(fileInputs).toHaveLength(1);
@@ -417,8 +417,8 @@ describe("EventSettingsPage tabs", () => {
       false,
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: "Branding" }));
-    await screen.findByText("Event branding");
+    fireEvent.click(screen.getByRole("tab", { name: "Images" }));
+    await screen.findByText("Event logo");
     const [logoInput] = document.querySelectorAll('.logo-upload input[type="file"]');
     fireEvent.change(logoInput!, {
       target: { files: [new File(["x"], "logo.png", { type: "image/png" })] },
@@ -448,9 +448,9 @@ describe("EventSettingsPage tabs", () => {
       },
     });
     renderSettings();
-    await screen.findByRole("tab", { name: "Branding" });
-    fireEvent.click(screen.getByRole("tab", { name: "Branding" }));
-    await screen.findByText("Event branding");
+    await screen.findByRole("tab", { name: "Images" });
+    fireEvent.click(screen.getByRole("tab", { name: "Images" }));
+    await screen.findByText("Event logo");
 
     const [logoInput] = document.querySelectorAll('.logo-upload input[type="file"]');
     fireEvent.change(logoInput!, {
@@ -474,16 +474,16 @@ describe("EventSettingsPage tabs", () => {
   it("disables branding upload zones when the event is archived", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(archivedEvent);
     renderSettings("/admin/events/evt-2/settings");
-    await screen.findByRole("tab", { name: "Branding" });
-    fireEvent.click(screen.getByRole("tab", { name: "Branding" }));
-    await screen.findByText("Event branding");
+    await screen.findByRole("tab", { name: "Images" });
+    fireEvent.click(screen.getByRole("tab", { name: "Images" }));
+    await screen.findByText("Event logo");
 
     const fileInputs = document.querySelectorAll('.logo-upload input[type="file"]');
     expect(fileInputs).toHaveLength(1);
     for (const input of fileInputs) {
       expect((input as HTMLInputElement).disabled).toBe(true);
     }
-    expect(screen.getByText("This event is archived - branding cannot be changed.")).toBeTruthy();
+    expect(screen.getByText("This event is archived - images cannot be changed.")).toBeTruthy();
 
     await screen.findByText(/No image assets yet/);
     const assetFileInput = document.querySelector(
@@ -545,12 +545,12 @@ describe("EventSettingsPage tabs", () => {
     await screen.findByRole("tab", { name: "Mailing" });
     fireEvent.click(screen.getByRole("tab", { name: "Mailing" }));
     await waitFor(() => expect(fetchEventMailSettings).toHaveBeenCalledTimes(1));
-    await screen.findByRole("radio", { name: "Organization mail" });
+    await screen.findByRole("radio", { name: "Organization" });
 
     // Dirty the mail draft without saving it.
-    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated" }));
     expect(
-      screen.getByRole("radio", { name: "Dedicated for this event" }).getAttribute("aria-checked"),
+      screen.getByRole("radio", { name: "Dedicated" }).getAttribute("aria-checked"),
     ).toBe("true");
 
     fireEvent.click(screen.getByRole("tab", { name: "Danger zone" }));
@@ -566,7 +566,7 @@ describe("EventSettingsPage tabs", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Mailing" }));
     await waitFor(() => {
       expect(
-        screen.getByRole("radio", { name: "Organization mail" }).getAttribute("aria-checked"),
+        screen.getByRole("radio", { name: "Organization" }).getAttribute("aria-checked"),
       ).toBe("true");
     });
   });
@@ -634,7 +634,7 @@ describe("EventSettingsPage Mailing tab (superadmin-only)", () => {
     renderSettings();
     await screen.findByRole("tab", { name: "Mailing" });
     fireEvent.click(screen.getByRole("tab", { name: "Mailing" }));
-    expect(await screen.findByRole("radio", { name: "Organization mail" })).toBeTruthy();
+    expect(await screen.findByRole("radio", { name: "Organization" })).toBeTruthy();
   });
 
   it("hides the Mailing tab entirely for a non-superadmin org admin", async () => {
@@ -651,22 +651,25 @@ describe("EventSettingsPage Mailing tab (superadmin-only)", () => {
     renderSettings("/admin/events/evt-1/settings?tab=mail");
     await screen.findByLabelText("Event title");
     expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.queryByRole("radio", { name: "Organization mail" })).toBeNull();
+    expect(screen.queryByRole("radio", { name: "Organization" })).toBeNull();
   });
 });
 
-describe("EventSettingsPage Mail tab — single hoisted Save/Reset pair", () => {
+describe("EventSettingsPage Mail tab — Save/Reset pair lives in the card's own SettingsFooter", () => {
   // Regression coverage: the Mail tab used to render its own Save/Reset footer inside
-  // EventMailSettingsCard *in addition to* this page header's Save button — two ways to
-  // save the same form, and the bottom one could scroll out of view. The card now only
-  // exposes save()/reset() imperatively; this page header is the single save affordance.
+  // EventMailSettingsCard *in addition to* a hoisted page-header Save button — two ways to
+  // save the same form, and the bottom one could scroll out of view. The pair now lives
+  // exactly once, in a SettingsFooter at the bottom of the card (matching the instance-level
+  // Mail transport panel's own layout) — the page header has no per-tab Save/Reset at all.
+  // The "Organization" / "Dedicated" mode toggle lives in the card's
+  // header instead (moved there from the card body).
   async function openMailTab() {
     await screen.findByRole("tab", { name: "Mailing" });
     fireEvent.click(screen.getByRole("tab", { name: "Mailing" }));
-    await screen.findByRole("radio", { name: "Organization mail" });
+    await screen.findByRole("radio", { name: "Organization" });
   }
 
-  it("shows exactly one Save button and one Reset button, both in the page header", async () => {
+  it("shows exactly one Save button and one Reset button", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
     await openMailTab();
@@ -675,54 +678,53 @@ describe("EventSettingsPage Mail tab — single hoisted Save/Reset pair", () => 
     expect(screen.getAllByRole("button", { name: "Reset" })).toHaveLength(1);
   });
 
-  it("disables the header's Save/Reset pair until the mail draft is dirty", async () => {
+  it("shows an Unsaved changes indicator only once the mail draft is dirty", async () => {
+    // Matches the instance-level Mail transport panel's own SettingsFooter (shared
+    // component) — Save/Reset stay clickable throughout, "Unsaved changes" is the signal.
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
     await openMailTab();
 
-    expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(true);
-    expect(screen.getByRole("button", { name: "Reset" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.queryByText("Unsaved changes")).toBeNull();
 
-    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated" }));
 
-    expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(false);
-    expect(screen.getByRole("button", { name: "Reset" }).hasAttribute("disabled")).toBe(false);
+    expect(screen.getByText("Unsaved changes")).toBeTruthy();
   });
 
-  it("clicking the header's Save button drives the card's own save flow", async () => {
+  it("clicking the card's Save button drives its own save flow", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     vi.mocked(fetchEventMailSettings).mockResolvedValue(dedicatedMailSettingsResponse());
     renderSettings();
     await openMailTab();
     expect(
-      screen.getByRole("radio", { name: "Dedicated for this event" }).getAttribute("aria-checked"),
+      screen.getByRole("radio", { name: "Dedicated" }).getAttribute("aria-checked"),
     ).toBe("true");
 
-    // Switching back to "Organization mail" is destructive (drops the dedicated override),
+    // Switching back to "Organization" is destructive (drops the dedicated override),
     // so saving it goes through EventMailSettingsCard's own ConfirmDialog rather than an
-    // immediate save — proof the header button reaches the card's real handleSave, not a
-    // no-op stub.
-    fireEvent.click(screen.getByRole("radio", { name: "Organization mail" }));
+    // immediate save.
+    fireEvent.click(screen.getByRole("radio", { name: "Organization" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByRole("dialog")).toBeTruthy();
     expect(screen.getByText(/Revert to organization mail/)).toBeTruthy();
   });
 
-  it("clicking the header's Reset button reverts the mail draft", async () => {
+  it("clicking the card's Reset button reverts the mail draft", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
     await openMailTab();
 
-    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated" }));
     expect(
-      screen.getByRole("radio", { name: "Dedicated for this event" }).getAttribute("aria-checked"),
+      screen.getByRole("radio", { name: "Dedicated" }).getAttribute("aria-checked"),
     ).toBe("true");
 
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
 
     expect(
-      screen.getByRole("radio", { name: "Organization mail" }).getAttribute("aria-checked"),
+      screen.getByRole("radio", { name: "Organization" }).getAttribute("aria-checked"),
     ).toBe("true");
   });
 
