@@ -132,6 +132,66 @@ describe("sanitizeTheme (branding theme storage validation)", () => {
     ]);
   });
 
+  it("skips malformed (non-object) entries in custom_font_families, keeping the valid one", () => {
+    const result = sanitizeTheme({
+      custom_font_families: [
+        null,
+        "garbage",
+        { name: "Good Name", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/b.woff2" }] },
+      ],
+    });
+    expect(result.custom_font_families).toEqual([
+      { name: "Good Name", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/b.woff2" }] },
+    ]);
+  });
+
+  it("drops a family whose own name field isn't a string", () => {
+    const result = sanitizeTheme({
+      custom_font_families: [
+        { name: 123, variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/a.woff2" }] },
+        { name: "Good Name", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/b.woff2" }] },
+      ],
+    });
+    expect(result.custom_font_families).toEqual([
+      { name: "Good Name", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/b.woff2" }] },
+    ]);
+  });
+
+  it("drops a family whose variants field is not an array", () => {
+    const result = sanitizeTheme({
+      custom_font_families: [
+        { name: "Bad Family", variants: "not-an-array" },
+        { name: "Good Family", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/z.woff2" }] },
+      ],
+    });
+    expect(result.custom_font_families).toEqual([
+      { name: "Good Family", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/z.woff2" }] },
+    ]);
+  });
+
+  it("skips malformed (non-object) entries within a family's variants array, keeping the valid ones", () => {
+    const result = sanitizeTheme({
+      custom_font_families: [
+        {
+          name: "Brand Sans",
+          variants: [null, "garbage", { weight: 400, style: "normal", url: "https://cdn.example.com/ok.woff2" }],
+        },
+      ],
+    });
+    expect(result.custom_font_families?.[0]?.variants).toEqual([
+      { weight: 400, style: "normal", url: "https://cdn.example.com/ok.woff2" },
+    ]);
+  });
+
+  it("rejects a variant URL carrying only a password (empty username) as credentialed", () => {
+    const result = sanitizeTheme({
+      custom_font_families: [
+        { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: "https://:secret@example.com/font.woff2" }] },
+      ],
+    });
+    expect(result.custom_font_families).toBeUndefined();
+  });
+
   it("dedupes families by (sanitized) name, keeping only the first occurrence", () => {
     const result = sanitizeTheme({
       custom_font_families: [

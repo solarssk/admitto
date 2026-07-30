@@ -331,6 +331,51 @@ describe("BrandingSettingsPanel — font picker", () => {
     expect(within(customTile as HTMLElement).getByText("2 styles")).toBeTruthy();
   });
 
+  it("opens the styles popover on click, listing each style label", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce({
+      theme: {
+        font_family_name: "Acme Sans",
+        custom_font_families: [
+          {
+            name: "Acme Sans",
+            variants: [
+              { weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" },
+              { weight: 700, style: "normal", url: "/uploads/default/theme/b.woff2" },
+            ],
+          },
+        ],
+      },
+    });
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    const customTile = screen.getByText("Acme Sans").closest(".font-option-card") as HTMLElement;
+    fireEvent.click(within(customTile).getByRole("button", { name: /2 styles/ }));
+    expect(within(customTile).getByText("400")).toBeTruthy();
+    expect(within(customTile).getByText("700")).toBeTruthy();
+  });
+
+  it("closes the styles popover when clicking outside it", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce({
+      theme: {
+        font_family_name: "Acme Sans",
+        custom_font_families: [
+          { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
+        ],
+      },
+    });
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    fireEvent.click(screen.getByRole("button", { name: /1 style/ }));
+    expect(screen.getByText("400")).toBeTruthy();
+
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByText("400")).toBeNull();
+  });
+
   it("opens the font family modal when the Custom font tile is clicked", async () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
@@ -622,6 +667,42 @@ describe("BrandingSettingsPanel — save and reset", () => {
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Branding saved/);
     });
+  });
+
+  it("blocks save when the loaded theme already has an invalid saved custom font family, without calling either API", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce({
+      theme: {
+        font_family_name: "Bad Family",
+        custom_font_families: [{ name: "Bad Family", variants: [] }],
+      },
+    });
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByText(/saved custom fonts are invalid/i)).toBeTruthy();
+    });
+    expect(mockPatchOrg).not.toHaveBeenCalled();
+    expect(mockSaveTheme).not.toHaveBeenCalled();
+  });
+
+  it("reports a partial failure when the organisation save rejects but the theme save succeeds", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
+    mockPatchOrg.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    mockSaveTheme.mockResolvedValueOnce({ theme: { primary: "#7c3aed" } });
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    fireEvent.click(screen.getByRole("button", { name: "Violet" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Part of your branding failed to save/);
+    });
+    expect(screen.queryByText("secret_internal")).toBeNull();
   });
 
   it("restores last saved values via Reset to saved, including the colour palette selection", async () => {

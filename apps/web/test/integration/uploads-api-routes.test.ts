@@ -198,6 +198,30 @@ describe("POST /api/admin/uploads", () => {
     });
     expect(res.status).toBe(403);
   });
+
+  it("returns 400 file_required when the multipart body has no file field", async () => {
+    const fd = new FormData();
+    fd.append("not_a_file", "hello");
+    const res = await app.request("/api/admin/uploads", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: fd,
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("file_required");
+  });
+
+  it("returns 400 invalid_form_data for a body that fails to parse as multipart", async () => {
+    const res = await app.request("/api/admin/uploads", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "multipart/form-data" },
+      body: "not actually multipart",
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("invalid_form_data");
+  });
 });
 
 describe("POST /api/admin/theme-font-upload", () => {
@@ -242,6 +266,16 @@ describe("POST /api/admin/theme-font-upload", () => {
       body: uploadForm(new Blob([woff2], { type: "font/woff2" }), "Brand-Sans.woff2"),
     });
     expect(res.status).toBe(403);
+  });
+
+  it("returns 413 when the raw request body exceeds the font upload size limit", async () => {
+    const oversized = new Uint8Array(6 * 1024 * 1024);
+    const res = await app.request("/api/admin/theme-font-upload", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: uploadForm(new Blob([oversized], { type: "font/woff2" }), "big.woff2"),
+    });
+    expect(res.status).toBe(413);
   });
 });
 

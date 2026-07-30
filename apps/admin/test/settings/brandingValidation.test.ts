@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolveThemeVars } from "@admitto/ui";
+import type { BrandingThemeDto } from "../../src/api/types.js";
 import {
   brandingDraftForSave,
   primaryForColorInput,
@@ -85,6 +86,17 @@ describe("validateBrandingDraft", () => {
     ],
   ])("rejects a family with %s", (_label, name, variants) => {
     const result = validateBrandingDraft({ custom_font_families: [{ name, variants }] });
+    expect(result.valid).toBe(false);
+    expect(result.errors.custom_font_families).toBeTruthy();
+  });
+
+  it("rejects a family containing a variant whose style is neither normal nor italic", () => {
+    const draft = {
+      custom_font_families: [
+        { name: "Brand Sans", variants: [{ weight: 400, style: "oblique", url: "https://cdn.example.com/font.woff2" }] },
+      ],
+    } as unknown as BrandingThemeDto;
+    const result = validateBrandingDraft(draft);
     expect(result.valid).toBe(false);
     expect(result.errors.custom_font_families).toBeTruthy();
   });

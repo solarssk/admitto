@@ -239,6 +239,17 @@ describe("resolveThemeVars", () => {
     expect(vars.fontFaceCss).toContain('format("opentype")');
   });
 
+  it("omits the format() hint entirely for an unrecognized file extension", () => {
+    const vars = resolveThemeVars({
+      font_family_name: "Brand Sans",
+      custom_font_families: [
+        { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/font.eot" }] },
+      ],
+    });
+    expect(vars.fontFaceCss).toContain('url("https://cdn.example.com/font.eot")');
+    expect(vars.fontFaceCss).not.toContain("format(");
+  });
+
   it("accepts a local theme upload path without throwing (no base URL to resolve against)", () => {
     const vars = resolveThemeVars({
       custom_font_families: [

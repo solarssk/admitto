@@ -199,6 +199,68 @@ describe("FontFamilyModal", () => {
     expect(rows()).toHaveLength(0);
   });
 
+  it("reverts (not removes) an existing row when replacing its file fails to upload", async () => {
+    mockUploadFont
+      .mockResolvedValueOnce({ url: "/uploads/default/theme/first.woff2" })
+      .mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText(/Drop font files here/), {
+      target: { files: [new File(["x"], "Acme-Sans-Regular.woff2")] },
+    });
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    const row = rows()[0]!;
+
+    fireEvent.change(fileInputOf(row), { target: { files: [new File(["y"], "Acme-Sans-Regular-v2.woff2")] } });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Couldn't upload "Acme-Sans-Regular-v2\.woff2"/);
+    });
+    expect(rows()).toHaveLength(1);
+    expect(within(rows()[0]!).getByText("Choose file")).toBeTruthy();
+  });
+
+  it("rejects an unsupported file extension when replacing an existing row's file, leaving it unchanged", async () => {
+    mockUploadFont.mockResolvedValueOnce({ url: "/uploads/default/theme/first.woff2" });
+    renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText(/Drop font files here/), {
+      target: { files: [new File(["x"], "Acme-Sans-Regular.woff2")] },
+    });
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    const row = rows()[0]!;
+
+    fireEvent.change(fileInputOf(row), { target: { files: [new File(["y"], "not-a-font.exe")] } });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/\.woff, \.woff2, \.ttf, or \.otf/);
+    });
+    expect(mockUploadFont).toHaveBeenCalledTimes(1);
+    expect(within(rows()[0]!).getByText("Acme-Sans-Regular.woff2")).toBeTruthy();
+  });
+
+  it("discards a still-loading upload immediately when a newer file pick for the same row arrives first", async () => {
+    let resolveFirstBuffer!: (v: ArrayBuffer) => void;
+    const firstFile = new File(["x"], "Acme-Sans-Regular.woff2");
+    firstFile.arrayBuffer = () => new Promise((resolve) => (resolveFirstBuffer = resolve));
+
+    mockUploadFont.mockResolvedValueOnce({ url: "/uploads/default/theme/second.woff2" });
+    renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText(/Drop font files here/), { target: { files: [firstFile] } });
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    const row = rows()[0]!;
+
+    fireEvent.change(fileInputOf(row), { target: { files: [new File(["y"], "Acme-Sans-Regular-v2.woff2")] } });
+    await waitFor(() => expect(mockUploadFont).toHaveBeenCalledTimes(1));
+
+    resolveFirstBuffer(new ArrayBuffer(1));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // The stale first load never reached the upload step - only the newer pick's file was sent.
+    expect(mockUploadFont).toHaveBeenCalledTimes(1);
+  });
+
   it("drops multiple files at once into separate rows, one per weight/style combo", async () => {
     mockUploadFont
       .mockResolvedValueOnce({ url: "/uploads/default/theme/regular.woff2" })
@@ -271,6 +333,58 @@ describe("FontFamilyModal", () => {
     expect(rows()).toHaveLength(1);
     expect(within(rows()[0]!).getByRole("combobox", { name: "Weight" })).toHaveProperty("value", "100");
     expect(within(rows()[0]!).getByRole("radio", { name: "Normal" }).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("shows an info toast instead of a 19th row once every weight/style combination is already used", () => {
+    renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />);
+    const addButton = screen.getByRole("button", { name: /Add a variant manually/ });
+
+    for (let i = 0; i < 18; i++) {
+      fireEvent.click(addButton);
+    }
+    expect(rows()).toHaveLength(18);
+
+    fireEvent.click(addButton);
+    expect(rows()).toHaveLength(18);
+    expect(screen.getByTestId("at-toast").textContent).toMatch(/All weight and style combinations are already added/);
+  });
+
+  it("changes a row's style via the Normal/Italic toggle", async () => {
+    mockUploadFont.mockResolvedValueOnce({ url: "/uploads/default/theme/a.woff2" });
+    renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText(/Drop font files here/), {
+      target: { files: [new File(["x"], "Acme-Sans-Regular.woff2")] },
+    });
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    const row = rows()[0]!;
+    expect(within(row).getByRole("radio", { name: "Normal" }).getAttribute("aria-checked")).toBe("true");
+
+    fireEvent.click(within(row).getByRole("radio", { name: "Italic" }));
+    expect(within(row).getByRole("radio", { name: "Italic" }).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("shows the drag-over state on drag over and clears it on drag leave", () => {
+    renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />);
+    const dropzone = document.querySelector(".fontfam-dropzone") as HTMLElement;
+
+    fireEvent.dragOver(dropzone);
+    expect(dropzone.className).toContain("fontfam-dropzone--over");
+
+    fireEvent.dragLeave(dropzone);
+    expect(dropzone.className).not.toContain("fontfam-dropzone--over");
+  });
+
+  it("accepts a file dropped directly onto the dropzone, same as picking one via the hidden input", async () => {
+    mockUploadFont.mockResolvedValueOnce({ url: "/uploads/default/theme/a.woff2" });
+    renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />);
+    const dropzone = document.querySelector(".fontfam-dropzone") as HTMLElement;
+
+    fireEvent.dragOver(dropzone);
+    fireEvent.drop(dropzone, { dataTransfer: { files: [new File(["x"], "Acme-Sans-Regular.woff2")] } });
+
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(dropzone.className).not.toContain("fontfam-dropzone--over");
   });
 
   it("removes a row via its own remove button", async () => {
