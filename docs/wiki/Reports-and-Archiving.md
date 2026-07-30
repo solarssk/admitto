@@ -18,12 +18,15 @@ Open the correct event and confirm its time zone. Before archiving, finish check
 ### Review and export reports
 
 1. Open **Reports**.
-2. Review overall attendance, admissions over time, ticket-type and RSVP summaries, check-in methods, device information, and the admission log relevant to your question.
+2. Review overall attendance, admissions over time, ticket-type and RSVP summaries, check-in methods, admissions by operator, device information, and the admission log relevant to your question.
 3. Apply filters when you need a narrower result.
 4. Check displayed times against the event time zone.
 5. Use the available export control only for an approved event purpose.
 
 ### Archive the event
+
+> [!CAUTION]
+> Archiving makes the whole event read-only, including attendee changes, communication, settings, and check-in.
 
 1. Ask a Superadmin to open **Event settings**.
 2. Review the status and make sure no operator is still using check-in.

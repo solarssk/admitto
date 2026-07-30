@@ -157,6 +157,15 @@ you start`, `Steps`, `Expected result`, `Important decisions`, `What changes aft
 their purpose. Verify factual instructions against the current `main` UI and domain behaviour;
 the documentation check proves structural consistency, not product correctness.
 
+### Visual documentation
+
+- Use tables to compare roles, statuses, fields, providers, or actions.
+- Use Mermaid only to explain a lifecycle, decision path, scope, or relationship that is harder to understand in a short list.
+- Give every Mermaid diagram a nearby text explanation; it must not be the only source of essential guidance.
+- Use at most one main diagram per page. Keep labels short and never include personal data, secrets, ticket URLs, QR values, customer names, or internal environment details.
+- Use GitHub alerts only for important, risky, or irreversible information. Keep to one or two per page.
+- Use collapsed sections only for optional or advanced detail, never for required steps or warnings.
+
 ## Claude Code
 
 Claude-specific workflow (plan gate, split guidelines): [CLAUDE.md](CLAUDE.md).

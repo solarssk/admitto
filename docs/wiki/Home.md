@@ -7,16 +7,30 @@
 
 Admitto helps event teams prepare attendees, send tickets, and run check-in.
 
-Choose the guide that matches your work:
+## Find your starting point
 
-- I organise an event: start with [First Event Checklist](First-Event-Checklist).
-- I prepare attendee data: read [Importing Attendees](Importing-Attendees) and the [Import File Reference](Import-File-Reference).
-- I create event messages: read [Email Templates](Email-Templates) and [Sending Messages and Delivery](Sending-Tickets-and-Delivery).
-- I work at the entrance: read [Operator Quick Start](Operator-Quick-Start).
-- I administer an organisation: read [Organisation Administration](Organisation-Administration).
-- I manage the Admitto instance: read [Superadmin Quick Start](Superadmin-Quick-Start).
+| I want to… | Start here |
+|---|---|
+| Organise an event | [First Event Checklist](First-Event-Checklist) |
+| Prepare attendee data | [Importing Attendees](Importing-Attendees) and the [Import File Reference](Import-File-Reference) |
+| Create event messages | [Email Templates](Email-Templates) and [Sending Messages and Delivery](Sending-Tickets-and-Delivery) |
+| Work at the entrance | [Operator Quick Start](Operator-Quick-Start) |
+| Administer an organisation | [Organisation Administration](Organisation-Administration) |
+| Manage the Admitto instance | [Superadmin Quick Start](Superadmin-Quick-Start) |
 
 ## The event journey
+
+```mermaid
+flowchart TD
+    create[Create event] --> configure[Configure event]
+    configure --> attendees[Add or import attendees]
+    attendees --> messages[Prepare and test messages]
+    messages --> tickets[Send tickets]
+    tickets --> checkin[Run check-in]
+    checkin --> close[Review reports and archive]
+```
+
+The diagram is a quick overview. The numbered list below describes the same journey in text.
 
 1. Create the event and check its basic details.
 2. Add ticket types and event requirements when needed.

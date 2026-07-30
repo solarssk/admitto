@@ -13,6 +13,9 @@ Configure supported OIDC sign-in and Cloudflare Access from the administration U
 
 Have a separate working Superadmin session, an approved test account, and the identity provider values supplied through a secure channel.
 
+> [!CAUTION]
+> Keep the separate Superadmin session open while testing identity or Cloudflare Access changes. An incorrect configuration can block staff access.
+
 ## Steps
 
 1. Open **Organisation settings**, then **Identity**.

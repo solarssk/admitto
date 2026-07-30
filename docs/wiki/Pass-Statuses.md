@@ -7,6 +7,17 @@
 
 Pass status controls whether an attendee may use the event ticket. It is separate from email delivery, RSVP, and check-in state.
 
+```mermaid
+flowchart TD
+    attendee[Attendee record] --> pass[Pass status]
+    attendee --> rsvp[RSVP status]
+    attendee --> delivery[Email delivery status]
+    attendee --> checkin[Check-in status]
+    pass --> admission[Admission allowed or blocked]
+```
+
+Only pass status controls admission. RSVP, delivery, and check-in are recorded separately and do not replace it.
+
 | Displayed status | Meaning | Check-in |
 |---|---|---|
 | Active | The attendee has a normal registered pass. | Allowed. |

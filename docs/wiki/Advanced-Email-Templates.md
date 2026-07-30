@@ -37,6 +37,25 @@ The preview renders without validation errors, required ticket values are presen
 - Unknown or malformed `{{placeholders}}` are rejected. Do not invent variable names.
 - Wallet variables are planned and currently render empty. Do not depend on them in a live message.
 
+<details>
+<summary>Example MJML ticket section</summary>
+
+Use the editor buttons to insert the variables in the correct place. This small example keeps the ticket link and QR image separate from ordinary text.
+
+```mjml
+<mj-section>
+  <mj-column>
+    <mj-text>Hello {{first_name}}</mj-text>
+    <mj-button href="{{ticket_url}}">View your ticket</mj-button>
+    <mj-image src="{{qr_image_url}}" alt="Ticket QR code" />
+  </mj-column>
+</mj-section>
+```
+
+The surrounding template must still be valid MJML. Preview and send a test after every source change.
+
+</details>
+
 ## What changes after this action
 
 Saving replaces the event template source used by later previews, tests, initial sends, and resends. It does not change messages that were already sent.

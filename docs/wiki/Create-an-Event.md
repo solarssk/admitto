@@ -13,6 +13,9 @@ Create the event workspace before adding attendees, messages, requirements, or o
 
 Prepare the event title, calendar date, timezone, and optional location. Choose a short URL slug that will remain suitable for the lifetime of the event.
 
+> [!IMPORTANT]
+> The URL slug is used in ticket URLs and cannot be changed after the event is created.
+
 ## Steps
 
 1. Open **Events**.

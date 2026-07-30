@@ -13,6 +13,31 @@ Select, test, and troubleshoot the supported mail transport used by event messag
 
 Obtain approved provider details through your organisation's secure process. Do not paste secrets into issues, screenshots, or this Wiki.
 
+## How Admitto chooses a transport
+
+```mermaid
+flowchart TD
+    start[Send an event message] --> override{Dedicated event transport configured?}
+    override -- Yes --> event[Use event transport]
+    override -- No --> organisation[Use organisation transport]
+    event --> provider{Selected provider}
+    organisation --> provider
+    provider -- SMTP --> smtp[SMTP delivery]
+    provider -- Microsoft Graph --> graph[Microsoft Graph delivery]
+    provider -- Power Automate --> automate[Power Automate delivery]
+    smtp --> record[Create delivery record]
+    graph --> record
+    automate --> record
+```
+
+An event uses its dedicated transport only when one is configured. Otherwise, it uses the organisation transport. Every send creates a delivery record.
+
+| Transport | Connection model | Important configuration |
+|---|---|---|
+| SMTP | Direct mail server connection | Host, port, credentials, and sender |
+| Microsoft Graph | Microsoft 365 application-only sending | Application credentials and mailbox |
+| Power Automate | Webhook-based delivery | Flow URL and secret key |
+
 ## Steps
 
 1. Open **Organisation settings**, then **Mail**.

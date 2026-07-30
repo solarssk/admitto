@@ -13,6 +13,9 @@ Prepare and test the browser ticket and QR code used at check-in.
 
 Prepare a synthetic attendee with an active pass. Save and test the ticket email template, including `ticket_url` and `qr_image_url`.
 
+> [!WARNING]
+> Treat ticket links and QR codes as access credentials. Do not publish them in documentation, screenshots, issues, or test files.
+
 ## Steps
 
 1. Open **Communication** and select the ticket template.
