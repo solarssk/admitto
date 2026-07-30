@@ -8,7 +8,7 @@ import {
   type RefObject,
 } from "react";
 import { useParams } from "react-router";
-import { Button, Card, PageHeader, useToast } from "@admitto/ui";
+import { Button, Card, Notice, PageHeader, useToast } from "@admitto/ui";
 import {
   ApiError,
   fetchAttendeeCard,
@@ -181,14 +181,14 @@ function CheckInStreamBanners({
   return (
     <>
       {canAct && streamStatus === "auth_error" && (
-        <output className="check-in__offline-banner">
+        <Notice variant="warning" as="output" className="check-in__offline-banner">
           Live updates unavailable. Check access
-        </output>
+        </Notice>
       )}
       {canAct && streamStatus === "reconnecting" && (
-        <output className="check-in__offline-banner">
+        <Notice variant="warning" as="output" className="check-in__offline-banner">
           Reconnecting live updates…
-        </output>
+        </Notice>
       )}
     </>
   );
