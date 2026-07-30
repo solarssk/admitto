@@ -12,6 +12,17 @@ const MIME: Record<string, string> = {
   ".ttf": "font/ttf",
 };
 
+/** `require.resolve(id)`, or "" if the module can't be resolved (e.g. genuinely not installed) -
+ * shared by every vendor asset lookup below so there's exactly one such fallback path instead of
+ * three near-identical ones. */
+function tryResolve(id: string): string {
+  try {
+    return require.resolve(id);
+  } catch {
+    return "";
+  }
+}
+
 /** Safely serve `relative` under `baseDir`: path-traversal guard, known-extension MIME lookup,
  * immutable caching. Shared by every self-hosted vendor asset route below (Tabler Icons,
  * @fontsource) so this exists in exactly one place - each route only differs in how it derives
@@ -42,12 +53,8 @@ function serveVendorFile(c: Context, baseDir: string, relative: string): Respons
 }
 
 function resolveTablerIconsDist(): string {
-  try {
-    const cssPath = require.resolve("@tabler/icons-webfont/dist/tabler-icons.min.css");
-    return dirname(cssPath);
-  } catch {
-    return "";
-  }
+  const cssPath = tryResolve("@tabler/icons-webfont/dist/tabler-icons.min.css");
+  return cssPath ? dirname(cssPath) : "";
 }
 
 const TABLER_DIST = resolveTablerIconsDist();
@@ -80,12 +87,8 @@ function isFontsourcePackage(value: string): value is FontsourcePackage {
 }
 
 function resolveFontsourceFilesDir(pkg: FontsourcePackage): string {
-  try {
-    const pkgJsonPath = require.resolve(`@fontsource/${pkg}/package.json`);
-    return join(dirname(pkgJsonPath), "files");
-  } catch {
-    return "";
-  }
+  const pkgJsonPath = tryResolve(`@fontsource/${pkg}/package.json`);
+  return pkgJsonPath ? join(dirname(pkgJsonPath), "files") : "";
 }
 
 const FONTSOURCE_FILES_DIR: Record<FontsourcePackage, string> = Object.fromEntries(
@@ -135,8 +138,9 @@ const BUILT_IN_FONT_SOURCES: Record<string, { pkg: FontsourcePackage; files: rea
  * `url(./files/...)` references to the `/vendor/fontsource/<pkg>/...` route above, so the CSS text
  * stays correct once inlined into a page that isn't served from inside the package itself. */
 function readFontsourceWeightCss(pkg: FontsourcePackage, weightFile: string): string {
+  const cssPath = tryResolve(`@fontsource/${pkg}/${weightFile}.css`);
+  if (!cssPath) return "";
   try {
-    const cssPath = require.resolve(`@fontsource/${pkg}/${weightFile}.css`);
     // eslint-disable-next-line security/detect-non-literal-fs-filename -- pkg/weightFile only ever come from the fixed BUILT_IN_FONT_SOURCES manifest above, never from a request
     const raw = readFileSync(cssPath, "utf8");
     return raw.replaceAll("url(./files/", `url(/vendor/fontsource/${pkg}/`);
@@ -159,3 +163,12 @@ const BUILT_IN_FONT_FACE_CSS: Record<string, string> = Object.fromEntries(
 export function builtInFontFaceCss(familyName: string): string | undefined {
   return BUILT_IN_FONT_FACE_CSS[familyName] || undefined;
 }
+
+// Test-only exports (mirrors packages/auth's `sanitizeTheme as sanitizeBrandingThemeForTests`
+// convention). Real HTTP requests never reach serveVendorFile's path-traversal guard with a raw
+// ".."  still in place - Node's URL parsing (both in Hono's own request-testing helper and in
+// @hono/node-server's real request handling, confirmed empirically) already collapses dot-segments
+// before any handler sees the path - so it's tested directly here instead of through a route.
+// tryResolve's failure branch (a genuinely uninstalled package) isn't reachable through any of the
+// 4 known built-in packages either, since they're always present in this monorepo.
+export { serveVendorFile as serveVendorFileForTests, tryResolve as tryResolveForTests };

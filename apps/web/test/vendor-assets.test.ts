@@ -1,6 +1,18 @@
+import { createRequire } from "node:module";
+import { dirname } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Hono } from "hono";
-import { builtInFontFaceCss, serveFontsourceFonts } from "../src/vendor-assets.js";
+import type { Context } from "hono";
+import {
+  builtInFontFaceCss,
+  serveFontsourceFonts,
+  serveTablerIcons,
+  serveVendorFileForTests,
+  tryResolveForTests,
+} from "../src/vendor-assets.js";
+
+const require = createRequire(import.meta.url);
+const MANROPE_FILES_DIR = dirname(require.resolve("@fontsource/manrope/package.json")) + "/files";
 
 function appWithFontsourceRoute() {
   const app = new Hono();
@@ -22,17 +34,82 @@ describe("serveFontsourceFonts", () => {
     ["a package outside the built-in allowlist", "/vendor/fontsource/comic-sans/comic-sans-latin-400-normal.woff2"],
     ["no file segment given", "/vendor/fontsource/manrope"],
     ["an unknown file within a known package", "/vendor/fontsource/manrope/does-not-exist.woff2"],
-    ["a disallowed extension even inside a known package's files directory", "/vendor/fontsource/manrope/manrope-latin-400-normal.css"],
+    ["a file that resolves to no physical file on disk (valid extension, wrong name)", "/vendor/fontsource/manrope/manrope-latin-400-normal.css"],
+    ["a genuinely disallowed extension (not in the MIME map at all)", "/vendor/fontsource/manrope/manrope-latin-400-normal.png"],
   ])("404s for %s", async (_case, path) => {
     const res = await appWithFontsourceRoute().request(path);
     expect(res.status).toBe(404);
   });
 
   it("rejects path traversal outside the package's files directory", async () => {
+    // Real HTTP requests never reach the code with a raw ".." still in the path - both Hono's own
+    // request-testing helper and @hono/node-server's real request handling already collapse
+    // dot-segments before any handler sees them (confirmed empirically, incl. against the real
+    // running dev server). This documents that normalization; the guard itself is tested directly
+    // via serveVendorFileForTests below, where a raw ".." can actually reach it.
     const res = await appWithFontsourceRoute().request("/vendor/fontsource/manrope/../../../../../../etc/passwd");
     expect([403, 404]).toContain(res.status);
     const text = await res.text();
     expect(text).not.toContain("root:");
+  });
+});
+
+describe("serveTablerIcons", () => {
+  it("serves the self-hosted Tabler Icons stylesheet", async () => {
+    const app = new Hono();
+    app.get("/vendor/tabler-icons/*", serveTablerIcons);
+    const res = await app.request("/vendor/tabler-icons/tabler-icons.min.css");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("text/css; charset=utf-8");
+  });
+});
+
+/** Minimal duck-typed Context - serveVendorFile only ever calls these four methods. */
+function fakeContext() {
+  const headers: Record<string, string> = {};
+  return {
+    header: (key: string, value: string) => {
+      headers[key] = value;
+    },
+    text: (body: string, status: number) => new Response(body, { status }),
+    notFound: () => new Response("404 Not Found", { status: 404 }),
+    body: (data: Uint8Array) => new Response(data, { status: 200, headers }),
+  } as unknown as Context;
+}
+
+describe("serveVendorFileForTests", () => {
+  it("serves a real file under baseDir", async () => {
+    const res = await serveVendorFileForTests(fakeContext(), MANROPE_FILES_DIR, "manrope-latin-400-normal.woff2");
+    expect(res.status).toBe(200);
+  });
+
+  it("returns 403 Forbidden for a relative path that escapes baseDir", async () => {
+    // Called directly with a raw ".." so no URL-layer normalization can intercept it first -
+    // this is the guard serveFontsourceFonts/serveTablerIcons can never actually reach it through
+    // (see the note in serveFontsourceFonts's own traversal test above).
+    const res = await serveVendorFileForTests(fakeContext(), MANROPE_FILES_DIR, "../../../../../etc/passwd");
+    expect(res.status).toBe(403);
+    expect(await res.text()).toBe("Forbidden");
+  });
+
+  it("returns 404 for an extension not in the MIME map", async () => {
+    const res = await serveVendorFileForTests(fakeContext(), MANROPE_FILES_DIR, "manrope-latin-400-normal.png");
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 when the file doesn't exist on disk", async () => {
+    const res = await serveVendorFileForTests(fakeContext(), MANROPE_FILES_DIR, "does-not-exist.woff2");
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("tryResolveForTests", () => {
+  it("resolves a real installed package", () => {
+    expect(tryResolveForTests("@fontsource/manrope/package.json")).toMatch(/package\.json$/);
+  });
+
+  it("returns an empty string for a package that can't be resolved", () => {
+    expect(tryResolveForTests("@definitely-not-a-real-package-xyz-123/whatever")).toBe("");
   });
 });
 
