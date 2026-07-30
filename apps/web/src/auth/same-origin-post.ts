@@ -1,5 +1,5 @@
 import type { Context, Next } from "hono";
-import { resolveTrustProxy } from "../config.js";
+import { shouldTrustForwardedHeaders } from "../rate-limit/trust-proxy.js";
 
 /** First comma-separated hop from a proxy-forwarded header value. */
 function firstForwardedValue(raw: string | undefined): string | undefined {
@@ -10,15 +10,16 @@ function firstForwardedValue(raw: string | undefined): string | undefined {
 
 /**
  * Canonical request origin for CSRF checks.
- * Uses `X-Forwarded-Proto` / `X-Forwarded-Host` only when `TRUST_PROXY=true`; otherwise the
- * request URL (defense-in-depth when the app is not behind a sanitizing reverse proxy).
+ * Uses `X-Forwarded-Proto` / `X-Forwarded-Host` only when the request arrived from a trusted
+ * proxy peer; otherwise the request URL (defense-in-depth when the app is not behind one, or
+ * when a client reaches it directly, bypassing the proxy).
  */
 export function resolveRequestOrigin(c: Context): string {
   const requestUrl = new URL(c.req.url);
   let proto = requestUrl.protocol.replace(/:$/, "");
   let host = requestUrl.host;
 
-  if (resolveTrustProxy()) {
+  if (shouldTrustForwardedHeaders(c)) {
     proto = firstForwardedValue(c.req.header("x-forwarded-proto")) ?? proto;
     host = firstForwardedValue(c.req.header("x-forwarded-host")) ?? host;
   }

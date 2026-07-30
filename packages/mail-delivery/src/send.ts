@@ -47,6 +47,9 @@ export interface SendTicketEmailsOptions {
   baseUrl?: string;
   /** Triggering admin's IANA timezone at send time, when known. */
   timezone?: string;
+  /** Triggering admin's user id and session id at send time, when known. */
+  actorUserId?: string;
+  sessionId?: string;
 }
 
 /** Optional test hooks for `sendTicketEmails()` (e.g. export_only sink). */
@@ -222,6 +225,8 @@ async function processAttendeeForSend({
     renderedSubject: rendered.subject,
     renderedHtml: rendered.html,
     timezone: options.timezone,
+    actorUserId: options.actorUserId,
+    sessionId: options.sessionId,
   };
 
   if (purpose === "initial") {

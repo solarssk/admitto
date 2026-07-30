@@ -246,6 +246,8 @@ Do **not** use `$proxy_add_x_forwarded_for` on the NPM vhost that faces the publ
 
 Compose nginx trusts **only `127.0.0.1`** as the RealIP peer (NPM on the host → `127.0.0.1:8080`). If NPM runs in Docker and hits the host via the bridge gateway (often `172.17.0.1`), add that single address to `deploy/nginx/default.conf` — do not widen to whole RFC1918 ranges.
 
+That covers the first hop (NPM → compose nginx). The app has its **own**, second trust boundary: it only honours `X-Forwarded-For/Host/Proto` when the request's direct TCP peer is inside `TRUSTED_PROXY_CIDRS` ([`rate-limit/trust-proxy.ts`](../apps/web/src/rate-limit/trust-proxy.ts)) — `TRUST_PROXY=true` alone is not enough, since anything that can reach the app container directly could otherwise set those headers itself. Compose nginx and `app` are separate containers on the `internal` network, not sharing loopback, so this is **not** `127.0.0.1` — it's the network's fixed subnet (`docker-compose.yml`'s `networks.internal.ipam`), already set to match in `.env.example`. Only widen it if you added another trusted hop between compose nginx and the app.
+
 (`$scheme` is `https` on the public NPM vhost; compose nginx forwards that value so `TRUST_PROXY` CSRF checks see HTTPS.)
 
 For long-lived check-in SSE, add a custom location in NPM (or here in `default.conf`):
@@ -258,7 +260,7 @@ location ~ ^/api/checkin/events/[^/]+/stream$ {
 }
 ```
 
-Set `TRUST_PROXY=true` in `deploy/.env` (already in `.env.example`).
+Set `TRUST_PROXY=true` and `TRUSTED_PROXY_CIDRS` in `deploy/.env` (both already in `.env.example`).
 
 ## Cloudflare and WireGuard
 

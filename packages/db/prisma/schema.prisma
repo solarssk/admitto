@@ -267,6 +267,12 @@ model EmailDelivery {
   // Triggering admin's IANA timezone at send/resend time — null for rows predating this
   // column or created outside a browser request.
   client_timezone     String?
+  // Triggering admin's user/session id at send/resend time — null for rows predating these
+  // columns or created outside a browser request (e.g. an automated initial send). Durable
+  // independently of the best-effort bulk-action audit log (see writeBulkActionLog callers):
+  // this is written in the same call that queues the row, not a separate fire-and-forget write.
+  actor_user_id       String?
+  session_id          String?
   updated_at          DateTime      @updatedAt
 
   @@index([organization_id])

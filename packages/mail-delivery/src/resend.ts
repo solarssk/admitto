@@ -8,6 +8,9 @@ export interface ResendTicketEmailOptions {
   baseUrl?: string;
   /** Triggering admin's IANA timezone at send time, when known. */
   timezone?: string;
+  /** Triggering admin's user id and session id at send time, when known. */
+  actorUserId?: string;
+  sessionId?: string;
 }
 
 /** Explicit resend — new EmailDelivery row with purpose=resend and fresh render. */
@@ -27,6 +30,8 @@ export async function resendTicketEmail(
       ...(options.to ? { recipientEmail: options.to } : {}),
       ...(options.baseUrl ? { baseUrl: options.baseUrl } : {}),
       ...(options.timezone ? { timezone: options.timezone } : {}),
+      ...(options.actorUserId ? { actorUserId: options.actorUserId } : {}),
+      ...(options.sessionId ? { sessionId: options.sessionId } : {}),
     },
     prisma,
     env,
