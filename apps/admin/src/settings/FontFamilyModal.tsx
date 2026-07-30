@@ -1,5 +1,13 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, IconButton, Input, isReservedBrandingFontFamilyName, Select, useToast } from "@admitto/ui";
+import {
+  Button,
+  IconButton,
+  Input,
+  isReservedBrandingFontFamilyName,
+  ModalBackdrop,
+  Select,
+  useToast,
+} from "@admitto/ui";
 import { uploadThemeFont } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { BrandingCustomFontFamilyDto, BrandingFontVariantDto } from "../api/types.js";
@@ -378,11 +386,7 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
 
   return (
     <dialog className="add-attendee-modal" open aria-modal="true" aria-labelledby={titleId}>
-      <div // NOSONAR — plain decorative click-catcher div, not an <img>; same backdrop pattern as AddAttendeeModal's own (unflagged there only because it predates this PR's diff)
-        className="add-attendee-modal__backdrop"
-        role="presentation"
-        onClick={handleClose}
-      />
+      <ModalBackdrop onClose={handleClose} />
       <div ref={panelRef} className="add-attendee-modal__panel" style={{ width: "min(94vw, 640px)" }}>
         <h2 className="add-attendee-modal__title" id={titleId}>
           {initialFamily ? `Edit "${initialFamily.name}"` : "Create font family"}

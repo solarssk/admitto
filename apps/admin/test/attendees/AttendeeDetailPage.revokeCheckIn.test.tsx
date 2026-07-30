@@ -363,7 +363,7 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
     await waitFor(() => expect(bulkRevokeItems).toHaveBeenCalledOnce());
 
-    fireEvent.click(document.querySelector(".confirm-dialog__backdrop")!);
+    fireEvent.click(document.querySelector(".at-modal-backdrop")!);
     expect(screen.getByRole("dialog", { name: "Revoke items?" })).toBeTruthy();
 
     rejectRequest(new Error("request failed"));

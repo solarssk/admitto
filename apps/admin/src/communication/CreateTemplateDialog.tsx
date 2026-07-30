@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, Input } from "@admitto/ui";
+import { Button, Input, ModalBackdrop } from "@admitto/ui";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 
 /** Props for {@link CreateTemplateDialog}. */
@@ -53,7 +53,7 @@ export function CreateTemplateDialog({
 
   return (
     <dialog className="add-attendee-modal" open aria-modal="true" aria-labelledby={titleId}>
-      <div className="add-attendee-modal__backdrop" role="presentation" onClick={busy ? undefined : onClose} />
+      <ModalBackdrop onClose={busy ? undefined : onClose} />
       <div className="add-attendee-modal__panel" ref={panelRef}>
         <h2 className="add-attendee-modal__title" id={titleId}>
           New template

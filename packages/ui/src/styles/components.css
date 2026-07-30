@@ -47,6 +47,13 @@
 .at-btn--warning { background: var(--status-warn-fg); color: var(--text-on-primary); }
 .at-btn--warning:hover:not(:disabled) { filter: brightness(0.9); }
 
+/* ---------------- Modal backdrop ---------------- */
+.at-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+}
+
 /* ---------------- Tooltip ---------------- */
 /* Trigger wrapper - inline-flex by default (shrink-to-fit, sits next to sibling controls);
    callers needing a full-width block-level wrapper (e.g. a stacked menu item list) pass an

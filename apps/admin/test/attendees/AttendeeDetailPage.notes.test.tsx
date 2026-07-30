@@ -800,7 +800,7 @@ describe("AttendeeDetailPage — Notes tab", () => {
       deleteAttendeeNote.mockReturnValueOnce(new Promise((resolve) => { resolveRequest = resolve; }));
       fireEvent.click(screen.getByRole("button", { name: "Delete" }));
       await waitFor(() => expect(deleteAttendeeNote).toHaveBeenCalledOnce());
-      fireEvent.click(document.querySelector(".confirm-dialog__backdrop")!);
+      fireEvent.click(document.querySelector(".at-modal-backdrop")!);
 
       expect(screen.getByText("Delete this note?")).toBeTruthy();
       resolveRequest(baseDetail({ notes: [] }));
