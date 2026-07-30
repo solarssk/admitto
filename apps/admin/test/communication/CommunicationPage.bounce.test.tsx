@@ -100,6 +100,7 @@ describe("CommunicationPage bounce banner", () => {
     // Scoped to the captured alert node (not re-queried from `screen`) so a later, unrelated
     // re-render can't race this assertion the way two separate screen queries could.
     const banner = await screen.findByRole("alert");
+    expect(banner.classList.contains("at-notice--warning")).toBe(true);
     expect(within(banner).getByText(/3 emails bounced/i)).toBeTruthy();
     expect(within(banner).getByRole("button", { name: "View delivery log" })).toBeTruthy();
   });

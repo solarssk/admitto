@@ -16,6 +16,7 @@ import {
   Button,
   Card,
   Input,
+  Notice,
   PageHeader,
   Select,
   StatusBadge,
@@ -461,18 +462,15 @@ function deleteConfirmMessage(
 function EmailBounceBanner({ count, onViewLog }: Readonly<{ count: number; onViewLog: () => void }>) {
   if (count <= 0) return null;
   return (
-    <div className="bounce-banner" role="alert">
-      <i className="ti ti-alert-triangle" aria-hidden="true" />
-      <span>
-        <strong>
-          {count} email{count !== 1 ? "s" : ""} bounced
-        </strong>
-        {". These addresses will not receive future mail. "}
-        <button type="button" className="bounce-banner__link" onClick={onViewLog}>
-          View delivery log
-        </button>
-      </span>
-    </div>
+    <Notice variant="warning" role="alert">
+      <strong>
+        {count} email{count !== 1 ? "s" : ""} bounced
+      </strong>
+      {". These addresses will not receive future mail. "}
+      <button type="button" className="bounce-banner__link" onClick={onViewLog}>
+        View delivery log
+      </button>
+    </Notice>
   );
 }
 
