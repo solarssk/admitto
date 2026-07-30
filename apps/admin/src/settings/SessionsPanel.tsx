@@ -9,6 +9,7 @@ import {
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto, SessionListDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { DeviceLabelEditModal } from "./DeviceLabelEditModal.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import {
   formatRelativeTime,
@@ -67,6 +68,8 @@ export function SessionsPanel() {
   const [filter, setFilter] = useState<FilterValue>("all");
   const [confirmTarget, setConfirmTarget] = useState<SessionListDto | null>(null);
   const [revoking, setRevoking] = useState(false);
+
+  const [editTarget, setEditTarget] = useState<SessionListDto | null>(null);
 
   const [events, setEvents] = useState<EventDto[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
@@ -217,24 +220,33 @@ export function SessionsPanel() {
                     <td>{formatRelativeTime(s.lastSeenAt)}</td>
                     <td>{s.authMethod === "oidc" ? "OIDC" : "Local"}</td>
                     <td>
-                      {s.isCurrent ? (
+                      <div className="sessions-row-actions">
                         <Button
                           type="button"
-                          variant="danger"
-                          disabled
-                          title="You cannot revoke your own session"
+                          variant="secondary"
+                          onClick={() => setEditTarget(s)}
                         >
-                          Revoke
+                          Edit
                         </Button>
-                      ) : (
-                        <Button
-                          type="button"
-                          variant="danger"
-                          onClick={() => setConfirmTarget(s)}
-                        >
-                          Revoke
-                        </Button>
-                      )}
+                        {s.isCurrent ? (
+                          <Button
+                            type="button"
+                            variant="danger"
+                            disabled
+                            title="You cannot revoke your own session"
+                          >
+                            Revoke
+                          </Button>
+                        ) : (
+                          <Button
+                            type="button"
+                            variant="danger"
+                            onClick={() => setConfirmTarget(s)}
+                          >
+                            Revoke
+                          </Button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -293,6 +305,16 @@ export function SessionsPanel() {
         onConfirm={() => void handleRevoke()}
         onCancel={() => {
           if (!revoking) setConfirmTarget(null);
+        }}
+      />
+
+      <DeviceLabelEditModal
+        open={!!editTarget}
+        session={editTarget}
+        onClose={() => setEditTarget(null)}
+        onSaved={() => {
+          addToast("Device label updated.", "success");
+          void load();
         }}
       />
 

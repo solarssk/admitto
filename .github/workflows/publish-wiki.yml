@@ -1,0 +1,44 @@
+name: Publish Wiki
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/wiki/**"
+      - ".github/workflows/publish-wiki.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-wiki
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate Wiki source
+        run: node scripts/check-wiki-docs.mjs
+      - name: Synchronize GitHub Wiki
+        env:
+          WIKI_REMOTE: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.wiki.git
+        run: |
+          wiki_publish_dir=$(mktemp -d)
+          trap 'rm -rf "$wiki_publish_dir"' EXIT
+          git clone "$WIKI_REMOTE" "$wiki_publish_dir"
+          rsync -a --delete --exclude=.git docs/wiki/ "$wiki_publish_dir/"
+          git -C "$wiki_publish_dir" diff --check
+          if git -C "$wiki_publish_dir" diff --quiet; then
+            echo "Wiki is already current."
+            exit 0
+          fi
+          git -C "$wiki_publish_dir" config user.name "github-actions[bot]"
+          git -C "$wiki_publish_dir" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "$wiki_publish_dir" add --all
+          git -C "$wiki_publish_dir" commit -m "docs(wiki): publish ${GITHUB_SHA}"
+          git -C "$wiki_publish_dir" push origin HEAD:master

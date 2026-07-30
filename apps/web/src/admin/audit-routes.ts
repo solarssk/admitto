@@ -6,7 +6,9 @@ import {
   parseDateBound,
   positiveIntQuery,
   requireSuperadmin,
+  resolveUserDisplayMap,
   selfAuditCsvExport,
+  type UserDisplayRow,
 } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 
@@ -78,28 +80,6 @@ async function buildAuditLogWhere(c: Context, db: PrismaClient, orgId: string): 
   };
 }
 
-type ActorRow = { id: string; email: string; display_name: string | null };
-
-/** Resolve each row's actor_user_id to its current email/display_name (deleted users resolve to
- * neither — callers fall back to a "Deleted user"-style label). Shared by the list and export
- * handlers so the two never drift on how an actor is displayed. */
-async function resolveActorMap(
-  db: PrismaClient,
-  rows: { actor_user_id: string }[],
-): Promise<Record<string, ActorRow>> {
-  const actorIds = [...new Set(rows.map((r) => r.actor_user_id))];
-  const actors =
-    actorIds.length > 0
-      ? await db.user.findMany({
-          where: { id: { in: actorIds } },
-          select: { id: true, email: true, display_name: true },
-        })
-      : [];
-  const actorMap: Record<string, ActorRow> = Object.create(null);
-  for (const a of actors) actorMap[a.id] = a;
-  return actorMap;
-}
-
 /** GET /api/admin/audit-log — paginated org-scoped admin audit entries. Superadmin only. */
 export async function handleGetAuditLog(c: Context, db: PrismaClient): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
@@ -120,7 +100,7 @@ export async function handleGetAuditLog(c: Context, db: PrismaClient): Promise<R
     db.adminAuditLog.count({ where }),
   ]);
 
-  const actorMap = await resolveActorMap(db, rows);
+  const actorMap = await resolveUserDisplayMap(db, rows.map((r) => r.actor_user_id));
 
   const entries = rows.map((r) => ({
     id: r.id,
@@ -148,7 +128,7 @@ function buildAuditLogCsv(
     actor_user_id: string;
     ip: string | null;
   }[],
-  actorMap: Record<string, ActorRow>,
+  actorMap: Record<string, UserDisplayRow>,
 ): string {
   const header = CSV_COLUMNS.map((col) => quoteCsvCell(col)).join(",");
   const csvRows = rows.map((r) => {
@@ -190,7 +170,7 @@ export async function handleExportAuditLog(c: Context, db: PrismaClient): Promis
   // `take` is defense-in-depth, not the primary guard (the count() check above already rejects
   // an over-cap export) - matches findFilteredAttendeesForExport's own belt-and-suspenders cap.
   const rows = await db.adminAuditLog.findMany({ where, orderBy: { created_at: "desc" }, take: EXPORT_ROW_CAP });
-  const actorMap = await resolveActorMap(db, rows);
+  const actorMap = await resolveUserDisplayMap(db, rows.map((r) => r.actor_user_id));
   const csv = buildAuditLogCsv(rows, actorMap);
 
   await selfAuditCsvExport(db, c, { organizationId: orgId, actionType: "audit_log_exported", rowCount: rows.length });
