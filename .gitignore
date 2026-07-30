@@ -10,7 +10,8 @@ docs/*
 !docs/assets/**
 !docs/wiki/
 !docs/wiki/**
-!docs/SECURITY-CONTROLS.md
+!docs/security/
+!docs/security/**
 !docs/CORPORATE-DEPLOYMENT.md
 !docs/ARCHITECTURE-FOR-AUDITORS.md
 !docs/GDPR-ONE-PAGER.md
