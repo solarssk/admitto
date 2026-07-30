@@ -63,66 +63,28 @@ describe("validateBrandingDraft", () => {
     expect(result.valid).toBe(true);
   });
 
-  it("rejects a family with an invalid own name", () => {
-    const result = validateBrandingDraft({
-      custom_font_families: [
-        { name: "bad</name>", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/font.woff2" }] },
-      ],
-    });
-    expect(result.valid).toBe(false);
-    expect(result.errors.custom_font_families).toBeTruthy();
-  });
-
-  it("rejects a family with zero variants", () => {
-    const result = validateBrandingDraft({
-      custom_font_families: [{ name: "Brand Sans", variants: [] }],
-    });
-    expect(result.valid).toBe(false);
-    expect(result.errors.custom_font_families).toBeTruthy();
-  });
-
-  it("rejects a family containing a non-HTTPS variant URL", () => {
-    const result = validateBrandingDraft({
-      custom_font_families: [
-        { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: "http://evil.com/font.woff2" }] },
-      ],
-    });
-    expect(result.valid).toBe(false);
-    expect(result.errors.custom_font_families).toBeTruthy();
-  });
-
-  it("rejects a family containing a credentialed HTTPS variant URL", () => {
-    const result = validateBrandingDraft({
-      custom_font_families: [
-        {
-          name: "Brand Sans",
-          variants: [{ weight: 400, style: "normal", url: "https://user:pass@example.com/font.woff2" }],
-        },
-      ],
-    });
-    expect(result.valid).toBe(false);
-    expect(result.errors.custom_font_families).toBeTruthy();
-  });
-
-  it("rejects a family containing an out-of-range font weight", () => {
-    const result = validateBrandingDraft({
-      custom_font_families: [
-        { name: "Brand Sans", variants: [{ weight: 950, style: "normal", url: "https://cdn.example.com/font.woff2" }] },
-      ],
-    });
-    expect(result.valid).toBe(false);
-    expect(result.errors.custom_font_families).toBeTruthy();
-  });
-
-  it("rejects a family with a variant path outside the theme upload namespace", () => {
-    const result = validateBrandingDraft({
-      custom_font_families: [
-        {
-          name: "Brand Sans",
-          variants: [{ weight: 400, style: "normal", url: "/uploads/default/events/evt-1/abc123.woff2" }],
-        },
-      ],
-    });
+  it.each([
+    ["an invalid own name", "bad</name>", [{ weight: 400, style: "normal" as const, url: "https://cdn.example.com/font.woff2" }]],
+    ["zero variants", "Brand Sans", []],
+    ["a non-HTTPS variant URL", "Brand Sans", [{ weight: 400, style: "normal" as const, url: "http://evil.com/font.woff2" }]],
+    [
+      "a credentialed HTTPS variant URL",
+      "Brand Sans",
+      [{ weight: 400, style: "normal" as const, url: "https://user:pass@example.com/font.woff2" }],
+    ],
+    ["an out-of-range font weight", "Brand Sans", [{ weight: 950, style: "normal" as const, url: "https://cdn.example.com/font.woff2" }]],
+    [
+      "a variant path outside the theme upload namespace",
+      "Brand Sans",
+      [{ weight: 400, style: "normal" as const, url: "/uploads/default/events/evt-1/abc123.woff2" }],
+    ],
+    [
+      "a name matching a built-in font, case-insensitively",
+      "manrope",
+      [{ weight: 400, style: "normal" as const, url: "https://cdn.example.com/font.woff2" }],
+    ],
+  ])("rejects a family with %s", (_label, name, variants) => {
+    const result = validateBrandingDraft({ custom_font_families: [{ name, variants }] });
     expect(result.valid).toBe(false);
     expect(result.errors.custom_font_families).toBeTruthy();
   });
@@ -135,16 +97,6 @@ describe("validateBrandingDraft", () => {
       ],
     });
     expect(result.valid).toBe(true);
-  });
-
-  it("rejects a custom family named after a built-in font, case-insensitively", () => {
-    const result = validateBrandingDraft({
-      custom_font_families: [
-        { name: "manrope", variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/font.woff2" }] },
-      ],
-    });
-    expect(result.valid).toBe(false);
-    expect(result.errors.custom_font_families).toBeTruthy();
   });
 });
 
