@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword } from "../../src/password.js";
 import {
   resolveOrCreateUserFromExternalIdentity,
@@ -16,7 +17,7 @@ let prisma: PrismaClient;
 let provider: Awaited<ReturnType<typeof prisma.identityProvider.create>>;
 
 beforeAll(async () => {
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
 
   await prisma.oidcRoleGrant.deleteMany({ where: { provider_id: PROVIDER_ID } });
   await prisma.externalIdentity.deleteMany({ where: { provider_id: PROVIDER_ID } });

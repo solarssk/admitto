@@ -1,7 +1,8 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { buildXlsxBuffer } from "../../src/admin/xlsx-to-csv.js";
@@ -178,7 +179,7 @@ async function sessionCookieFor(userId: string): Promise<string> {
 }
 
 beforeAll(async () => {
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
   await seed(prisma);
   rateLimitStore = new InMemoryRateLimitStore();
   app = createApp({

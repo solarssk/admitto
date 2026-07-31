@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { regenerateBackupRecoveryCodes } from "@admitto/auth";
 import {
   extendEnrollmentBackupCodes,

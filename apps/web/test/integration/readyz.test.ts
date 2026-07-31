@@ -1,8 +1,8 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { Prisma } from "@prisma/client";
-import type { PrismaClient } from "@prisma/client";
+import { Prisma } from "@admitto/db";
+import type { PrismaClient } from "@admitto/db";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 import { RedisRateLimitStore } from "../../src/rate-limit/redis.js";

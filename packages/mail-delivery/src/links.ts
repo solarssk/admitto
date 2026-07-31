@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { decryptFromString } from "@admitto/crypto";
 import { validateHttpUrl } from "@admitto/mail-templates";
 

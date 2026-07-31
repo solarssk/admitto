@@ -17,7 +17,7 @@
  * the way it can for a single field, since this is a whole separate scoped row.
  */
 import type { Context } from "hono";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import type { z } from "zod";
 import {
   describeMailConfig,

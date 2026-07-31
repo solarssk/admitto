@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { backfillAgencyPublicRefs } from "@admitto/db";
 import { encryptToString } from "@admitto/crypto";
 import { generateToken, hashToken } from "@admitto/tickets";
@@ -66,7 +67,7 @@ async function seedPublicRefFixture(client: PrismaClient): Promise<void> {
 }
 
 beforeAll(async () => {
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
   await seedPublicRefFixture(prisma);
 
   app = createApp({

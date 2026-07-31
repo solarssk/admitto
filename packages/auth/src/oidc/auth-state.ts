@@ -1,4 +1,4 @@
-import type { PrismaClient, Prisma } from "@prisma/client";
+import type { PrismaClient, Prisma } from "@admitto/db";
 import {
   OIDC_AUTH_STATE_CONSUMED_RETENTION_MS,
   OIDC_AUTH_STATE_TTL_MS,

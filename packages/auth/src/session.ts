@@ -1,4 +1,4 @@
-import type { PrismaClient, Prisma } from "@prisma/client";
+import type { PrismaClient, Prisma } from "@admitto/db";
 import { generateToken, hashToken } from "@admitto/tickets";
 import { SESSION_LAST_SEEN_THROTTLE_MS, SESSION_STAGE, AUTH_METHOD, type SessionStage, type AuthMethod } from "./constants.js";
 import { MFA_PENDING_SESSION_TTL_MS, BACKUP_CODES_STEP_TTL_MS } from "./constants.js";
@@ -27,7 +27,7 @@ export interface CreateSessionInput {
 
 /** Active full session after cookie token validation. */
 export interface ValidatedSession {
-  session: import("@prisma/client").Session;
+  session: import("@admitto/db").Session;
   userId: string;
   rawToken: string;
 }
@@ -93,7 +93,7 @@ async function resolveInitialSessionStage(
 export async function createSession(
   prisma: PrismaClient | Prisma.TransactionClient,
   input: CreateSessionInput,
-): Promise<{ session: import("@prisma/client").Session; rawToken: string }> {
+): Promise<{ session: import("@admitto/db").Session; rawToken: string }> {
   const rawToken = generateToken();
   const token_hash = hashToken(rawToken);
   const authMethod = input.authMethod ?? AUTH_METHOD.LOCAL;
@@ -365,7 +365,7 @@ export async function revokeAllOperatorSessionsForEvent(
 export async function listSessions(
   prisma: PrismaClient | Prisma.TransactionClient,
   filters: ListSessionsFilters = {},
-): Promise<import("@prisma/client").Session[]> {
+): Promise<import("@admitto/db").Session[]> {
   return prisma.session.findMany({
     where: {
       ...(filters.userId ? { user_id: filters.userId } : {}),

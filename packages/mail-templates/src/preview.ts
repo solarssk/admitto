@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { resolvePublicBaseUrl } from "./baseUrl.js";
 import { resolveBrandingFromEvent, resolveEventImageAssetVars } from "./branding.js";
 import { validateHttpUrl } from "./escape.js";

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { createApp } from "../src/app.js";
 import { InMemoryRateLimitStore } from "../src/rate-limit/index.js";
 import { RedisRateLimitStore } from "../src/rate-limit/redis.js";

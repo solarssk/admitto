@@ -1,5 +1,5 @@
-import { Prisma } from "@prisma/client";
-import type { PrismaClient } from "@prisma/client";
+import { Prisma } from "@admitto/db/client";
+import type { PrismaClient } from "@admitto/db/client";
 import { EMAIL_DELIVERY_SUCCESS_STATUSES } from "@admitto/db/status";
 
 export const ATTENDEE_EXPORT_RSVP_STATUSES = [

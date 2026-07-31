@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import {
   UnknownTicketTypeError,
   assertTicketTypeInCatalog,
@@ -14,7 +15,7 @@ describe("loadEventTicketTypes / ensureStandardTicketType", () => {
   const EVENT_ID = "test-event-load-ticket-types";
 
   beforeAll(async () => {
-    prisma = new PrismaClient();
+    prisma = createTestPrismaClient();
     await prisma.organization.upsert({
       where: { id: "org_load_ticket_types" },
       create: { id: "org_load_ticket_types", name: "Load Ticket Types", slug: "load-ticket-types" },

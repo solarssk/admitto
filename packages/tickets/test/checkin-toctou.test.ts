@@ -14,7 +14,8 @@ import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashToken } from "../src/hash.js";
 import { generateToken } from "../src/token.js";
 
@@ -42,9 +43,7 @@ beforeAll(async () => {
     env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
     stdio: "pipe",
   });
-  prisma = new PrismaClient({
-    datasources: { db: { url: TEST_DATABASE_URL } },
-  });
+  prisma = createTestPrismaClient(TEST_DATABASE_URL);
   await prisma.organization.create({
     data: { id: "org_default", name: "Default", slug: "default" },
   });

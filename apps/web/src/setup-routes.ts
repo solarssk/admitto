@@ -1,6 +1,6 @@
 import type { Context } from "hono";
-import type { PrismaClient } from "@prisma/client";
-import { Prisma } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
+import { Prisma } from "@admitto/db";
 import {
   LOGIN_NEXT,
   createUser,

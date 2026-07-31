@@ -1,4 +1,4 @@
-import type { PrismaClient, Prisma } from "@prisma/client";
+import type { PrismaClient, Prisma } from "@admitto/db";
 import { SETTING_DEFAULTS, SETTING_ENV_LOCKS } from "./defaults.js";
 
 function parseEnvValue(raw: string, fallback: unknown): unknown {

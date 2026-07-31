@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { closeMailer, createMailer, type MailerConfig, type SendResult } from "@admitto/mailer";
 import { resolveMailConfig, resolveMailConfigForOrg } from "@admitto/mailer-config";
 import type { MailDeliveryDeps } from "./send.js";

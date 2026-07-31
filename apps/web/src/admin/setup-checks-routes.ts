@@ -1,6 +1,6 @@
 import type { Context } from "hono";
-import type { PrismaClient } from "@prisma/client";
-import { Prisma } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
+import { Prisma } from "@admitto/db";
 import { canManageInstance, getInstanceUrl } from "@admitto/auth";
 import { validateEncryptionKeyBootConfig } from "../config.js";
 import { checkMigrationsStatus } from "../ops/migrations-check.js";

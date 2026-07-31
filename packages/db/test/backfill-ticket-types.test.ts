@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PrismaClient, Prisma } from "@prisma/client";
+import { PrismaClient, Prisma } from "../src/generated/prisma/client.js";
+import { createTestPrismaClient } from "../src/testing.js";
 import { backfillTicketTypes } from "../src/backfill-ticket-types.js";
 
 const ORG_ID = "org-backfill-tt";
@@ -7,7 +8,7 @@ const ORG_ID = "org-backfill-tt";
 let prisma: PrismaClient;
 
 beforeAll(async () => {
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
   await prisma.organization.create({
     data: { id: ORG_ID, name: "Org", slug: "org-backfill-tt" },
   });

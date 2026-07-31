@@ -1,4 +1,4 @@
-import type { PrismaClient, Prisma } from "@prisma/client";
+import type { PrismaClient, Prisma } from "@admitto/db";
 import {
   SESSION_TTL_ADMIN_MS,
   SESSION_TTL_OPERATOR_MS,

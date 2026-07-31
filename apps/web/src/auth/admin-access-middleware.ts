@@ -1,5 +1,5 @@
 import type { Context, Next } from "hono";
-import type { IdentityProvider, PrismaClient } from "@prisma/client";
+import type { IdentityProvider, PrismaClient } from "@admitto/db";
 import { getCookie } from "hono/cookie";
 import {
   SESSION_COOKIE_NAME,

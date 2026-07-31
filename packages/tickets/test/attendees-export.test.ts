@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import {
   buildExportCsv,
   buildSanitizedExportRows,
@@ -83,7 +84,7 @@ describe("exportAttendeesCsv — ticket type catalog resolution (DB)", () => {
   const EVENT_ID = "test-event-export-ticket-types";
 
   beforeAll(async () => {
-    prisma = new PrismaClient();
+    prisma = createTestPrismaClient();
     await prisma.organization.upsert({
       where: { id: ORG_ID },
       create: { id: ORG_ID, name: "Export Ticket Types", slug: "export-ticket-types" },

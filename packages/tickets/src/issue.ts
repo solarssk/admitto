@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@admitto/db";
 import { encryptToString } from "@admitto/crypto";
 import { generateToken } from "./token.js";
 import { hashToken } from "./hash.js";

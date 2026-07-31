@@ -1,4 +1,5 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   getBuiltinTemplate,
@@ -10,7 +11,7 @@ import {
 } from "../src/index.js";
 import { resetDb } from "./resetDb.js";
 
-const prisma = new PrismaClient();
+const prisma = createTestPrismaClient();
 
 const VALID_MJML = `<mjml><mj-body><mj-section><mj-column><mj-text>{{event_name}} — {{first_name}}</mj-text></mj-column></mj-section></mj-body></mjml>`;
 

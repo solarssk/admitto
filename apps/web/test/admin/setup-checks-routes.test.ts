@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { Prisma } from "@prisma/client";
-import type { PrismaClient } from "@prisma/client";
+import { Prisma } from "@admitto/db";
+import type { PrismaClient } from "@admitto/db";
 
 const { checkMigrationsStatus, checkRedis } = vi.hoisted(() => ({
   checkMigrationsStatus: vi.fn(),

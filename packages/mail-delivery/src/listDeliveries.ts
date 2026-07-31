@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import type { EmailDeliveryPurpose, EmailDeliveryStatus } from "@admitto/db";
 import { sanitizeDeliveryError } from "./sanitizeError.js";
 

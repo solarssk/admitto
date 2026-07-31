@@ -1,4 +1,4 @@
-import type { PrismaClient, Prisma } from "@prisma/client";
+import type { PrismaClient, Prisma } from "@admitto/db";
 import { getMfaRequiredRoles } from "../settings/resolver.js";
 
 /** True when user has any role assignment in the MFA-required set. */

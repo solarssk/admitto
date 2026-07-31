@@ -1,4 +1,4 @@
-import type { IdentityProvider } from "@prisma/client";
+import type { IdentityProvider } from "@admitto/db";
 import type { JWTPayload } from "jose";
 
 export interface ExternalIdentityClaims {

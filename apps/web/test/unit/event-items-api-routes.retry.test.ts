@@ -1,4 +1,4 @@
-import { Prisma, type PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@admitto/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   isSerializationFailure,

@@ -1,4 +1,4 @@
-import type { PrismaClient, Prisma } from "@prisma/client";
+import type { PrismaClient, Prisma } from "@admitto/db";
 import type { MfaMethod } from "../audit.js";
 import { verifyUserTotpCode } from "./enrollment.js";
 import { findBackupRecoveryRowId } from "./backup-recovery.js";

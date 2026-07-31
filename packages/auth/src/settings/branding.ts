@@ -1,4 +1,4 @@
-import type { PrismaClient, Prisma } from "@prisma/client";
+import type { PrismaClient, Prisma } from "@admitto/db";
 import { getSetting } from "./resolver.js";
 import { SETTING_BRANDING_THEME } from "./keys.js";
 

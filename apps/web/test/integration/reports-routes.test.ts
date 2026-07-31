@@ -1,7 +1,8 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PrismaClient, Prisma } from "@prisma/client";
+import { PrismaClient, Prisma } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE, updateSessionDeviceLabel } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
@@ -247,7 +248,7 @@ async function seed(client: PrismaClient) {
 }
 
 beforeAll(async () => {
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
   await seed(prisma);
   app = createApp({
     prisma,

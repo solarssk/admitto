@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import {
   parseAttendees,
   commitImport,

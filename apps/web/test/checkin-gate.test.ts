@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Hono } from "hono";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { createCheckinPreAuth } from "../src/checkin-gate.js";
 
 const mockPrisma = {} as PrismaClient;

@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@admitto/db";
 import type { BrandingUrls } from "./types.js";
 import { validateBrandingUrl } from "./escape.js";
 

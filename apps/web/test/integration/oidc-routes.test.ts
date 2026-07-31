@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { Hono } from "hono";
 import { hashPassword, SESSION_COOKIE_NAME, OIDC_FLOW_COOKIE_NAME, createSession, SESSION_STAGE } from "@admitto/auth";
 import { createApp } from "../../src/app.js";
@@ -18,7 +19,7 @@ let mockIdp: MockOidcIdp;
 let rateLimitStore: InMemoryRateLimitStore;
 
 beforeAll(async () => {
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
   mockIdp = await startMockOidcIdp();
 
   await prisma.oidcAuthState.deleteMany({ where: { provider_id: PROVIDER_ID } });

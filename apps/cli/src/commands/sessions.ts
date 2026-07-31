@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { findUserByEmail, normalizeEmail, purgeAllSessions, revokeUserAuthState } from "@admitto/auth";
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { CliError, arg, hasFlag, parseFormat } from "../lib/args.js";

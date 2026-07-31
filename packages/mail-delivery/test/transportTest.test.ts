@@ -1,11 +1,12 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setMailSettings } from "@admitto/mailer-config";
 import type { ExportPayload } from "@admitto/mailer";
 import { resetDb } from "./resetDb.js";
 import { sendEventTransportTestEmail, sendTransportTestEmail } from "../src/transportTest.js";
 
-const prisma = new PrismaClient();
+const prisma = createTestPrismaClient();
 const ORG_ID = "org-transport-test";
 const EVENT_ID = "evt-transport-test";
 const EVENT_OVERRIDE_ID = "evt-transport-test-override";

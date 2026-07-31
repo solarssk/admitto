@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@admitto/db";
 import { canManageInstance } from "@admitto/auth";
 import { positiveIntQuery } from "./admin-helpers.js";
 

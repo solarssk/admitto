@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { listCheckInEvents } from "@admitto/auth";
 import { serializeEventDto } from "./admin-api-routes.js";
 import {

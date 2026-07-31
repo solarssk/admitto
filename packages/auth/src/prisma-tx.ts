@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@admitto/db";
 
 function isRootPrismaClient(
   prisma: PrismaClient | Prisma.TransactionClient,

@@ -1,7 +1,8 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import {
   bootstrapSuperadmin,
   confirmTotpEnrollment,
@@ -72,7 +73,7 @@ async function seed(client: PrismaClient) {
 beforeAll(async () => {
   prevInstanceOrgId = process.env.INSTANCE_ORG_ID;
   process.env.INSTANCE_ORG_ID = ORG_ACCOUNT;
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
   await seed(prisma);
   rateLimitStore = new InMemoryRateLimitStore();
   app = createApp({

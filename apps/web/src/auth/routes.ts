@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { describeMailConfigForOrg } from "@admitto/mailer-config";
 import { sanitizePreferredLocale } from "@admitto/shared";
 import { resolveInstanceOrganizationId } from "../admin/instance-org.js";

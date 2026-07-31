@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { InstanceUrlRequiredError, resolveInstanceBaseUrl } from "@admitto/auth";
 import { retryDelivery } from "@admitto/mail-delivery";
 import { CliError, arg, hasFlag, parseFormat } from "../lib/args.js";

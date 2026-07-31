@@ -17,7 +17,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import {
   revokeAllCheckInsForEvent,
   revokeAllItemsForEvent,
@@ -43,7 +44,7 @@ beforeAll(async () => {
     stdio: "pipe",
   });
 
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
 
   await prisma.organization.create({
     data: { id: "org_default", name: "Default", slug: "default" },

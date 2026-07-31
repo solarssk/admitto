@@ -2,8 +2,8 @@ import { existsSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Prisma } from "@prisma/client";
-import type { PrismaClient } from "@prisma/client";
+import { Prisma } from "@admitto/db";
+import type { PrismaClient } from "@admitto/db";
 import { findAdmittoRepoRoot } from "./repo-root.js";
 
 type MigrationRow = {

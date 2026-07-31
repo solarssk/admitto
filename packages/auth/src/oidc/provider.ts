@@ -1,4 +1,4 @@
-import type { IdentityProvider, Prisma, PrismaClient } from "@prisma/client";
+import type { IdentityProvider, Prisma, PrismaClient } from "@admitto/db";
 import { encryptClientSecret, hasClientSecret } from "./provider-secret.js";
 import { PROVIDER_TYPE_OIDC } from "./constants.js";
 import { normalizeSsoLoginButtonLabelInput } from "./login-button-label.js";

@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@admitto/db";
 
 /** Runtime controls for auth-state retention cleanup. */
 export interface PurgeAuthRetentionOptions {

@@ -1,7 +1,7 @@
 import { createRequire } from "node:module";
 import type { Context } from "hono";
-import { Prisma } from "@prisma/client";
-import type { PrismaClient } from "@prisma/client";
+import { Prisma } from "@admitto/db";
+import type { PrismaClient } from "@admitto/db";
 import { z } from "zod";
 import { recordSystemLog } from "@admitto/shared/system-log";
 import {

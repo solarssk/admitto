@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "../src/generated/prisma/client.js";
+import { createPrismaAdapter } from "../src/adapter.js";
 import { encryptToString } from "@admitto/crypto";
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({ adapter: createPrismaAdapter(process.env["DATABASE_URL"]) });
 const bobDevToken = "devticketbob0000000000000000000000000000000";
 const daveDevToken = "devticketdave000000000000000000000000000000";
 

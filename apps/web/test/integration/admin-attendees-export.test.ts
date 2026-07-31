@@ -2,7 +2,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import ExcelJS from "exceljs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
@@ -331,7 +332,7 @@ function formatAdmittedAtLocal(date: Date, timeZone: string): string {
 }
 
 beforeAll(async () => {
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
   await seed(prisma);
   rateLimitStore = new InMemoryRateLimitStore();
   app = createApp({

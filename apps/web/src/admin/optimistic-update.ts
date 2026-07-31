@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import type { Prisma } from "@admitto/db";
 
 /** Optimistic-lock conflict — caller should respond with HTTP 409 `stale_write`. */
 export type StaleWrite = { kind: "stale_write" };

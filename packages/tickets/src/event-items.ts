@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@admitto/db";
 import type { EventItemConfig } from "./types.js";
 
 type DbClient = PrismaClient | Prisma.TransactionClient;

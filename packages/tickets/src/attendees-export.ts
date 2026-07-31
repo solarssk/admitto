@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import { customDataValue, parseCustomData } from "./custom-data.js";
 import { loadEventCustomDataFields } from "./event-custom-fields.js";

@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { hasScope } from "@admitto/db";
 import { createUser } from "./user.js";
 

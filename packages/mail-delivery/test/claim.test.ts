@@ -1,9 +1,10 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { claimInitialDelivery } from "../src/claim.js";
 import { resetDb } from "./resetDb.js";
 
-const prisma = new PrismaClient();
+const prisma = createTestPrismaClient();
 const EVENT_ID = "evt-claim-batch";
 const ATT_ID = "att-claim-batch";
 const ORG_ID = "org-claim-batch";

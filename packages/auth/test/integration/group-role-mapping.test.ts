@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword } from "../../src/password.js";
 import * as audit from "../../src/audit.js";
 import {
@@ -17,7 +18,7 @@ const EVENT_ID = "oidc-event-mapping-test";
 let prisma: PrismaClient;
 
 beforeAll(async () => {
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
   await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: PROVIDER_ID } });
   await prisma.oidcRoleGrant.deleteMany({ where: { provider_id: PROVIDER_ID } });
   await prisma.externalIdentity.deleteMany({ where: { provider_id: PROVIDER_ID } });

@@ -9,7 +9,7 @@
  * Complete check-in before archiving an event.
  */
 import type { Context } from "hono";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import {

@@ -8,7 +8,7 @@
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import {
   prisma,
   EMAIL_DELIVERY_PURPOSE,

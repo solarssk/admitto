@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "../src/generated/prisma/client.js";
+import { createTestPrismaClient } from "../src/testing.js";
 import { assertTestDatabaseUrl } from "../src/testDbGuard.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -15,12 +16,12 @@ let prisma: PrismaClient | undefined;
 
 beforeAll(async () => {
   assertTestDatabaseUrl(process.env.DATABASE_URL ?? "");
-  execSync("npx prisma migrate reset --force --skip-seed", {
+  execSync("npx prisma migrate reset --force", {
     cwd: DB_ROOT,
     env: { ...process.env },
     stdio: "pipe",
   });
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
   await prisma.organization.create({
     data: { id: ORG_ID, name: "RSVP Constraint Org", slug: "rsvp-constraint" },
   });

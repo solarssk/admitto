@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword, createSession, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import {
@@ -93,7 +94,7 @@ function buildStreamApp() {
 
 describe("GET /api/checkin/events/:eventId/stream", () => {
   beforeAll(async () => {
-    prisma = new PrismaClient();
+    prisma = createTestPrismaClient();
     await seed(prisma);
   });
 

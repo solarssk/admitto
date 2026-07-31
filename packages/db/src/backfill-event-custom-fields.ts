@@ -1,5 +1,5 @@
-import { Prisma } from "@prisma/client";
-import type { PrismaClient } from "@prisma/client";
+import { Prisma } from "./generated/prisma/client.js";
+import type { PrismaClient } from "./generated/prisma/client.js";
 
 type ContentType = "text" | "select" | "boolean";
 

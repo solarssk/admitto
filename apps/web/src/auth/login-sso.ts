@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { findEnabledOidcProviders, resolveSsoLoginButtonLabel } from "@admitto/auth";
 import type { LoginSsoProvider } from "../login-page.js";
 

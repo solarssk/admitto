@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword, createSession, SESSION_STAGE } from "@admitto/auth";
 import { generateToken, hashToken } from "@admitto/tickets";
 import * as ticketOperations from "@admitto/tickets";
@@ -128,7 +129,7 @@ function buildMutatingApp(config = { allowBearer: false, operatorToken: null as 
 }
 
 beforeAll(async () => {
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
   await seedFixture(prisma);
   const { rawToken, session } = await createSession(prisma, {
     userId: USER_OP_A,

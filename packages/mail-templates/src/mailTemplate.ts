@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@admitto/db";
 import { compileTemplate } from "./compile.js";
 import { getBuiltinTemplate } from "./defaultTemplate.js";
 import { assertRenderableCompiledHtml, assertValidTemplate } from "./validate.js";

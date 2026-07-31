@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { runInTransaction } from "./prisma-tx.js";
 
 export interface PurgeAllSessionsOptions {

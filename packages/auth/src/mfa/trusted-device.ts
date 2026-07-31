@@ -1,4 +1,4 @@
-import type { PrismaClient, Prisma, TrustedDevice } from "@prisma/client";
+import type { PrismaClient, Prisma, TrustedDevice } from "@admitto/db";
 import { generateToken, hashToken } from "@admitto/tickets";
 import { getTrustedDeviceDays } from "../settings/resolver.js";
 

@@ -1,7 +1,8 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE, setSetting, SETTING_INSTANCE_URL } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { setMailSettings } from "@admitto/mailer-config";
@@ -190,7 +191,7 @@ function createMailAppWithoutInjectedBaseUrl(): ReturnType<typeof createApp> {
 }
 
 beforeAll(async () => {
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
   await seed(prisma);
   exported.length = 0;
   app = createApp({

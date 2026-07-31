@@ -1,4 +1,4 @@
-import { Prisma, type PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@admitto/db";
 import { hasScope } from "@admitto/db";
 import { logOidcSuperadminRevokeBlocked } from "../audit.js";
 

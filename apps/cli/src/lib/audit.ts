@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { findUserByEmail, normalizeEmail } from "@admitto/auth";
 import type { OpsAuditContext } from "@admitto/tickets";
 import { CliError, arg } from "./args.js";

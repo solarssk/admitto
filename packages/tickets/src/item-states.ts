@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@admitto/db";
 import type { AttendeeStatus } from "@admitto/db";
 import { ensureBadgeEventItem } from "./event-items.js";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";

@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { toResolved, type ResolvedTicket } from "@admitto/tickets";
 
 /** Event-scoped attendee lookup for Mode B public routes (by public_ref, not Attendee.id). */

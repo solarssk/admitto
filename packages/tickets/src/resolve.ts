@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@admitto/db";
 // Subpath import, not the package root - the root barrel also re-exports compileTemplate, which
 // pulls in the full `mjml` compiler (and its own large dependency tree). @admitto/tickets is
 // bundled into the admin SPA, so importing from the root here would ship all of that unused MJML

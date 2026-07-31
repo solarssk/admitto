@@ -1,4 +1,4 @@
-import type { PrismaClient, Prisma } from "@prisma/client";
+import type { PrismaClient, Prisma } from "@admitto/db";
 import { verifyPasswordOrDummy } from "./password.js";
 import { findUserByEmail, normalizeEmail } from "./user.js";
 import {

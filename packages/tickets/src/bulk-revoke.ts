@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { revokeCheckInMutation, UndoNotAllowedError } from "./undo.js";
 import {
   resetAllItemStatesForRevoke,

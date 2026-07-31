@@ -6,7 +6,8 @@
  */
 import { createServer, type Server } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword, createSession, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { createApp } from "../../src/app.js";
@@ -51,7 +52,7 @@ beforeAll(async () => {
   stubBase = `http://127.0.0.1:${addr.port}`;
 
   // --- App + superadmin session ---
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
   await prisma.userMfaMethod.deleteMany({ where: { user_id: SUPER_ID } });
   await prisma.roleAssignment.deleteMany({ where: { user_id: SUPER_ID } });
   await prisma.session.deleteMany({ where: { user_id: SUPER_ID } });
