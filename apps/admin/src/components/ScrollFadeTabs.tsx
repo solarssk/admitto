@@ -3,6 +3,11 @@ import { Tabs, type TabsProps } from "@admitto/ui";
 import { useScrollFade } from "../hooks/useScrollFade.js";
 import "./scroll-fade-tabs.css";
 
+// Matches .scroll-fade-tabs__arrow's own `width` in scroll-fade-tabs.css - the arrow sits as a
+// solid-background overlay on top of the scrollable strip (not a reserved margin), so "the tab
+// is visible" and "the tab clears the arrow" are two different distances.
+const ARROW_WIDTH = 28;
+
 /**
  * Wraps the shared <Tabs> in a horizontally-scrollable strip with soft edge
  * fades that hint "more this way" instead of a visible OS scrollbar. Use this
@@ -25,9 +30,32 @@ export function ScrollFadeTabs(props: TabsProps) {
   // AuditLogPanel's own scroll-restore precedent: only move the minimum needed, never
   // disturb an axis that's already fine — here that's the vertical page scroll.
   useLayoutEffect(() => {
-    scrollRef.current
-      ?.querySelector('[aria-selected="true"]')
-      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const container = scrollRef.current;
+    const target = container?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (!container || !target) return;
+
+    target.scrollIntoView({ block: "nearest", inline: "nearest" });
+
+    // The native scrollIntoView above only guarantees the tab is *visible*, not that it clears
+    // the arrow's own solid-background overlay sitting on top of the last ARROW_WIDTH px on
+    // whichever side still has more to scroll to - a tab already "just barely" on-screen (e.g.
+    // the last tab, a hair short of the true end on initial mount) can pass "nearest" without
+    // actually clearing it. Nudge the remaining distance so the tab's own edge, not just any
+    // sliver of it, ends up past the arrow.
+    const containerRect = container.getBoundingClientRect();
+    // No real layout yet (e.g. jsdom, which reports an all-zero rect for every element unless a
+    // test explicitly mocks it) - skip rather than act on meaningless zeroed coordinates.
+    if (containerRect.width === 0) return;
+
+    const targetRect = target.getBoundingClientRect();
+    const hiddenPastLeft = containerRect.left + ARROW_WIDTH - targetRect.left;
+    const hiddenPastRight = targetRect.right - (containerRect.right - ARROW_WIDTH);
+
+    if (hiddenPastLeft > 0) {
+      container.scrollBy({ left: -hiddenPastLeft });
+    } else if (hiddenPastRight > 0) {
+      container.scrollBy({ left: hiddenPastRight });
+    }
   }, [scrollRef, props.value, tabCount]);
 
   const scrollByArrow = (direction: 1 | -1) => {

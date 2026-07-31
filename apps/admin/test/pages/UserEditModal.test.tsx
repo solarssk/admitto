@@ -58,10 +58,12 @@ const user: UserListItemDto = {
   roles: [],
 };
 
-function renderModal() {
+function renderModal(userOverride: Partial<UserListItemDto> = {}) {
   const onClose = vi.fn();
   const onUpdated = vi.fn();
-  render(<UserEditModal open user={user} onClose={onClose} onUpdated={onUpdated} />);
+  render(
+    <UserEditModal open user={{ ...user, ...userOverride }} onClose={onClose} onUpdated={onUpdated} />,
+  );
   return { onClose, onUpdated };
 }
 
@@ -138,6 +140,24 @@ describe("UserEditModal role scope controls", () => {
     const organizationSelect = screen.getByLabelText("Organization scope for admin role");
     expect(organizationSelect.hasAttribute("disabled")).toBe(true);
     expect(screen.getByRole("option", { name: "No organizations available" })).toBeTruthy();
+  });
+});
+
+describe("UserEditModal assigned roles list", () => {
+  it("shows each assigned role's badge with the shared label and color, not a flat neutral badge", async () => {
+    renderModal({
+      roles: [
+        { id: "role-1", role: "admin", scope_type: "organization", scope_id: "org-1", is_oidc: false },
+      ],
+    });
+
+    // Scoped to the assigned-roles list, not the page overall - "Administrator" also appears as
+    // an <option> in the separate "Role to assign" select further down the same modal.
+    const rolesList = document.querySelector(".users-modal__roles") as HTMLElement;
+    await waitFor(() => {
+      expect(within(rolesList).getByText("Administrator")).toBeTruthy();
+    });
+    expect(within(rolesList).getByText("Administrator").className).toMatch(/at-badge--warn/);
   });
 });
 

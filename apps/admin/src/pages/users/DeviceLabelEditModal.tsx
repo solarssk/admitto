@@ -1,10 +1,10 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Button, Input, ModalBackdrop } from "@admitto/ui";
-import { updateSessionDeviceLabel } from "../api/client.js";
-import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { SessionListDto } from "../api/types.js";
-import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
-import "../attendees/add-attendee-modal.css";
+import { updateSessionDeviceLabel } from "../../api/client.js";
+import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
+import type { SessionListDto } from "../../api/types.js";
+import { useModalFocusTrap } from "../../components/useModalFocusTrap.js";
+import "../../attendees/add-attendee-modal.css";
 
 export interface DeviceLabelEditModalProps {
   readonly open: boolean;

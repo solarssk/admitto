@@ -1,15 +1,16 @@
-import { Badge, type BadgeVariant } from "@admitto/ui";
+import { Badge } from "@admitto/ui";
 import { useNavigate } from "react-router";
 import type { AuthUser, RoleAssignment } from "../api/types.js";
 import { isAdmin, isSuperadmin } from "../auth/capabilities.js";
+import { ROLE_BADGE_VARIANT, ROLE_LABELS, type StaffRole } from "../auth/role-labels.js";
 import { useDropdownMenu } from "./useDropdownMenu.js";
 
-type RoleTier = "superadmin" | "admin" | "operator";
+type RoleTier = StaffRole;
 
-const ROLE_TIER_META: Record<RoleTier, { label: string; icon: string; badgeCls: string; variant: BadgeVariant }> = {
-  superadmin: { label: "Superadmin", icon: "shield-star", badgeCls: "user-avatar__badge--superadmin", variant: "error" },
-  admin: { label: "Admin", icon: "shield-check", badgeCls: "user-avatar__badge--admin", variant: "info" },
-  operator: { label: "Operator", icon: "id-badge-2", badgeCls: "user-avatar__badge--operator", variant: "neutral" },
+const ROLE_TIER_ICON: Record<RoleTier, { icon: string; badgeCls: string }> = {
+  superadmin: { icon: "shield-star", badgeCls: "user-avatar__badge--superadmin" },
+  admin: { icon: "shield-check", badgeCls: "user-avatar__badge--admin" },
+  operator: { icon: "id-badge-2", badgeCls: "user-avatar__badge--operator" },
 };
 
 function roleTier(assignments: RoleAssignment[]): RoleTier {
@@ -25,7 +26,7 @@ function avatarClassName(size?: "md"): string {
 /** A generic person glyph + a role-tier icon badge, not initials — this is the one spot
  * naming the signed-in user, so the role (not just a name) needs to read at a glance. */
 function RoleAvatar({ tier, size }: Readonly<{ tier: RoleTier; size?: "md" }>) {
-  const meta = ROLE_TIER_META[tier];
+  const meta = ROLE_TIER_ICON[tier];
   return (
     <span className={avatarClassName(size)}>
       <i className="ti ti-user" aria-hidden="true" />
@@ -65,8 +66,8 @@ export function UserMenu({ user, assignments }: Readonly<{ user: AuthUser; assig
             <RoleAvatar tier={tier} size="md" />
             <div className="user-menu__head-text">
               <strong>{displayName}</strong>
-              <Badge variant={ROLE_TIER_META[tier].variant} outline>
-                {ROLE_TIER_META[tier].label}
+              <Badge variant={ROLE_BADGE_VARIANT[tier]} outline>
+                {ROLE_LABELS[tier]}
               </Badge>
             </div>
           </div>

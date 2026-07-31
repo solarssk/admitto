@@ -21,7 +21,7 @@ Use a named Superadmin account, record the intended change, and prepare a synthe
 2. Use **General** for instance behaviour and base configuration shown by the panel.
 3. Use **Branding** for organisation name, logo, colours, and supported fonts.
 4. Use **Mail** for the organisation-wide transport.
-5. Use **Security** for MFA and session policy, and to review active sessions.
+5. Use **Security** for MFA and session policy. Review or revoke active sessions from **Users & roles** instead.
 6. Use **Archiving** for retention and completed-event controls.
 7. Use **Identity** for OIDC providers and Cloudflare Access.
 8. Use **Logs** to review system, administration, and security activity.
