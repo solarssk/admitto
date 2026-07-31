@@ -10,9 +10,18 @@ const fetchEventOverview = vi.fn();
 const fetchEventTemplate = vi.fn();
 const fetchEventTemplates = vi.fn();
 const fetchEventDeliveries = vi.fn();
+const reportApiError = vi.fn();
 
+// A fresh `vi.fn()` per call (as this used to return) breaks CommunicationPage's own
+// memoization: `reportApiError` sits in the dependency array of 3 effects (initial template
+// load, the bounce-overview fetch, and the tab-switch delivery fetch), so an unstable identity
+// re-fires all of them on every render, flickering `loading` fast enough that
+// useDelayedLoading's 200ms window never elapses and the whole page intermittently renders
+// null - a CI-only race, since a fast/idle local machine never lingers in that window long
+// enough to observe it. Every sibling CommunicationPage test file already hoists this the same
+// way; this file was the one holdout.
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ reportApiError: vi.fn() }),
+  useConnectionState: () => ({ reportApiError }),
 }));
 
 vi.mock("../../src/api/client.js", () => ({
@@ -149,10 +158,11 @@ describe("CommunicationPage bounce banner", () => {
 
     renderPage();
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "View delivery log" })).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole("button", { name: "View delivery log" }));
+    // Captured once and reused, not re-queried from `screen` a second time (see #592's identical
+    // fix a few tests up in this same file) - a later, unrelated re-render can't race this click
+    // the way two separate screen queries could.
+    const viewLogButton = await screen.findByRole("button", { name: "View delivery log" });
+    fireEvent.click(viewLogButton);
 
     await waitFor(() => {
       expect(fetchEventDeliveries).toHaveBeenCalledWith(
