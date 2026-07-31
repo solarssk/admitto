@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import { SessionsPanel } from "../../src/settings/SessionsPanel.js";
@@ -122,7 +123,11 @@ describe("Settings panels delayed loading", () => {
   it("EventArchivingPanel shows the loading placeholder once the fetch has genuinely taken a moment", () => {
     vi.mocked(fetchAdminEvents).mockImplementationOnce(() => new Promise(() => {}));
     vi.useFakeTimers();
-    renderWithToast(<EventArchivingPanel />);
+    renderWithToast(
+      <MemoryRouter>
+        <EventArchivingPanel />
+      </MemoryRouter>,
+    );
     act(() => {
       vi.advanceTimersByTime(200);
     });
@@ -293,7 +298,11 @@ describe("BrandingSettingsPanel operator errors", () => {
 describe("EventArchivingPanel operator errors", () => {
   it("shows operator-safe load failure", async () => {
     vi.mocked(fetchAdminEvents).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    renderWithToast(<EventArchivingPanel />);
+    renderWithToast(
+      <MemoryRouter>
+        <EventArchivingPanel />
+      </MemoryRouter>,
+    );
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     });
@@ -303,7 +312,11 @@ describe("EventArchivingPanel operator errors", () => {
   it("shows operator-safe action failure in confirm dialog", async () => {
     vi.mocked(fetchAdminEvents).mockResolvedValueOnce([sampleEvent]);
     vi.mocked(archiveEvent).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    renderWithToast(<EventArchivingPanel />);
+    renderWithToast(
+      <MemoryRouter>
+        <EventArchivingPanel />
+      </MemoryRouter>,
+    );
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Archive" })).toBeTruthy();
     });

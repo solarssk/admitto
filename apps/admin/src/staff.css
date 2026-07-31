@@ -2277,6 +2277,32 @@
   }
 }
 
+/* Organisation settings header: "Documentation" is a single short action, same shape as
+   Reports' "Export" - keep it beside the title on mobile too instead of the shared PageHeader's
+   default stack-below-full-width, and shrink it to match .reports-pageheader/
+   .event-settings-pageheader verbatim (drifting from those two read as a mismatch before -
+   PO review, see reports-page.css). */
+@media (max-width: 767px) {
+  .settings-pageheader .at-pageheader__row {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .settings-pageheader .at-pageheader__actions {
+    justify-content: flex-end;
+  }
+
+  .settings-pageheader .at-pageheader__actions .at-btn {
+    height: var(--control-h-sm);
+    font-size: var(--fs-sm);
+    padding: 0 var(--space-2);
+  }
+
+  .settings-pageheader .at-pageheader__actions .at-btn .at-btn__icon {
+    display: none;
+  }
+}
+
 /* Mockup kiosk viewfinder (.vf__feed): a QR-sized square, not a full-width
    4:3 hero — was oversized for framing a QR code (#381). */
 .ck-inline-camera {
@@ -4555,6 +4581,20 @@ output.mail-field-hint {
   line-height: 1;
 }
 
+/* Event archiving's Active/Archived toggle, inline in the Card header's actions row — same
+   fix as .seg-control.audit-log-view-toggle above, for the identical reason. */
+.seg-control.archiving-view-toggle {
+  margin-bottom: 0;
+  height: var(--control-h-sm);
+}
+
+.seg-control.archiving-view-toggle .seg-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  line-height: 1;
+}
+
 .audit-log-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -5281,29 +5321,6 @@ select.system-log-panel__field {
 }
 
 /* Event archiving panel */
-.archiving-hint {
-  margin: 0 0 var(--space-2);
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-}
-
-.archiving-note {
-  margin: 0 0 var(--space-4);
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-}
-
-.archiving-section-title {
-  margin: var(--space-4) 0 var(--space-2);
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.archiving-section-title:first-of-type {
-  margin-top: 0;
-}
-
 .archiving-status {
   display: flex;
   align-items: center;
@@ -5315,6 +5332,11 @@ select.system-log-panel__field {
 .archiving-table-wrap {
   overflow-x: auto;
   margin-bottom: var(--space-2);
+}
+
+.archiving-table-wrap th:last-child,
+.archiving-table-wrap td:last-child {
+  text-align: right;
 }
 
 .archiving-subdued {
@@ -5337,6 +5359,61 @@ select.system-log-panel__field {
   border-radius: var(--radius);
   box-shadow: var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.08));
   z-index: 100;
+}
+
+/* Mobile/tablet (<768px, matching useIsDesktop's default breakpoint) one-card-per-event list -
+   the table below this width has too many columns to shrink into without wrapping cell text
+   into unreadable fragments, so it's replaced outright rather than left to scroll horizontally. */
+.archiving-cards {
+  display: flex;
+  flex-direction: column;
+}
+
+.archiving-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.archiving-card:last-child {
+  border-bottom: 0;
+}
+
+/* .at-card__body already carries --pad-card on every side - without these, the first/last
+   card's own top/bottom padding stacks on top of it, leaving a bigger gap here than every
+   other Settings tab's first/last field has against the same shared card-body padding. */
+.archiving-cards > .archiving-card:first-child {
+  padding-top: 0;
+}
+
+.archiving-cards > .archiving-card:last-child {
+  padding-bottom: 0;
+}
+
+.archiving-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.archiving-card__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+  font-size: var(--fs-sm);
+}
+
+.archiving-card__row > span:last-child {
+  text-align: right;
+}
+
+.archiving-card__label {
+  color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 .picker-status {

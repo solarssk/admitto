@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   AuditLogEntryDto,
@@ -22,6 +23,7 @@ import {
   updateSessionDeviceLabel,
 } from "../../src/api/client.js";
 import { AuditLogPanel } from "../../src/settings/AuditLogPanel.js";
+import { EventArchivingPanel } from "../../src/settings/EventArchivingPanel.js";
 import { SessionsPanel } from "../../src/settings/SessionsPanel.js";
 import { POLL_INTERVAL_MS } from "../../src/settings/SystemLogsPanel.js";
 import { mockMatchMedia, renderWithToast } from "../test-utils.js";
@@ -2430,5 +2432,144 @@ describe("SessionsPanel rendering", () => {
     } finally {
       now.mockRestore();
     }
+  });
+});
+
+describe("EventArchivingPanel rendering", () => {
+  it("renders an active event's details in a table row, including a link to its overview", async () => {
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([
+      makeEvent({
+        id: "evt-spring-summit",
+        title: "Spring Summit",
+        slug: "spring-summit",
+        attendee_count: 42,
+        created_by_display_name: "Alice Admin",
+      }),
+    ]);
+    renderWithToast(
+      <MemoryRouter>
+        <EventArchivingPanel />
+      </MemoryRouter>,
+    );
+
+    const link = await screen.findByRole("link", { name: "Spring Summit" });
+    expect(link.getAttribute("href")).toBe("/admin/events/evt-spring-summit/overview");
+    expect(screen.getByText("spring-summit")).toBeTruthy();
+    expect(screen.getByText("42")).toBeTruthy();
+    expect(screen.getByText("by Alice Admin")).toBeTruthy();
+  });
+
+  it("shows the Created date in the creator's own timezone rather than UTC, when known", async () => {
+    // 11:30 PM UTC on the 21st is already the 22nd in Kolkata (UTC+5:30) - an unambiguous way to
+    // tell the two apart without depending on exact formatted-string equality.
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([
+      makeEvent({
+        title: "Diwali Meetup",
+        created_at: "2026-06-21T23:30:00.000Z",
+        created_by_timezone: "Asia/Kolkata",
+      }),
+    ]);
+    renderWithToast(
+      <MemoryRouter>
+        <EventArchivingPanel />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("Diwali Meetup");
+    expect(screen.getByText(/Jun 22, 2026/)).toBeTruthy();
+    expect(screen.queryByText(/Jun 21, 2026/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Archive" })).toBeTruthy();
+  });
+
+  it("falls back to email, then '-', when created_by has no display name or no attribution at all", async () => {
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([
+      makeEvent({ id: "evt-a", title: "Event A", created_by_email: "bob@example.com" }),
+      makeEvent({ id: "evt-b", title: "Event B", slug: "event-b" }),
+    ]);
+    renderWithToast(
+      <MemoryRouter>
+        <EventArchivingPanel />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("Event A");
+    expect(screen.getByText("by bob@example.com")).toBeTruthy();
+    expect(screen.getByText("by -")).toBeTruthy();
+  });
+
+  it("switches to the Archived view and renders the archived date, who archived it, and an Unarchive action", async () => {
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([
+      makeEvent({
+        title: "Winter Meetup",
+        archived_at: "2026-02-15T10:30:00.000Z",
+        archived_by_display_name: "Carol Superadmin",
+      }),
+    ]);
+    renderWithToast(
+      <MemoryRouter>
+        <EventArchivingPanel />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("No active events");
+    fireEvent.click(screen.getByRole("radio", { name: "Archived" }));
+
+    await screen.findByText("Winter Meetup");
+    expect(screen.getByText(/Feb 15, 2026/)).toBeTruthy();
+    expect(screen.getByText("by Carol Superadmin")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Unarchive" })).toBeTruthy();
+  });
+
+  it("shows empty-state copy with no table underneath, for both views", async () => {
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([]);
+    renderWithToast(
+      <MemoryRouter>
+        <EventArchivingPanel />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("No active events");
+    expect(screen.queryByRole("table")).toBeNull();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Archived" }));
+    await screen.findByText("No archived events");
+    expect(screen.queryByRole("table")).toBeNull();
+  });
+
+  it("paginates client-side once a view has more rows than one page", async () => {
+    const many = Array.from({ length: 30 }, (_, i) => makeEvent({ id: `evt-page-${i}`, title: `Event ${i}` }));
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce(many);
+    renderWithToast(
+      <MemoryRouter>
+        <EventArchivingPanel />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("Showing 1–25 of 30");
+    expect(screen.getByText("Event 0")).toBeTruthy();
+    expect(screen.queryByText("Event 25")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByText("Event 25");
+    expect(screen.queryByText("Event 0")).toBeNull();
+  });
+
+  it("renders a one-card-per-event list instead of a table below the desktop breakpoint", async () => {
+    mockMatchMedia(false);
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([
+      makeEvent({ title: "Mobile Meetup", attendee_count: 7, created_by_display_name: "Dana Admin" }),
+    ]);
+    renderWithToast(
+      <MemoryRouter>
+        <EventArchivingPanel />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("Mobile Meetup");
+    expect(screen.queryByRole("table")).toBeNull();
+    expect(screen.getByText("Event date")).toBeTruthy();
+    expect(screen.getByText("7")).toBeTruthy();
+    expect(screen.getByText("by Dana Admin")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Archive" })).toBeTruthy();
   });
 });
