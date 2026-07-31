@@ -641,10 +641,21 @@ describe("AuditLogPanel rendering", () => {
     });
     fireEvent.click(retry);
 
-    await waitFor(() => {
-      expect(screen.getByText("Page 1 of 1")).toBeTruthy();
-    });
-  });
+    // Reaching this state takes two sequential fetchAuditLog round trips, each through its own
+    // render/commit cycle: the retried page-2 request comes back with the shrunk total, notices
+    // page 2 no longer exists against it, and resets `page` to 1 - which only then triggers the
+    // second request that actually updates `total` (see the `page > maxPage` branch in
+    // AuditLogPanel's own `load`, which intentionally returns before setting it, precisely so a
+    // stale total doesn't flash between the two). Generous timeout, same as other real-timer-
+    // dependent assertions in this file - two full round trips is more margin-sensitive on a
+    // loaded CI runner than this file's single-request assertions.
+    await waitFor(
+      () => {
+        expect(screen.getByText("Page 1 of 1")).toBeTruthy();
+      },
+      { timeout: 5000 },
+    );
+  }, 10000);
 
   it("falls back to the raw action_type string for an action outside the known label map", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue({
