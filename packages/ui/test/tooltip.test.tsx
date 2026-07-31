@@ -70,6 +70,64 @@ describe("Tooltip", () => {
     expect(screen.getByRole("tooltip").textContent).toBe("Disabled because reasons");
   });
 
+  it("puts the wrapper in the tab order when the trigger has no focusable child (e.g. a plain icon hint)", () => {
+    const { container } = render(
+      <Tooltip content="OpenID Connect">
+        <i aria-hidden="true" />
+      </Tooltip>,
+    );
+    const wrapper = container.querySelector(".at-tooltip-trigger");
+    expect(wrapper?.getAttribute("tabindex")).toBe("0");
+
+    fireEvent.focus(wrapper as HTMLElement);
+    expect(screen.getByRole("tooltip").textContent).toBe("OpenID Connect");
+  });
+
+  it("does not add a redundant tab stop when the trigger is already focusable (a live button)", () => {
+    const { container } = render(
+      <Tooltip content="Do the thing">
+        <button>Do thing</button>
+      </Tooltip>,
+    );
+    expect(container.querySelector(".at-tooltip-trigger")?.getAttribute("tabindex")).toBeNull();
+  });
+
+  it("reaches through nested markup to find a focusable descendant (Switch's <label><input/></label>)", () => {
+    const { container } = render(
+      <Tooltip content="Allow sign-in through this provider">
+        <label>
+          <input type="checkbox" />
+        </label>
+      </Tooltip>,
+    );
+    expect(container.querySelector(".at-tooltip-trigger")?.getAttribute("tabindex")).toBeNull();
+  });
+
+  it("picks up the tab stop once the only child goes from enabled to disabled (ArchivedGuard's pattern)", () => {
+    function Example({ disabled }: Readonly<{ disabled: boolean }>) {
+      return (
+        <Tooltip content="This event is archived. Editing is disabled.">
+          <button disabled={disabled}>Do thing</button>
+        </Tooltip>
+      );
+    }
+    const { container, rerender } = render(<Example disabled={false} />);
+    const wrapper = () => container.querySelector(".at-tooltip-trigger");
+    expect(wrapper()?.getAttribute("tabindex")).toBeNull();
+
+    rerender(<Example disabled={true} />);
+    expect(wrapper()?.getAttribute("tabindex")).toBe("0");
+  });
+
+  it("never adds a tab stop when there is no content to show, regardless of the child", () => {
+    const { container } = render(
+      <Tooltip content={undefined}>
+        <i aria-hidden="true" />
+      </Tooltip>,
+    );
+    expect(container.querySelector(".at-tooltip-trigger")?.getAttribute("tabindex")).toBeNull();
+  });
+
   it("renders the bubble into document.body (portal), not inside the trigger's own subtree", () => {
     const { container } = render(
       <Tooltip content="Portal check">

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The shared `Tooltip` component's trigger was completely unreachable by keyboard and invisible to screen readers navigating by Tab whenever its content had no focusable element of its own** — a plain icon or text hint, e.g. Identity providers' protocol icon, or the Audit log/Active sessions/Overview column-header "(i)" hints (flagged by CodeRabbit reviewing #658). `Tooltip` (`@admitto/ui`) wraps its trigger in a `<span>` with hover/focus handlers but had no `tabindex`, so Tab only ever reached it when a child happened to already be focusable on its own (a live button, a `Switch`). The wrapper now becomes a Tab stop exactly when there's content to show and nothing inside it is already focusable, re-checked on every render rather than just on mount, so callers like `ArchivedGuard` and `SessionListItem`'s revoke button — which toggle a child control's `disabled` state at runtime — correctly pick up the Tab stop the moment the control itself drops out of the tab order, without ever adding a second Tab stop on an enabled control that was already reachable.
+
 ### Added
 - **The sidebar footer's version label now also shows the running build's commit** (`v0.4.12 · a955ac9`, matching GitHub's own short-SHA format) next to the "Report a bug" icon. Production images get the real commit from the CI build that produced them (`GIT_COMMIT` Docker build-arg, since the image has no `.git` directory of its own); local dev/builds read it straight from the checked-out `HEAD`.
 

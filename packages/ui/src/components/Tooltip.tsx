@@ -25,6 +25,13 @@ export interface TooltipProps {
 const MARGIN = 5;
 const VIEWPORT_PADDING = 8;
 
+// Elements a keyboard user can already reach on their own - if one of these sits inside the
+// trigger, Tab lands there directly and focus bubbles up to the wrapper span, showing the
+// tooltip. Same selector as apps/admin/src/components/focusable.ts (modal focus trap /
+// dropdown-menu hook); duplicated rather than imported since this package can't depend on an app.
+const FOCUSABLE_SELECTOR =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 /**
  * Hover/focus tooltip that measures the trigger and its own rendered size at show-time and picks
  * whichever side actually has room, instead of a fixed CSS position - a static position (e.g.
@@ -38,6 +45,17 @@ export function Tooltip({ content, children, className, axis = "vertical" }: Rea
   const bubbleRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   const [style, setStyle] = useState<CSSProperties>({ top: 0, left: 0, visibility: "hidden" });
+  const [tabbable, setTabbable] = useState(false);
+
+  // Own Tab stop only when there's content to reveal AND nothing inside is already focusable -
+  // otherwise a plain-text/icon trigger (e.g. a column-header hint) would be unreachable by
+  // keyboard, but a trigger wrapping a live button/Switch would get two Tab stops for one
+  // control. Re-checked every render (not just mount): callers like ArchivedGuard flip a child's
+  // `disabled` attribute at runtime, which moves it out of the tab order, so the wrapper has to
+  // pick up the slack exactly when that happens.
+  useLayoutEffect(() => {
+    setTabbable(!!content && !wrapperRef.current?.querySelector(FOCUSABLE_SELECTOR));
+  }, [children, content]);
 
   useLayoutEffect(() => {
     if (!visible) return;
@@ -117,6 +135,7 @@ export function Tooltip({ content, children, className, axis = "vertical" }: Rea
     <span
       ref={wrapperRef}
       className={["at-tooltip-trigger", className].filter(Boolean).join(" ")}
+      tabIndex={tabbable ? 0 : undefined}
       onMouseEnter={show}
       onMouseLeave={hide}
       onFocus={show}
