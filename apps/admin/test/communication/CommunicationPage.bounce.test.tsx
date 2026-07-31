@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RouterProvider } from "react-router/dom";
 import { MemoryRouter, Route, Routes, createMemoryRouter } from "react-router";
 import { CommunicationPage } from "../../src/pages/CommunicationPage.js";
-import { renderWithToast } from "../test-utils.js";
+import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const fetchEventOverview = vi.fn();
 const fetchEventTemplate = vi.fn();
@@ -88,10 +88,15 @@ function renderPage() {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 beforeEach(() => {
   fetchEventTemplates.mockResolvedValue([]);
+  // The delivery log tab (rendered by "View delivery log") uses useIsDesktop(), which reads
+  // window.matchMedia - unimplemented in jsdom, so it must be stubbed even though this file's
+  // focus is the bounce banner, not the log tab's responsive layout.
+  mockMatchMedia(true);
 });
 
 describe("CommunicationPage bounce banner", () => {

@@ -6,7 +6,6 @@ import {
   useState,
   type Dispatch,
   type MutableRefObject,
-  type ReactNode,
   type RefObject,
   type SetStateAction,
 } from "react";
@@ -18,8 +17,6 @@ import {
   Input,
   Notice,
   PageHeader,
-  Select,
-  StatusBadge,
   Tabs,
   Tooltip,
   useToast,
@@ -57,9 +54,9 @@ import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../comp
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { CommunicationSendDialog } from "../communication/CommunicationSendDialog.js";
 import { CreateTemplateDialog } from "../communication/CreateTemplateDialog.js";
+import { DELIVERY_PAGE_SIZE_DEFAULT, DeliveryLogTab } from "../communication/DeliveryLogTable.js";
 import "../communication/communication.css";
 import { isTemplateDirty } from "../communication/templateDirty.js";
-import { formatUtcDateTime } from "../utils/event-dates.js";
 
 type ActiveField = "subject" | "body";
 type TemplateFormat = "mjml" | "html";
@@ -72,12 +69,6 @@ type TemplateFormat = "mjml" | "html";
  * to fill it in. Filtered client-side, not removed from the server's ALLOWED_PLACEHOLDERS
  * whitelist, so it's not a backward-compat break for any already-saved template. */
 const HIDDEN_PLACEHOLDERS = new Set(["header_image_url"]);
-
-/** Format an ISO timestamp for the delivery log table. */
-function formatDateTime(iso: string | null): string {
-  if (!iso) return "-";
-  return formatUtcDateTime(iso);
-}
 
 /** Insert placeholder text at the textarea cursor selection. */
 function insertAtCursor(value: string, insertion: string, start: number, end: number): string {
@@ -235,8 +226,6 @@ function resolveMjmlInsertion(
   const insertion = token.startsWith("<mj-") ? token : `<mj-text>${token}</mj-text>`;
   return { start: fallbackIdx, end: fallbackIdx, insertion };
 }
-
-const DELIVERY_PAGE_SIZE = 25;
 
 type DirtyProtectedAction =
   | { kind: "select"; key: string }
@@ -854,99 +843,6 @@ function SendTestCard({
   );
 }
 
-/** Delivery log tab: status/purpose filters, the deliveries table (with its own loading/error/empty
- * states), and pagination. */
-function DeliveryLogTab({
-  deliveryStatus,
-  setDeliveryStatus,
-  deliveryPurpose,
-  setDeliveryPurpose,
-  setDeliveryPage,
-  deliveryLogContent,
-  deliveriesError,
-  deliveryTotal,
-  deliveryRangeStart,
-  deliveryRangeEnd,
-  effectiveDeliveryPage,
-  deliveryPages,
-}: Readonly<{
-  deliveryStatus: EventDeliveriesListParams["status"];
-  setDeliveryStatus: Dispatch<SetStateAction<EventDeliveriesListParams["status"]>>;
-  deliveryPurpose: EventDeliveriesListParams["purpose"];
-  setDeliveryPurpose: Dispatch<SetStateAction<EventDeliveriesListParams["purpose"]>>;
-  setDeliveryPage: Dispatch<SetStateAction<number>>;
-  deliveryLogContent: ReactNode;
-  deliveriesError: string | null;
-  deliveryTotal: number;
-  deliveryRangeStart: number;
-  deliveryRangeEnd: number;
-  effectiveDeliveryPage: number;
-  deliveryPages: number;
-}>) {
-  return (
-    <>
-      <div className="communication-log-toolbar">
-        <Select
-          label="Status"
-          value={deliveryStatus}
-          onChange={(e) => {
-            setDeliveryStatus(e.target.value as EventDeliveriesListParams["status"]);
-            setDeliveryPage(1);
-          }}
-        >
-          <option value="all">All</option>
-          <option value="queued">Queued</option>
-          <option value="accepted">Accepted</option>
-          <option value="sent">Sent</option>
-          <option value="delivered">Delivered</option>
-          <option value="failed">Failed</option>
-          <option value="bounced">Bounced</option>
-          <option value="rejected">Rejected</option>
-        </Select>
-        <Select
-          label="Purpose"
-          value={deliveryPurpose}
-          onChange={(e) => {
-            setDeliveryPurpose(e.target.value as EventDeliveriesListParams["purpose"]);
-            setDeliveryPage(1);
-          }}
-        >
-          <option value="all">All purposes</option>
-          <option value="initial">Initial send</option>
-          <option value="resend">Resend</option>
-        </Select>
-      </div>
-
-      <Card padded={false}>
-        {deliveryLogContent}
-        {!deliveriesError && deliveryTotal > 0 && (
-          <div className="communication-pager">
-            <span>
-              Showing {deliveryRangeStart}–{deliveryRangeEnd} of {deliveryTotal}
-            </span>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={effectiveDeliveryPage <= 1}
-              onClick={() => setDeliveryPage((p) => Math.max(1, p - 1))}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={effectiveDeliveryPage >= deliveryPages}
-              onClick={() => setDeliveryPage((p) => p + 1)}
-            >
-              Next
-            </Button>
-          </div>
-        )}
-      </Card>
-    </>
-  );
-}
-
 /** Admin screen for event mail template editing, preview, test-send, and delivery log. */
 export function CommunicationPage() {
   const { eventId } = useParams();
@@ -993,8 +889,12 @@ export function CommunicationPage() {
   const [deliveries, setDeliveries] = useState<DeliveryDto[]>([]);
   const [deliveryTotal, setDeliveryTotal] = useState(0);
   const [deliveryPage, setDeliveryPage] = useState(1);
+  const [deliveryPageSize, setDeliveryPageSize] = useState(DELIVERY_PAGE_SIZE_DEFAULT);
   const [deliveryStatus, setDeliveryStatus] = useState<EventDeliveriesListParams["status"]>("all");
   const [deliveryPurpose, setDeliveryPurpose] = useState<EventDeliveriesListParams["purpose"]>("all");
+  const [deliveryTemplateId, setDeliveryTemplateId] = useState("all");
+  const [deliverySearchInput, setDeliverySearchInput] = useState("");
+  const [deliverySearch, setDeliverySearch] = useState("");
   const [deliveriesLoading, setDeliveriesLoading] = useState(false);
   const [deliveriesError, setDeliveriesError] = useState<string | null>(null);
   const [emailBounced, setEmailBounced] = useState(0);
@@ -1258,9 +1158,11 @@ export function CommunicationPage() {
         eventId,
         {
           page: deliveryPage,
-          pageSize: DELIVERY_PAGE_SIZE,
+          pageSize: deliveryPageSize,
           status: deliveryStatus,
           purpose: deliveryPurpose,
+          search: deliverySearch || undefined,
+          templateId: deliveryTemplateId,
         },
         signal,
       );
@@ -1285,7 +1187,24 @@ export function CommunicationPage() {
         setDeliveriesLoading(false);
       }
     }
-  }, [eventId, deliveryPage, deliveryStatus, deliveryPurpose, reportApiError]);
+  }, [
+    eventId,
+    deliveryPage,
+    deliveryPageSize,
+    deliveryStatus,
+    deliveryPurpose,
+    deliverySearch,
+    deliveryTemplateId,
+    reportApiError,
+  ]);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setDeliverySearch(deliverySearchInput.trim());
+      setDeliveryPage(1);
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [deliverySearchInput]);
 
   useEffect(() => {
     currentEventIdRef.current = eventId;
@@ -1366,13 +1285,13 @@ export function CommunicationPage() {
   }, [tab, loadDeliveries]);
 
   useEffect(() => {
-    const maxPage = Math.max(1, Math.ceil(deliveryTotal / DELIVERY_PAGE_SIZE));
+    const maxPage = Math.max(1, Math.ceil(deliveryTotal / deliveryPageSize));
     if (deliveryTotal === 0) {
       if (deliveryPage !== 1) setDeliveryPage(1);
     } else if (deliveryPage > maxPage) {
       setDeliveryPage(maxPage);
     }
-  }, [deliveryTotal, deliveryPage]);
+  }, [deliveryTotal, deliveryPage, deliveryPageSize]);
 
   useEffect(() => {
     if (!isDirty) return;
@@ -1560,61 +1479,13 @@ export function CommunicationPage() {
   // these "Loading…" placeholders on and off faster than they can register as loading —
   // show them only once the fetch has genuinely taken a moment.
   const showLoading = useDelayedLoading(loading);
-  const showDeliveriesLoading = useDelayedLoading(deliveriesLoading);
 
   if (!eventId) return <p>Missing event.</p>;
   if (loading) return whenShown(showLoading, <p>Loading communication…</p>);
   if (error) return <p>{error}</p>;
 
-  const deliveryPages = Math.max(1, Math.ceil(deliveryTotal / DELIVERY_PAGE_SIZE));
-  const effectiveDeliveryPage = Math.min(deliveryPage, deliveryPages);
-  const deliveryRangeStart = (effectiveDeliveryPage - 1) * DELIVERY_PAGE_SIZE + 1;
-  const deliveryRangeEnd = Math.min(effectiveDeliveryPage * DELIVERY_PAGE_SIZE, deliveryTotal);
   const unsavedTemplateLabel = isDirty ? "Save *" : "Saved";
   const saveButtonLabel = saving ? "Saving…" : unsavedTemplateLabel;
-
-  let deliveryLogContent: ReactNode;
-  if (deliveriesLoading) {
-    deliveryLogContent = whenShown(
-      showDeliveriesLoading,
-      <div className="communication-empty">Loading deliveries…</div>,
-    );
-  } else if (deliveriesError) {
-    deliveryLogContent = <div className="communication-empty">{deliveriesError}</div>;
-  } else if (deliveries.length === 0) {
-    deliveryLogContent = <div className="communication-empty">No messages sent yet.</div>;
-  } else {
-    deliveryLogContent = (
-      <table className="table communication-table">
-        <thead>
-          <tr>
-            <th>Recipient</th>
-            <th>Subject</th>
-            <th>Purpose</th>
-            <th>Status</th>
-            <th>Queued</th>
-            <th>Sent / Failed</th>
-            <th>Error</th>
-          </tr>
-        </thead>
-        <tbody>
-          {deliveries.map((row) => (
-            <tr key={row.id}>
-              <td className="mono">{row.recipient_email ?? "-"}</td>
-              <td>{row.rendered_subject ?? "-"}</td>
-              <td>{row.purpose === "resend" ? "Resend" : "Initial"}</td>
-              <td>
-                <StatusBadge status={row.status} />
-              </td>
-              <td className="mono muted">{formatDateTime(row.queued_at)}</td>
-              <td className="mono muted">{formatDateTime(row.sent_at ?? row.accepted_at ?? row.failed_at)}</td>
-              <td className="muted">{row.error_code ?? "-"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    );
-  }
 
   return (
     <div className="screen">
@@ -1706,18 +1577,24 @@ export function CommunicationPage() {
         </>
       ) : (
         <DeliveryLogTab
-          deliveryStatus={deliveryStatus}
-          setDeliveryStatus={setDeliveryStatus}
-          deliveryPurpose={deliveryPurpose}
-          setDeliveryPurpose={setDeliveryPurpose}
-          setDeliveryPage={setDeliveryPage}
-          deliveryLogContent={deliveryLogContent}
-          deliveriesError={deliveriesError}
+          eventId={eventId}
+          deliveries={deliveries}
           deliveryTotal={deliveryTotal}
-          deliveryRangeStart={deliveryRangeStart}
-          deliveryRangeEnd={deliveryRangeEnd}
-          effectiveDeliveryPage={effectiveDeliveryPage}
-          deliveryPages={deliveryPages}
+          deliveriesLoading={deliveriesLoading}
+          deliveriesError={deliveriesError}
+          templates={templates}
+          page={deliveryPage}
+          onPageChange={setDeliveryPage}
+          pageSize={deliveryPageSize}
+          onPageSizeChange={setDeliveryPageSize}
+          status={deliveryStatus}
+          onStatusChange={setDeliveryStatus}
+          purpose={deliveryPurpose}
+          onPurposeChange={setDeliveryPurpose}
+          templateId={deliveryTemplateId}
+          onTemplateIdChange={setDeliveryTemplateId}
+          searchInput={deliverySearchInput}
+          onSearchChange={setDeliverySearchInput}
         />
       )}
       <ConfirmDialog
