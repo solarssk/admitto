@@ -77,3 +77,8 @@ export {
 export {
   backfillCheckInSessionIds,
 } from './backfill-checkin-session-id.js';
+
+export {
+  backfillEventCreatedByUserId,
+  backfillEventArchivedByUserId,
+} from './backfill-event-actor-attribution.js';
