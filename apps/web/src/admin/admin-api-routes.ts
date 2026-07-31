@@ -5,7 +5,13 @@ import { z } from "zod";
 import { canManageInstance, listAdminEvents } from "@admitto/auth";
 import { ensureBadgeEventItem, ensureStandardTicketType, writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
-import { adminAuditFromContext, countAttendeesByEvent, resolveActorEmailForLog } from "./admin-helpers.js";
+import {
+  adminAuditFromContext,
+  countAttendeesByEvent,
+  resolveActorEmailForLog,
+  resolveUserDisplayMap,
+  type UserDisplayRow,
+} from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { timezoneField } from "./timezone.js";
 
@@ -38,6 +44,11 @@ type EventJsonRow = {
   location: string | null;
   organization_id: string;
   archived_at: Date | null;
+  created_at: Date;
+  created_by_user_id: string | null;
+  created_by_timezone: string | null;
+  archived_by_user_id: string | null;
+  archived_by_timezone: string | null;
 };
 
 function isValidCalendarDate(value: string): boolean {
@@ -56,8 +67,16 @@ function parseEventDateInput(date: string): Date {
   return new Date(date.includes("T") ? date : `${date}T12:00:00.000Z`);
 }
 
-/** Map an event row to the admin/check-in picker JSON shape. */
-export function serializeEventDto(event: EventJsonRow, count?: number) {
+/** Map an event row to the admin/check-in picker JSON shape. `userDisplayMap` resolves
+ * created_by_user_id/archived_by_user_id to a display name/email - omitted (both null) when the
+ * caller has no map to resolve against (e.g. the check-in picker doesn't need this). */
+export function serializeEventDto(
+  event: EventJsonRow,
+  count?: number,
+  userDisplayMap?: Record<string, UserDisplayRow>,
+) {
+  const createdBy = event.created_by_user_id ? userDisplayMap?.[event.created_by_user_id] : undefined;
+  const archivedBy = event.archived_by_user_id ? userDisplayMap?.[event.archived_by_user_id] : undefined;
   return {
     id: event.id,
     title: event.title,
@@ -67,6 +86,13 @@ export function serializeEventDto(event: EventJsonRow, count?: number) {
     location: event.location,
     organization_id: event.organization_id,
     archived_at: event.archived_at?.toISOString() ?? null,
+    created_at: event.created_at.toISOString(),
+    created_by_display_name: createdBy?.display_name ?? null,
+    created_by_email: createdBy?.email ?? null,
+    created_by_timezone: event.created_by_timezone,
+    archived_by_display_name: archivedBy?.display_name ?? null,
+    archived_by_email: archivedBy?.email ?? null,
+    archived_by_timezone: event.archived_by_timezone,
     ...(count !== undefined ? { attendee_count: count } : {}),
   };
 }
@@ -110,9 +136,11 @@ export async function handleGetAdminEvents(c: Context, db: PrismaClient): Promis
   const includeArchived = c.req.query("includeArchived") === "true";
   const events = await listAdminEvents(db, auth.userId, { includeArchived });
   const countByEvent = await countAttendeesByEvent(db, events.map((e) => e.id));
+  const actorIds = events.flatMap((e) => [e.created_by_user_id, e.archived_by_user_id].filter((id): id is string => !!id));
+  const userDisplayMap = await resolveUserDisplayMap(db, actorIds);
 
   return c.json({
-    events: events.map((e) => serializeEventDto(e, countByEvent.get(e.id) ?? 0)),
+    events: events.map((e) => serializeEventDto(e, countByEvent.get(e.id) ?? 0, userDisplayMap)),
   });
 }
 
@@ -159,6 +187,8 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
           timezone,
           location: location?.trim() ? location.trim() : null,
           organization_id: orgId,
+          created_by_user_id: actorUserId,
+          created_by_timezone: audit.timezone,
         },
       });
 

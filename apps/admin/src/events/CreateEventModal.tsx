@@ -127,7 +127,7 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
                 type="text"
                 value={slug}
                 maxLength={80}
-                pattern="[a-z0-9_-]+"
+                pattern="[a-z0-9_\-]+"
                 required
                 disabled={submitting}
                 onChange={(e) => {

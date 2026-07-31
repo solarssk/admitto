@@ -50,10 +50,13 @@ async function setEventArchivedState<NoTransitionCode extends string>(
   try {
     const outcome = await db.$transaction(async (tx) => {
       const updated = archiving
-        ? await tx.event.updateMany({ where: { id: eventId, archived_at: null }, data: { archived_at: new Date() } })
+        ? await tx.event.updateMany({
+            where: { id: eventId, archived_at: null },
+            data: { archived_at: new Date(), archived_by_user_id: actor.userId, archived_by_timezone: timezone },
+          })
         : await tx.event.updateMany({
             where: { id: eventId, archived_at: { not: null } },
-            data: { archived_at: null },
+            data: { archived_at: null, archived_by_user_id: null, archived_by_timezone: null },
           });
       if (updated.count !== 1) return { kind: "no_transition" as const };
 

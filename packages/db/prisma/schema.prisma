@@ -28,34 +28,45 @@ model Organization {
 }
 
 model Event {
-  id               String              @id @default(cuid())
-  organization_id  String
-  organization     Organization        @relation(fields: [organization_id], references: [id], onDelete: Restrict)
-  title            String
-  slug             String              @unique
-  date             DateTime
-  timezone         String              @default("UTC")
-  location         String?
-  capacity         Int?
-  logo_url         String?
-  header_image_url String?
-  created_at       DateTime            @default(now())
-  archived_at      DateTime?
+  id                   String              @id @default(cuid())
+  organization_id      String
+  organization         Organization        @relation(fields: [organization_id], references: [id], onDelete: Restrict)
+  title                String
+  slug                 String              @unique
+  date                 DateTime
+  timezone             String              @default("UTC")
+  location             String?
+  capacity             Int?
+  logo_url             String?
+  header_image_url     String?
+  created_at           DateTime            @default(now())
+  // No FK (matches AdminAuditLog.actor_user_id) - a deactivated/deleted user must not block
+  // reads of the event they created/archived. Null for historical rows predating this column;
+  // backfilled best-effort from AdminAuditLog where a matching event_created/event_archived
+  // entry exists (see backfill-event-actor-attribution.ts).
+  created_by_user_id   String?
+  // Actor's IANA timezone at the moment of the matching action - mirrors AdminAuditLog.
+  // actor_timezone/AttendeeActionLog.client_timezone. Null for rows predating this column, a
+  // non-browser actor (CLI), or where backfill found no matching audit entry.
+  created_by_timezone  String?
+  archived_at          DateTime?
+  archived_by_user_id  String?
+  archived_by_timezone String?
   // Event-day ops (ADR 0010): require_confirm_on_scan, badge_at_entry, etc.
-  ops_config       Json?
+  ops_config           Json?
   // Single operational sticky note shown on the overview page to all staff.
-  pinned_note      String?             @db.Text
-  attendees        Attendee[]
-  check_ins        CheckIn[]
-  email_deliveries EmailDelivery[]
-  event_items      EventItem[]
-  attendee_notes   AttendeeNote[]
-  action_logs      AttendeeActionLog[]
-  contacts         EventContact[]
-  resources        EventResource[]
-  image_assets     EventImageAsset[]
-  custom_fields    EventCustomField[]
-  ticket_types     TicketType[]
+  pinned_note          String?             @db.Text
+  attendees            Attendee[]
+  check_ins            CheckIn[]
+  email_deliveries     EmailDelivery[]
+  event_items          EventItem[]
+  attendee_notes       AttendeeNote[]
+  action_logs          AttendeeActionLog[]
+  contacts             EventContact[]
+  resources            EventResource[]
+  image_assets         EventImageAsset[]
+  custom_fields        EventCustomField[]
+  ticket_types         TicketType[]
 
   @@index([organization_id])
   @@index([organization_id, archived_at])

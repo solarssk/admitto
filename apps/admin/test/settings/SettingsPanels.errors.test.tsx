@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import { SecurityPanel } from "../../src/settings/SecurityPanel.js";
@@ -61,6 +62,7 @@ import {
   patchOrgBranding,
   patchSecuritySettings,
   saveStaffTheme,
+  unarchiveEvent,
 } from "../../src/api/client.js";
 
 afterEach(() => {
@@ -85,7 +87,7 @@ describe("Settings panels delayed loading", () => {
   it("EventArchivingPanel shows the loading placeholder once the fetch has genuinely taken a moment", () => {
     vi.mocked(fetchAdminEvents).mockImplementationOnce(() => new Promise(() => {}));
     vi.useFakeTimers();
-    renderWithToast(<EventArchivingPanel />);
+    renderWithToastAndRouter(<EventArchivingPanel />);
     act(() => {
       vi.advanceTimersByTime(200);
     });
@@ -185,19 +187,24 @@ describe("BrandingSettingsPanel operator errors", () => {
 });
 
 describe("EventArchivingPanel operator errors", () => {
-  it("shows operator-safe load failure", async () => {
+  it("shows operator-safe load failure, and retries the load on demand", async () => {
     vi.mocked(fetchAdminEvents).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    renderWithToast(<EventArchivingPanel />);
+    renderWithToastAndRouter(<EventArchivingPanel />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     });
     expect(screen.getByText(/Failed to load events/)).toBeTruthy();
+
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([sampleEvent]);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await screen.findByText("Summit");
+    expect(screen.queryByText(/Failed to load events/)).toBeNull();
   });
 
   it("shows operator-safe action failure in confirm dialog", async () => {
     vi.mocked(fetchAdminEvents).mockResolvedValueOnce([sampleEvent]);
     vi.mocked(archiveEvent).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    renderWithToast(<EventArchivingPanel />);
+    renderWithToastAndRouter(<EventArchivingPanel />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Archive" })).toBeTruthy();
     });
@@ -207,5 +214,101 @@ describe("EventArchivingPanel operator errors", () => {
     await waitFor(() => {
       expect(screen.getByText(/Action failed/)).toBeTruthy();
     });
+  });
+
+  it("archives an event on confirm, toasts, and reloads the list", async () => {
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([sampleEvent]);
+    vi.mocked(archiveEvent).mockResolvedValueOnce(undefined);
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([{ ...sampleEvent, archived_at: "2026-06-02T00:00:00.000Z" }]);
+    renderWithToastAndRouter(<EventArchivingPanel />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Archive" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Archive" }));
+
+    await waitFor(() => {
+      expect(archiveEvent).toHaveBeenCalledWith("evt-1");
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Event archived/);
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(fetchAdminEvents).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the remaining rows visible after archiving the only event on the current page", async () => {
+    const many = Array.from({ length: 26 }, (_, i) => ({ ...sampleEvent, id: `evt-${i}`, title: `Event ${i}`, slug: `event-${i}` }));
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce(many);
+    vi.mocked(archiveEvent).mockResolvedValueOnce(undefined);
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([
+      ...many.slice(0, 25),
+      { ...many[25], archived_at: "2026-06-02T00:00:00.000Z" },
+    ]);
+    renderWithToastAndRouter(<EventArchivingPanel />);
+
+    await screen.findByText("Showing 1–25 of 26");
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByText("Event 25");
+
+    fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Archive" }));
+
+    await waitFor(() => {
+      expect(archiveEvent).toHaveBeenCalledWith("evt-25");
+    });
+    await screen.findByText("Event 0");
+    expect(screen.queryByText("No active events")).toBeNull();
+  });
+
+  it("unarchives an event on confirm, toasts, and reloads the list", async () => {
+    const archived = { ...sampleEvent, archived_at: "2026-06-02T00:00:00.000Z" };
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([archived]);
+    vi.mocked(unarchiveEvent).mockResolvedValueOnce(undefined);
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([{ ...sampleEvent, archived_at: null }]);
+    renderWithToastAndRouter(<EventArchivingPanel />);
+    await waitFor(() => {
+      expect(screen.getByRole("radio", { name: "Archived" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("radio", { name: "Archived" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Unarchive" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Unarchive" }));
+
+    await waitFor(() => {
+      expect(unarchiveEvent).toHaveBeenCalledWith("evt-1");
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Event unarchived/);
+    });
+    expect(fetchAdminEvents).toHaveBeenCalledTimes(2);
+  });
+
+  it("cancels the confirm dialog without calling the API", async () => {
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([sampleEvent]);
+    renderWithToastAndRouter(<EventArchivingPanel />);
+    fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(archiveEvent).not.toHaveBeenCalled();
+  });
+
+  it("keeps the confirm dialog open on Escape while an action is in flight", async () => {
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([sampleEvent]);
+    vi.mocked(archiveEvent).mockImplementationOnce(() => new Promise(() => {}));
+    renderWithToastAndRouter(<EventArchivingPanel />);
+    fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Archive" }));
+
+    await within(dialog).findByRole("button", { name: "Working…" });
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 });

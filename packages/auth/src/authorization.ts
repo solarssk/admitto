@@ -132,6 +132,11 @@ export interface EventSummary {
   location: string | null;
   organization_id: string;
   archived_at: Date | null;
+  created_at: Date;
+  created_by_user_id: string | null;
+  created_by_timezone: string | null;
+  archived_by_user_id: string | null;
+  archived_by_timezone: string | null;
 }
 
 const eventSelect = {
@@ -143,6 +148,11 @@ const eventSelect = {
   location: true,
   organization_id: true,
   archived_at: true,
+  created_at: true,
+  created_by_user_id: true,
+  created_by_timezone: true,
+  archived_by_user_id: true,
+  archived_by_timezone: true,
 } as const;
 
 /** Events where user has check-in capability (matches canPerformCheckIn). Excludes archived events — archiving an event ends check-in for it, same as admin mutating APIs. */

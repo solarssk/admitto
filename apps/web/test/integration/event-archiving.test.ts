@@ -145,7 +145,7 @@ afterEach(async () => {
   await prisma.adminAuditLog.deleteMany({ where: { organization_id: ORG_ARCH } });
   await prisma.event.update({
     where: { id: EVENT_ARCH },
-    data: { archived_at: null },
+    data: { archived_at: null, archived_by_user_id: null },
   });
 });
 
@@ -171,6 +171,7 @@ describe("POST /api/admin/events/:eventId/archive", () => {
 
     const event = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_ARCH } });
     expect(event.archived_at).not.toBeNull();
+    expect(event.archived_by_user_id).toBe(superId);
 
     const audit = await prisma.adminAuditLog.findFirst({
       where: { organization_id: ORG_ARCH, action_type: "event_archived" },
@@ -184,6 +185,23 @@ describe("POST /api/admin/events/:eventId/archive", () => {
     expect(
       logs.some((entry) => entry.message === "event_archived" && entry.fields?.eventId === EVENT_ARCH),
     ).toBe(true);
+  });
+
+  it("captures the actor's IANA timezone via X-Client-Timezone", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_ARCH}/archive`, {
+      method: "POST",
+      headers: {
+        Cookie: superCookie,
+        ...sameOrigin,
+        "Content-Type": "application/json",
+        "X-Client-Timezone": "Asia/Kolkata",
+      },
+      body: "{}",
+    });
+    expect(res.status).toBe(200);
+
+    const event = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_ARCH } });
+    expect(event.archived_by_timezone).toBe("Asia/Kolkata");
   });
 
   it("returns 409 when already archived", async () => {
@@ -239,7 +257,7 @@ describe("POST /api/admin/events/:eventId/unarchive", () => {
   it("clears archived_at and writes AdminAuditLog", async () => {
     await prisma.event.update({
       where: { id: EVENT_ARCH },
-      data: { archived_at: new Date() },
+      data: { archived_at: new Date(), archived_by_user_id: adminId },
     });
 
     const res = await app.request(`/api/admin/events/${EVENT_ARCH}/unarchive`, {
@@ -251,6 +269,7 @@ describe("POST /api/admin/events/:eventId/unarchive", () => {
 
     const event = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_ARCH } });
     expect(event.archived_at).toBeNull();
+    expect(event.archived_by_user_id).toBeNull();
 
     const audit = await prisma.adminAuditLog.findFirst({
       where: { organization_id: ORG_ARCH, action_type: "event_unarchived" },
@@ -405,6 +424,27 @@ describe("GET /api/admin/events includeArchived", () => {
     const found = body.events.find((e) => e.id === EVENT_ARCH);
     expect(found).toBeDefined();
     expect(found!.archived_at).toBe(archivedAt.toISOString());
+  });
+
+  it("resolves archived_by to the acting user's email; created_by stays null for a directly-seeded event", async () => {
+    await app.request(`/api/admin/events/${EVENT_ARCH}/archive`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{}",
+    });
+
+    const res = await app.request("/api/admin/events?includeArchived=true", {
+      headers: { Cookie: superCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      events: Array<{ id: string; created_by_email: string | null; archived_by_email: string | null }>;
+    };
+    const found = body.events.find((e) => e.id === EVENT_ARCH);
+    expect(found).toBeDefined();
+    expect(found!.archived_by_email).toBe(EMAIL_SUPER);
+    // EVENT_ARCH is seeded directly via Prisma, not through POST /api/admin/events, so it has no creator to resolve.
+    expect(found!.created_by_email).toBeNull();
   });
 });
 
