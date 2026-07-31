@@ -23,7 +23,7 @@ Agree what operators will physically issue or return. Decide whether operators n
 4. Enable **Issue on check-in** only when the item should be offered during admission.
 5. Mark the item active when it is ready for event use.
 
-### Event behaviour
+### Check-in behaviour
 
 1. Enable **Issue badge at entry** only when the badge item exists, is active, and has **Issue on check-in** enabled.
 2. Enable **Require confirmation on scan** when operators must review a preview before admission is recorded.

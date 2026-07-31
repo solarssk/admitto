@@ -587,7 +587,7 @@ describe("RequirementsPage operator errors", () => {
     });
     fireEvent.click(screen.getByRole("switch", { name: "Issue badge at entry" }));
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to save event behaviour/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to save check-in behaviour/);
     });
   });
 

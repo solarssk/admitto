@@ -4,8 +4,8 @@
  * grid, secret field UI, provider-specific cards, test result preview, and footer
  * are identical between the two scopes; only what fetches/saves/tests differs.
  */
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
-import { Badge, Button, Card, Input, Switch, Tooltip } from "@admitto/ui";
+import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { Badge, Button, Card, HintLabel, Input, Switch, Tooltip } from "@admitto/ui";
 import type {
   MailPlainFieldDto,
   MailProvider,
@@ -100,6 +100,8 @@ export function EnvBadge({ locked }: Readonly<{ locked: boolean }>) {
     </Badge>
   );
 }
+
+const SENDER_HINT = "From, reply-to, and bounce addresses used on every email this sends.";
 
 export const PROVIDER_GUIDE: Record<MailProvider | "", string> = {
   "": "No mail will be sent yet.",
@@ -358,7 +360,7 @@ export function SenderCard({
 }>) {
   const isDisabled: FieldLocked = (key) => fieldLocked(key) || disabled;
   return (
-    <Card title="Sender">
+    <Card title={<HintLabel hint={SENDER_HINT}>Sender</HintLabel>}>
       <div className="mail-transport-section">
         <Input
           label="From address"
@@ -426,7 +428,7 @@ export function SmtpConnectionCard({
 }>) {
   const isDisabled: FieldLocked = (key) => fieldLocked(key) || disabled;
   return (
-    <Card title="SMTP connection">
+    <Card title={<HintLabel hint={PROVIDER_GUIDE.smtp}>SMTP connection</HintLabel>}>
       <div className="mail-transport-form">
         <div className="mail-transport-section">
           <Input
@@ -586,7 +588,7 @@ export function GraphCard({
 }>) {
   const isDisabled: FieldLocked = (key) => fieldLocked(key) || disabled;
   return (
-    <Card title="Microsoft Graph">
+    <Card title={<HintLabel hint={PROVIDER_GUIDE.graph}>Microsoft Graph</HintLabel>}>
       <div className="mail-transport-form">
         <details className="mail-graph-setup-info">
           <summary>Entra app registration steps</summary>
@@ -680,7 +682,7 @@ export function PowerAutomateCard({
   disabled?: boolean;
 }>) {
   return (
-    <Card title="Power Automate">
+    <Card title={<HintLabel hint={PROVIDER_GUIDE.powerautomate}>Power Automate</HintLabel>}>
       <div className="mail-transport-section">
         <SecretFieldRow
           label="Flow URL"
@@ -783,7 +785,7 @@ export function MailTransportCard({
   onSelectProvider,
 }: Readonly<{
   title?: string;
-  description?: ReactNode;
+  description?: string;
   provider: MailProvider | "";
   providerOptions: ReturnType<typeof buildMailProviderOptions>;
   fieldLocked: FieldLocked;
@@ -791,7 +793,7 @@ export function MailTransportCard({
 }>) {
   return (
     <Card
-      title={title}
+      title={<HintLabel hint={description}>{title}</HintLabel>}
       actions={
         <Badge variant={provider ? "ok" : "neutral"}>{provider ? "Configured" : "Not configured"}</Badge>
       }
@@ -803,7 +805,6 @@ export function MailTransportCard({
             here. Contact your instance administrator if you need to update them.
           </p>
         )}
-        <p className="mail-transport__desc">{description}</p>
         <TransportTileGrid
           provider={provider}
           providerOptions={providerOptions}

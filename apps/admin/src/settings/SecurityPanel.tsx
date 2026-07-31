@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
-import { Badge, Button, Card, Checkbox, Input, useToast } from "@admitto/ui";
+import { Badge, Button, Card, Checkbox, HintLabel, Input, useToast } from "@admitto/ui";
 import { fetchSecuritySettings, patchSecuritySettings } from "../api/client.js";
 import { roleLabel } from "../auth/role-labels.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { PatchSystemSettingsBody, SystemSettingsDto, SettingSource } from "../api/types.js";
 
+const SECURITY_HINT =
+  "Controls session lifetimes, trusted-device duration, and which roles must enroll two-factor authentication.";
 const MS_PER_HOUR = 3_600_000;
 const MFA_ROLES = [
   { value: "superadmin", label: roleLabel("superadmin") },
@@ -184,7 +186,7 @@ export function SecurityPanel() {
 
   return (
     <Card
-      title="Security"
+      title={<HintLabel hint={SECURITY_HINT}>Security</HintLabel>}
       footer={
         <div className="mail-transport-footer">
           <Button

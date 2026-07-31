@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useNavigate } from "react-router";
-import { Card, Input, Button, Tooltip, useToast } from "@admitto/ui";
+import { Card, HintLabel, Input, Button, Tooltip, useToast } from "@admitto/ui";
 import {
   clearEventMailSettings,
   fetchEventMailSettings,
@@ -37,6 +37,9 @@ import {
   useMailSettingsFormState,
   type FieldLocked,
 } from "./mailTransportFormParts.js";
+
+const EVENT_MAIL_TRANSPORT_HINT = "Which mailbox and provider send this event's tickets and reminders.";
+const SEND_TEST_EMAIL_HINT = "Verifies transport credentials with a trivial message, not an event template.";
 
 type Mode = "org" | "dedicated";
 
@@ -390,7 +393,7 @@ export const EventMailSettingsCard = forwardRef<
   return (
     <div className="settings-sections">
       <Card
-        title="Mail transport"
+        title={<HintLabel hint={EVENT_MAIL_TRANSPORT_HINT}>Mail transport</HintLabel>}
         actions={
           <Segmented
             ariaLabel="Mail source"
@@ -405,10 +408,6 @@ export const EventMailSettingsCard = forwardRef<
           />
         }
       >
-        <p className="mail-transport__desc">
-          Which mailbox and provider send this event&apos;s tickets and reminders.
-        </p>
-
         {mode === "org" &&
           (orgSummaryTrustworthy ? (
             <OrgMailSummary
@@ -500,7 +499,7 @@ export const EventMailSettingsCard = forwardRef<
         </>
       )}
 
-      <Card title="Send test email">
+      <Card title={<HintLabel hint={SEND_TEST_EMAIL_HINT}>Send test email</HintLabel>}>
         <p className="mail-test-send__hint">{testSendHint}</p>
         <div className="mail-test-send__row">
           <Input

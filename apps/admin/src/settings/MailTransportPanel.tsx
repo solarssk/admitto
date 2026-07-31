@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Card, Input, Button, Tooltip, useToast } from "@admitto/ui";
+import { Card, HintLabel, Input, Button, Tooltip, useToast } from "@admitto/ui";
 import { fetchMailSettings, saveMailSettings, sendMailTransportTest } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { MailSettingsResponse } from "../api/types.js";
@@ -25,6 +25,8 @@ import {
   useMailSettingsFormState,
   type FieldLocked,
 } from "./mailTransportFormParts.js";
+
+const SEND_TEST_EMAIL_HINT = "Verifies transport credentials with a trivial message, not an event template.";
 
 /** Superadmin mail transport configuration panel. */
 export function MailTransportPanel() {
@@ -263,7 +265,7 @@ export function MailTransportPanel() {
         />
       )}
 
-      <Card title="Send test email">
+      <Card title={<HintLabel hint={SEND_TEST_EMAIL_HINT}>Send test email</HintLabel>}>
         <p className="mail-test-send__hint">{testSendHint}</p>
         <div className="mail-test-send__row">
           <Input
