@@ -5,81 +5,16 @@ import { exportDeliveryLog } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { DeliveryDto, EventDeliveriesListParams, MailTemplateListItem } from "../api/types.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
-import { useDropdownMenu } from "../components/useDropdownMenu.js";
+import { PaginationFooter } from "../components/PaginationFooter.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { formatDateTime, purposeLabel, rowTimestamp, templateLabel } from "./delivery-format.js";
 import { DeliveryDetailsModal } from "./DeliveryDetailsModal.js";
+import { DeliveryRowMenu } from "./DeliveryRowMenu.js";
 import { SentMessagePreviewModal } from "./SentMessagePreviewModal.js";
 
 export const DELIVERY_PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 export const DELIVERY_PAGE_SIZE_DEFAULT = 25;
-
-interface DeliveryRowMenuProps {
-  eventId: string;
-  row: DeliveryDto;
-  onViewSentMessage: (row: DeliveryDto) => void;
-  onViewDetails: (row: DeliveryDto) => void;
-}
-
-/** Per-row "..." menu: same trigger+role="menu" panel mechanism as UserMenu/MoreActionsMenu,
- * just anchored to a table row (or mobile card) instead of a page header. */
-function DeliveryRowMenu({ eventId, row, onViewSentMessage, onViewDetails }: Readonly<DeliveryRowMenuProps>) {
-  const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
-
-  return (
-    <div className="communication-row-menu" ref={rootRef}>
-      <button
-        type="button"
-        ref={triggerRef}
-        className="at-iconbtn at-iconbtn--sm"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={`Actions for ${row.attendee_name}'s message`}
-        onClick={() => setOpen((o) => !o)}
-      >
-        <i className="ti ti-dots-vertical" aria-hidden="true" />
-      </button>
-      {open && (
-        <div className="communication-row-menu__panel" role="menu" ref={panelRef}>
-          <button
-            type="button"
-            role="menuitem"
-            className="communication-row-menu__item"
-            onClick={() => {
-              setOpen(false);
-              onViewSentMessage(row);
-            }}
-          >
-            <i className="ti ti-mail-opened" aria-hidden="true" />
-            View sent message
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="communication-row-menu__item"
-            onClick={() => {
-              setOpen(false);
-              onViewDetails(row);
-            }}
-          >
-            <i className="ti ti-list-details" aria-hidden="true" />
-            View delivery details
-          </button>
-          <Link
-            role="menuitem"
-            className="communication-row-menu__item"
-            to={`/admin/events/${eventId}/attendees/${row.attendee_id}`}
-            onClick={() => setOpen(false)}
-          >
-            <i className="ti ti-user" aria-hidden="true" />
-            Open attendee
-          </Link>
-        </div>
-      )}
-    </div>
-  );
-}
 
 interface DeliveryToolbarProps {
   searchInput: string;
@@ -258,13 +193,13 @@ function DeliveryListContent({
         {deliveries.map((row) => (
           <div className="communication-card" key={row.id}>
             <div className="communication-card__top">
-              <span className="communication-card__name">{row.attendee_name}</span>
-              <DeliveryRowMenu
-                eventId={eventId}
-                row={row}
-                onViewSentMessage={onViewSentMessage}
-                onViewDetails={onViewDetails}
-              />
+              <Link
+                className="communication-card__name"
+                to={`/admin/events/${eventId}/attendees/${row.attendee_id}`}
+              >
+                {row.attendee_name}
+              </Link>
+              <DeliveryRowMenu row={row} onViewSentMessage={onViewSentMessage} onViewDetails={onViewDetails} />
             </div>
             <div className="communication-card__meta">
               <span className="communication-card__meta-item">
@@ -307,10 +242,13 @@ function DeliveryListContent({
           {deliveries.map((row) => (
             <tr key={row.id}>
               <td>
-                <div className="communication-user">
+                <Link
+                  className="communication-user"
+                  to={`/admin/events/${eventId}/attendees/${row.attendee_id}`}
+                >
                   <strong>{row.attendee_name}</strong>
                   <span className="mono muted">{row.recipient_email ?? "-"}</span>
-                </div>
+                </Link>
               </td>
               <td>{templateLabel(row)}</td>
               <td>{purposeLabel(row.purpose)}</td>
@@ -319,12 +257,7 @@ function DeliveryListContent({
               </td>
               <td className="mono muted">{formatDateTime(rowTimestamp(row))}</td>
               <td className="communication-row-menu-cell">
-                <DeliveryRowMenu
-                  eventId={eventId}
-                  row={row}
-                  onViewSentMessage={onViewSentMessage}
-                  onViewDetails={onViewDetails}
-                />
+                <DeliveryRowMenu row={row} onViewSentMessage={onViewSentMessage} onViewDetails={onViewDetails} />
               </td>
             </tr>
           ))}
@@ -386,8 +319,6 @@ export function DeliveryLogTab({
 
   const totalPages = Math.max(1, Math.ceil(deliveryTotal / pageSize));
   const safePage = Math.min(page, totalPages);
-  const from = deliveryTotal === 0 ? 0 : (safePage - 1) * pageSize + 1;
-  const to = Math.min(safePage * pageSize, deliveryTotal);
   const isUnfilteredEmpty =
     searchInput.trim() === "" && status === "all" && purpose === "all" && templateId === "all";
 
@@ -429,54 +360,22 @@ export function DeliveryLogTab({
         onViewSentMessage={setSentMessageRow}
         onViewDetails={setDetailsRow}
       />
-      <div className="communication-foot">
-        <span>
-          {deliveryTotal === 0 ? "0 messages" : `Showing ${from}–${to} of ${deliveryTotal}`}
-        </span>
-        <div className="communication-foot__controls">
-          <label className="communication-pagesize">
-            <span>Rows per page</span>
-            <select
-              id="communication-log-pagesize"
-              className="at-select"
-              value={pageSize}
-              onChange={(e) => {
-                onPageSizeChange(Number(e.target.value));
-                onPageChange(1);
-              }}
-            >
-              {DELIVERY_PAGE_SIZE_OPTIONS.map((size) => (
-                <option key={size} value={size}>
-                  {size}
-                </option>
-              ))}
-            </select>
-          </label>
-          {deliveryTotal > pageSize && (
-            <div className="communication-pager">
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={safePage <= 1}
-                onClick={() => onPageChange(Math.max(1, safePage - 1))}
-              >
-                Previous
-              </Button>
-              <span>
-                Page {safePage} of {totalPages}
-              </span>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={safePage >= totalPages}
-                onClick={() => onPageChange(safePage + 1)}
-              >
-                Next
-              </Button>
-            </div>
-          )}
-        </div>
-      </div>
+      {deliveryTotal > 0 && (
+        <PaginationFooter
+          idPrefix="communication-log"
+          page={safePage}
+          pageSize={pageSize}
+          totalPages={totalPages}
+          totalRows={deliveryTotal}
+          pageSizeOptions={DELIVERY_PAGE_SIZE_OPTIONS}
+          onPageSizeChange={(size) => {
+            onPageSizeChange(size);
+            onPageChange(1);
+          }}
+          onPrevious={() => onPageChange(Math.max(1, safePage - 1))}
+          onNext={() => onPageChange(safePage + 1)}
+        />
+      )}
       {sentMessageRow && (
         <SentMessagePreviewModal
           eventId={eventId}

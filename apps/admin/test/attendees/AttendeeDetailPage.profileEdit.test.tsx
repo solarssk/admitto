@@ -637,12 +637,14 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     expect(within(itemsList).getByText("Not yet")).toBeTruthy();
   });
 
-  it("lists mail delivery history when deliveries exist", async () => {
+  it("lists mail delivery history when deliveries exist, with a working row menu", async () => {
     mockLoad(
       baseDetail({
         deliveries: [
           {
             id: "del-1",
+            attendee_id: "att-1",
+            attendee_name: "Anna",
             purpose: "initial",
             status: "sent",
             recipient_email: "anna@example.com",
@@ -662,6 +664,14 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     expect(screen.getByText("Delivery history")).toBeTruthy();
     expect(screen.getByText("Your ticket")).toBeTruthy();
     expect(screen.queryByText("No delivery attempts yet")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Anna's message" }));
+    const menu = screen.getByRole("menu");
+    const items = within(menu).getAllByRole("menuitem");
+    expect(items.map((item) => item.textContent?.trim())).toEqual([
+      "View sent message",
+      "View delivery details",
+    ]);
   });
 
   it("shows an icon+text empty-state placeholder in Mail delivery history when nothing was ever sent", async () => {

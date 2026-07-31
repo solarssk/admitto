@@ -101,24 +101,8 @@
   color: var(--status-error-fg);
 }
 
-/* "View sent message" preview - QR/ticket-link privacy notice + sandboxed iframe. */
-.delivery-modal-notice {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  border-radius: var(--radius-md);
-  background: var(--status-info-tint);
-  color: var(--status-info-fg);
-  font-size: var(--fs-sm);
-}
-
-.delivery-modal-notice i {
-  flex: none;
-  margin-top: 2px;
-  color: var(--status-info-fg);
-}
-
+/* "View sent message" preview - sandboxed iframe (the privacy notice above it is a shared
+ * <Notice variant="highlight">, see Notice.tsx). */
 .delivery-modal-preview-subject {
   font-size: var(--fs-sm);
 }
@@ -134,6 +118,29 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: #fff;
+}
+
+/* Loading-state placeholder sized to match .delivery-modal-preview-frame above, so the
+ * loaded/loading layouts are close enough in height that the swap doesn't visibly "jump". */
+.delivery-modal-skeleton-frame {
+  border-radius: var(--radius-md);
+}
+
+/* Vertical stack for a modal's Skeleton loading state (SentMessagePreviewModal and
+ * DeliveryDetailsModal both use this) - a plain flex column with the same rhythm as the
+ * loaded content it stands in for. */
+.delivery-modal-skeleton-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* One "section title + content" pair within .delivery-modal-skeleton-group (DeliveryDetailsModal
+ * has three: Overview, Delivery timeline, Raw fields). */
+.delivery-modal-skeleton-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
 /* Delivery details - key/value grid, timeline list, raw-fields grid. */

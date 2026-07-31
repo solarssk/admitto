@@ -332,7 +332,7 @@ describe("CommunicationPage delivery log - filters, search, pagination", () => {
 });
 
 describe("CommunicationPage delivery log - row menu", () => {
-  it("opens with three actions, and Open attendee links to the attendee page", async () => {
+  it("opens with two diagnostic actions (no attendee link - the recipient name links there instead)", async () => {
     fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 1 });
 
     renderPage();
@@ -345,11 +345,16 @@ describe("CommunicationPage delivery log - row menu", () => {
     expect(items.map((item) => item.textContent?.trim())).toEqual([
       "View sent message",
       "View delivery details",
-      "Open attendee",
     ]);
-    expect(
-      within(menu).getByRole("menuitem", { name: "Open attendee" }).getAttribute("href"),
-    ).toBe("/admin/events/evt-1/attendees/att-1");
+  });
+
+  it("links the recipient name to their attendee profile", async () => {
+    fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 1 });
+
+    renderPage();
+    await goToDeliveryLogTab();
+    const nameLink = await screen.findByRole("link", { name: /Guest One/ });
+    expect(nameLink.getAttribute("href")).toBe("/admin/events/evt-1/attendees/att-1");
   });
 });
 

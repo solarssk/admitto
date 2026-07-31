@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, IconButton, ModalBackdrop } from "@admitto/ui";
+import { Button, IconButton, ModalBackdrop, Notice, Skeleton } from "@admitto/ui";
 import { fetchRenderedDelivery } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { DeliveryDto, RenderedDeliveryDto } from "../api/types.js";
@@ -57,14 +57,17 @@ export function SentMessagePreviewModal({ eventId, row, onClose }: Readonly<Sent
           <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" aria-hidden="true" />} />
         </div>
         <div className="delivery-modal__body">
-          <div className="delivery-modal-notice">
-            <i className="ti ti-qrcode-off" aria-hidden="true" />
-            <span>
-              The QR code and ticket link are hidden here for privacy. The recipient&apos;s actual
-              copy includes the real ones.
-            </span>
-          </div>
-          {loading && <div className="delivery-modal__loading">Loading message…</div>}
+          <Notice variant="highlight" icon="qrcode-off">
+            The QR code and ticket link are hidden here for privacy. The recipient&apos;s actual
+            copy includes the real ones.
+          </Notice>
+          {loading && (
+            <div className="delivery-modal-skeleton-group" aria-live="polite" aria-busy="true">
+              <span className="sr-only">Loading message…</span>
+              <Skeleton variant="text" lines={2} width="50%" />
+              <Skeleton variant="rect" height={320} className="delivery-modal-skeleton-frame" />
+            </div>
+          )}
           {!loading && error && <div className="delivery-modal__error">{error}</div>}
           {!loading && !error && !rendered?.html && (
             <div className="delivery-modal__loading">

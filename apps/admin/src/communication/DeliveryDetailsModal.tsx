@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
-import { Button, IconButton, ModalBackdrop, StatusBadge } from "@admitto/ui";
+import { Button, IconButton, ModalBackdrop, Skeleton, StatusBadge } from "@admitto/ui";
 import { fetchEventDelivery } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { DeliveryDetailDto, DeliveryDto } from "../api/types.js";
@@ -127,7 +127,25 @@ export function DeliveryDetailsModal({
           <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" aria-hidden="true" />} />
         </div>
         <div className="delivery-modal__body">
-          {loading && <div className="delivery-modal__loading">Loading delivery details…</div>}
+          {loading && (
+            // Roughly mirrors the loaded Overview/Timeline/Raw fields sections below, so the
+            // swap from loading to loaded doesn't visibly jump in height.
+            <div className="delivery-modal-skeleton-group" aria-live="polite" aria-busy="true">
+              <span className="sr-only">Loading delivery details…</span>
+              <div className="delivery-modal-skeleton-section">
+                <Skeleton variant="text" width="30%" />
+                <Skeleton variant="rect" height={220} />
+              </div>
+              <div className="delivery-modal-skeleton-section">
+                <Skeleton variant="text" width="30%" />
+                <Skeleton variant="rect" height={120} />
+              </div>
+              <div className="delivery-modal-skeleton-section">
+                <Skeleton variant="text" width="30%" />
+                <Skeleton variant="rect" height={140} />
+              </div>
+            </div>
+          )}
           {!loading && error && <div className="delivery-modal__error">{error}</div>}
           {!loading && !error && detail && (
             <>
