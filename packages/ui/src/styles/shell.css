@@ -731,9 +731,11 @@ html:has(.shell), body:has(.shell) {
      visibly jumped position between collapsed/expanded instead of staying put. Keep the row
      (same height, same position — enforced by .sidebar__build's own min-height above, since
      this 22px icon was otherwise its tallest child) and just drop the bug-report link below —
-     .sidebar__build-ver alone easily fits the rail's width, unlike .sidebar__event's full
-     address block. */
-  .shell:not(.shell--nav-open) .sidebar__build-report {
+     the bare version text alone easily fits the rail's width, unlike .sidebar__event's full
+     address block. The commit SHA appended after it (.sidebar__build-commit) does not fit
+     that same width and wraps awkwardly, so it drops here too (PO review) — expanded only. */
+  .shell:not(.shell--nav-open) .sidebar__build-report,
+  .shell:not(.shell--nav-open) .sidebar__build-commit {
     display: none;
   }
 

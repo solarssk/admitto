@@ -33,7 +33,7 @@ export function InstanceSidebarFoot() {
       )}
       <div className="sidebar__build">
         <span className="sidebar__build-ver">
-          v{__APP_VERSION__} · {__APP_COMMIT__}
+          v{__APP_VERSION__} <span className="sidebar__build-commit">· {__APP_COMMIT__}</span>
         </span>
         <a
           href="https://github.com/solarssk/admitto/issues/new"
