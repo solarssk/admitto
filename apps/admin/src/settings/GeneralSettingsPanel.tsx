@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Badge, Button, Card, HintLabel, Input, Notice, useToast, type ToastVariant } from "@admitto/ui";
+import { Button, Card, HintLabel, Input, Notice, useToast, type ToastVariant } from "@admitto/ui";
 import {
   fetchSecuritySettings,
   fetchSupportContact,
@@ -28,15 +28,6 @@ const SUPPORT_CONTACT_HINT =
 
 function fieldLocked(source: SettingSource): boolean {
   return source === "env";
-}
-
-function EnvBadge({ source }: Readonly<{ source: SettingSource }>) {
-  if (!fieldLocked(source)) return null;
-  return (
-    <Badge variant="neutral" className="mail-field-env-badge">
-      Managed by environment
-    </Badge>
-  );
 }
 
 function isValidInstanceUrl(value: string): boolean {
@@ -258,15 +249,7 @@ export function GeneralSettingsPanel() {
               placeholder="https://tickets.example.com"
               onChange={(e) => setInstanceUrlDraft(e.target.value)}
             />
-            <EnvBadge source={settings.instance_url.source} />
           </div>
-
-          {hasConfiguredUrl && (
-            <Notice variant="success" as="output">
-              Instance URL is configured
-              {settings.instance_url.source === "env" ? " via environment" : ""}.
-            </Notice>
-          )}
 
           {showUrlWarning && (
             <Notice variant="warning" role="alert">
