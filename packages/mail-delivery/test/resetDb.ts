@@ -14,7 +14,7 @@ const DB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.
  */
 export async function resetDb(): Promise<void> {
   assertTestDatabaseUrl(process.env.DATABASE_URL ?? "");
-  await execAsync("npx prisma migrate reset --force --skip-seed", {
+  await execAsync("npx prisma migrate reset --force", {
     cwd: DB_ROOT,
     env: process.env,
   });
