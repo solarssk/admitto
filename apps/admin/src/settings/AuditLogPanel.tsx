@@ -317,12 +317,13 @@ function buildRowSummary(entry: AuditLogEntryDto, eventTitleById: Map<string, st
   const localTimeSuffix = localTime ? ` (${localTime})` : "";
   const actorEmailSuffix = entry.actor_display_name && entry.actor_email ? ` (${entry.actor_email})` : "";
   const locationText = entry.ip ? geoLocationText(entry.country) : "";
+  const locationSuffix = locationText ? ` (${locationText})` : "";
   const lines = [
     `Time: ${formatAuditPrimaryTime(entry.created_at)} UTC${localTimeSuffix}`,
     `Action: ${actionLabel(entry.action_type)}`,
     `Scope: ${scopeLabel(entry, eventTitleById)}`,
     `User: ${actorDisplay(entry)}${actorEmailSuffix}`,
-    `IP address: ${entry.ip ?? "-"}${locationText ? ` (${locationText})` : ""}`,
+    `IP address: ${entry.ip ?? "-"}${locationSuffix}`,
   ];
   if (hasVisibleMetadata(entry.metadata)) {
     lines.push("Details:");
@@ -768,11 +769,12 @@ function securityUserEmail(entry: SecurityAuditLogEntryDto): string | undefined 
 function buildSecurityRowSummary(entry: SecurityAuditLogEntryDto): string {
   const userEmailSuffix = securityUserEmail(entry) ? ` (${securityUserEmail(entry)})` : "";
   const locationText = entry.ip ? geoLocationText(entry.country) : "";
+  const locationSuffix = locationText ? ` (${locationText})` : "";
   const lines = [
     `Time: ${formatAuditPrimaryTime(entry.created_at)} UTC (${viewerLocalTime(entry.created_at)})`,
     `Event: ${securityEventLabel(entry.event_type)}`,
     `User: ${securityUserDisplay(entry)}${userEmailSuffix}`,
-    `IP address: ${entry.ip ?? "-"}${locationText ? ` (${locationText})` : ""}`,
+    `IP address: ${entry.ip ?? "-"}${locationSuffix}`,
   ];
   if (hasVisibleMetadata(entry.metadata)) {
     lines.push("Details:");

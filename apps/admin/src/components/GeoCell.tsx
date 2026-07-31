@@ -2,7 +2,7 @@ import type { IpLocationDto } from "../api/types.js";
 import { getPreferredLocale } from "../utils/locale-store.js";
 
 function flagEmoji(countryCode: string): string {
-  return String.fromCodePoint(...[...countryCode.toUpperCase()].map((c) => 127397 + c.charCodeAt(0)));
+  return String.fromCodePoint(...[...countryCode.toUpperCase()].map((c) => 127397 + (c.codePointAt(0) ?? 0)));
 }
 
 function countryDisplayName(countryCode: string): string {

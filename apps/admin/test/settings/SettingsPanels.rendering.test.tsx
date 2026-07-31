@@ -405,7 +405,11 @@ describe("AuditLogPanel rendering", () => {
   it("copies a plain-text row summary (with local time and Details) to the clipboard and toasts on success", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue({
       entries: [
-        makeAuditEntry({ actor_timezone: "Europe/Warsaw", metadata: { event_id: "evt-1", note: "hello" } }),
+        makeAuditEntry({
+          actor_timezone: "Europe/Warsaw",
+          metadata: { event_id: "evt-1", note: "hello" },
+          country: { kind: "resolved", countryCode: "US" },
+        }),
       ],
       total: 1,
       page: 1,
@@ -418,6 +422,7 @@ describe("AuditLogPanel rendering", () => {
     try {
       renderAuditPanel();
       const table = await screen.findByRole("table");
+      expect(within(table).getByText("United States")).toBeTruthy();
       fireEvent.click(within(table).getByRole("button", { name: "Copy row" }));
 
       expect(writeText).toHaveBeenCalledTimes(1);
@@ -425,6 +430,7 @@ describe("AuditLogPanel rendering", () => {
       expect(summary).toContain("Action: Event created");
       expect(summary).toContain("User: Alice Admin (alice@example.com)");
       expect(summary).toMatch(/Time: 2026-01-01 12:00:00 UTC \(13:00 \(Europe\/Warsaw, UTC\+1\)\)/);
+      expect(summary).toContain("IP address: 192.0.2.10 (United States)");
       expect(summary).toContain("Details:");
       expect(summary).toContain("Note: hello");
       expect(await screen.findByText("Row copied to clipboard")).toBeTruthy();
@@ -1352,7 +1358,12 @@ describe("AuditLogPanel Security view rendering", () => {
       .spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions")
       .mockReturnValue({ timeZone: "Europe/Warsaw" } as Intl.ResolvedDateTimeFormatOptions);
     vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
-      entries: [makeSecurityEntry({ metadata: { email: "alice@example.com", userAgent: "curl/8.0" } })],
+      entries: [
+        makeSecurityEntry({
+          metadata: { email: "alice@example.com", userAgent: "curl/8.0" },
+          country: { kind: "internal" },
+        }),
+      ],
       total: 1,
       page: 1,
       pageSize: 25,
@@ -1364,6 +1375,7 @@ describe("AuditLogPanel Security view rendering", () => {
     try {
       renderSecurityPanel();
       const table = await screen.findByRole("table");
+      expect(within(table).getByText("Internal network")).toBeTruthy();
       fireEvent.click(within(table).getByRole("button", { name: "Copy row" }));
 
       expect(writeText).toHaveBeenCalledTimes(1);
@@ -1371,6 +1383,7 @@ describe("AuditLogPanel Security view rendering", () => {
       expect(summary).toMatch(/Time: 2026-01-01 12:00:00 UTC \(13:00 \(Europe\/Warsaw, UTC\+1\)\)/);
       expect(summary).toContain("Event: Login succeeded");
       expect(summary).toContain("User: Alice Admin");
+      expect(summary).toContain("IP address: 192.0.2.10 (Internal network)");
       expect(summary).toContain("Details:");
       expect(summary).toContain("User agent: curl/8.0");
       expect(await screen.findByText("Row copied to clipboard")).toBeTruthy();

@@ -910,6 +910,22 @@ describe("AccountPage toasts", () => {
     expect(screen.getByText("curl/8.7.1")).toBeTruthy();
   });
 
+  it("shows the resolved country under the IP address for a session with one", async () => {
+    mockLoadedAccount();
+    mockFetchSessions.mockResolvedValue({
+      sessions: [
+        makeAccountSession({ ip: "192.0.2.10", country: { kind: "resolved", countryCode: "FR" } }),
+      ],
+    });
+
+    renderWithToast(<AccountPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("192.0.2.10")).toBeTruthy();
+    });
+    expect(screen.getByText("France")).toBeTruthy();
+  });
+
   it("shows OIDC-only MFA guidance when local password is unavailable", async () => {
     mockFetchAccount.mockResolvedValue({ ...baseAccount, has_local_password: false, roles: [] });
     mockFetchSessions.mockResolvedValue({ sessions: [] });
