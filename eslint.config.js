@@ -21,6 +21,29 @@ export default [
     },
   },
   {
+    // packages/ui is a React component library — same shape as apps/*/src below.
+    files: ["packages/*/src/**/*.tsx"],
+    plugins: {
+      security,
+      "react-hooks": reactHooks,
+    },
+    languageOptions: {
+      parser: tsParser,
+      ecmaVersion: 2022,
+      sourceType: "module",
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+      },
+    },
+    rules: {
+      ...security.configs.recommended.rules,
+      // Typed records, React state, and route params — false positives (same as apps/*).
+      "security/detect-object-injection": "off",
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
+    },
+  },
+  {
     files: ["apps/*/src/**/*.{ts,tsx}"],
     plugins: {
       security,
