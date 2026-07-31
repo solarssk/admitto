@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import {
+  countAttendeesByEvent,
   isValidCalendarDate,
   resolveActorEmailForLog,
   resolveClientTimezone,
@@ -66,5 +67,27 @@ describe("resolveActorEmailForLog", () => {
   it("returns null instead of throwing when the DB lookup itself fails", async () => {
     const db = { user: { findUnique: vi.fn().mockRejectedValue(new Error("connection lost")) } } as unknown as PrismaClient;
     await expect(resolveActorEmailForLog(db, "user-1")).resolves.toBeNull();
+  });
+});
+
+describe("countAttendeesByEvent", () => {
+  function dbReturning(rows: Array<{ event_id: string; _count: { _all: number } }>) {
+    return { attendee: { groupBy: vi.fn().mockResolvedValue(rows) } } as unknown as PrismaClient;
+  }
+
+  it("maps each event id to its grouped attendee count", async () => {
+    const db = dbReturning([
+      { event_id: "evt-1", _count: { _all: 3 } },
+      { event_id: "evt-2", _count: { _all: 0 } },
+    ]);
+    const result = await countAttendeesByEvent(db, ["evt-1", "evt-2"]);
+    expect(result.get("evt-1")).toBe(3);
+    expect(result.get("evt-2")).toBe(0);
+  });
+
+  it("has no entry for an event id groupBy didn't return a row for", async () => {
+    const db = dbReturning([]);
+    const result = await countAttendeesByEvent(db, ["evt-empty"]);
+    expect(result.has("evt-empty")).toBe(false);
   });
 });
