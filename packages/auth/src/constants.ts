@@ -33,6 +33,14 @@ export const SESSION_LAST_SEEN_THROTTLE_MS = 60_000;
 /** Minimum length for any user-chosen password (forced-change, setup, account). */
 export const PASSWORD_MIN_LENGTH = 12;
 
+/**
+ * Consecutive failed login attempts against a single admin/superadmin account that trigger the
+ * `auth.login.repeated_failures` audit alert (P0 security review). Deliberately a fixed internal
+ * constant, not a SystemSettings value — this is a security backstop, not a per-instance tuning
+ * knob, matching the existing login/MFA rate-limit thresholds.
+ */
+export const PRIVILEGED_LOGIN_FAILURE_ALERT_THRESHOLD = 5;
+
 /** Session stages — only `full` grants protected routes. */
 export const SESSION_STAGE = {
   FULL: "full",

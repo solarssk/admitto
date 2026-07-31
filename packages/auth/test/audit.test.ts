@@ -14,6 +14,8 @@ import {
   logOidcLoginSuccess,
   logOidcSuperadminRevokeBlocked,
   logRateLimitExceeded,
+  logRepeatedFailedLogins,
+  logTrustedDeviceCreated,
   redactEmail,
 } from "../src/audit.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
@@ -397,6 +399,72 @@ describe("audit", () => {
       expect(create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ user_id: null, ip: null }) }),
       );
+    });
+  });
+
+  describe("logTrustedDeviceCreated", () => {
+    it("fingerprints user and session ids in the stdout emit", async () => {
+      const spy = vi.spyOn(console, "info").mockImplementation(() => {});
+      const userId = "550e8400-e29b-41d4-a716-446655440000";
+      await logTrustedDeviceCreated(fakeDb(), { userId, sessionId: "sess-1", ip: "1.2.3.4" });
+      const payload = JSON.parse(String(spy.mock.calls[0]?.[0]));
+      expect(payload.event).toBe("auth.trusted_device.created");
+      expect(payload.user_fingerprint).toBe(fingerprint(userId));
+      expect(JSON.stringify(payload)).not.toContain(userId);
+    });
+
+    it("persists the raw user id and session id in metadata", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const create = vi.fn().mockResolvedValue({});
+      await logTrustedDeviceCreated(fakeDb(create), { userId: "user-1", sessionId: "sess-1", ip: "1.2.3.4" });
+      expect(create).toHaveBeenCalledWith({
+        data: {
+          event_type: "auth.trusted_device.created",
+          user_id: "user-1",
+          ip: "1.2.3.4",
+          metadata: { sessionId: "sess-1", userAgent: null },
+        },
+      });
+    });
+
+    it("records into the System logs buffer at info level (routine MFA outcome, not a warning)", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      await logTrustedDeviceCreated(fakeDb(), { userId: "user-1" });
+      const entries = querySystemLogs({ source: "security" });
+      expect(entries[0]?.level).toBe("info");
+    });
+  });
+
+  describe("logRepeatedFailedLogins", () => {
+    it("persists the raw user id and streak in metadata (deliberate exception to enumeration-safety)", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const create = vi.fn().mockResolvedValue({});
+      await logRepeatedFailedLogins(fakeDb(create), {
+        userId: "user-1",
+        email: "admin@example.com",
+        ip: "1.2.3.4",
+        streak: 5,
+      });
+      expect(create).toHaveBeenCalledWith({
+        data: {
+          event_type: "auth.login.repeated_failures",
+          user_id: "user-1",
+          ip: "1.2.3.4",
+          metadata: { email: "admin@example.com", streak: 5 },
+        },
+      });
+    });
+
+    it("records into the System logs buffer at warn level", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      await logRepeatedFailedLogins(fakeDb(), {
+        userId: "user-1",
+        email: "admin@example.com",
+        streak: 5,
+      });
+      const entries = querySystemLogs({ source: "security" });
+      expect(entries[0]?.level).toBe("warn");
+      expect(entries[0]?.message).toBe("auth.login.repeated_failures");
     });
   });
 });
