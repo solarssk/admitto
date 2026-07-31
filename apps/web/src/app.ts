@@ -6,6 +6,7 @@ import { bodyLimit } from "hono/body-limit";
 import { Prisma, prisma as defaultPrisma, type PrismaClient, type AttendeeStatus } from "@admitto/db";
 import { recordTicketViewed } from "@admitto/mail-delivery";
 import type { MailDeliveryDeps } from "@admitto/mail-delivery";
+import type { GeocodingProvider } from "@admitto/location";
 import { getBrandingTheme, SESSION_STAGE, sweepExpiredOidcAuthStates } from "@admitto/auth";
 import {
   resolveTicket,
@@ -214,6 +215,12 @@ import {
   handlePostEventMailSettingsTest,
 } from "./admin/event-mail-settings-routes.js";
 import { handleGetEventLocation, handlePutEventLocation } from "./admin/event-location-routes.js";
+import { handlePostGeocodingSearch } from "./admin/geocoding-routes.js";
+import { resolveGeocodingConfig } from "./maps/config.js";
+import { buildGeocodingUserAgent } from "./maps/user-agent.js";
+import { NominatimProvider } from "./maps/nominatim-provider.js";
+import { createGeocodingCache } from "./maps/geocoding-cache.js";
+import { GeocodingService } from "./maps/geocoding-service.js";
 import { handleGetSetupChecks } from "./admin/setup-checks-routes.js";
 import { handlePostSetupComplete } from "./admin/setup-complete-routes.js";
 import {
@@ -305,6 +312,8 @@ export interface CreateAppOptions {
   rateLimitStore?: RateLimitStore;
   adminDistRoot?: string;
   mailDeliveryDeps?: MailDeliveryDeps;
+  /** Test-only injection point — bypasses the real Nominatim HTTP adapter. */
+  geocodingProvider?: GeocodingProvider;
   opsHealthToken?: string | null;
   /** JSON access log per request (defaults to `LOG_HTTP_REQUESTS` env). */
   logHttpRequests?: boolean;
@@ -364,6 +373,15 @@ export function createApp(options: CreateAppOptions = {}) {
   };
   const checkinAuthDeps = { prisma: db, config: checkinGateConfig };
   const mailDeliveryDeps = options.mailDeliveryDeps ?? {};
+  const geocodingConfig = resolveGeocodingConfig();
+  const geocodingProvider: GeocodingProvider =
+    options.geocodingProvider ??
+    new NominatimProvider({
+      baseUrl: geocodingConfig.baseUrl,
+      timeoutMs: geocodingConfig.timeoutMs,
+      buildUserAgent: () => buildGeocodingUserAgent(db),
+    });
+  const geocodingService = new GeocodingService(geocodingProvider, createGeocodingCache());
 
   const app = new Hono();
   // Catch route errors once with enough request context in System logs. Keep raw exception
@@ -428,6 +446,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminEventMailSettingsRateLimit = rateLimit(rateLimitStore, "admin:event-mail-transport-test");
   const adminImportPreviewRateLimit = rateLimit(rateLimitStore, "admin:import-preview");
   const adminAttendeesSearchRateLimit = rateLimit(rateLimitStore, "admin:attendees-search");
+  const adminGeocodingSearchRateLimit = rateLimit(rateLimitStore, "admin:geocoding-search");
   const adminImportCommitRateLimit = rateLimit(rateLimitStore, "admin:import-commit");
   const adminTemplatePreviewRateLimit = rateLimit(rateLimitStore, "admin:template-preview");
   const adminAuthProviderOpsRateLimit = rateLimit(rateLimitStore, "admin:oidc-provider-ops");
@@ -634,6 +653,13 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     guardArchivedEvent((c) => handlePutEventLocation(c, db)),
+  );
+  app.post(
+    "/api/admin/geocoding/search",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminGeocodingSearchRateLimit,
+    (c) => handlePostGeocodingSearch(c, db, geocodingService),
   );
   app.post(
     "/api/admin/events/:eventId/branding-upload",

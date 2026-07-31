@@ -265,6 +265,27 @@ export const RATE_POLICIES = {
       },
     ],
   },
+  /** Nominatim's Usage Policy caps at 1 request/second for the whole deployment, not per
+   * user — hence a single shared global key, plus a lighter per-user check so one admin
+   * mashing "Find on map" can't eat the entire global budget alone. */
+  "admin:geocoding-search": {
+    checks: [
+      {
+        keyOf: () => "admin:geocoding-search:global",
+        windowMs: 1_000,
+        max: 1,
+        onExceeded: (c) => c.json({ error: "geocoding_rate_limited" }, 429),
+        logOnExceeded: { scope: "admin_geocoding_search", keyHint: "global" },
+      },
+      {
+        keyOf: (c) => `admin:geocoding-search:user:${c.get("auth").userId}`,
+        windowMs: 60_000,
+        max: 20,
+        onExceeded: (c) => c.json({ error: "geocoding_rate_limited" }, 429),
+        logOnExceeded: { scope: "admin_geocoding_search", keyHint: "user" },
+      },
+    ],
+  },
   "admin:resend": {
     beforeCheck: (c) => {
       if (!c.req.param("id")) return c.json({ error: "id required" }, 400);
