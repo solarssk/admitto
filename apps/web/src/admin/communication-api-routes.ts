@@ -1,7 +1,5 @@
 import type { Context } from "hono";
-import { Prisma } from "@admitto/db";
-import type { PrismaClient } from "@admitto/db";
-import type { EmailDeliveryStatus, EmailDeliveryPurpose } from "@admitto/db";
+import { Prisma, type PrismaClient, type EmailDeliveryStatus, type EmailDeliveryPurpose } from "@admitto/db";
 import { EMAIL_DELIVERY_STATUS, EMAIL_DELIVERY_PURPOSE } from "@admitto/db/status";
 import { z } from "zod";
 import {
