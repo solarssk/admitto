@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useNavigate } from "react-router";
-import { Card, HintLabel, Input, Button, Tooltip, useToast } from "@admitto/ui";
+import { Card, HintLabel, Button, useToast } from "@admitto/ui";
 import {
   clearEventMailSettings,
   fetchEventMailSettings,
@@ -26,14 +26,12 @@ import { buildMailProviderOptions, MAIL_PROVIDER_LABELS } from "./mailProviderOp
 import {
   draftFromFields,
   GraphCard,
-  NO_AUTOFILL_PROPS,
   PowerAutomateCard,
   runTestSend,
   SenderCard,
-  SEND_TEST_EMAIL_HINT,
+  SendTestEmailCard,
   SettingsFooter,
   SmtpConnectionCard,
-  TestResultPreview,
   TransportTileGrid,
   useMailSettingsFormState,
   type FieldLocked,
@@ -499,38 +497,16 @@ export const EventMailSettingsCard = forwardRef<
         </>
       )}
 
-      <Card title={<HintLabel hint={SEND_TEST_EMAIL_HINT}>Send test email</HintLabel>}>
-        <p className="mail-test-send__hint">{testSendHint}</p>
-        <div className="mail-test-send__row">
-          <Input
-            label="Recipient"
-            type="text"
-            inputMode="email"
-            value={testEmail}
-            onChange={(e) => setTestEmail(e.target.value)}
-            placeholder="you@example.com"
-            disabled={!!testSendReason}
-            {...NO_AUTOFILL_PROPS}
-          />
-          <Tooltip content={testSendReason}>
-            {testSendReason && (
-              <span id="event-mail-test-send-reason" className="sr-only">
-                {testSendReason}
-              </span>
-            )}
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={testSending || !!testSendReason}
-              aria-describedby={testSendReason ? "event-mail-test-send-reason" : undefined}
-              onClick={() => void handleTestSend()}
-            >
-              {testSending ? "Sending…" : "Send test"}
-            </Button>
-          </Tooltip>
-        </div>
-        {testResult && <TestResultPreview testResult={testResult} />}
-      </Card>
+      <SendTestEmailCard
+        idPrefix="event-mail-test-send"
+        testEmail={testEmail}
+        onTestEmailChange={setTestEmail}
+        testSendHint={testSendHint}
+        testSendReason={testSendReason}
+        testSending={testSending}
+        onTestSend={() => void handleTestSend()}
+        testResult={testResult}
+      />
 
       {isArchived ? (
         <p className="field-hint event-settings-archived-note">

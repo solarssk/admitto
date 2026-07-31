@@ -779,6 +779,65 @@ export function TestResultPreview({ testResult }: Readonly<{ testResult: TestRes
   );
 }
 
+/** Shared by MailTransportPanel (organization-wide) and EventMailSettingsCard (per-event) -
+ * identical in both scopes except the disabled-reason element's id, which needs to be unique
+ * when (in principle) both could render on the same page. */
+export function SendTestEmailCard({
+  idPrefix,
+  testEmail,
+  onTestEmailChange,
+  testSendHint,
+  testSendReason,
+  testSending,
+  onTestSend,
+  testResult,
+}: Readonly<{
+  idPrefix: string;
+  testEmail: string;
+  onTestEmailChange: (value: string) => void;
+  testSendHint: string;
+  testSendReason: string | undefined;
+  testSending: boolean;
+  onTestSend: () => void;
+  testResult: TestResult | null;
+}>) {
+  const reasonId = `${idPrefix}-reason`;
+  return (
+    <Card title={<HintLabel hint={SEND_TEST_EMAIL_HINT}>Send test email</HintLabel>}>
+      <p className="mail-test-send__hint">{testSendHint}</p>
+      <div className="mail-test-send__row">
+        <Input
+          label="Recipient"
+          type="text"
+          inputMode="email"
+          value={testEmail}
+          onChange={(e) => onTestEmailChange(e.target.value)}
+          placeholder="you@example.com"
+          disabled={!!testSendReason}
+          {...NO_AUTOFILL_PROPS}
+        />
+        <Tooltip content={testSendReason}>
+          {testSendReason && (
+            <span id={reasonId} className="sr-only">
+              {testSendReason}
+            </span>
+          )}
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={testSending || !!testSendReason}
+            aria-describedby={testSendReason ? reasonId : undefined}
+            onClick={onTestSend}
+          >
+            {testSending ? "Sending…" : "Send test"}
+          </Button>
+        </Tooltip>
+      </div>
+      {testResult && <TestResultPreview testResult={testResult} />}
+    </Card>
+  );
+}
+
 export function MailTransportCard({
   title = "Mail transport",
   description = "Instance-wide outbound transport for tickets and lifecycle mail.",
