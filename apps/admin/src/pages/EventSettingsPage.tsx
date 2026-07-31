@@ -50,7 +50,6 @@ type SettingsForm = {
   title: string;
   date: string;
   timezone: string;
-  location: string;
   capacity: string;
   logoUrl: string;
 };
@@ -59,7 +58,6 @@ type SettingsPatch = Partial<{
   title: string;
   date: string;
   timezone: string;
-  location: string | null;
   capacity: number | null;
   logo_url: string | null;
 }>;
@@ -89,7 +87,6 @@ function toForm(data: EventSettingsDto): SettingsForm {
     title: data.title,
     date: data.date.split("T")[0] ?? "",
     timezone: data.timezone,
-    location: data.location ?? "",
     capacity: data.capacity?.toString() ?? "",
     logoUrl: data.logo_url ?? "",
   };
@@ -112,9 +109,6 @@ function buildSettingsPatch(form: SettingsForm, original: SettingsForm): Setting
   if (title !== original.title.trim()) patch.title = title;
   if (form.date !== original.date) patch.date = form.date;
   if (form.timezone !== original.timezone) patch.timezone = form.timezone;
-  const location = form.location.trim() || null;
-  const originalLocation = original.location.trim() || null;
-  if (location !== originalLocation) patch.location = location;
   if (form.capacity.trim() !== original.capacity.trim()) {
     patch.capacity = parseCapacityInput(form.capacity);
   }
@@ -904,18 +898,6 @@ export function EventSettingsPage() {
                 disabled={isArchived || saving}
               />
               <p className="field-hint">All check-in times and reports use this timezone.</p>
-            </div>
-
-            <div className="settings-field-group">
-              <Input
-                label="Location"
-                value={form.location}
-                disabled={isArchived || saving}
-                placeholder="Convention Center, Warsaw"
-                icon={<i className="ti ti-map-pin" aria-hidden="true" />}
-                onChange={(e) => setForm({ ...form, location: e.target.value })}
-              />
-              <p className="field-hint">Optional. Shown on tickets and calendar invites.</p>
             </div>
 
             <div className="settings-field-group slug-field">

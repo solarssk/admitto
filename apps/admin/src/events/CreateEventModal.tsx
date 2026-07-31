@@ -1,10 +1,12 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Button, ModalBackdrop, Notice } from "@admitto/ui";
+import { LOCATION_LIMITS } from "@admitto/location";
 import { ApiError, createEvent } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { EventDto } from "../api/types.js";
+import type { EventDto, GeocodingResultDto } from "../api/types.js";
 import { TimezoneSelect } from "../components/TimezoneSelect.js";
 import { DatePicker } from "../components/DatePicker.js";
+import { VenueAutocomplete } from "../components/VenueAutocomplete.js";
 import { slugFromTitle } from "./slug.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import "./create-event-modal.css";
@@ -28,7 +30,10 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
   const [slugTouched, setSlugTouched] = useState(false);
   const [date, setDate] = useState("");
   const [timezone, setTimezone] = useState(defaultBrowserTimezone);
-  const [location, setLocation] = useState("");
+  const [venueName, setVenueName] = useState("");
+  // Only set right after picking a geocoding suggestion; free-typed text carries just
+  // venue_name below, matching the Location tab's own venue_name vs. geocoded-fields split.
+  const [venueGeocode, setVenueGeocode] = useState<GeocodingResultDto | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,7 +49,8 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
     setSlugTouched(false);
     setDate("");
     setTimezone(defaultBrowserTimezone());
-    setLocation("");
+    setVenueName("");
+    setVenueGeocode(null);
     setError(null);
   };
 
@@ -68,7 +74,11 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
         slug: slug.trim(),
         date,
         timezone,
-        location: location.trim() || undefined,
+        venue_name: venueName.trim() || undefined,
+        formatted_address: venueGeocode?.formatted_address,
+        latitude: venueGeocode?.latitude,
+        longitude: venueGeocode?.longitude,
+        geocoding_provider: venueGeocode?.provider,
       });
       onCreated(event);
       resetForm();
@@ -160,17 +170,18 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
             />
           </div>
           <div className="create-event-modal__field">
-            <label htmlFor="ce-location">
-              Location <span className="form-optional">(optional)</span>
-            </label>
-            <input
+            <VenueAutocomplete
               id="ce-location"
-              className="create-event-modal__input"
-              type="text"
-              value={location}
-              maxLength={300}
+              label="Location (optional)"
+              value={venueName}
+              maxLength={LOCATION_LIMITS.VENUE_NAME_MAX_LENGTH}
               disabled={submitting}
-              onChange={(e) => setLocation(e.target.value)}
+              placeholder="e.g. Convention Center, Warsaw"
+              onChange={setVenueName}
+              onSelectResult={(result) => {
+                setVenueName(result.name ?? result.formatted_address);
+                setVenueGeocode(result);
+              }}
             />
           </div>
         </div>

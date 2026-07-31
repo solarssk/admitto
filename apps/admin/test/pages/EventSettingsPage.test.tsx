@@ -82,7 +82,6 @@ const activeEvent = {
   slug: "summit",
   date: "2026-06-01",
   timezone: "Europe/Warsaw",
-  location: "Hall A",
   capacity: 100,
   status: "active" as const,
   archived_at: null as string | null,

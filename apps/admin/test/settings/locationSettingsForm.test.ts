@@ -9,6 +9,7 @@ import {
 } from "../../src/settings/locationSettingsForm.js";
 
 const EMPTY_LOCATION: EventLocationDto = {
+  venue_name: null,
   formatted_address: null,
   latitude: null,
   longitude: null,
@@ -20,6 +21,7 @@ const EMPTY_LOCATION: EventLocationDto = {
 };
 
 const FULL_LOCATION: EventLocationDto = {
+  venue_name: "Springfield Hall",
   formatted_address: "1 Main St, Springfield",
   latitude: 51.5074,
   longitude: -0.1278,
@@ -33,6 +35,7 @@ const FULL_LOCATION: EventLocationDto = {
 describe("draftFromLocation", () => {
   it("converts null text fields to empty strings", () => {
     expect(draftFromLocation(EMPTY_LOCATION)).toEqual({
+      venue_name: "",
       formatted_address: "",
       latitude: null,
       longitude: null,
@@ -44,6 +47,7 @@ describe("draftFromLocation", () => {
 
   it("preserves populated fields", () => {
     const draft = draftFromLocation(FULL_LOCATION);
+    expect(draft.venue_name).toBe("Springfield Hall");
     expect(draft.formatted_address).toBe("1 Main St, Springfield");
     expect(draft.latitude).toBe(51.5074);
     expect(draft.longitude).toBe(-0.1278);
@@ -63,6 +67,11 @@ describe("isLocationDirty", () => {
   it("ignores leading/trailing whitespace-only differences in text fields", () => {
     const draft: LocationDraft = { ...saved, formatted_address: `  ${saved.formatted_address}  ` };
     expect(isLocationDirty(draft, saved)).toBe(false);
+  });
+
+  it("is true when the venue name changes", () => {
+    const draft: LocationDraft = { ...saved, venue_name: "A different hall" };
+    expect(isLocationDirty(draft, saved)).toBe(true);
   });
 
   it("is true when the address changes", () => {
@@ -111,6 +120,18 @@ describe("buildEventLocationPatchBody", () => {
     const draft: LocationDraft = { ...saved, formatted_address: "   " };
     expect(buildEventLocationPatchBody(draft, saved, null)).toEqual({
       formatted_address: null,
+    });
+  });
+
+  it("includes the venue name when changed and clears it to null when emptied", () => {
+    const draft: LocationDraft = { ...saved, venue_name: "New Hall" };
+    expect(buildEventLocationPatchBody(draft, saved, null)).toEqual({
+      venue_name: "New Hall",
+    });
+
+    const cleared: LocationDraft = { ...saved, venue_name: "   " };
+    expect(buildEventLocationPatchBody(cleared, saved, null)).toEqual({
+      venue_name: null,
     });
   });
 

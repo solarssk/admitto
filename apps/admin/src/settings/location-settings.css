@@ -21,47 +21,6 @@
   cursor: not-allowed;
 }
 
-.location-search-row {
-  display: flex;
-  align-items: end;
-  gap: var(--space-3);
-  margin-top: var(--space-4);
-}
-
-.location-search-row .at-field {
-  flex: 1 1 260px;
-  min-width: 0;
-}
-
-.location-search-results {
-  list-style: none;
-  margin: var(--space-2) 0 0;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-
-.location-search-results li + li {
-  border-top: 1px solid var(--border);
-}
-
-.location-search-results button {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: var(--space-2) var(--space-3);
-  border: 0;
-  background: var(--surface-card);
-  color: var(--text-primary);
-  font-size: var(--fs-sm);
-  cursor: pointer;
-}
-
-.location-search-results button:hover {
-  background: var(--surface-hover);
-}
-
 .location-map-info {
   display: flex;
   flex-direction: column;

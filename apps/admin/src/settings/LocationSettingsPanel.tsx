@@ -1,21 +1,17 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useNavigate } from "react-router";
-import { Card, Input, Button, Notice, useToast } from "@admitto/ui";
+import { Card, Button, Notice, useToast } from "@admitto/ui";
 import { LOCATION_LIMITS, buildAppleMapsUrl, buildGoogleMapsUrl, buildOsmUrl } from "@admitto/location";
-import {
-  fetchEventLocation,
-  fetchMapTileConfig,
-  saveEventLocation,
-  searchGeocoding,
-} from "../api/client.js";
+import { fetchEventLocation, fetchMapTileConfig, saveEventLocation } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventLocationDto, GeocodingResultDto, MapTileConfigDto } from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
+import { VenueAutocomplete } from "../components/VenueAutocomplete.js";
 import { whenShown, useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { formatUtcDateTime } from "../utils/event-dates.js";
 import { MapPicker } from "./MapPicker.js";
-import { NO_AUTOFILL_PROPS, SettingsFooter } from "./mailTransportFormParts.js";
+import { SettingsFooter } from "./mailTransportFormParts.js";
 import {
   buildEventLocationPatchBody,
   draftFromLocation,
@@ -26,6 +22,7 @@ import {
 import "./location-settings.css";
 
 const EMPTY_DRAFT: LocationDraft = {
+  venue_name: "",
   formatted_address: "",
   latitude: null,
   longitude: null,
@@ -69,10 +66,6 @@ export const LocationSettingsPanel = forwardRef<
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<GeocodingResultDto[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [searchHint, setSearchHint] = useState<string | null>(null);
   const [contactConfigured, setContactConfigured] = useState(true);
 
   const loadAbortRef = useRef<AbortController | null>(null);
@@ -87,8 +80,6 @@ export const LocationSettingsPanel = forwardRef<
     setDraft(nextDraft);
     setSavedDraft(nextDraft);
     pendingGeocodingProviderRef.current = null;
-    setSearchResults([]);
-    setSearchHint(null);
   }, []);
 
   const loadSettings = useCallback(async () => {
@@ -138,8 +129,6 @@ export const LocationSettingsPanel = forwardRef<
   const handleReset = () => {
     setDraft(savedDraft);
     pendingGeocodingProviderRef.current = null;
-    setSearchResults([]);
-    setSearchHint(null);
   };
 
   useImperativeHandle(ref, () => ({ save: handleSave, reset: handleReset }));
@@ -159,36 +148,24 @@ export const LocationSettingsPanel = forwardRef<
     setDraft((prev) => ({ ...prev, latitude, longitude }));
   }
 
-  const handleClearLocation = () => setCoordinates(null, null);
-
-  const handleSearch = async () => {
-    const query = searchQuery.trim();
-    if (!query) return;
-    setSearching(true);
-    setSearchHint(null);
-    try {
-      const res = await searchGeocoding(query);
-      setSearchResults(res.results);
-      setContactConfigured(res.contact_configured);
-      if (res.results.length === 0) setSearchHint("No matching addresses found.");
-    } catch (err) {
-      addToast(operatorApiErrorMessage(err, "Address lookup failed."), "error");
-    } finally {
-      setSearching(false);
-    }
+  // Clears the address too - a formatted_address with no coordinates has nothing left to
+  // anchor it to (no map, no "Located via ..." provenance). The venue name is left alone: it's
+  // the display label, not part of what the map/geocoding result described.
+  const handleClearLocation = () => {
+    pendingGeocodingProviderRef.current = null;
+    setDraft((prev) => ({ ...prev, latitude: null, longitude: null, formatted_address: "" }));
   };
 
   function handleSelectResult(result: GeocodingResultDto) {
     pendingGeocodingProviderRef.current = result.provider;
     setDraft((prev) => ({
       ...prev,
+      venue_name: result.name ?? result.formatted_address,
       formatted_address: result.formatted_address,
       latitude: result.latitude,
       longitude: result.longitude,
       map_zoom: LOCATION_LIMITS.DEFAULT_ZOOM,
     }));
-    setSearchResults([]);
-    setSearchHint(null);
   }
 
   if (loading) {
@@ -224,9 +201,10 @@ export const LocationSettingsPanel = forwardRef<
 
   return (
     <div className="settings-sections">
-      <Card title="Address">
+      <Card title="Venue">
         <p className="field-hint">
-          The venue address shown to attendees, and the starting point for the map below.
+          The venue name shown to attendees. Start typing a name or address to search - pick a
+          match to also set the map location below, or keep typing to save free text.
         </p>
 
         {contactConfigured === false && (
@@ -252,53 +230,20 @@ export const LocationSettingsPanel = forwardRef<
           </Notice>
         )}
 
-        <Input
-          label="Address"
-          value={draft.formatted_address}
-          maxLength={LOCATION_LIMITS.ADDRESS_MAX_LENGTH}
+        <VenueAutocomplete
+          id="location-venue-name"
+          label="Venue name or address"
+          value={draft.venue_name}
+          maxLength={LOCATION_LIMITS.VENUE_NAME_MAX_LENGTH}
           disabled={disabled}
-          placeholder="Street, city, country"
-          icon={<i className="ti ti-map-pin" aria-hidden="true" />}
-          onChange={(e) => setDraft((prev) => ({ ...prev, formatted_address: e.target.value }))}
+          placeholder="e.g. Convention Center, or a full address"
+          onChange={(text) => setDraft((prev) => ({ ...prev, venue_name: text }))}
+          onSelectResult={handleSelectResult}
+          onContactConfigured={setContactConfigured}
         />
 
-        <div className="settings-field-row location-search-row">
-          <Input
-            label="Search for an address"
-            value={searchQuery}
-            disabled={isArchived || searching}
-            placeholder="e.g. Convention Center, Warsaw"
-            {...NO_AUTOFILL_PROPS}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                void handleSearch();
-              }
-            }}
-          />
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={isArchived || searching || !searchQuery.trim()}
-            onClick={() => void handleSearch()}
-          >
-            {searching ? "Searching…" : "Find on map"}
-          </Button>
-        </div>
-
-        {searchHint && <p className="field-hint">{searchHint}</p>}
-
-        {searchResults.length > 0 && (
-          <ul className="location-search-results">
-            {searchResults.map((result, index) => (
-              <li key={`${result.latitude},${result.longitude},${index}`}>
-                <button type="button" onClick={() => handleSelectResult(result)}>
-                  {result.formatted_address}
-                </button>
-              </li>
-            ))}
-          </ul>
+        {draft.formatted_address && (
+          <p className="field-hint">Address: {draft.formatted_address}</p>
         )}
       </Card>
 
@@ -317,7 +262,7 @@ export const LocationSettingsPanel = forwardRef<
           </>
         ) : (
           <Notice variant="info">
-            Map display is disabled for this instance. Address search below still works and sets
+            Map display is disabled for this instance. Venue search above still works and sets
             coordinates, but there is no map to click or drag a pin on.
           </Notice>
         )}

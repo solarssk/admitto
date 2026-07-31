@@ -1,6 +1,7 @@
 import type { EventLocationDto, SaveEventLocationBody } from "../api/types.js";
 
 export interface LocationDraft {
+  venue_name: string;
   formatted_address: string;
   latitude: number | null;
   longitude: number | null;
@@ -11,6 +12,7 @@ export interface LocationDraft {
 
 export function draftFromLocation(data: EventLocationDto): LocationDraft {
   return {
+    venue_name: data.venue_name ?? "",
     formatted_address: data.formatted_address ?? "",
     latitude: data.latitude,
     longitude: data.longitude,
@@ -22,6 +24,7 @@ export function draftFromLocation(data: EventLocationDto): LocationDraft {
 
 export function isLocationDirty(draft: LocationDraft, saved: LocationDraft): boolean {
   return (
+    draft.venue_name.trim() !== saved.venue_name.trim() ||
     draft.formatted_address.trim() !== saved.formatted_address.trim() ||
     draft.latitude !== saved.latitude ||
     draft.longitude !== saved.longitude ||
@@ -44,6 +47,11 @@ export function buildEventLocationPatchBody(
   pendingGeocodingProvider: string | null,
 ): SaveEventLocationBody {
   const body: SaveEventLocationBody = {};
+
+  const venueName = draft.venue_name.trim();
+  if (venueName !== saved.venue_name.trim()) {
+    body.venue_name = venueName || null;
+  }
 
   const address = draft.formatted_address.trim();
   if (address !== saved.formatted_address.trim()) {

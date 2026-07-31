@@ -1,0 +1,66 @@
+/* VenueAutocomplete: single-field venue/address search with an inline suggestions dropdown,
+   styled after check-in's attendee typeahead (.ck-suggest in staff.css) so both search
+   experiences feel the same, without cross-importing check-in-specific styles. */
+
+.venue-autocomplete {
+  position: relative;
+}
+
+.venue-suggest {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 60;
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: var(--shadow-lg, 0 8px 24px rgb(15 23 42 / 12%));
+}
+
+.venue-suggest__hit {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius, 4px);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: var(--text-primary);
+}
+
+.venue-suggest__hit:hover,
+.venue-suggest__hit:focus-visible {
+  background: var(--surface-hover, var(--surface-sunken));
+}
+
+.venue-suggest__info {
+  display: block;
+  min-width: 0;
+}
+
+.venue-suggest__name {
+  display: block;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.venue-suggest__meta {
+  display: block;
+  font-size: var(--fs-xs);
+  color: var(--text-muted, var(--text-secondary));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

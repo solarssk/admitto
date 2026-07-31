@@ -49,13 +49,26 @@ export interface EventDto {
   archived_by_timezone?: string | null;
 }
 
+export interface CreateEventBody {
+  title: string;
+  slug: string;
+  date: string;
+  timezone: string;
+  /** Short display name, e.g. "National Stadium" - free text, or picked from a geocoding
+   * suggestion alongside the fields below. */
+  venue_name?: string;
+  formatted_address?: string;
+  latitude?: number;
+  longitude?: number;
+  geocoding_provider?: string;
+}
+
 export interface EventSettingsDto {
   id: string;
   title: string;
   slug: string;
   date: string;
   timezone: string;
-  location: string | null;
   capacity: number | null;
   status: "active" | "archived";
   /** Null unless status is "archived". */
@@ -779,10 +792,13 @@ export interface EventDeliveriesListResponse {
   pageSize: number;
 }
 
-/** Event Settings "Location" tab — full address, coordinates, and directions/accessibility
- * notes for an event's venue. `Event.location` (Basic information card) remains the short
- * display name; this is the richer, optional record behind the map. */
+/** Event Settings "Location" tab — venue name, full address, coordinates, and directions/
+ * accessibility notes for an event's venue. The single source of truth for an event's
+ * location (no separate Basic Information field). */
 export interface EventLocationDto {
+  /** Short display name (e.g. "National Stadium") - the single source of truth for an
+   * event's location, replacing the old Basic Information "Location" field. */
+  venue_name: string | null;
   formatted_address: string | null;
   latitude: number | null;
   longitude: number | null;
@@ -797,6 +813,7 @@ export interface EventLocationDto {
 
 export interface SaveEventLocationBody {
   /** Omit = unchanged; `null` (or "" for text fields) clears it. */
+  venue_name?: string | null;
   formatted_address?: string | null;
   latitude?: number | null;
   longitude?: number | null;
@@ -809,6 +826,9 @@ export interface SaveEventLocationBody {
 }
 
 export interface GeocodingResultDto {
+  /** Localized place/POI name (e.g. "ICE Kraków Congress Centre") when the match is a named
+   * venue rather than a bare address - absent for plain street-address matches. */
+  name?: string;
   formatted_address: string;
   latitude: number;
   longitude: number;

@@ -43,6 +43,7 @@ const mockSearch = vi.mocked(searchGeocoding);
 const mockFetchTiles = vi.mocked(fetchMapTileConfig);
 
 const EMPTY_LOCATION: EventLocationDto = {
+  venue_name: null,
   formatted_address: null,
   latitude: null,
   longitude: null,
@@ -54,6 +55,7 @@ const EMPTY_LOCATION: EventLocationDto = {
 };
 
 const SAVED_LOCATION: EventLocationDto = {
+  venue_name: "Springfield Hall",
   formatted_address: "1 Main St, Springfield",
   latitude: 51.5074,
   longitude: -0.1278,
@@ -73,6 +75,7 @@ const TILE_CONFIG: MapTileConfigDto = {
 
 function searchResult(overrides: Partial<GeocodingResultDto> = {}): GeocodingResultDto {
   return {
+    name: "10 Downing Street",
     formatted_address: "10 Downing Street, London",
     latitude: 51.5034,
     longitude: -0.1276,
@@ -110,6 +113,10 @@ beforeEach(() => {
   mockFetchLocation.mockReset();
   mockSaveLocation.mockReset();
   mockSearch.mockReset();
+  // Default to "no matches" so a debounced search triggered incidentally by an unrelated test
+  // (e.g. typing a new venue name) doesn't reject and log noise - tests that care about search
+  // results override this explicitly.
+  mockSearch.mockResolvedValue({ results: [], contact_configured: true });
   mockFetchTiles.mockReset();
   mockFetchTiles.mockResolvedValue(TILE_CONFIG);
 });
@@ -119,11 +126,11 @@ afterEach(() => {
 });
 
 describe("LocationSettingsPanel — loading", () => {
-  it("shows the saved address once loaded", async () => {
+  it("shows the saved venue name once loaded", async () => {
     mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
     renderPanel();
 
-    expect(await screen.findByDisplayValue("1 Main St, Springfield")).toBeTruthy();
+    expect(await screen.findByDisplayValue("Springfield Hall")).toBeTruthy();
   });
 
   it("shows a placeholder hint when no coordinates are set yet", async () => {
@@ -142,21 +149,21 @@ describe("LocationSettingsPanel — loading", () => {
 });
 
 describe("LocationSettingsPanel — dirty state and save", () => {
-  it("reports dirty after an address edit and clears it after a successful save", async () => {
+  it("reports dirty after a venue name edit and clears it after a successful save", async () => {
     mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
-    mockSaveLocation.mockResolvedValue({ ...SAVED_LOCATION, formatted_address: "2 Main St, Springfield" });
+    mockSaveLocation.mockResolvedValue({ ...SAVED_LOCATION, venue_name: "New Hall" });
     const onDirtyChange = vi.fn();
     renderPanel({ onDirtyChange });
 
-    const input = await screen.findByDisplayValue("1 Main St, Springfield");
-    fireEvent.change(input, { target: { value: "2 Main St, Springfield" } });
+    const input = await screen.findByDisplayValue("Springfield Hall");
+    fireEvent.change(input, { target: { value: "New Hall" } });
 
     await waitFor(() => expect(onDirtyChange).toHaveBeenCalledWith(true));
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
-      expect(mockSaveLocation).toHaveBeenCalledWith("evt-1", { formatted_address: "2 Main St, Springfield" }),
+      expect(mockSaveLocation).toHaveBeenCalledWith("evt-1", { venue_name: "New Hall" }),
     );
     await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
     expect(await screen.findByText("Location saved.")).toBeTruthy();
@@ -166,13 +173,13 @@ describe("LocationSettingsPanel — dirty state and save", () => {
     mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
     renderPanel();
 
-    const input = await screen.findByDisplayValue("1 Main St, Springfield");
+    const input = await screen.findByDisplayValue("Springfield Hall");
     fireEvent.change(input, { target: { value: "Something else" } });
     expect(await screen.findByText("Unsaved changes")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
 
-    expect(await screen.findByDisplayValue("1 Main St, Springfield")).toBeTruthy();
+    expect(await screen.findByDisplayValue("Springfield Hall")).toBeTruthy();
     expect(screen.queryByText("Unsaved changes")).toBeFalsy();
   });
 
@@ -181,58 +188,60 @@ describe("LocationSettingsPanel — dirty state and save", () => {
     mockSaveLocation.mockRejectedValue(new Error("boom"));
     renderPanel();
 
-    const input = await screen.findByDisplayValue("1 Main St, Springfield");
-    fireEvent.change(input, { target: { value: "2 Main St, Springfield" } });
+    const input = await screen.findByDisplayValue("Springfield Hall");
+    fireEvent.change(input, { target: { value: "New Hall" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByText("Failed to save location.")).toBeTruthy();
-    expect(screen.getByDisplayValue("2 Main St, Springfield")).toBeTruthy();
+    expect(screen.getByDisplayValue("New Hall")).toBeTruthy();
   });
 });
 
-describe("LocationSettingsPanel — geocoding search", () => {
-  it("searches and lists results on 'Find on map'", async () => {
+describe("LocationSettingsPanel — venue search", () => {
+  it("searches and lists suggestions while typing, debounced", async () => {
     mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
     mockSearch.mockResolvedValue({ results: [searchResult()], contact_configured: true });
     renderPanel();
 
-    const searchInput = await screen.findByPlaceholderText("e.g. Convention Center, Warsaw");
-    fireEvent.change(searchInput, { target: { value: "Downing Street" } });
-    fireEvent.click(screen.getByRole("button", { name: "Find on map" }));
+    const input = await screen.findByLabelText("Venue name or address");
+    fireEvent.change(input, { target: { value: "Downing Street" } });
 
-    expect(await screen.findByText("10 Downing Street, London")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("10 Downing Street")).toBeTruthy());
     expect(mockSearch).toHaveBeenCalledWith("Downing Street");
   });
 
-  it("shows an inline hint (not a toast) when no results are found", async () => {
+  it("keeps the typed text as free-form venue name when no suggestions match", async () => {
     mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
     mockSearch.mockResolvedValue({ results: [], contact_configured: true });
     renderPanel();
 
-    const searchInput = await screen.findByPlaceholderText("e.g. Convention Center, Warsaw");
-    fireEvent.change(searchInput, { target: { value: "Nowhere" } });
-    fireEvent.click(screen.getByRole("button", { name: "Find on map" }));
+    const input = await screen.findByLabelText("Venue name or address");
+    fireEvent.change(input, { target: { value: "Nowhere Hall" } });
 
-    expect(await screen.findByText("No matching addresses found.")).toBeTruthy();
+    await waitFor(() => expect(mockSearch).toHaveBeenCalledWith("Nowhere Hall"));
+    expect(screen.getByDisplayValue("Nowhere Hall")).toBeTruthy();
+    expect(screen.queryByRole("list", { name: "Venue suggestions" })).toBeFalsy();
   });
 
-  it("shows a toast when the search request fails", async () => {
+  it("silently ignores a failed suggestion search - typing still works", async () => {
     mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
     mockSearch.mockRejectedValue(new Error("rate limited"));
     renderPanel();
 
-    const searchInput = await screen.findByPlaceholderText("e.g. Convention Center, Warsaw");
-    fireEvent.change(searchInput, { target: { value: "Downing Street" } });
-    fireEvent.click(screen.getByRole("button", { name: "Find on map" }));
+    const input = await screen.findByLabelText("Venue name or address");
+    fireEvent.change(input, { target: { value: "Downing Street" } });
 
-    expect(await screen.findByText("Address lookup failed.")).toBeTruthy();
+    await waitFor(() => expect(mockSearch).toHaveBeenCalledWith("Downing Street"));
+    expect(screen.getByDisplayValue("Downing Street")).toBeTruthy();
+    expect(screen.queryByText(/failed/i)).toBeFalsy();
   });
 
-  it("applies a selected result's address and coordinates, and saves with its geocoding_provider", async () => {
+  it("applies a selected result's name, address, and coordinates, and saves with its geocoding_provider", async () => {
     mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
     mockSearch.mockResolvedValue({ results: [searchResult()], contact_configured: true });
     mockSaveLocation.mockResolvedValue({
       ...EMPTY_LOCATION,
+      venue_name: "10 Downing Street",
       formatted_address: "10 Downing Street, London",
       latitude: 51.5034,
       longitude: -0.1276,
@@ -240,20 +249,19 @@ describe("LocationSettingsPanel — geocoding search", () => {
     });
     renderPanel();
 
-    const searchInput = await screen.findByPlaceholderText("e.g. Convention Center, Warsaw");
-    fireEvent.change(searchInput, { target: { value: "Downing Street" } });
-    fireEvent.click(screen.getByRole("button", { name: "Find on map" }));
-    fireEvent.click(await screen.findByText("10 Downing Street, London"));
+    const input = await screen.findByLabelText("Venue name or address");
+    fireEvent.change(input, { target: { value: "Downing Street" } });
 
-    expect(await screen.findByDisplayValue("10 Downing Street, London")).toBeTruthy();
-    expect(screen.queryByText("10 Downing Street, London", { selector: "button" })).toBeFalsy();
+    fireEvent.click(await screen.findByRole("button", { name: /10 Downing Street/ }));
+
+    expect(await screen.findByDisplayValue("10 Downing Street")).toBeTruthy();
+    expect(await screen.findByText("Address: 10 Downing Street, London")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
-      // map_zoom is omitted: the result's zoom (LOCATION_LIMITS.DEFAULT_ZOOM) equals the
-      // already-saved EMPTY_LOCATION.map_zoom, so buildEventLocationPatchBody sees no diff.
       expect(mockSaveLocation).toHaveBeenCalledWith("evt-1", {
+        venue_name: "10 Downing Street",
         formatted_address: "10 Downing Street, London",
         latitude: 51.5034,
         longitude: -0.1276,
@@ -267,9 +275,8 @@ describe("LocationSettingsPanel — geocoding search", () => {
     mockSearch.mockResolvedValue({ results: [searchResult()], contact_configured: false });
     renderPanelWithRoutes();
 
-    const searchInput = await screen.findByPlaceholderText("e.g. Convention Center, Warsaw");
-    fireEvent.change(searchInput, { target: { value: "Downing Street" } });
-    fireEvent.click(screen.getByRole("button", { name: "Find on map" }));
+    const input = await screen.findByLabelText("Venue name or address");
+    fireEvent.change(input, { target: { value: "Downing Street" } });
 
     expect(await screen.findByText(/No Support contact is configured/)).toBeTruthy();
     fireEvent.click(screen.getByText("Open instance settings"));
@@ -278,13 +285,16 @@ describe("LocationSettingsPanel — geocoding search", () => {
 });
 
 describe("LocationSettingsPanel — clearing and map availability", () => {
-  it("clears coordinates via 'Clear map location'", async () => {
+  it("clears coordinates and address via 'Clear map location', but keeps the venue name", async () => {
     mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
     renderPanel();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Clear map location" }));
+    await screen.findByDisplayValue("Springfield Hall");
+    fireEvent.click(screen.getByRole("button", { name: "Clear map location" }));
 
     expect(await screen.findByText(/No coordinates set yet/)).toBeTruthy();
+    expect(screen.getByDisplayValue("Springfield Hall")).toBeTruthy();
+    expect(screen.queryByText(/^Address: /)).toBeFalsy();
     expect(await screen.findByText("Unsaved changes")).toBeTruthy();
   });
 
@@ -302,7 +312,7 @@ describe("LocationSettingsPanel — archived event", () => {
     mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
     renderPanel({ isArchived: true });
 
-    await screen.findByDisplayValue("1 Main St, Springfield");
+    await screen.findByDisplayValue("Springfield Hall");
     expect(screen.queryByRole("button", { name: "Save" })).toBeFalsy();
     expect(screen.queryByRole("button", { name: "Clear map location" })).toBeFalsy();
     expect(screen.getByText(/location settings cannot be changed/)).toBeTruthy();

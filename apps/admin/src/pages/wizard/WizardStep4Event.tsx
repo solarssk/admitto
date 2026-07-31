@@ -5,10 +5,13 @@ import {
   useState,
 } from "react";
 import { Input, useToast } from "@admitto/ui";
+import { LOCATION_LIMITS } from "@admitto/location";
 import { ApiError, createEvent, fetchAdminEvents } from "../../api/client.js";
 import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import { DatePicker } from "../../components/DatePicker.js";
 import { TimezoneSelect } from "../../components/TimezoneSelect.js";
+import { VenueAutocomplete } from "../../components/VenueAutocomplete.js";
+import type { GeocodingResultDto } from "../../api/types.js";
 import { slugFromTitle } from "../../events/slug.js";
 import { useWizard } from "./WizardContext.js";
 
@@ -35,6 +38,7 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
       () => Intl.DateTimeFormat().resolvedOptions().timeZone,
     );
     const [location, setLocation] = useState("");
+    const [locationGeocode, setLocationGeocode] = useState<GeocodingResultDto | null>(null);
     const [existingEvents, setExistingEvents] = useState<{ id: string; title: string }[]>([]);
     const [loadingEvents, setLoadingEvents] = useState(true);
     const [submitting, setSubmitting] = useState(false);
@@ -78,7 +82,11 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
           slug: slug.trim(),
           date,
           timezone,
-          location: location.trim() || undefined,
+          venue_name: location.trim() || undefined,
+          formatted_address: locationGeocode?.formatted_address,
+          latitude: locationGeocode?.latitude,
+          longitude: locationGeocode?.longitude,
+          geocoding_provider: locationGeocode?.provider,
         });
         setSelectedEventId(event.id);
         setSummary({ eventTitle: event.title });
@@ -161,13 +169,20 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
         </div>
 
         <div className="setup-wizard__field">
-          <Input
+          <VenueAutocomplete
+            id="wizard-event-location"
             label="Location (optional)"
             value={location}
-            placeholder="e.g. Warsaw, Poland"
+            maxLength={LOCATION_LIMITS.VENUE_NAME_MAX_LENGTH}
             disabled={submitting}
-            onChange={(e) => {
-              setLocation(e.target.value);
+            placeholder="e.g. Warsaw, Poland"
+            onChange={(text) => {
+              setLocation(text);
+              onDirtyChange?.(true);
+            }}
+            onSelectResult={(result) => {
+              setLocation(result.name ?? result.formatted_address);
+              setLocationGeocode(result);
               onDirtyChange?.(true);
             }}
           />

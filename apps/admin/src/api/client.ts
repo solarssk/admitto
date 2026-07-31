@@ -8,6 +8,7 @@ import type {
   CheckInHistoryEntry,
   CheckInScanResponse,
   CheckInStatsResponse,
+  CreateEventBody,
   DeliveryDto,
   EventDto,
   EventSettingsDto,
@@ -351,13 +352,7 @@ export async function fetchAdminEvents(
 }
 
 /** Create a new event (superadmin or org admin). */
-export async function createEvent(body: {
-  title: string;
-  slug: string;
-  date: string;
-  timezone: string;
-  location?: string;
-}): Promise<EventDto> {
+export async function createEvent(body: CreateEventBody): Promise<EventDto> {
   const res = await fetch("/api/admin/events", jsonPostInit(body));
   const data = await parseJson<{ event: EventDto }>(res);
   return data.event;
