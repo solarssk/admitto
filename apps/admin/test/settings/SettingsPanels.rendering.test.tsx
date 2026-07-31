@@ -600,6 +600,14 @@ describe("AuditLogPanel rendering", () => {
   });
 
   it("resets to page 1 once a retried page no longer exists against the current total", async () => {
+    // shouldAdvanceTime: real wall-clock time still passes (so findBy/waitFor's own polling
+    // keeps working exactly as under real timers), but every setTimeout/setInterval this test
+    // doesn't explicitly control - useDelayedLoading's 200ms grace window, Live's POLL_INTERVAL_MS
+    // - is deterministic rather than racing this sequence's two real network round trips on
+    // whatever CPU happens to be available. Belt-and-suspenders with turning Live off below:
+    // that removes the *trigger*, this removes the *mechanism* regardless of trigger.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
     // Page 1 loads fine; the page-2 request fails (server-side data shrank in the
     // meantime), so Retry re-issues the *same* page-2 request rather than a filter
     // change resetting the page itself — the only way `load()` ever re-runs with
@@ -641,20 +649,28 @@ describe("AuditLogPanel rendering", () => {
     });
     fireEvent.click(retry);
 
-    // Reaching this state takes two sequential fetchAuditLog round trips, each through its own
-    // render/commit cycle: the retried page-2 request comes back with the shrunk total, notices
-    // page 2 no longer exists against it, and resets `page` to 1 - which only then triggers the
-    // second request that actually updates `total` (see the `page > maxPage` branch in
-    // AuditLogPanel's own `load`, which intentionally returns before setting it, precisely so a
-    // stale total doesn't flash between the two). Generous timeout, same as other real-timer-
-    // dependent assertions in this file - two full round trips is more margin-sensitive on a
-    // loaded CI runner than this file's single-request assertions.
+    // Reaching the final state takes two sequential fetchAuditLog round trips, each through its
+    // own render/commit cycle: the retried page-2 request comes back with the shrunk total,
+    // notices page 2 no longer exists against it, and resets `page` to 1 (which briefly clears
+    // entries - see the `page > maxPage` branch in AuditLogPanel's own `load`) - only *that*
+    // page change then triggers the second request that actually updates `total`. Waiting for
+    // this first hop explicitly, rather than jumping straight to the final assertion, means a
+    // failure here points at which of the two hops didn't land instead of one ambiguous timeout
+    // spanning both.
+    await waitFor(
+      () => {
+        expect(screen.getByText("No audit log entries yet")).toBeTruthy();
+      },
+      { timeout: 4000 },
+    );
     await waitFor(
       () => {
         expect(screen.getByText("Page 1 of 1")).toBeTruthy();
       },
-      { timeout: 5000 },
+      { timeout: 4000 },
     );
+
+    vi.useRealTimers();
   }, 10000);
 
   it("falls back to the raw action_type string for an action outside the known label map", async () => {
