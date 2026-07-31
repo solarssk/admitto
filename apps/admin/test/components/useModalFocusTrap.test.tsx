@@ -51,6 +51,32 @@ describe("useModalFocusTrap", () => {
     expect(document.activeElement).toBe(panel.querySelector("#last"));
   });
 
+  it("excludes buttons disabled only via an ancestor <fieldset disabled> from the Tab-trap cycle", () => {
+    // Fieldset-inherited disabling never sets the `disabled` attribute on the descendant button
+    // itself (only on the fieldset) - a modal with a disabled fieldset section (e.g. an
+    // archived-event form) must still skip those buttons when cycling Tab, not just ones with
+    // their own `disabled` attribute.
+    const panel = document.createElement("div");
+    panel.innerHTML = `
+      <button id="first">First</button>
+      <fieldset disabled>
+        <button id="hidden1">Hidden 1</button>
+        <button id="hidden2">Hidden 2</button>
+      </fieldset>
+      <button id="last">Last</button>
+    `;
+    document.body.appendChild(panel);
+    renderHook(() => useModalFocusTrap({ current: panel }, true, vi.fn()));
+
+    panel.querySelector<HTMLElement>("#last")!.focus();
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(document.activeElement).toBe(panel.querySelector("#first"));
+
+    panel.querySelector<HTMLElement>("#first")!.focus();
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(panel.querySelector("#last"));
+  });
+
   it("does nothing when not open", () => {
     const panel = makePanel();
     const onCancel = vi.fn();
