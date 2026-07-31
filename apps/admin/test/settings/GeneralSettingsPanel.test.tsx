@@ -87,7 +87,7 @@ describe("GeneralSettingsPanel", () => {
     mockFetch.mockResolvedValueOnce(emptySettings);
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => {
-      expect(screen.getByLabelText("Instance URL")).toBeTruthy();
+      expect(screen.getByLabelText("URL")).toBeTruthy();
     });
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
@@ -98,9 +98,9 @@ describe("GeneralSettingsPanel", () => {
     mockPatchContact.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToast(<GeneralSettingsPanel />);
     await waitFor(() => {
-      expect(screen.getByLabelText("Instance URL")).toBeTruthy();
+      expect(screen.getByLabelText("URL")).toBeTruthy();
     });
-    fireEvent.change(screen.getByLabelText("Instance URL"), {
+    fireEvent.change(screen.getByLabelText("URL"), {
       target: { value: "https://tickets.example.com" },
     });
     // Contact fields also need a real change - patchSupportContact is skipped otherwise, and the
@@ -122,9 +122,9 @@ describe("GeneralSettingsPanel", () => {
     mockPatchContact.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToast(<GeneralSettingsPanel />);
     await waitFor(() => {
-      expect(screen.getByLabelText("Instance URL")).toBeTruthy();
+      expect(screen.getByLabelText("URL")).toBeTruthy();
     });
-    fireEvent.change(screen.getByLabelText("Instance URL"), {
+    fireEvent.change(screen.getByLabelText("URL"), {
       target: { value: "https://tickets.example.com" },
     });
     // Contact fields also need a real change - patchSupportContact is skipped otherwise, and the
@@ -144,9 +144,9 @@ describe("GeneralSettingsPanel", () => {
     mockPatch.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToast(<GeneralSettingsPanel />);
     await waitFor(() => {
-      expect(screen.getByLabelText("Instance URL")).toBeTruthy();
+      expect(screen.getByLabelText("URL")).toBeTruthy();
     });
-    fireEvent.change(screen.getByLabelText("Instance URL"), {
+    fireEvent.change(screen.getByLabelText("URL"), {
       target: { value: "https://tickets.example.com" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -209,9 +209,9 @@ describe("GeneralSettingsPanel", () => {
     });
     renderWithToast(<GeneralSettingsPanel />);
     await waitFor(() => {
-      expect(screen.getByLabelText("Instance URL")).toBeTruthy();
+      expect(screen.getByLabelText("URL")).toBeTruthy();
     });
-    fireEvent.change(screen.getByLabelText("Instance URL"), {
+    fireEvent.change(screen.getByLabelText("URL"), {
       target: { value: "https://tickets.example.com" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -228,9 +228,9 @@ describe("GeneralSettingsPanel", () => {
     });
     renderWithToast(<GeneralSettingsPanel />);
     await waitFor(() => {
-      expect(screen.getByLabelText("Instance URL")).toBeTruthy();
+      expect(screen.getByLabelText("URL")).toBeTruthy();
     });
-    fireEvent.change(screen.getByLabelText("Instance URL"), {
+    fireEvent.change(screen.getByLabelText("URL"), {
       target: { value: "https://tickets.example.com" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -244,9 +244,9 @@ describe("GeneralSettingsPanel", () => {
     mockFetch.mockResolvedValueOnce(emptySettings);
     renderWithToast(<GeneralSettingsPanel />);
     await waitFor(() => {
-      expect(screen.getByLabelText("Instance URL")).toBeTruthy();
+      expect(screen.getByLabelText("URL")).toBeTruthy();
     });
-    fireEvent.change(screen.getByLabelText("Instance URL"), {
+    fireEvent.change(screen.getByLabelText("URL"), {
       target: { value: "http://insecure.example.com" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -261,9 +261,9 @@ describe("GeneralSettingsPanel", () => {
     mockFetch.mockResolvedValueOnce(emptySettings);
     renderWithToast(<GeneralSettingsPanel />);
     await waitFor(() => {
-      expect(screen.getByLabelText("Instance URL")).toBeTruthy();
+      expect(screen.getByLabelText("URL")).toBeTruthy();
     });
-    fireEvent.change(screen.getByLabelText("Instance URL"), {
+    fireEvent.change(screen.getByLabelText("URL"), {
       target: { value: "https://tickets.example.com?preview=1" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -277,9 +277,9 @@ describe("GeneralSettingsPanel", () => {
     mockFetch.mockResolvedValueOnce(emptySettings);
     renderWithToast(<GeneralSettingsPanel />);
     await waitFor(() => {
-      expect(screen.getByLabelText("Instance URL")).toBeTruthy();
+      expect(screen.getByLabelText("URL")).toBeTruthy();
     });
-    fireEvent.change(screen.getByLabelText("Instance URL"), {
+    fireEvent.change(screen.getByLabelText("URL"), {
       target: { value: "https://user:pass@tickets.example.com" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -293,9 +293,9 @@ describe("GeneralSettingsPanel", () => {
     mockFetch.mockResolvedValueOnce(emptySettings);
     renderWithToast(<GeneralSettingsPanel />);
     await waitFor(() => {
-      expect(screen.getByLabelText("Instance URL")).toBeTruthy();
+      expect(screen.getByLabelText("URL")).toBeTruthy();
     });
-    fireEvent.change(screen.getByLabelText("Instance URL"), {
+    fireEvent.change(screen.getByLabelText("URL"), {
       target: { value: "https://tickets.example.com/" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -309,11 +309,11 @@ describe("GeneralSettingsPanel", () => {
     mockFetch.mockResolvedValueOnce(emptySettings);
     renderWithToast(<GeneralSettingsPanel />);
     await waitFor(() => {
-      expect(screen.getByLabelText("Instance URL")).toBeTruthy();
+      expect(screen.getByLabelText("URL")).toBeTruthy();
     });
     // Passes the https:// prefix and trailing-slash checks, but a space makes it fail to parse
     // as a URL at all - exercises the isValidInstanceUrl try/catch, not just its early returns.
-    fireEvent.change(screen.getByLabelText("Instance URL"), {
+    fireEvent.change(screen.getByLabelText("URL"), {
       target: { value: "https://exa mple.com" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -406,14 +406,14 @@ describe("GeneralSettingsPanel", () => {
     mockFetch.mockResolvedValueOnce(emptySettings);
     renderWithToast(<GeneralSettingsPanel />);
     await waitFor(() => {
-      expect(screen.getByLabelText("Instance URL")).toBeTruthy();
+      expect(screen.getByLabelText("URL")).toBeTruthy();
     });
-    fireEvent.change(screen.getByLabelText("Instance URL"), {
+    fireEvent.change(screen.getByLabelText("URL"), {
       target: { value: "https://tickets.example.com" },
     });
     fireEvent.change(screen.getByLabelText("Contact name"), { target: { value: "Acme Events" } });
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
-    expect((screen.getByLabelText("Instance URL") as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText("URL") as HTMLInputElement).value).toBe("");
     expect((screen.getByLabelText("Contact name") as HTMLInputElement).value).toBe("");
     expect(mockPatch).not.toHaveBeenCalled();
     expect(mockPatchContact).not.toHaveBeenCalled();

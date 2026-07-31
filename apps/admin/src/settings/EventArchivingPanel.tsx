@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router";
-import { Button, Card, EmptyState, Tooltip, useToast } from "@admitto/ui";
+import { Button, Card, EmptyState, HintLabel, useToast } from "@admitto/ui";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { PaginationFooter } from "../components/PaginationFooter.js";
 import { Segmented } from "../components/Segmented.js";
@@ -178,14 +178,10 @@ export function EventArchivingPanel() {
           <thead>
             <tr>
               <th scope="col">
-                <Tooltip content={EVENT_HINT} className="audit-log-scope-header">
-                  Event <i className="ti ti-info-circle" aria-hidden="true" />
-                </Tooltip>
+                <HintLabel hint={EVENT_HINT}>Event</HintLabel>
               </th>
               <th scope="col">
-                <Tooltip content={EVENT_DATE_HINT} className="audit-log-scope-header">
-                  Event date <i className="ti ti-info-circle" aria-hidden="true" />
-                </Tooltip>
+                <HintLabel hint={EVENT_DATE_HINT}>Event date</HintLabel>
               </th>
               <th scope="col">Attendees</th>
               <th scope="col">Created</th>
@@ -282,11 +278,7 @@ export function EventArchivingPanel() {
   return (
     <>
       <Card
-        title={
-          <Tooltip content={CARD_HINT} className="audit-log-scope-header">
-            Event archiving <i className="ti ti-info-circle" aria-hidden="true" />
-          </Tooltip>
-        }
+        title={<HintLabel hint={CARD_HINT}>Event archiving</HintLabel>}
         actions={
           <Segmented
             ariaLabel="Event view"
