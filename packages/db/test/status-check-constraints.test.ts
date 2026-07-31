@@ -23,13 +23,26 @@ async function expectCheckViolation(
   try {
     await action();
   } catch (err) {
+    // Prisma 7's driver adapters route raw Postgres errors through
+    // meta.driverAdapterError.cause instead of directly on meta (pre-v7 shape) - see
+    // @prisma/driver-adapter-utils' DriverAdapterError.
     expect(err).toMatchObject({
       code: "P2010",
-      meta: expect.objectContaining({ code: "23514" }),
+      meta: expect.objectContaining({
+        driverAdapterError: expect.objectContaining({
+          cause: expect.objectContaining({ code: "23514" }),
+        }),
+      }),
     });
-    expect(String((err as { meta?: { message?: unknown } }).meta?.message ?? err)).toContain(
-      constraintName,
-    );
+    expect(
+      String(
+        (
+          err as {
+            meta?: { driverAdapterError?: { cause?: { message?: unknown } } };
+          }
+        ).meta?.driverAdapterError?.cause?.message ?? err,
+      ),
+    ).toContain(constraintName);
     return;
   }
   throw new Error(`Expected ${constraintName} check violation`);
