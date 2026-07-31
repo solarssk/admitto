@@ -6,12 +6,14 @@ const BROWSER_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
   [/Safari\//, "Safari"],
 ];
 
+// Android UAs contain "Linux" and iPhone/iPad UAs contain "like Mac OS X" - the mobile-specific
+// patterns must be checked first or a real device UA matches the generic desktop OS instead.
 const OS_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/Android/, "Android"],
+  [/iPhone|iPad/, "iOS"],
   [/Windows/, "Windows"],
   [/Mac OS X/, "macOS"],
   [/Linux/, "Linux"],
-  [/Android/, "Android"],
-  [/iPhone|iPad/, "iOS"],
 ];
 
 function matchFirstPattern(ua: string, patterns: ReadonlyArray<readonly [RegExp, string]>): string | null {
@@ -22,8 +24,8 @@ function matchFirstPattern(ua: string, patterns: ReadonlyArray<readonly [RegExp,
 }
 
 /** Human-readable "Browser / OS" label from a stored request User-Agent string (e.g. a session
- * or login-history row) - unlike parseDeviceName.ts, which reads the current browser's own
- * navigator.userAgent for self-service device labeling. */
+ * row) - unlike parseDeviceName.ts, which reads the current browser's own navigator.userAgent
+ * for self-service device labeling. */
 export function parseUserAgent(ua: string | null): string {
   if (!ua) return "Unknown";
   const browser = matchFirstPattern(ua, BROWSER_PATTERNS);
