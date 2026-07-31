@@ -9,6 +9,7 @@ import {
   selfAuditCsvExport,
 } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
+import { resolveIpLocation } from "../rate-limit/ip-location.js";
 
 /** Free-text search over the resolved user (email/display name) - resolved to concrete ids up
  * front since it isn't directly queryable on SecurityAuditLog itself (requires a User join).
@@ -109,6 +110,7 @@ export async function handleGetSecurityAuditLog(c: Context, db: PrismaClient): P
     user_email: r.user_id ? (userMap[r.user_id]?.email ?? null) : null,
     user_display_name: r.user_id ? (userMap[r.user_id]?.display_name ?? null) : null,
     ip: r.ip,
+    country: resolveIpLocation(r.ip),
     metadata: r.metadata as Record<string, unknown> | null,
     created_at: r.created_at.toISOString(),
   }));

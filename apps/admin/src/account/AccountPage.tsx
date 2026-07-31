@@ -15,9 +15,11 @@ import {
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AccountDto, MfaEnrollResponse, SessionListDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { GeoCell } from "../components/GeoCell.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { formatRelativeTime, formatUtcDateTime } from "../utils/event-dates.js";
 import { LOCALE_OPTIONS, setPreferredLocale as setPreferredLocaleStore } from "../utils/locale-store.js";
+import { parseUserAgent } from "../utils/parseUserAgent.js";
 import { TotpDigitInput } from "./TotpDigitInput.js";
 import { TotpQrCode } from "./TotpQrCode.js";
 
@@ -28,14 +30,6 @@ const stepUpCodeFieldAttrs = {
   "data-1p-ignore": "",
   "data-form-type": "other",
 } as const;
-
-function parseUserAgent(ua: string | null): string {
-  if (!ua) return "Unknown";
-  const browser = matchUaPattern(ua, BROWSER_UA_PATTERNS);
-  const os = matchUaPattern(ua, OS_UA_PATTERNS);
-  const parts = [browser, os].filter(Boolean);
-  return parts.length ? parts.join(" / ") : ua.slice(0, 40);
-}
 
 function formatDate(iso: string): string {
   return formatUtcDateTime(iso);
@@ -56,27 +50,6 @@ function downloadBackupCodes(codes: string[]): void {
 
 function isTotpEnrolled(account: AccountDto): boolean {
   return account.mfa_methods.some((m) => m.type === "totp" && m.confirmed);
-}
-
-const BROWSER_UA_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
-  [/Edg\//, "Edge"],
-  [/Chrome\//, "Chrome"],
-  [/Firefox\//, "Firefox"],
-  [/Safari\//, "Safari"],
-];
-
-const OS_UA_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
-  [/Windows/, "Windows"],
-  [/Mac OS X/, "macOS"],
-  [/Linux/, "Linux"],
-  [/iPhone|iPad/, "iOS"],
-];
-
-function matchUaPattern(ua: string, patterns: ReadonlyArray<readonly [RegExp, string]>): string | null {
-  for (const [pattern, label] of patterns) {
-    if (pattern.test(ua)) return label;
-  }
-  return null;
 }
 
 function signInMethod(account: AccountDto): string {
@@ -654,7 +627,10 @@ export function AccountPage() {
                       {s.deviceLabel || parseUserAgent(s.userAgent)}
                       {s.isCurrent && <Badge variant="neutral" className="sessions-current-badge">Current</Badge>}
                     </td>
-                    <td>{s.ip ?? "-"}</td>
+                    <td>
+                      {s.ip ?? "-"}
+                      {s.ip && <div className="sessions-subdued"><GeoCell location={s.country} /></div>}
+                    </td>
                     <td>{formatDate(s.loginAt)}</td>
                     <td>{formatRelativeTime(s.lastSeenAt)}</td>
                     <td>{s.authMethod === "oidc" ? "OIDC" : "Local"}</td>

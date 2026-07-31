@@ -16,6 +16,7 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AuditLogEntryDto, EventDto, SecurityAuditLogEntryDto } from "../api/types.js";
 import { DatePicker } from "../components/DatePicker.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
+import { GeoCell, geoLocationText } from "../components/GeoCell.js";
 import { PaginationFooter } from "../components/PaginationFooter.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { useClickOutside } from "../components/useClickOutside.js";
@@ -315,12 +316,13 @@ function buildRowSummary(entry: AuditLogEntryDto, eventTitleById: Map<string, st
   const localTime = actorLocalTime(entry);
   const localTimeSuffix = localTime ? ` (${localTime})` : "";
   const actorEmailSuffix = entry.actor_display_name && entry.actor_email ? ` (${entry.actor_email})` : "";
+  const locationText = entry.ip ? geoLocationText(entry.country) : "";
   const lines = [
     `Time: ${formatAuditPrimaryTime(entry.created_at)} UTC${localTimeSuffix}`,
     `Action: ${actionLabel(entry.action_type)}`,
     `Scope: ${scopeLabel(entry, eventTitleById)}`,
     `User: ${actorDisplay(entry)}${actorEmailSuffix}`,
-    `IP address: ${entry.ip ?? "-"}`,
+    `IP address: ${entry.ip ?? "-"}${locationText ? ` (${locationText})` : ""}`,
   ];
   if (hasVisibleMetadata(entry.metadata)) {
     lines.push("Details:");
@@ -673,7 +675,12 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
     {
       key: "ip",
       header: "IP address",
-      cell: (entry) => entry.ip ?? "-",
+      cell: (entry) => (
+        <>
+          {entry.ip ?? "-"}
+          {entry.ip && <div className="sessions-subdued"><GeoCell location={entry.country} /></div>}
+        </>
+      ),
     },
   ];
 }
@@ -760,11 +767,12 @@ function securityUserEmail(entry: SecurityAuditLogEntryDto): string | undefined 
  * viewer's own (see viewerLocalTime), not an actor's. */
 function buildSecurityRowSummary(entry: SecurityAuditLogEntryDto): string {
   const userEmailSuffix = securityUserEmail(entry) ? ` (${securityUserEmail(entry)})` : "";
+  const locationText = entry.ip ? geoLocationText(entry.country) : "";
   const lines = [
     `Time: ${formatAuditPrimaryTime(entry.created_at)} UTC (${viewerLocalTime(entry.created_at)})`,
     `Event: ${securityEventLabel(entry.event_type)}`,
     `User: ${securityUserDisplay(entry)}${userEmailSuffix}`,
-    `IP address: ${entry.ip ?? "-"}`,
+    `IP address: ${entry.ip ?? "-"}${locationText ? ` (${locationText})` : ""}`,
   ];
   if (hasVisibleMetadata(entry.metadata)) {
     lines.push("Details:");
@@ -817,7 +825,12 @@ const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
   {
     key: "ip",
     header: "IP address",
-    cell: (entry) => entry.ip ?? "-",
+    cell: (entry) => (
+      <>
+        {entry.ip ?? "-"}
+        {entry.ip && <div className="sessions-subdued"><GeoCell location={entry.country} /></div>}
+      </>
+    ),
   },
 ];
 

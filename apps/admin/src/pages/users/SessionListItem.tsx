@@ -2,37 +2,8 @@ import { Avatar, Badge, IconButton, Tooltip } from "@admitto/ui";
 import type { SessionListDto } from "../../api/types.js";
 import { roleBadgeVariant, roleLabel } from "../../auth/role-labels.js";
 import { formatRelativeTime, zonedTimeLabel } from "../../utils/event-dates.js";
-
-const BROWSER_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
-  [/Edg\//, "Edge"],
-  [/OPR\//, "Opera"],
-  [/Chrome\//, "Chrome"],
-  [/Firefox\//, "Firefox"],
-  [/Safari\//, "Safari"],
-];
-
-const OS_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
-  [/Windows/, "Windows"],
-  [/Mac OS X/, "macOS"],
-  [/Linux/, "Linux"],
-  [/Android/, "Android"],
-  [/iPhone|iPad/, "iOS"],
-];
-
-function matchFirstPattern(ua: string, patterns: ReadonlyArray<readonly [RegExp, string]>): string | null {
-  for (const [pattern, label] of patterns) {
-    if (pattern.test(ua)) return label;
-  }
-  return null;
-}
-
-function parseUserAgent(ua: string | null): string {
-  if (!ua) return "Unknown";
-  const browser = matchFirstPattern(ua, BROWSER_PATTERNS);
-  const os = matchFirstPattern(ua, OS_PATTERNS);
-  const parts = [browser, os].filter(Boolean);
-  return parts.length ? parts.join(" / ") : ua.slice(0, 40);
-}
+import { parseUserAgent } from "../../utils/parseUserAgent.js";
+import { GeoCell } from "../../components/GeoCell.js";
 
 /** "2026-01-01 12:00:00" - matches the Audit/Security log's own UTC-primary convention. */
 function formatPrimaryTime(iso: string): string {
@@ -122,7 +93,10 @@ export function SessionTableRow({ session: s, onEdit, onRevoke }: Readonly<Sessi
       <td className="sessions-col-tablet-hide" title={s.userAgent ?? undefined}>
         {s.deviceLabel ? s.deviceLabel : parseUserAgent(s.userAgent)}
       </td>
-      <td className="sessions-col-tablet-hide">{s.ip ?? "-"}</td>
+      <td className="sessions-col-tablet-hide">
+        {s.ip ?? "-"}
+        {s.ip && <div className="sessions-subdued"><GeoCell location={s.country} /></div>}
+      </td>
       <td>
         {formatPrimaryTime(s.loginAt)} UTC
         <div className="sessions-subdued">{viewerLocalTime(s.loginAt)}</div>
@@ -179,7 +153,10 @@ export function SessionCard({ session: s, onEdit, onRevoke }: Readonly<SessionRo
         </div>
         <div>
           <dt>IP address</dt>
-          <dd>{s.ip ?? "-"}</dd>
+          <dd>
+            {s.ip ?? "-"}
+            {s.ip && <div className="sessions-subdued"><GeoCell location={s.country} /></div>}
+          </dd>
         </div>
         <div>
           <dt>Logged in</dt>

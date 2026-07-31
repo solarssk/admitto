@@ -4508,6 +4508,12 @@ output.mail-field-hint {
   color: var(--text-muted);
 }
 
+.geo-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
 .sessions-col-header {
   align-items: center;
   gap: var(--space-1);
