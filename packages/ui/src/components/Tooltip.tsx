@@ -27,10 +27,14 @@ const VIEWPORT_PADDING = 8;
 
 // Elements a keyboard user can already reach on their own - if one of these sits inside the
 // trigger, Tab lands there directly and focus bubbles up to the wrapper span, showing the
-// tooltip. Same selector as apps/admin/src/components/focusable.ts (modal focus trap /
-// dropdown-menu hook); duplicated rather than imported since this package can't depend on an app.
+// tooltip. `:disabled` (not the `[disabled]` attribute) so a control that's only disabled via an
+// ancestor <fieldset disabled> - e.g. every archived-event form (CommunicationPage, ImportPage,
+// AttendeeDetailPage) - still counts as not-actually-focusable: fieldset-inherited disabling
+// never sets the `disabled` attribute on the descendant itself, only on the fieldset. Same
+// selector as apps/admin/src/components/focusable.ts (modal focus trap / dropdown-menu hook);
+// duplicated rather than imported since this package can't depend on an app.
 const FOCUSABLE_SELECTOR =
-  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
 
 /**
  * Hover/focus tooltip that measures the trigger and its own rendered size at show-time and picks

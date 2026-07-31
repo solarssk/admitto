@@ -119,6 +119,26 @@ describe("Tooltip", () => {
     expect(wrapper()?.getAttribute("tabindex")).toBe("0");
   });
 
+  it("picks up the tab stop when the child is only disabled via an ancestor <fieldset disabled> (CommunicationPage/ImportPage/AttendeeDetailPage's archived-event pattern)", () => {
+    function Example({ archived }: Readonly<{ archived: boolean }>) {
+      return (
+        <Tooltip content={archived ? "This event is archived. Editing is disabled." : undefined}>
+          <fieldset disabled={archived}>
+            <input aria-label="Subject" />
+          </fieldset>
+        </Tooltip>
+      );
+    }
+    const { container, rerender } = render(<Example archived={false} />);
+    const wrapper = () => container.querySelector(".at-tooltip-trigger");
+    // Fieldset-inherited disabling never sets the `disabled` attribute on the input itself -
+    // only `:disabled` (not `[disabled]`) sees through it, which is exactly what's under test.
+    expect(wrapper()?.getAttribute("tabindex")).toBeNull();
+
+    rerender(<Example archived={true} />);
+    expect(wrapper()?.getAttribute("tabindex")).toBe("0");
+  });
+
   it("never adds a tab stop when there is no content to show, regardless of the child", () => {
     const { container } = render(
       <Tooltip content={undefined}>
