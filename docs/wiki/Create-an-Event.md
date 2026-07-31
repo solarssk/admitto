@@ -23,7 +23,7 @@ Prepare the event title, calendar date, timezone, and optional location. Choose 
 3. Enter the **Event title**.
 4. Review the auto-generated **URL slug**. Use only lowercase letters, numbers, `_`, or `-`.
 5. Select the **Event date** and **Event timezone**.
-6. Add **Location** when it should appear on tickets and calendar information.
+6. Add **Location** when it should appear on tickets and calendar information — start typing a venue name or address and pick a match from the suggestions, or type it in by hand.
 7. Select **Create event**.
 
 ## Expected result
