@@ -100,8 +100,24 @@ describe("CommunicationPage bounce banner", () => {
     // Scoped to the captured alert node (not re-queried from `screen`) so a later, unrelated
     // re-render can't race this assertion the way two separate screen queries could.
     const banner = await screen.findByRole("alert");
+    expect(banner.classList.contains("at-notice--warning")).toBe(true);
     expect(within(banner).getByText(/3 emails bounced/i)).toBeTruthy();
     expect(within(banner).getByRole("button", { name: "View delivery log" })).toBeTruthy();
+  });
+
+  it("uses singular wording when exactly one email bounced", async () => {
+    fetchEventTemplate.mockResolvedValue(templatePayload);
+    fetchEventOverview.mockResolvedValue({
+      email_bounced: 1,
+      email_failed: 0,
+      email_sent: 10,
+      email_queued: 0,
+    });
+
+    renderPage();
+
+    const banner = await screen.findByRole("alert");
+    expect(within(banner).getByText(/^1 email bounced$/i)).toBeTruthy();
   });
 
   it("hides bounce banner when email_bounced is 0", async () => {
