@@ -67,6 +67,7 @@ model Event {
   image_assets         EventImageAsset[]
   custom_fields        EventCustomField[]
   ticket_types         TicketType[]
+  location_details     EventLocation?
 
   @@index([organization_id])
   @@index([organization_id, archived_at])
@@ -144,6 +145,28 @@ model EventCustomField {
 
   @@unique([event_id, source_field])
   @@index([event_id])
+}
+
+// Event Settings "Location" tab (1:1 with Event) - the venue's full address, map coordinates,
+// and free-text directions/accessibility notes. Deliberately separate from Event.location, which
+// stays the short display name shown on the event list/card and in ticket emails; this table only
+// backs the interactive map picker. `latitude`/`longitude` are both-or-neither (see
+// assertCoordinatePairing in @admitto/location) - checked again at the DB layer below.
+model EventLocation {
+  id                 String    @id @default(cuid())
+  event_id           String    @unique
+  event              Event     @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  formatted_address  String?
+  latitude           Float?
+  longitude          Float?
+  map_zoom           Int       @default(15)
+  directions_text    String?   @db.Text
+  accessibility_text String?   @db.Text
+  // Plain string, not a Prisma enum (see header comment) - e.g. "nominatim".
+  geocoding_provider String?
+  geocoded_at        DateTime?
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
 }
 
 // Per-event catalog of ticket types (batch 04 / #351) - replaces free-text Attendee.ticket_type.
