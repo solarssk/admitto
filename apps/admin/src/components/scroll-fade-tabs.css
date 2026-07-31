@@ -24,6 +24,14 @@
 
 .scroll-fade-tabs__scroll .at-tab {
   flex-shrink: 0;
+  /* Matches .scroll-fade-tabs__arrow's own width - scrollIntoView's "nearest" (ScrollFadeTabs.tsx)
+     only checks this element's geometry against the scroll container's plain clientWidth, with
+     no idea that a 28px-wide arrow button sits absolutely on top of the container's edge. Without
+     this, "nearest" can stop a tab technically-visible-but-still-partly-under-the-arrow - e.g. a
+     deep link straight to the last tab. scroll-margin-inline is exactly the signal scrollIntoView
+     reads for "treat this much extra space around the element as required," so it keeps scrolling
+     until the tab actually clears the arrow, not just the container's raw edge. */
+  scroll-margin-inline: 28px;
 }
 
 .scroll-fade-tabs::before,

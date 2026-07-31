@@ -49,6 +49,7 @@ export function SettingsLayout() {
   return (
     <div className="settings-page">
       <PageHeader
+        className="settings-pageheader"
         title="Organisation settings"
         subtitle="Organisation configuration, security policies, and identity providers."
         actions={

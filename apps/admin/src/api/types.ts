@@ -40,6 +40,13 @@ export interface EventDto {
   organization_id: string;
   attendee_count?: number;
   archived_at: string | null;
+  created_at?: string;
+  created_by_display_name?: string | null;
+  created_by_email?: string | null;
+  created_by_timezone?: string | null;
+  archived_by_display_name?: string | null;
+  archived_by_email?: string | null;
+  archived_by_timezone?: string | null;
 }
 
 export interface EventSettingsDto {
