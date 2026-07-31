@@ -21,6 +21,7 @@
     "@admitto/auth": "*",
     "@admitto/db": "*",
     "@admitto/import": "*",
+    "@admitto/location": "*",
     "@admitto/mail-delivery": "*",
     "@admitto/mail-templates": "*",
     "@admitto/mailer": "*",

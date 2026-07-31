@@ -40,25 +40,45 @@ function isTimeoutError(err: unknown): boolean {
   return err instanceof Error && err.name === "TimeoutError";
 }
 
-/** One raw Nominatim `jsonv2` search result — only the fields this adapter reads. */
-interface RawNominatimResult {
-  display_name?: unknown;
-  lat?: unknown;
-  lon?: unknown;
+/** One raw GeocodeJSON feature — only the fields this adapter reads. Nesting is
+ * `properties.geocoding.*` (not directly under `properties` as in plain GeoJSON) per the
+ * GeocodeJSON spec (https://github.com/geocoders/geocodejson-spec). `name` is the localized
+ * POI/venue name and is absent for plain street/city matches with no named entity; `label` is
+ * the full formatted address and is always present on a match. */
+interface RawGeocodeJsonFeature {
+  properties?: {
+    geocoding?: {
+      name?: unknown;
+      label?: unknown;
+    };
+  };
+  geometry?: {
+    // GeoJSON order: [longitude, latitude].
+    coordinates?: unknown;
+  };
 }
 
-function parseResult(raw: unknown, provider: string): GeocodingResult | null {
+function parseFeature(raw: unknown, provider: string): GeocodingResult | null {
   if (typeof raw !== "object" || raw === null) return null;
-  const rec = raw as RawNominatimResult;
-  const displayName = typeof rec.display_name === "string" ? rec.display_name : null;
-  const latitude = typeof rec.lat === "string" ? Number.parseFloat(rec.lat) : null;
-  const longitude = typeof rec.lon === "string" ? Number.parseFloat(rec.lon) : null;
-  if (!displayName || latitude === null || longitude === null) return null;
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
-  return { formatted_address: displayName, latitude, longitude, provider };
+  const feature = raw as RawGeocodeJsonFeature;
+  const geocoding = feature.properties?.geocoding;
+  const label = typeof geocoding?.label === "string" ? geocoding.label : null;
+  const name = typeof geocoding?.name === "string" ? geocoding.name : undefined;
+
+  const coordinates = feature.geometry?.coordinates;
+  if (!Array.isArray(coordinates) || coordinates.length < 2) return null;
+  const [longitude, latitude] = coordinates as [unknown, unknown];
+  if (typeof longitude !== "number" || typeof latitude !== "number") return null;
+
+  if (!label || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  return { name, formatted_address: label, latitude, longitude, provider };
 }
 
-/** Nominatim (OpenStreetMap) geocoding adapter — free-text query to lat/lng candidates. */
+/** Nominatim (OpenStreetMap) geocoding adapter — free-text query (address or venue name) to
+ * lat/lng candidates. Uses `format=geocodejson` (rather than `jsonv2`) specifically because it
+ * exposes the matched place/venue *name* (`properties.geocoding.name`) separately from the full
+ * address (`.label`) — `jsonv2`'s `display_name` only ever has the full address, which is why
+ * venue-name search wasn't previously possible. */
 export class NominatimProvider implements GeocodingProvider {
   readonly name = "nominatim";
 
@@ -70,7 +90,7 @@ export class NominatimProvider implements GeocodingProvider {
 
     const url = new URL("/search", this.options.baseUrl);
     url.searchParams.set("q", query);
-    url.searchParams.set("format", "jsonv2");
+    url.searchParams.set("format", "geocodejson");
     url.searchParams.set("limit", String(MAX_RESULTS));
 
     let res: Response;
@@ -101,10 +121,13 @@ export class NominatimProvider implements GeocodingProvider {
       throw new GeocodingProviderError("unavailable", { cause: err });
     }
 
-    if (!Array.isArray(data)) return [];
+    const features =
+      typeof data === "object" && data !== null && Array.isArray((data as { features?: unknown }).features)
+        ? (data as { features: unknown[] }).features
+        : [];
     const results: GeocodingResult[] = [];
-    for (const raw of data) {
-      const parsed = parseResult(raw, this.name);
+    for (const raw of features) {
+      const parsed = parseFeature(raw, this.name);
       if (parsed) results.push(parsed);
       if (results.length >= MAX_RESULTS) break;
     }

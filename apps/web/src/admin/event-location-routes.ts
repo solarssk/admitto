@@ -23,6 +23,7 @@ import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "
 
 const putLocationBodySchema = z
   .object({
+    venue_name: z.string().nullish(),
     formatted_address: z.string().nullish(),
     latitude: z.number().nullish(),
     longitude: z.number().nullish(),
@@ -37,6 +38,7 @@ const putLocationBodySchema = z
   .strict();
 
 type EventLocationRow = {
+  venue_name: string | null;
   formatted_address: string | null;
   latitude: number | null;
   longitude: number | null;
@@ -50,6 +52,7 @@ type EventLocationRow = {
 /** Stable empty shape returned by GET when no `EventLocation` row exists yet — the tab
  * always has something to render instead of branching on a 404. */
 const EMPTY_LOCATION_DTO: EventLocationDto = {
+  venue_name: null,
   formatted_address: null,
   latitude: null,
   longitude: null,
@@ -63,6 +66,7 @@ const EMPTY_LOCATION_DTO: EventLocationDto = {
 function serializeLocation(row: EventLocationRow | null): EventLocationDto {
   if (!row) return EMPTY_LOCATION_DTO;
   return {
+    venue_name: row.venue_name,
     formatted_address: row.formatted_address,
     latitude: row.latitude,
     longitude: row.longitude,
@@ -171,6 +175,7 @@ export async function handlePutEventLocation(c: Context, db: PrismaClient): Prom
         where: { event_id: eventId },
         create: {
           event_id: eventId,
+          venue_name: patch.venue_name ?? null,
           formatted_address: patch.formatted_address ?? null,
           latitude: mergedLatitude,
           longitude: mergedLongitude,
@@ -180,6 +185,7 @@ export async function handlePutEventLocation(c: Context, db: PrismaClient): Prom
           ...geocodingPatch,
         },
         update: {
+          ...(patch.venue_name !== undefined && { venue_name: patch.venue_name }),
           ...(patch.formatted_address !== undefined && { formatted_address: patch.formatted_address }),
           ...(patch.latitude !== undefined && { latitude: patch.latitude }),
           ...(patch.longitude !== undefined && { longitude: patch.longitude }),

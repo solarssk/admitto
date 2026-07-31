@@ -1,6 +1,7 @@
 import type { EventLocationInput } from "./types.js";
 
 export const LOCATION_LIMITS = {
+  VENUE_NAME_MAX_LENGTH: 300,
   ADDRESS_MAX_LENGTH: 500,
   TEXT_MAX_LENGTH: 2000,
   LATITUDE_MIN: -90,
@@ -54,6 +55,7 @@ function normalizeCoordinate(
 }
 
 export interface NormalizedEventLocationInput {
+  venue_name?: string | null;
   formatted_address?: string | null;
   latitude?: number | null;
   longitude?: number | null;
@@ -71,6 +73,9 @@ export interface NormalizedEventLocationInput {
  * just one axis when the other is already set on the stored record. */
 export function normalizeEventLocationInput(input: EventLocationInput): NormalizedEventLocationInput {
   const result: NormalizedEventLocationInput = {};
+
+  const venueName = normalizeText(input.venue_name, LOCATION_LIMITS.VENUE_NAME_MAX_LENGTH, "venue_name");
+  if (venueName !== undefined) result.venue_name = venueName;
 
   const address = normalizeText(input.formatted_address, LOCATION_LIMITS.ADDRESS_MAX_LENGTH, "formatted_address");
   if (address !== undefined) result.formatted_address = address;

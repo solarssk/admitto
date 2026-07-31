@@ -11,13 +11,27 @@ function jsonResponse(body: unknown, init: { status?: number; headers?: Record<s
   });
 }
 
+/** Builds a minimal GeocodeJSON FeatureCollection body from a flat list of feature shorthand. */
+function geocodeJsonBody(features: Array<{ name?: string; label?: string; coordinates?: unknown }>) {
+  return {
+    type: "FeatureCollection",
+    features: features.map(({ name, label, coordinates }) => ({
+      type: "Feature",
+      properties: { geocoding: { ...(name !== undefined ? { name } : {}), ...(label !== undefined ? { label } : {}) } },
+      geometry: { type: "Point", coordinates },
+    })),
+  };
+}
+
 describe("NominatimProvider", () => {
-  it("maps Nominatim jsonv2 results to GeocodingResult[]", async () => {
+  it("maps GeocodeJSON features to GeocodingResult[], swapping [lon, lat] to latitude/longitude", async () => {
     const fetchFn = vi.fn().mockResolvedValue(
-      jsonResponse([
-        { display_name: "Warsaw, Poland", lat: "52.2296756", lon: "21.0122287" },
-        { display_name: "Warsaw, IN, USA", lat: "38.6217", lon: "-87.6828" },
-      ]),
+      jsonResponse(
+        geocodeJsonBody([
+          { name: "Tour Eiffel", label: "Tour Eiffel, Paris, France", coordinates: [2.2945006, 48.8582599] },
+          { label: "Warsaw, IN, USA", coordinates: [-87.6828, 38.6217] },
+        ]),
+      ),
     );
     const provider = new NominatimProvider({
       baseUrl: "https://nominatim.example.org",
@@ -26,16 +40,42 @@ describe("NominatimProvider", () => {
       fetchFn,
     });
 
-    const results = await provider.search("Warsaw");
+    const results = await provider.search("Eiffel Tower");
 
     expect(results).toEqual([
-      { formatted_address: "Warsaw, Poland", latitude: 52.2296756, longitude: 21.0122287, provider: "nominatim" },
-      { formatted_address: "Warsaw, IN, USA", latitude: 38.6217, longitude: -87.6828, provider: "nominatim" },
+      {
+        name: "Tour Eiffel",
+        formatted_address: "Tour Eiffel, Paris, France",
+        latitude: 48.8582599,
+        longitude: 2.2945006,
+        provider: "nominatim",
+      },
+      {
+        formatted_address: "Warsaw, IN, USA",
+        latitude: 38.6217,
+        longitude: -87.6828,
+        provider: "nominatim",
+      },
     ]);
   });
 
-  it("sends the query, format, limit, and a dynamic User-Agent", async () => {
-    const fetchFn = vi.fn().mockResolvedValue(jsonResponse([]));
+  it("omits `name` when the feature has no localized venue/POI name", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse(geocodeJsonBody([{ label: "Some Street, Some City", coordinates: [10, 20] }])),
+    );
+    const provider = new NominatimProvider({
+      baseUrl: "https://nominatim.example.org",
+      timeoutMs: 5_000,
+      buildUserAgent,
+      fetchFn,
+    });
+
+    const [result] = await provider.search("Some Street");
+    expect(result?.name).toBeUndefined();
+  });
+
+  it("sends the query, geocodejson format, limit, and a dynamic User-Agent", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse(geocodeJsonBody([])));
     const provider = new NominatimProvider({
       baseUrl: "https://nominatim.example.org",
       timeoutMs: 5_000,
@@ -50,18 +90,17 @@ describe("NominatimProvider", () => {
     expect(url.origin).toBe("https://nominatim.example.org");
     expect(url.pathname).toBe("/search");
     expect(url.searchParams.get("q")).toBe("Main St");
-    expect(url.searchParams.get("format")).toBe("jsonv2");
+    expect(url.searchParams.get("format")).toBe("geocodejson");
     expect(url.searchParams.get("limit")).toBe("5");
     expect((requestInit.headers as Record<string, string>)["User-Agent"]).toBe(USER_AGENT);
   });
 
   it("caps results at 5 even when the provider returns more", async () => {
     const many = Array.from({ length: 7 }, (_, i) => ({
-      display_name: `Place ${i}`,
-      lat: String(50 + i),
-      lon: String(10 + i),
+      label: `Place ${i}`,
+      coordinates: [10 + i, 50 + i],
     }));
-    const fetchFn = vi.fn().mockResolvedValue(jsonResponse(many));
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse(geocodeJsonBody(many)));
     const provider = new NominatimProvider({
       baseUrl: "https://nominatim.example.org",
       timeoutMs: 5_000,
@@ -73,15 +112,22 @@ describe("NominatimProvider", () => {
     expect(results).toHaveLength(5);
   });
 
-  it("skips malformed entries (missing/non-numeric lat or lon) instead of throwing", async () => {
+  it("skips malformed entries (missing/non-numeric coordinates or label) instead of throwing", async () => {
     const fetchFn = vi.fn().mockResolvedValue(
-      jsonResponse([
-        { display_name: "Good", lat: "10", lon: "20" },
-        { display_name: "Missing lat", lon: "20" },
-        { display_name: "Bad lat", lat: "not-a-number", lon: "20" },
-        { lat: "10", lon: "20" },
-        "not even an object",
-      ]),
+      jsonResponse({
+        type: "FeatureCollection",
+        features: [
+          { type: "Feature", properties: { geocoding: { label: "Good" } }, geometry: { coordinates: [10, 20] } },
+          { type: "Feature", properties: { geocoding: {} }, geometry: { coordinates: [10, 20] } },
+          {
+            type: "Feature",
+            properties: { geocoding: { label: "Bad coords" } },
+            geometry: { coordinates: ["not-a-number", 20] },
+          },
+          { type: "Feature", properties: {}, geometry: { coordinates: [10, 20] } },
+          "not even an object",
+        ],
+      }),
     );
     const provider = new NominatimProvider({
       baseUrl: "https://nominatim.example.org",
@@ -91,10 +137,10 @@ describe("NominatimProvider", () => {
     });
 
     const results = await provider.search("mixed");
-    expect(results).toEqual([{ formatted_address: "Good", latitude: 10, longitude: 20, provider: "nominatim" }]);
+    expect(results).toEqual([{ formatted_address: "Good", latitude: 20, longitude: 10, provider: "nominatim" }]);
   });
 
-  it("returns an empty array when the response body is not an array", async () => {
+  it("returns an empty array when the response has no features array", async () => {
     const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ error: "unexpected shape" }));
     const provider = new NominatimProvider({
       baseUrl: "https://nominatim.example.org",
@@ -164,7 +210,7 @@ describe("NominatimProvider", () => {
 
   it("rejects a response advertising a body larger than the safety cap", async () => {
     const fetchFn = vi.fn().mockResolvedValue(
-      jsonResponse([], { headers: { "content-length": String(2_000_000) } }),
+      jsonResponse(geocodeJsonBody([]), { headers: { "content-length": String(2_000_000) } }),
     );
     const provider = new NominatimProvider({
       baseUrl: "https://nominatim.example.org",

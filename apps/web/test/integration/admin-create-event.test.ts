@@ -164,7 +164,7 @@ describe("POST /api/admin/events", () => {
       slug: "autumn-summit-2026",
       date: "2026-09-29",
       timezone: "UTC",
-      location: "Convention Center, Warsaw",
+      venue_name: "Convention Center, Warsaw",
     });
 
     expect(res.status).toBe(201);
@@ -174,14 +174,19 @@ describe("POST /api/admin/events", () => {
         title: string;
         slug: string;
         organization_id: string;
+        location: string | null;
       };
     };
     expect(body.event.title).toBe("Autumn Summit 2026");
     expect(body.event.slug).toBe("autumn-summit-2026");
     expect(body.event.organization_id).toBe(ORG_CREATE);
+    expect(body.event.location).toBe("Convention Center, Warsaw");
 
-    const row = await prisma.event.findUnique({ where: { id: body.event.id } });
-    expect(row?.location).toBe("Convention Center, Warsaw");
+    const row = await prisma.event.findUnique({
+      where: { id: body.event.id },
+      include: { location_details: true },
+    });
+    expect(row?.location_details?.venue_name).toBe("Convention Center, Warsaw");
     expect(row?.created_by_user_id).toBe(superId);
 
     const afterAudit = await prisma.adminAuditLog.count({

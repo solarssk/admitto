@@ -13,11 +13,13 @@ describe("normalizeEventLocationInput", () => {
 
   it("trims text fields and passes through valid values", () => {
     const result = normalizeEventLocationInput({
+      venue_name: "  ICE Kraków Congress Centre  ",
       formatted_address: "  ICE Kraków, ul. Marii Konopnickiej 17  ",
       directions_text: "  Enter via gate B  ",
       accessibility_text: "  Step-free access  ",
     });
     expect(result).toEqual({
+      venue_name: "ICE Kraków Congress Centre",
       formatted_address: "ICE Kraków, ul. Marii Konopnickiej 17",
       directions_text: "Enter via gate B",
       accessibility_text: "Step-free access",
@@ -26,9 +28,11 @@ describe("normalizeEventLocationInput", () => {
 
   it("normalizes empty/whitespace-only text to null (clears the field)", () => {
     const result = normalizeEventLocationInput({
+      venue_name: "   ",
       formatted_address: "   ",
       directions_text: "",
     });
+    expect(result.venue_name).toBeNull();
     expect(result.formatted_address).toBeNull();
     expect(result.directions_text).toBeNull();
   });
@@ -39,6 +43,7 @@ describe("normalizeEventLocationInput", () => {
   });
 
   it.each([
+    ["venue_name", LOCATION_LIMITS.VENUE_NAME_MAX_LENGTH],
     ["formatted_address", LOCATION_LIMITS.ADDRESS_MAX_LENGTH],
     ["directions_text", LOCATION_LIMITS.TEXT_MAX_LENGTH],
     ["accessibility_text", LOCATION_LIMITS.TEXT_MAX_LENGTH],
@@ -48,6 +53,7 @@ describe("normalizeEventLocationInput", () => {
   });
 
   it.each([
+    ["venue_name", "a".repeat(LOCATION_LIMITS.VENUE_NAME_MAX_LENGTH)],
     ["formatted_address", "a".repeat(LOCATION_LIMITS.ADDRESS_MAX_LENGTH)],
     ["directions_text", "a".repeat(LOCATION_LIMITS.TEXT_MAX_LENGTH)],
   ])("accepts %s exactly at its max length", (field, value) => {

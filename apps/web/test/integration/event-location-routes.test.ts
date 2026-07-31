@@ -177,6 +177,7 @@ describe("GET /api/admin/events/:eventId/location", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as EventLocationDto;
     expect(body).toEqual({
+      venue_name: null,
       formatted_address: null,
       latitude: null,
       longitude: null,
@@ -261,6 +262,7 @@ describe("PUT /api/admin/events/:eventId/location", () => {
     ["zoom too low", { map_zoom: 0 }],
     ["zoom too high", { map_zoom: 20 }],
     ["zoom not an integer", { map_zoom: 15.5 }],
+    ["venue_name too long", { venue_name: "a".repeat(301) }],
     ["formatted_address too long", { formatted_address: "a".repeat(501) }],
     ["directions_text too long", { directions_text: "a".repeat(2001) }],
     ["accessibility_text too long", { accessibility_text: "a".repeat(2001) }],
@@ -271,6 +273,7 @@ describe("PUT /api/admin/events/:eventId/location", () => {
 
   it("creates a new row with all fields on first save", async () => {
     const res = await putLocation(EVENT_LOC, adminCookie, {
+      venue_name: "ICE Kraków Congress Centre",
       formatted_address: "1 Example Street, Example City",
       latitude: 50.06,
       longitude: 19.94,
@@ -281,6 +284,7 @@ describe("PUT /api/admin/events/:eventId/location", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as EventLocationDto;
     expect(body).toMatchObject({
+      venue_name: "ICE Kraków Congress Centre",
       formatted_address: "1 Example Street, Example City",
       latitude: 50.06,
       longitude: 19.94,
@@ -291,6 +295,7 @@ describe("PUT /api/admin/events/:eventId/location", () => {
 
     const row = await prisma.eventLocation.findUnique({ where: { event_id: EVENT_LOC } });
     expect(row?.formatted_address).toBe("1 Example Street, Example City");
+    expect(row?.venue_name).toBe("ICE Kraków Congress Centre");
   });
 
   it("applies a default zoom of 15 when map_zoom is omitted on create", async () => {
@@ -304,6 +309,7 @@ describe("PUT /api/admin/events/:eventId/location", () => {
     await prisma.eventLocation.create({
       data: {
         event_id: EVENT_LOC,
+        venue_name: "Original Venue",
         formatted_address: "Original address",
         latitude: 50.06,
         longitude: 19.94,
@@ -315,11 +321,34 @@ describe("PUT /api/admin/events/:eventId/location", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as EventLocationDto;
     expect(body).toMatchObject({
+      venue_name: "Original Venue",
       formatted_address: "Original address",
       latitude: 50.06,
       longitude: 19.94,
       directions_text: "Updated directions",
     });
+  });
+
+  it("clears venue_name via null", async () => {
+    await prisma.eventLocation.create({
+      data: { event_id: EVENT_LOC, venue_name: "Will be cleared" },
+    });
+
+    const res = await putLocation(EVENT_LOC, adminCookie, { venue_name: null });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as EventLocationDto;
+    expect(body.venue_name).toBeNull();
+  });
+
+  it("clears venue_name via an empty string", async () => {
+    await prisma.eventLocation.create({
+      data: { event_id: EVENT_LOC, venue_name: "Will be cleared" },
+    });
+
+    const res = await putLocation(EVENT_LOC, adminCookie, { venue_name: "   " });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as EventLocationDto;
+    expect(body.venue_name).toBeNull();
   });
 
   it("clears a text field via null", async () => {
@@ -378,6 +407,7 @@ describe("PUT /api/admin/events/:eventId/location", () => {
 
   it("writes an event_location_updated admin audit log entry with the changed field names", async () => {
     const res = await putLocation(EVENT_LOC, adminCookie, {
+      venue_name: "Audited Venue",
       formatted_address: "Audited address",
       map_zoom: 12,
     });
@@ -390,7 +420,7 @@ describe("PUT /api/admin/events/:eventId/location", () => {
     expect(entries[0]?.actor_user_id).toBe(adminId);
     expect(entries[0]?.metadata).toMatchObject({
       eventId: EVENT_LOC,
-      fields: expect.arrayContaining(["formatted_address", "map_zoom"]),
+      fields: expect.arrayContaining(["venue_name", "formatted_address", "map_zoom"]),
     });
   });
 
