@@ -182,6 +182,7 @@ describe("POST /api/admin/events", () => {
 
     const row = await prisma.event.findUnique({ where: { id: body.event.id } });
     expect(row?.location).toBe("Convention Center, Warsaw");
+    expect(row?.created_by_user_id).toBe(superId);
 
     const afterAudit = await prisma.adminAuditLog.count({
       where: { organization_id: ORG_CREATE, action_type: "event_created" },
@@ -247,9 +248,12 @@ describe("POST /api/admin/events", () => {
     });
 
     expect(res.status).toBe(201);
-    const body = (await res.json()) as { event: { organization_id: string; slug: string } };
+    const body = (await res.json()) as { event: { id: string; organization_id: string; slug: string } };
     expect(body.event.organization_id).toBe(ORG_CREATE);
     expect(body.event.slug).toBe("admin-created-event");
+
+    const row = await prisma.event.findUniqueOrThrow({ where: { id: body.event.id } });
+    expect(row.created_by_user_id).toBe(adminId);
   });
 
   it("returns 403 for operator", async () => {

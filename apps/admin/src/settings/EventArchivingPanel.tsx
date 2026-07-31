@@ -1,23 +1,70 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, Card, useToast } from "@admitto/ui";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Link } from "react-router";
+import { Button, Card, EmptyState, Tooltip, useToast } from "@admitto/ui";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { PaginationFooter } from "../components/PaginationFooter.js";
+import { Segmented } from "../components/Segmented.js";
 import { archiveEvent, fetchAdminEvents, unarchiveEvent } from "../api/client.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto } from "../api/types.js";
-import { formatEventCalendarDate, formatUtcDateTime } from "../utils/event-dates.js";
+import { formatEventDateTime, formatUtcDateTime } from "../utils/event-dates.js";
 
 type ConfirmAction = { type: "archive" | "unarchive"; event: EventDto };
+type View = "active" | "archived";
+
+const CARD_HINT = "Archive completed events to hide them from default lists and make them read-only. Data is preserved.";
+const EVENT_HINT = "The line below the title is the event's URL slug, used in links — not an internal ID.";
+const EVENT_DATE_HINT = "The event's own date and time, in its local timezone — not when it was created.";
+const VIEW_OPTIONS = [
+  { value: "active" as const, label: "Active" },
+  { value: "archived" as const, label: "Archived" },
+];
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
+
+/** Best-effort "who" label for created_by/archived_by — display name, falling back to email,
+ * falling back to "-" for events predating this attribution (or a deleted user). */
+function actorLabel(displayName: string | null | undefined, email: string | null | undefined): string {
+  return displayName || email || "-";
+}
+
+/** Created/archived date+time in the acting admin's own timezone when known — a regular admin
+ * cares when they themselves did it, not the UTC instant. Falls back to UTC only when the
+ * actor's timezone wasn't captured (events predating this attribution, or a non-browser actor). */
+function actorDateTime(iso: string | null | undefined, timezone: string | null | undefined): string {
+  if (!iso) return "-";
+  return timezone ? formatEventDateTime(iso, timezone) : formatUtcDateTime(iso);
+}
+
+/** Date/time + "by <actor>" subline, shared by the desktop table cell and the mobile card row. */
+function actorCell(
+  iso: string | null | undefined,
+  timezone: string | null | undefined,
+  displayName: string | null | undefined,
+  email: string | null | undefined,
+): ReactNode {
+  return (
+    <>
+      {actorDateTime(iso, timezone)}
+      <span className="archiving-subdued archiving-subdued--block">by {actorLabel(displayName, email)}</span>
+    </>
+  );
+}
 
 /** Settings panel — archive/unarchive events (superadmin-only section). */
 export function EventArchivingPanel() {
   const { addToast } = useToast();
+  const isDesktop = useIsDesktop();
   const [events, setEvents] = useState<EventDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const [acting, setActing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [view, setView] = useState<View>("active");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -49,6 +96,16 @@ export function EventArchivingPanel() {
     () => events.filter((e) => e.archived_at),
     [events],
   );
+  const rows = view === "active" ? activeEvents : archivedEvents;
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  // A row can disappear from the current view under the current page (e.g. archiving the only
+  // event on the last page) without page itself changing - clamp instead of rendering an empty
+  // slice as "no events at all".
+  const currentPage = Math.min(page, totalPages);
+  const displayedRows = useMemo(
+    () => rows.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [rows, currentPage, pageSize],
+  );
 
   const handleConfirm = async () => {
     if (!confirmAction) return;
@@ -71,63 +128,25 @@ export function EventArchivingPanel() {
     }
   };
 
-  const renderEventTable = (
-    rows: EventDto[],
-    mode: "active" | "archived",
-    emptyMessage: string,
-  ) => {
-    if (rows.length === 0) {
-      return <p className="archiving-status">{emptyMessage}</p>;
-    }
-
-    return (
-      <div className="archiving-table-wrap">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Event</th>
-              <th>Date</th>
-              {mode === "archived" && <th>Archived</th>}
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((event) => (
-              <tr key={event.id}>
-                <td>
-                  <div>{event.title}</div>
-                  <div className="archiving-subdued">{event.slug}</div>
-                </td>
-                <td>{formatEventCalendarDate(event.date)}</td>
-                {mode === "archived" && (
-                  <td>{event.archived_at ? formatUtcDateTime(event.archived_at) : "-"}</td>
-                )}
-                <td>
-                  {mode === "active" ? (
-                    <Button
-                      type="button"
-                      variant="danger"
-                      onClick={() => setConfirmAction({ type: "archive", event })}
-                    >
-                      Archive
-                    </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() => setConfirmAction({ type: "unarchive", event })}
-                    >
-                      Unarchive
-                    </Button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+  const renderAction = (event: EventDto) =>
+    view === "active" ? (
+      <Button type="button" variant="danger" size="sm" onClick={() => setConfirmAction({ type: "archive", event })}>
+        Archive
+      </Button>
+    ) : (
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        onClick={() => setConfirmAction({ type: "unarchive", event })}
+      >
+        Unarchive
+      </Button>
     );
-  };
+
+  const emptyMessage = view === "active" ? "No active events" : "No archived events";
+  const emptyDescription =
+    view === "active" ? "Active events will appear here." : "Events you archive will appear here.";
 
   const restoreMessage = confirmAction
     ? `Restore "${confirmAction.event.title}" to active events? Edits will be allowed again.`
@@ -138,17 +157,149 @@ export function EventArchivingPanel() {
   // once the fetch has genuinely taken a moment.
   const showLoading = useDelayedLoading(loading);
 
+  let content: ReactNode;
+  if (displayedRows.length === 0) {
+    content = (
+      <EmptyState
+        icon={
+          <i
+            className={`ti ${view === "active" ? "ti-archive" : "ti-archive-off"}`}
+            aria-hidden="true"
+          />
+        }
+        title={emptyMessage}
+        description={emptyDescription}
+      />
+    );
+  } else if (isDesktop) {
+    content = (
+      <div className="archiving-table-wrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th scope="col">
+                <Tooltip content={EVENT_HINT} className="audit-log-scope-header">
+                  Event <i className="ti ti-info-circle" aria-hidden="true" />
+                </Tooltip>
+              </th>
+              <th scope="col">
+                <Tooltip content={EVENT_DATE_HINT} className="audit-log-scope-header">
+                  Event date <i className="ti ti-info-circle" aria-hidden="true" />
+                </Tooltip>
+              </th>
+              <th scope="col">Attendees</th>
+              <th scope="col">Created</th>
+              {view === "archived" && <th scope="col">Archived</th>}
+              <th scope="col">
+                <span className="sr-only">Action</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {displayedRows.map((event) => (
+              <tr key={event.id}>
+                <td>
+                  <Link to={`/admin/events/${event.id}/overview`}>{event.title}</Link>
+                  <div className="archiving-subdued">{event.slug}</div>
+                </td>
+                <td>{formatEventDateTime(event.date, event.timezone)}</td>
+                <td>{event.attendee_count ?? "-"}</td>
+                <td>
+                  {actorCell(
+                    event.created_at,
+                    event.created_by_timezone,
+                    event.created_by_display_name,
+                    event.created_by_email,
+                  )}
+                </td>
+                {view === "archived" && (
+                  <td>
+                    {actorCell(
+                      event.archived_at,
+                      event.archived_by_timezone,
+                      event.archived_by_display_name,
+                      event.archived_by_email,
+                    )}
+                  </td>
+                )}
+                <td>{renderAction(event)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  } else {
+    content = (
+      <div className="archiving-cards">
+        {displayedRows.map((event) => (
+          <div className="archiving-card" key={event.id}>
+            <div className="archiving-card__head">
+              <div>
+                <Link to={`/admin/events/${event.id}/overview`}>{event.title}</Link>
+                <div className="archiving-subdued">{event.slug}</div>
+              </div>
+              {renderAction(event)}
+            </div>
+            <div className="archiving-card__row">
+              <span className="archiving-card__label">Event date</span>
+              <span>{formatEventDateTime(event.date, event.timezone)}</span>
+            </div>
+            <div className="archiving-card__row">
+              <span className="archiving-card__label">Attendees</span>
+              <span>{event.attendee_count ?? "-"}</span>
+            </div>
+            <div className="archiving-card__row">
+              <span className="archiving-card__label">Created</span>
+              <span>
+                {actorCell(
+                  event.created_at,
+                  event.created_by_timezone,
+                  event.created_by_display_name,
+                  event.created_by_email,
+                )}
+              </span>
+            </div>
+            {view === "archived" && (
+              <div className="archiving-card__row">
+                <span className="archiving-card__label">Archived</span>
+                <span>
+                  {actorCell(
+                    event.archived_at,
+                    event.archived_by_timezone,
+                    event.archived_by_display_name,
+                    event.archived_by_email,
+                  )}
+                </span>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <>
-      <Card title="Event archiving">
-        <p className="archiving-hint">
-          Archive completed events to hide them from default lists and make them read-only. Data is
-          preserved.
-        </p>
-        <p className="archiving-note">
-          Data deletion is a separate ops step (v1.0).
-        </p>
-
+      <Card
+        title={
+          <Tooltip content={CARD_HINT} className="audit-log-scope-header">
+            Event archiving <i className="ti ti-info-circle" aria-hidden="true" />
+          </Tooltip>
+        }
+        actions={
+          <Segmented
+            ariaLabel="Event view"
+            value={view}
+            onChange={(next) => {
+              setView(next);
+              setPage(1);
+            }}
+            options={VIEW_OPTIONS}
+            className="archiving-view-toggle"
+          />
+        }
+      >
         {loading && showLoading && <p className="archiving-status">Loading…</p>}
 
         {!loading && error && (
@@ -162,14 +313,26 @@ export function EventArchivingPanel() {
 
         {!loading && !error && (
           <>
-            <h3 className="archiving-section-title">Active</h3>
-            {renderEventTable(activeEvents, "active", "No active events.")}
+            {content}
 
-            <h3 className="archiving-section-title">Archived</h3>
-            {renderEventTable(archivedEvents, "archived", "No archived events.")}
+            {rows.length > 0 && (
+              <PaginationFooter
+                idPrefix="archiving"
+                page={currentPage}
+                pageSize={pageSize}
+                totalPages={totalPages}
+                totalRows={rows.length}
+                pageSizeOptions={PAGE_SIZE_OPTIONS}
+                onPageSizeChange={(size) => {
+                  setPageSize(size);
+                  setPage(1);
+                }}
+                onPrevious={() => setPage(Math.max(1, currentPage - 1))}
+                onNext={() => setPage(Math.min(totalPages, currentPage + 1))}
+              />
+            )}
           </>
         )}
-
       </Card>
 
       <ConfirmDialog

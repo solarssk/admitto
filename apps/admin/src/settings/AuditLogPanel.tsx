@@ -16,6 +16,7 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AuditLogEntryDto, EventDto, SecurityAuditLogEntryDto } from "../api/types.js";
 import { DatePicker } from "../components/DatePicker.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
+import { PaginationFooter } from "../components/PaginationFooter.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { useClickOutside } from "../components/useClickOutside.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
@@ -1411,55 +1412,20 @@ function LogView({
       {listContent}
 
       {!loading && !error && total > 0 && (
-        <div className="audit-log-footer">
-          <div className="audit-log-footer__summary">
-            <span className="audit-log-footer__info">
-              {`Showing ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
-            </span>
-            <div className="audit-log-pagesize">
-              <label htmlFor={`${idPrefix}-pagesize-select`}>Rows per page</label>
-              <select
-                id={`${idPrefix}-pagesize-select`}
-                name={`${idPrefix}-pagesize-select`}
-                className="at-select audit-log-pagesize-select"
-                value={pageSize}
-                onChange={(e) => {
-                  setPageSize(Number(e.target.value));
-                  setPage(1);
-                }}
-              >
-                {PAGE_SIZE_OPTIONS.map((size) => (
-                  <option key={size} value={size}>
-                    {size}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <div className="audit-log-footer__pager">
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => goToPage(Math.max(1, page - 1))}
-            >
-              Previous
-            </Button>
-            <span>
-              Page {page} of {totalPages}
-            </span>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => goToPage(page + 1)}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
+        <PaginationFooter
+          idPrefix={idPrefix}
+          page={page}
+          pageSize={pageSize}
+          totalPages={totalPages}
+          totalRows={total}
+          pageSizeOptions={PAGE_SIZE_OPTIONS}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setPage(1);
+          }}
+          onPrevious={() => goToPage(Math.max(1, page - 1))}
+          onNext={() => goToPage(page + 1)}
+        />
       )}
     </>
   );
