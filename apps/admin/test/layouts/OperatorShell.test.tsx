@@ -88,7 +88,8 @@ describe("OperatorShell", () => {
       expect(screen.getByText("Operator Gala")).toBeTruthy();
     });
     expect(screen.getByText("Kraków")).toBeTruthy();
-    expect(mockFetchCheckInEvents).toHaveBeenCalled();
+    // The sidebar never shows attendee counts, so it must not request them.
+    expect(mockFetchCheckInEvents).toHaveBeenCalledWith();
     expect(screen.queryByTestId("connection-banner")).toBeNull();
     expect(connectionBanner).not.toHaveBeenCalled();
   });

@@ -38,6 +38,7 @@ async function seed(client: PrismaClient) {
     where: { user: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN] } } },
   });
   await client.user.deleteMany({ where: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN, EMAIL_OP] } } });
+  await client.attendee.deleteMany({ where: { event_id: { in: [EVENT_A, EVENT_B] } } });
   await client.event.deleteMany({ where: { id: { in: [EVENT_A, EVENT_B] } } });
   await client.organization.deleteMany({ where: { id: { in: [ORG_A, ORG_B] } } });
 
@@ -221,17 +222,23 @@ describe("GET /api/checkin/events", () => {
     expect(res.status).toBe(401);
   });
 
-  it("lists check-in events for operator, including attendee_count", async () => {
-    await prisma.attendee.create({
-      data: {
+  async function seedCountFixtureAttendee() {
+    await prisma.attendee.upsert({
+      where: { id: "att-staff-foundation-checkin-count" },
+      update: {},
+      create: {
         id: "att-staff-foundation-checkin-count",
         event_id: EVENT_A,
         email: "staff-foundation-checkin-count@example.com",
         name: "Count Fixture",
       },
     });
+  }
 
-    const res = await app.request("/api/checkin/events", {
+  it("lists check-in events for operator, including attendee_count when requested", async () => {
+    await seedCountFixtureAttendee();
+
+    const res = await app.request("/api/checkin/events?includeAttendeeCount=true", {
       headers: { Cookie: await sessionCookieFor(opId) },
     });
     expect(res.status).toBe(200);
@@ -241,6 +248,23 @@ describe("GET /api/checkin/events", () => {
     expect(body.events.map((e) => e.id)).toEqual([EVENT_A]);
     expect(body.events[0]!.timezone).toBeTruthy();
     expect(body.events[0]!.attendee_count).toBe(1);
+    expect(body.events[0]!.archived_at).toBeNull();
+  });
+
+  it("omits attendee_count entirely without includeAttendeeCount, skipping the aggregate query", async () => {
+    await seedCountFixtureAttendee();
+
+    const res = await app.request("/api/checkin/events", {
+      headers: { Cookie: await sessionCookieFor(opId) },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      events: Array<Record<string, unknown>>;
+    };
+    expect(body.events.map((e) => e.id)).toEqual([EVENT_A]);
+    // The event has an attendee, so a counted response would carry 1 — the key is absent, not 0.
+    expect(Object.hasOwn(body.events[0]!, "attendee_count")).toBe(false);
+    expect(body.events[0]!.timezone).toBeTruthy();
     expect(body.events[0]!.archived_at).toBeNull();
   });
 

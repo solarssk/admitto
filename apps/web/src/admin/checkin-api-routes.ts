@@ -25,22 +25,25 @@ import { resolveClientIp } from "../rate-limit/client-ip.js";
 import { publishCheckinIfValid } from "./checkin-sse-publish.js";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import {
+  countAttendeesByEvent,
   itemTransitionErrorResponse,
   resolveClientTimezone,
 } from "./admin-helpers.js";
 
-/** GET /api/checkin/events — session-only capability list (P4). */
+/** GET /api/checkin/events — session-only capability list (P4).
+ *  `attendee_count` costs an extra aggregate query, so it is opt-in via
+ *  `?includeAttendeeCount=true` and omitted from the DTO otherwise — only the
+ *  operator event picker displays it. */
 export async function handleGetCheckinEvents(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");
+  const includeAttendeeCount = c.req.query("includeAttendeeCount") === "true";
   const events = await listCheckInEvents(db, auth.userId);
 
-  const counts = await db.attendee.groupBy({
-    by: ["event_id"],
-    where: { event_id: { in: events.map((e) => e.id) } },
-    _count: { _all: true },
-  });
-  const countByEvent = new Map(counts.map((row) => [row.event_id, row._count._all]));
+  if (!includeAttendeeCount) {
+    return c.json({ events: events.map((e) => serializeEventDto(e)) });
+  }
 
+  const countByEvent = await countAttendeesByEvent(db, events.map((e) => e.id));
   return c.json({
     events: events.map((e) => serializeEventDto(e, countByEvent.get(e.id) ?? 0)),
   });

@@ -64,6 +64,8 @@ describe("CheckInEntryPage", () => {
     expect(document.querySelector(".event-grid--cols-2")).toBeTruthy();
     expect(document.querySelector(".event-card--touch")).toBeTruthy();
     expect(screen.getByText("42")).toBeTruthy();
+    // Only this page renders counts, so it is the one caller that opts into the extra query.
+    expect(fetchCheckInEvents).toHaveBeenCalledWith({ includeAttendeeCount: true });
   });
 
   it("uses the three-column grid when at least four events are available, same as the admin picker", async () => {

@@ -5,7 +5,7 @@ import { z } from "zod";
 import { canManageInstance, listAdminEvents } from "@admitto/auth";
 import { ensureBadgeEventItem, ensureStandardTicketType, writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
-import { adminAuditFromContext, resolveActorEmailForLog } from "./admin-helpers.js";
+import { adminAuditFromContext, countAttendeesByEvent, resolveActorEmailForLog } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { timezoneField } from "./timezone.js";
 
@@ -109,13 +109,7 @@ export async function handleGetAdminEvents(c: Context, db: PrismaClient): Promis
   const auth = c.get("auth");
   const includeArchived = c.req.query("includeArchived") === "true";
   const events = await listAdminEvents(db, auth.userId, { includeArchived });
-
-  const counts = await db.attendee.groupBy({
-    by: ["event_id"],
-    where: { event_id: { in: events.map((e) => e.id) } },
-    _count: { _all: true },
-  });
-  const countByEvent = new Map(counts.map((row) => [row.event_id, row._count._all]));
+  const countByEvent = await countAttendeesByEvent(db, events.map((e) => e.id));
 
   return c.json({
     events: events.map((e) => serializeEventDto(e, countByEvent.get(e.id) ?? 0)),

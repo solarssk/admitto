@@ -542,8 +542,16 @@ export async function exportEventPii(eventId: string, signal?: AbortSignal): Pro
   return res;
 }
 
-export async function fetchCheckInEvents(signal?: AbortSignal): Promise<EventDto[]> {
-  const res = await fetch("/api/checkin/events", { credentials: "same-origin", signal });
+/** Load operator check-in events; pass includeAttendeeCount when the caller renders counts
+ *  (an extra aggregate query server-side — the sidebar and scan page do not need it). */
+export async function fetchCheckInEvents(
+  opts?: { includeAttendeeCount?: boolean; signal?: AbortSignal },
+): Promise<EventDto[]> {
+  const params = opts?.includeAttendeeCount ? "?includeAttendeeCount=true" : "";
+  const res = await fetch(`/api/checkin/events${params}`, {
+    credentials: "same-origin",
+    signal: opts?.signal,
+  });
   const data = await parseJson<{ events: EventDto[] }>(res);
   return data.events;
 }

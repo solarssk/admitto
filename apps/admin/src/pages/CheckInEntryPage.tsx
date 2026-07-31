@@ -18,7 +18,7 @@ export function CheckInEntryPage() {
     let cancelled = false;
     (async () => {
       try {
-        const list = await fetchCheckInEvents();
+        const list = await fetchCheckInEvents({ includeAttendeeCount: true });
         if (cancelled) return;
         if (list.length === 1) {
           navigate(`/operator/events/${list[0]!.id}/checkin`, { replace: true });

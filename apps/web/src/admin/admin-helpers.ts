@@ -28,6 +28,20 @@ export async function resolveMailInstanceBaseUrl(
   }
 }
 
+/** Attendee counts for a set of events, keyed by event id — shared by the admin and
+ * check-in events-list endpoints, which both attach `attendee_count` to their DTOs. */
+export async function countAttendeesByEvent(
+  db: PrismaClient,
+  eventIds: string[],
+): Promise<Map<string, number>> {
+  const counts = await db.attendee.groupBy({
+    by: ["event_id"],
+    where: { event_id: { in: eventIds } },
+    _count: { _all: true },
+  });
+  return new Map(counts.map((row) => [row.event_id, row._count._all]));
+}
+
 /** Return 403 when the session user cannot manage the event; otherwise null. */
 export async function assertEventManageAccess(
   c: Context,
