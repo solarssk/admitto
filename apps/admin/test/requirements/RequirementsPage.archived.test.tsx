@@ -11,6 +11,7 @@ import { getTooltipText } from "../test-utils.js";
 const fetchEventItems = vi.fn();
 const fetchEventCustomFields = vi.fn();
 const fetchOpsConfig = vi.fn();
+const reportApiError = vi.fn();
 
 vi.mock("../../src/api/client.js", () => ({
   ApiError: class ApiError extends Error {
@@ -32,7 +33,7 @@ vi.mock("../../src/api/client.js", () => ({
 }));
 
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ reportApiError: vi.fn() }),
+  useConnectionState: () => ({ reportApiError }),
 }));
 
 vi.mock("react-router", async (importOriginal) => {
