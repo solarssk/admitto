@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { Link } from "react-router";
 import { Button, Card, EmptyState, Tooltip, useToast } from "@admitto/ui";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { PaginationFooter } from "../components/PaginationFooter.js";
 import { Segmented } from "../components/Segmented.js";
 import { archiveEvent, fetchAdminEvents, unarchiveEvent } from "../api/client.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
@@ -311,55 +312,20 @@ export function EventArchivingPanel() {
             {content}
 
             {rows.length > 0 && (
-              <div className="audit-log-footer">
-                <div className="audit-log-footer__summary">
-                  <span className="audit-log-footer__info">
-                    {`Showing ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, rows.length)} of ${rows.length}`}
-                  </span>
-                  <div className="audit-log-pagesize">
-                    <label htmlFor="archiving-pagesize-select">Rows per page</label>
-                    <select
-                      id="archiving-pagesize-select"
-                      name="archiving-pagesize-select"
-                      className="at-select audit-log-pagesize-select"
-                      value={pageSize}
-                      onChange={(e) => {
-                        setPageSize(Number(e.target.value));
-                        setPage(1);
-                      }}
-                    >
-                      {PAGE_SIZE_OPTIONS.map((size) => (
-                        <option key={size} value={size}>
-                          {size}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                <div className="audit-log-footer__pager">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    disabled={page <= 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  >
-                    Previous
-                  </Button>
-                  <span>
-                    Page {page} of {totalPages}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    disabled={page >= totalPages}
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  >
-                    Next
-                  </Button>
-                </div>
-              </div>
+              <PaginationFooter
+                idPrefix="archiving"
+                page={page}
+                pageSize={pageSize}
+                totalPages={totalPages}
+                totalRows={rows.length}
+                pageSizeOptions={PAGE_SIZE_OPTIONS}
+                onPageSizeChange={(size) => {
+                  setPageSize(size);
+                  setPage(1);
+                }}
+                onPrevious={() => setPage((p) => Math.max(1, p - 1))}
+                onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+              />
             )}
           </>
         )}
