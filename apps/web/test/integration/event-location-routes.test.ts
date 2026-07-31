@@ -393,4 +393,112 @@ describe("PUT /api/admin/events/:eventId/location", () => {
       fields: expect.arrayContaining(["formatted_address", "map_zoom"]),
     });
   });
+
+  describe("geocoding provenance (geocoding_provider / geocoded_at)", () => {
+    it("stamps geocoding_provider and geocoded_at when coordinates arrive with a provider", async () => {
+      const res = await putLocation(EVENT_LOC, adminCookie, {
+        latitude: 50.06,
+        longitude: 19.94,
+        geocoding_provider: "nominatim",
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as EventLocationDto;
+      expect(body.geocoding_provider).toBe("nominatim");
+      expect(body.geocoded_at).not.toBeNull();
+      expect(new Date(body.geocoded_at ?? "").getTime()).not.toBeNaN();
+    });
+
+    it("clears geocoding_provider and geocoded_at when coordinates change without a provider (manual drag)", async () => {
+      await prisma.eventLocation.create({
+        data: {
+          event_id: EVENT_LOC,
+          latitude: 50.06,
+          longitude: 19.94,
+          geocoding_provider: "nominatim",
+          geocoded_at: new Date(),
+        },
+      });
+
+      const res = await putLocation(EVENT_LOC, adminCookie, { latitude: 50.07, longitude: 19.95 });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as EventLocationDto;
+      expect(body.geocoding_provider).toBeNull();
+      expect(body.geocoded_at).toBeNull();
+    });
+
+    it("clears geocoding_provider and geocoded_at when coordinates are cleared entirely", async () => {
+      await prisma.eventLocation.create({
+        data: {
+          event_id: EVENT_LOC,
+          latitude: 50.06,
+          longitude: 19.94,
+          geocoding_provider: "nominatim",
+          geocoded_at: new Date(),
+        },
+      });
+
+      const res = await putLocation(EVENT_LOC, adminCookie, { latitude: null, longitude: null });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as EventLocationDto;
+      expect(body.geocoding_provider).toBeNull();
+      expect(body.geocoded_at).toBeNull();
+    });
+
+    it("leaves geocoding_provider and geocoded_at untouched when coordinates are not part of the patch", async () => {
+      const created = await prisma.eventLocation.create({
+        data: {
+          event_id: EVENT_LOC,
+          latitude: 50.06,
+          longitude: 19.94,
+          geocoding_provider: "nominatim",
+          geocoded_at: new Date("2026-01-01T00:00:00.000Z"),
+        },
+      });
+
+      const res = await putLocation(EVENT_LOC, adminCookie, { directions_text: "Updated directions" });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as EventLocationDto;
+      expect(body.geocoding_provider).toBe("nominatim");
+      expect(body.geocoded_at).toBe(created.geocoded_at?.toISOString());
+    });
+
+    it("treats a blank geocoding_provider the same as omitting it (clears provenance)", async () => {
+      await prisma.eventLocation.create({
+        data: {
+          event_id: EVENT_LOC,
+          latitude: 50.06,
+          longitude: 19.94,
+          geocoding_provider: "nominatim",
+          geocoded_at: new Date(),
+        },
+      });
+
+      const res = await putLocation(EVENT_LOC, adminCookie, {
+        latitude: 50.08,
+        longitude: 19.96,
+        geocoding_provider: "   ",
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as EventLocationDto;
+      expect(body.geocoding_provider).toBeNull();
+      expect(body.geocoded_at).toBeNull();
+    });
+
+    it("includes geocoding_provider in the audit log's changed fields when coordinates change", async () => {
+      const res = await putLocation(EVENT_LOC, adminCookie, {
+        latitude: 50.06,
+        longitude: 19.94,
+        geocoding_provider: "nominatim",
+      });
+      expect(res.status).toBe(200);
+
+      const entries = await prisma.adminAuditLog.findMany({
+        where: { organization_id: ORG_LOC, action_type: "event_location_updated" },
+      });
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.metadata).toMatchObject({
+        fields: expect.arrayContaining(["latitude", "longitude", "geocoding_provider"]),
+      });
+    });
+  });
 });

@@ -29,6 +29,10 @@ const putLocationBodySchema = z
     map_zoom: z.number().nullish(),
     directions_text: z.string().nullish(),
     accessibility_text: z.string().nullish(),
+    // API-layer only — not part of `@admitto/location`'s EventLocationInput, since it isn't a
+    // user-editable field with its own validation rules. It only ever rides along with a
+    // latitude/longitude change (see the geocoding provenance logic below).
+    geocoding_provider: z.string().nullish(),
   })
   .strict();
 
@@ -138,7 +142,20 @@ export async function handlePutEventLocation(c: Context, db: PrismaClient): Prom
     throw err;
   }
 
-  const changedFields = Object.keys(patch);
+  // Geocoding provenance: a coordinate change made by picking a search result carries a
+  // `geocoding_provider` (e.g. "nominatim") and is stamped `geocoded_at: now()`. A coordinate
+  // change with no provider — a dragged pin, a manually typed lat/lng, or a "clear location" —
+  // means the previous provenance no longer describes these coordinates, so both are reset to
+  // null. Leaving lat/lng untouched leaves provenance untouched too.
+  const coordinatesInPatch = patch.latitude !== undefined || patch.longitude !== undefined;
+  const rawProvider = parsed.data.geocoding_provider?.trim();
+  const geocodingPatch = coordinatesInPatch
+    ? rawProvider
+      ? { geocoding_provider: rawProvider, geocoded_at: new Date() }
+      : { geocoding_provider: null, geocoded_at: null }
+    : {};
+
+  const changedFields = [...Object.keys(patch), ...(coordinatesInPatch ? ["geocoding_provider"] : [])];
   const audit = adminAuditFromContext(c);
   const actorUserId = c.get("auth").userId;
 
@@ -160,6 +177,7 @@ export async function handlePutEventLocation(c: Context, db: PrismaClient): Prom
           ...(patch.map_zoom !== undefined && { map_zoom: patch.map_zoom }),
           directions_text: patch.directions_text ?? null,
           accessibility_text: patch.accessibility_text ?? null,
+          ...geocodingPatch,
         },
         update: {
           ...(patch.formatted_address !== undefined && { formatted_address: patch.formatted_address }),
@@ -168,6 +186,7 @@ export async function handlePutEventLocation(c: Context, db: PrismaClient): Prom
           ...(patch.map_zoom !== undefined && { map_zoom: patch.map_zoom }),
           ...(patch.directions_text !== undefined && { directions_text: patch.directions_text }),
           ...(patch.accessibility_text !== undefined && { accessibility_text: patch.accessibility_text }),
+          ...geocodingPatch,
         },
       });
 

@@ -624,6 +624,32 @@ describe("PUT /api/admin/theme", () => {
   });
 });
 
+describe("GET /api/admin/maps/config", () => {
+  it("returns the default map tile config for an org admin", async () => {
+    const res = await app.request("/api/admin/maps/config", {
+      headers: { Cookie: await sessionCookieFor(adminId) },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      enabled: boolean;
+      tile_url: string;
+      attribution: string;
+      max_zoom: number;
+    };
+    expect(body).toEqual({
+      enabled: true,
+      tile_url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      max_zoom: 19,
+    });
+  });
+
+  it("rejects an unauthenticated request", async () => {
+    const res = await app.request("/api/admin/maps/config");
+    expect(res.status).toBe(401);
+  });
+});
+
 describe("staff SPA routes", () => {
   it("serves admin SPA for org admin", async () => {
     const res = await app.request("/admin", {

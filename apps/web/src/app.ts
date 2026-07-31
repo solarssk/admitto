@@ -216,6 +216,7 @@ import {
 } from "./admin/event-mail-settings-routes.js";
 import { handleGetEventLocation, handlePutEventLocation } from "./admin/event-location-routes.js";
 import { handlePostGeocodingSearch } from "./admin/geocoding-routes.js";
+import { handleGetMapsConfig } from "./admin/maps-config-routes.js";
 import { resolveGeocodingConfig } from "./maps/config.js";
 import { buildGeocodingUserAgent } from "./maps/user-agent.js";
 import { NominatimProvider } from "./maps/nominatim-provider.js";
@@ -661,6 +662,7 @@ export function createApp(options: CreateAppOptions = {}) {
     adminGeocodingSearchRateLimit,
     (c) => handlePostGeocodingSearch(c, db, geocodingService),
   );
+  app.get("/api/admin/maps/config", staffAdminGate, (c) => handleGetMapsConfig(c));
   app.post(
     "/api/admin/events/:eventId/branding-upload",
     jsonPostCsrf,
