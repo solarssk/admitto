@@ -13,6 +13,7 @@ import {
   createUser,
   findUserByEmail,
   hashPassword,
+  isPasswordTooCommon,
   normalizeEmail,
   PASSWORD_MIN_LENGTH,
   resetUserMfa,
@@ -283,6 +284,9 @@ export async function handlePostUser(c: Context, db: PrismaClient): Promise<Resp
   const email = normalizeEmail(emailRaw);
   if (!email || password.length < PASSWORD_MIN_LENGTH) {
     return c.json({ error: "invalid_request" }, 400);
+  }
+  if (isPasswordTooCommon(password)) {
+    return c.json({ code: "password_too_common", error: "password_too_common" }, 400);
   }
 
   const existing = await findUserByEmail(db, email);
@@ -696,6 +700,9 @@ export async function handlePostResetUserPassword(c: Context, db: PrismaClient):
   const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
   const newPassword = typeof body?.new_password === "string" ? body.new_password : "";
   if (newPassword.length < PASSWORD_MIN_LENGTH) return c.json({ error: "invalid_request" }, 400);
+  if (isPasswordTooCommon(newPassword)) {
+    return c.json({ code: "password_too_common", error: "password_too_common" }, 400);
+  }
 
   const user = await db.user.findUnique({ where: { id }, select: { id: true, email: true } });
   if (!user) return c.json({ error: "not_found" }, 404);

@@ -22,6 +22,7 @@ export {
 } from "./constants.js";
 
 export { hashPassword, verifyPassword, verifyPasswordOrDummy } from "./password.js";
+export { isPasswordTooCommon, isPasswordBlocklisted, hasTrivialCharacterPattern } from "./password-blocklist.js";
 export {
   scorePasswordStrength,
   scorePasswordStrengthInline,

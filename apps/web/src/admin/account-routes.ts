@@ -6,6 +6,7 @@ import {
   confirmTotpEnrollment,
   getOrStartTotpEnrollment,
   hashPassword,
+  isPasswordTooCommon,
   markBackupCodesAcknowledged,
   revokeAllTrustedDevicesForUser,
   revokeOtherSessions,
@@ -347,6 +348,9 @@ export async function handlePatchAccountPassword(
   const { current_password, new_password, new_password_confirm } = parsed.data;
   if (new_password !== new_password_confirm) {
     return c.json({ error: "passwords do not match" }, 400);
+  }
+  if (isPasswordTooCommon(new_password)) {
+    return c.json({ code: "password_too_common", error: "password_too_common" }, 400);
   }
 
   const user = await db.user.findUnique({

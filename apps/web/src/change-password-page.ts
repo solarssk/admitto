@@ -28,12 +28,16 @@ export function getChangePasswordPageSecurityHeaders(scriptNonce: string): Recor
 
 const PASSWORD_MISMATCH = "password_mismatch";
 const PASSWORD_TOO_SHORT = "password_too_short";
+const PASSWORD_TOO_COMMON = "password_too_common";
 const PASSWORD_INVALID = "password_invalid";
 export const PASSWORD_COMPLETE_FAILED = "password_complete_failed";
 
 function errorMessage(error?: string): string | undefined {
   if (error === PASSWORD_MISMATCH) return "Passwords do not match.";
   if (error === PASSWORD_TOO_SHORT) return `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`;
+  if (error === PASSWORD_TOO_COMMON) {
+    return "This password is too common or predictable. Choose a different one.";
+  }
   if (error === PASSWORD_INVALID) return "Could not update password. Try again.";
   if (error === PASSWORD_COMPLETE_FAILED) {
     return "Password updated, but sign-in could not be completed. Try logging in again.";
@@ -74,4 +78,4 @@ export function renderChangePasswordForm(scriptNonce: string, error?: string): s
   });
 }
 
-export { PASSWORD_MISMATCH, PASSWORD_TOO_SHORT, PASSWORD_INVALID };
+export { PASSWORD_MISMATCH, PASSWORD_TOO_SHORT, PASSWORD_TOO_COMMON, PASSWORD_INVALID };

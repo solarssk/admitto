@@ -30,6 +30,7 @@ export function getSetupPageSecurityHeaders(scriptNonce: string): Record<string,
 export type SetupErrorCode =
   | "invalid_email"
   | "password_too_short"
+  | "password_too_common"
   | "password_mismatch"
   | "email_taken";
 
@@ -40,6 +41,8 @@ export function setupErrorMessage(code?: SetupErrorCode): string | undefined {
       return "Enter a valid email address.";
     case "password_too_short":
       return `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`;
+    case "password_too_common":
+      return "This password is too common or predictable. Choose a different one.";
     case "password_mismatch":
       return "Passwords do not match.";
     case "email_taken":
