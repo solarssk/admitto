@@ -370,7 +370,14 @@ export function AccountPage() {
               </div>
             </div>
             <div className="mail-field-row">
-              <label className="mail-field-label" htmlFor="account-confirm-password">Confirm new password</label>
+              <div className="mail-secret-field__label-row">
+                <label className="mail-field-label" htmlFor="account-confirm-password">Confirm new password</label>
+                {passwordMismatch && (
+                  <span id="account-confirm-password-error" className="text-error" role="alert">
+                    Passwords do not match.
+                  </span>
+                )}
+              </div>
               <Input
                 id="account-confirm-password"
                 name="confirm-new-password"
@@ -383,11 +390,6 @@ export function AccountPage() {
                 aria-invalid={passwordMismatch || undefined}
                 aria-describedby={passwordMismatch ? "account-confirm-password-error" : undefined}
               />
-              {passwordMismatch && (
-                <p id="account-confirm-password-error" className="text-error" role="alert">
-                  Passwords do not match.
-                </p>
-              )}
             </div>
             <div className="mail-transport-footer">
               <Button type="submit" variant="primary" disabled={passwordSaving || !passwordFormValid}>

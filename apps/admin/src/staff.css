@@ -3904,7 +3904,8 @@ output.mail-field-hint {
 .mail-transport-section > .settings-row,
 .mail-transport-section > .mail-tuning__toggles,
 .mail-transport-section > .mail-tuning__limits,
-.mail-transport-section > .mail-tuning__timeouts {
+.mail-transport-section > .mail-tuning__timeouts,
+.mail-transport-section > .security-numeric-grid {
   grid-column: 1 / -1;
 }
 
@@ -3936,6 +3937,23 @@ output.mail-field-hint {
   .mail-transport-section,
   .mail-tuning__limits,
   .mail-tuning__timeouts {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Security panel — pairs of related numeric fields (session lifetime + idle timeout) side
+   by side instead of each on its own full-width row; same grid pattern as .mail-tuning__limits
+   above, just 2 columns since these come in pairs rather than threes. Each field's own <input>
+   is width-capped via inline style (see SecurityPanel's NUMERIC_INPUT_STYLE) since a number
+   never needs the full grid-column width a text field would. */
+.security-numeric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3) var(--space-4);
+}
+
+@media (max-width: 560px) {
+  .security-numeric-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -4423,7 +4441,9 @@ output.mail-field-hint {
   }
 }
 
-/* mfa-roles-fieldset — Security panel "Require 2FA for roles" checkbox group */
+/* mfa-roles-fieldset — Security panel "Require 2FA for roles" switch group. Legend stays on
+   its own line; the switches themselves sit in one wrapping row below it (see
+   .mfa-roles-fieldset__switches) instead of a stacked checkbox list. */
 .mfa-roles-fieldset {
   border: 0;
   padding: 0;
@@ -4432,6 +4452,12 @@ output.mail-field-hint {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+}
+
+.mfa-roles-fieldset__switches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
 }
 
 .mfa-roles-fieldset legend {

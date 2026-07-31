@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
-import { Badge, Button, Card, Checkbox, Input, useToast } from "@admitto/ui";
+import { Badge, Button, Card, Input, Notice, Switch, useToast } from "@admitto/ui";
 import { fetchSecuritySettings, patchSecuritySettings } from "../api/client.js";
 import { roleLabel } from "../auth/role-labels.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
@@ -18,6 +18,9 @@ const MFA_ROLES = [
   { value: "admin", label: roleLabel("admin") },
   { value: "operator", label: roleLabel("operator") },
 ] as const;
+/** Numbers only need a few characters — cap the field width instead of letting it stretch
+ * across the grid column like a text field would (mirrors Branding's FONT_SURFACE_SELECT_STYLE). */
+const NUMERIC_INPUT_STYLE = { maxWidth: "8rem" } as const;
 
 function fieldLocked(source: SettingSource): boolean {
   return source === "env";
@@ -238,110 +241,120 @@ export function SecurityPanel() {
       }
     >
       <div className="mail-transport-section">
-        <div className="mail-field-row">
-          <Input
-            label="Admin session — maximum lifetime (hours)"
-            type="number"
-            min={1}
-            max={720}
-            value={String(draft.sessionTtlH)}
-            disabled={fieldLocked(settings.session_ttl_ms.source)}
-            onChange={(e) =>
-              setDraft({
-                ...draft,
-                sessionTtlH: Math.max(1, Number.parseInt(e.target.value, 10) || 1),
-              })
-            }
-          />
-          <EnvBadge source={settings.session_ttl_ms.source} />
-          <p className="mail-field-hint">
-            Absolute limit for admin and superadmin sessions, regardless of activity (1–720 h).
-          </p>
-          {draft.sessionTtlH > ABSOLUTE_LIFETIME_WARNING_HOURS && (
-            <p role="alert" className="text-warning">
-              Sessions longer than {ABSOLUTE_LIFETIME_WARNING_HOURS} hours increase the impact of
-              a stolen session.
+        <div className="security-numeric-grid">
+          <div className="mail-field-row">
+            <Input
+              label="Admin session — maximum lifetime (hours)"
+              type="number"
+              min={1}
+              max={720}
+              style={NUMERIC_INPUT_STYLE}
+              value={String(draft.sessionTtlH)}
+              disabled={fieldLocked(settings.session_ttl_ms.source)}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  sessionTtlH: Math.max(1, Number.parseInt(e.target.value, 10) || 1),
+                })
+              }
+            />
+            <EnvBadge source={settings.session_ttl_ms.source} />
+            <p className="mail-field-hint">
+              Absolute limit for admin and superadmin sessions, regardless of activity (1–720 h).
             </p>
-          )}
+            {draft.sessionTtlH > ABSOLUTE_LIFETIME_WARNING_HOURS && (
+              <Notice variant="warning" role="alert">
+                Sessions longer than {ABSOLUTE_LIFETIME_WARNING_HOURS} hours increase the impact
+                of a stolen session.
+              </Notice>
+            )}
+          </div>
+
+          <div className="mail-field-row">
+            <Input
+              label="Admin session — inactivity timeout (minutes)"
+              type="number"
+              min={5}
+              max={240}
+              style={NUMERIC_INPUT_STYLE}
+              value={String(draft.sessionIdleM)}
+              disabled={fieldLocked(settings.session_idle_timeout_ms.source)}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  sessionIdleM: Math.max(5, Number.parseInt(e.target.value, 10) || 5),
+                })
+              }
+            />
+            <EnvBadge source={settings.session_idle_timeout_ms.source} />
+            <p className="mail-field-hint">
+              Signs an admin or superadmin out after this much inactivity (5–240 min).
+            </p>
+            {draft.sessionIdleM > ADMIN_IDLE_WARNING_MINUTES && (
+              <Notice variant="warning" role="alert">
+                A long inactivity timeout leaves unattended admin sessions open longer.
+              </Notice>
+            )}
+          </div>
         </div>
 
-        <div className="mail-field-row">
-          <Input
-            label="Admin session — inactivity timeout (minutes)"
-            type="number"
-            min={5}
-            max={240}
-            value={String(draft.sessionIdleM)}
-            disabled={fieldLocked(settings.session_idle_timeout_ms.source)}
-            onChange={(e) =>
-              setDraft({
-                ...draft,
-                sessionIdleM: Math.max(5, Number.parseInt(e.target.value, 10) || 5),
-              })
-            }
-          />
-          <EnvBadge source={settings.session_idle_timeout_ms.source} />
-          <p className="mail-field-hint">
-            Signs an admin or superadmin out after this much inactivity (5–240 min).
-          </p>
-          {draft.sessionIdleM > ADMIN_IDLE_WARNING_MINUTES && (
-            <p role="alert" className="text-warning">
-              A long inactivity timeout leaves unattended admin sessions open longer.
+        <div className="security-numeric-grid">
+          <div className="mail-field-row">
+            <Input
+              label="Operator session — maximum lifetime (hours)"
+              type="number"
+              min={1}
+              max={168}
+              style={NUMERIC_INPUT_STYLE}
+              value={String(draft.opTtlH)}
+              disabled={fieldLocked(settings.operator_session_ttl_ms.source)}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  opTtlH: Math.max(1, Number.parseInt(e.target.value, 10) || 1),
+                })
+              }
+            />
+            <EnvBadge source={settings.operator_session_ttl_ms.source} />
+            <p className="mail-field-hint">
+              Absolute limit for operator (check-in staff) sessions, regardless of activity
+              (1–168 h).
             </p>
-          )}
-        </div>
+            {draft.opTtlH > ABSOLUTE_LIFETIME_WARNING_HOURS && (
+              <Notice variant="warning" role="alert">
+                Sessions longer than {ABSOLUTE_LIFETIME_WARNING_HOURS} hours increase the impact
+                of a stolen session.
+              </Notice>
+            )}
+          </div>
 
-        <div className="mail-field-row">
-          <Input
-            label="Operator session — maximum lifetime (hours)"
-            type="number"
-            min={1}
-            max={168}
-            value={String(draft.opTtlH)}
-            disabled={fieldLocked(settings.operator_session_ttl_ms.source)}
-            onChange={(e) =>
-              setDraft({
-                ...draft,
-                opTtlH: Math.max(1, Number.parseInt(e.target.value, 10) || 1),
-              })
-            }
-          />
-          <EnvBadge source={settings.operator_session_ttl_ms.source} />
-          <p className="mail-field-hint">
-            Absolute limit for operator (check-in staff) sessions, regardless of activity (1–168 h).
-          </p>
-          {draft.opTtlH > ABSOLUTE_LIFETIME_WARNING_HOURS && (
-            <p role="alert" className="text-warning">
-              Sessions longer than {ABSOLUTE_LIFETIME_WARNING_HOURS} hours increase the impact of
-              a stolen session.
+          <div className="mail-field-row">
+            <Input
+              label="Operator session — inactivity timeout (minutes)"
+              type="number"
+              min={5}
+              max={480}
+              style={NUMERIC_INPUT_STYLE}
+              value={String(draft.opIdleM)}
+              disabled={fieldLocked(settings.operator_session_idle_timeout_ms.source)}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  opIdleM: Math.max(5, Number.parseInt(e.target.value, 10) || 5),
+                })
+              }
+            />
+            <EnvBadge source={settings.operator_session_idle_timeout_ms.source} />
+            <p className="mail-field-hint">
+              Signs an operator out after this much inactivity at the check-in station (5–480
+              min).
             </p>
-          )}
-        </div>
-
-        <div className="mail-field-row">
-          <Input
-            label="Operator session — inactivity timeout (minutes)"
-            type="number"
-            min={5}
-            max={480}
-            value={String(draft.opIdleM)}
-            disabled={fieldLocked(settings.operator_session_idle_timeout_ms.source)}
-            onChange={(e) =>
-              setDraft({
-                ...draft,
-                opIdleM: Math.max(5, Number.parseInt(e.target.value, 10) || 5),
-              })
-            }
-          />
-          <EnvBadge source={settings.operator_session_idle_timeout_ms.source} />
-          <p className="mail-field-hint">
-            Signs an operator out after this much inactivity at the check-in station (5–480 min).
-          </p>
-          {draft.opIdleM > OPERATOR_IDLE_WARNING_MINUTES && (
-            <p role="alert" className="text-warning">
-              A long inactivity timeout leaves unattended check-in stations open longer.
-            </p>
-          )}
+            {draft.opIdleM > OPERATOR_IDLE_WARNING_MINUTES && (
+              <Notice variant="warning" role="alert">
+                A long inactivity timeout leaves unattended check-in stations open longer.
+              </Notice>
+            )}
+          </div>
         </div>
 
         <div className="mail-field-row">
@@ -350,6 +363,7 @@ export function SecurityPanel() {
             type="number"
             min={0}
             max={90}
+            style={NUMERIC_INPUT_STYLE}
             value={String(draft.trustedDays)}
             disabled={fieldLocked(settings.trusted_device_days.source)}
             onChange={(e) =>
@@ -375,14 +389,16 @@ export function SecurityPanel() {
             disabled={fieldLocked(settings.mfa_required_roles.source)}
           >
             <legend className="mail-field-label">Require 2FA for roles</legend>
-            {MFA_ROLES.map((role) => (
-              <Checkbox
-                key={role.value}
-                label={role.label}
-                checked={draft.mfaRoles.includes(role.value)}
-                onChange={() => toggleRole(role.value)}
-              />
-            ))}
+            <div className="mfa-roles-fieldset__switches">
+              {MFA_ROLES.map((role) => (
+                <Switch
+                  key={role.value}
+                  label={role.label}
+                  checked={draft.mfaRoles.includes(role.value)}
+                  onChange={() => toggleRole(role.value)}
+                />
+              ))}
+            </div>
           </fieldset>
           <EnvBadge source={settings.mfa_required_roles.source} />
           <p className="mail-field-hint">
@@ -392,9 +408,9 @@ export function SecurityPanel() {
         </div>
 
         {draft.mfaRoles.length === 0 && (
-          <p role="alert" className="text-warning">
+          <Notice variant="warning" role="alert">
             2FA is disabled for all roles. This is not recommended for production.
-          </p>
+          </Notice>
         )}
       </div>
     </Card>
