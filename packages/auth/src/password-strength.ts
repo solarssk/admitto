@@ -20,6 +20,26 @@ export function tooShortProgressScore(length: number, minLength: number): number
   return Math.min(4, Math.max(1, Math.ceil((length / minLength) * 4)));
 }
 
+/**
+ * NIST SP 800-63B-4 §3.1.1.2 recommends scoring length and unpredictability
+ * over character-composition rules — requiring "upper + lower + digit +
+ * symbol" nudges users toward predictable substitutions ("P@ssw0rd1")
+ * without meaningfully raising guessing resistance. This scorer rewards
+ * length and character variety instead, and floors near-zero-entropy
+ * passwords (a single repeated character, e.g. "aaaaaaaaaaaa", or a simple
+ * ascending/descending run, e.g. "abcdefghijkl") to "Weak" regardless of
+ * length, since padding a trivial pattern with more of the same characters
+ * does not add real guessing resistance.
+ *
+ * Self-contained by design: embedded in the browser via `.toString()` (see
+ * `passwordStrengthAuthScript()`), so it cannot import
+ * `password-blocklist.ts` or anything else. The near-zero-entropy check
+ * below is a small, deliberate, inlined duplicate of that module's
+ * `hasTrivialCharacterPattern` (same reasoning, kept independent) — see
+ * that module's doc comment for why the strength meter does not share code
+ * with it, and `password-strength.test.ts` for the parity test that keeps
+ * both scorers producing the same verdicts.
+ */
 export function scorePasswordStrengthInline(
   password: string,
   minLength: number,
@@ -35,16 +55,32 @@ export function scorePasswordStrengthInline(
     };
   }
 
-  let points = 0;
-  if (password.length >= minLength) points += 1;
-  if (password.length >= 16) points += 1;
-  if (/[a-z]/.test(password) && /[A-Z]/.test(password)) points += 1;
-  if (/\d/.test(password)) points += 1;
-  if (/[^a-zA-Z0-9]/.test(password)) points += 1;
+  const lower = password.toLowerCase();
+  const uniqueRatio = new Set(lower).size / lower.length;
 
-  if (points <= 2) return { score: 1, label: "Weak", level: "weak" };
-  if (points === 3) return { score: 2, label: "Fair", level: "fair" };
-  if (points === 4) return { score: 3, label: "Good", level: "good" };
+  let isSimpleRun = false;
+  if (lower.length >= 6) {
+    let ascending = true;
+    let descending = true;
+    for (let i = 1; i < lower.length; i++) {
+      const step = lower.charCodeAt(i) - lower.charCodeAt(i - 1);
+      if (step !== 1) ascending = false;
+      if (step !== -1) descending = false;
+    }
+    isSimpleRun = ascending || descending;
+  }
+  if (uniqueRatio <= 0.25 || isSimpleRun) {
+    return { score: 1, label: "Weak", level: "weak" };
+  }
+
+  let points = 1;
+  if (password.length >= 16) points += 1;
+  if (password.length >= 20) points += 1;
+  if (uniqueRatio >= 0.6) points += 1;
+
+  if (points <= 1) return { score: 1, label: "Weak", level: "weak" };
+  if (points === 2) return { score: 2, label: "Fair", level: "fair" };
+  if (points === 3) return { score: 3, label: "Good", level: "good" };
   return { score: 4, label: "Strong", level: "strong" };
 }
 
@@ -63,19 +99,36 @@ export function scorePasswordStrength(password: string): PasswordStrengthResult 
  * already Strong, or while below minlength — "Too short" already says enough).
  * Names only the single highest-impact missing ingredient — guarantees a
  * short, one-line message instead of a long list that could wrap and
- * overlap the next field. Browser-safe — embedded into auth HTML via `.toString()`.
+ * overlap the next field. Browser-safe — embedded into auth HTML via
+ * `.toString()`, so (like `scorePasswordStrengthInline`) it inlines its own
+ * near-zero-entropy check rather than importing one — see that function's
+ * doc comment for why.
  */
 export function passwordStrengthTip(password: string, minLength: number): string {
   if (!password || password.length < minLength) return "";
-  const hasLower = /[a-z]/.test(password);
-  const hasUpper = /[A-Z]/.test(password);
-  const hasDigit = /\d/.test(password);
-  const hasSymbol = /[^a-zA-Z0-9]/.test(password);
+
+  const lower = password.toLowerCase();
+  const uniqueRatio = new Set(lower).size / lower.length;
+
+  let isSimpleRun = false;
+  if (lower.length >= 6) {
+    let ascending = true;
+    let descending = true;
+    for (let i = 1; i < lower.length; i++) {
+      const step = lower.charCodeAt(i) - lower.charCodeAt(i - 1);
+      if (step !== 1) ascending = false;
+      if (step !== -1) descending = false;
+    }
+    isSimpleRun = ascending || descending;
+  }
+  if (uniqueRatio <= 0.25 || isSimpleRun) {
+    return "Avoid repeated or sequential characters for a stronger score.";
+  }
+
   let missing = "";
   if (password.length < 16) missing = "16+ characters";
-  else if (!(hasLower && hasUpper)) missing = "upper & lower case";
-  else if (!hasDigit) missing = "a number";
-  else if (!hasSymbol) missing = "a symbol";
+  else if (password.length < 20) missing = "20+ characters";
+  else if (uniqueRatio < 0.6) missing = "more variety of characters";
   if (!missing) return "";
   return "Add " + missing + " for a stronger score.";
 }

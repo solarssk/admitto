@@ -88,7 +88,7 @@ describe("passwordStrengthAuthScript in a DOM (jsdom)", () => {
 
     expect(PASSWORD_STRENGTH_WEAK.length).toBeGreaterThanOrEqual(PASSWORD_MIN_LENGTH);
     expect(meter().getAttribute("aria-label")).toBe(
-      "Password strength: Weak. Add 16+ characters for a stronger score.",
+      "Password strength: Weak. Avoid repeated or sequential characters for a stronger score.",
     );
   });
 

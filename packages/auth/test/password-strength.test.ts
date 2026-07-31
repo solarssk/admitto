@@ -39,6 +39,16 @@ describe("scorePasswordStrength", () => {
     expect(scorePasswordStrength(PASSWORD_STRENGTH_GOOD).label).toBe("Good");
     expect(scorePasswordStrength(PASSWORD_STRENGTH_STRONG).label).toBe("Strong");
   });
+
+  it("floors near-zero-entropy passwords to Weak regardless of length", () => {
+    // 20-char ascending run: long, and every character is different, but
+    // fully predictable once the pattern is guessed.
+    expect(scorePasswordStrength("abcdefghijklmnopqrst").label).toBe("Weak");
+    // 20-char descending run.
+    expect(scorePasswordStrength("tsrqponmlkjihgfedcba").label).toBe("Weak");
+    // 20 chars, single repeated character.
+    expect(scorePasswordStrength("a".repeat(20)).label).toBe("Weak");
+  });
 });
 
 describe("passwordStrengthTip", () => {
@@ -52,21 +62,25 @@ describe("passwordStrengthTip", () => {
   });
 
   it("names only the single highest-impact missing ingredient (stays one line)", () => {
-    // 12 lowercase chars: length is the biggest lever, named first.
+    // 12 identical chars: near-zero entropy is the biggest problem, named first
+    // (padding a repeated character with length would not help).
     expect(passwordStrengthTip(PASSWORD_STRENGTH_WEAK, PASSWORD_MIN_LENGTH)).toBe(
-      "Add 16+ characters for a stronger score.",
+      "Avoid repeated or sequential characters for a stronger score.",
     );
   });
 
-  it("moves on to the next missing ingredient once length is satisfied", () => {
-    expect(passwordStrengthTip("a".repeat(16), PASSWORD_MIN_LENGTH)).toBe(
-      "Add upper & lower case for a stronger score.",
+  it("moves on to the next missing ingredient once entropy and length are satisfied", () => {
+    // 13 chars, good variety, below the 16-char tier.
+    expect(passwordStrengthTip(PASSWORD_STRENGTH_FAIR, PASSWORD_MIN_LENGTH)).toBe(
+      "Add 16+ characters for a stronger score.",
     );
-    expect(passwordStrengthTip("aaaaaaaaaaaaaaaA", PASSWORD_MIN_LENGTH)).toBe(
-      "Add a number for a stronger score.",
+    // 16 chars, good variety, below the 20-char tier.
+    expect(passwordStrengthTip(PASSWORD_STRENGTH_GOOD, PASSWORD_MIN_LENGTH)).toBe(
+      "Add 20+ characters for a stronger score.",
     );
-    expect(passwordStrengthTip("aaaaaaaaaaaaaaA1", PASSWORD_MIN_LENGTH)).toBe(
-      "Add a symbol for a stronger score.",
+    // 20 chars (both length tiers met) but low variety.
+    expect(passwordStrengthTip("aabbccddeeffgghhiijj", PASSWORD_MIN_LENGTH)).toBe(
+      "Add more variety of characters for a stronger score.",
     );
   });
 });
