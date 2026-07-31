@@ -98,7 +98,7 @@
   border: none;
   border-radius: var(--radius-pill, 999px);
   background: var(--surface-card, #fff);
-  color: var(--text);
+  color: var(--text-primary);
   box-shadow: var(--shadow-sm, 0 1px 2px rgb(15 23 42 / 8%));
   cursor: pointer;
   z-index: 1;

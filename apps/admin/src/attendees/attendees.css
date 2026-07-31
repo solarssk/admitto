@@ -99,7 +99,7 @@
 
 .attendees-toolbar__search-clear:hover {
   background: var(--surface-hover);
-  color: var(--text);
+  color: var(--text-primary);
 }
 
 .attendees-filters-menu {
@@ -395,7 +395,7 @@
 
 .attendees-bulkbar__clear:hover {
   background: var(--surface-hover);
-  color: var(--text);
+  color: var(--text-primary);
 }
 
 .attendees-table-v2__checkbox-col {
@@ -735,7 +735,7 @@
   font-family: var(--font-sans);
   font-size: var(--fs-sm);
   font-weight: 500;
-  color: var(--text);
+  color: var(--text-primary);
   cursor: pointer;
 }
 
@@ -1044,7 +1044,7 @@
   background: var(--status-ok-bg, #ecfdf5);
   border-radius: var(--radius-md);
   font-size: var(--fs-sm);
-  color: var(--text);
+  color: var(--status-ok-fg);
 }
 
 .attendee-readonly {
