@@ -1,6 +1,8 @@
 node_modules/
 dist/
 _reference/
+# Prisma ORM v7 generated client (raw .ts build output, not source) — see packages/db/prisma/schema.prisma
+packages/db/src/generated/
 # Local mkcert/dev TLS certs and keys — never commit
 .certs/
 *.pem

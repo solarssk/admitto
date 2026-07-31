@@ -4,6 +4,7 @@ const sharedExclude = [
   "coverage/**",
   "coverage-integration/**",
   "**/dist/**",
+  "**/generated/**",
   "**/test/**",
   "**/*.test.ts",
   "**/*.test.tsx",

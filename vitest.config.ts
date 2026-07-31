@@ -3,9 +3,11 @@ import { defineConfig } from "vitest/config";
 /**
  * Root-level aggregator so `npx vitest run` from the repo root resolves into every package's own
  * vitest config — including its own DATABASE_URL override to the package's `*_test` database —
- * instead of falling through to whatever DATABASE_URL happens to be ambient (a real dev database
- * via Prisma's own dotenv auto-load). `npm test` (`--workspaces`) was never affected by this —
- * each workspace's own `npm run test` already `cd`s into that package first.
+ * instead of falling through to whatever DATABASE_URL happens to be ambient (a real dev database,
+ * e.g. a shell that has sourced packages/db/.env directly - Prisma Client itself no longer
+ * auto-loads that file as a side effect of construction; that v5/v6 behavior was removed in v7).
+ * `npm test` (`--workspaces`) was never affected by this — each workspace's own `npm run test`
+ * already `cd`s into that package first.
  *
  * Only works from the repo root. `test.projects` entries below are resolved relative to CWD, not
  * to this file's own directory — running `npx vitest run` from any OTHER directory fails at

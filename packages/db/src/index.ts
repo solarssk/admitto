@@ -1,11 +1,15 @@
-import { PrismaClient } from '@prisma/client';
 import { emitSystemLog } from '@admitto/shared/system-log';
 import { formatSlowQueryMessage, isSlowQuery } from './queryLogging.js';
+import { PrismaClient } from './generated/prisma/client.js';
+import { createPrismaAdapter } from './adapter.js';
+
+export * from './client.js';
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 
 function createPrismaClient() {
   const client = new PrismaClient({
+    adapter: createPrismaAdapter(process.env.DATABASE_URL),
     log: [
       { emit: 'event', level: 'query' },
       { emit: 'event', level: 'warn' },
