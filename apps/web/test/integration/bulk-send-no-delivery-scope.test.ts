@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { DEFAULT_BODY_MJML, DEFAULT_SUBJECT_TEMPLATE, setMailTemplate } from "@admitto/mail-templates";
 import {
   resolveBulkSendAttendeeIds,
@@ -15,7 +16,7 @@ let reminderId: string;
 
 describe("resolveBulkSendAttendeeIds no_delivery scope", () => {
   beforeAll(async () => {
-    prisma = new PrismaClient();
+    prisma = createTestPrismaClient();
     await prisma.emailDelivery.deleteMany({ where: { event_id: EVENT } });
     await prisma.attendee.deleteMany({ where: { event_id: EVENT } });
     await prisma.mailTemplate.deleteMany({ where: { scope_id: { in: [EVENT, ORG] } } });

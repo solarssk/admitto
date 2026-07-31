@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { consumeOidcAuthState, createOidcAuthState } from "../../src/oidc/auth-state.js";
 
 const PROVIDER_ID = "auth-state-test-provider";
@@ -8,7 +9,7 @@ const STATE = "auth-state-test-state-value";
 let prisma: PrismaClient;
 
 beforeAll(async () => {
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
   await prisma.oidcAuthState.deleteMany({ where: { state: STATE } });
   await prisma.identityProvider.deleteMany({ where: { id: PROVIDER_ID } });
   await prisma.identityProvider.create({

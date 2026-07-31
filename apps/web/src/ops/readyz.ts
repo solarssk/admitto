@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import type { Context } from "hono";
-import { Prisma } from "@prisma/client";
-import type { PrismaClient } from "@prisma/client";
+import { Prisma } from "@admitto/db";
+import type { PrismaClient } from "@admitto/db";
 import { configFromEnv } from "@admitto/mailer";
 import type { MailerProvider } from "@admitto/mailer";
 import { resolveClientIp } from "../rate-limit/client-ip.js";

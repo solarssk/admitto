@@ -26,7 +26,7 @@
  * checked explicitly below rather than assumed covered by `attendeeCount`.
  */
 import type { Context } from "hono";
-import { Prisma, type PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@admitto/db";
 import { BADGE_ITEM_KEY, STANDARD_TICKET_TYPE_KEY, writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import {

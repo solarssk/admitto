@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { IdentityProvider } from "@prisma/client";
+import type { IdentityProvider } from "@admitto/db";
 import { exchangeAuthorizationCode } from "../src/oidc/token.js";
 
 vi.mock("node:dns/promises", () => ({

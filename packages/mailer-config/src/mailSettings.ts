@@ -1,5 +1,5 @@
 import { encryptToString } from "@admitto/crypto";
-import type { MailSettings, Prisma, PrismaClient } from "@prisma/client";
+import type { MailSettings, Prisma, PrismaClient } from "@admitto/db";
 import type { MailScope, MailSettingsInput } from "./types.js";
 
 function maybeEncrypt(value: string | undefined): string | undefined {

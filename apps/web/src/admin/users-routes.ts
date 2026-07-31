@@ -1,5 +1,13 @@
 import type { Context } from "hono";
-import { Prisma, type PrismaClient } from "@prisma/client";
+import {
+  Prisma,
+  type PrismaClient,
+  hasScope,
+  ROLES,
+  SCOPE_TYPES,
+  type Role,
+  type ScopeType,
+} from "@admitto/db";
 import {
   canManageInstance,
   createUser,
@@ -11,7 +19,6 @@ import {
   revokeAllTrustedDevicesForUser,
   revokeUserAuthState,
 } from "@admitto/auth";
-import { hasScope, ROLES, SCOPE_TYPES, type Role, type ScopeType } from "@admitto/db";
 import { writeAdminAuditLog, type OpsAuditContext } from "@admitto/tickets";
 import { emitSystemLog } from "@admitto/shared/system-log";
 import {

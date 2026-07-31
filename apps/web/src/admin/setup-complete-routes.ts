@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { canManageInstance, markSetupComplete } from "@admitto/auth";
 import { writeAdminAuditLogBestEffort } from "@admitto/tickets";
 import type { RateLimitStore } from "../rate-limit/types.js";

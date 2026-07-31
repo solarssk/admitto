@@ -1,5 +1,5 @@
-import { Prisma } from "@prisma/client";
-import type { PrismaClient } from "@prisma/client";
+import { Prisma } from "@admitto/db/client";
+import type { PrismaClient } from "@admitto/db/client";
 
 type TicketTypeDb = PrismaClient | Prisma.TransactionClient;
 

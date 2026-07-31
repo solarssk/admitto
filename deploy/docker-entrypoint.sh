@@ -2,6 +2,7 @@
 set -eu
 
 SCHEMA="packages/db/prisma/schema.prisma"
+CONFIG="packages/db/prisma.config.ts"
 
 log() {
   printf '%s\n' "$*" >&2
@@ -71,7 +72,9 @@ unset_pg_env() {
 }
 
 migration_status_output() {
-  run_as_node_cmd node node_modules/prisma/build/index.js migrate status --schema "$SCHEMA" 2>&1
+  # --config: WORKDIR here is /app, not packages/db/ where prisma.config.ts lives — auto-discovery
+  # only looks in CWD, so this must be explicit (Prisma v7 prisma.config.ts monorepo resolution).
+  run_as_node_cmd node node_modules/prisma/build/index.js migrate status --schema "$SCHEMA" --config "$CONFIG" 2>&1
 }
 
 is_connection_error() {
@@ -260,7 +263,7 @@ elif [ "$status_exit" -ne 0 ]; then
   exit 1
 fi
 
-run_as_node_cmd node node_modules/prisma/build/index.js migrate deploy --schema "$SCHEMA"
+run_as_node_cmd node node_modules/prisma/build/index.js migrate deploy --schema "$SCHEMA" --config "$CONFIG"
 log "running agency public_ref backfill with 120s timeout"
 run_as_node_cmd timeout 120 node packages/db/dist/scripts/backfill-public-ref.js
 log "running event custom-field registry backfill with 120s timeout"

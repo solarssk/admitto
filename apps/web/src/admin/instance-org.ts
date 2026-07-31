@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 
 /** Stable default organization id from tenant_foundation migration / seed. */
 export const INSTANCE_ORG_DEFAULT_ID = "org_default";

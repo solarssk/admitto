@@ -1,7 +1,8 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import {
   createSession,
   hashPassword,
@@ -88,7 +89,7 @@ beforeAll(async () => {
   prevNodeEnv = process.env.NODE_ENV;
   process.env.INSTANCE_ORG_ID = ORG_MAIL;
 
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
   await seed(prisma);
 
   rateLimitStore = new InMemoryRateLimitStore();

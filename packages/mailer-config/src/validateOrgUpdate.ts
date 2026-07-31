@@ -1,4 +1,4 @@
-import type { MailSettings } from "@prisma/client";
+import type { MailSettings } from "@admitto/db";
 import { mergeMailSettingsRow } from "./mailSettings.js";
 import { tryParseOrgMailConfigFromRow, tryParseEventMailConfigFromRow } from "./resolver.js";
 import type { MailSettingsInput } from "./types.js";

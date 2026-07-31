@@ -5,10 +5,13 @@
  * apps/web/test/ADR-0015-test-strategy.md for the incident that motivated this.
  *
  * Deliberately NOT re-exported from `./index.js` (the `@admitto/db` barrel): that module
- * instantiates a live PrismaClient at import time, and Prisma's own dotenv auto-loading can then
- * pull DATABASE_URL from packages/db/.env (the real dev database) as a side effect - clobbering
- * whatever a consumer's test runner had already set. Import this file via the `@admitto/db/test-db-guard`
- * subpath instead, which never touches index.js.
+ * instantiates a live PrismaClient at import time (top-level `export const prisma = ...`), reading
+ * whatever `process.env.DATABASE_URL` already happens to be set at that exact moment - before a
+ * consumer's test runner gets any chance to call this guard first. (Prisma Client itself no longer
+ * auto-loads packages/db/.env as a side effect of construction - that v5/v6 behavior was removed in
+ * v7 - but the eager top-level construction here means index.js still isn't safe to import before
+ * validating DATABASE_URL.) Import this file via the `@admitto/db/test-db-guard` subpath instead,
+ * which never touches index.js.
  */
 
 /**

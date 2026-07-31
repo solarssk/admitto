@@ -1,6 +1,4 @@
-import { Prisma } from "@prisma/client";
-import type { PrismaClient } from "@prisma/client";
-import { EMAIL_DELIVERY_SUCCESS_STATUSES } from "@admitto/db";
+import { Prisma, type PrismaClient, EMAIL_DELIVERY_SUCCESS_STATUSES } from "@admitto/db";
 
 export interface FrozenMessage {
   to: string;

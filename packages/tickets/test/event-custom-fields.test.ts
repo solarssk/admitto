@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import {
   UnknownContentFieldError,
   loadEventCustomDataFields,
@@ -11,7 +12,7 @@ describe("loadEventCustomDataFields", () => {
   const EVENT_ID = "test-event-load-custom-fields";
 
   beforeAll(async () => {
-    prisma = new PrismaClient();
+    prisma = createTestPrismaClient();
     await prisma.organization.upsert({
       where: { id: "org_load_custom_fields" },
       create: { id: "org_load_custom_fields", name: "Load Custom Fields", slug: "load-custom-fields" },

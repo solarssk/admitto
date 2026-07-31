@@ -74,9 +74,6 @@ export async function ensureIntegrationTestSchema(): Promise<void> {
       "[ensureTestSchema] migrate deploy failed, falling back to db push:",
       migrateError,
     );
-    await runPrismaArgs(
-      ["prisma", "db", "push", "--skip-generate", "--accept-data-loss"],
-      env,
-    );
+    await runPrismaArgs(["prisma", "db", "push", "--accept-data-loss"], env);
   }
 }

@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient, MailSettings } from "@prisma/client";
+import type { Prisma, PrismaClient, MailSettings } from "@admitto/db";
 import { rawMailFieldsFromEnv } from "./envFields.js";
 import { getProviderDefaults } from "./providerDefaults.js";
 import type { ConfigDescriptor, FieldDescriptor, FieldSource } from "./types.js";

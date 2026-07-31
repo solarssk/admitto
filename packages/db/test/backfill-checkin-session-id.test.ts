@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "../src/generated/prisma/client.js";
+import { createTestPrismaClient } from "../src/testing.js";
 import { backfillCheckInSessionIds } from "../src/backfill-checkin-session-id.js";
 import { assertTestDatabaseUrl } from "../src/testDbGuard.js";
 
@@ -21,7 +22,7 @@ beforeAll(async () => {
     env: { ...process.env },
     stdio: "pipe",
   });
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
   await prisma.organization.create({
     data: { id: ORG_ID, name: "Org", slug: "org-backfill-checkin-session" },
   });

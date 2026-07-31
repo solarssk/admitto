@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { IdentityProvider } from "@prisma/client";
+import type { IdentityProvider } from "@admitto/db";
 import type { JWTPayload } from "jose";
 import { extractClaims } from "../src/oidc/claims.js";
 

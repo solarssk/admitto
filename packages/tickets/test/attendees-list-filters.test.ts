@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { countFilteredAttendees } from "../src/attendees-list-filters.js";
 
 describe("latest mail-status attendee filters", () => {

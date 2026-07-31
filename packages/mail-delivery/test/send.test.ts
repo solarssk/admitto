@@ -1,4 +1,5 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import * as mailer from "@admitto/mailer";
 import { encryptToString } from "@admitto/crypto";
@@ -12,7 +13,7 @@ import {
   sendTicketEmails,
 } from "../src/index.js";
 
-const prisma = new PrismaClient();
+const prisma = createTestPrismaClient();
 const EVENT_ID = "evt-mail-send";
 const exported: ExportPayload[] = [];
 

@@ -1,14 +1,11 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient, Prisma } from "@admitto/db";
 import { hasScope } from "@admitto/db";
 
 export class LastSuperadminError extends Error {}
 
-type PrismaTx = Omit<
-  PrismaClient,
-  "$connect" | "$disconnect" | "$on" | "$transaction" | "$extends" | "$use"
->;
-
-export async function countSuperadminAssignments(db: PrismaClient | PrismaTx): Promise<number> {
+export async function countSuperadminAssignments(
+  db: PrismaClient | Prisma.TransactionClient,
+): Promise<number> {
   return db.roleAssignment.count({
     where: {
       role: "superadmin",
@@ -19,12 +16,12 @@ export async function countSuperadminAssignments(db: PrismaClient | PrismaTx): P
   });
 }
 
-async function targetIsSuperadmin(db: PrismaClient | PrismaTx, userId: string): Promise<boolean> {
+async function targetIsSuperadmin(db: PrismaClient | Prisma.TransactionClient, userId: string): Promise<boolean> {
   return hasScope(db, userId, "superadmin", "instance");
 }
 
 export async function assertLastSuperadminRemovalAllowed(
-  tx: PrismaTx,
+  tx: Prisma.TransactionClient,
   assignment: { id: string; role: string; scope_type: string; scope_id: string | null },
 ): Promise<void> {
   if (assignment.role !== "superadmin" || assignment.scope_type !== "instance" || assignment.scope_id !== null) {
@@ -38,7 +35,7 @@ export async function assertLastSuperadminRemovalAllowed(
   if (superadmins <= 1) throw new LastSuperadminError();
 }
 
-export async function assertLastSuperadminDeactivationAllowed(tx: PrismaTx, userId: string): Promise<void> {
+export async function assertLastSuperadminDeactivationAllowed(tx: Prisma.TransactionClient, userId: string): Promise<void> {
   if (!(await targetIsSuperadmin(tx, userId))) return;
   const superadmins = await countSuperadminAssignments(tx);
   if (superadmins <= 1) throw new LastSuperadminError();

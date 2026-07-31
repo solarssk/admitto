@@ -1,5 +1,5 @@
 import { describe, expect, it, afterEach } from "vitest";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import {
   getCfAccessConfig,
   clearCfAccessRuntimeConfigCache,

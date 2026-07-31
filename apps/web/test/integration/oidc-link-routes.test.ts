@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import {
   createSession,
   hashPassword,
@@ -25,7 +26,7 @@ let linkUserId: string;
 let rateLimitStore: ReturnType<typeof createRateLimitStore>;
 
 beforeAll(async () => {
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
   mockIdp = await startMockOidcIdp();
 
   await prisma.oidcAuthState.deleteMany({ where: { provider_id: PROVIDER_ID } });

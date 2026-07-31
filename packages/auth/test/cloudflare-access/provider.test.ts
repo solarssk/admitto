@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { IdentityProvider, PrismaClient } from "@prisma/client";
+import type { IdentityProvider, PrismaClient } from "@admitto/db";
 import {
   CF_ACCESS_CLIENT_ID_SENTINEL,
   ensureCloudflareAccessProvider,

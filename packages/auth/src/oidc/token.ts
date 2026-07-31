@@ -1,5 +1,5 @@
 import * as jose from "jose";
-import type { IdentityProvider } from "@prisma/client";
+import type { IdentityProvider } from "@admitto/db";
 import type { JWTPayload } from "jose";
 import { decryptClientSecret } from "./provider-secret.js";
 import { createPinnedRemoteJWKSet, safeOidcFetch } from "./safe-oidc-fetch.js";

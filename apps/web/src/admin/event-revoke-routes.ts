@@ -12,7 +12,7 @@
  * event is already over, so there is nothing to correct).
  */
 import type { Context } from "hono";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { revokeAllCheckInsForEvent, revokeAllItemsForEvent, writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog } from "@admitto/shared/system-log";
 import {

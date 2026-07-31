@@ -1,4 +1,4 @@
-import type { IdentityProvider, PrismaClient, Prisma } from "@prisma/client";
+import type { IdentityProvider, PrismaClient, Prisma } from "@admitto/db";
 import { PROVIDER_TYPE_CLOUDFLARE_ACCESS } from "../oidc/constants.js";
 import type { CfAccessConfig } from "./config.js";
 

@@ -8,11 +8,11 @@
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { PrismaClient } from "@prisma/client";
 import {
   prisma,
   EMAIL_DELIVERY_PURPOSE,
   EMAIL_DELIVERY_STATUS,
+  type PrismaClient,
   type EmailDeliveryPurpose,
   type EmailDeliveryStatus,
 } from "@admitto/db";

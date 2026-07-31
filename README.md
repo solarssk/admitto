@@ -9,6 +9,8 @@
   &nbsp;
   <img src="https://img.shields.io/badge/node-24-brightgreen" alt="Node 24">
   &nbsp;
+  <img src="https://img.shields.io/badge/prisma-7-2D3748" alt="Prisma 7">
+  &nbsp;
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT">
 </p>
 
@@ -51,7 +53,7 @@ flowchart LR
 | Layer | Technologies |
 |-------|-------------|
 | Runtime | Node.js 24, TypeScript, Docker |
-| Backend | Hono 4, PostgreSQL (Prisma), Redis |
+| Backend | Hono 4, PostgreSQL (Prisma 7), Redis |
 | Frontend | React 19, react-router 7, Vite, Tabler design tokens |
 | Mail | M365 Graph · SMTP · Power Automate |
 | Auth | Local accounts · OIDC (Authentik) · Cloudflare Access (ZTNA) · 2FA (TOTP) |

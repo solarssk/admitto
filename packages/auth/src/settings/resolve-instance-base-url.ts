@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { validateHttpUrl } from "@admitto/mail-templates";
 import { getInstanceUrl } from "./instance-url.js";
 

@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { createApp } from "../../src/app.js";
@@ -33,7 +34,7 @@ beforeAll(async () => {
   uploadDir = mkdtempSync(join(tmpdir(), "admitto-uploads-"));
   process.env.UPLOAD_DIR = uploadDir;
 
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
   const rateLimitStore = new InMemoryRateLimitStore();
   app = createApp({ prisma, rateLimitStore, adminDistRoot });
 

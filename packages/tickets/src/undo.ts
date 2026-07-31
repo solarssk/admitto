@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@admitto/db";
 import { rollbackBadgeForCheckIn, resetAllItemStatesForRevoke } from "./item-states.js";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
 import { getAttendeeCard } from "./attendee-card.js";

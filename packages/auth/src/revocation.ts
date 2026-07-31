@@ -1,4 +1,4 @@
-import type { PrismaClient, Prisma } from "@prisma/client";
+import type { PrismaClient, Prisma } from "@admitto/db";
 import { revokeAllTrustedDevicesForUser } from "./mfa/trusted-device.js";
 import { runInTransaction } from "./prisma-tx.js";
 

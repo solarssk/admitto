@@ -1,4 +1,5 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { lookup } from "node:dns/promises";
 import { createMailer, parseMailerConfig } from "@admitto/mailer";
@@ -18,7 +19,7 @@ beforeEach(() => {
   >);
 });
 
-const prisma = new PrismaClient();
+const prisma = createTestPrismaClient();
 
 const BASE_SMTP_ENV: NodeJS.ProcessEnv = {
   EMAIL_PROVIDER: "smtp",

@@ -1,4 +1,4 @@
-import type { PrismaClient, Prisma } from "@prisma/client";
+import type { PrismaClient, Prisma } from "@admitto/db";
 import {
   SETTING_CF_ACCESS_AUD,
   SETTING_CF_ACCESS_ENABLED,

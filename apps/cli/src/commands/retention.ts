@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { purgeAuthRetention, purgeSecurityAuditLog, resolveSecurityAuditLogRetentionDays } from "@admitto/auth";
 import { nullifyDeliverySnapshots } from "@admitto/mail-delivery";
 import { writeAdminAuditLog } from "@admitto/tickets";

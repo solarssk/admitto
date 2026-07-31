@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { existsSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@admitto/db";
 import { checkMigrationsStatus } from "../../src/ops/migrations-check.js";
 
 const require = createRequire(import.meta.url);

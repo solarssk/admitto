@@ -1,5 +1,5 @@
 import type { Context, Next } from "hono";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { canAccessAdminPanel, canAccessCheckInPanel, logAccessDenied, logCfAccessAuth } from "@admitto/auth";
 import { resolveStaffEntryPath } from "../setup-routes.js";
 import { resolveStaffAuthFromRequest } from "./resolve-staff-auth.js";

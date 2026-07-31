@@ -1,4 +1,5 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   nullifyDeliverySnapshots,
@@ -6,7 +7,7 @@ import {
 } from "../src/retention.js";
 import { resetDb } from "./resetDb.js";
 
-const prisma = new PrismaClient();
+const prisma = createTestPrismaClient();
 const EVENT_ID = "evt-mail-retention";
 const NOW = new Date("2026-06-27T12:00:00.000Z");
 const RETENTION_DAYS = 60;

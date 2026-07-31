@@ -5,9 +5,10 @@
  *   npx tsx src/scripts/seed-bulk-attendees.ts
  *   EVENT_SLUG=test-event-2024 COUNT=300 npx tsx src/scripts/seed-bulk-attendees.ts
  */
-import { PrismaClient, type Prisma } from "@prisma/client";
+import { PrismaClient, type Prisma } from "../generated/prisma/client.js";
+import { createPrismaAdapter } from "../adapter.js";
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({ adapter: createPrismaAdapter(process.env["DATABASE_URL"]) });
 
 const EVENT_SLUG = process.env["EVENT_SLUG"] ?? "test-event-2024";
 const COUNT = Number(process.env["COUNT"] ?? "300");

@@ -1,7 +1,8 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import {
   hashPassword,
   createSession,
@@ -55,7 +56,7 @@ async function seedCfSettings(): Promise<void> {
 beforeAll(async () => {
   process.env.NODE_ENV = "test";
   mock = await startMockCfAccess();
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
 
   await prisma.externalIdentity.deleteMany();
   await prisma.identityProvider.deleteMany({ where: { provider_type: "cloudflare_access" } });

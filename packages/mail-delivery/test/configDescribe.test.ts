@@ -1,10 +1,11 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setMailSettings } from "@admitto/mailer-config";
 import { resetDb } from "./resetDb.js";
 import { getMailConfigDescription, serializeConfigDescriptionForCli } from "../src/configDescribe.js";
 
-const prisma = new PrismaClient();
+const prisma = createTestPrismaClient();
 
 beforeAll(async () => {
   await resetDb();

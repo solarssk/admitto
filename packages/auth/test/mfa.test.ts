@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword } from "../src/password.js";
 import { login, completeMfa } from "../src/login.js";
 import {
@@ -71,7 +72,7 @@ beforeAll(async () => {
     stdio: "pipe",
   });
 
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
   const password_hash = await hashPassword(PASSWORD);
 
   await prisma.user.createMany({

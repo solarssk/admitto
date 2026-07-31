@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import type { AdmitResult } from "@admitto/tickets";
 import { admitAttendee, lookupAttendees, resolveTicket } from "@admitto/tickets";
 import { CliError, arg, hasFlag, parseFormat } from "../lib/args.js";

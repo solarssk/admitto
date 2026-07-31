@@ -1,4 +1,4 @@
-import type { PrismaClient, Prisma } from "@prisma/client";
+import type { PrismaClient, Prisma } from "@admitto/db";
 import { verifyRecoveryCode } from "./recovery-hash.js";
 
 /** Atomically mark a recovery row used; returns false if already consumed (safe under concurrency). */

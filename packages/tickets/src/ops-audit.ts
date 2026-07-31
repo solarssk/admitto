@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@admitto/db";
 
 /** Prisma client or an active transaction — both support `attendeeActionLog.create`. */
 type OpsAuditDb = PrismaClient | Prisma.TransactionClient;

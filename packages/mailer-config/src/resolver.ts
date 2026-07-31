@@ -1,6 +1,6 @@
 import { decryptFromString } from "@admitto/crypto";
 import { parseMailerConfig, safeParseMailerConfig, type MailerConfig } from "@admitto/mailer";
-import type { PrismaClient, MailSettings } from "@prisma/client";
+import type { PrismaClient, MailSettings } from "@admitto/db";
 import { rawMailFieldsFromEnv } from "./envFields.js";
 import { enforceAllowedFromDomain } from "./senderPolicy.js";
 

@@ -1,7 +1,8 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE, verifyPassword } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import * as tickets from "@admitto/tickets";
@@ -156,7 +157,7 @@ beforeAll(async () => {
   prevInstanceOrgId = process.env.INSTANCE_ORG_ID;
   process.env.INSTANCE_ORG_ID = ORG_USERS;
 
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
   await seed(prisma);
 
   app = createApp({

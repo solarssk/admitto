@@ -1,7 +1,8 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import {
   createSession,
   hashPassword,
@@ -107,9 +108,7 @@ async function seed(client: PrismaClient) {
 
 beforeAll(async () => {
   process.env.DATABASE_URL = WEB_TEST_DATABASE_URL;
-  prisma = new PrismaClient({
-    datasources: { db: { url: WEB_TEST_DATABASE_URL } },
-  });
+  prisma = createTestPrismaClient(WEB_TEST_DATABASE_URL);
   // Disk-vs-DB migration parity is covered in test/ops/migrations-check.test.ts; Vitest fork
   // workers can inherit CI job DATABASE_URL (main DB) and report a false pending state here.
   migrationsOkSpy = vi.spyOn(migrationsCheck, "checkMigrationsStatus").mockResolvedValue("ok");

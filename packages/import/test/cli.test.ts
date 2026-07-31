@@ -4,7 +4,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { acquireEventTicketTypesLock } from "@admitto/tickets";
 import { runImport } from "../src/cli.js";
 import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
@@ -26,7 +27,7 @@ beforeAll(async () => {
     stdio: "pipe",
   });
 
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
 
   await prisma.organization.create({
     data: { id: ORG_ID, name: "CLI Import Org", slug: "cli-import-org" },

@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@admitto/db";
 import { loadEventTicketTypes } from "@admitto/tickets";
 import type { ImportTicketType } from "./types.js";
 

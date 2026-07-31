@@ -2,7 +2,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
-import { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
@@ -47,6 +48,17 @@ let adminId: string;
 let opId: string;
 let adminCookie = "";
 let opCookie = "";
+
+/**
+ * One-shot hook for simulating a concurrent write racing a route handler's own
+ * `tx.attendee.findMany` mid-transaction (TOCTOU tests below). Prisma v7 removed `$use`
+ * middleware in favor of `$extends`, which returns a new client instead of mutating one in
+ * place - since `createApp` below captures `prisma` once, this hook is wired into the extended
+ * client from the start, and individual `it()` blocks arm it right before issuing their request.
+ * Query extensions run for queries issued inside `$transaction` callbacks too, so this still
+ * intercepts the route handler's own `tx.attendee.findMany`.
+ */
+let onAttendeeFindMany: (() => Promise<void>) | null = null;
 
 function buildNoEmailBulkHarness() {
   const harness = new Hono();
@@ -288,7 +300,24 @@ async function withSuperadminCookie(fn: (cookie: string) => Promise<void>): Prom
 }
 
 beforeAll(async () => {
-  prisma = new PrismaClient();
+  // `$on`/`$connect` aren't preserved on extended clients' types (Prisma's client-extensions
+  // docs: "client-level methods do not necessarily exist on extended clients") - this file never
+  // calls those on `prisma`, so the cast back to `PrismaClient` is safe.
+  prisma = createTestPrismaClient().$extends({
+    query: {
+      attendee: {
+        async findMany({ args, query }) {
+          const result = await query(args);
+          if (onAttendeeFindMany) {
+            const hook = onAttendeeFindMany;
+            onAttendeeFindMany = null;
+            await hook();
+          }
+          return result;
+        },
+      },
+    },
+  }) as PrismaClient;
   await seed(prisma);
   rateLimitStore = createRateLimitStore() as InMemoryRateLimitStore;
   app = createApp({
@@ -892,19 +921,14 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-delete", () => {
 
     // Simulates another admin's request (or a separate DSAR erasure) committing a delete for
     // one of the selected attendees between this request's findMany and its own DELETE
-    // statement - exactly the TOCTOU window CodeRabbit flagged. Prisma middleware also runs
-    // for queries issued inside `$transaction` callbacks, so this intercepts the route
-    // handler's own `tx.attendee.findMany`. Fires once, then becomes a permanent no-op, since
-    // `prisma` is shared for the rest of this file and `$use` middleware can't be unregistered.
+    // statement - exactly the TOCTOU window CodeRabbit flagged. See `onAttendeeFindMany` above:
+    // arms the shared hook wired into the extended `prisma` client, which self-clears after
+    // firing once.
     let armed = true;
-    prisma.$use(async (params, next) => {
-      const result = await next(params);
-      if (armed && params.model === "Attendee" && params.action === "findMany") {
-        armed = false;
-        await prisma.attendee.delete({ where: { id: ids[1]! } });
-      }
-      return result;
-    });
+    onAttendeeFindMany = async () => {
+      armed = false;
+      await prisma.attendee.delete({ where: { id: ids[1]! } });
+    };
 
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-delete`, {
       method: "POST",
@@ -4538,19 +4562,13 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-ticket-type", () => {
     // Simulates a concurrent single-attendee PATCH clearing `raced`'s ticket_type between this
     // request's findMany read and its own per-row CAS UPDATE - the exact TOCTOU window the code
     // review flagged (a blanket `id IN (...)` updateMany can't see this and would silently
-    // overwrite it back to the bulk's target). Prisma middleware also runs for queries issued
-    // inside `$transaction` callbacks, so this intercepts the route handler's own
-    // `tx.attendee.findMany`. Fires once, then becomes a permanent no-op, since `prisma` is
-    // shared for the rest of this file and `$use` middleware can't be unregistered.
+    // overwrite it back to the bulk's target). See `onAttendeeFindMany` above: arms the shared
+    // hook wired into the extended `prisma` client, which self-clears after firing once.
     let armed = true;
-    prisma.$use(async (params, next) => {
-      const result = await next(params);
-      if (armed && params.model === "Attendee" && params.action === "findMany") {
-        armed = false;
-        await prisma.attendee.update({ where: { id: raced }, data: { ticket_type: null } });
-      }
-      return result;
-    });
+    onAttendeeFindMany = async () => {
+      armed = false;
+      await prisma.attendee.update({ where: { id: raced }, data: { ticket_type: null } });
+    };
 
     const res = await postBulkType(EVENT_A, { attendeeIds: [raced, safe], ticket_type: "vip" });
 
@@ -4773,19 +4791,13 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-rsvp", () => {
     // this request's findMany read and its own per-row CAS UPDATE - the exact TOCTOU window the
     // code review flagged (a blanket `id IN (...)` updateMany can't see this and would silently
     // overwrite it back to the bulk's target, with the activity log recording a "from" value the
-    // row never actually held at write time). Prisma middleware also runs for queries issued
-    // inside `$transaction` callbacks, so this intercepts the route handler's own
-    // `tx.attendee.findMany`. Fires once, then becomes a permanent no-op, since `prisma` is
-    // shared for the rest of this file and `$use` middleware can't be unregistered.
+    // row never actually held at write time). See `onAttendeeFindMany` above: arms the shared
+    // hook wired into the extended `prisma` client, which self-clears after firing once.
     let armed = true;
-    prisma.$use(async (params, next) => {
-      const result = await next(params);
-      if (armed && params.model === "Attendee" && params.action === "findMany") {
-        armed = false;
-        await prisma.attendee.update({ where: { id: raced }, data: { rsvp_status: "declined" } });
-      }
-      return result;
-    });
+    onAttendeeFindMany = async () => {
+      armed = false;
+      await prisma.attendee.update({ where: { id: raced }, data: { rsvp_status: "declined" } });
+    };
 
     const res = await postBulkRsvp(EVENT_A, { attendeeIds: [raced, safe], rsvp_status: "confirmed" });
 

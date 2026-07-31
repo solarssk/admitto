@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 
 const { fetchOidcDiscovery } = vi.hoisted(() => ({
   fetchOidcDiscovery: vi.fn(async () => ({

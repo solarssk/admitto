@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import {
   commitImport,
   createAttendeesBatch,
@@ -44,7 +45,7 @@ beforeAll(async () => {
     stdio: "pipe",
   });
 
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
 
   await prisma.organization.create({
     data: { id: "org_default", name: "Default", slug: "default" },

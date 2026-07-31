@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "../src/generated/prisma/client.js";
+import { createTestPrismaClient } from "../src/testing.js";
 import { assertTestDatabaseUrl } from "../src/testDbGuard.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -22,13 +23,26 @@ async function expectCheckViolation(
   try {
     await action();
   } catch (err) {
+    // Prisma 7's driver adapters route raw Postgres errors through
+    // meta.driverAdapterError.cause instead of directly on meta (pre-v7 shape) - see
+    // @prisma/driver-adapter-utils' DriverAdapterError.
     expect(err).toMatchObject({
       code: "P2010",
-      meta: expect.objectContaining({ code: "23514" }),
+      meta: expect.objectContaining({
+        driverAdapterError: expect.objectContaining({
+          cause: expect.objectContaining({ code: "23514" }),
+        }),
+      }),
     });
-    expect(String((err as { meta?: { message?: unknown } }).meta?.message ?? err)).toContain(
-      constraintName,
-    );
+    expect(
+      String(
+        (
+          err as {
+            meta?: { driverAdapterError?: { cause?: { message?: unknown } } };
+          }
+        ).meta?.driverAdapterError?.cause?.message ?? err,
+      ),
+    ).toContain(constraintName);
     return;
   }
   throw new Error(`Expected ${constraintName} check violation`);
@@ -37,13 +51,13 @@ async function expectCheckViolation(
 beforeAll(async () => {
   assertTestDatabaseUrl(process.env.DATABASE_URL ?? "");
 
-  execSync("npx prisma migrate reset --force --skip-seed", {
+  execSync("npx prisma migrate reset --force", {
     cwd: DB_ROOT,
     env: { ...process.env },
     stdio: "pipe",
   });
 
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
   await prisma.organization.create({
     data: { id: ORG_ID, name: "Status Check Org", slug: "status-check" },
   });

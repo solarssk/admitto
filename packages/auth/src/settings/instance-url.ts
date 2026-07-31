@@ -1,4 +1,4 @@
-import type { PrismaClient, Prisma } from "@prisma/client";
+import type { PrismaClient, Prisma } from "@admitto/db";
 import { getSetting } from "./resolver.js";
 import { SETTING_INSTANCE_URL } from "./keys.js";
 

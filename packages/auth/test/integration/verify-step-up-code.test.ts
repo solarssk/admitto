@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { verifyTotpOrRecoveryCode } from "../../src/mfa/verify-step-up-code.js";
 import { generateBackupRecoveryCodes } from "../../src/mfa/backup-recovery.js";
 import { generateEmergencyRecoveryCode } from "../../src/mfa/emergency-recovery.js";
@@ -11,7 +12,7 @@ const USER_ID = "verify-step-up-code-user";
 let prisma: PrismaClient;
 
 beforeAll(async () => {
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
   await prisma.userMfaMethod.deleteMany({ where: { user_id: USER_ID } });
   await prisma.user.deleteMany({ where: { id: USER_ID } });
 

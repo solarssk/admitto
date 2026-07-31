@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "./generated/prisma/client.js";
 
 /**
  * Idempotent backfill: recovers CheckIn.session_id for rows written before that column existed,

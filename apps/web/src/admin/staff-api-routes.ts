@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { canManageInstance, getBrandingTheme, setBrandingTheme, type BrandingCustomFontFamily } from "@admitto/auth";
 import { resolveThemeVars } from "@admitto/ui";
 

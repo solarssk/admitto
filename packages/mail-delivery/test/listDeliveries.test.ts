@@ -1,4 +1,5 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setMailSettings } from "@admitto/mailer-config";
 import type { ExportPayload } from "@admitto/mailer";
@@ -6,7 +7,7 @@ import { resetDb } from "./resetDb.js";
 import { listDeliveries } from "../src/listDeliveries.js";
 import { sendTicketEmails } from "../src/index.js";
 
-const prisma = new PrismaClient();
+const prisma = createTestPrismaClient();
 const EVENT_A = "evt-list-a";
 const EVENT_B = "evt-list-b";
 const exported: ExportPayload[] = [];

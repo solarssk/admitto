@@ -1,6 +1,6 @@
 import type { Context } from "hono";
-import { Prisma } from "@prisma/client";
-import type { PrismaClient } from "@prisma/client";
+import { Prisma } from "@admitto/db";
+import type { PrismaClient } from "@admitto/db";
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { validateHttpUrl, InvalidHttpUrlError } from "@admitto/mail-templates";
 import { assertEventManageAccess, adminAuditFromContext, requireEventId } from "./admin-helpers.js";

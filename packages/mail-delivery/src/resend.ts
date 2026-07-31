@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { sendTicketEmails, type MailDeliveryDeps } from "./send.js";
 
 export interface ResendTicketEmailOptions {

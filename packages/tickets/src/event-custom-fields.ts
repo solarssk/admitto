@@ -1,4 +1,4 @@
-import type { PrismaClient, Prisma } from "@prisma/client";
+import type { PrismaClient, Prisma } from "@admitto/db";
 import type { EventItemContent } from "./types.js";
 
 type CustomFieldDb = PrismaClient | Prisma.TransactionClient;

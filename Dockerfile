@@ -13,7 +13,7 @@ COPY apps ./apps
 ENV npm_config_ignore_scripts=true
 RUN npm ci
 
-RUN npx prisma generate --schema packages/db/prisma/schema.prisma
+RUN npx prisma generate --schema packages/db/prisma/schema.prisma --config packages/db/prisma.config.ts
 
 # No .git dir is copied into the build context — publish-container.yml passes the real commit
 # it just checked out; the admin SPA build (apps/admin/vite.config.ts) reads it from here.
@@ -21,13 +21,17 @@ ARG GIT_COMMIT=unknown
 ENV GIT_COMMIT=$GIT_COMMIT
 RUN npm run build
 
-# Prisma migrate CLI is a devDependency — stash before prune.
-RUN mkdir -p /opt/prisma-runtime \
-  && cp -r node_modules/prisma /opt/prisma-runtime/prisma \
-  && cp -r node_modules/@prisma /opt/prisma-runtime/@prisma \
-  && cp -r node_modules/.prisma /opt/prisma-runtime/dot-prisma
+# Prisma v7's config loader (prisma.config.ts -> @prisma/config -> c12/jiti/etc.) pulls in several
+# new transitive packages beyond the old prisma/@prisma/.prisma trio, and docker-entrypoint.sh
+# still needs the CLI (a devDependency) at container startup to run migrate status/deploy. Snapshot
+# node_modules before pruning devDependencies, then merge back only what pruning removed (`cp -n`
+# skips anything that already exists, so real prod dependencies are untouched) instead of
+# hardcoding an increasingly long and version-fragile package list.
+RUN cp -r node_modules /opt/node_modules-full
 
 RUN npm prune --omit=dev
+
+RUN cp -rn /opt/node_modules-full/. node_modules/ && rm -rf /opt/node_modules-full
 
 FROM node:24-bookworm-slim AS production
 
@@ -76,6 +80,7 @@ COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 COPY --from=builder /app/packages/crypto/dist ./packages/crypto/dist
 COPY --from=builder /app/packages/db/dist ./packages/db/dist
 COPY --from=builder /app/packages/db/prisma ./packages/db/prisma
+COPY --from=builder /app/packages/db/prisma.config.ts ./packages/db/prisma.config.ts
 COPY --from=builder /app/packages/tickets/dist ./packages/tickets/dist
 COPY --from=builder /app/packages/auth/dist ./packages/auth/dist
 COPY --from=builder /app/packages/mailer/dist ./packages/mailer/dist
@@ -83,10 +88,6 @@ COPY --from=builder /app/packages/mailer-config/dist ./packages/mailer-config/di
 COPY --from=builder /app/packages/mail-templates/dist ./packages/mail-templates/dist
 COPY --from=builder /app/packages/mail-delivery/dist ./packages/mail-delivery/dist
 COPY --from=builder /app/packages/import/dist ./packages/import/dist
-
-COPY --from=builder /opt/prisma-runtime/dot-prisma ./node_modules/.prisma
-COPY --from=builder /opt/prisma-runtime/@prisma ./node_modules/@prisma
-COPY --from=builder /opt/prisma-runtime/prisma ./node_modules/prisma
 
 COPY deploy/docker-entrypoint.sh ./deploy/docker-entrypoint.sh
 

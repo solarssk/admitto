@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { MAX_ATTENDEE_NOTE_LENGTH } from "@admitto/db/status";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
 

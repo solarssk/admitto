@@ -27,7 +27,10 @@ export DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:5432/${DB_NA
 run_migrate_deploy() {
   # --no-install: use only the already-installed, lockfile-pinned prisma binary, never an
   # on-demand npx download (SonarCloud shell:S6505 — same fix already applied to ci.yml).
-  npx --no-install prisma migrate deploy --schema packages/db/prisma/schema.prisma
+  # --config: CWD here is the repo root (see `cd "$ROOT"` above), not packages/db/ where
+  # prisma.config.ts lives — auto-discovery only looks in CWD, so this must be explicit
+  # (Prisma v7 prisma.config.ts monorepo path resolution).
+  npx --no-install prisma migrate deploy --schema packages/db/prisma/schema.prisma --config packages/db/prisma.config.ts
 }
 
 migrate_output=""
@@ -56,5 +59,5 @@ if [[ -n "${CI:-}" ]]; then
 fi
 
 echo "migrate deploy failed locally — falling back to db push (ADR 0015 integration parity)…" >&2
-npx --no-install prisma db push --schema packages/db/prisma/schema.prisma --skip-generate --accept-data-loss
+npx --no-install prisma db push --schema packages/db/prisma/schema.prisma --config packages/db/prisma.config.ts --accept-data-loss
 echo "db push OK (${DB_NAME})"

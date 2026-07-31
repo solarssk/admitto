@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Attendee, Prisma, PrismaClient } from "@prisma/client";
+import type { Attendee, Prisma, PrismaClient } from "@admitto/db";
 import {
   assertCustomDataMeetsRequirements,
   filterCustomDataAttributeFields,

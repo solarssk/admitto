@@ -1,4 +1,4 @@
-import type { PrismaClient, Prisma } from "@prisma/client";
+import type { PrismaClient, Prisma } from "@admitto/db";
 import { findUserById } from "../user.js";
 import { verifyPassword } from "../password.js";
 import { userRequiresMfaStepUp } from "../mfa/policy.js";

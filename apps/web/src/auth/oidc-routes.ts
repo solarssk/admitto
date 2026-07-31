@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import type { IdentityProvider, PrismaClient } from "@prisma/client";
+import type { IdentityProvider, PrismaClient } from "@admitto/db";
 import type { JWTPayload } from "jose";
 import {
   SESSION_STAGE,

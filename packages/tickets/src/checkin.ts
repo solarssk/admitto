@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { resolveTicket } from "./resolve.js";
 import { admitAttendee, shouldRequireConfirmOnScan } from "./admit.js";
 import { getAttendeeCard } from "./attendee-card.js";

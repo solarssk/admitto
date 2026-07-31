@@ -1,4 +1,4 @@
-import type { PrismaClient, Prisma, User } from "@prisma/client";
+import type { PrismaClient, Prisma, User } from "@admitto/db";
 import { hashPassword } from "./password.js";
 
 /** Normalize email for storage and lookup (lowercase, trimmed). */

@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { materializeStoredDeliveryMessage } from "@admitto/mail-templates";
 import { createMailer, sendBatch } from "@admitto/mailer";
 import { resolveMailConfig } from "@admitto/mailer-config";

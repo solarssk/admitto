@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword } from "../../src/password.js";
 import { verifyOidcLinkStepUp } from "../../src/oidc/link-step-up.js";
 import { bootstrapSuperadmin } from "../../src/bootstrap.js";
@@ -14,7 +15,7 @@ const USER_ID = "oidc-link-stepup-user";
 let prisma: PrismaClient;
 
 beforeAll(async () => {
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
   await prisma.userMfaMethod.deleteMany({ where: { user_id: USER_ID } });
   await prisma.roleAssignment.deleteMany({ where: { user_id: USER_ID } });
   await prisma.user.deleteMany({ where: { id: USER_ID } });

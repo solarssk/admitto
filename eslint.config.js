@@ -4,6 +4,11 @@ import reactHooks from "eslint-plugin-react-hooks";
 
 export default [
   {
+    // Prisma's `prisma-client` generator emits raw, uncompiled TypeScript directly into
+    // packages/db/src/generated — treat it as build output, not source to lint.
+    ignores: ["packages/*/src/generated/**"],
+  },
+  {
     files: ["packages/*/src/**/*.ts"],
     plugins: { security },
     languageOptions: {

@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@admitto/db";
 import { canManageInstance } from "@admitto/auth";
 import { setBranding, InvalidHttpUrlError } from "@admitto/mail-templates";
 import { emitSystemLog } from "@admitto/shared/system-log";

@@ -1,5 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
-import type { EmailDeliveryPurpose, EmailDeliveryStatus } from "@admitto/db";
+import type { PrismaClient, EmailDeliveryPurpose, EmailDeliveryStatus } from "@admitto/db";
 import { sanitizeDeliveryError } from "./sanitizeError.js";
 
 export interface DeliveryLogEntry {

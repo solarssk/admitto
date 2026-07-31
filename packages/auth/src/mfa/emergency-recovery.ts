@@ -1,4 +1,4 @@
-import type { PrismaClient, Prisma } from "@prisma/client";
+import type { PrismaClient, Prisma } from "@admitto/db";
 import { EMERGENCY_RECOVERY_LABEL } from "../constants.js";
 import {
   generateRecoveryCodePlaintext,

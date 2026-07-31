@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import {
   hashPassword,
   createSession,
@@ -49,7 +50,7 @@ let operatorCookie: string;
 let adminCookie: string;
 
 beforeAll(async () => {
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
   // CF Access settings are instance-wide (SystemSettings) in the shared admitto_web_test
   // database. The team_domain_required test below requires them absent - clear any leftovers
   // defensively instead of depending on other test files' cleanup.

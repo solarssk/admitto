@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "./generated/prisma/client.js";
 import { randomBytes } from "node:crypto";
 
 /** Same format as `@admitto/crypto` `generateToken` (32 CSPRNG bytes, base64url). */

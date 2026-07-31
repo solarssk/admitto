@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@admitto/db";
+import { createTestPrismaClient } from "@admitto/db/testing";
 import { admitAttendee } from "../src/admit.js";
 import { undoLastCheckIn as undoFn, revokeCheckIn, UndoNotAllowedError } from "../src/undo.js";
 import {
@@ -41,7 +42,7 @@ beforeAll(async () => {
     env: { ...process.env },
     stdio: "pipe",
   });
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
   await prisma.organization.create({ data: { id: "org_ops", name: "Ops", slug: "ops" } });
   await prisma.event.create({
     data: {
