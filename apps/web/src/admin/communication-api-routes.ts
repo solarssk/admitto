@@ -20,6 +20,7 @@ import {
   createMailTemplate,
   setMailTemplate,
   validateTemplate,
+  materializeStoredDeliveryMessageRedacted,
   UnknownPlaceholdersError,
   MjmlCompileError,
   PlaceholderInHtmlCommentError,
@@ -31,20 +32,26 @@ import {
 } from "@admitto/mail-templates";
 import {
   listDeliveries,
+  getDeliveryWithTimeline,
+  getRenderedDelivery,
   sendTestEmail,
   toDeliveryDto,
+  toDeliveryDetailDto,
   clientSafeDeliveryError,
   type DeliveryDto,
+  type DeliveryDetailDto,
   type MailDeliveryDeps,
 } from "@admitto/mail-delivery";
 import { isSendSuccess } from "@admitto/mailer";
-import { writeBulkActionLog } from "@admitto/tickets";
+import { EXPORT_ROW_CAP, quoteCsvCell, sanitizeCsvCell, writeBulkActionLog } from "@admitto/tickets";
 import {
   adminAuditFromContext,
   assertEventManageAccess,
+  csvExportResponse,
   positiveIntQuery,
   requireEventId,
   resolveMailInstanceBaseUrl,
+  resolveUserDisplayMap,
 } from "./admin-helpers.js";
 import { acquireEventImageAssetsLock } from "./event-image-assets-routes.js";
 
@@ -552,19 +559,26 @@ export async function handleTestSendEventTemplateById(
 }
 
 /** GET /api/admin/events/:eventId/deliveries */
-export async function handleListEventDeliveries(c: Context, db: PrismaClient): Promise<Response> {
-  const eventId = requireEventId(c);
-  if (eventId instanceof Response) return eventId;
+/** Delivery list/export filters shared by handleListEventDeliveries and
+ * handleExportEventDeliveries — kept as one parser so the two routes can never silently drift
+ * on what a given query string actually filters by. */
+type DeliveryFilters = {
+  status?: EmailDeliveryStatus;
+  purpose?: EmailDeliveryPurpose;
+  search?: string;
+  /** `null` filters to the built-in default ticket template (no custom MailTemplate override). */
+  templateId?: string | null;
+};
 
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
-
-  const page = positiveIntQuery(c.req.query("page"), 1);
-  const pageSize = positiveIntQuery(c.req.query("pageSize"), 25, 100);
+/** Parse status/purpose/search/templateId query params. Returns a 400 Response on an unknown
+ * status/purpose literal, otherwise the parsed filter object (empty when nothing was passed). */
+function buildDeliveryFilters(c: Context): DeliveryFilters | Response {
   const statusRaw = c.req.query("status")?.trim();
   const purposeRaw = c.req.query("purpose")?.trim();
+  const searchRaw = c.req.query("search")?.trim();
+  const templateIdRaw = c.req.query("templateId")?.trim();
 
-  const filters: { status?: EmailDeliveryStatus; purpose?: EmailDeliveryPurpose } = {};
+  const filters: DeliveryFilters = {};
   if (statusRaw && statusRaw !== "all") {
     if (!ALLOWED_DELIVERY_STATUSES.has(statusRaw)) {
       return c.json({ error: "validation_failed" }, 400);
@@ -577,6 +591,27 @@ export async function handleListEventDeliveries(c: Context, db: PrismaClient): P
     }
     filters.purpose = purposeRaw as EmailDeliveryPurpose;
   }
+  if (searchRaw) {
+    filters.search = searchRaw;
+  }
+  if (templateIdRaw) {
+    filters.templateId = templateIdRaw === "default" ? null : templateIdRaw;
+  }
+  return filters;
+}
+
+export async function handleListEventDeliveries(c: Context, db: PrismaClient): Promise<Response> {
+  const eventId = requireEventId(c);
+  if (eventId instanceof Response) return eventId;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const page = positiveIntQuery(c.req.query("page"), 1);
+  const pageSize = positiveIntQuery(c.req.query("pageSize"), 25, 100);
+
+  const filters = buildDeliveryFilters(c);
+  if (filters instanceof Response) return filters;
 
   const { items, total } = await listDeliveries(
     {
@@ -596,6 +631,145 @@ export async function handleListEventDeliveries(c: Context, db: PrismaClient): P
   };
 
   return c.json(dto);
+}
+
+/** GET /api/admin/events/:eventId/deliveries/:deliveryId — full detail plus the attendee's whole
+ * delivery timeline (this row included, oldest first), for the "View delivery details" modal. */
+export async function handleGetEventDelivery(c: Context, db: PrismaClient): Promise<Response> {
+  const eventId = requireEventId(c);
+  if (eventId instanceof Response) return eventId;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const deliveryId = c.req.param("deliveryId");
+  if (!deliveryId) return c.json({ error: "deliveryId required" }, 400);
+
+  const result = await getDeliveryWithTimeline({ eventId, id: deliveryId }, db);
+  if (!result) return c.json({ error: "not_found" }, 404);
+
+  const actorUserId = result.entry.actor_user_id;
+  const actorMap = actorUserId ? await resolveUserDisplayMap(db, [actorUserId]) : {};
+  const actorDisplay = actorUserId ? (actorMap[actorUserId]?.email ?? null) : null;
+
+  const dto: DeliveryDetailDto = toDeliveryDetailDto(result.entry, actorDisplay, result.timeline);
+  return c.json(dto);
+}
+
+/** GET /api/admin/events/:eventId/deliveries/:deliveryId/rendered — redacted rendered message
+ * for the "View sent message" preview. The recipient's real QR code / ticket link are never
+ * returned, by construction — see materializeStoredDeliveryMessageRedacted. Either field can
+ * independently be null: the delivery wasn't found at all (whole response is null/404), or the
+ * retention window already nulled the stored snapshot (see retention.ts nullifyDeliverySnapshots)
+ * — callers must render an explicit "message content no longer available" state for the latter. */
+export async function handleGetRenderedEventDelivery(
+  c: Context,
+  db: PrismaClient,
+): Promise<Response> {
+  const eventId = requireEventId(c);
+  if (eventId instanceof Response) return eventId;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const deliveryId = c.req.param("deliveryId");
+  if (!deliveryId) return c.json({ error: "deliveryId required" }, 400);
+
+  const rendered = await getRenderedDelivery({ eventId, id: deliveryId }, db);
+  if (!rendered) return c.json({ error: "not_found" }, 404);
+
+  if (rendered.rendered_subject == null && rendered.rendered_html == null) {
+    return c.json({ subject: null, html: null });
+  }
+
+  const redacted = materializeStoredDeliveryMessageRedacted({
+    subject: rendered.rendered_subject ?? "",
+    html: rendered.rendered_html ?? "",
+  });
+
+  return c.json({
+    subject: rendered.rendered_subject != null ? redacted.subject : null,
+    html: rendered.rendered_html != null ? redacted.html : null,
+  });
+}
+
+const DELIVERY_CSV_COLUMNS = [
+  "Recipient name",
+  "Recipient email",
+  "Template",
+  "Purpose",
+  "Status",
+  "Provider",
+  "Provider message id",
+  "Attempts",
+  "Retryable",
+  "Queued at",
+  "Accepted at",
+  "Sent at",
+  "Failed at",
+  "Error code",
+  "Error",
+] as const;
+
+/** Build CSV text for the delivery log export (CRLF, quoted, formula-injection-safe fields). */
+function buildDeliveryLogCsv(rows: DeliveryDto[]): string {
+  const header = DELIVERY_CSV_COLUMNS.map((col) => quoteCsvCell(col)).join(",");
+  const csvRows = rows.map((r) =>
+    [
+      r.attendee_name,
+      r.recipient_email,
+      r.template_name ?? "Default ticket email",
+      r.purpose,
+      r.status,
+      r.provider,
+      r.provider_message_id,
+      String(r.attempts),
+      r.retryable === null ? "" : r.retryable ? "yes" : "no",
+      r.queued_at,
+      r.accepted_at,
+      r.sent_at,
+      r.failed_at,
+      r.error_code,
+      r.error,
+    ]
+      .map((cell) => quoteCsvCell(sanitizeCsvCell(cell)))
+      .join(","),
+  );
+  return [header, ...csvRows].join("\r\n");
+}
+
+/** GET /api/admin/events/:eventId/deliveries/export?format=csv — every delivery matching the
+ * current filters (not just the current page), same filters as the list route. Event-scoped
+ * (not superadmin-only), so this follows handleExportAttendees'/handleExportReports' convention
+ * rather than the org-wide audit-log export's self-audit-log write. */
+export async function handleExportEventDeliveries(c: Context, db: PrismaClient): Promise<Response> {
+  const eventId = requireEventId(c);
+  if (eventId instanceof Response) return eventId;
+
+  if (c.req.query("format") !== "csv") {
+    return c.json({ error: "format must be csv" }, 400);
+  }
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const filters = buildDeliveryFilters(c);
+  if (filters instanceof Response) return filters;
+
+  const { items, total } = await listDeliveries(
+    {
+      eventId,
+      filters: Object.keys(filters).length > 0 ? filters : undefined,
+      take: EXPORT_ROW_CAP,
+    },
+    db,
+  );
+  if (total > EXPORT_ROW_CAP) {
+    return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
+  }
+
+  const csv = buildDeliveryLogCsv(items.map(toDeliveryDto));
+  return csvExportResponse(csv, "delivery-log");
 }
 
 const MAX_TEMPLATES_PER_EVENT = 10;

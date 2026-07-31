@@ -47,6 +47,8 @@ import type {
   SaveMailSettingsBody,
   EventDeliveriesListParams,
   EventDeliveriesListResponse,
+  DeliveryDetailDto,
+  RenderedDeliveryDto,
   SessionsResponse,
   SystemSettingsDto,
   PatchSystemSettingsBody,
@@ -1229,14 +1231,22 @@ export async function fetchBulkSendStatus(
 
 /** Build query string for paginated event delivery log requests. */
 function deliveriesListQuery(eventId: string, params: EventDeliveriesListParams = {}): string {
-  const q = new URLSearchParams();
+  const q = deliveriesFilterQuery(params);
   if (params.page != null) q.set("page", String(params.page));
   if (params.pageSize != null) q.set("pageSize", String(params.pageSize));
-  if (params.status && params.status !== "all") q.set("status", params.status);
-  if (params.purpose && params.purpose !== "all") q.set("purpose", params.purpose);
   const qs = q.toString();
   const queryPart = qs ? `?${qs}` : "";
   return `/api/admin/events/${encodeURIComponent(eventId)}/deliveries${queryPart}`;
+}
+
+/** Filter-only query params shared by the list and export requests. */
+function deliveriesFilterQuery(params: EventDeliveriesListParams): URLSearchParams {
+  const q = new URLSearchParams();
+  if (params.status && params.status !== "all") q.set("status", params.status);
+  if (params.purpose && params.purpose !== "all") q.set("purpose", params.purpose);
+  if (params.search) q.set("search", params.search);
+  if (params.templateId && params.templateId !== "all") q.set("templateId", params.templateId);
+  return q;
 }
 
 /** Fetch paginated email delivery rows for an event (no rendered HTML). */
@@ -1251,6 +1261,53 @@ export async function fetchEventDeliveries(
   });
   return parseJson<EventDeliveriesListResponse>(res);
 }
+
+/** Fetch one delivery's full detail plus its attendee's whole delivery timeline, for the "View
+ * delivery details" modal. */
+export async function fetchEventDelivery(
+  eventId: string,
+  deliveryId: string,
+  signal?: AbortSignal,
+): Promise<DeliveryDetailDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/deliveries/${encodeURIComponent(deliveryId)}`,
+    { credentials: "same-origin", signal },
+  );
+  return parseJson<DeliveryDetailDto>(res);
+}
+
+/** Fetch a delivery's redacted rendered message for the "View sent message" preview — the
+ * recipient's real QR code / ticket link are never included, by design (see
+ * communication-api-routes.ts handleGetRenderedEventDelivery). `subject`/`html` are null when the
+ * retention window already cleared the stored snapshot. */
+export async function fetchRenderedDelivery(
+  eventId: string,
+  deliveryId: string,
+  signal?: AbortSignal,
+): Promise<RenderedDeliveryDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/deliveries/${encodeURIComponent(deliveryId)}/rendered`,
+    { credentials: "same-origin", signal },
+  );
+  return parseJson<RenderedDeliveryDto>(res);
+}
+
+/** Export the (filtered) event delivery log as CSV — same filters as fetchEventDeliveries, but
+ * every matching row, not just the current page. */
+export async function exportDeliveryLog(
+  eventId: string,
+  params: EventDeliveriesListParams = {},
+  signal?: AbortSignal,
+): Promise<void> {
+  const q = deliveriesFilterQuery(params);
+  q.set("format", "csv");
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/deliveries/export?${q.toString()}`,
+    { credentials: "same-origin", signal },
+  );
+  await downloadExportResponse(res, "delivery-log.csv");
+}
+
 
 /** Fetch distinct ticket types for an event (for the filter dropdown). */
 /** List an event's ticket-type catalog (label/color, each with a live attendee count) — the

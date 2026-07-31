@@ -4,13 +4,21 @@ import { sanitizeDeliveryError } from "./sanitizeError.js";
 export interface DeliveryLogEntry {
   id: string;
   attendee_id: string;
+  /** Attendee's current display name (joined) — never dangling, GDPR erasure deletes deliveries
+   * in the same transaction as the attendee (see attendees-api-routes.ts handleDeleteEventAttendee). */
+  attendee_name: string;
   status: string;
   provider: string;
   provider_message_id: string | null;
   attempts: number;
+  retryable: boolean | null;
   purpose: string;
   recipient_email: string | null;
   rendered_subject: string | null;
+  template_id: string | null;
+  /** Human-readable template label (joined), null when template_id is null (built-in default
+   * ticket template) — callers should show a "Default ticket email" fallback in that case. */
+  template_name: string | null;
   error_code: string | null;
   error: string | null;
   queued_at: Date;
@@ -30,6 +38,11 @@ export interface ListDeliveriesParams {
     status?: EmailDeliveryStatus | EmailDeliveryStatus[];
     purpose?: EmailDeliveryPurpose;
     attendeeId?: string;
+    /** Case-insensitive match against the attendee's current name or email. */
+    search?: string;
+    /** Filter by template id. Pass `null` explicitly to match the built-in default ticket
+     * template (rows with no custom MailTemplate override). */
+    templateId?: string | null;
   };
   skip?: number;
   take?: number;
@@ -43,13 +56,17 @@ export interface ListDeliveriesResult {
 const DELIVERY_LOG_SELECT = {
   id: true,
   attendee_id: true,
+  attendee: { select: { name: true } },
   status: true,
   provider: true,
   provider_message_id: true,
   attempts: true,
+  retryable: true,
   purpose: true,
   recipient_email: true,
   rendered_subject: true,
+  template_id: true,
+  template: { select: { label: true } },
   error_code: true,
   error: true,
   queued_at: true,
@@ -79,20 +96,36 @@ function buildWhere(params: ListDeliveriesParams) {
       : {}),
     ...(filters?.purpose ? { purpose: filters.purpose } : {}),
     ...(filters?.attendeeId ? { attendee_id: filters.attendeeId } : {}),
+    ...(filters?.templateId !== undefined ? { template_id: filters.templateId } : {}),
+    ...(filters?.search
+      ? {
+          attendee: {
+            OR: [
+              { name: { contains: filters.search, mode: "insensitive" as const } },
+              { email: { contains: filters.search, mode: "insensitive" as const } },
+            ],
+          },
+        }
+      : {}),
   };
 }
 
-/** Map a Prisma row to a delivery log entry with sanitized error text. */
+/** Map a Prisma row (with attendee/template joins) to a delivery log entry with sanitized error
+ * text and flattened join fields. */
 function mapRow(row: {
   id: string;
   attendee_id: string;
+  attendee: { name: string };
   status: string;
   provider: string;
   provider_message_id: string | null;
   attempts: number;
+  retryable: boolean | null;
   purpose: string;
   recipient_email: string | null;
   rendered_subject: string | null;
+  template_id: string | null;
+  template: { label: string } | null;
   error_code: string | null;
   error: string | null;
   queued_at: Date;
@@ -104,8 +137,11 @@ function mapRow(row: {
   created_at: Date;
   client_timezone: string | null;
 }): DeliveryLogEntry {
+  const { attendee, template, ...rest } = row;
   return {
-    ...row,
+    ...rest,
+    attendee_name: attendee.name,
+    template_name: template?.label ?? null,
     error: sanitizeDeliveryError(row.error ?? undefined) ?? null,
   };
 }
@@ -134,4 +170,76 @@ export async function listDeliveries(
     items: rows.map(mapRow),
     total,
   };
+}
+
+export interface DeliveryDetailEntry extends DeliveryLogEntry {
+  batch_id: string | null;
+  actor_user_id: string | null;
+  session_id: string | null;
+}
+
+export interface DeliveryTimelineResult {
+  entry: DeliveryDetailEntry;
+  /** Every delivery for the same attendee/event, oldest first (this entry included) — a genuine
+   * multi-step history buildable with zero schema migration, since each resend creates a new row
+   * rather than mutating the original (see attendees-api-routes.ts handleResendAttendeeTicket). */
+  timeline: DeliveryLogEntry[];
+}
+
+const DELIVERY_DETAIL_SELECT = {
+  ...DELIVERY_LOG_SELECT,
+  batch_id: true,
+  actor_user_id: true,
+  session_id: true,
+} as const;
+
+/**
+ * Fetch one delivery's full detail plus its attendee's whole delivery history (the "Delivery
+ * Timeline"), ordered oldest-to-newest. Returns null when not found (wrong id/event, or a
+ * cross-tenant id). Deliberately excludes `rendered_html`/`rendered_subject` — see
+ * `getRenderedDelivery` for the privacy-redacted message preview, kept as a separate fetch so
+ * this detail view never carries the (potentially large) HTML blob unless staff actually open it.
+ */
+export async function getDeliveryWithTimeline(
+  params: { eventId: string; id: string },
+  prisma: PrismaClient,
+): Promise<DeliveryTimelineResult | null> {
+  const row = await prisma.emailDelivery.findFirst({
+    where: { id: params.id, event_id: params.eventId },
+    select: DELIVERY_DETAIL_SELECT,
+  });
+  if (!row) return null;
+
+  const { batch_id, actor_user_id, session_id, ...logRow } = row;
+  const entry: DeliveryDetailEntry = {
+    ...mapRow(logRow),
+    batch_id,
+    actor_user_id,
+    session_id,
+  };
+
+  const timelineRows = await prisma.emailDelivery.findMany({
+    where: { attendee_id: row.attendee_id, event_id: params.eventId },
+    select: DELIVERY_LOG_SELECT,
+    orderBy: [{ created_at: "asc" }, { id: "asc" }],
+  });
+
+  return { entry, timeline: timelineRows.map(mapRow) };
+}
+
+/**
+ * Fetch a single delivery's frozen rendered snapshot for the "View sent message" preview.
+ * Returns null when the delivery itself isn't found. The snapshot fields inside a found result
+ * can independently be null once the retention window has passed (see retention.ts
+ * nullifyDeliverySnapshots) — callers must render an explicit "message content no longer
+ * available" state for that case, not treat it as a fetch error.
+ */
+export async function getRenderedDelivery(
+  params: { eventId: string; id: string },
+  prisma: PrismaClient,
+): Promise<{ rendered_subject: string | null; rendered_html: string | null } | null> {
+  return prisma.emailDelivery.findFirst({
+    where: { id: params.id, event_id: params.eventId },
+    select: { rendered_subject: true, rendered_html: true },
+  });
 }

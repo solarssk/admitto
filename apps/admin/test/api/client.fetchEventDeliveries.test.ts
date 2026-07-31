@@ -33,6 +33,8 @@ describe("fetchEventDeliveries (client) — query string building", () => {
     await fetchEventDeliveries("evt-1", { page: 2, status: "failed", purpose: "ticket" });
 
     const [url] = fetchMock.mock.calls[0]!;
-    expect(url).toBe("/api/admin/events/evt-1/deliveries?page=2&status=failed&purpose=ticket");
+    // Filter params (status/purpose/search/templateId) are built by a helper shared with the CSV
+    // export request, then page/pageSize are appended - hence filters preceding pagination here.
+    expect(url).toBe("/api/admin/events/evt-1/deliveries?status=failed&purpose=ticket&page=2");
   });
 });
