@@ -103,6 +103,41 @@ describe("ActiveSessionsTab rendering", () => {
     expect(screen.queryByText("No active sessions")).toBeNull();
   });
 
+  it("the Operators filter shows only operator-role sessions", async () => {
+    vi.mocked(fetchSessions).mockResolvedValue({
+      sessions: [
+        makeSession({ id: "admin-1", userEmail: "admin@example.com", role: "admin" }),
+        makeSession({ id: "op-1", userEmail: "operator@example.com", role: "operator" }),
+      ],
+    });
+
+    renderWithToast(<ActiveSessionsTab />);
+
+    await screen.findByRole("table");
+    fireEvent.click(screen.getByRole("radio", { name: "Operators" }));
+
+    expect(screen.getByText("operator@example.com")).toBeTruthy();
+    expect(screen.queryByText("admin@example.com")).toBeNull();
+  });
+
+  it("changing rows-per-page resets to page 1 and updates the page slice", async () => {
+    const many = Array.from({ length: 30 }, (_, i) =>
+      makeSession({ id: `s${i}`, userEmail: `user${i}@example.com` }),
+    );
+    vi.mocked(fetchSessions).mockResolvedValue({ sessions: many });
+
+    renderWithToast(<ActiveSessionsTab />);
+
+    await screen.findByRole("table");
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByText("Page 2 of 2")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Rows per page"), { target: { value: "50" } });
+
+    expect(screen.getByText("Showing 1–30 of 30")).toBeTruthy();
+    expect(screen.getByText("Page 1 of 1")).toBeTruthy();
+  });
+
   it("shows an operator-safe session error and retries", async () => {
     vi.mocked(fetchSessions)
       .mockRejectedValueOnce(new ApiError(500, "secret_internal"))
@@ -481,19 +516,62 @@ describe("ActiveSessionsTab rendering", () => {
 });
 
 describe("ActiveSessionsTab responsive layout", () => {
-  it("renders stacked cards instead of a table below the desktop breakpoint", async () => {
+  it("renders stacked cards instead of a table below the desktop breakpoint, with every field populated", async () => {
     mockMatchMedia(false);
     vi.mocked(fetchSessions).mockResolvedValue({
-      sessions: [makeSession({ userEmail: "mobile@example.com", role: "operator" })],
+      sessions: [
+        makeSession({
+          userEmail: "mobile@example.com",
+          userDisplayName: "Mobile User",
+          role: "operator",
+          deviceLabel: "Field Tablet",
+          ip: null,
+        }),
+      ],
     });
 
     renderWithToast(<ActiveSessionsTab />);
 
     await screen.findByText("mobile@example.com");
     expect(screen.queryByRole("table")).toBeNull();
-    expect(document.querySelector(".users-page__card")).toBeTruthy();
-    expect(screen.getByRole("button", { name: EDIT_NAME })).toBeTruthy();
+    const card = document.querySelector(".users-page__card") as HTMLElement;
+    expect(card).toBeTruthy();
+    // Exercises the branches only this (mobile) rendering path has: a display name present
+    // (shows the email as a secondary line), a device label present (skips the user-agent
+    // parse), and a missing IP (falls back to "-") - all already covered for the desktop table
+    // by other tests here, but SessionCard is a separate component with its own copies.
+    expect(within(card).getByText("Mobile User")).toBeTruthy();
+    expect(within(card).getByText("Field Tablet")).toBeTruthy();
+    expect(within(card).getByText("-")).toBeTruthy();
     expect(screen.getByRole("button", { name: REVOKE_NAME })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: EDIT_NAME }));
+    const dialog = await screen.findByRole("dialog");
+    const input = within(dialog).getByLabelText("Device label") as HTMLInputElement;
+    expect(input.value).toBe("Field Tablet");
+  });
+
+  it("falls back to email, parsed user agent, and a dash when a mobile card's optional fields are empty", async () => {
+    mockMatchMedia(false);
+    vi.mocked(fetchSessions).mockResolvedValue({
+      sessions: [
+        makeSession({
+          userEmail: "plain-mobile@example.com",
+          userDisplayName: null,
+          deviceLabel: null,
+          userAgent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36",
+          ip: "203.0.113.5",
+        }),
+      ],
+    });
+
+    renderWithToast(<ActiveSessionsTab />);
+
+    const card = (await screen.findByText("plain-mobile@example.com")).closest("article") as HTMLElement;
+    // No display name -> no secondary email line under the name (it's already the name itself).
+    expect(within(card).queryByText("plain-mobile@example.com", { selector: ".users-page__user-email" })).toBeNull();
+    expect(within(card).getByText("Chrome / Linux")).toBeTruthy();
+    expect(within(card).getByText("203.0.113.5")).toBeTruthy();
   });
 });
 
@@ -618,5 +696,120 @@ describe("ActiveSessionsTab operator errors", () => {
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to revoke sessions/);
     });
+  });
+});
+
+describe("ActiveSessionsTab revoke success", () => {
+  it("closes the dialog, toasts, and reloads after a successful revoke; blocks backdrop-close while in flight", async () => {
+    let resolveRevoke: (() => void) | undefined;
+    vi.mocked(fetchSessions).mockResolvedValue({ sessions: [makeSession()] });
+    vi.mocked(revokeSessionById).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveRevoke = resolve; }),
+    );
+
+    renderWithToast(<ActiveSessionsTab />);
+
+    await screen.findByRole("table");
+    fireEvent.click(screen.getByRole("button", { name: REVOKE_NAME }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
+
+    // The backdrop's onClose is wired to onCancel regardless of loading state - only the
+    // handler's own `if (!revoking)` guard stops it from clearing confirmTarget mid-request
+    // (same pattern already covered for DeviceLabelEditModal's save-in-flight case).
+    fireEvent.click(document.querySelector(".at-modal-backdrop")!);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+
+    await act(async () => {
+      resolveRevoke?.();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(screen.getByTestId("at-toast").textContent).toMatch(/Session revoked/);
+    expect(fetchSessions).toHaveBeenCalledTimes(2);
+  });
+
+  it("blocks backdrop-close while a bulk revoke is in flight, then closes and toasts with plural wording on success", async () => {
+    let resolveBulk: ((value: { revokedCount: number }) => void) | undefined;
+    vi.mocked(fetchSessions).mockResolvedValue({ sessions: [] });
+    vi.mocked(fetchAdminEvents).mockResolvedValue([sampleEvent]);
+    vi.mocked(revokeAllOperatorSessions).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveBulk = resolve; }),
+    );
+
+    renderWithToast(<ActiveSessionsTab />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("combobox")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "evt-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Revoke all operator sessions" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
+
+    fireEvent.click(document.querySelector(".at-modal-backdrop")!);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+
+    await act(async () => {
+      resolveBulk?.({ revokedCount: 3 });
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(screen.getByTestId("at-toast").textContent).toMatch(/Revoked 3 operator sessions\./);
+  });
+
+  it("uses singular wording when exactly one operator session is revoked", async () => {
+    vi.mocked(fetchSessions).mockResolvedValue({ sessions: [] });
+    vi.mocked(fetchAdminEvents).mockResolvedValue([sampleEvent]);
+    vi.mocked(revokeAllOperatorSessions).mockResolvedValueOnce({ revokedCount: 1 });
+
+    renderWithToast(<ActiveSessionsTab />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("combobox")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "evt-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Revoke all operator sessions" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Revoked 1 operator session\./);
+    });
+  });
+
+  it("Cancel closes the bulk-revoke dialog without revoking anything", async () => {
+    vi.mocked(fetchSessions).mockResolvedValue({ sessions: [] });
+    vi.mocked(fetchAdminEvents).mockResolvedValue([sampleEvent]);
+
+    renderWithToast(<ActiveSessionsTab />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("combobox")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "evt-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Revoke all operator sessions" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(revokeAllOperatorSessions).not.toHaveBeenCalled();
+  });
+
+  it("marks an archived event in the event picker", async () => {
+    vi.mocked(fetchSessions).mockResolvedValue({ sessions: [] });
+    vi.mocked(fetchAdminEvents).mockResolvedValue([
+      { ...sampleEvent, id: "evt-arch", title: "Old Summit", archived_at: "2025-01-01T00:00:00.000Z" },
+    ]);
+
+    renderWithToast(<ActiveSessionsTab />);
+
+    expect(await screen.findByRole("option", { name: "Old Summit (archived)" })).toBeTruthy();
   });
 });

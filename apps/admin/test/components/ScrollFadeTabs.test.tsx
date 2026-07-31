@@ -184,4 +184,63 @@ describe("ScrollFadeTabs", () => {
       Element.prototype.getBoundingClientRect = realRect;
     }
   });
+
+  it("nudges past the left arrow's own overlay when the active tab is clipped on that side", () => {
+    // Mirror image of the right-clip case above: the active tab's left edge (5) is inside the
+    // container's left edge (0) plus the arrow's 28px zone, so scrollIntoView's "nearest" alone
+    // isn't enough to clear it.
+    const realRect = Element.prototype.getBoundingClientRect;
+    const rect = (partial: Partial<DOMRect>): DOMRect =>
+      ({ top: 0, bottom: 0, height: 0, x: 0, y: 0, toJSON: () => "", ...partial }) as DOMRect;
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      if (this.classList.contains("scroll-fade-tabs__scroll")) return rect({ left: 0, right: 100, width: 100 });
+      if (this.getAttribute("aria-selected") === "true") return rect({ left: 5, right: 35, width: 30 });
+      return realRect.call(this);
+    };
+
+    try {
+      const { container, rerender } = render(<ScrollFadeTabs value="danger" tabs={TABS} />);
+      const scrollEl = getScrollEl(container);
+      mockScrollMetrics(scrollEl, { scrollWidth: 500, clientWidth: 100, scrollLeft: 5 });
+      vi.mocked(scrollEl.scrollBy).mockClear();
+
+      rerender(<ScrollFadeTabs value="general" tabs={TABS} />);
+
+      expect(scrollEl.scrollBy).toHaveBeenCalledWith({ left: -23 });
+    } finally {
+      Element.prototype.getBoundingClientRect = realRect;
+    }
+  });
+
+  it("does not scroll when the active tab already clears both arrows", () => {
+    const realRect = Element.prototype.getBoundingClientRect;
+    const rect = (partial: Partial<DOMRect>): DOMRect =>
+      ({ top: 0, bottom: 0, height: 0, x: 0, y: 0, toJSON: () => "", ...partial }) as DOMRect;
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      // Comfortably clear of both the left zone (0-28) and the right zone (72-100).
+      if (this.classList.contains("scroll-fade-tabs__scroll")) return rect({ left: 0, right: 100, width: 100 });
+      if (this.getAttribute("aria-selected") === "true") return rect({ left: 40, right: 60, width: 20 });
+      return realRect.call(this);
+    };
+
+    try {
+      const { container, rerender } = render(<ScrollFadeTabs value="general" tabs={TABS} />);
+      const scrollEl = getScrollEl(container);
+      mockScrollMetrics(scrollEl, { scrollWidth: 500, clientWidth: 100, scrollLeft: 40 });
+      vi.mocked(scrollEl.scrollBy).mockClear();
+
+      rerender(<ScrollFadeTabs value="branding" tabs={TABS} />);
+
+      expect(scrollEl.scrollBy).not.toHaveBeenCalled();
+    } finally {
+      Element.prototype.getBoundingClientRect = realRect;
+    }
+  });
+
+  it("does not throw when no tab is marked active (no aria-selected match)", () => {
+    // value doesn't match any tab id, so no element ever gets aria-selected="true" - the effect
+    // must bail out via its own `!target` guard rather than crash on a null querySelector result.
+    expect(() => render(<ScrollFadeTabs value="does-not-exist" tabs={TABS} />)).not.toThrow();
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+  });
 });
