@@ -5443,6 +5443,13 @@ select.system-log-panel__field {
   color: var(--text-muted);
 }
 
+/* actorCell's "by <actor>" subline renders a <span> (valid inside the mobile card's wrapping
+   <span>, unlike a <div>) - this puts it on its own line where the desktop table's <td> would
+   otherwise have done that for free. */
+.archiving-subdued--block {
+  display: block;
+}
+
 .archiving-error {
   color: var(--status-danger-text, var(--danger-700, #b91c1c));
   margin: var(--space-2) 0 0;

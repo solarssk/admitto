@@ -22,7 +22,8 @@ import {
 import { AuditLogPanel } from "../../src/settings/AuditLogPanel.js";
 import { EventArchivingPanel } from "../../src/settings/EventArchivingPanel.js";
 import { POLL_INTERVAL_MS } from "../../src/settings/SystemLogsPanel.js";
-import { mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { mockMatchMedia, renderWithToast, renderWithToastAndRouter } from "../test-utils.js";
+import { setPreferredLocale } from "../../src/utils/locale-store.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -117,6 +118,7 @@ afterEach(() => {
   vi.resetAllMocks();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  setPreferredLocale(null);
 });
 
 describe("AuditLogPanel rendering", () => {
@@ -2113,11 +2115,7 @@ describe("EventArchivingPanel rendering", () => {
         created_by_display_name: "Alice Admin",
       }),
     ]);
-    renderWithToast(
-      <MemoryRouter>
-        <EventArchivingPanel />
-      </MemoryRouter>,
-    );
+    renderWithToastAndRouter(<EventArchivingPanel />);
 
     const link = await screen.findByRole("link", { name: "Spring Summit" });
     expect(link.getAttribute("href")).toBe("/admin/events/evt-spring-summit/overview");
@@ -2129,6 +2127,8 @@ describe("EventArchivingPanel rendering", () => {
   it("shows the Created date in the creator's own timezone rather than UTC, when known", async () => {
     // 11:30 PM UTC on the 21st is already the 22nd in Kolkata (UTC+5:30) - an unambiguous way to
     // tell the two apart without depending on exact formatted-string equality.
+    // Pinned so the "Jun"/month-name assertions below don't depend on the test runner's own locale.
+    setPreferredLocale("en-US");
     vi.mocked(fetchAdminEvents).mockResolvedValueOnce([
       makeEvent({
         title: "Diwali Meetup",
@@ -2136,11 +2136,7 @@ describe("EventArchivingPanel rendering", () => {
         created_by_timezone: "Asia/Kolkata",
       }),
     ]);
-    renderWithToast(
-      <MemoryRouter>
-        <EventArchivingPanel />
-      </MemoryRouter>,
-    );
+    renderWithToastAndRouter(<EventArchivingPanel />);
 
     await screen.findByText("Diwali Meetup");
     expect(screen.getByText(/Jun 22, 2026/)).toBeTruthy();
@@ -2153,11 +2149,7 @@ describe("EventArchivingPanel rendering", () => {
       makeEvent({ id: "evt-a", title: "Event A", created_by_email: "bob@example.com" }),
       makeEvent({ id: "evt-b", title: "Event B", slug: "event-b" }),
     ]);
-    renderWithToast(
-      <MemoryRouter>
-        <EventArchivingPanel />
-      </MemoryRouter>,
-    );
+    renderWithToastAndRouter(<EventArchivingPanel />);
 
     await screen.findByText("Event A");
     expect(screen.getByText("by bob@example.com")).toBeTruthy();
@@ -2165,6 +2157,8 @@ describe("EventArchivingPanel rendering", () => {
   });
 
   it("switches to the Archived view and renders the archived date, who archived it, and an Unarchive action", async () => {
+    // Pinned so the "Feb"/month-name assertion below doesn't depend on the test runner's own locale.
+    setPreferredLocale("en-US");
     vi.mocked(fetchAdminEvents).mockResolvedValueOnce([
       makeEvent({
         title: "Winter Meetup",
@@ -2172,11 +2166,7 @@ describe("EventArchivingPanel rendering", () => {
         archived_by_display_name: "Carol Superadmin",
       }),
     ]);
-    renderWithToast(
-      <MemoryRouter>
-        <EventArchivingPanel />
-      </MemoryRouter>,
-    );
+    renderWithToastAndRouter(<EventArchivingPanel />);
 
     await screen.findByText("No active events");
     fireEvent.click(screen.getByRole("radio", { name: "Archived" }));
@@ -2189,11 +2179,7 @@ describe("EventArchivingPanel rendering", () => {
 
   it("shows empty-state copy with no table underneath, for both views", async () => {
     vi.mocked(fetchAdminEvents).mockResolvedValueOnce([]);
-    renderWithToast(
-      <MemoryRouter>
-        <EventArchivingPanel />
-      </MemoryRouter>,
-    );
+    renderWithToastAndRouter(<EventArchivingPanel />);
 
     await screen.findByText("No active events");
     expect(screen.queryByRole("table")).toBeNull();
@@ -2206,11 +2192,7 @@ describe("EventArchivingPanel rendering", () => {
   it("paginates client-side once a view has more rows than one page", async () => {
     const many = Array.from({ length: 30 }, (_, i) => makeEvent({ id: `evt-page-${i}`, title: `Event ${i}` }));
     vi.mocked(fetchAdminEvents).mockResolvedValueOnce(many);
-    renderWithToast(
-      <MemoryRouter>
-        <EventArchivingPanel />
-      </MemoryRouter>,
-    );
+    renderWithToastAndRouter(<EventArchivingPanel />);
 
     await screen.findByText("Showing 1–25 of 30");
     expect(screen.getByText("Event 0")).toBeTruthy();
@@ -2228,11 +2210,7 @@ describe("EventArchivingPanel rendering", () => {
   it("shows more rows on one page after increasing the page size", async () => {
     const many = Array.from({ length: 30 }, (_, i) => makeEvent({ id: `evt-page-${i}`, title: `Event ${i}` }));
     vi.mocked(fetchAdminEvents).mockResolvedValueOnce(many);
-    renderWithToast(
-      <MemoryRouter>
-        <EventArchivingPanel />
-      </MemoryRouter>,
-    );
+    renderWithToastAndRouter(<EventArchivingPanel />);
 
     await screen.findByText("Showing 1–25 of 30");
     fireEvent.change(screen.getByLabelText("Rows per page"), { target: { value: "50" } });
@@ -2246,11 +2224,7 @@ describe("EventArchivingPanel rendering", () => {
     vi.mocked(fetchAdminEvents).mockResolvedValueOnce([
       makeEvent({ title: "Mobile Meetup", attendee_count: 7, created_by_display_name: "Dana Admin" }),
     ]);
-    renderWithToast(
-      <MemoryRouter>
-        <EventArchivingPanel />
-      </MemoryRouter>,
-    );
+    renderWithToastAndRouter(<EventArchivingPanel />);
 
     await screen.findByText("Mobile Meetup");
     expect(screen.queryByRole("table")).toBeNull();
@@ -2271,11 +2245,7 @@ describe("EventArchivingPanel rendering", () => {
         archived_by_display_name: "Carol Superadmin",
       }),
     ]);
-    renderWithToast(
-      <MemoryRouter>
-        <EventArchivingPanel />
-      </MemoryRouter>,
-    );
+    renderWithToastAndRouter(<EventArchivingPanel />);
 
     await screen.findByText("No active events");
     fireEvent.click(screen.getByRole("radio", { name: "Archived" }));

@@ -47,7 +47,7 @@ function actorCell(
   return (
     <>
       {actorDateTime(iso, timezone)}
-      <div className="archiving-subdued">by {actorLabel(displayName, email)}</div>
+      <span className="archiving-subdued archiving-subdued--block">by {actorLabel(displayName, email)}</span>
     </>
   );
 }
@@ -98,9 +98,13 @@ export function EventArchivingPanel() {
   );
   const rows = view === "active" ? activeEvents : archivedEvents;
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  // A row can disappear from the current view under the current page (e.g. archiving the only
+  // event on the last page) without page itself changing - clamp instead of rendering an empty
+  // slice as "no events at all".
+  const currentPage = Math.min(page, totalPages);
   const displayedRows = useMemo(
-    () => rows.slice((page - 1) * pageSize, page * pageSize),
-    [rows, page, pageSize],
+    () => rows.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [rows, currentPage, pageSize],
   );
 
   const handleConfirm = async () => {
@@ -314,7 +318,7 @@ export function EventArchivingPanel() {
             {rows.length > 0 && (
               <PaginationFooter
                 idPrefix="archiving"
-                page={page}
+                page={currentPage}
                 pageSize={pageSize}
                 totalPages={totalPages}
                 totalRows={rows.length}
@@ -323,8 +327,8 @@ export function EventArchivingPanel() {
                   setPageSize(size);
                   setPage(1);
                 }}
-                onPrevious={() => setPage((p) => Math.max(1, p - 1))}
-                onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+                onPrevious={() => setPage(Math.max(1, currentPage - 1))}
+                onNext={() => setPage(Math.min(totalPages, currentPage + 1))}
               />
             )}
           </>
