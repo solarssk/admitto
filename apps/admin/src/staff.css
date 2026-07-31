@@ -5567,17 +5567,28 @@ select.system-log-panel__field {
   height: 100%;
 }
 
-/* KPI tiles (D, E2) — icon-square-left layout scoped to Overview's 4 top tiles only, a separate
- * bespoke tile from ReportsPage's own (both migrated off @admitto/ui's generic Stat component
- * independently, which has since been removed entirely — see #590). Left-anchored (not centered
- * as a unit) so all 4 tiles' icons line up in one column regardless of value/label length —
- * centering each tile's content independently made icons drift sideways per tile, which read
- * worse than the "empty" space it was meant to fix. */
+/* KPI tiles (D, E2) — icon-square-left layout scoped to Overview's 4 top tiles only. Sizing
+ * (icon box, value, label, and their own 640px shrink) now matches ReportsPage's own
+ * .reports-stat tile (reports-page.css) at every width, so the two pages' KPI cards read as one
+ * consistent system instead of two independently-tuned sets of pixel values — only the color
+ * tones stay page-specific (below), matching each page's own set of KPI meanings. Left-anchored
+ * (not centered as a unit) so all 4 tiles' icons line up in one column regardless of
+ * value/label length — centering each tile's content independently made icons drift sideways
+ * per tile, which read worse than the "empty" space it was meant to fix. */
 .overview-kpi {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
-  height: 100%;
+  gap: 13px;
+  /* Fixed, not 100%-of-stretched-grid-row - a variable-length value (e.g. the countdown tile's
+   * "Ended today" vs a shorter "In 4 days") could wrap to 2 lines and grow the whole row, and
+   * with it every sibling tile in that grid row (CSS Grid's default cross-axis stretch). A hard
+   * height plus nowrap/ellipsis on the value below (rather than min-height) makes the tile's
+   * footprint constant regardless of which value happens to be showing. 76px comfortably fits
+   * .reports-stat's own 3-line stack (value+label+sub) too, since both tiles now share this
+   * exact height (reports-page.css). overflow hidden is a backstop for the rare case a value
+   * still ends up too long to fit even truncated. */
+  height: 76px;
+  overflow: hidden;
 }
 
 .overview-kpi__icon {
@@ -5585,10 +5596,10 @@ select.system-log-panel__field {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 3.5rem;
-  height: 3.5rem;
-  border-radius: var(--radius-md);
-  font-size: 1.75rem;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  font-size: 20px;
 }
 
 .overview-kpi__icon--primary { background: var(--primary-tint); color: var(--primary-active); }
@@ -5599,27 +5610,30 @@ select.system-log-panel__field {
 .overview-kpi__body {
   display: flex;
   flex-direction: column;
-  gap: 2px;
   min-width: 0;
 }
 
 .overview-kpi__value {
-  /* --fs-display is this codebase's own "hero number" token — matching it instead of an
-   * off-scale custom size. */
-  font-size: var(--fs-display);
-  font-weight: var(--fw-bold);
+  font-size: 26px;
+  font-weight: 700;
   color: var(--text-primary);
-  line-height: 1.1;
-  letter-spacing: var(--ls-tight);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .overview-kpi__label {
-  /* Same size/weight as .at-card__title (the app's standard card-title tier) — the label is
-   * effectively this tile's title, and fs-sm/fw-medium (PO review: "too big a jump" from the
-   * fs-display value above it) was borrowed from generic secondary-text styling instead. */
-  font-size: var(--fs-h3);
-  font-weight: var(--fw-semibold);
+  /* fs-sm here supersedes an earlier fs-h3 choice (a past PO review called fs-sm "too big a
+   * jump" from a fs-display value above it) - the value directly above dropped from fs-display
+   * to 26px in this same pass, so the two now step down together instead of the label alone
+   * closing that gap. Revisit both together if this combination reads as too big a jump again. */
+  font-size: var(--fs-sm);
+  font-weight: 600;
   color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .overview-kpi__sub {
@@ -5628,27 +5642,34 @@ select.system-log-panel__field {
 }
 
 /* Stays 2-up rather than collapsing to a single column (PO review: a 1x4 stack read as an
- * oversized, sparse list on a phone) — the icon and value/label text shrink instead so the
- * "Failed delivery" / "In 4 days" tiles still fit their content in roughly half the tablet
- * breakpoint's per-tile width. Must come after the base .overview-kpi* rules above so this
- * override wins the cascade at matching widths (equal specificity, source order decides). */
-@media (max-width: 480px) {
+ * oversized, sparse list on a phone) — the icon and value shrink instead so the "Failed
+ * delivery" / "In 4 days" tiles still fit their content in roughly half the tablet breakpoint's
+ * per-tile width. Same breakpoint and shrunk values as .reports-stat's own 640px rule. */
+@media (max-width: 640px) {
+  /* Taller fixed height (not the desktop tiles' 76px) - at 2-up mobile width there's less
+   * per-tile horizontal room, so the value/label below are allowed to wrap onto a 2nd line
+   * instead of truncating with an ellipsis (PO review: truncated "Failed deli…"/"Event cou…"
+   * read worse than just wrapping, now that there's a fixed height to wrap safely within
+   * instead of pushing the row taller). Still a hard constant, not content-driven - it just
+   * accounts for up to 2 wrapped lines instead of 1. */
   .overview-kpi {
-    gap: var(--space-3);
+    height: 96px;
   }
 
   .overview-kpi__icon {
-    width: 2.75rem;
-    height: 2.75rem;
-    font-size: 1.25rem;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    font-size: 17px;
   }
 
   .overview-kpi__value {
-    font-size: var(--fs-h2);
+    font-size: 21px;
+    white-space: normal;
   }
 
   .overview-kpi__label {
-    font-size: var(--fs-sm);
+    white-space: normal;
   }
 }
 
