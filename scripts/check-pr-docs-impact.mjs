@@ -15,10 +15,18 @@ if (!event.pull_request) {
 
 const body = event.pull_request.body ?? "";
 const wikiUpdated = /^- \[[xX]\] Wiki updated\s*$/m.test(body);
-const noWikiUpdate = /^- \[[xX]\] No Wiki update needed — \S.+$/m.test(body);
+// Accepts an em dash, en dash, or plain hyphen before the reason - the template shows an em
+// dash, but that's an easy, invisible thing to mistype/autocorrect away from, and the exact
+// character carries no meaning here; only requiring *some* separator plus a real reason does.
+const noWikiUpdate = /^- \[[xX]\] No Wiki update needed [—–-] \S.+$/m.test(body);
 
 if (wikiUpdated === noWikiUpdate) {
-  console.error("docs:pr-check: select exactly one Documentation impact declaration.");
+  console.error(
+    "docs:pr-check: select exactly one Documentation impact declaration - the PR body must " +
+      'contain exactly one of these two checked, on its own line: "- [x] Wiki updated" or ' +
+      '"- [x] No Wiki update needed <dash> <a real reason>" (both unchecked template lines ' +
+      "must stay present; only check the one that applies).",
+  );
   process.exit(1);
 }
 
