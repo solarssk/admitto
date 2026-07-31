@@ -86,6 +86,9 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
   const pageSlice = displayed.slice((effectivePage - 1) * pageSize, effectivePage * pageSize);
 
   const handleRevoke = async () => {
+    // Type-narrowing guard only - onConfirm is wired to a dialog that's only ever open
+    // (and clickable) while confirmTarget is already set, so this can't fire in practice.
+    /* v8 ignore if */
     if (!confirmTarget) return;
     setRevoking(true);
     try {
@@ -101,6 +104,9 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
   };
 
   const handleBulkRevoke = async () => {
+    // Type-narrowing guard only - the button that opens this confirmation is itself
+    // disabled while selectedEventId is empty, so this can't fire in practice.
+    /* v8 ignore if */
     if (!selectedEventId) return;
     setBulkRevoking(true);
     try {

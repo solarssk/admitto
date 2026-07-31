@@ -159,7 +159,18 @@ export function SessionCard({ session: s, onEdit, onRevoke }: Readonly<SessionRo
             {s.userDisplayName && <div className="users-page__user-email">{s.userEmail}</div>}
           </div>
         </div>
-        <Badge variant={roleBadgeVariant(s.role)}>{roleLabel(s.role)}</Badge>
+        <div className="sessions-card-head-end">
+          <Badge variant={roleBadgeVariant(s.role)}>{roleLabel(s.role)}</Badge>
+          <div className="sessions-card-icon-actions">
+            <IconButton
+              icon={<i className="ti ti-pencil" aria-hidden="true" />}
+              label={`Edit device label for ${s.userEmail}`}
+              size="sm"
+              onClick={() => onEdit(s)}
+            />
+            <RevokeAction session={s} onRevoke={onRevoke} />
+          </div>
+        </div>
       </div>
       <dl className="users-page__card-meta">
         <div>
@@ -188,14 +199,6 @@ export function SessionCard({ session: s, onEdit, onRevoke }: Readonly<SessionRo
           </dd>
         </div>
       </dl>
-      <div className="users-page__actions">
-        <IconButton
-          icon={<i className="ti ti-pencil" aria-hidden="true" />}
-          label={`Edit device label for ${s.userEmail}`}
-          onClick={() => onEdit(s)}
-        />
-        <RevokeAction session={s} onRevoke={onRevoke} />
-      </div>
     </article>
   );
 }
