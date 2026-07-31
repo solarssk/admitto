@@ -11,6 +11,7 @@ import {
   type UserDisplayRow,
 } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
+import { resolveIpLocation } from "../rate-limit/ip-location.js";
 
 /** An event_id metadata match - writers split between an `eventId` and a legacy `event_id` key,
  * so both are checked rather than picking one and silently missing the other's rows. */
@@ -110,6 +111,7 @@ export async function handleGetAuditLog(c: Context, db: PrismaClient): Promise<R
     actor_display_name: actorMap[r.actor_user_id]?.display_name ?? null,
     actor_timezone: r.actor_timezone,
     ip: r.ip,
+    country: resolveIpLocation(r.ip),
     metadata: r.metadata as Record<string, unknown> | null,
     created_at: r.created_at.toISOString(),
   }));

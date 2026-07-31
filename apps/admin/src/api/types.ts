@@ -782,6 +782,14 @@ export interface EventDeliveriesListResponse {
 export type SessionRole = "superadmin" | "admin" | "operator";
 export type SettingSource = "env" | "db" | "default";
 
+export type IpLocationKind = "internal" | "resolved" | "unknown";
+
+/** Mirrors IpLocation from apps/web/src/rate-limit/ip-location.ts. */
+export interface IpLocationDto {
+  kind: IpLocationKind;
+  countryCode?: string;
+}
+
 export interface SessionListDto {
   id: string;
   userId: string;
@@ -790,6 +798,7 @@ export interface SessionListDto {
   role: SessionRole;
   deviceLabel: string | null;
   ip: string | null;
+  country: IpLocationDto;
   userAgent: string | null;
   loginAt: string;
   lastSeenAt: string;
@@ -951,6 +960,7 @@ export interface AuditLogEntryDto {
   actor_display_name: string | null;
   actor_timezone: string | null;
   ip: string | null;
+  country: IpLocationDto;
   metadata: Record<string, unknown> | null;
   created_at: string;
 }
@@ -974,6 +984,7 @@ export interface SecurityAuditLogEntryDto {
   user_email: string | null;
   user_display_name: string | null;
   ip: string | null;
+  country: IpLocationDto;
   metadata: Record<string, unknown> | null;
   created_at: string;
 }

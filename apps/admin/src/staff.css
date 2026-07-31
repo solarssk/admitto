@@ -4512,6 +4512,19 @@ output.mail-field-hint {
   color: var(--text-muted);
 }
 
+.geo-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.geo-cell > [aria-hidden="true"]:first-child {
+  display: inline-block;
+  width: 1.25rem;
+  text-align: center;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+}
+
 .sessions-col-header {
   align-items: center;
   gap: var(--space-1);

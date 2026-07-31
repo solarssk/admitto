@@ -180,11 +180,18 @@ describe("GET /api/admin/sessions", () => {
       headers: { Cookie: superCookie },
     });
     const body = (await res.json()) as {
-      sessions: { id: string; isCurrent: boolean; userId: string }[];
+      sessions: {
+        id: string;
+        isCurrent: boolean;
+        userId: string;
+        country: { kind: string; countryCode?: string };
+      }[];
     };
 
     const superEntry = body.sessions.find((s) => s.id === superSessionId);
     expect(superEntry?.isCurrent).toBe(true);
+    // Seeded with ip: "127.0.0.1" (loopback) - resolves to internal, not a live geo lookup.
+    expect(superEntry?.country.kind).toBe("internal");
 
     const operatorEntry = body.sessions.find((s) => s.id === extra.session.id);
     expect(operatorEntry?.isCurrent).toBe(false);

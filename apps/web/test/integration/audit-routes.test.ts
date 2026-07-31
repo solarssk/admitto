@@ -231,6 +231,7 @@ describe("GET /api/admin/audit-log", () => {
         actor_email: string | null;
         actor_display_name: string | null;
         actor_timezone: string | null;
+        country: { kind: string; countryCode?: string };
         metadata: Record<string, unknown> | null;
       }[];
       total: number;
@@ -242,6 +243,8 @@ describe("GET /api/admin/audit-log", () => {
     expect(body.total).toBe(6);
     expect(body.entries).toHaveLength(6);
     expect(body.entries[0]?.actor_email).toBe(EMAIL_SUPER);
+    // Every seeded row uses a public-looking IP (1.2.3.x, 9.9.9.9) - never misclassified as internal.
+    expect(body.entries.every((e) => e.country.kind !== "internal")).toBe(true);
     for (const entry of body.entries) {
       assertNoPiiKeys(entry.metadata);
     }

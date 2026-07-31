@@ -13,6 +13,17 @@ COPY apps ./apps
 ENV npm_config_ignore_scripts=true
 RUN npm ci
 
+# Bake the offline IP->country dataset into the image at build time (apps/web/src/rate-limit/
+# ip-location.ts never fetches it at request time). ILA_IP_LOCATION_DB=user selects the
+# PDDL/CDLA-Permissive-licensed ip-location-db "user" dataset instead of ip-location-api's default
+# MaxMind GeoLite2 mode, which needs a MaxMind account/license key — unnecessary friction repeated
+# across every self-hosted deployment. These ENV vars are re-declared in the production stage
+# below so the running container reads the same, already-baked data instead of re-fetching it.
+ENV ILA_IP_LOCATION_DB=user
+ENV ILA_DATA_DIR=/app/data/geoip
+ENV ILA_AUTO_UPDATE=false
+RUN node apps/web/scripts/prefetch-geo-db.mjs
+
 RUN npx prisma generate --schema packages/db/prisma/schema.prisma --config packages/db/prisma.config.ts
 
 # No .git dir is copied into the build context — publish-container.yml passes the real commit
@@ -88,6 +99,7 @@ COPY --from=builder /app/packages/mailer-config/dist ./packages/mailer-config/di
 COPY --from=builder /app/packages/mail-templates/dist ./packages/mail-templates/dist
 COPY --from=builder /app/packages/mail-delivery/dist ./packages/mail-delivery/dist
 COPY --from=builder /app/packages/import/dist ./packages/import/dist
+COPY --from=builder /app/data/geoip ./data/geoip
 
 COPY deploy/docker-entrypoint.sh ./deploy/docker-entrypoint.sh
 
@@ -100,6 +112,10 @@ RUN chmod +x ./deploy/docker-entrypoint.sh \
 USER node
 
 ENV NODE_ENV=production
+# Read-only offline dataset baked in above (builder stage) — never re-fetched at runtime.
+ENV ILA_IP_LOCATION_DB=user
+ENV ILA_DATA_DIR=/app/data/geoip
+ENV ILA_AUTO_UPDATE=false
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \

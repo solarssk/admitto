@@ -104,6 +104,7 @@ function makeAccountSession(overrides: Partial<SessionListDto> = {}): SessionLis
     role: "superadmin",
     deviceLabel: "This device",
     ip: null,
+    country: { kind: "unknown" },
     userAgent: null,
     loginAt: "2026-01-01T00:00:00.000Z",
     lastSeenAt: "2026-01-01T01:00:00.000Z",
@@ -909,6 +910,22 @@ describe("AccountPage toasts", () => {
     expect(screen.getByText("curl/8.7.1")).toBeTruthy();
   });
 
+  it("shows the resolved country under the IP address for a session with one", async () => {
+    mockLoadedAccount();
+    mockFetchSessions.mockResolvedValue({
+      sessions: [
+        makeAccountSession({ ip: "192.0.2.10", country: { kind: "resolved", countryCode: "FR" } }),
+      ],
+    });
+
+    renderWithToast(<AccountPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("192.0.2.10")).toBeTruthy();
+    });
+    expect(screen.getByText("France")).toBeTruthy();
+  });
+
   it("shows OIDC-only MFA guidance when local password is unavailable", async () => {
     mockFetchAccount.mockResolvedValue({ ...baseAccount, has_local_password: false, roles: [] });
     mockFetchSessions.mockResolvedValue({ sessions: [] });
@@ -1207,6 +1224,7 @@ describe("AccountPage toasts", () => {
       role: "superadmin" as const,
       deviceLabel: "Other",
       ip: null,
+      country: { kind: "unknown" as const },
       userAgent: null,
       loginAt: "2026-01-01T00:00:00.000Z",
       lastSeenAt: "2026-01-01T01:00:00.000Z",
@@ -1240,6 +1258,7 @@ describe("AccountPage toasts", () => {
       role: "superadmin" as const,
       deviceLabel: "This device",
       ip: null,
+      country: { kind: "unknown" as const },
       userAgent: null,
       loginAt: "2026-01-01T00:00:00.000Z",
       lastSeenAt: "2026-01-01T01:00:00.000Z",
