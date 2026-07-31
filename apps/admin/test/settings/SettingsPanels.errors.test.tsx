@@ -2,12 +2,11 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
-import { SessionsPanel } from "../../src/settings/SessionsPanel.js";
 import { SecurityPanel } from "../../src/settings/SecurityPanel.js";
 import { AuditLogPanel } from "../../src/settings/AuditLogPanel.js";
 import { BrandingSettingsPanel } from "../../src/settings/BrandingSettingsPanel.js";
 import { EventArchivingPanel } from "../../src/settings/EventArchivingPanel.js";
-import { mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { mockMatchMedia, renderWithToast, renderWithToastAndRouter } from "../test-utils.js";
 
 // AuditLogPanel picks table vs. mobile cards via useIsDesktop() - default to desktop so
 // its tests exercise the <table> markup they assert against.
@@ -24,23 +23,6 @@ const emptySettings = {
   instance_url: { value: null as string | null, source: "default" as const },
 };
 
-const sampleSession = {
-  id: "sess-2",
-  userId: "u2",
-  userEmail: "op@example.com",
-  userDisplayName: null,
-  role: "operator" as const,
-  deviceLabel: "iPad",
-  ip: "10.0.0.1",
-  userAgent: "Mozilla/5.0",
-  loginAt: "2026-01-01T00:00:00.000Z",
-  lastSeenAt: "2026-01-01T01:00:00.000Z",
-  expiresAt: "2026-01-02T00:00:00.000Z",
-  authMethod: "local",
-  stage: "active",
-  isCurrent: false,
-};
-
 const sampleEvent = {
   id: "evt-1",
   title: "Summit",
@@ -54,11 +36,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
   return {
     ...actual,
-    fetchSessions: vi.fn(),
     fetchAdminEvents: vi.fn(),
-    revokeSessionById: vi.fn(),
-    revokeAllOperatorSessions: vi.fn(),
-    updateSessionDeviceLabel: vi.fn(),
     fetchSecuritySettings: vi.fn(),
     patchSecuritySettings: vi.fn(),
     fetchAuditLog: vi.fn(),
@@ -78,15 +56,11 @@ import {
   fetchAuditLog,
   fetchOrgBranding,
   fetchSecuritySettings,
-  fetchSessions,
   fetchStaffTheme,
   fetchSystemLogs,
   patchOrgBranding,
   patchSecuritySettings,
-  revokeAllOperatorSessions,
-  revokeSessionById,
   saveStaffTheme,
-  updateSessionDeviceLabel,
 } from "../../src/api/client.js";
 
 afterEach(() => {
@@ -97,17 +71,6 @@ afterEach(() => {
 });
 
 describe("Settings panels delayed loading", () => {
-  it("SessionsPanel shows the loading placeholder once the fetch has genuinely taken a moment", () => {
-    vi.mocked(fetchSessions).mockImplementationOnce(() => new Promise(() => {}));
-    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([]);
-    vi.useFakeTimers();
-    renderWithToast(<SessionsPanel />);
-    act(() => {
-      vi.advanceTimersByTime(200);
-    });
-    expect(screen.getByText("Loading…")).toBeTruthy();
-  });
-
   it("BrandingSettingsPanel shows the loading placeholder once the fetch has genuinely taken a moment", () => {
     vi.mocked(fetchOrgBranding).mockResolvedValueOnce({ org_name: "Acme", logo_url: null });
     vi.mocked(fetchStaffTheme).mockImplementationOnce(() => new Promise(() => {}));
@@ -130,79 +93,10 @@ describe("Settings panels delayed loading", () => {
   });
 });
 
-describe("SessionsPanel operator errors", () => {
-  it("shows session-expired copy when load fails with authentication_required", async () => {
-    vi.mocked(fetchSessions).mockRejectedValueOnce(new ApiError(401, "authentication_required"));
-    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([]);
-    renderWithToast(<SessionsPanel />);
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
-    });
-    const panel = document.querySelector(".sessions-status p");
-    expect(panel?.textContent).toMatch(/session has expired/i);
-    expect(screen.queryByText("authentication_required")).toBeNull();
-  });
-
-  it("toasts operator-safe message when revoke fails", async () => {
-    vi.mocked(fetchSessions).mockResolvedValueOnce({ sessions: [sampleSession] });
-    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([]);
-    vi.mocked(revokeSessionById).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    renderWithToast(<SessionsPanel />);
-    await waitFor(() => {
-      expect(screen.getAllByRole("button", { name: "Revoke" }).length).toBeGreaterThan(0);
-    });
-    fireEvent.click(screen.getAllByRole("button", { name: "Revoke" })[0]!);
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
-    await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to revoke session/);
-    });
-    expect(screen.queryByText("secret_internal")).toBeNull();
-  });
-
-  it("shows an operator-safe message inline in the modal when device label edit fails", async () => {
-    vi.mocked(fetchSessions).mockResolvedValueOnce({ sessions: [sampleSession] });
-    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([]);
-    vi.mocked(updateSessionDeviceLabel).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    renderWithToast(<SessionsPanel />);
-    await waitFor(() => {
-      expect(screen.getAllByRole("button", { name: "Edit" }).length).toBeGreaterThan(0);
-    });
-    fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]!);
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.change(within(dialog).getByLabelText("Device label"), {
-      target: { value: "New Label" },
-    });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
-    await waitFor(() => {
-      expect(within(dialog).getByRole("alert").textContent).toMatch(/Failed to update device label/);
-    });
-    expect(screen.queryByText("secret_internal")).toBeNull();
-    // Stays open on failure, same as UserEditModal - the operator can retry or cancel.
-    expect(screen.getByRole("dialog")).toBeTruthy();
-  });
-
-  it("toasts operator-safe message when bulk revoke fails", async () => {
-    vi.mocked(fetchSessions).mockResolvedValueOnce({ sessions: [] });
-    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([sampleEvent]);
-    vi.mocked(revokeAllOperatorSessions).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    renderWithToast(<SessionsPanel />);
-    await waitFor(() => {
-      expect(screen.getByRole("combobox")).toBeTruthy();
-    });
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "evt-1" } });
-    fireEvent.click(screen.getByRole("button", { name: "Revoke all operator sessions" }));
-    fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
-    await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to revoke sessions/);
-    });
-  });
-});
-
 describe("SecurityPanel operator errors", () => {
   it("shows operator-safe load failure", async () => {
     vi.mocked(fetchSecuritySettings).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    renderWithToast(<SecurityPanel />);
+    renderWithToastAndRouter(<SecurityPanel />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     });
@@ -214,7 +108,7 @@ describe("SecurityPanel operator errors", () => {
   it("toasts on save failure", async () => {
     vi.mocked(fetchSecuritySettings).mockResolvedValueOnce(emptySettings);
     vi.mocked(patchSecuritySettings).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    renderWithToast(<SecurityPanel />);
+    renderWithToastAndRouter(<SecurityPanel />);
     await waitFor(() => {
       expect(screen.getByLabelText("Admin session lifetime (hours)")).toBeTruthy();
     });
@@ -230,7 +124,7 @@ describe("SecurityPanel operator errors", () => {
   it("toasts on reset failure", async () => {
     vi.mocked(fetchSecuritySettings).mockResolvedValueOnce(emptySettings);
     vi.mocked(patchSecuritySettings).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    renderWithToast(<SecurityPanel />);
+    renderWithToastAndRouter(<SecurityPanel />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Reset to defaults" })).toBeTruthy();
     });

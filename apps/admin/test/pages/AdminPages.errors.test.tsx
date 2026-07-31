@@ -12,7 +12,7 @@ import { ReportsPage } from "../../src/pages/ReportsPage.js";
 import { EventsPickerPage } from "../../src/pages/EventsPickerPage.js";
 import { ImportPage } from "../../src/pages/ImportPage.js";
 import { DeviceLabelStep } from "../../src/pages/DeviceLabelStep.js";
-import { getTooltipText, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { getTooltipText, mockMatchMedia, renderWithToast, renderWithToastAndRouter } from "../test-utils.js";
 
 const superadminAssignments = [
   { role: "superadmin", scope_type: "instance", scope_id: null },
@@ -68,6 +68,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchEventReports: vi.fn(),
     exportEventReportsCsv: vi.fn(),
     fetchAdminEvents: vi.fn(),
+    fetchSessions: vi.fn(),
     previewImport: vi.fn(),
     fetchImportHistory: vi.fn().mockResolvedValue([]),
     submitSessionDeviceLabel: vi.fn(),
@@ -91,6 +92,7 @@ import {
   fetchEventSettings,
   fetchOpsConfig,
   fetchRoleAssignments,
+  fetchSessions,
   fetchTicketTypes,
   previewImport,
   revokeUserSessions,
@@ -180,6 +182,13 @@ beforeEach(() => {
   // ScrollFadeTabs (wrapping EventSettingsPage's own tab strip) scrolls its active tab into
   // view on mount/change - jsdom does not implement scrollIntoView.
   Element.prototype.scrollIntoView = vi.fn();
+  // UsersPage now always mounts ActiveSessionsTab (hidden, not unmounted, so its tab-label
+  // count is ready immediately) regardless of which Users & roles tab is active - so its own
+  // effect (fetchSessions + fetchAdminEvents) fires on every UsersPage render in this file,
+  // not just the dedicated Users/Sessions tests. Harmless defaults here; individual tests still
+  // override with their own mockResolvedValueOnce/mockImplementationOnce as needed.
+  vi.mocked(fetchAdminEvents).mockResolvedValue([]);
+  vi.mocked(fetchSessions).mockResolvedValue({ sessions: [] });
 });
 
 afterEach(() => {
@@ -225,7 +234,7 @@ describe("Admin pages delayed loading", () => {
   it("UsersPage shows the loading skeleton once the fetch has genuinely taken a moment", () => {
     vi.mocked(fetchAdminUsers).mockImplementationOnce(() => new Promise(() => {}));
     vi.useFakeTimers();
-    renderWithToast(<UsersPage />);
+    renderWithToastAndRouter(<UsersPage />);
     act(() => {
       vi.advanceTimersByTime(200);
     });
@@ -388,12 +397,44 @@ describe("EventSettingsPage operator errors", () => {
 describe("UsersPage operator errors", () => {
   it("shows load failure", async () => {
     vi.mocked(fetchAdminUsers).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    renderWithToast(<UsersPage />);
+    renderWithToastAndRouter(<UsersPage />);
     await waitFor(() => {
       expect(screen.getByText(/Failed to load users/)).toBeTruthy();
     });
   });
 
+});
+
+describe("UsersPage tab count", () => {
+  it("fetches sessions eagerly so the Active sessions tab count is ready without ever visiting that tab", async () => {
+    vi.mocked(fetchAdminUsers).mockResolvedValueOnce({ users: [], total: 0 });
+    vi.mocked(fetchSessions).mockResolvedValueOnce({
+      sessions: [
+        {
+          id: "s1", userId: "u1", userEmail: "a@example.com", userDisplayName: null,
+          role: "admin", deviceLabel: null, ip: null, userAgent: null,
+          loginAt: "2026-01-01T00:00:00.000Z", lastSeenAt: "2026-01-01T00:00:00.000Z",
+          expiresAt: "2026-01-02T00:00:00.000Z", authMethod: "local", stage: "active", isCurrent: false,
+        },
+        {
+          id: "s2", userId: "u2", userEmail: "b@example.com", userDisplayName: null,
+          role: "operator", deviceLabel: null, ip: null, userAgent: null,
+          loginAt: "2026-01-01T00:00:00.000Z", lastSeenAt: "2026-01-01T00:00:00.000Z",
+          expiresAt: "2026-01-02T00:00:00.000Z", authMethod: "local", stage: "active", isCurrent: false,
+        },
+      ],
+    });
+
+    // A bare MemoryRouter (no ?tab=) lands on "Staff users" by default for a superadmin - the
+    // bug this covers is the count staying at nothing until the tab was actually clicked into.
+    renderWithToastAndRouter(<UsersPage />);
+
+    await waitFor(() => {
+      expect(fetchSessions).toHaveBeenCalled();
+    });
+    const sessionsTab = await screen.findByRole("tab", { name: /Active sessions/ });
+    expect(sessionsTab.textContent).toContain("2");
+  });
 });
 
 describe("RoleAssignmentsTab operator errors", () => {

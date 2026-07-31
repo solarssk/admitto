@@ -14,9 +14,6 @@ vi.mock("../../src/settings/GeneralSettingsPanel.js", () => ({
 vi.mock("../../src/settings/MailTransportPanel.js", () => ({
   MailTransportPanel: () => <div data-testid="mail-panel" />,
 }));
-vi.mock("../../src/settings/SessionsPanel.js", () => ({
-  SessionsPanel: () => <div data-testid="sessions-panel" />,
-}));
 vi.mock("../../src/settings/EventArchivingPanel.js", () => ({
   EventArchivingPanel: () => <div data-testid="archiving-panel" />,
 }));

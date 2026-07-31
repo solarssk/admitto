@@ -4423,36 +4423,6 @@ output.mail-field-hint {
 }
 
 /* Sessions panel */
-.sessions-filter {
-  display: flex;
-  gap: var(--space-2);
-  margin-bottom: var(--space-4);
-  flex-wrap: wrap;
-}
-
-.sessions-filter__btn {
-  padding: var(--space-1) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-  cursor: pointer;
-  transition: background 0.1s, color 0.1s;
-}
-
-.sessions-filter__btn:hover {
-  background: var(--bg-subtle);
-  color: var(--text-primary);
-}
-
-.sessions-filter__btn--active {
-  background: var(--bg-active, var(--brand-50, #eff6ff));
-  color: var(--brand-700, #1d4ed8);
-  border-color: var(--brand-300, #93c5fd);
-  font-weight: 600;
-}
-
 .sessions-status {
   display: flex;
   flex-direction: column;
@@ -4498,14 +4468,50 @@ output.mail-field-hint {
   color: var(--text-muted);
 }
 
-.sessions-current-badge {
-  margin-left: var(--space-1);
+.sessions-signin {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.sessions-signin--sso {
+  color: var(--primary);
+}
+
+.sessions-signin--local {
+  color: var(--text-muted);
+}
+
+.sessions-col-header {
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.sessions-action-col {
+  text-align: center;
+}
+
+/* Tablet portrait (769-1180px): the desktop table stays a table here (unlike the mobile-card
+   breakpoint below), but 8 columns still don't comfortably fit without horizontal scroll. Drop
+   the 3 most supplementary columns (still fully visible via the mobile card layout, and via
+   Device's own title= tooltip on desktop) rather than forcing a scrollbar or the more drastic
+   card layout at a width that isn't actually a phone. */
+@media (min-width: 769px) and (max-width: 1180px) {
+  .sessions-col-tablet-hide {
+    display: none;
+  }
 }
 
 .sessions-row-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  justify-content: center;
   gap: var(--space-2);
+}
+
+.sessions-row-actions__revoke:hover:not(:disabled) {
+  background: var(--status-error-tint);
+  color: var(--status-error-fg);
 }
 
 .sessions-error,
@@ -4535,6 +4541,69 @@ output.mail-field-hint {
   flex-wrap: wrap;
 }
 
+/* Sessions pagination footer - same shape as the Logs table's own (.audit-log-footer*), kept as
+   a separate, sessions-scoped copy rather than a shared class since the two panels don't
+   otherwise share a component. */
+.sessions-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.sessions-footer__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.sessions-footer__pager {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sessions-pagesize {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-sm);
+  color: var(--text-muted, var(--text-secondary));
+  white-space: nowrap;
+}
+
+.at-select.sessions-pagesize-select {
+  height: var(--control-h-sm);
+  width: auto;
+  padding: 0 1.4rem 0 var(--space-2);
+  background-position: right 0.4rem center;
+  background-size: 12px;
+  font-size: var(--fs-sm);
+}
+
+@media (max-width: 600px) {
+  .sessions-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+  }
+
+  .sessions-footer__summary {
+    flex-wrap: wrap;
+  }
+
+  .sessions-footer__pager {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+}
+
 /* Audit log panel (Settings) */
 /* .seg-control's shared margin-bottom (below) is meant for its other usage on the Mail tab,
    where the toggle sits above unrelated content — inline in a Card header's actions row that
@@ -4549,6 +4618,20 @@ output.mail-field-hint {
 }
 
 .seg-control.audit-log-view-toggle .seg-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  line-height: 1;
+}
+
+/* Same fix as .seg-control.audit-log-view-toggle/.mail-source-toggle/.overview-activity-filter,
+   for the identical reason: this Segmented sits in a Card header's actions row here too. */
+.seg-control.sessions-filter-toggle {
+  margin-bottom: 0;
+  height: var(--control-h-sm);
+}
+
+.seg-control.sessions-filter-toggle .seg-btn {
   display: inline-flex;
   align-items: center;
   padding: 0 var(--space-2);

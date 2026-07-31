@@ -7,7 +7,6 @@ import type {
   EventDto,
   SecurityAuditLogEntryDto,
   SecurityAuditLogResponse,
-  SessionListDto,
   SystemLogResponse,
 } from "../../src/api/types.js";
 import {
@@ -17,12 +16,9 @@ import {
   fetchAdminEvents,
   fetchAuditLog,
   fetchSecurityAuditLog,
-  fetchSessions,
   fetchSystemLogs,
-  updateSessionDeviceLabel,
 } from "../../src/api/client.js";
 import { AuditLogPanel } from "../../src/settings/AuditLogPanel.js";
-import { SessionsPanel } from "../../src/settings/SessionsPanel.js";
 import { POLL_INTERVAL_MS } from "../../src/settings/SystemLogsPanel.js";
 import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 
@@ -35,9 +31,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchSecurityAuditLog: vi.fn(),
     exportAuditLog: vi.fn(),
     exportSecurityAuditLog: vi.fn(),
-    fetchSessions: vi.fn(),
     fetchSystemLogs: vi.fn(),
-    updateSessionDeviceLabel: vi.fn(),
   };
 });
 
@@ -92,26 +86,6 @@ function makeEvent(overrides: Partial<EventDto> = {}): EventDto {
     location: null,
     organization_id: "org-1",
     archived_at: null,
-    ...overrides,
-  };
-}
-
-function makeSession(overrides: Partial<SessionListDto> = {}): SessionListDto {
-  return {
-    id: "session-1",
-    userId: "user-1",
-    userEmail: "user@example.com",
-    userDisplayName: null,
-    role: "admin",
-    deviceLabel: null,
-    ip: "192.0.2.10",
-    userAgent: null,
-    loginAt: "2026-01-01T12:00:00.000Z",
-    lastSeenAt: "2026-01-01T12:30:00.000Z",
-    expiresAt: "2026-01-02T12:00:00.000Z",
-    authMethod: "local",
-    stage: "active",
-    isCurrent: false,
     ...overrides,
   };
 }
@@ -2123,312 +2097,5 @@ describe("SystemLogsPanel rendering", () => {
 
     expect(screen.getByRole("button", { name: "Live" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Export logs" })).toBeTruthy();
-  });
-});
-
-describe("SessionsPanel rendering", () => {
-  it("shows filter labels and the empty state after sessions load", async () => {
-    vi.mocked(fetchSessions).mockResolvedValue({ sessions: [] });
-
-    renderWithToast(<SessionsPanel />);
-
-    expect(await screen.findByText("No active sessions.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "All" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Admins" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Operators" })).toBeTruthy();
-  });
-
-  it("shows an operator-safe session error and retries", async () => {
-    vi.mocked(fetchSessions)
-      .mockRejectedValueOnce(new ApiError(500, "secret_internal"))
-      .mockResolvedValueOnce({ sessions: [] });
-
-    renderWithToast(<SessionsPanel />);
-
-    const retry = await screen.findByRole("button", { name: "Retry" });
-    expect(document.querySelector(".sessions-status p")?.textContent).toMatch(/Failed to load sessions/);
-    expect(screen.queryByText("secret_internal")).toBeNull();
-
-    fireEvent.click(retry);
-
-    expect(await screen.findByText("No active sessions.")).toBeTruthy();
-    expect(fetchSessions).toHaveBeenCalledTimes(2);
-  });
-
-  it("renders browser and operating-system labels from user agents", async () => {
-    const sessions = [
-      makeSession({
-        id: "edge",
-        userEmail: "edge@example.com",
-        userAgent:
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36 Edg/120.0",
-      }),
-      makeSession({
-        id: "opera",
-        userEmail: "opera@example.com",
-        userAgent:
-          "Mozilla/5.0 (Mac OS X 13_0) AppleWebKit/537.36 Chrome/120.0 Safari/537.36 OPR/106.0",
-      }),
-      makeSession({
-        id: "chrome",
-        userEmail: "chrome@example.com",
-        userAgent:
-          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36",
-      }),
-      makeSession({
-        id: "firefox",
-        userEmail: "firefox@example.com",
-        userAgent: "Mozilla/5.0 (Android 14; Mobile; rv:123.0) Gecko/123.0 Firefox/123.0",
-      }),
-      makeSession({
-        id: "safari",
-        userEmail: "safari@example.com",
-        userAgent:
-          "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0) AppleWebKit/605.1.15 Version/17.0 Mobile Safari/604.1",
-      }),
-      makeSession({
-        id: "unknown",
-        userEmail: "unknown@example.com",
-        userAgent: "CustomScanner/1.0",
-      }),
-      makeSession({
-        id: "missing",
-        userEmail: "missing@example.com",
-        userAgent: null,
-      }),
-      makeSession({
-        id: "labelled",
-        userEmail: "labelled@example.com",
-        deviceLabel: "Managed kiosk",
-        userAgent: "Mozilla/5.0 (Windows NT 10.0) Chrome/120.0",
-      }),
-    ];
-    vi.mocked(fetchSessions).mockResolvedValue({ sessions });
-
-    renderWithToast(<SessionsPanel />);
-
-    const table = await screen.findByRole("table");
-    for (const label of [
-      "Edge / Windows",
-      "Opera / macOS",
-      "Chrome / Linux",
-      "Firefox / Android",
-      "Safari / iOS",
-      "CustomScanner/1.0",
-      "Unknown",
-      "Managed kiosk",
-    ]) {
-      expect(within(table).getByText(label)).toBeTruthy();
-    }
-  });
-
-  it("includes a device label in the revoke confirmation only when one is available", async () => {
-    vi.mocked(fetchSessions).mockResolvedValue({
-      sessions: [
-        makeSession({
-          id: "with-device",
-          userEmail: "device@example.com",
-          deviceLabel: "Desk iPad",
-        }),
-        makeSession({
-          id: "without-device",
-          userEmail: "plain@example.com",
-          deviceLabel: null,
-        }),
-      ],
-    });
-
-    renderWithToast(<SessionsPanel />);
-
-    await screen.findByRole("table");
-    const withDeviceRow = screen.getByText("device@example.com").closest("tr");
-    expect(withDeviceRow).toBeTruthy();
-    fireEvent.click(within(withDeviceRow!).getByRole("button", { name: "Revoke" }));
-    const withDeviceDialog = await screen.findByRole("dialog");
-    expect(withDeviceDialog.textContent).toContain("device@example.com (Desk iPad)? Last active");
-    fireEvent.click(within(withDeviceDialog).getByRole("button", { name: "Cancel" }));
-
-    const withoutDeviceRow = screen.getByText("plain@example.com").closest("tr");
-    expect(withoutDeviceRow).toBeTruthy();
-    fireEvent.click(within(withoutDeviceRow!).getByRole("button", { name: "Revoke" }));
-    const withoutDeviceDialog = await screen.findByRole("dialog");
-    expect(withoutDeviceDialog.textContent).toContain("plain@example.com? Last active");
-  });
-
-  it("disables Revoke (but not Edit) for the current session", async () => {
-    vi.mocked(fetchSessions).mockResolvedValue({
-      sessions: [makeSession({ id: "self", userEmail: "self@example.com", isCurrent: true })],
-    });
-
-    renderWithToast(<SessionsPanel />);
-
-    const row = (await screen.findByText("self@example.com")).closest("tr");
-    expect(row).toBeTruthy();
-    const revokeButton = within(row!).getByRole("button", { name: "Revoke" }) as HTMLButtonElement;
-    expect(revokeButton.disabled).toBe(true);
-    expect(revokeButton.title).toBe("You cannot revoke your own session");
-    const editButton = within(row!).getByRole("button", { name: "Edit" }) as HTMLButtonElement;
-    expect(editButton.disabled).toBe(false);
-  });
-
-  it("Edit opens a dialog prefilled with the current device label; Save is disabled until it changes", async () => {
-    vi.mocked(fetchSessions).mockResolvedValue({
-      sessions: [
-        makeSession({ id: "with-device", userEmail: "device@example.com", deviceLabel: "Desk iPad" }),
-      ],
-    });
-
-    renderWithToast(<SessionsPanel />);
-
-    await screen.findByRole("table");
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    const dialog = await screen.findByRole("dialog");
-    const input = within(dialog).getByLabelText("Device label") as HTMLInputElement;
-    expect(input.value).toBe("Desk iPad");
-    const saveButton = within(dialog).getByRole("button", { name: "Save" }) as HTMLButtonElement;
-    expect(saveButton.disabled).toBe(true);
-
-    fireEvent.change(input, { target: { value: "Desk iPad 2" } });
-    expect(saveButton.disabled).toBe(false);
-  });
-
-  it("saving a changed device label calls the API with the trimmed value and reloads the list", async () => {
-    vi.mocked(fetchSessions).mockResolvedValue({
-      sessions: [
-        makeSession({ id: "with-device", userEmail: "device@example.com", deviceLabel: "Desk iPad" }),
-      ],
-    });
-    vi.mocked(updateSessionDeviceLabel).mockResolvedValueOnce({ deviceLabel: "Fixed Label" });
-
-    renderWithToast(<SessionsPanel />);
-
-    await screen.findByRole("table");
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.change(within(dialog).getByLabelText("Device label"), {
-      target: { value: "  Fixed Label  " },
-    });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
-
-    await waitFor(() => {
-      expect(updateSessionDeviceLabel).toHaveBeenCalledWith("with-device", "Fixed Label");
-    });
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).toBeNull();
-    });
-    expect(fetchSessions).toHaveBeenCalledTimes(2);
-  });
-
-  it("Edit opens with an empty input for a session with no device label yet", async () => {
-    vi.mocked(fetchSessions).mockResolvedValue({
-      sessions: [makeSession({ id: "no-device", userEmail: "plain@example.com", deviceLabel: null })],
-    });
-
-    renderWithToast(<SessionsPanel />);
-
-    await screen.findByRole("table");
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    const dialog = await screen.findByRole("dialog");
-    const input = within(dialog).getByLabelText("Device label") as HTMLInputElement;
-    expect(input.value).toBe("");
-    expect(dialog.textContent).not.toContain("currently");
-  });
-
-  it("saving a cleared device label sends null, not an empty string", async () => {
-    vi.mocked(fetchSessions).mockResolvedValue({
-      sessions: [
-        makeSession({ id: "with-device", userEmail: "device@example.com", deviceLabel: "Desk iPad" }),
-      ],
-    });
-    vi.mocked(updateSessionDeviceLabel).mockResolvedValueOnce({ deviceLabel: null });
-
-    renderWithToast(<SessionsPanel />);
-
-    await screen.findByRole("table");
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.change(within(dialog).getByLabelText("Device label"), { target: { value: "   " } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
-
-    await waitFor(() => {
-      expect(updateSessionDeviceLabel).toHaveBeenCalledWith("with-device", null);
-    });
-  });
-
-  it("Cancel closes the edit dialog without saving", async () => {
-    vi.mocked(fetchSessions).mockResolvedValue({
-      sessions: [
-        makeSession({ id: "with-device", userEmail: "device@example.com", deviceLabel: "Desk iPad" }),
-      ],
-    });
-
-    renderWithToast(<SessionsPanel />);
-
-    await screen.findByRole("table");
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.change(within(dialog).getByLabelText("Device label"), {
-      target: { value: "Ignored change" },
-    });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).toBeNull();
-    });
-    expect(updateSessionDeviceLabel).not.toHaveBeenCalled();
-  });
-
-  it("blocks a backdrop-click close while a device-label save is in flight", async () => {
-    vi.mocked(fetchSessions).mockResolvedValue({
-      sessions: [
-        makeSession({ id: "with-device", userEmail: "device@example.com", deviceLabel: "Desk iPad" }),
-      ],
-    });
-    let resolveSave: ((value: { deviceLabel: string | null }) => void) | undefined;
-    vi.mocked(updateSessionDeviceLabel).mockImplementationOnce(
-      () => new Promise((resolve) => { resolveSave = resolve; }),
-    );
-
-    renderWithToast(<SessionsPanel />);
-
-    await screen.findByRole("table");
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.change(within(dialog).getByLabelText("Device label"), {
-      target: { value: "Desk iPad 2" },
-    });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
-
-    // The Cancel button itself is disabled while saving, but the modal backdrop's click-outside
-    // isn't gated the same way - onCancel's own `if (!editSaving)` guard is what actually stops
-    // this from clearing editTarget mid-save (same pattern already covered for
-    // CommunicationSendDialog's send-in-flight case).
-    fireEvent.click(document.querySelector(".at-modal-backdrop")!);
-    expect(screen.getByRole("dialog")).toBeTruthy();
-
-    await act(async () => {
-      resolveSave?.({ deviceLabel: "Desk iPad 2" });
-      await Promise.resolve();
-    });
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).toBeNull();
-    });
-  });
-
-  it("labels IP addresses explicitly and keeps a missing address distinct from relative activity", async () => {
-    const now = vi.spyOn(Date, "now").mockReturnValue(new Date("2026-01-01T13:00:00.000Z").getTime());
-    try {
-      vi.mocked(fetchSessions).mockResolvedValue({
-        sessions: [makeSession({ ip: null, lastSeenAt: "2026-01-01T12:30:00.000Z" })],
-      });
-      renderWithToast(<SessionsPanel />);
-
-      const table = await screen.findByRole("table");
-      expect(within(table).getByRole("columnheader", { name: "IP address" })).toBeTruthy();
-      expect(within(table).getByText("-")).toBeTruthy();
-      expect(within(table).getByText("30 min ago")).toBeTruthy();
-    } finally {
-      now.mockRestore();
-    }
   });
 });

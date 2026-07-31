@@ -13,6 +13,7 @@ import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import type { EventDto, UserListItemDto } from "../../api/types.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
 import { useModalFocusTrap } from "../../components/useModalFocusTrap.js";
+import { roleLabel } from "../../auth/role-labels.js";
 
 type UserEditModalProps = {
   open: boolean;
@@ -22,13 +23,6 @@ type UserEditModalProps = {
 };
 
 type AssignRole = "" | "superadmin" | "admin" | "operator";
-
-function roleLabel(role: string): string {
-  if (role === "superadmin") return "Superadmin";
-  if (role === "admin") return "Admin";
-  if (role === "operator") return "Operator";
-  return role;
-}
 
 export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserEditModalProps>) {
   const titleId = useId();
@@ -219,6 +213,8 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
   const adminOrAddRoleControl =
     newRole === "admin" ? (
       <select
+        id="edit-user-org-scope"
+        name="edit-user-org-scope"
         className="users-modal__select"
         aria-label="Organization scope for admin role"
         value={newOrgId}
@@ -243,6 +239,8 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
   const roleScopeControl =
     newRole === "operator" ? (
       <select
+        id="edit-user-event-scope"
+        name="edit-user-event-scope"
         className="users-modal__select"
         aria-label="Event scope for operator role"
         value={newEventId}
@@ -319,6 +317,8 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
           </div>
           <div className="users-modal__role-assign">
             <select
+              id="edit-user-assign-role"
+              name="edit-user-assign-role"
               className="users-modal__select"
               aria-label="Role to assign"
               value={newRole}
@@ -326,9 +326,9 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
               onChange={(e) => setNewRole(e.target.value as AssignRole)}
             >
               <option value="">Assign role…</option>
-              <option value="superadmin">Superadmin</option>
-              <option value="admin">Admin</option>
-              <option value="operator">Operator</option>
+              <option value="superadmin">{roleLabel("superadmin")}</option>
+              <option value="admin">{roleLabel("admin")}</option>
+              <option value="operator">{roleLabel("operator")}</option>
             </select>
             {roleScopeControl}
           </div>

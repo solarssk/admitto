@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router";
 import { Badge, Button, Card, Checkbox, Input, useToast } from "@admitto/ui";
 import { fetchSecuritySettings, patchSecuritySettings } from "../api/client.js";
+import { roleLabel } from "../auth/role-labels.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { PatchSystemSettingsBody, SystemSettingsDto, SettingSource } from "../api/types.js";
 
 const MS_PER_HOUR = 3_600_000;
 const MFA_ROLES = [
-  { value: "superadmin", label: "Superadmin" },
-  { value: "admin", label: "Admin" },
-  { value: "operator", label: "Operator" },
+  { value: "superadmin", label: roleLabel("superadmin") },
+  { value: "admin", label: roleLabel("admin") },
+  { value: "operator", label: roleLabel("operator") },
 ] as const;
 
 function fieldLocked(source: SettingSource): boolean {
@@ -267,6 +269,10 @@ export function SecurityPanel() {
             Days before a trusted device must re-verify 2FA. Set 0 to disable device trust entirely.
           </p>
         </div>
+
+        <p className="mail-field-hint">
+          Manage individual sessions in <Link to="/admin/users?tab=sessions">Users &amp; roles</Link>.
+        </p>
 
         <div className="mail-field-row">
           <fieldset

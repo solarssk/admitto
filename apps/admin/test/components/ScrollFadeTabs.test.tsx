@@ -154,4 +154,34 @@ describe("ScrollFadeTabs", () => {
       expect.objectContaining({ block: "nearest", inline: "nearest" }),
     );
   });
+
+  it("nudges past the right arrow's own overlay when scrollIntoView alone leaves the active tab just barely on-screen", () => {
+    // Simulates exactly the bug report: landing straight on the last ("danger") tab (e.g. via a
+    // deep-linked URL), its right edge (110) already technically inside the container's (right
+    // edge 100) per scrollIntoView's own "nearest" - but only by 10px into the 28px zone the
+    // right arrow's solid background sits on top of. Mocked by element identity (not render
+    // order) since the "which element is the target" question only resolves once "danger"
+    // actually has aria-selected="true", i.e. mid-effect, too late to spy on afterwards.
+    const realRect = Element.prototype.getBoundingClientRect;
+    const rect = (partial: Partial<DOMRect>): DOMRect =>
+      ({ top: 0, bottom: 0, height: 0, x: 0, y: 0, toJSON: () => "", ...partial }) as DOMRect;
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      if (this.classList.contains("scroll-fade-tabs__scroll")) return rect({ left: 0, right: 100, width: 100 });
+      if (this.getAttribute("aria-selected") === "true") return rect({ left: 80, right: 110, width: 30 });
+      return realRect.call(this);
+    };
+
+    try {
+      const { container, rerender } = render(<ScrollFadeTabs value="general" tabs={TABS} />);
+      const scrollEl = getScrollEl(container);
+      mockScrollMetrics(scrollEl, { scrollWidth: 500, clientWidth: 100, scrollLeft: 72 });
+      vi.mocked(scrollEl.scrollBy).mockClear();
+
+      rerender(<ScrollFadeTabs value="danger" tabs={TABS} />);
+
+      expect(scrollEl.scrollBy).toHaveBeenCalledWith({ left: 38 });
+    } finally {
+      Element.prototype.getBoundingClientRect = realRect;
+    }
+  });
 });

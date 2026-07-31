@@ -18,10 +18,11 @@ Decide what the person must do, which organisation or event they need, and when 
 1. Open **Users & roles**.
 2. Superadmins can use **Staff users** to invite, search, edit, enable, or disable staff accounts.
 3. Open **Role assignments** to add or review scoped roles.
-4. Use instance scope only for a Superadmin.
-5. Use organisation scope for an Admin.
-6. Use event scope for an Operator.
-7. Confirm the assignment by signing in with a synthetic test account or asking the user to verify their visible events.
+4. Superadmins can open **Active sessions** to see every signed-in staff session (device, IP address, sign-in time, last activity), end one specific session, or end every operator session for one event at once.
+5. Use instance scope only for a Superadmin.
+6. Use organisation scope for an Admin.
+7. Use event scope for an Operator.
+8. Confirm the assignment by signing in with a synthetic test account or asking the user to verify their visible events.
 
 ## Expected result
 
@@ -36,7 +37,7 @@ The user sees only the administration or check-in surfaces allowed by the new as
 
 ## What changes after this action
 
-New sessions use the updated assignments. Review active sessions when access must end immediately.
+New sessions use the updated assignments. Use **Active sessions** when access must end immediately.
 
 ## Common problems
 

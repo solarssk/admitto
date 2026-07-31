@@ -7,6 +7,7 @@ import type { RoleAssignmentListItemDto } from "../../api/types.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
 import { useAuth } from "../../auth/AuthProvider.js";
 import { isSuperadmin } from "../../auth/capabilities.js";
+import { roleBadgeVariant, roleLabel } from "../../auth/role-labels.js";
 import { formatUtcDateTime } from "../../utils/event-dates.js";
 
 const SKELETON_ROWS = 4;
@@ -32,7 +33,7 @@ function AssignmentTableRow({ row, canRevoke, onRevoke }: Readonly<AssignmentRow
         {row.user_display_name && <div className="users-page__user-email">{row.user_email}</div>}
       </td>
       <td>
-        <Badge variant="neutral">{row.role}</Badge>
+        <Badge variant={roleBadgeVariant(row.role)}>{roleLabel(row.role)}</Badge>
         {row.is_oidc && (
           <span className="users-page__role-oidc" title="Managed by identity provider">
             <i className="ti ti-cloud" aria-hidden="true" />
@@ -61,7 +62,7 @@ function AssignmentCard({ row, canRevoke, onRevoke }: Readonly<AssignmentRowProp
           <div className="users-page__user-name">{row.user_display_name ?? row.user_email}</div>
           {row.user_display_name && <div className="users-page__user-email">{row.user_email}</div>}
         </div>
-        <Badge variant="neutral">{row.role}</Badge>
+        <Badge variant={roleBadgeVariant(row.role)}>{roleLabel(row.role)}</Badge>
       </div>
       <dl className="users-page__card-meta">
         <div>

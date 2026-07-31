@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SecurityPanel } from "../../src/settings/SecurityPanel.js";
-import { renderWithToast } from "../test-utils.js";
+import { renderWithToastAndRouter } from "../test-utils.js";
 
 const baseSettings = {
   session_ttl_ms: { value: 86_400_000, source: "default" as const },
@@ -33,7 +33,7 @@ describe("SecurityPanel delayed loading", () => {
   it("shows the loading placeholder once the fetch has genuinely taken a moment", () => {
     vi.mocked(fetchSecuritySettings).mockImplementationOnce(() => new Promise(() => {}));
     vi.useFakeTimers();
-    renderWithToast(<SecurityPanel />);
+    renderWithToastAndRouter(<SecurityPanel />);
     act(() => {
       vi.advanceTimersByTime(200);
     });
@@ -48,7 +48,7 @@ describe("SecurityPanel — session/trust duration inputs", () => {
     { label: '"Remember device" duration (days, 0 = off)', floor: "0" },
   ])("clamps a non-numeric $label to the $floor floor instead of NaN", async ({ label, floor }) => {
     vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
-    renderWithToast(<SecurityPanel />);
+    renderWithToastAndRouter(<SecurityPanel />);
 
     const input = await screen.findByLabelText<HTMLInputElement>(label);
     fireEvent.change(input, { target: { value: "abc" } });
@@ -60,11 +60,11 @@ describe("SecurityPanel — session/trust duration inputs", () => {
 describe("SecurityPanel — Require 2FA for roles", () => {
   it("renders three distinct checkboxes with human role labels", async () => {
     vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
-    renderWithToast(<SecurityPanel />);
+    renderWithToastAndRouter(<SecurityPanel />);
 
     const superadmin = await screen.findByLabelText<HTMLInputElement>("Superadmin");
     expect(superadmin.checked).toBe(true);
-    expect(screen.getByLabelText<HTMLInputElement>("Admin").checked).toBe(false);
+    expect(screen.getByLabelText<HTMLInputElement>("Administrator").checked).toBe(false);
     expect(screen.getByLabelText<HTMLInputElement>("Operator").checked).toBe(false);
   });
 
@@ -74,7 +74,7 @@ describe("SecurityPanel — Require 2FA for roles", () => {
       ...baseSettings,
       mfa_required_roles: { value: ["superadmin", "operator"], source: "db" as const },
     });
-    renderWithToast(<SecurityPanel />);
+    renderWithToastAndRouter(<SecurityPanel />);
 
     fireEvent.click(await screen.findByLabelText("Operator"));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -91,7 +91,7 @@ describe("SecurityPanel — Require 2FA for roles", () => {
       ...baseSettings,
       mfa_required_roles: { value: ["superadmin", "admin"], source: "env" as const },
     });
-    renderWithToast(<SecurityPanel />);
+    renderWithToastAndRouter(<SecurityPanel />);
 
     const superadmin = await screen.findByLabelText<HTMLInputElement>("Superadmin");
     // <fieldset disabled> disables descendants functionally without reflecting
@@ -103,7 +103,7 @@ describe("SecurityPanel — Require 2FA for roles", () => {
 
   it("warns when no roles are selected", async () => {
     vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
-    renderWithToast(<SecurityPanel />);
+    renderWithToastAndRouter(<SecurityPanel />);
 
     fireEvent.click(await screen.findByLabelText("Superadmin"));
     expect(screen.getByRole("alert").textContent).toContain("2FA is disabled for all roles");
