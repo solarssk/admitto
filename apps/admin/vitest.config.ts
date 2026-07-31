@@ -1,32 +1,12 @@
 import react from "@vitejs/plugin-react";
-import { execSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { defineConfig } from "vitest/config";
 import { vitestCoverage } from "../../vitest.coverage.ts";
-
-const rootVersion = (
-  JSON.parse(readFileSync(resolve(__dirname, "../../package.json"), "utf-8")) as { version: string }
-).version;
-
-// Mirrors vite.config.ts's own resolveCommitSha — keep both in sync if this logic changes.
-function resolveCommitSha(): string {
-  const sha = process.env.GIT_COMMIT ?? gitHeadSha();
-  return sha ? sha.slice(0, 7) : "unknown";
-}
-
-function gitHeadSha(): string | null {
-  try {
-    return execSync("git rev-parse HEAD", { cwd: __dirname }).toString().trim();
-  } catch {
-    return null;
-  }
-}
+import { resolveAppVersion, resolveCommitSha } from "./build-meta.ts";
 
 export default defineConfig({
   plugins: [react()],
   define: {
-    __APP_VERSION__: JSON.stringify(rootVersion),
+    __APP_VERSION__: JSON.stringify(resolveAppVersion()),
     __APP_COMMIT__: JSON.stringify(resolveCommitSha()),
   },
   test: {
