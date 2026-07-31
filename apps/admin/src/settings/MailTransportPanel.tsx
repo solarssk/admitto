@@ -19,14 +19,13 @@ import {
   PowerAutomateCard,
   runTestSend,
   SenderCard,
+  SEND_TEST_EMAIL_HINT,
   SettingsFooter,
   SmtpConnectionCard,
   TestResultPreview,
   useMailSettingsFormState,
   type FieldLocked,
 } from "./mailTransportFormParts.js";
-
-const SEND_TEST_EMAIL_HINT = "Verifies transport credentials with a trivial message, not an event template.";
 
 /** Superadmin mail transport configuration panel. */
 export function MailTransportPanel() {

@@ -30,6 +30,7 @@ import {
   PowerAutomateCard,
   runTestSend,
   SenderCard,
+  SEND_TEST_EMAIL_HINT,
   SettingsFooter,
   SmtpConnectionCard,
   TestResultPreview,
@@ -39,7 +40,6 @@ import {
 } from "./mailTransportFormParts.js";
 
 const EVENT_MAIL_TRANSPORT_HINT = "Which mailbox and provider send this event's tickets and reminders.";
-const SEND_TEST_EMAIL_HINT = "Verifies transport credentials with a trivial message, not an event template.";
 
 type Mode = "org" | "dedicated";
 

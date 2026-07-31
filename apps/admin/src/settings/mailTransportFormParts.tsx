@@ -102,6 +102,9 @@ export function EnvBadge({ locked }: Readonly<{ locked: boolean }>) {
 }
 
 const SENDER_HINT = "From, reply-to, and bounce addresses used on every email this sends.";
+// Shared by MailTransportPanel (organization-wide) and EventMailSettingsCard (per-event) - both
+// render their own "Send test email" card against the same underlying test-send flow.
+export const SEND_TEST_EMAIL_HINT = "Verifies transport credentials with a trivial message, not an event template.";
 
 export const PROVIDER_GUIDE: Record<MailProvider | "", string> = {
   "": "No mail will be sent yet.",
