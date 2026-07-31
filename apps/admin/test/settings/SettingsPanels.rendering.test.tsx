@@ -1211,6 +1211,22 @@ describe("AuditLogPanel Security view rendering", () => {
     expect(within(table).getByText("192.0.2.10")).toBeTruthy();
   });
 
+  it("renders a safe fallback and no location line when a security entry has no IP address", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
+      entries: [makeSecurityEntry({ ip: null, country: { kind: "internal" } })],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderSecurityPanel();
+
+    const table = await screen.findByRole("table");
+    await screen.findByText("Login succeeded");
+    expect(within(table).getByText("-")).toBeTruthy();
+    expect(within(table).queryByText("Internal network")).toBeNull();
+  });
+
   it("shows the viewer's own local time as a secondary line under the UTC timestamp, not the actor's", async () => {
     const resolvedOptionsSpy = vi
       .spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions")
