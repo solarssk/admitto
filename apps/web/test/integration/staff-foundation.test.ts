@@ -268,6 +268,31 @@ describe("GET /api/checkin/events", () => {
     expect(body.events[0]!.archived_at).toBeNull();
   });
 
+  it("falls back to 0 attendee_count for a counted event with no attendees", async () => {
+    await seedCountFixtureAttendee();
+    await prisma.roleAssignment.create({
+      data: { user_id: opId, role: "operator", scope_type: "event", scope_id: EVENT_B },
+    });
+
+    try {
+      const res = await app.request("/api/checkin/events?includeAttendeeCount=true", {
+        headers: { Cookie: await sessionCookieFor(opId) },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { events: Array<{ id: string; attendee_count: number }> };
+      // EVENT_A has the fixture attendee (asserted as 1 above); EVENT_B has none, so
+      // countByEvent.get(EVENT_B) finds no row at all — this is what proves the `?? 0`
+      // fallback specifically, not just that the counted branch runs (EVENT_A alone can't
+      // tell the two apart, since a present-and-nonzero count never touches the fallback).
+      expect(body.events.find((e) => e.id === EVENT_A)?.attendee_count).toBe(1);
+      expect(body.events.find((e) => e.id === EVENT_B)?.attendee_count).toBe(0);
+    } finally {
+      await prisma.roleAssignment.deleteMany({
+        where: { user_id: opId, scope_type: "event", scope_id: EVENT_B },
+      });
+    }
+  });
+
   it("excludes archived event for operator (archiving ends check-in for it)", async () => {
     await prisma.event.update({
       where: { id: EVENT_A },
