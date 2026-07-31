@@ -89,6 +89,20 @@ describe("ActiveSessionsTab rendering", () => {
     expect(screen.getByRole("radio", { name: "Operators" })).toBeTruthy();
   });
 
+  it("shows a filter-specific empty state when sessions exist but none match the filter", async () => {
+    vi.mocked(fetchSessions).mockResolvedValue({
+      sessions: [makeSession({ role: "operator" })],
+    });
+
+    renderWithToast(<ActiveSessionsTab />);
+
+    await screen.findByRole("table");
+    fireEvent.click(screen.getByRole("radio", { name: "Admins" }));
+
+    expect(await screen.findByText("No sessions match this filter")).toBeTruthy();
+    expect(screen.queryByText("No active sessions")).toBeNull();
+  });
+
   it("shows an operator-safe session error and retries", async () => {
     vi.mocked(fetchSessions)
       .mockRejectedValueOnce(new ApiError(500, "secret_internal"))

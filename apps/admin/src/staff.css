@@ -4496,7 +4496,7 @@ output.mail-field-hint {
    the 3 most supplementary columns (still fully visible via the mobile card layout, and via
    Device's own title= tooltip on desktop) rather than forcing a scrollbar or the more drastic
    card layout at a width that isn't actually a phone. */
-@media (min-width: 769px) and (max-width: 1180px) {
+@media (min-width: 768px) and (max-width: 1180px) {
   .sessions-col-tablet-hide {
     display: none;
   }

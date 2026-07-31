@@ -159,11 +159,19 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
           </div>
         )}
 
-        {!loading && !error && total === 0 && (
+        {!loading && !error && total === 0 && sessions.length === 0 && (
           <EmptyState
             icon={<i className="ti ti-plug-connected" aria-hidden="true" />}
             title="No active sessions"
             description="Staff sessions will appear here once someone signs in."
+          />
+        )}
+
+        {!loading && !error && total === 0 && sessions.length > 0 && (
+          <EmptyState
+            icon={<i className="ti ti-filter-off" aria-hidden="true" />}
+            title="No sessions match this filter"
+            description="Select All to see every active staff session."
           />
         )}
 

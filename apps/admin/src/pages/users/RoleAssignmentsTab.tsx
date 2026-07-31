@@ -276,7 +276,7 @@ export function RoleAssignmentsTab() {
         title="Revoke role assignment"
         message={
           confirmTarget
-            ? `Remove ${confirmTarget.role} access for ${confirmTarget.user_display_name ?? confirmTarget.user_email}?`
+            ? `Remove ${roleLabel(confirmTarget.role)} access for ${confirmTarget.user_display_name ?? confirmTarget.user_email}?`
             : ""
         }
         errorMessage={revokeError}

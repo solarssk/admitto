@@ -44,7 +44,7 @@ function formatPrimaryTime(iso: string): string {
 const hourMinuteFormatCache = new Map<string, Intl.DateTimeFormat>();
 
 function hourMinuteFormat(timeZone: string): Intl.DateTimeFormat {
-  const locale = Intl.NumberFormat().resolvedOptions().locale;
+  const locale = Intl.DateTimeFormat().resolvedOptions().locale;
   const key = `${locale}\0${timeZone}`;
   let format = hourMinuteFormatCache.get(key);
   if (!format) {

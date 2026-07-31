@@ -13,7 +13,7 @@ import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import type { EventDto, UserListItemDto } from "../../api/types.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
 import { useModalFocusTrap } from "../../components/useModalFocusTrap.js";
-import { roleLabel } from "../../auth/role-labels.js";
+import { roleBadgeVariant, roleLabel } from "../../auth/role-labels.js";
 
 type UserEditModalProps = {
   open: boolean;
@@ -295,7 +295,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
             {user.roles.map((role) => (
               <div key={role.id} className="users-modal__role-row">
                 <div>
-                  <Badge variant="neutral">{roleLabel(role.role)}</Badge>{" "}
+                  <Badge variant={roleBadgeVariant(role.role)}>{roleLabel(role.role)}</Badge>{" "}
                   <span className="form-hint">
                     {role.scope_type}
                     {role.scope_id ? ` · ${role.scope_id.slice(0, 8)}…` : ""}
