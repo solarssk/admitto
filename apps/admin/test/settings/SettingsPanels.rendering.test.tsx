@@ -613,6 +613,11 @@ describe("AuditLogPanel rendering", () => {
     vi.mocked(fetchAuditLog).mockRejectedValueOnce(new Error("network hiccup"));
     renderAuditPanel();
     await screen.findByRole("table");
+    // Live polling (real setInterval, on by default) would otherwise consume one of the
+    // precisely-queued mock responses below on a slow CI run - see the resetAllMocks comment
+    // above. This test cares about the retry/page-reset sequence, not live-refresh, so turn it
+    // off before that sequence starts, same as "stops polling once Live is turned off" above.
+    fireEvent.click(screen.getByRole("button", { name: "Live" }));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     const retry = await screen.findByRole("button", { name: "Retry" });
 
