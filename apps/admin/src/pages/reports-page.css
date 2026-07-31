@@ -147,6 +147,11 @@
   align-items: center;
   gap: 13px;
   min-width: 0;
+  /* Fixed, matching .overview-kpi's own height (staff.css) - this tile's 3-line stack
+   * (value+label+sub) is the taller of the two pages' tiles, so 76px is sized around it, with
+   * overflow hidden as a backstop so a tile never grows past this regardless of content. */
+  height: 76px;
+  overflow: hidden;
 }
 
 .reports-stat__icon {
@@ -176,6 +181,9 @@
   font-weight: 700;
   line-height: 1.2;
   color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .reports-stat__label {
@@ -537,6 +545,16 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  /* Taller fixed height (not the desktop tiles' 76px, matching .overview-kpi's own 640px rule
+   * in staff.css) - at 2-up mobile width there's less per-tile horizontal room, so value/label
+   * are allowed to wrap onto a 2nd line instead of truncating with an ellipsis (PO review:
+   * truncated "Total atten…" read worse than just wrapping, now that there's a fixed height to
+   * wrap safely within instead of pushing the row taller). Still a hard constant, not
+   * content-driven - sized for this tile's extra sub line, which .overview-kpi doesn't have. */
+  .reports-stat {
+    height: 108px;
+  }
+
   .reports-stat__icon {
     width: 38px;
     height: 38px;
@@ -546,6 +564,11 @@
 
   .reports-stat__value {
     font-size: 21px;
+    white-space: normal;
+  }
+
+  .reports-stat__label {
+    white-space: normal;
   }
 
   /* Below tablet width there usually isn't room for every hour column at a readable size -
