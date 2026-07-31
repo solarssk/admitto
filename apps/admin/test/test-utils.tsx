@@ -1,12 +1,24 @@
 import type { ReactNode } from "react";
 import { fireEvent, render, screen, type RenderOptions } from "@testing-library/react";
 import { vi } from "vitest";
+import { MemoryRouter } from "react-router";
 import { ToastProvider } from "@admitto/ui";
 import type { TicketTypeDto } from "../src/api/types.js";
 
 /** Renders UI wrapped in `ToastProvider` for components that call `useToast()`. */
 export function renderWithToast(ui: ReactNode, options?: Omit<RenderOptions, "wrapper">) {
   return render(<ToastProvider>{ui}</ToastProvider>, options);
+}
+
+/** Renders UI wrapped in both `MemoryRouter` and `ToastProvider`, for components that call
+ * `useToast()` and also need a router context (e.g. a `<Link>` or `useSearchParams()`). */
+export function renderWithToastAndRouter(ui: ReactNode, options?: Omit<RenderOptions, "wrapper">) {
+  return render(
+    <MemoryRouter>
+      <ToastProvider>{ui}</ToastProvider>
+    </MemoryRouter>,
+    options,
+  );
 }
 
 /** Minimal TicketTypeDto fixture for tests exercising catalog resolution. */

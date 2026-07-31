@@ -10,6 +10,7 @@ import {
 import { hasApiErrorCode, operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import type { EventDto, UserListItemDto } from "../../api/types.js";
 import { useModalFocusTrap } from "../../components/useModalFocusTrap.js";
+import { roleLabel } from "../../auth/role-labels.js";
 
 export type InviteUserCreatedResult = {
   user: UserListItemDto;
@@ -188,9 +189,9 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
             onChange={(e) => setInitialRole(e.target.value as InitialRole)}
           >
             <option value="">None</option>
-            <option value="superadmin">Superadmin</option>
-            <option value="admin">Admin</option>
-            <option value="operator">Operator</option>
+            <option value="superadmin">{roleLabel("superadmin")}</option>
+            <option value="admin">{roleLabel("admin")}</option>
+            <option value="operator">{roleLabel("operator")}</option>
           </select>
         </div>
         {initialRole === "admin" && (

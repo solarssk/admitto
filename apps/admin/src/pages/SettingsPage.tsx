@@ -3,7 +3,6 @@ import { useSearchParams } from "react-router";
 import { BrandingSettingsPanel } from "../settings/BrandingSettingsPanel.js";
 import { MailTransportPanel } from "../settings/MailTransportPanel.js";
 import { GeneralSettingsPanel } from "../settings/GeneralSettingsPanel.js";
-import { SessionsPanel } from "../settings/SessionsPanel.js";
 import { EventArchivingPanel } from "../settings/EventArchivingPanel.js";
 import { SecurityPanel } from "../settings/SecurityPanel.js";
 import { AuditLogPanel } from "../settings/AuditLogPanel.js";
@@ -93,7 +92,6 @@ export function SettingsTabContent() {
         className="settings-sections"
       >
         <SecurityPanel />
-        <SessionsPanel />
       </SettingsTabPanel>
       <SettingsTabPanel tab="archiving" activeTab={tab} visited={visitedTabs} label="Archiving">
         <EventArchivingPanel />

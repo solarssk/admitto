@@ -3,17 +3,10 @@ import {
   Badge,
   Button,
   StatusBadge,
-  type BadgeProps,
 } from "@admitto/ui";
 import type { UserListItemDto } from "../../api/types.js";
+import { roleBadgeVariant } from "../../auth/role-labels.js";
 import { formatRelativeTime as formatRelativeTimeShared } from "../../utils/event-dates.js";
-
-function roleBadgeVariant(role: string): BadgeProps["variant"] {
-  if (role === "superadmin") return "error";
-  if (role === "admin") return "warn";
-  if (role === "operator") return "info";
-  return "neutral";
-}
 
 function roleShort(role: string): string {
   if (role === "superadmin") return "SA";

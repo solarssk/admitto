@@ -42,10 +42,10 @@ describe("UserMenu", () => {
     expect(screen.getByText("Superadmin")).toBeTruthy();
   });
 
-  it("shows the Admin role badge for an org admin", () => {
+  it("shows the Administrator role badge for an org admin", () => {
     renderMenu([{ role: "admin", scope_type: "organization", scope_id: "org-1" }]);
     fireEvent.click(screen.getByRole("button", { name: /Ola Operator/ }));
-    expect(screen.getByText("Admin")).toBeTruthy();
+    expect(screen.getByText("Administrator")).toBeTruthy();
   });
 
   it("shows the Operator role badge for an operator", () => {
