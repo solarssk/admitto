@@ -2552,6 +2552,26 @@ describe("EventArchivingPanel rendering", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await screen.findByText("Event 25");
     expect(screen.queryByText("Event 0")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+    await screen.findByText("Event 0");
+    expect(screen.queryByText("Event 25")).toBeNull();
+  });
+
+  it("shows more rows on one page after increasing the page size", async () => {
+    const many = Array.from({ length: 30 }, (_, i) => makeEvent({ id: `evt-page-${i}`, title: `Event ${i}` }));
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce(many);
+    renderWithToast(
+      <MemoryRouter>
+        <EventArchivingPanel />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("Showing 1–25 of 30");
+    fireEvent.change(screen.getByLabelText("Rows per page"), { target: { value: "50" } });
+
+    await screen.findByText("Showing 1–30 of 30");
+    expect(screen.getByText("Event 25")).toBeTruthy();
   });
 
   it("renders a one-card-per-event list instead of a table below the desktop breakpoint", async () => {
@@ -2571,5 +2591,32 @@ describe("EventArchivingPanel rendering", () => {
     expect(screen.getByText("7")).toBeTruthy();
     expect(screen.getByText("by Dana Admin")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Archive" })).toBeTruthy();
+  });
+
+  it("shows the Archived row and attendee fallback in the mobile card view when viewing archived events", async () => {
+    mockMatchMedia(false);
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([
+      makeEvent({
+        title: "Archived Mobile Meetup",
+        created_at: "2026-01-10T09:00:00.000Z",
+        created_by_display_name: "Erin Creator",
+        archived_at: "2026-02-15T10:30:00.000Z",
+        archived_by_display_name: "Carol Superadmin",
+      }),
+    ]);
+    renderWithToast(
+      <MemoryRouter>
+        <EventArchivingPanel />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("No active events");
+    fireEvent.click(screen.getByRole("radio", { name: "Archived" }));
+
+    await screen.findByText("Archived Mobile Meetup");
+    expect(screen.queryByRole("table")).toBeNull();
+    expect(screen.getByText("Attendees")).toBeTruthy();
+    expect(screen.getByText("-")).toBeTruthy();
+    expect(screen.getByText("by Carol Superadmin")).toBeTruthy();
   });
 });
