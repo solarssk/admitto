@@ -627,7 +627,13 @@ describe("AuditLogPanel rendering", () => {
       page: 2,
       pageSize: 25,
     });
-    vi.mocked(fetchAuditLog).mockResolvedValueOnce({
+    // mockResolvedValue (not Once): this is the sequence's true end state - the page-1 reset
+    // load that should follow, once the component notices page 2 no longer exists against the
+    // new total. Leaving it as the durable answer to every call from here on (rather than a
+    // single-shot value) means an extra call from any other source during this waitFor gets a
+    // harmless repeat of the same valid response instead of running out of queued mocks and
+    // failing in a way unrelated to what this test actually checks.
+    vi.mocked(fetchAuditLog).mockResolvedValue({
       entries: [makeAuditEntry({ id: "audit-narrowed" })],
       total: 5,
       page: 1,
