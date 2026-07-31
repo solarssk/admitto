@@ -24,6 +24,15 @@ The delivery log records the latest known state reported by Admitto and the conf
 
 Filters show recorded facts; they do not guarantee that a person read the email. Use the attendee detail and delivery log together when investigating.
 
+## Investigating one delivery
+
+Use a row's **…** menu in the delivery log to look deeper at a single delivery without leaving the page:
+
+- **View sent message** shows the actual subject and body generated for that attendee. The QR code and ticket link are always replaced with a "hidden for privacy" placeholder, so this view is for confirming wording and layout, not for retrieving a working ticket.
+- **View delivery details** shows the mail provider, message id, attempt count, and — for a Failed, Bounced, or Rejected delivery — the sanitized error reported by the transport. It also lists every delivery Admitto has made to that attendee, oldest first, so you can see the initial send and any resends together as one timeline.
+
+**Search** (recipient name or email) and the **Template** filter narrow the log alongside Status and Purpose; **Export log** downloads the current filtered view as CSV.
+
 ## Related pages
 
 - [Sending Messages and Delivery](Sending-Tickets-and-Delivery)
