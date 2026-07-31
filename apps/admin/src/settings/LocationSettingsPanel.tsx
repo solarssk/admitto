@@ -377,7 +377,7 @@ export const LocationSettingsPanel = forwardRef<
               placeholder="How to find the entrance, parking, public transit…"
               onChange={(e) => setDraft((prev) => ({ ...prev, directions_text: e.target.value }))}
             />
-            <p className="field-hint">Shown to attendees alongside the map.</p>
+            <p className="field-hint">Optional. Saved with the event, alongside the map.</p>
           </div>
           <div className="settings-field-group">
             <label className="at-label" htmlFor="location-accessibility">
@@ -393,7 +393,7 @@ export const LocationSettingsPanel = forwardRef<
               placeholder="Step-free access, accessible restrooms, hearing loop…"
               onChange={(e) => setDraft((prev) => ({ ...prev, accessibility_text: e.target.value }))}
             />
-            <p className="field-hint">Shown to attendees alongside the map.</p>
+            <p className="field-hint">Optional. Saved with the event, alongside the map.</p>
           </div>
         </div>
       </Card>
