@@ -33,7 +33,6 @@ beforeAll(async () => {
       title: "Brand Event",
       slug: "brand-event",
       date: new Date("2026-10-01"),
-      location: "Gdansk",
     },
   });
 });

@@ -30,7 +30,6 @@ beforeAll(async () => {
       title: "MT Event",
       slug: "mt-event",
       date: new Date("2026-09-15"),
-      location: "Krakow",
     },
   });
 });

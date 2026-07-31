@@ -52,7 +52,7 @@ export async function previewTemplate(
 ): Promise<RenderedTemplate> {
   const event = await prisma.event.findUniqueOrThrow({
     where: { id: eventId },
-    include: { organization: true },
+    include: { organization: true, location_details: true },
   });
   const resolved = await resolveTemplateForEvent(event, prisma);
   const branding = resolveBrandingFromEvent(event);
@@ -65,7 +65,7 @@ export async function previewTemplate(
       event.date,
       resolvePreviewEventTimeZone(options?.timeZone),
     ),
-    event_location: event.location ?? "",
+    event_location: event.location_details?.venue_name ?? "",
     logo_url: branding.logo_url,
     header_image_url: branding.header_image_url,
     ...customAssets.vars,

@@ -75,7 +75,6 @@ async function seed(client: PrismaClient) {
         title: "Settings Event",
         slug: "event-settings",
         date: new Date("2026-10-01T12:00:00.000Z"),
-        location: "Warsaw",
         organization_id: ORG_SET,
       },
       {
@@ -180,7 +179,6 @@ afterEach(async () => {
     data: {
       title: "Settings Event",
       date: new Date("2026-10-01T12:00:00.000Z"),
-      location: "Warsaw",
       timezone: "UTC",
       capacity: null,
       archived_at: null,
@@ -229,7 +227,6 @@ describe("GET /api/admin/events/:eventId/settings", () => {
       slug: string;
       date: string;
       timezone: string;
-      location: string | null;
       capacity: number | null;
       status: string;
       archived_at: string | null;
@@ -247,7 +244,6 @@ describe("GET /api/admin/events/:eventId/settings", () => {
     expect(body.id).toBe(EVENT_SET);
     expect(body.title).toBe("Settings Event");
     expect(body.slug).toBe("event-settings");
-    expect(body.location).toBe("Warsaw");
     expect(body.timezone).toBe("UTC");
     expect(body.capacity).toBeNull();
     expect(body.status).toBe("active");
@@ -642,20 +638,6 @@ describe("PATCH /api/admin/events/:eventId", () => {
     };
     expect(body.event.logo_url).toBeNull();
     expect(body.event.resolved_logo_url).toBe("https://cdn.example.com/org-logo.png");
-  });
-
-  it("clears location to null when set to an empty string", async () => {
-    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
-      method: "PATCH",
-      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ location: "" }),
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { event: { location: string | null } };
-    expect(body.event.location).toBeNull();
-
-    const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
-    expect(row.location).toBeNull();
   });
 
   it("returns 400 for a non-URL logo_url and does not mutate", async () => {

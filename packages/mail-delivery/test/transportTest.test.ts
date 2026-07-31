@@ -26,7 +26,6 @@ beforeAll(async () => {
         title: "Transport Test Event",
         slug: "transport-test-event",
         date: new Date("2026-09-01"),
-        location: "Warsaw",
       },
       {
         id: EVENT_OVERRIDE_ID,
@@ -34,7 +33,6 @@ beforeAll(async () => {
         title: "Transport Test Event Override",
         slug: "transport-test-event-override",
         date: new Date("2026-09-02"),
-        location: "Warsaw",
       },
     ],
   });

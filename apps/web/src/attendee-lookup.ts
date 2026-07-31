@@ -14,7 +14,7 @@ export async function findAttendeeForEventRoute(
 
   const attendee = await prisma.attendee.findFirst({
     where: { public_ref: publicRef, event_id: event.id },
-    include: { event: { include: { organization: true } } },
+    include: { event: { include: { organization: true, location_details: true } } },
   });
   if (!attendee) return null;
 

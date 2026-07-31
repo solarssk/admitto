@@ -47,7 +47,7 @@ export async function sendTestEmail(
     if (params.templateId) {
       const event = await prisma.event.findUniqueOrThrow({
         where: { id: params.eventId },
-        include: { organization: true },
+        include: { organization: true, location_details: true },
       });
       const resolved = await resolveTemplateById(params.templateId, params.eventId, prisma);
       const branding = resolveBrandingFromEvent(event);
@@ -56,7 +56,7 @@ export async function sendTestEmail(
         ...DEFAULT_SAMPLE_VARS,
         event_name: event.title,
         event_date: formatEventDate(event.date, resolvePreviewEventTimeZone()),
-        event_location: event.location ?? "",
+        event_location: event.location_details?.venue_name ?? "",
         logo_url: branding.logo_url,
         header_image_url: branding.header_image_url,
         ...customAssets.vars,
