@@ -19,6 +19,8 @@ beforeEach(() => {
 const emptySettings = {
   session_ttl_ms: { value: 86_400_000, source: "default" as const },
   operator_session_ttl_ms: { value: 43_200_000, source: "default" as const },
+  session_idle_timeout_ms: { value: 1_800_000, source: "default" as const },
+  operator_session_idle_timeout_ms: { value: 7_200_000, source: "default" as const },
   trusted_device_days: { value: 30, source: "default" as const },
   mfa_required_roles: { value: ["superadmin"], source: "default" as const },
   instance_url: { value: null as string | null, source: "default" as const },
@@ -112,9 +114,9 @@ describe("SecurityPanel operator errors", () => {
     vi.mocked(patchSecuritySettings).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToastAndRouter(<SecurityPanel />);
     await waitFor(() => {
-      expect(screen.getByLabelText("Admin session lifetime (hours)")).toBeTruthy();
+      expect(screen.getByLabelText("Admin session — maximum lifetime (hours)")).toBeTruthy();
     });
-    fireEvent.change(screen.getByLabelText("Admin session lifetime (hours)"), {
+    fireEvent.change(screen.getByLabelText("Admin session — maximum lifetime (hours)"), {
       target: { value: "48" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
