@@ -135,7 +135,7 @@ export function Tooltip({ content, children, className, axis = "vertical" }: Rea
     <span
       ref={wrapperRef}
       className={["at-tooltip-trigger", className].filter(Boolean).join(" ")}
-      tabIndex={tabbable ? 0 : undefined}
+      tabIndex={tabbable ? 0 : undefined} // NOSONAR — WAI-ARIA tooltip-trigger pattern: reveals its hint on focus the same way hover does for a mouse; there's no click/keypress action to expose via a widget role, and role="button" would falsely announce one
       onMouseEnter={show}
       onMouseLeave={hide}
       onFocus={show}
