@@ -36,20 +36,17 @@ function actorDateTime(iso: string | null | undefined, timezone: string | null |
   return timezone ? formatEventDateTime(iso, timezone) : formatUtcDateTime(iso);
 }
 
-/** Date/time + "by <actor>" subline, shared by the desktop table cell and the mobile card row.
- * `showActor` hides the subline entirely rather than printing "by -" (e.g. an active event has
- * no archiver at all, which reads better as absent than as a dash). */
+/** Date/time + "by <actor>" subline, shared by the desktop table cell and the mobile card row. */
 function actorCell(
   iso: string | null | undefined,
   timezone: string | null | undefined,
   displayName: string | null | undefined,
   email: string | null | undefined,
-  showActor: boolean,
 ): ReactNode {
   return (
     <>
       {actorDateTime(iso, timezone)}
-      {showActor && <div className="archiving-subdued">by {actorLabel(displayName, email)}</div>}
+      <div className="archiving-subdued">by {actorLabel(displayName, email)}</div>
     </>
   );
 }
@@ -155,6 +152,128 @@ export function EventArchivingPanel() {
   // once the fetch has genuinely taken a moment.
   const showLoading = useDelayedLoading(loading);
 
+  let content: ReactNode;
+  if (displayedRows.length === 0) {
+    content = (
+      <EmptyState
+        icon={
+          <i
+            className={`ti ${view === "active" ? "ti-archive" : "ti-archive-off"}`}
+            aria-hidden="true"
+          />
+        }
+        title={emptyMessage}
+        description={emptyDescription}
+      />
+    );
+  } else if (isDesktop) {
+    content = (
+      <div className="archiving-table-wrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th scope="col">
+                <Tooltip content={EVENT_HINT} className="audit-log-scope-header">
+                  Event <i className="ti ti-info-circle" aria-hidden="true" />
+                </Tooltip>
+              </th>
+              <th scope="col">
+                <Tooltip content={EVENT_DATE_HINT} className="audit-log-scope-header">
+                  Event date <i className="ti ti-info-circle" aria-hidden="true" />
+                </Tooltip>
+              </th>
+              <th scope="col">Attendees</th>
+              <th scope="col">Created</th>
+              {view === "archived" && <th scope="col">Archived</th>}
+              <th scope="col">
+                <span className="sr-only">Action</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {displayedRows.map((event) => (
+              <tr key={event.id}>
+                <td>
+                  <Link to={`/admin/events/${event.id}/overview`}>{event.title}</Link>
+                  <div className="archiving-subdued">{event.slug}</div>
+                </td>
+                <td>{formatEventDateTime(event.date, event.timezone)}</td>
+                <td>{event.attendee_count ?? "-"}</td>
+                <td>
+                  {actorCell(
+                    event.created_at,
+                    event.created_by_timezone,
+                    event.created_by_display_name,
+                    event.created_by_email,
+                  )}
+                </td>
+                {view === "archived" && (
+                  <td>
+                    {actorCell(
+                      event.archived_at,
+                      event.archived_by_timezone,
+                      event.archived_by_display_name,
+                      event.archived_by_email,
+                    )}
+                  </td>
+                )}
+                <td>{renderAction(event)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  } else {
+    content = (
+      <div className="archiving-cards">
+        {displayedRows.map((event) => (
+          <div className="archiving-card" key={event.id}>
+            <div className="archiving-card__head">
+              <div>
+                <Link to={`/admin/events/${event.id}/overview`}>{event.title}</Link>
+                <div className="archiving-subdued">{event.slug}</div>
+              </div>
+              {renderAction(event)}
+            </div>
+            <div className="archiving-card__row">
+              <span className="archiving-card__label">Event date</span>
+              <span>{formatEventDateTime(event.date, event.timezone)}</span>
+            </div>
+            <div className="archiving-card__row">
+              <span className="archiving-card__label">Attendees</span>
+              <span>{event.attendee_count ?? "-"}</span>
+            </div>
+            <div className="archiving-card__row">
+              <span className="archiving-card__label">Created</span>
+              <span>
+                {actorCell(
+                  event.created_at,
+                  event.created_by_timezone,
+                  event.created_by_display_name,
+                  event.created_by_email,
+                )}
+              </span>
+            </div>
+            {view === "archived" && (
+              <div className="archiving-card__row">
+                <span className="archiving-card__label">Archived</span>
+                <span>
+                  {actorCell(
+                    event.archived_at,
+                    event.archived_by_timezone,
+                    event.archived_by_display_name,
+                    event.archived_by_email,
+                  )}
+                </span>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <>
       <Card
@@ -189,124 +308,7 @@ export function EventArchivingPanel() {
 
         {!loading && !error && (
           <>
-            {displayedRows.length === 0 ? (
-              <EmptyState
-                icon={
-                  <i
-                    className={`ti ${view === "active" ? "ti-archive" : "ti-archive-off"}`}
-                    aria-hidden="true"
-                  />
-                }
-                title={emptyMessage}
-                description={emptyDescription}
-              />
-            ) : isDesktop ? (
-              <div className="archiving-table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th scope="col">
-                        <Tooltip content={EVENT_HINT} className="audit-log-scope-header">
-                          Event <i className="ti ti-info-circle" aria-hidden="true" />
-                        </Tooltip>
-                      </th>
-                      <th scope="col">
-                        <Tooltip content={EVENT_DATE_HINT} className="audit-log-scope-header">
-                          Event date <i className="ti ti-info-circle" aria-hidden="true" />
-                        </Tooltip>
-                      </th>
-                      <th scope="col">Attendees</th>
-                      <th scope="col">Created</th>
-                      {view === "archived" && <th scope="col">Archived</th>}
-                      <th scope="col">
-                        <span className="sr-only">Action</span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {displayedRows.map((event) => (
-                      <tr key={event.id}>
-                        <td>
-                          <Link to={`/admin/events/${event.id}/overview`}>{event.title}</Link>
-                          <div className="archiving-subdued">{event.slug}</div>
-                        </td>
-                        <td>{formatEventDateTime(event.date, event.timezone)}</td>
-                        <td>{event.attendee_count ?? "-"}</td>
-                        <td>
-                          {actorCell(
-                            event.created_at,
-                            event.created_by_timezone,
-                            event.created_by_display_name,
-                            event.created_by_email,
-                            true,
-                          )}
-                        </td>
-                        {view === "archived" && (
-                          <td>
-                            {actorCell(
-                              event.archived_at,
-                              event.archived_by_timezone,
-                              event.archived_by_display_name,
-                              event.archived_by_email,
-                              !!event.archived_at,
-                            )}
-                          </td>
-                        )}
-                        <td>{renderAction(event)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="archiving-cards">
-                {displayedRows.map((event) => (
-                  <div className="archiving-card" key={event.id}>
-                    <div className="archiving-card__head">
-                      <div>
-                        <Link to={`/admin/events/${event.id}/overview`}>{event.title}</Link>
-                        <div className="archiving-subdued">{event.slug}</div>
-                      </div>
-                      {renderAction(event)}
-                    </div>
-                    <div className="archiving-card__row">
-                      <span className="archiving-card__label">Event date</span>
-                      <span>{formatEventDateTime(event.date, event.timezone)}</span>
-                    </div>
-                    <div className="archiving-card__row">
-                      <span className="archiving-card__label">Attendees</span>
-                      <span>{event.attendee_count ?? "-"}</span>
-                    </div>
-                    <div className="archiving-card__row">
-                      <span className="archiving-card__label">Created</span>
-                      <span>
-                        {actorCell(
-                          event.created_at,
-                          event.created_by_timezone,
-                          event.created_by_display_name,
-                          event.created_by_email,
-                          true,
-                        )}
-                      </span>
-                    </div>
-                    {view === "archived" && (
-                      <div className="archiving-card__row">
-                        <span className="archiving-card__label">Archived</span>
-                        <span>
-                          {actorCell(
-                            event.archived_at,
-                            event.archived_by_timezone,
-                            event.archived_by_display_name,
-                            event.archived_by_email,
-                            !!event.archived_at,
-                          )}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
+            {content}
 
             {rows.length > 0 && (
               <div className="audit-log-footer">
