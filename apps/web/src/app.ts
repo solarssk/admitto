@@ -213,6 +213,7 @@ import {
   handleDeleteEventMailSettings,
   handlePostEventMailSettingsTest,
 } from "./admin/event-mail-settings-routes.js";
+import { handleGetEventLocation, handlePutEventLocation } from "./admin/event-location-routes.js";
 import { handleGetSetupChecks } from "./admin/setup-checks-routes.js";
 import { handlePostSetupComplete } from "./admin/setup-complete-routes.js";
 import {
@@ -626,6 +627,13 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     adminEventMailSettingsRateLimit,
     guardArchivedEvent((c) => handlePostEventMailSettingsTest(c, db, mailDeliveryDeps)),
+  );
+  app.get("/api/admin/events/:eventId/location", staffAdminGate, (c) => handleGetEventLocation(c, db));
+  app.put(
+    "/api/admin/events/:eventId/location",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handlePutEventLocation(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/branding-upload",
