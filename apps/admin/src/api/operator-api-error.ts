@@ -30,6 +30,8 @@ const CODE_MESSAGES: Record<string, string> = {
   file_required: "Choose a file to upload.",
   file_too_large: "File exceeds the 2 MB limit.",
   forbidden: "You do not have access.",
+  idle_timeout_exceeds_absolute_lifetime:
+    "Inactivity timeout cannot be longer than the maximum session lifetime.",
   incomplete_transport: "Fill in all required fields for this mail transport before saving.",
   invalid_form_data: "Could not read the upload. Try again.",
   invalid_code: "Invalid authenticator code.",

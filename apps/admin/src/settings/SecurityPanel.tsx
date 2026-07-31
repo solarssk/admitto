@@ -8,6 +8,11 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { PatchSystemSettingsBody, SystemSettingsDto, SettingSource } from "../api/types.js";
 
 const MS_PER_HOUR = 3_600_000;
+const MS_PER_MINUTE = 60_000;
+/** Inline-warning thresholds (P0-4): flag values that weaken session security without blocking them. */
+const ABSOLUTE_LIFETIME_WARNING_HOURS = 24;
+const ADMIN_IDLE_WARNING_MINUTES = 120;
+const OPERATOR_IDLE_WARNING_MINUTES = 240;
 const MFA_ROLES = [
   { value: "superadmin", label: roleLabel("superadmin") },
   { value: "admin", label: roleLabel("admin") },
@@ -30,6 +35,8 @@ function EnvBadge({ source }: Readonly<{ source: SettingSource }>) {
 interface Draft {
   sessionTtlH: number;
   opTtlH: number;
+  sessionIdleM: number;
+  opIdleM: number;
   trustedDays: number;
   mfaRoles: string[];
 }
@@ -38,6 +45,8 @@ function draftFromSettings(s: SystemSettingsDto): Draft {
   return {
     sessionTtlH: Math.round(s.session_ttl_ms.value / MS_PER_HOUR),
     opTtlH: Math.round(s.operator_session_ttl_ms.value / MS_PER_HOUR),
+    sessionIdleM: Math.round(s.session_idle_timeout_ms.value / MS_PER_MINUTE),
+    opIdleM: Math.round(s.operator_session_idle_timeout_ms.value / MS_PER_MINUTE),
     trustedDays: s.trusted_device_days.value,
     mfaRoles: [...s.mfa_required_roles.value],
   };
@@ -91,6 +100,24 @@ export function SecurityPanel() {
         hasChanges = true;
       }
     }
+    if (!fieldLocked(settings.session_idle_timeout_ms.source)) {
+      if (
+        draft.sessionIdleM !==
+        Math.round(settings.session_idle_timeout_ms.value / MS_PER_MINUTE)
+      ) {
+        body.session_idle_timeout_ms = draft.sessionIdleM * MS_PER_MINUTE;
+        hasChanges = true;
+      }
+    }
+    if (!fieldLocked(settings.operator_session_idle_timeout_ms.source)) {
+      if (
+        draft.opIdleM !==
+        Math.round(settings.operator_session_idle_timeout_ms.value / MS_PER_MINUTE)
+      ) {
+        body.operator_session_idle_timeout_ms = draft.opIdleM * MS_PER_MINUTE;
+        hasChanges = true;
+      }
+    }
     if (!fieldLocked(settings.trusted_device_days.source)) {
       if (draft.trustedDays !== settings.trusted_device_days.value) {
         body.trusted_device_days = draft.trustedDays;
@@ -131,6 +158,10 @@ export function SecurityPanel() {
     const body: PatchSystemSettingsBody = {};
     if (!fieldLocked(settings.session_ttl_ms.source)) body.session_ttl_ms = null;
     if (!fieldLocked(settings.operator_session_ttl_ms.source)) body.operator_session_ttl_ms = null;
+    if (!fieldLocked(settings.session_idle_timeout_ms.source)) body.session_idle_timeout_ms = null;
+    if (!fieldLocked(settings.operator_session_idle_timeout_ms.source)) {
+      body.operator_session_idle_timeout_ms = null;
+    }
     if (!fieldLocked(settings.trusted_device_days.source)) body.trusted_device_days = null;
     if (!fieldLocked(settings.mfa_required_roles.source)) body.mfa_required_roles = null;
 
@@ -209,7 +240,7 @@ export function SecurityPanel() {
       <div className="mail-transport-section">
         <div className="mail-field-row">
           <Input
-            label="Admin session lifetime (hours)"
+            label="Admin session — maximum lifetime (hours)"
             type="number"
             min={1}
             max={720}
@@ -224,13 +255,45 @@ export function SecurityPanel() {
           />
           <EnvBadge source={settings.session_ttl_ms.source} />
           <p className="mail-field-hint">
-            How long admin and superadmin sessions stay active (1–720 h).
+            Absolute limit for admin and superadmin sessions, regardless of activity (1–720 h).
           </p>
+          {draft.sessionTtlH > ABSOLUTE_LIFETIME_WARNING_HOURS && (
+            <p role="alert" className="text-warning">
+              Sessions longer than {ABSOLUTE_LIFETIME_WARNING_HOURS} hours increase the impact of
+              a stolen session.
+            </p>
+          )}
         </div>
 
         <div className="mail-field-row">
           <Input
-            label="Operator session lifetime (hours)"
+            label="Admin session — inactivity timeout (minutes)"
+            type="number"
+            min={5}
+            max={240}
+            value={String(draft.sessionIdleM)}
+            disabled={fieldLocked(settings.session_idle_timeout_ms.source)}
+            onChange={(e) =>
+              setDraft({
+                ...draft,
+                sessionIdleM: Math.max(5, Number.parseInt(e.target.value, 10) || 5),
+              })
+            }
+          />
+          <EnvBadge source={settings.session_idle_timeout_ms.source} />
+          <p className="mail-field-hint">
+            Signs an admin or superadmin out after this much inactivity (5–240 min).
+          </p>
+          {draft.sessionIdleM > ADMIN_IDLE_WARNING_MINUTES && (
+            <p role="alert" className="text-warning">
+              A long inactivity timeout leaves unattended admin sessions open longer.
+            </p>
+          )}
+        </div>
+
+        <div className="mail-field-row">
+          <Input
+            label="Operator session — maximum lifetime (hours)"
             type="number"
             min={1}
             max={168}
@@ -245,8 +308,40 @@ export function SecurityPanel() {
           />
           <EnvBadge source={settings.operator_session_ttl_ms.source} />
           <p className="mail-field-hint">
-            How long operator (check-in staff) sessions stay active (1–168 h).
+            Absolute limit for operator (check-in staff) sessions, regardless of activity (1–168 h).
           </p>
+          {draft.opTtlH > ABSOLUTE_LIFETIME_WARNING_HOURS && (
+            <p role="alert" className="text-warning">
+              Sessions longer than {ABSOLUTE_LIFETIME_WARNING_HOURS} hours increase the impact of
+              a stolen session.
+            </p>
+          )}
+        </div>
+
+        <div className="mail-field-row">
+          <Input
+            label="Operator session — inactivity timeout (minutes)"
+            type="number"
+            min={5}
+            max={480}
+            value={String(draft.opIdleM)}
+            disabled={fieldLocked(settings.operator_session_idle_timeout_ms.source)}
+            onChange={(e) =>
+              setDraft({
+                ...draft,
+                opIdleM: Math.max(5, Number.parseInt(e.target.value, 10) || 5),
+              })
+            }
+          />
+          <EnvBadge source={settings.operator_session_idle_timeout_ms.source} />
+          <p className="mail-field-hint">
+            Signs an operator out after this much inactivity at the check-in station (5–480 min).
+          </p>
+          {draft.opIdleM > OPERATOR_IDLE_WARNING_MINUTES && (
+            <p role="alert" className="text-warning">
+              A long inactivity timeout leaves unattended check-in stations open longer.
+            </p>
+          )}
         </div>
 
         <div className="mail-field-row">

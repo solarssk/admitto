@@ -811,6 +811,8 @@ export interface SecuritySettingField<T> {
 export interface SystemSettingsDto {
   session_ttl_ms: SecuritySettingField<number>;
   operator_session_ttl_ms: SecuritySettingField<number>;
+  session_idle_timeout_ms: SecuritySettingField<number>;
+  operator_session_idle_timeout_ms: SecuritySettingField<number>;
   trusted_device_days: SecuritySettingField<number>;
   mfa_required_roles: SecuritySettingField<string[]>;
   instance_url: SecuritySettingField<string | null>;
@@ -819,6 +821,8 @@ export interface SystemSettingsDto {
 export interface PatchSystemSettingsBody {
   session_ttl_ms?: number | null;
   operator_session_ttl_ms?: number | null;
+  session_idle_timeout_ms?: number | null;
+  operator_session_idle_timeout_ms?: number | null;
   trusted_device_days?: number | null;
   mfa_required_roles?: string[] | null;
   instance_url?: string | null;

@@ -7,6 +7,8 @@ import { renderWithToastAndRouter } from "../test-utils.js";
 const baseSettings = {
   session_ttl_ms: { value: 86_400_000, source: "default" as const },
   operator_session_ttl_ms: { value: 43_200_000, source: "default" as const },
+  session_idle_timeout_ms: { value: 1_800_000, source: "default" as const },
+  operator_session_idle_timeout_ms: { value: 7_200_000, source: "default" as const },
   trusted_device_days: { value: 30, source: "default" as const },
   mfa_required_roles: { value: ["superadmin"], source: "default" as const },
   instance_url: { value: null as string | null, source: "default" as const },
@@ -21,7 +23,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   };
 });
 
-import { fetchSecuritySettings, patchSecuritySettings } from "../../src/api/client.js";
+import { fetchSecuritySettings, patchSecuritySettings, ApiError } from "../../src/api/client.js";
 
 afterEach(() => {
   cleanup();
@@ -43,8 +45,10 @@ describe("SecurityPanel delayed loading", () => {
 
 describe("SecurityPanel — session/trust duration inputs", () => {
   it.each([
-    { label: "Operator session lifetime (hours)", floor: "1" },
-    { label: "Admin session lifetime (hours)", floor: "1" },
+    { label: "Operator session — maximum lifetime (hours)", floor: "1" },
+    { label: "Admin session — maximum lifetime (hours)", floor: "1" },
+    { label: "Admin session — inactivity timeout (minutes)", floor: "5" },
+    { label: "Operator session — inactivity timeout (minutes)", floor: "5" },
     { label: '"Remember device" duration (days, 0 = off)', floor: "0" },
   ])("clamps a non-numeric $label to the $floor floor instead of NaN", async ({ label, floor }) => {
     vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
@@ -107,5 +111,89 @@ describe("SecurityPanel — Require 2FA for roles", () => {
 
     fireEvent.click(await screen.findByLabelText("Superadmin"));
     expect(screen.getByRole("alert").textContent).toContain("2FA is disabled for all roles");
+  });
+});
+
+describe("SecurityPanel — dangerous-value inline warnings (P0-4)", () => {
+  it("shows no warning for the default settings", async () => {
+    vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
+    renderWithToastAndRouter(<SecurityPanel />);
+
+    await screen.findByLabelText("Admin session — maximum lifetime (hours)");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("warns when the admin absolute lifetime exceeds 24 hours", async () => {
+    vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
+    renderWithToastAndRouter(<SecurityPanel />);
+
+    const input = await screen.findByLabelText<HTMLInputElement>(
+      "Admin session — maximum lifetime (hours)",
+    );
+    fireEvent.change(input, { target: { value: "48" } });
+
+    expect(screen.getByRole("alert").textContent).toContain("Sessions longer than 24 hours");
+  });
+
+  it("warns when the operator absolute lifetime exceeds 24 hours", async () => {
+    vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
+    renderWithToastAndRouter(<SecurityPanel />);
+
+    const input = await screen.findByLabelText<HTMLInputElement>(
+      "Operator session — maximum lifetime (hours)",
+    );
+    fireEvent.change(input, { target: { value: "48" } });
+
+    expect(screen.getByRole("alert").textContent).toContain("Sessions longer than 24 hours");
+  });
+
+  it("warns when the admin inactivity timeout exceeds 2 hours", async () => {
+    vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
+    renderWithToastAndRouter(<SecurityPanel />);
+
+    const input = await screen.findByLabelText<HTMLInputElement>(
+      "Admin session — inactivity timeout (minutes)",
+    );
+    fireEvent.change(input, { target: { value: "180" } });
+
+    expect(screen.getByRole("alert").textContent).toContain("unattended admin sessions");
+  });
+
+  it("warns when the operator inactivity timeout exceeds 4 hours", async () => {
+    vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
+    renderWithToastAndRouter(<SecurityPanel />);
+
+    const input = await screen.findByLabelText<HTMLInputElement>(
+      "Operator session — inactivity timeout (minutes)",
+    );
+    fireEvent.change(input, { target: { value: "300" } });
+
+    expect(screen.getByRole("alert").textContent).toContain("unattended check-in stations");
+  });
+});
+
+describe("SecurityPanel — idle-vs-absolute server error mapping", () => {
+  it("toasts a friendly message when the server rejects idle > absolute lifetime", async () => {
+    vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
+    vi.mocked(patchSecuritySettings).mockRejectedValueOnce(
+      new ApiError(
+        400,
+        "idle_timeout_exceeds_absolute_lifetime",
+        "idle_timeout_exceeds_absolute_lifetime",
+      ),
+    );
+    renderWithToastAndRouter(<SecurityPanel />);
+
+    const input = await screen.findByLabelText<HTMLInputElement>(
+      "Admin session — inactivity timeout (minutes)",
+    );
+    fireEvent.change(input, { target: { value: "60" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(
+        /Inactivity timeout cannot be longer than the maximum session lifetime/,
+      );
+    });
   });
 });

@@ -14,7 +14,7 @@ import {
   validatePartialSession,
   promoteSessionToFull,
 } from "../src/session.js";
-import { SESSION_STAGE } from "../src/constants.js";
+import { SESSION_STAGE, SESSION_IDLE_TIMEOUT_OPERATOR_MS } from "../src/constants.js";
 import {
   canPerformCheckIn,
   canManageEvent,
@@ -232,6 +232,28 @@ describe("session", () => {
     const { rawToken, session } = await createSession(prisma, { userId: USER_OP_A });
     await revokeSession(prisma, session.id);
     expect(await validateSession(prisma, rawToken)).toBeNull();
+  });
+
+  it("rejects full session after idle timeout (last_seen_at beyond the idle window)", async () => {
+    const { rawToken, session } = await createSession(prisma, { userId: USER_OP_A });
+    await prisma.session.update({
+      where: { id: session.id },
+      data: {
+        last_seen_at: new Date(Date.now() - SESSION_IDLE_TIMEOUT_OPERATOR_MS - 1000),
+      },
+    });
+    expect(await validateSession(prisma, rawToken)).toBeNull();
+  });
+
+  it("keeps full session alive within the idle window", async () => {
+    const { rawToken, session } = await createSession(prisma, { userId: USER_OP_A });
+    await prisma.session.update({
+      where: { id: session.id },
+      data: {
+        last_seen_at: new Date(Date.now() - SESSION_IDLE_TIMEOUT_OPERATOR_MS + 60_000),
+      },
+    });
+    expect(await validateSession(prisma, rawToken)).not.toBeNull();
   });
 
   it("defaults MFA-required users to partial stage when stage omitted", async () => {

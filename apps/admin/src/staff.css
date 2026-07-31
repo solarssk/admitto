@@ -4137,7 +4137,11 @@ output.mail-field-hint {
 }
 
 .text-warning {
-  color: var(--status-warning-fg, #b54708);
+  /* --status-warn-fg (not --status-warning-fg, which was never defined — see
+     packages/ui/src/styles/tokens/colors.css). Newly activated by SecurityPanel's P0-4
+     inline warnings below; this class had zero call sites before that, so the typo was
+     silently masked by this same fallback value until now. */
+  color: var(--status-warn-fg, #b54708);
 }
 
 /* Send-test-email result — simulates the received test message (ok) or a

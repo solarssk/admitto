@@ -5,6 +5,8 @@ import { MFA_PENDING_SESSION_TTL_MS, BACKUP_CODES_STEP_TTL_MS } from "./constant
 import {
   getSessionTtlAdminMs,
   getSessionTtlOperatorMs,
+  getSessionIdleTimeoutAdminMs,
+  getSessionIdleTimeoutOperatorMs,
   getMfaRequiredRoles,
 } from "./settings/resolver.js";
 import {
@@ -43,16 +45,38 @@ export interface ListSessionsFilters {
   includeRevoked?: boolean;
 }
 
-async function resolveFullTtlMs(
+async function hasElevatedRole(
   prisma: PrismaClient | Prisma.TransactionClient,
   userId: string,
-): Promise<number> {
+): Promise<boolean> {
   const assignments = await prisma.roleAssignment.findMany({
     where: { user_id: userId },
     select: { role: true },
   });
-  const hasElevated = assignments.some((a) => a.role === "superadmin" || a.role === "admin");
-  return hasElevated ? getSessionTtlAdminMs(prisma) : getSessionTtlOperatorMs(prisma);
+  return assignments.some((a) => a.role === "superadmin" || a.role === "admin");
+}
+
+async function resolveFullTtlMs(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+): Promise<number> {
+  const elevated = await hasElevatedRole(prisma, userId);
+  return elevated ? getSessionTtlAdminMs(prisma) : getSessionTtlOperatorMs(prisma);
+}
+
+/**
+ * Resolve the idle timeout (inactivity window) for a `full` session, based on role.
+ * Separate from the absolute lifetime above (P0 security review): a session is now
+ * ended by whichever limit is hit first — long inactivity, or the absolute TTL.
+ */
+async function resolveIdleTimeoutMs(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+): Promise<number> {
+  const elevated = await hasElevatedRole(prisma, userId);
+  return elevated
+    ? getSessionIdleTimeoutAdminMs(prisma)
+    : getSessionIdleTimeoutOperatorMs(prisma);
 }
 
 /**
@@ -142,6 +166,17 @@ async function lookupSessionByToken(
   if (!session.user.is_active) return null;
 
   const now = new Date();
+
+  // Idle timeout only applies to `full` sessions. Partial stages (mfa_pending,
+  // enrollment_required, ...) already carry a short absolute TTL
+  // (MFA_PENDING_SESSION_TTL_MS) that serves the same purpose.
+  if (session.stage === SESSION_STAGE.FULL) {
+    const idleTimeoutMs = await resolveIdleTimeoutMs(prisma, session.user_id);
+    if (now.getTime() - session.last_seen_at.getTime() >= idleTimeoutMs) {
+      return null;
+    }
+  }
+
   if (now.getTime() - session.last_seen_at.getTime() >= SESSION_LAST_SEEN_THROTTLE_MS) {
     await prisma.session.update({
       where: { id: session.id },
