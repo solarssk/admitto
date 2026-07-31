@@ -14,6 +14,11 @@ ENV npm_config_ignore_scripts=true
 RUN npm ci
 
 RUN npx prisma generate --schema packages/db/prisma/schema.prisma
+
+# No .git dir is copied into the build context — publish-container.yml passes the real commit
+# it just checked out; the admin SPA build (apps/admin/vite.config.ts) reads it from here.
+ARG GIT_COMMIT=unknown
+ENV GIT_COMMIT=$GIT_COMMIT
 RUN npm run build
 
 # Prisma migrate CLI is a devDependency — stash before prune.

@@ -1,17 +1,13 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-
-const rootVersion = (
-  JSON.parse(readFileSync(resolve(__dirname, "../../package.json"), "utf-8")) as { version: string }
-).version;
+import { resolveAppVersion, resolveCommitSha } from "./build-meta.ts";
 
 export default defineConfig({
   plugins: [react()],
   base: "/",
   define: {
-    __APP_VERSION__: JSON.stringify(rootVersion),
+    __APP_VERSION__: JSON.stringify(resolveAppVersion()),
+    __APP_COMMIT__: JSON.stringify(resolveCommitSha()),
   },
   build: {
     outDir: "dist",

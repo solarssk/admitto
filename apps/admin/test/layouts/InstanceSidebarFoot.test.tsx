@@ -31,6 +31,10 @@ describe("InstanceSidebarFoot", () => {
       "/admin/settings",
     );
     expect(screen.getByText(/^v\d/)).toBeTruthy();
+    // Its own element (not just present in the version span's combined text) - the collapsed
+    // sidebar rail hides it via `.shell:not(.shell--nav-open) .sidebar__build-commit`, which
+    // only works if the commit SHA has a selectable node of its own, separate from the version.
+    expect(document.querySelector(".sidebar__build-commit")).toBeTruthy();
   });
 
   it("renders no administration links for check-in-only operators", () => {
