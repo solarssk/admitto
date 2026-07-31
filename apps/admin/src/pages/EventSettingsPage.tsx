@@ -25,6 +25,7 @@ import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-er
 import type { EventSettingsDto, TicketTypeDto } from "../api/types.js";
 import { TicketTypesCard } from "../settings/TicketTypesCard.js";
 import { EventMailSettingsCard } from "../settings/EventMailSettingsCard.js";
+import { LocationSettingsPanel } from "../settings/LocationSettingsPanel.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
@@ -310,6 +311,7 @@ interface ArchiveToggleDeps {
   setArchiving: (value: boolean) => void;
   setArchiveOpen: (value: boolean) => void;
   setMailCardResetKey: (updater: (n: number) => number) => void;
+  setLocationCardResetKey: (updater: (n: number) => number) => void;
   addToast: AddToast;
   load: () => Promise<void>;
   refreshLayoutEvent?: () => Promise<void>;
@@ -323,6 +325,7 @@ async function confirmArchiveToggle(deps: ArchiveToggleDeps): Promise<void> {
     setArchiving,
     setArchiveOpen,
     setMailCardResetKey,
+    setLocationCardResetKey,
     addToast,
     load,
     refreshLayoutEvent,
@@ -338,6 +341,7 @@ async function confirmArchiveToggle(deps: ArchiveToggleDeps): Promise<void> {
     }
     setArchiveOpen(false);
     setMailCardResetKey((n) => n + 1);
+    setLocationCardResetKey((n) => n + 1);
     await load();
     await refreshLayoutEvent?.();
   } catch (err) {
@@ -415,6 +419,7 @@ interface RevokeCheckinsDeps {
   setRevokingCheckins: (value: boolean) => void;
   setRevokeCheckinsOpen: (value: boolean) => void;
   setMailCardResetKey: (updater: (n: number) => number) => void;
+  setLocationCardResetKey: (updater: (n: number) => number) => void;
   addToast: AddToast;
   load: () => Promise<void>;
   refreshLayoutEvent?: () => Promise<void>;
@@ -427,6 +432,7 @@ async function confirmRevokeCheckins(deps: RevokeCheckinsDeps): Promise<void> {
     setRevokingCheckins,
     setRevokeCheckinsOpen,
     setMailCardResetKey,
+    setLocationCardResetKey,
     addToast,
     load,
     refreshLayoutEvent,
@@ -442,6 +448,7 @@ async function confirmRevokeCheckins(deps: RevokeCheckinsDeps): Promise<void> {
     );
     setRevokeCheckinsOpen(false);
     setMailCardResetKey((n) => n + 1);
+    setLocationCardResetKey((n) => n + 1);
     await load();
     await refreshLayoutEvent?.();
   } catch (err) {
@@ -456,6 +463,7 @@ interface RevokeItemsDeps {
   setRevokingItems: (value: boolean) => void;
   setRevokeItemsOpen: (value: boolean) => void;
   setMailCardResetKey: (updater: (n: number) => number) => void;
+  setLocationCardResetKey: (updater: (n: number) => number) => void;
   addToast: AddToast;
   load: () => Promise<void>;
   refreshLayoutEvent?: () => Promise<void>;
@@ -468,6 +476,7 @@ async function confirmRevokeItems(deps: RevokeItemsDeps): Promise<void> {
     setRevokingItems,
     setRevokeItemsOpen,
     setMailCardResetKey,
+    setLocationCardResetKey,
     addToast,
     load,
     refreshLayoutEvent,
@@ -483,6 +492,7 @@ async function confirmRevokeItems(deps: RevokeItemsDeps): Promise<void> {
     );
     setRevokeItemsOpen(false);
     setMailCardResetKey((n) => n + 1);
+    setLocationCardResetKey((n) => n + 1);
     await load();
     await refreshLayoutEvent?.();
   } catch (err) {
@@ -554,6 +564,10 @@ export function EventSettingsPage() {
   // (CodeRabbit review). Bumping this key remounts the card, discarding its draft and
   // re-fetching current server state.
   const [mailCardResetKey, setMailCardResetKey] = useState(0);
+  const [locationDirty, setLocationDirty] = useState(false);
+  const [locationSaving, setLocationSaving] = useState(false);
+  // Same reasoning as mailCardResetKey above, applied to LocationSettingsPanel's own draft state.
+  const [locationCardResetKey, setLocationCardResetKey] = useState(0);
 
   const initialTab = inPageTabFromSearch(searchParams, isSa);
   const [tab, setTab] = useState<EventSettingsTab>(initialTab);
@@ -581,13 +595,14 @@ export function EventSettingsPage() {
 
   const dirty =
     form !== null && original !== null && JSON.stringify(form) !== JSON.stringify(original);
-  // Combines the General form's own dirty state with the Mail tab's — navigating away or
-  // running a page action that reloads state (archive, revoke) would otherwise silently
-  // discard unsaved mail transport edits and pending secret replacements (CodeRabbit review).
-  const pageDirty = dirty || mailDirty;
+  // Combines the General form's own dirty state with the Mail and Location tabs' — navigating
+  // away or running a page action that reloads state (archive, revoke) would otherwise silently
+  // discard unsaved mail transport edits, pending secret replacements, or a pending pin move
+  // (CodeRabbit review).
+  const pageDirty = dirty || mailDirty || locationDirty;
   // Same combination for "a save request is in flight" - a Danger Zone action firing while the
-  // Mail tab's own save is still in flight would race against it on the same event record.
-  const pageBusy = saving || mailSaving;
+  // Mail or Location tab's own save is still in flight would race against it on the same event record.
+  const pageBusy = saving || mailSaving || locationSaving;
   const saveButtonLabel = computeSaveButtonLabel(saving, logoUploading);
   // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
   // these "Loading…" placeholders on and off faster than they can register as loading —
@@ -678,6 +693,7 @@ export function EventSettingsPage() {
       setArchiving,
       setArchiveOpen,
       setMailCardResetKey,
+      setLocationCardResetKey,
       addToast,
       load,
       refreshLayoutEvent,
@@ -701,6 +717,7 @@ export function EventSettingsPage() {
       setRevokingCheckins,
       setRevokeCheckinsOpen,
       setMailCardResetKey,
+      setLocationCardResetKey,
       addToast,
       load,
       refreshLayoutEvent,
@@ -714,6 +731,7 @@ export function EventSettingsPage() {
       setRevokingItems,
       setRevokeItemsOpen,
       setMailCardResetKey,
+      setLocationCardResetKey,
       addToast,
       load,
       refreshLayoutEvent,
@@ -945,6 +963,16 @@ export function EventSettingsPage() {
             </div>
           </div>
         </Card>
+      </EventSettingsTabPanel>
+
+      <EventSettingsTabPanel tab="location" activeTab={tab} visited={visitedTabs} label="Location">
+        <LocationSettingsPanel
+          key={locationCardResetKey}
+          eventId={eventId}
+          isArchived={isArchived}
+          onDirtyChange={setLocationDirty}
+          onSavingChange={setLocationSaving}
+        />
       </EventSettingsTabPanel>
 
       <EventSettingsTabPanel tab="ticket-types" activeTab={tab} visited={visitedTabs} label="Ticket types">

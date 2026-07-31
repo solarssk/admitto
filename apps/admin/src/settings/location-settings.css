@@ -1,0 +1,99 @@
+/* Event Settings — Location tab. LocationSettingsPanel.tsx + MapPicker.tsx. */
+
+.location-address-notice {
+  margin-top: var(--space-3);
+}
+
+/* Leaflet needs an explicit pixel height on its container - it measures the container at mount
+   and renders nothing (a grey box) if it is 0px, which it would be with only `width: 100%` and
+   no height. ResizeObserver (MapPicker.tsx) keeps it correctly sized after that, including when
+   this tab becomes visible after being hidden. */
+.location-map-picker {
+  width: 100%;
+  height: 360px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-top: var(--space-3);
+  cursor: pointer;
+}
+
+.location-map-picker--disabled {
+  cursor: not-allowed;
+}
+
+.location-search-row {
+  display: flex;
+  align-items: end;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.location-search-row .at-field {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.location-search-results {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.location-search-results li + li {
+  border-top: 1px solid var(--border);
+}
+
+.location-search-results button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  background: var(--surface-card);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.location-search-results button:hover {
+  background: var(--surface-hover);
+}
+
+.location-map-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-3);
+}
+
+.location-map-links {
+  font-size: var(--fs-sm);
+}
+
+.location-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--fs-base);
+  font-family: inherit;
+  color: var(--text-primary);
+  background: var(--surface-card);
+  min-height: 96px;
+}
+
+.location-textarea:focus {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -1px;
+}
+
+.location-textarea:disabled {
+  background: var(--surface-sunken);
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}

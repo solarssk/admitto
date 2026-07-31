@@ -30,6 +30,8 @@ const CODE_MESSAGES: Record<string, string> = {
   file_required: "Choose a file to upload.",
   file_too_large: "File exceeds the 2 MB limit.",
   forbidden: "You do not have access.",
+  geocoding_rate_limited: "Too many address lookups right now. Wait a moment and try again.",
+  geocoding_unavailable: "Address lookup is temporarily unavailable. Try again shortly.",
   incomplete_transport: "Fill in all required fields for this mail transport before saving.",
   invalid_form_data: "Could not read the upload. Try again.",
   invalid_code: "Invalid authenticator code.",

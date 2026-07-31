@@ -279,8 +279,8 @@ export function GeneralSettingsPanel() {
 
       <Card title="Support contact">
         <p className="at-hint branding-scope-hint">
-          Saved for future use, for example identifying this instance if it ever calls external
-          services. Nothing uses these fields yet.
+          Used to identify this instance to external services such as the geocoding provider used
+          by the Location tab on event settings.
         </p>
         <div className="branding-form">
           <Input

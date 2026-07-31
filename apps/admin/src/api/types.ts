@@ -779,6 +779,56 @@ export interface EventDeliveriesListResponse {
   pageSize: number;
 }
 
+/** Event Settings "Location" tab — full address, coordinates, and directions/accessibility
+ * notes for an event's venue. `Event.location` (Basic information card) remains the short
+ * display name; this is the richer, optional record behind the map. */
+export interface EventLocationDto {
+  formatted_address: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  map_zoom: number;
+  directions_text: string | null;
+  accessibility_text: string | null;
+  /** e.g. "nominatim" once set via a geocoding search result; null after a manual pin drag,
+   * a manually typed coordinate, or "Clear map location" — see event-location-routes.ts. */
+  geocoding_provider: string | null;
+  geocoded_at: string | null;
+}
+
+export interface SaveEventLocationBody {
+  /** Omit = unchanged; `null` (or "" for text fields) clears it. */
+  formatted_address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  map_zoom?: number | null;
+  directions_text?: string | null;
+  accessibility_text?: string | null;
+  /** Only meaningful alongside a latitude/longitude change; omit for a manual pin move so the
+   * server clears stale provenance instead of relabeling it as freshly geocoded. */
+  geocoding_provider?: string | null;
+}
+
+export interface GeocodingResultDto {
+  formatted_address: string;
+  latitude: number;
+  longitude: number;
+  provider: string;
+}
+
+export interface GeocodingSearchResponse {
+  results: GeocodingResultDto[];
+  /** False when the instance has no Support contact configured — Nominatim's usage policy
+   * asks for an identifiable contact; search still works, the UI just shows a hint. */
+  contact_configured: boolean;
+}
+
+export interface MapTileConfigDto {
+  enabled: boolean;
+  tile_url: string;
+  attribution: string;
+  max_zoom: number;
+}
+
 export type SessionRole = "superadmin" | "admin" | "operator";
 export type SettingSource = "env" | "db" | "default";
 
