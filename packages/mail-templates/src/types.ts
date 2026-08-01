@@ -18,6 +18,9 @@ export interface ResolvedTemplate {
   source: TemplateSource;
   /** Set when resolved from a MailTemplate row (for EmailDelivery.template_id). */
   templateId?: string;
+  /** The row's label, for EmailDelivery.template_label_snapshot - set whenever templateId is,
+   * so a later template deletion doesn't erase what it was called. */
+  templateLabel?: string;
 }
 
 export interface TemplateVars {

@@ -247,47 +247,52 @@ model WalletPass {
 }
 
 model EmailDelivery {
-  id                  String        @id @default(cuid())
-  organization_id     String
-  organization        Organization  @relation(fields: [organization_id], references: [id], onDelete: Restrict)
-  event_id            String
-  event               Event         @relation(fields: [event_id], references: [id], onDelete: Restrict)
-  attendee_id         String
-  attendee            Attendee      @relation(fields: [attendee_id], references: [id])
-  purpose             String        @default("initial") // "initial" | "resend"
-  batch_id            String?
-  template_id         String?
-  template            MailTemplate? @relation(fields: [template_id], references: [id], onDelete: SetNull)
-  provider            String
-  provider_message_id String?
-  status              String        @default("queued")
-  error_code          String?
-  error               String?
-  retryable           Boolean?
-  attempts            Int           @default(1)
-  recipient_email     String?
-  rendered_subject    String?
-  rendered_html       String?       @db.Text
-  queued_at           DateTime      @default(now())
-  attempted_at        DateTime?
-  accepted_at         DateTime?
-  sent_at             DateTime?
-  delivered_at        DateTime?
-  failed_at           DateTime?
-  viewed_at           DateTime?
-  opened_at           DateTime?
-  clicked_at          DateTime?
-  created_at          DateTime      @default(now())
+  id                      String        @id @default(cuid())
+  organization_id         String
+  organization            Organization  @relation(fields: [organization_id], references: [id], onDelete: Restrict)
+  event_id                String
+  event                   Event         @relation(fields: [event_id], references: [id], onDelete: Restrict)
+  attendee_id             String
+  attendee                Attendee      @relation(fields: [attendee_id], references: [id])
+  purpose                 String        @default("initial") // "initial" | "resend"
+  batch_id                String?
+  template_id             String?
+  template                MailTemplate? @relation(fields: [template_id], references: [id], onDelete: SetNull)
+  // The template's label at send time, independent of the live MailTemplate row - template_id
+  // is SetNull'd if that row is later deleted (templates may be deleted even once used, see
+  // multi-template.test.ts), which would otherwise make a deleted-template send indistinguishable
+  // from a genuine default-template send. Null when no custom template was used (builtin default).
+  template_label_snapshot String?
+  provider                String
+  provider_message_id     String?
+  status                  String        @default("queued")
+  error_code              String?
+  error                   String?
+  retryable               Boolean?
+  attempts                Int           @default(1)
+  recipient_email         String?
+  rendered_subject        String?
+  rendered_html           String?       @db.Text
+  queued_at               DateTime      @default(now())
+  attempted_at            DateTime?
+  accepted_at             DateTime?
+  sent_at                 DateTime?
+  delivered_at            DateTime?
+  failed_at               DateTime?
+  viewed_at               DateTime?
+  opened_at               DateTime?
+  clicked_at              DateTime?
+  created_at              DateTime      @default(now())
   // Triggering admin's IANA timezone at send/resend time — null for rows predating this
   // column or created outside a browser request.
-  client_timezone     String?
+  client_timezone         String?
   // Triggering admin's user/session id at send/resend time — null for rows predating these
   // columns or created outside a browser request (e.g. an automated initial send). Durable
   // independently of the best-effort bulk-action audit log (see writeBulkActionLog callers):
   // this is written in the same call that queues the row, not a separate fire-and-forget write.
-  actor_user_id       String?
-  session_id          String?
-  updated_at          DateTime      @updatedAt
+  actor_user_id           String?
+  session_id              String?
+  updated_at              DateTime      @updatedAt
 
   @@index([organization_id])
   @@index([event_id, created_at(sort: Desc)])
