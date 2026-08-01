@@ -17,8 +17,11 @@ export { formatCompactAddress, formatStreetLine, formatVenueName } from "./forma
 export type { CompactAddressParts } from "./formatAddress.js";
 export {
   EMPTY_ADDRESS_COMPONENTS,
+  addressComponentsFromNominatimLabel,
   addressComponentsFromParts,
   isAddressComponentsEmpty,
+  isAddressComponentsSparse,
+  mergeAddressComponents,
   normalizeAddressComponents,
   parseStoredAddressComponents,
 } from "./addressComponents.js";

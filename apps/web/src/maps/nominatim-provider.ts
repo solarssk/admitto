@@ -7,9 +7,12 @@
  * BASE_URL/DATABASE_URL/REDIS_URL, none of which get SSRF protection either.
  */
 import {
+  addressComponentsFromNominatimLabel,
   addressComponentsFromParts,
   formatCompactAddress,
   formatVenueName,
+  isAddressComponentsSparse,
+  mergeAddressComponents,
   type GeocodingProvider,
   type GeocodingResult,
 } from "@admitto/location";
@@ -62,10 +65,15 @@ interface RawGeocodeJsonFeature {
       housenumber?: unknown;
       street?: unknown;
       city?: unknown;
+      /** GeocodeJSON often puts the settlement here when `city` is absent. */
+      locality?: unknown;
+      town?: unknown;
+      village?: unknown;
       country?: unknown;
       postcode?: unknown;
       state?: unknown;
       county?: unknown;
+      district?: unknown;
     };
   };
   geometry?: {
@@ -79,6 +87,14 @@ function asOptionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
 }
 
+function firstOptionalString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    const parsed = asOptionalString(value);
+    if (parsed) return parsed;
+  }
+  return undefined;
+}
+
 function parseFeature(raw: unknown, provider: string): GeocodingResult | null {
   if (typeof raw !== "object" || raw === null) return null;
   const feature = raw as RawGeocodeJsonFeature;
@@ -88,10 +104,13 @@ function parseFeature(raw: unknown, provider: string): GeocodingResult | null {
     name: asOptionalString(geocoding?.name) ?? null,
     housenumber: asOptionalString(geocoding?.housenumber) ?? null,
     street: asOptionalString(geocoding?.street) ?? null,
-    city: asOptionalString(geocoding?.city) ?? null,
+    city:
+      firstOptionalString(geocoding?.city, geocoding?.locality, geocoding?.town, geocoding?.village) ??
+      null,
     country: asOptionalString(geocoding?.country) ?? null,
     postcode: asOptionalString(geocoding?.postcode) ?? null,
-    state: asOptionalString(geocoding?.state) ?? asOptionalString(geocoding?.county) ?? null,
+    state:
+      firstOptionalString(geocoding?.state, geocoding?.county, geocoding?.district) ?? null,
     label,
   };
 
@@ -110,7 +129,14 @@ function parseFeature(raw: unknown, provider: string): GeocodingResult | null {
   const finalName =
     parts.name ?? (streetLine && streetLine !== formatted_address ? streetLine : undefined);
 
-  const components = addressComponentsFromParts(parts);
+  const componentsFromParts = addressComponentsFromParts(parts);
+  const components =
+    isAddressComponentsSparse(componentsFromParts) && label
+      ? mergeAddressComponents(
+          componentsFromParts,
+          addressComponentsFromNominatimLabel(label, parts.name),
+        )
+      : componentsFromParts;
 
   return {
     ...(finalName ? { name: finalName } : {}),

@@ -22,6 +22,11 @@ export const EMPTY_ADDRESS_COMPONENTS: AddressComponents = {
 
 const COMPONENT_MAX_LENGTH = 200;
 
+/** PL `00-120`, generic 4–6 digit, UK-ish outward codes — enough for Nominatim labels. */
+const POSTCODE_RE = /^(?:\d{2}-\d{3}|\d{4,6}|[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})$/i;
+const REGION_RE = /województwo|voivodeship|province|canton|oblast|région|region\b|state of/i;
+const HOUSE_NUMBER_RE = /^\d+[a-zA-Z]?$/;
+
 function cleanComponent(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   if (!trimmed) return null;
@@ -42,6 +47,77 @@ export function addressComponentsFromParts(
   };
 }
 
+/**
+ * Best-effort parse of a Nominatim comma-separated `label` when GeocodeJSON omits structured
+ * street/city fields (common for amenity POIs that only carry `name` + hierarchical label).
+ *
+ * Example: "Złote Tarasy, 59, Złota, Śródmieście, Warszawa, województwo mazowieckie, Polska"
+ */
+export function addressComponentsFromNominatimLabel(
+  label: string,
+  name?: string | null,
+): AddressComponents {
+  const segments = label
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (segments.length === 0) {
+    return { ...EMPTY_ADDRESS_COMPONENTS, object_name: cleanComponent(name) };
+  }
+
+  let parts = segments;
+  const cleanedName = cleanComponent(name);
+  if (cleanedName && parts[0]?.toLowerCase() === cleanedName.toLowerCase()) {
+    parts = parts.slice(1);
+  }
+
+  let country: string | null = null;
+  let region: string | null = null;
+  let city: string | null = null;
+  let postcode: string | null = null;
+
+  if (parts.length > 0) {
+    country = parts.at(-1) ?? null;
+    parts = parts.slice(0, -1);
+  }
+  if (parts.length > 0 && POSTCODE_RE.test(parts.at(-1)!)) {
+    postcode = parts.at(-1) ?? null;
+    parts = parts.slice(0, -1);
+  }
+  if (parts.length > 0 && REGION_RE.test(parts.at(-1)!)) {
+    region = parts.at(-1) ?? null;
+    parts = parts.slice(0, -1);
+  }
+  if (parts.length > 0) {
+    city = parts.at(-1) ?? null;
+    parts = parts.slice(0, -1);
+  }
+
+  // Leftover leading segments: housenumber + street (+ optional suburb we ignore).
+  let street: string | null = null;
+  if (parts.length >= 2 && HOUSE_NUMBER_RE.test(parts[0]!)) {
+    street = cleanComponent(formatStreetLine({ street: parts[1], housenumber: parts[0] }));
+  } else if (parts.length >= 1) {
+    const numberIdx = parts.findIndex((s) => HOUSE_NUMBER_RE.test(s));
+    if (numberIdx >= 0 && parts.length >= 2) {
+      const housenumber = parts[numberIdx]!;
+      const streetName = parts.find((s, i) => i !== numberIdx && !HOUSE_NUMBER_RE.test(s));
+      street = cleanComponent(formatStreetLine({ street: streetName, housenumber }));
+    } else if (parts.length === 1 && !HOUSE_NUMBER_RE.test(parts[0]!)) {
+      street = cleanComponent(parts[0]);
+    }
+  }
+
+  return {
+    object_name: cleanedName,
+    street,
+    postcode: cleanComponent(postcode),
+    city: cleanComponent(city),
+    region: cleanComponent(region),
+    country: cleanComponent(country),
+  };
+}
+
 /** True when every field is null/empty (used for dirty checks and "clear" patches). */
 export function isAddressComponentsEmpty(components: AddressComponents | null | undefined): boolean {
   if (!components) return true;
@@ -53,6 +129,30 @@ export function isAddressComponentsEmpty(components: AddressComponents | null | 
     !components.region &&
     !components.country
   );
+}
+
+/**
+ * True when the grid has nothing useful beyond a POI name — typical for Nominatim GeocodeJSON
+ * amenity matches that only set `name` + `label`.
+ */
+export function isAddressComponentsSparse(components: AddressComponents | null | undefined): boolean {
+  if (!components || isAddressComponentsEmpty(components)) return true;
+  return !components.street && !components.postcode && !components.city && !components.country;
+}
+
+/** Fill null fields in `primary` from `fallback` (e.g. structured parts + label parse). */
+export function mergeAddressComponents(
+  primary: AddressComponents,
+  fallback: AddressComponents,
+): AddressComponents {
+  return {
+    object_name: primary.object_name ?? fallback.object_name,
+    street: primary.street ?? fallback.street,
+    postcode: primary.postcode ?? fallback.postcode,
+    city: primary.city ?? fallback.city,
+    region: primary.region ?? fallback.region,
+    country: primary.country ?? fallback.country,
+  };
 }
 
 /** Normalize a submitted JSON blob into AddressComponents, or null to clear. Throws on

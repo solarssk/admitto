@@ -163,12 +163,60 @@ describe("NominatimProvider.search", () => {
           object_name: null,
           street: null,
           postcode: null,
-          city: null,
+          city: "Good Place",
           region: null,
-          country: null,
+          country: "Somewhere",
         },
       },
     ]);
+  });
+
+  it("fills sparse POI components from the Nominatim label when GeocodeJSON omits street/city", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse(
+        geocodeJsonBody([
+          {
+            name: "Złote Tarasy",
+            label: "Złote Tarasy, 59, Złota, Śródmieście, Warszawa, województwo mazowieckie, Polska",
+            coordinates: [21.0028, 52.2297],
+          },
+        ]),
+      ),
+    );
+    const results = await makeProvider(fetchFn).search("zlote");
+    expect(results[0]?.components).toEqual({
+      object_name: "Złote Tarasy",
+      street: "Złota 59",
+      postcode: null,
+      city: "Warszawa",
+      region: "województwo mazowieckie",
+      country: "Polska",
+    });
+  });
+
+  it("uses locality as city when city is absent", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            properties: {
+              geocoding: {
+                name: "Hall",
+                locality: "Kraków",
+                country: "Polska",
+                label: "Hall, Kraków, Polska",
+              },
+            },
+            geometry: { type: "Point", coordinates: [19.9, 50.0] },
+          },
+        ],
+      }),
+    );
+    const results = await makeProvider(fetchFn).search("hall");
+    expect(results[0]?.components?.city).toBe("Kraków");
+    expect(results[0]?.formatted_address).toBe("Polska, Kraków - Hall");
   });
 
   it("throws a timeout-flavored GeocodingProviderError when the request aborts on timeout", async () => {

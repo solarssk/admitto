@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   EMPTY_ADDRESS_COMPONENTS,
+  addressComponentsFromNominatimLabel,
   addressComponentsFromParts,
   isAddressComponentsEmpty,
   normalizeAddressComponents,
@@ -26,6 +27,24 @@ describe("addressComponentsFromParts", () => {
       city: "Warsaw",
       region: "Masovian Voivodeship",
       country: "Poland",
+    });
+  });
+});
+
+describe("addressComponentsFromNominatimLabel", () => {
+  it("parses a Polish amenity label into street/city/region/country", () => {
+    expect(
+      addressComponentsFromNominatimLabel(
+        "Złote Tarasy, 59, Złota, Śródmieście, Warszawa, województwo mazowieckie, Polska",
+        "Złote Tarasy",
+      ),
+    ).toEqual({
+      object_name: "Złote Tarasy",
+      street: "Złota 59",
+      postcode: null,
+      city: "Warszawa",
+      region: "województwo mazowieckie",
+      country: "Polska",
     });
   });
 });
