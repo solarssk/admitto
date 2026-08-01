@@ -40,6 +40,11 @@ describe("hasTrivialCharacterPattern", () => {
     // so a run has to stay within one ascending/descending decade to hold.
     expect(hasTrivialCharacterPattern("23456789")).toBe(true);
     expect(hasTrivialCharacterPattern("nmlkjihgfedcba")).toBe(true);
+    expect(hasTrivialCharacterPattern("zyxwvu")).toBe(true);
+  });
+
+  it("flags passwords at the low-variety threshold without a full run", () => {
+    expect(hasTrivialCharacterPattern("aabbaabb")).toBe(true);
   });
 
   it("does not flag a password with normal character variety", () => {

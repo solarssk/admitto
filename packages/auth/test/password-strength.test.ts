@@ -83,8 +83,18 @@ describe("hasNearZeroEntropy and strengthPoints", () => {
     expect(hasNearZeroEntropy("aaaabbbb")).toBe(true);
   });
 
+  it("flags simple ascending runs when variety is otherwise normal", () => {
+    expect(hasNearZeroEntropy("abcdefgh")).toBe(true);
+  });
+
   it("awards a single point when length and variety bonuses are not met", () => {
     expect(strengthPoints("aabbccddeeff")).toBe(1);
+  });
+
+  it("adds points for length and variety tiers", () => {
+    expect(strengthPoints(PASSWORD_STRENGTH_GOOD)).toBe(3);
+    expect(strengthPoints(PASSWORD_STRENGTH_STRONG)).toBe(4);
+    expect(scorePasswordStrength(PASSWORD_STRENGTH_STRONG).score).toBe(4);
   });
 });
 

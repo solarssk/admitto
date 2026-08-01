@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildSecurityPatchBody } from "../../src/settings/securitySettingsPatch.js";
+import {
+  buildSecurityPatchBody,
+  draftFromSettings,
+  parseDraftInt,
+  previewDraftInt,
+} from "../../src/settings/securitySettingsPatch.js";
 import type { SystemSettingsDto } from "../../src/api/types.js";
 
 const baseSettings: SystemSettingsDto = {
@@ -24,6 +29,35 @@ const baseDraft = {
 function fieldLocked(source: "env" | "db" | "default") {
   return source === "env";
 }
+
+describe("parseDraftInt", () => {
+  it("falls back on empty or non-numeric input and clamps to bounds", () => {
+    expect(parseDraftInt("", 1, 10, 5)).toBe(5);
+    expect(parseDraftInt("  ", 1, 10, 5)).toBe(5);
+    expect(parseDraftInt("xy", 1, 10, 5)).toBe(5);
+    expect(parseDraftInt("0", 1, 10, 5)).toBe(1);
+    expect(parseDraftInt("999", 1, 10, 5)).toBe(10);
+  });
+});
+
+describe("previewDraftInt", () => {
+  it("returns null for empty or non-numeric input", () => {
+    expect(previewDraftInt("")).toBeNull();
+    expect(previewDraftInt("  ")).toBeNull();
+    expect(previewDraftInt("nope")).toBeNull();
+  });
+
+  it("parses integers without clamping", () => {
+    expect(previewDraftInt("48")).toBe(48);
+    expect(previewDraftInt(" 3 ")).toBe(3);
+  });
+});
+
+describe("draftFromSettings", () => {
+  it("maps persisted settings to editable string fields", () => {
+    expect(draftFromSettings(baseSettings)).toEqual(baseDraft);
+  });
+});
 
 describe("buildSecurityPatchBody", () => {
   it("returns no changes when the draft matches persisted settings", () => {
@@ -53,6 +87,19 @@ describe("buildSecurityPatchBody", () => {
     );
     expect(result.hasChanges).toBe(true);
     expect(result.body.session_idle_timeout_ms).toBe(60 * 60_000);
+  });
+
+  it("includes operator session TTL and idle fields when they change", () => {
+    const result = buildSecurityPatchBody(
+      baseSettings,
+      { ...baseDraft, opTtlH: "24", opIdleM: "60" },
+      fieldLocked,
+    );
+    expect(result.hasChanges).toBe(true);
+    expect(result.body).toEqual({
+      operator_session_ttl_ms: 24 * 3_600_000,
+      operator_session_idle_timeout_ms: 60 * 60_000,
+    });
   });
 
   it("skips env-locked fields even when the draft differs", () => {
