@@ -64,7 +64,8 @@ type SettingsPatch = Partial<{
 
 const EVENT_SETTINGS_SUBTITLE = "Manage this event's details, images, and access controls.";
 
-const BASIC_INFORMATION_HINT = "Core event details. Title, date, and location are shown to attendees and printed on tickets.";
+const BASIC_INFORMATION_HINT =
+  "Core event details. Title and date are shown to attendees and printed on tickets. Set the venue in the Location tab.";
 const STATUS_HINT = "Read-only overview of this event's current state. Archive or delete it from the Danger zone tab.";
 const EVENT_LOGO_HINT = "Use a different logo just for this event, or leave it blank to use the organization's logo.";
 const DANGER_ZONE_HINT = "Irreversible actions affecting this event's data or availability. Most require superadmin.";

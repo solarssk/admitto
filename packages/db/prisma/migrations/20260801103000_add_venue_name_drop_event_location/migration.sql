@@ -11,7 +11,7 @@ ALTER TABLE "EventLocation" ADD COLUMN "venue_name" TEXT;
 -- 2. Backfill: events that already have an EventLocation row (e.g. directions/coordinates set
 --    via the Location tab) get their Event.location copied into venue_name alongside that data.
 UPDATE "EventLocation" el
-SET venue_name = e.location
+SET venue_name = left(e.location, 300)
 FROM "Event" e
 WHERE el.event_id = e.id
   AND e.location IS NOT NULL
@@ -22,7 +22,7 @@ WHERE el.event_id = e.id
 --    13+, confirmed available here) stands in for Prisma's client-side cuid() - the id format
 --    doesn't matter to Prisma, only uniqueness does.
 INSERT INTO "EventLocation" ("id", "event_id", "venue_name", "map_zoom", "created_at", "updated_at")
-SELECT gen_random_uuid()::text, e.id, e.location, 15, NOW(), NOW()
+SELECT gen_random_uuid()::text, e.id, left(e.location, 300), 15, NOW(), NOW()
 FROM "Event" e
 LEFT JOIN "EventLocation" el ON el.event_id = e.id
 WHERE el.event_id IS NULL

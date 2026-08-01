@@ -36,9 +36,29 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   };
 });
 
+vi.mock("../../src/settings/MapPicker.js", () => ({
+  MapPicker: ({
+    disabled,
+    onPick,
+  }: {
+    disabled?: boolean;
+    onPick: (latitude: number, longitude: number) => void;
+  }) => (
+    <button
+      type="button"
+      data-testid="map-picker"
+      disabled={disabled}
+      onClick={() => onPick(40.7128, -74.006)}
+    >
+      Pick New York
+    </button>
+  ),
+}));
+
 import {
   fetchEventLocation,
   fetchMapTileConfig,
+  fetchTimezoneForCoordinates,
   reverseGeocoding,
   saveEventLocation,
   searchGeocoding,
@@ -49,6 +69,7 @@ const mockSaveLocation = vi.mocked(saveEventLocation);
 const mockSearch = vi.mocked(searchGeocoding);
 const mockReverse = vi.mocked(reverseGeocoding);
 const mockFetchTiles = vi.mocked(fetchMapTileConfig);
+const mockFetchTimezone = vi.mocked(fetchTimezoneForCoordinates);
 
 const EMPTY_LOCATION: EventLocationDto = {
   venue_name: null,
@@ -102,6 +123,16 @@ function searchResult(overrides: Partial<GeocodingResultDto> = {}): GeocodingRes
   };
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 function renderPanel(
   props: Partial<{
     eventId: string;
@@ -110,6 +141,7 @@ function renderPanel(
     onDirtyChange: (d: boolean) => void;
     onSavingChange: (s: boolean) => void;
     onLocationSaved: () => Promise<void> | void;
+    onApplyTimezone: (timezone: string) => Promise<void> | void;
   }> = {},
 ) {
   return renderWithToast(
@@ -152,6 +184,8 @@ beforeEach(() => {
   // results override this explicitly.
   mockSearch.mockResolvedValue({ results: [], contact_configured: true });
   mockReverse.mockResolvedValue({ result: null, contact_configured: true });
+  mockFetchTimezone.mockReset();
+  mockFetchTimezone.mockResolvedValue({ timezone: "Europe/London" });
   mockFetchTiles.mockReset();
   mockFetchTiles.mockResolvedValue(TILE_CONFIG);
 });
@@ -175,15 +209,16 @@ describe("LocationSettingsPanel — loading", () => {
     expect(await screen.findByLabelText("Address details")).toBeTruthy();
     expect(await screen.findByText("Find on map")).toBeTruthy();
     await waitFor(() => {
-      expect(document.querySelector(".location-map-footer__coords")?.textContent).toContain("-");
+      expect(document.querySelector(".location-map-footer__coords")?.textContent?.trim()).toBe("-");
     });
   });
 
   it("shows a retry link on load failure", async () => {
-    mockFetchLocation.mockRejectedValue(new Error("network down"));
+    mockFetchLocation.mockRejectedValueOnce(new Error("network down")).mockResolvedValue(SAVED_LOCATION);
     renderPanel();
 
-    expect(await screen.findByText("Retry")).toBeTruthy();
+    fireEvent.click(await screen.findByText("Retry"));
+    expect(await screen.findByDisplayValue("Springfield Hall")).toBeTruthy();
   });
 });
 
@@ -321,6 +356,49 @@ describe("LocationSettingsPanel — venue search", () => {
     );
   });
 
+  it("does not let a slow reverse lookup overwrite a later selected venue", async () => {
+    const slowReverse = createDeferred<Awaited<ReturnType<typeof reverseGeocoding>>>();
+    const first = searchResult({ name: "First venue", formatted_address: "First address" });
+    const second = searchResult({
+      name: "Second venue",
+      formatted_address: "Second address",
+      latitude: 52.2297,
+      longitude: 21.0122,
+      components: {
+        object_name: "Second venue",
+        street: "Main Street 2",
+        postcode: "00-001",
+        city: "Warsaw",
+        region: null,
+        country: "Poland",
+      },
+    });
+    mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
+    mockSearch.mockResolvedValueOnce({ results: [first], contact_configured: true });
+    mockSearch.mockResolvedValueOnce({ results: [second], contact_configured: true });
+    mockReverse.mockReturnValueOnce(slowReverse.promise);
+    renderPanel();
+
+    const input = await screen.findByLabelText("Venue name or address");
+    fireEvent.change(input, { target: { value: "First venue" } });
+    fireEvent.click(await screen.findByRole("button", { name: /First venue/ }));
+
+    fireEvent.change(input, { target: { value: "Second venue" } });
+    fireEvent.click(await screen.findByRole("button", { name: /Second venue/ }));
+    expect(await screen.findByDisplayValue("Second venue")).toBeTruthy();
+
+    slowReverse.resolve({
+      contact_configured: true,
+      result: searchResult({
+        name: "First venue",
+        formatted_address: "Late first address",
+        components: { object_name: "First venue", street: "Late Street", postcode: null, city: null, region: null, country: null },
+      }),
+    });
+    await waitFor(() => expect(screen.getByDisplayValue("Second venue")).toBeTruthy());
+    expect(screen.getByText("52.22970, 21.01220")).toBeTruthy();
+  });
+
   it("Find on map shows a no-match notice when OSM returns nothing", async () => {
     mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
     mockSearch.mockResolvedValue({ results: [], contact_configured: true });
@@ -380,7 +458,7 @@ describe("LocationSettingsPanel — clearing and map availability", () => {
 
     expect(screen.getByDisplayValue("Springfield Hall")).toBeTruthy();
     await waitFor(() => {
-      expect(document.querySelector(".location-map-footer__coords")?.textContent).toContain("-");
+      expect(document.querySelector(".location-map-footer__coords")?.textContent?.trim()).toBe("-");
     });
     expect(screen.queryByText("Verified on OpenStreetMap")).toBeFalsy();
     expect(await screen.findByText("Unsaved changes")).toBeTruthy();
@@ -393,6 +471,180 @@ describe("LocationSettingsPanel — clearing and map availability", () => {
 
     expect(await screen.findByText(/Map display is disabled for this instance/)).toBeTruthy();
   });
+
+  it("keeps a manually picked pin but clears its address when reverse geocoding has no match", async () => {
+    mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
+    mockReverse.mockResolvedValue({ result: null, contact_configured: true });
+    renderPanel();
+
+    fireEvent.click(await screen.findByTestId("map-picker"));
+
+    expect(await screen.findByText("40.71280, -74.00600")).toBeTruthy();
+    expect(screen.getByLabelText("Address details").textContent).not.toContain("Springfield");
+    expect(screen.queryByText("Verified on OpenStreetMap")).toBeFalsy();
+  });
+
+  it("fills an empty venue name from reverse geocoding after a manual pin pick", async () => {
+    mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
+    mockReverse.mockResolvedValue({
+      result: searchResult({
+        name: "Empire State",
+        formatted_address: "Empire State Building, New York",
+        latitude: 40.7128,
+        longitude: -74.006,
+      }),
+      contact_configured: true,
+    });
+    renderPanel();
+
+    fireEvent.click(await screen.findByTestId("map-picker"));
+
+    expect(await screen.findByDisplayValue("Empire State")).toBeTruthy();
+    expect(await screen.findByText("Verified on OpenStreetMap")).toBeTruthy();
+  });
+
+  it("uses formatted_address as venue name when reverse has no name", async () => {
+    mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
+    mockReverse.mockResolvedValue({
+      result: searchResult({
+        name: undefined,
+        formatted_address: "Unnamed pin, New York",
+        latitude: 40.7128,
+        longitude: -74.006,
+      }),
+      contact_configured: true,
+    });
+    renderPanel();
+
+    fireEvent.click(await screen.findByTestId("map-picker"));
+    expect(await screen.findByDisplayValue("Unnamed pin, New York")).toBeTruthy();
+  });
+
+  it("keeps a manually picked pin and clears stale provider after a reverse failure", async () => {
+    mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
+    mockReverse.mockRejectedValue(new Error("reverse unavailable"));
+    mockSaveLocation.mockResolvedValue({ ...SAVED_LOCATION, latitude: 40.7128, longitude: -74.006 });
+    renderPanel();
+
+    fireEvent.click(await screen.findByTestId("map-picker"));
+    expect(await screen.findByText("40.71280, -74.00600")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(mockSaveLocation).toHaveBeenCalledWith(
+        "evt-1",
+        expect.objectContaining({
+          latitude: 40.7128,
+          longitude: -74.006,
+        }),
+      ),
+    );
+  });
+});
+
+describe("LocationSettingsPanel — map links and timezone", () => {
+  it("copies Google and Apple Maps links", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
+    renderPanel();
+
+    await screen.findByDisplayValue("Springfield Hall");
+    fireEvent.click(screen.getByRole("button", { name: "Copy Google Maps link" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining("google.com/maps")));
+    expect(await screen.findByText("Google Maps link copied.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy Apple Maps link" }));
+    await waitFor(() => expect(writeText).toHaveBeenLastCalledWith(expect.stringContaining("maps.apple.com")));
+    expect(await screen.findByText("Apple Maps link copied.")).toBeTruthy();
+  });
+
+  it("offers the coordinate timezone and applies it", async () => {
+    const onApplyTimezone = vi.fn().mockResolvedValue(undefined);
+    mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
+    mockFetchTimezone.mockResolvedValue({ timezone: "America/New_York" });
+    renderPanel({ onApplyTimezone });
+
+    expect(await screen.findByText(/This address seems to be in/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Use" }));
+    await waitFor(() => expect(onApplyTimezone).toHaveBeenCalledWith("America/New_York"));
+    expect(await screen.findByText("Event timezone set to America/New_York.")).toBeTruthy();
+  });
+
+  it("toasts when applying the suggested timezone fails", async () => {
+    const onApplyTimezone = vi.fn().mockRejectedValue(new Error("timezone patch failed"));
+    mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
+    mockFetchTimezone.mockResolvedValue({ timezone: "America/New_York" });
+    renderPanel({ onApplyTimezone });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Use" }));
+    expect(await screen.findByText("Failed to update timezone.")).toBeTruthy();
+  });
+
+  it("toasts when copying a map link fails", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: vi.fn().mockRejectedValue(new Error("denied")) },
+    });
+    mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
+    renderPanel();
+
+    await screen.findByDisplayValue("Springfield Hall");
+    fireEvent.click(screen.getByRole("button", { name: "Copy Google Maps link" }));
+    expect(await screen.findByText("Could not copy link.")).toBeTruthy();
+  });
+
+  it("clears the timezone suggestion when the lookup fails", async () => {
+    mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
+    mockFetchTimezone
+      .mockResolvedValueOnce({ timezone: "America/New_York" })
+      .mockRejectedValueOnce(new Error("tz unavailable"));
+    renderPanel();
+
+    expect(await screen.findByText(/This address seems to be in/)).toBeTruthy();
+    // Nudge the pin so the effect re-runs and hits the rejection path.
+    fireEvent.click(screen.getByTestId("map-picker"));
+    await waitFor(() => {
+      expect(screen.queryByText(/This address seems to be in/)).toBeNull();
+    });
+  });
+});
+
+describe("LocationSettingsPanel — editable fields", () => {
+  it("saves directions and accessibility text", async () => {
+    mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
+    mockSaveLocation.mockResolvedValue({
+      ...EMPTY_LOCATION,
+      directions_text: "Use the east entrance.",
+      accessibility_text: "Step-free entrance.",
+    });
+    renderPanel();
+
+    fireEvent.change(await screen.findByLabelText("Directions"), { target: { value: "Use the east entrance." } });
+    fireEvent.change(screen.getByLabelText("Accessibility"), { target: { value: "Step-free entrance." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(mockSaveLocation).toHaveBeenCalledWith("evt-1", {
+        directions_text: "Use the east entrance.",
+        accessibility_text: "Step-free entrance.",
+      }),
+    );
+  });
+
+  it("disables the map while a location save is pending", async () => {
+    const pendingSave = createDeferred<EventLocationDto>();
+    mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
+    mockSaveLocation.mockReturnValue(pendingSave.promise);
+    renderPanel();
+
+    fireEvent.change(await screen.findByLabelText("Directions"), { target: { value: "New directions" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect((screen.getByTestId("map-picker") as HTMLButtonElement).disabled).toBe(true));
+    pendingSave.resolve({ ...SAVED_LOCATION, directions_text: "New directions" });
+    await screen.findByText("Location saved.");
+  });
 });
 
 describe("LocationSettingsPanel — archived event", () => {
@@ -404,5 +656,15 @@ describe("LocationSettingsPanel — archived event", () => {
     expect(screen.queryByRole("button", { name: "Save" })).toBeFalsy();
     expect(screen.queryByRole("button", { name: "Clear map" })).toBeFalsy();
     expect(screen.getByText(/location settings cannot be changed/)).toBeTruthy();
+  });
+
+  it("disables map, fields, and copied links for an archived event", async () => {
+    mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
+    renderPanel({ isArchived: true });
+
+    expect((await screen.findByLabelText("Venue name or address") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText("Directions") as HTMLTextAreaElement).disabled).toBe(true);
+    expect((screen.getByTestId("map-picker") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Copy Google Maps link" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

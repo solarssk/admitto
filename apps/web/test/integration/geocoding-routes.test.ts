@@ -268,20 +268,18 @@ describe("POST /api/admin/geocoding/search", () => {
   });
 
   describe("rate limiting", () => {
-    it("returns 429 geocoding_rate_limited on a second request within the global 1/s window", async () => {
+    it("allows consecutive search requests within a second (Nominatim 1/s is provider-side)", async () => {
       const first = await search(adminCookie, { query: "Global Limit First" });
       expect(first.status).toBe(200);
 
       const second = await search(adminCookie, { query: "Global Limit Second" });
-      expect(second.status).toBe(429);
-      const body = (await second.json()) as { error: string };
-      expect(body.error).toBe("geocoding_rate_limited");
+      expect(second.status).toBe(200);
     });
 
-    it("returns 429 geocoding_rate_limited once the per-user 20/min limit is exhausted", async () => {
+    it("returns 429 geocoding_rate_limited once the per-user 40/min limit is exhausted", async () => {
       const userKey = `admin:geocoding-search:user:${adminId}`;
-      for (let i = 0; i < 20; i++) {
-        await rateLimitStore.hit(userKey, 60_000, 20);
+      for (let i = 0; i < 40; i++) {
+        await rateLimitStore.hit(userKey, 60_000, 40);
       }
 
       const res = await search(adminCookie, { query: "Per User Limit" });
@@ -296,6 +294,11 @@ describe("POST /api/admin/geocoding/reverse", () => {
   it("returns 401 for an unauthenticated request", async () => {
     const res = await reverse(null, { latitude: 52.23, longitude: 21.01 });
     expect(res.status).toBe(401);
+  });
+
+  it("returns 403 for a user without admin panel access (operator)", async () => {
+    const res = await reverse(opCookie, { latitude: 52.23, longitude: 21.01 });
+    expect(res.status).toBe(403);
   });
 
   it("returns 400 when coordinates are out of range", async () => {
@@ -336,6 +339,13 @@ describe("POST /api/admin/geocoding/reverse", () => {
     const res = await reverse(adminCookie, { latitude: 1, longitude: 2 });
     expect(res.status).toBe(503);
   });
+
+  it("returns 502 when the provider is unavailable", async () => {
+    reverseError = new GeocodingProviderError("unavailable");
+    const res = await reverse(adminCookie, { latitude: 1, longitude: 2 });
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: "geocoding_unavailable" });
+  });
 });
 
 describe("POST /api/admin/geocoding/timezone", () => {
@@ -374,5 +384,16 @@ describe("POST /api/admin/geocoding/timezone", () => {
 
     const searchRes = await search(adminCookie, { query: "After Timezone" });
     expect(searchRes.status).toBe(200);
+  });
+
+  it("returns 429 after the per-user timezone limit is exhausted", async () => {
+    const userKey = `admin:geocoding-timezone:user:${adminId}`;
+    for (let i = 0; i < 60; i++) {
+      await rateLimitStore.hit(userKey, 60_000, 60);
+    }
+
+    const res = await timezone(adminCookie, { latitude: 52.23, longitude: 21.01 });
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: "geocoding_rate_limited" });
   });
 });

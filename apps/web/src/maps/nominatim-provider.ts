@@ -38,18 +38,48 @@ export interface NominatimProviderOptions {
   /** Test-only injection point (see `packages/mailer/src/adapters/powerAutomate.ts` for the
    * same `fetchFn` DI pattern) — avoids stubbing the global `fetch`. */
   fetchFn?: typeof fetch;
+  /**
+   * Minimum gap between upstream Nominatim HTTP calls (Usage Policy: ≤1 req/s).
+   * Applied only around real provider traffic — not around Redis cache hits in
+   * `GeocodingService`. Tests set `0` to avoid artificial delays.
+   */
+  minIntervalMs?: number;
 }
 
 const MAX_RESULTS = 5;
 /** Safety cap on the response body; Nominatim replies are small, a much larger one signals
  * something is wrong (misconfigured baseUrl, proxy serving unrelated content, etc). */
-const MAX_RESPONSE_BYTES = 1_000_000;
+export const MAX_RESPONSE_BYTES = 1_000_000;
 /** Building-level reverse detail — Nominatim's zoom table maps 18 → building
  * (https://nominatim.org/release-docs/latest/api/Reverse/). */
 const REVERSE_ZOOM = 18;
+const DEFAULT_MIN_INTERVAL_MS = 1_000;
 
 function isTimeoutError(err: unknown): boolean {
-  return err instanceof Error && err.name === "TimeoutError";
+  return err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+}
+
+/** Reject `promise` when `signal` aborts (shared deadline for UA construction + fetch). */
+export function awaitWithAbortSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    return Promise.reject(new DOMException("The operation was aborted due to timeout", "TimeoutError"));
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      reject(new DOMException("The operation was aborted due to timeout", "TimeoutError"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (err: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(err);
+      },
+    );
+  });
 }
 
 /** One raw GeocodeJSON feature — only the fields this adapter reads. Nesting is
@@ -148,17 +178,63 @@ function parseFeature(raw: unknown, provider: string): GeocodingResult | null {
   };
 }
 
+/**
+ * Read the response body incrementally and abort once `maxBytes` is exceeded.
+ * Do not rely on `Content-Length` alone — chunked responses omit it, and a lying
+ * header must not let an oversized body buffer into process memory.
+ */
+export async function readBodyCapped(
+  res: Response,
+  maxBytes: number,
+): Promise<Uint8Array> {
+  if (!res.body) {
+    throw new GeocodingProviderError("unavailable");
+  }
+
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value || value.byteLength === 0) continue;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new GeocodingProviderError("unavailable");
+      }
+      chunks.push(value);
+    }
+  } catch (err) {
+    if (err instanceof GeocodingProviderError) throw err;
+    throw new GeocodingProviderError(
+      isTimeoutError(err) ? "timeout" : "unavailable",
+      { cause: err },
+    );
+  }
+
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
+}
+
 async function fetchJson(
   fetchImpl: typeof fetch,
   url: URL,
   userAgent: string,
-  timeoutMs: number,
+  signal: AbortSignal,
 ): Promise<unknown> {
   let res: Response;
   try {
     res = await fetchImpl(url, {
       headers: { "User-Agent": userAgent, Accept: "application/json" },
-      signal: AbortSignal.timeout(timeoutMs),
+      signal,
     });
   } catch (err) {
     throw new GeocodingProviderError(isTimeoutError(err) ? "timeout" : "unavailable", {
@@ -171,14 +247,24 @@ async function fetchJson(
   }
 
   const contentLength = res.headers.get("content-length");
-  if (contentLength && Number(contentLength) > MAX_RESPONSE_BYTES) {
-    throw new GeocodingProviderError("unavailable");
+  if (contentLength != null) {
+    const declared = Number(contentLength);
+    if (!Number.isFinite(declared) || declared < 0 || declared > MAX_RESPONSE_BYTES) {
+      // Cancel the body so we do not buffer a declared-oversize download.
+      await res.body?.cancel().catch(() => undefined);
+      throw new GeocodingProviderError("unavailable");
+    }
   }
 
   try {
-    return await res.json();
+    const buffer = await readBodyCapped(res, MAX_RESPONSE_BYTES);
+    return JSON.parse(new TextDecoder().decode(buffer)) as unknown;
   } catch (err) {
-    throw new GeocodingProviderError("unavailable", { cause: err });
+    if (err instanceof GeocodingProviderError) throw err;
+    throw new GeocodingProviderError(
+      isTimeoutError(err) ? "timeout" : "unavailable",
+      { cause: err },
+    );
   }
 }
 
@@ -192,54 +278,117 @@ function featuresFromBody(data: unknown): unknown[] {
   return [];
 }
 
+function mapProviderError(err: unknown): never {
+  if (err instanceof GeocodingProviderError) throw err;
+  throw new GeocodingProviderError(isTimeoutError(err) ? "timeout" : "unavailable", {
+    cause: err,
+  });
+}
+
 /** Nominatim (OpenStreetMap) geocoding adapter — free-text query and reverse lookup.
  * Uses `format=geocodejson` + `addressdetails=1` so structured fields drive compact UI
  * strings via `formatCompactAddress` / `formatVenueName`. */
 export class NominatimProvider implements GeocodingProvider {
   readonly name = "nominatim";
 
-  constructor(private readonly options: NominatimProviderOptions) {}
+  private readonly minIntervalMs: number;
+  /** Serializes upstream calls and enforces {@link minIntervalMs} between them. */
+  private slotTail: Promise<void> = Promise.resolve();
+  private lastCallAt = 0;
+
+  constructor(private readonly options: NominatimProviderOptions) {
+    this.minIntervalMs = options.minIntervalMs ?? DEFAULT_MIN_INTERVAL_MS;
+  }
+
+  /**
+   * Queue upstream work so concurrent search/reverse cannot burst past Nominatim's
+   * 1 req/s policy. Cache hits in `GeocodingService` never enter this queue.
+   */
+  private async withProviderSlot<T>(fn: () => Promise<T>): Promise<T> {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const previous = this.slotTail;
+    this.slotTail = previous.then(() => gate);
+
+    await previous;
+    try {
+      const waitMs = Math.max(0, this.minIntervalMs - (Date.now() - this.lastCallAt));
+      if (waitMs > 0) {
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, waitMs);
+        });
+      }
+      this.lastCallAt = Date.now();
+      return await fn();
+    } finally {
+      release();
+    }
+  }
+
+  private async resolveUserAgent(signal: AbortSignal): Promise<string> {
+    try {
+      return await awaitWithAbortSignal(this.options.buildUserAgent(), signal);
+    } catch (err) {
+      mapProviderError(err);
+    }
+  }
 
   async search(query: string): Promise<GeocodingResult[]> {
-    const fetchImpl = this.options.fetchFn ?? fetch;
-    const userAgent = await this.options.buildUserAgent();
+    return this.withProviderSlot(async () => {
+      const fetchImpl = this.options.fetchFn ?? fetch;
+      const signal = AbortSignal.timeout(this.options.timeoutMs);
+      try {
+        const userAgent = await this.resolveUserAgent(signal);
 
-    const url = new URL("/search", this.options.baseUrl);
-    url.searchParams.set("q", query);
-    url.searchParams.set("format", "geocodejson");
-    url.searchParams.set("addressdetails", "1");
-    url.searchParams.set("limit", String(MAX_RESULTS));
+        const url = new URL("/search", this.options.baseUrl);
+        url.searchParams.set("q", query);
+        url.searchParams.set("format", "geocodejson");
+        url.searchParams.set("addressdetails", "1");
+        url.searchParams.set("limit", String(MAX_RESULTS));
 
-    const data = await fetchJson(fetchImpl, url, userAgent, this.options.timeoutMs);
-    const results: GeocodingResult[] = [];
-    for (const raw of featuresFromBody(data)) {
-      const parsed = parseFeature(raw, this.name);
-      if (parsed) results.push(parsed);
-      if (results.length >= MAX_RESULTS) break;
-    }
-    return results;
+        const data = await fetchJson(fetchImpl, url, userAgent, signal);
+        const results: GeocodingResult[] = [];
+        for (const raw of featuresFromBody(data)) {
+          const parsed = parseFeature(raw, this.name);
+          if (parsed) results.push(parsed);
+          if (results.length >= MAX_RESULTS) break;
+        }
+        return results;
+      } catch (err) {
+        mapProviderError(err);
+      }
+    });
   }
 
   async reverse(latitude: number, longitude: number): Promise<GeocodingResult | null> {
-    const fetchImpl = this.options.fetchFn ?? fetch;
-    const userAgent = await this.options.buildUserAgent();
+    return this.withProviderSlot(async () => {
+      const fetchImpl = this.options.fetchFn ?? fetch;
+      const signal = AbortSignal.timeout(this.options.timeoutMs);
+      try {
+        const userAgent = await this.resolveUserAgent(signal);
 
-    const url = new URL("/reverse", this.options.baseUrl);
-    url.searchParams.set("lat", String(latitude));
-    url.searchParams.set("lon", String(longitude));
-    url.searchParams.set("format", "geocodejson");
-    url.searchParams.set("addressdetails", "1");
-    url.searchParams.set("zoom", String(REVERSE_ZOOM));
+        const url = new URL("/reverse", this.options.baseUrl);
+        url.searchParams.set("lat", String(latitude));
+        url.searchParams.set("lon", String(longitude));
+        url.searchParams.set("format", "geocodejson");
+        url.searchParams.set("addressdetails", "1");
+        url.searchParams.set("zoom", String(REVERSE_ZOOM));
 
-    const data = await fetchJson(fetchImpl, url, userAgent, this.options.timeoutMs);
-    for (const raw of featuresFromBody(data)) {
-      const parsed = parseFeature(raw, this.name);
-      if (parsed) {
-        // Prefer the clicked coordinates over the feature centroid — the pin is what the
-        // admin placed; the OSM object's centroid can sit a block away in dense cities.
-        return { ...parsed, latitude, longitude };
+        const data = await fetchJson(fetchImpl, url, userAgent, signal);
+        for (const raw of featuresFromBody(data)) {
+          const parsed = parseFeature(raw, this.name);
+          if (parsed) {
+            // Prefer the clicked coordinates over the feature centroid — the pin is what the
+            // admin placed; the OSM object's centroid can sit a block away in dense cities.
+            return { ...parsed, latitude, longitude };
+          }
+        }
+        return null;
+      } catch (err) {
+        mapProviderError(err);
       }
-    }
-    return null;
+    });
   }
 }

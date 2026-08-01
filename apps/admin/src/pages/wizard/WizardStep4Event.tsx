@@ -178,6 +178,7 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
             placeholder="e.g. Warsaw, Poland"
             onChange={(text) => {
               setLocation(text);
+              setLocationGeocode(null);
               onDirtyChange?.(true);
             }}
             onSelectResult={(result) => {

@@ -1,8 +1,8 @@
 /**
  * Event Settings "Location" tab — full address, map coordinates/zoom, and directions/
  * accessibility notes for an event's venue. Persisted in a separate 1:1 `EventLocation`
- * table (see schema.prisma) — `Event.location` remains the short display name shown on
- * the event list/card and in ticket emails, unrelated to this richer record.
+ * table (see schema.prisma). `venue_name` on that row is the short display name shown on
+ * the event list/card and in ticket emails; the former `Event.location` column is gone.
  *
  * Structural validation (types, unknown-key rejection) happens here via Zod; the actual
  * business rules (length limits, lat/lng/zoom ranges, "both coordinates or neither") live
@@ -14,6 +14,7 @@ import { Prisma, type PrismaClient } from "@admitto/db";
 import { writeAdminAuditLog } from "@admitto/tickets";
 import {
   assertCoordinatePairing,
+  LOCATION_LIMITS,
   LocationValidationError,
   normalizeEventLocationInput,
   parseStoredAddressComponents,
@@ -73,7 +74,7 @@ const EMPTY_LOCATION_DTO: EventLocationDto = {
   formatted_address: null,
   latitude: null,
   longitude: null,
-  map_zoom: 15,
+  map_zoom: LOCATION_LIMITS.DEFAULT_ZOOM,
   directions_text: null,
   accessibility_text: null,
   geocoding_provider: null,
@@ -102,8 +103,8 @@ function componentsToJson(
 ): Prisma.InputJsonValue | typeof Prisma.JsonNull | undefined {
   if (components === undefined) return undefined;
   if (components === null) return Prisma.JsonNull;
-  // AddressComponents has no index signature; Prisma JSON input requires one.
-  return components as unknown as Prisma.InputJsonValue;
+  // AddressComponents has no index signature; spread to a plain record for Prisma JSON input.
+  return { ...components } as Record<string, string | null> as Prisma.InputJsonValue;
 }
 
 type LocationPatch = ReturnType<typeof normalizeEventLocationInput>;

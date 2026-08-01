@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { render } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, render } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MapPicker } from "../../src/settings/MapPicker.js";
 import type { MapTileConfigDto } from "../../src/api/types.js";
 
@@ -29,6 +29,8 @@ function giveContainerSize(container: HTMLElement): void {
   mapDiv.getBoundingClientRect = () =>
     ({ width: 400, height: 300, top: 0, left: 0, right: 400, bottom: 300, x: 0, y: 0, toJSON() {} }) as DOMRect;
 }
+
+afterEach(cleanup);
 
 describe("MapPicker", () => {
   it("renders an empty world view when no coordinates are set", () => {

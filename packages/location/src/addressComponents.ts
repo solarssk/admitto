@@ -67,7 +67,7 @@ function parseStreetFromLeadingSegments(parts: string[]): string | null {
     const streetName = parts.find((s, i) => i !== numberIdx && !HOUSE_NUMBER_RE.test(s));
     return cleanComponent(formatStreetLine({ street: streetName, housenumber }));
   }
-  if (parts.length === 1 && !HOUSE_NUMBER_RE.test(parts[0]!)) {
+  if (!HOUSE_NUMBER_RE.test(parts[0]!)) {
     return cleanComponent(parts[0]);
   }
   return null;

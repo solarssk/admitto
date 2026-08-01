@@ -187,6 +187,40 @@ describe("buildEventLocationPatchBody", () => {
       longitude: null,
     });
   });
+
+  it("includes changed address components", () => {
+    const draft: LocationDraft = {
+      ...saved,
+      address_components: { ...saved.address_components, city: "Shelbyville" },
+    };
+    expect(buildEventLocationPatchBody(draft, saved, null)).toEqual({
+      address_components: { ...saved.address_components, city: "Shelbyville" },
+    });
+  });
+
+  it("sends null when every address component is emptied", () => {
+    const draft: LocationDraft = {
+      ...saved,
+      address_components: {
+        object_name: null,
+        street: null,
+        postcode: null,
+        city: null,
+        region: null,
+        country: null,
+      },
+    };
+    expect(buildEventLocationPatchBody(draft, saved, null)).toEqual({
+      address_components: null,
+    });
+  });
+
+  it("omits address_components when unchanged", () => {
+    const draft: LocationDraft = { ...saved, directions_text: "Updated directions" };
+    expect(buildEventLocationPatchBody(draft, saved, null)).toEqual({
+      directions_text: "Updated directions",
+    });
+  });
 });
 
 describe("geocodingProviderLabel", () => {

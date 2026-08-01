@@ -122,6 +122,26 @@ describe("RedisGeocodingCache fail-open", () => {
   });
 });
 
+describe("RedisGeocodingCache", () => {
+  it("round-trips positive and negative entries through Redis", async () => {
+    const cache = new RedisGeocodingCache(process.env["REDIS_URL"] ?? "redis://127.0.0.1:6379");
+    const key = `vitest-geocoding-cache-${crypto.randomUUID()}`;
+
+    try {
+      expect(await cache.get(key)).toBeNull();
+
+      await cache.set(key, SAMPLE_RESULTS);
+      expect(await cache.get(key)).toEqual(SAMPLE_RESULTS);
+
+      const negativeKey = `${key}-negative`;
+      await cache.set(negativeKey, []);
+      expect(await cache.get(negativeKey)).toEqual([]);
+    } finally {
+      await cache.disconnect();
+    }
+  });
+});
+
 describe("createGeocodingCache", () => {
   it("uses in-memory when REDIS_URL is unset", () => {
     expect(createGeocodingCache({})).toBeInstanceOf(InMemoryGeocodingCache);

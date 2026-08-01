@@ -158,21 +158,9 @@ const eventSelect = {
 /** Maps the raw `eventSelect` row (which has `location_details.venue_name`, a relation) to the
  * flat `EventSummary` shape callers expect (`location: string | null`) — keeps this internal
  * schema detail from leaking into every call site. */
-function toEventSummary(row: {
-  id: string;
-  title: string;
-  slug: string;
-  date: Date;
-  timezone: string;
-  location_details: { venue_name: string | null } | null;
-  organization_id: string;
-  archived_at: Date | null;
-  created_at: Date;
-  created_by_user_id: string | null;
-  created_by_timezone: string | null;
-  archived_by_user_id: string | null;
-  archived_by_timezone: string | null;
-}): EventSummary {
+function toEventSummary(
+  row: Prisma.EventGetPayload<{ select: typeof eventSelect }>,
+): EventSummary {
   const { location_details, ...rest } = row;
   return { ...rest, location: location_details?.venue_name ?? null };
 }

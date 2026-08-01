@@ -4,6 +4,8 @@ import {
   addressComponentsFromNominatimLabel,
   addressComponentsFromParts,
   isAddressComponentsEmpty,
+  isAddressComponentsSparse,
+  mergeAddressComponents,
   normalizeAddressComponents,
   parseStoredAddressComponents,
 } from "../src/addressComponents.js";
@@ -47,11 +49,154 @@ describe("addressComponentsFromNominatimLabel", () => {
       country: "Polska",
     });
   });
+
+  it("extracts the postcode when the label carries one", () => {
+    expect(
+      addressComponentsFromNominatimLabel(
+        "Złote Tarasy, 59, Złota, Śródmieście, Warszawa, województwo mazowieckie, 00-120, Polska",
+        "Złote Tarasy",
+      ),
+    ).toEqual({
+      object_name: "Złote Tarasy",
+      street: "Złota 59",
+      postcode: "00-120",
+      city: "Warszawa",
+      region: "województwo mazowieckie",
+      country: "Polska",
+    });
+  });
+
+  it("uses the first leftover segment as street when no housenumber is present", () => {
+    expect(
+      addressComponentsFromNominatimLabel(
+        "Some Venue, Złota, Śródmieście, Warszawa, Polska",
+        "Some Venue",
+      ),
+    ).toEqual({
+      object_name: "Some Venue",
+      street: "Złota",
+      postcode: null,
+      city: "Warszawa",
+      region: null,
+      country: "Polska",
+    });
+  });
+
+  it("returns empty components for a blank label", () => {
+    expect(addressComponentsFromNominatimLabel("   ", "Only Name")).toEqual({
+      ...EMPTY_ADDRESS_COMPONENTS,
+      object_name: "Only Name",
+    });
+  });
+
+  it("parses housenumber not in the first leftover segment", () => {
+    expect(
+      addressComponentsFromNominatimLabel("Venue, Złota, 12, Warszawa, Polska", "Venue"),
+    ).toEqual({
+      object_name: "Venue",
+      street: "Złota 12",
+      postcode: null,
+      city: "Warszawa",
+      region: null,
+      country: "Polska",
+    });
+  });
+
+  it("returns null street when leftovers are only a house number", () => {
+    expect(
+      addressComponentsFromNominatimLabel("Venue, 12, Warszawa, Polska", "Venue"),
+    ).toEqual({
+      object_name: "Venue",
+      street: null,
+      postcode: null,
+      city: "Warszawa",
+      region: null,
+      country: "Polska",
+    });
+  });
+
+  it("returns null street when every leftover segment was consumed as country/city", () => {
+    expect(addressComponentsFromNominatimLabel("Venue, Polska", "Venue")).toEqual({
+      object_name: "Venue",
+      street: null,
+      postcode: null,
+      city: null,
+      region: null,
+      country: "Polska",
+    });
+  });
+
+  it("keeps leading segments when the POI name is not the first label token", () => {
+    expect(
+      addressComponentsFromNominatimLabel("59, Złota, Warszawa, Polska", "Other Name"),
+    ).toEqual({
+      object_name: "Other Name",
+      street: "Złota 59",
+      postcode: null,
+      city: "Warszawa",
+      region: null,
+      country: "Polska",
+    });
+  });
+});
+
+describe("isAddressComponentsSparse / mergeAddressComponents", () => {
+  it("treats null/empty and name-only grids as sparse", () => {
+    expect(isAddressComponentsSparse(null)).toBe(true);
+    expect(isAddressComponentsSparse(EMPTY_ADDRESS_COMPONENTS)).toBe(true);
+    expect(
+      isAddressComponentsSparse({
+        ...EMPTY_ADDRESS_COMPONENTS,
+        object_name: "POI",
+      }),
+    ).toBe(true);
+    expect(
+      isAddressComponentsSparse({
+        ...EMPTY_ADDRESS_COMPONENTS,
+        object_name: "POI",
+        street: "Main St",
+      }),
+    ).toBe(false);
+  });
+
+  it("fills null fields from the fallback without overwriting set values", () => {
+    expect(
+      mergeAddressComponents(
+        {
+          object_name: null,
+          street: null,
+          postcode: null,
+          city: null,
+          region: null,
+          country: null,
+        },
+        {
+          object_name: "Fallback POI",
+          street: "Main 1",
+          postcode: "00-001",
+          city: "Warsaw",
+          region: "Mazovia",
+          country: "Poland",
+        },
+      ),
+    ).toEqual({
+      object_name: "Fallback POI",
+      street: "Main 1",
+      postcode: "00-001",
+      city: "Warsaw",
+      region: "Mazovia",
+      country: "Poland",
+    });
+  });
 });
 
 describe("normalizeAddressComponents", () => {
   it("passes null through as clear", () => {
     expect(normalizeAddressComponents(null)).toBeNull();
+  });
+
+  it("passes undefined through as omitted", () => {
+    expect(normalizeAddressComponents(undefined)).toBeUndefined();
   });
 
   it("trims and nulls empty strings", () => {
@@ -77,15 +222,50 @@ describe("normalizeAddressComponents", () => {
   it("rejects non-objects", () => {
     expect(() => normalizeAddressComponents("nope")).toThrow(/object or null/);
   });
+
+  it("rejects non-string field values", () => {
+    expect(() => normalizeAddressComponents({ city: 12 })).toThrow(/must be a string or null/);
+  });
+
+  it("truncates components longer than the max length", () => {
+    const long = "x".repeat(250);
+    expect(normalizeAddressComponents({ city: long })?.city).toHaveLength(200);
+  });
 });
 
 describe("parseStoredAddressComponents / isAddressComponentsEmpty", () => {
   it("treats empty components as empty", () => {
+    expect(isAddressComponentsEmpty(null)).toBe(true);
     expect(isAddressComponentsEmpty(EMPTY_ADDRESS_COMPONENTS)).toBe(true);
     expect(parseStoredAddressComponents(EMPTY_ADDRESS_COMPONENTS)).toBeNull();
   });
 
+  it("returns null when the stored value is omitted or null", () => {
+    expect(parseStoredAddressComponents(undefined)).toBeNull();
+    expect(parseStoredAddressComponents(null)).toBeNull();
+  });
+
   it("returns null for corrupt JSON", () => {
     expect(parseStoredAddressComponents({ object_name: 12 })).toBeNull();
+  });
+
+  it("returns normalized non-empty stored components", () => {
+    expect(
+      parseStoredAddressComponents({
+        object_name: "Hall",
+        street: null,
+        postcode: null,
+        city: "Warsaw",
+        region: null,
+        country: null,
+      }),
+    ).toEqual({
+      object_name: "Hall",
+      street: null,
+      postcode: null,
+      city: "Warsaw",
+      region: null,
+      country: null,
+    });
   });
 });

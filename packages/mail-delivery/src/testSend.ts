@@ -1,12 +1,10 @@
 import type { PrismaClient } from "@admitto/db";
 import {
-  DEFAULT_SAMPLE_VARS,
-  formatEventDate,
+  buildBaseTemplateVars,
   previewTemplate,
   renderTemplate,
   resolveBrandingFromEvent,
   resolveEventImageAssetVars,
-  resolvePreviewEventTimeZone,
   resolveTemplateById,
 } from "@admitto/mail-templates";
 import { closeMailer, createMailer, type SendResult } from "@admitto/mailer";
@@ -53,12 +51,7 @@ export async function sendTestEmail(
       const branding = resolveBrandingFromEvent(event);
       const customAssets = await resolveEventImageAssetVars(params.eventId, prisma);
       const vars = {
-        ...DEFAULT_SAMPLE_VARS,
-        event_name: event.title,
-        event_date: formatEventDate(event.date, resolvePreviewEventTimeZone()),
-        event_location: event.location_details?.venue_name ?? "",
-        logo_url: branding.logo_url,
-        header_image_url: branding.header_image_url,
+        ...buildBaseTemplateVars(event, undefined, branding),
         ...customAssets.vars,
       };
       rendered = renderTemplate(

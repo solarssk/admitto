@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { useState } from "react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VenueAutocomplete } from "../../src/components/VenueAutocomplete.js";
 import type { GeocodingResultDto, GeocodingSearchResponse } from "../../src/api/types.js";
+import { renderWithToast } from "../test-utils.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -43,10 +44,12 @@ function Harness({
   disabled = false,
   onSelectResult = () => {},
   onContactConfigured,
+  showFindButton = true,
 }: {
   disabled?: boolean;
   onSelectResult?: (result: GeocodingResultDto) => void;
   onContactConfigured?: (configured: boolean) => void;
+  showFindButton?: boolean;
 }) {
   const [value, setValue] = useState("");
   return (
@@ -58,6 +61,7 @@ function Harness({
       onChange={setValue}
       onSelectResult={onSelectResult}
       onContactConfigured={onContactConfigured}
+      showFindButton={showFindButton}
     />
   );
 }
@@ -71,24 +75,24 @@ afterEach(cleanup);
 
 describe("VenueAutocomplete", () => {
   it("renders the label and reflects the controlled value", () => {
-    render(<Harness />);
+    renderWithToast(<Harness />);
     expect((screen.getByLabelText("Venue name or address") as HTMLInputElement).value).toBe("");
   });
 
   it("calls onChange on every keystroke", () => {
-    render(<Harness />);
+    renderWithToast(<Harness />);
     const input = screen.getByLabelText("Venue name or address");
     fireEvent.change(input, { target: { value: "H" } });
     expect((input as HTMLInputElement).value).toBe("H");
   });
 
   it("disables the input when the disabled prop is true", () => {
-    render(<Harness disabled />);
+    renderWithToast(<Harness disabled />);
     expect((screen.getByLabelText("Venue name or address") as HTMLInputElement).disabled).toBe(true);
   });
 
   it("does not search below the two-character minimum", async () => {
-    render(<Harness />);
+    renderWithToast(<Harness />);
     fireEvent.change(screen.getByLabelText("Venue name or address"), { target: { value: "H" } });
 
     // Give the debounce window time to elapse; a query this short must never reach the API.
@@ -98,7 +102,7 @@ describe("VenueAutocomplete", () => {
 
   it("searches (debounced) once the query reaches the minimum length", async () => {
     mockSearch.mockResolvedValue({ results: [makeResult()], contact_configured: true });
-    render(<Harness />);
+    renderWithToast(<Harness />);
     fireEvent.change(screen.getByLabelText("Venue name or address"), {
       target: { value: "Downing St" },
     });
@@ -108,7 +112,7 @@ describe("VenueAutocomplete", () => {
   });
 
   it("trims surrounding whitespace before searching", async () => {
-    render(<Harness />);
+    renderWithToast(<Harness />);
     fireEvent.change(screen.getByLabelText("Venue name or address"), {
       target: { value: "  Downing St  " },
     });
@@ -118,7 +122,7 @@ describe("VenueAutocomplete", () => {
   it("shows both name and address for a named venue, and lets the admin pick it", async () => {
     const onSelectResult = vi.fn();
     mockSearch.mockResolvedValue({ results: [makeResult()], contact_configured: true });
-    render(<Harness onSelectResult={onSelectResult} />);
+    renderWithToast(<Harness onSelectResult={onSelectResult} />);
     fireEvent.change(screen.getByLabelText("Venue name or address"), {
       target: { value: "Downing St" },
     });
@@ -126,6 +130,8 @@ describe("VenueAutocomplete", () => {
     const hit = await screen.findByRole("button", { name: /10 Downing Street/ });
     expect(screen.getByText("10 Downing Street, London")).toBeTruthy();
 
+    // mousedown preventDefault keeps the input focused so the click can select the hit.
+    fireEvent.mouseDown(hit);
     fireEvent.click(hit);
     expect(onSelectResult).toHaveBeenCalledWith(makeResult());
     // Picking a result closes the dropdown immediately.
@@ -137,7 +143,7 @@ describe("VenueAutocomplete", () => {
       results: [makeResult({ name: undefined, formatted_address: "221B Baker Street, London" })],
       contact_configured: true,
     });
-    render(<Harness />);
+    renderWithToast(<Harness />);
     fireEvent.change(screen.getByLabelText("Venue name or address"), {
       target: { value: "Baker St" },
     });
@@ -147,7 +153,7 @@ describe("VenueAutocomplete", () => {
 
   it("silently ignores a failed search - the field stays usable", async () => {
     mockSearch.mockRejectedValue(new Error("network down"));
-    render(<Harness />);
+    renderWithToast(<Harness />);
     fireEvent.change(screen.getByLabelText("Venue name or address"), {
       target: { value: "Downing St" },
     });
@@ -162,7 +168,7 @@ describe("VenueAutocomplete", () => {
   it("reports contact_configured from each search response", async () => {
     const onContactConfigured = vi.fn();
     mockSearch.mockResolvedValue({ results: [makeResult()], contact_configured: false });
-    render(<Harness onContactConfigured={onContactConfigured} />);
+    renderWithToast(<Harness onContactConfigured={onContactConfigured} />);
     fireEvent.change(screen.getByLabelText("Venue name or address"), {
       target: { value: "Downing St" },
     });
@@ -175,7 +181,7 @@ describe("VenueAutocomplete", () => {
     const second = createDeferred<GeocodingSearchResponse>();
     mockSearch.mockImplementationOnce(() => first.promise);
     mockSearch.mockImplementationOnce(() => second.promise);
-    render(<Harness />);
+    renderWithToast(<Harness />);
     const input = screen.getByLabelText("Venue name or address");
 
     fireEvent.change(input, { target: { value: "Downing" } });
@@ -198,7 +204,7 @@ describe("VenueAutocomplete", () => {
 
   it("closes the dropdown on Escape without clearing the typed text", async () => {
     mockSearch.mockResolvedValue({ results: [makeResult()], contact_configured: true });
-    render(<Harness />);
+    renderWithToast(<Harness />);
     const input = screen.getByLabelText("Venue name or address");
     fireEvent.change(input, { target: { value: "Downing St" } });
     await screen.findByText("10 Downing Street");
@@ -210,7 +216,7 @@ describe("VenueAutocomplete", () => {
 
   it("closes the dropdown shortly after blur, and reopens on focus if results are cached", async () => {
     mockSearch.mockResolvedValue({ results: [makeResult()], contact_configured: true });
-    render(<Harness />);
+    renderWithToast(<Harness />);
     const input = screen.getByLabelText("Venue name or address");
     fireEvent.change(input, { target: { value: "Downing St" } });
     await screen.findByText("10 Downing Street");
@@ -224,7 +230,7 @@ describe("VenueAutocomplete", () => {
 
   it("Find on map runs search immediately and shows a no-match notice", async () => {
     mockSearch.mockResolvedValue({ results: [], contact_configured: true });
-    render(<Harness />);
+    renderWithToast(<Harness />);
     fireEvent.change(screen.getByLabelText("Venue name or address"), {
       target: { value: "Nowhere Hall" },
     });
@@ -232,5 +238,43 @@ describe("VenueAutocomplete", () => {
 
     expect(await screen.findByText(/No match found on OpenStreetMap/)).toBeTruthy();
     expect(mockSearch).toHaveBeenCalledWith("Nowhere Hall");
+  });
+
+  it("Find on map with a too-short query does not claim a search failure", async () => {
+    renderWithToast(<Harness />);
+    fireEvent.change(screen.getByLabelText("Venue name or address"), {
+      target: { value: "a" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Find on map" }));
+
+    expect(screen.queryByText(/No match found on OpenStreetMap/)).toBeNull();
+    expect(mockSearch).not.toHaveBeenCalled();
+  });
+
+  it("runs Find on map when Enter is pressed", async () => {
+    mockSearch.mockResolvedValue({ results: [], contact_configured: true });
+    renderWithToast(<Harness />);
+    const input = screen.getByLabelText("Venue name or address");
+    fireEvent.change(input, { target: { value: "Nowhere Hall" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(await screen.findByText(/No match found on OpenStreetMap/)).toBeTruthy();
+    expect(mockSearch).toHaveBeenCalledWith("Nowhere Hall");
+  });
+
+  it("shows a safe error when Find on map fails", async () => {
+    mockSearch.mockRejectedValue(new Error("upstream unavailable"));
+    renderWithToast(<Harness />);
+    fireEvent.change(screen.getByLabelText("Venue name or address"), {
+      target: { value: "Downing St" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Find on map" }));
+
+    expect(await screen.findByText("Address lookup failed. Try again shortly.")).toBeTruthy();
+  });
+
+  it("can omit the Find on map button", () => {
+    renderWithToast(<Harness showFindButton={false} />);
+    expect(screen.queryByRole("button", { name: "Find on map" })).toBeNull();
   });
 });

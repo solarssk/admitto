@@ -455,6 +455,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminImportPreviewRateLimit = rateLimit(rateLimitStore, "admin:import-preview");
   const adminAttendeesSearchRateLimit = rateLimit(rateLimitStore, "admin:attendees-search");
   const adminGeocodingSearchRateLimit = rateLimit(rateLimitStore, "admin:geocoding-search");
+  const adminGeocodingTimezoneRateLimit = rateLimit(rateLimitStore, "admin:geocoding-timezone");
   const adminImportCommitRateLimit = rateLimit(rateLimitStore, "admin:import-commit");
   const adminTemplatePreviewRateLimit = rateLimit(rateLimitStore, "admin:template-preview");
   const adminAuthProviderOpsRateLimit = rateLimit(rateLimitStore, "admin:oidc-provider-ops");
@@ -669,8 +670,8 @@ export function createApp(options: CreateAppOptions = {}) {
     adminGeocodingSearchRateLimit,
     (c) => handlePostGeocodingSearch(c, db, geocodingService),
   );
-  // Shares the same Nominatim budget as search (global 1 req/s) — reverse is the same
-  // upstream provider, so a separate policy would double the allowed traffic.
+  // Shares the same per-user API rate limit as search. Nominatim's ≤1 req/s Usage Policy is
+  // enforced inside NominatimProvider around real upstream calls (not on Redis cache hits).
   app.post(
     "/api/admin/geocoding/reverse",
     jsonPostCsrf,
@@ -683,6 +684,7 @@ export function createApp(options: CreateAppOptions = {}) {
     "/api/admin/geocoding/timezone",
     jsonPostCsrf,
     staffAdminGate,
+    adminGeocodingTimezoneRateLimit,
     (c) => handlePostGeocodingTimezone(c),
   );
   app.get("/api/admin/maps/config", staffAdminGate, (c) => handleGetMapsConfig(c, db));

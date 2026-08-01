@@ -177,7 +177,10 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
               maxLength={LOCATION_LIMITS.VENUE_NAME_MAX_LENGTH}
               disabled={submitting}
               placeholder="e.g. Convention Center, Warsaw"
-              onChange={setVenueName}
+              onChange={(text) => {
+                setVenueName(text);
+                setVenueGeocode(null);
+              }}
               onSelectResult={(result) => {
                 setVenueName(result.name ?? result.formatted_address);
                 setVenueGeocode(result);

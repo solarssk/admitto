@@ -110,7 +110,7 @@ export function VenueAutocomplete({
     if (searchTimerRef.current != null) window.clearTimeout(searchTimerRef.current);
     const trimmed = value.trim();
     if (trimmed.length < MIN_QUERY_LENGTH) {
-      setNoMatch(true);
+      setNoMatch(false);
       setSearchError(null);
       setResults([]);
       setVisible(false);

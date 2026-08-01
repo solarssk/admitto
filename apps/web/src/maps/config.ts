@@ -37,11 +37,51 @@ function parsePositiveInt(raw: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+/**
+ * Expand Leaflet template tokens so `new URL(...)` can parse the configured tile pattern.
+ * Tokens are replaced with fixed placeholders — we only care about scheme/host for CSP.
+ */
+function expandTileUrlForParse(raw: string): string {
+  return raw
+    .replaceAll("{s}", "a")
+    .replaceAll("{z}", "0")
+    .replaceAll("{x}", "0")
+    .replaceAll("{y}", "0")
+    .replaceAll("{r}", "");
+}
+
+/**
+ * Staff SPA CSP (`staff-spa.ts`) allows `img-src 'self' data: https:` in production
+ * (plus `http://localhost:*` in development). A plain-HTTP custom tile server would be
+ * returned as "enabled" while every tile request is blocked by the browser — reject
+ * those URLs so we never advertise a map that cannot load.
+ */
+export function isStaffSpaCompatibleTileUrl(raw: string, env: EnvLike = process.env): boolean {
+  let url: URL;
+  try {
+    url = new URL(expandTileUrlForParse(raw));
+  } catch {
+    return false;
+  }
+  if (url.protocol === "https:") return true;
+  if (
+    env["NODE_ENV"] === "development" &&
+    url.protocol === "http:" &&
+    (url.hostname === "localhost" || url.hostname === "127.0.0.1")
+  ) {
+    return true;
+  }
+  return false;
+}
+
 /** Map tile server config for the Leaflet-based Location tab (and any future map view). */
 export function resolveMapTileConfig(env: EnvLike = process.env): MapTileConfig {
+  const rawUrl = env["MAP_TILE_URL"]?.trim();
+  const tileUrl =
+    rawUrl && isStaffSpaCompatibleTileUrl(rawUrl, env) ? rawUrl : DEFAULT_MAP_TILE_URL;
   return {
     enabled: env["LOCATION_MAPS_ENABLED"]?.trim().toLowerCase() !== "false",
-    tileUrl: env["MAP_TILE_URL"]?.trim() || DEFAULT_MAP_TILE_URL,
+    tileUrl,
     attribution: env["MAP_TILE_ATTRIBUTION"]?.trim() || DEFAULT_MAP_TILE_ATTRIBUTION,
     maxZoom: parsePositiveInt(env["MAP_TILE_MAX_ZOOM"], DEFAULT_MAP_TILE_MAX_ZOOM),
   };

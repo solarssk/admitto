@@ -267,6 +267,9 @@ describe("PUT /api/admin/events/:eventId/location", () => {
     ["formatted_address too long", { formatted_address: "a".repeat(501) }],
     ["directions_text too long", { directions_text: "a".repeat(2001) }],
     ["accessibility_text too long", { accessibility_text: "a".repeat(2001) }],
+    ["address components is not an object", { address_components: "not-an-address" }],
+    ["address components has an unknown field", { address_components: { city: "Kraków", extra: "nope" } }],
+    ["address components contains a non-string field", { address_components: { city: 123 } }],
   ])("rejects invalid input: %s", async (_label, patch) => {
     const res = await putLocation(EVENT_LOC, adminCookie, patch);
     expect(res.status).toBe(400);

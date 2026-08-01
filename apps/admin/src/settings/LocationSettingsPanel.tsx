@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   EMPTY_ADDRESS_COMPONENTS,
@@ -52,38 +52,27 @@ const DIRECTIONS_HINT =
 const ACCESSIBILITY_HINT =
   "Step-free access, accessible restrooms, hearing loop, and similar notes for attendees.";
 
-export type LocationSettingsPanelHandle = {
-  save: () => Promise<void>;
-  reset: () => void;
-};
-
 /** Location tab: venue search, interactive map, structured address grid, and
  * directions/accessibility notes. */
-export const LocationSettingsPanel = forwardRef<
-  LocationSettingsPanelHandle,
-  Readonly<{
-    eventId: string;
-    isArchived: boolean;
-    eventTimezone: string;
-    onDirtyChange?: (dirty: boolean) => void;
-    onSavingChange?: (saving: boolean) => void;
-    /** Called after a successful location save so the shell can refresh sidebar `event.location`. */
-    onLocationSaved?: () => Promise<void> | void;
-    /** Apply a suggested IANA timezone from the map pin onto the event (General tab field). */
-    onApplyTimezone?: (timezone: string) => Promise<void> | void;
-  }>
->(function LocationSettingsPanel(
-  {
-    eventId,
-    isArchived,
-    eventTimezone,
-    onDirtyChange,
-    onSavingChange,
-    onLocationSaved,
-    onApplyTimezone,
-  },
-  ref,
-) {
+export function LocationSettingsPanel({
+  eventId,
+  isArchived,
+  eventTimezone,
+  onDirtyChange,
+  onSavingChange,
+  onLocationSaved,
+  onApplyTimezone,
+}: Readonly<{
+  eventId: string;
+  isArchived: boolean;
+  eventTimezone: string;
+  onDirtyChange?: (dirty: boolean) => void;
+  onSavingChange?: (saving: boolean) => void;
+  /** Called after a successful location save so the shell can refresh sidebar `event.location`. */
+  onLocationSaved?: () => Promise<void> | void;
+  /** Apply a suggested IANA timezone from the map pin onto the event (General tab field). */
+  onApplyTimezone?: (timezone: string) => Promise<void> | void;
+}>) {
   const { addToast } = useToast();
   const { assignments } = useAuth();
   const isSa = isSuperadmin(assignments);
@@ -170,8 +159,6 @@ export const LocationSettingsPanel = forwardRef<
     setDraftVerified(Boolean(apiData?.geocoding_provider));
   };
 
-  useImperativeHandle(ref, () => ({ save: handleSave, reset: handleReset }));
-
   const dirty = isLocationDirty(draft, savedDraft);
 
   useEffect(() => {
@@ -221,6 +208,7 @@ export const LocationSettingsPanel = forwardRef<
    * the venue name the admin just picked.
    */
   async function applyGeocodingResult(result: GeocodingResultDto) {
+    const seq = ++reverseSeqRef.current;
     pendingGeocodingProviderRef.current = result.provider;
     setDraftVerified(true);
     const baseComponents = componentsFromResult(result);
@@ -229,6 +217,7 @@ export const LocationSettingsPanel = forwardRef<
       baseComponents,
       setContactConfigured,
     );
+    if (seq !== reverseSeqRef.current) return;
     setDraft((prev) => ({
       ...prev,
       venue_name: result.name ?? result.formatted_address,
@@ -247,13 +236,26 @@ export const LocationSettingsPanel = forwardRef<
   /** Rule B: always update address + coords from reverse; fill venue_name only when empty. */
   async function handleMapPick(latitude: number, longitude: number) {
     const seq = ++reverseSeqRef.current;
+    // Manual pin move invalidates prior geocode provenance until reverse succeeds.
+    pendingGeocodingProviderRef.current = null;
     setDraft((prev) => ({ ...prev, latitude, longitude }));
 
     try {
       const res = await reverseGeocoding(latitude, longitude);
       if (seq !== reverseSeqRef.current) return;
       setContactConfigured(res.contact_configured);
-      if (!res.result) return;
+      if (!res.result) {
+        // New pin with no OSM coverage must not keep the previous address/grid.
+        setDraftVerified(false);
+        setDraft((prev) => ({
+          ...prev,
+          latitude,
+          longitude,
+          formatted_address: "",
+          address_components: { ...EMPTY_ADDRESS_COMPONENTS },
+        }));
+        return;
+      }
       const result = res.result;
       pendingGeocodingProviderRef.current = result.provider;
       setDraftVerified(true);
@@ -270,6 +272,7 @@ export const LocationSettingsPanel = forwardRef<
       }));
     } catch {
       // Coords already applied — a failed reverse must not undo the pin the admin placed.
+      // Provenance stays cleared so a later save does not stamp a stale provider.
     }
   }
 
@@ -403,7 +406,7 @@ export const LocationSettingsPanel = forwardRef<
                 longitude={longitude}
                 zoom={draft.map_zoom}
                 tileConfig={tileConfig}
-                disabled={isArchived}
+                disabled={disabled}
                 onPick={(lat, lng) => {
                   void handleMapPick(lat, lng);
                 }}
@@ -532,4 +535,4 @@ export const LocationSettingsPanel = forwardRef<
       )}
     </div>
   );
-});
+}

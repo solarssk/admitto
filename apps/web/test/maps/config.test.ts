@@ -30,6 +30,52 @@ describe("resolveMapTileConfig", () => {
     expect(config.maxZoom).toBe(12);
   });
 
+  it("ignores plain-HTTP remote tile URLs that the staff SPA CSP would block", () => {
+    const config = resolveMapTileConfig({
+      MAP_TILE_URL: "http://tiles.internal.example/{z}/{x}/{y}.png",
+    });
+    expect(config.tileUrl).toBe(
+      "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+    );
+  });
+
+  it("falls back when the tile URL is not parseable", () => {
+    expect(resolveMapTileConfig({ MAP_TILE_URL: "not a URL" }).tileUrl).toBe(
+      "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+    );
+  });
+
+  it("allows http://localhost tile URLs only in development", () => {
+    expect(
+      resolveMapTileConfig({
+        NODE_ENV: "development",
+        MAP_TILE_URL: "http://localhost:8080/{z}/{x}/{y}.png",
+      }).tileUrl,
+    ).toBe("http://localhost:8080/{z}/{x}/{y}.png");
+
+    expect(
+      resolveMapTileConfig({
+        NODE_ENV: "development",
+        MAP_TILE_URL: "http://127.0.0.1:8080/{z}/{x}/{y}.png",
+      }).tileUrl,
+    ).toBe("http://127.0.0.1:8080/{z}/{x}/{y}.png");
+
+    expect(
+      resolveMapTileConfig({
+        NODE_ENV: "production",
+        MAP_TILE_URL: "http://localhost:8080/{z}/{x}/{y}.png",
+      }).tileUrl,
+    ).toBe("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png");
+  });
+
+  it("rejects an unparseable MAP_TILE_URL and keeps the HTTPS default", () => {
+    expect(
+      resolveMapTileConfig({
+        MAP_TILE_URL: "not a url at all {{{",
+      }).tileUrl,
+    ).toBe("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png");
+  });
+
   it("falls back to the default max zoom on a non-numeric override", () => {
     expect(resolveMapTileConfig({ MAP_TILE_MAX_ZOOM: "not-a-number" }).maxZoom).toBe(19);
     expect(resolveMapTileConfig({ MAP_TILE_MAX_ZOOM: "-5" }).maxZoom).toBe(19);
