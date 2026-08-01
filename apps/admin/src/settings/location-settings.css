@@ -7,7 +7,14 @@
 /* Leaflet needs an explicit pixel height on its container - it measures the container at mount
    and renders nothing (a grey box) if it is 0px, which it would be with only `width: 100%` and
    no height. ResizeObserver (MapPicker.tsx) keeps it correctly sized after that, including when
-   this tab becomes visible after being hidden. */
+   this tab becomes visible after being hidden.
+
+   `isolation: isolate` creates a new stacking context here: Leaflet's own panes/controls use
+   z-index values up to 1000 (leaflet.css), and without this, those z-indexes aren't contained -
+   they compare against the *page's* stacking order instead of staying scoped to the map. That let
+   the map render on top of the Venue card's suggestion dropdown (z-index: 60, venue-autocomplete.
+   css) sitting right above it, and on top of any modal opened while this tab is visible (e.g.
+   ConfirmDialog's "Discard unsaved changes?" backdrop, z-index: 300, confirm-dialog.css). */
 .location-map-picker {
   width: 100%;
   height: 360px;
@@ -15,6 +22,7 @@
   border-radius: var(--radius);
   margin-top: var(--space-3);
   cursor: pointer;
+  isolation: isolate;
 }
 
 .location-map-picker--disabled {
