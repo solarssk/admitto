@@ -72,6 +72,22 @@ beforeAll(async () => {
     { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
     { exportSink: (p) => exported.push(p) },
   );
+
+  // A resend to an address other than the attendee's own profile email - the row search must
+  // still find it by the address actually shown in the log, not just the attendee's current
+  // name/email.
+  await prisma.emailDelivery.create({
+    data: {
+      id: "dlv-list-a-forwarded",
+      organization_id: "org-list",
+      event_id: EVENT_A,
+      attendee_id: "att-list-a",
+      purpose: "resend",
+      provider: "export_only",
+      status: "sent",
+      recipient_email: "alice-forwarded@example.org",
+    },
+  });
 });
 
 afterAll(async () => {
@@ -189,6 +205,14 @@ describe("listDeliveries", () => {
       prisma,
     );
     expect(noMatch).toHaveLength(0);
+  });
+
+  it("also matches a delivery's own recipient_email, e.g. a resend to a different address than the attendee's profile email", async () => {
+    const { items } = await listDeliveries(
+      { eventId: EVENT_A, filters: { search: "alice-forwarded@example.org" } },
+      prisma,
+    );
+    expect(items.map((r) => r.id)).toEqual(["dlv-list-a-forwarded"]);
   });
 });
 

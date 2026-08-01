@@ -141,6 +141,7 @@ interface DeliveryListContentProps {
   isDesktop: boolean;
   onViewSentMessage: (row: DeliveryDto) => void;
   onViewDetails: (row: DeliveryDto) => void;
+  onRetry: () => void;
 }
 
 /** Loading/error/empty ladder + the responsive desktop-table / mobile-card split - same shape as
@@ -155,12 +156,23 @@ function DeliveryListContent({
   isDesktop,
   onViewSentMessage,
   onViewDetails,
+  onRetry,
 }: Readonly<DeliveryListContentProps>) {
   if (loading && deliveries.length === 0) {
     return whenShown(showLoadingText, <div className="communication-empty">Loading deliveries…</div>);
   }
   if (error) {
-    return <div className="communication-empty">{error}</div>;
+    return (
+      <EmptyState
+        title="Could not load deliveries"
+        description={error}
+        action={
+          <Button type="button" variant="secondary" onClick={onRetry}>
+            Retry
+          </Button>
+        }
+      />
+    );
   }
   if (deliveries.length === 0) {
     return isUnfilteredEmpty ? (
@@ -290,11 +302,16 @@ export interface DeliveryLogTabProps {
   templateId: string;
   onTemplateIdChange: (value: string) => void;
   searchInput: string;
+  /** Debounced value of `searchInput` - what the on-screen rows were actually fetched with.
+   * Export uses this (not the live `searchInput`) so a click right after typing can't download a
+   * CSV for a stale query the table itself hasn't caught up to yet. */
+  search: string;
   onSearchChange: (value: string) => void;
   live: boolean;
   onLiveChange: (live: boolean) => void;
   hasActiveFilters: boolean;
   onClearFilters: () => void;
+  onRetry: () => void;
 }
 
 const DELIVERY_LOG_HINT =
@@ -322,11 +339,13 @@ export function DeliveryLogTab({
   templateId,
   onTemplateIdChange,
   searchInput,
+  search,
   onSearchChange,
   live,
   onLiveChange,
   hasActiveFilters,
   onClearFilters,
+  onRetry,
 }: Readonly<DeliveryLogTabProps>) {
   const isDesktop = useIsDesktop();
   const [sentMessageRow, setSentMessageRow] = useState<DeliveryDto | null>(null);
@@ -343,7 +362,7 @@ export function DeliveryLogTab({
   async function handleExport() {
     setExporting(true);
     try {
-      await exportDeliveryLog(eventId, { status, purpose, search: searchInput.trim() || undefined, templateId });
+      await exportDeliveryLog(eventId, { status, purpose, search: search.trim() || undefined, templateId });
     } catch (err) {
       addToast(operatorApiErrorMessage(err, "Failed to export the delivery log."), "error");
     } finally {
@@ -411,6 +430,7 @@ export function DeliveryLogTab({
         isDesktop={isDesktop}
         onViewSentMessage={setSentMessageRow}
         onViewDetails={setDetailsRow}
+        onRetry={onRetry}
       />
       {deliveryTotal > 0 && (
         <div className="communication-log-footer">

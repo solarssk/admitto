@@ -615,6 +615,31 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
     expect(fetchEventDelivery).toHaveBeenCalledWith("evt-1", "dlv-2", expect.any(AbortSignal));
   });
 
+  it("labels each timeline step from its own recorded purpose, not its position", async () => {
+    fetchEventDeliveries.mockResolvedValue({ items: [failedResendRow], total: 1 });
+    // A named custom template sent first is recorded with purpose "resend" (see
+    // resolveNoDeliveryScopeAndPurpose in bulk-send-routes.ts) - the oldest row in the timeline
+    // isn't reliably "initial". A later row can likewise genuinely be purpose "initial".
+    const namedTemplateFirstSend: DeliveryDto = { ...acceptedRow, id: "dlv-purpose-1", purpose: "resend" };
+    const laterActualInitial: DeliveryDto = { ...failedRow, id: "dlv-purpose-2", purpose: "initial" };
+    fetchEventDelivery.mockResolvedValue({
+      ...detailFixture(),
+      timeline: [namedTemplateFirstSend, laterActualInitial],
+    });
+
+    renderPage();
+    await goToDeliveryLogTab();
+    await screen.findByText("Guest Two");
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest Two's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Delivery details" });
+    await within(dialog).findByText("Overview");
+
+    expect(within(dialog).getByText("Resend 1")).toBeTruthy();
+    expect(within(dialog).getByText("Initial send")).toBeTruthy();
+  });
+
   it("falls back to placeholders for every unset optional field", async () => {
     fetchEventDeliveries.mockResolvedValue({
       items: [{ ...failedResendRow, recipient_email: null }],
@@ -883,6 +908,29 @@ describe("CommunicationPage delivery log - export log button", () => {
 
     expect(await screen.findByText("Failed to export the delivery log.")).toBeTruthy();
   });
+
+  it("exports with the debounced search the table itself used, not whatever is still mid-type", async () => {
+    fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 1 });
+    exportDeliveryLog.mockResolvedValue(undefined);
+
+    renderPage();
+    await goToDeliveryLogTab();
+    await screen.findByText("Guest One");
+
+    // Typing alone doesn't commit deliverySearch until the 300ms debounce fires - exporting
+    // right after a keystroke must not race ahead of the table's own (not-yet-updated) query.
+    fireEvent.change(screen.getByLabelText("Search recipient by name or email"), {
+      target: { value: "carol" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Export log" }));
+
+    await waitFor(() => {
+      expect(exportDeliveryLog).toHaveBeenCalledWith(
+        "evt-1",
+        expect.objectContaining({ search: undefined }),
+      );
+    });
+  });
 });
 
 describe("CommunicationPage delivery log - mobile card layout", () => {
@@ -950,6 +998,26 @@ describe("CommunicationPage delivery log - error handling, tab URL sync, live po
 
     expect(await screen.findByText("Failed to load deliveries.")).toBeTruthy();
     expect(connectionState.reportApiError).toHaveBeenCalledWith(500);
+  });
+
+  it("shows a Retry EmptyState on a failed load, and recovers when Retry succeeds (AGENTS.md initial-load-failure pattern)", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventDeliveries
+      .mockRejectedValueOnce(new ApiError(500, "internal_error"))
+      .mockResolvedValueOnce({ items: [acceptedRow], total: 1 });
+
+    renderPage();
+    await goToDeliveryLogTab();
+
+    await screen.findByText("Could not load deliveries");
+    expect(screen.getByText("Failed to load deliveries.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Could not load deliveries")).toBeNull();
+    });
+    expect(await screen.findByText("Guest One")).toBeTruthy();
   });
 
   it("ignores an aborted delivery fetch instead of flashing an error banner (e.g. filters changing again before the first request finishes)", async () => {

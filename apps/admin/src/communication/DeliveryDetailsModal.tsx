@@ -27,11 +27,11 @@ function downloadTextFile(filename: string, content: string): void {
   URL.revokeObjectURL(url);
 }
 
-/** Label a timeline step. The oldest row is always the initial send; every later one is a
- * resend (handleResendAttendeeTicket always creates a new, separate EmailDelivery row rather
- * than mutating the original - see plan.md), numbered in chronological order. */
+/** Label a timeline step from its own recorded purpose (not its position) - a named custom
+ * template can still be the attendee's first send, and resolveNoDeliveryScopeAndPurpose records
+ * that as purpose "resend" (see toDeliveryDto.ts), so the oldest row isn't reliably "initial". */
 function timelineStepLabel(timeline: DeliveryDto[], index: number): string {
-  if (index === 0) return "Initial send";
+  if (timeline[index]?.purpose !== "resend") return "Initial send";
   const resendNumber = timeline.slice(0, index + 1).filter((d) => d.purpose === "resend").length;
   return `Resend ${resendNumber}`;
 }

@@ -99,12 +99,11 @@ function buildWhere(params: ListDeliveriesParams) {
     ...(filters?.templateId !== undefined ? { template_id: filters.templateId } : {}),
     ...(filters?.search
       ? {
-          attendee: {
-            OR: [
-              { name: { contains: filters.search, mode: "insensitive" as const } },
-              { email: { contains: filters.search, mode: "insensitive" as const } },
-            ],
-          },
+          OR: [
+            { recipient_email: { contains: filters.search, mode: "insensitive" as const } },
+            { attendee: { name: { contains: filters.search, mode: "insensitive" as const } } },
+            { attendee: { email: { contains: filters.search, mode: "insensitive" as const } } },
+          ],
         }
       : {}),
   };

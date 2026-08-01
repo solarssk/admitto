@@ -1657,11 +1657,13 @@ export function CommunicationPage() {
           templateId={deliveryTemplateId}
           onTemplateIdChange={setDeliveryTemplateId}
           searchInput={deliverySearchInput}
+          search={deliverySearch}
           onSearchChange={setDeliverySearchInput}
           live={deliveriesLive}
           onLiveChange={setDeliveriesLive}
           hasActiveFilters={hasActiveDeliveryFilters}
           onClearFilters={clearDeliveryFilters}
+          onRetry={() => void loadDeliveries()}
         />
       )}
 
