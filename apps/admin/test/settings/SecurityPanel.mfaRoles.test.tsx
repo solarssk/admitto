@@ -48,19 +48,36 @@ describe("SecurityPanel delayed loading", () => {
 
 describe("SecurityPanel — session/trust duration inputs", () => {
   it.each([
-    { label: "Operator session maximum lifetime (hours)", floor: "1" },
-    { label: "Admin session maximum lifetime (hours)", floor: "1" },
-    { label: "Admin session inactivity timeout (minutes)", floor: "5" },
-    { label: "Operator session inactivity timeout (minutes)", floor: "5" },
-    { label: "Remember device duration (days)", floor: "0" },
-  ])("clamps a non-numeric $label to the $floor floor instead of NaN", async ({ label, floor }) => {
+    { label: "Operator session maximum lifetime (hours)", saved: "12" },
+    { label: "Admin session maximum lifetime (hours)", saved: "24" },
+    { label: "Admin session inactivity timeout (minutes)", saved: "30" },
+    { label: "Operator session inactivity timeout (minutes)", saved: "120" },
+    { label: "Remember device duration (days)", saved: "30" },
+  ])("reverts a non-numeric $label to the saved value on blur", async ({ label, saved }) => {
     vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
     renderWithToastAndRouter(<SecurityPanel />);
 
     const input = await screen.findByLabelText<HTMLInputElement>(label);
     fireEvent.change(input, { target: { value: "abc" } });
+    fireEvent.blur(input);
 
-    expect(input.value).toBe(floor);
+    expect(input.value).toBe(saved);
+  });
+
+  it("allows typing intermediate digits below the minimum before blur commits", async () => {
+    vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
+    renderWithToastAndRouter(<SecurityPanel />);
+
+    const input = await screen.findByLabelText<HTMLInputElement>(
+      "Admin session inactivity timeout (minutes)",
+    );
+    fireEvent.change(input, { target: { value: "3" } });
+    expect(input.value).toBe("3");
+
+    fireEvent.change(input, { target: { value: "30" } });
+    fireEvent.blur(input);
+
+    expect(input.value).toBe("30");
   });
 });
 
@@ -142,6 +159,7 @@ describe("SecurityPanel — dangerous-value inline warnings (P0-4)", () => {
       "Admin session maximum lifetime (hours)",
     );
     fireEvent.change(input, { target: { value: "48" } });
+    fireEvent.blur(input);
 
     expect(input.className).toContain("at-input--warn");
     expect(getTooltipText(warningTriggerFor("Admin session maximum lifetime (hours)"))).toContain(
@@ -157,6 +175,7 @@ describe("SecurityPanel — dangerous-value inline warnings (P0-4)", () => {
       "Operator session maximum lifetime (hours)",
     );
     fireEvent.change(input, { target: { value: "48" } });
+    fireEvent.blur(input);
 
     expect(input.className).toContain("at-input--warn");
     expect(getTooltipText(warningTriggerFor("Operator session maximum lifetime (hours)"))).toContain(
@@ -172,6 +191,7 @@ describe("SecurityPanel — dangerous-value inline warnings (P0-4)", () => {
       "Admin session inactivity timeout (minutes)",
     );
     fireEvent.change(input, { target: { value: "180" } });
+    fireEvent.blur(input);
 
     expect(input.className).toContain("at-input--warn");
     expect(getTooltipText(warningTriggerFor("Admin session inactivity timeout (minutes)"))).toContain(
@@ -187,6 +207,7 @@ describe("SecurityPanel — dangerous-value inline warnings (P0-4)", () => {
       "Operator session inactivity timeout (minutes)",
     );
     fireEvent.change(input, { target: { value: "300" } });
+    fireEvent.blur(input);
 
     expect(input.className).toContain("at-input--warn");
     expect(
@@ -216,6 +237,7 @@ describe("SecurityPanel — save and reset", () => {
       "Admin session maximum lifetime (hours)",
     );
     fireEvent.change(input, { target: { value: "48" } });
+    fireEvent.blur(input);
     expect(input.value).toBe("48");
 
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
@@ -250,6 +272,7 @@ describe("SecurityPanel — idle-vs-absolute server error mapping", () => {
       "Admin session inactivity timeout (minutes)",
     );
     fireEvent.change(input, { target: { value: "60" } });
+    fireEvent.blur(input);
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {

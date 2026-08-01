@@ -5,6 +5,8 @@ import {
   generateEmergencyRecoveryCode,
   logMfaBreakGlass,
   normalizeEmail,
+  PASSWORD_MIN_LENGTH,
+  PasswordPolicyError,
   resetUserMfa,
   superadminInstanceExists,
   userIsInstanceSuperadmin,
@@ -70,7 +72,18 @@ export async function runAuthBootstrapSuperadmin(db: PrismaClient): Promise<void
 
   assertNoPasswordArgv(process.argv);
   const password = await readPasswordFromStdin();
-  const { userId } = await bootstrapSuperadmin(db, email, password);
+  let userId: string;
+  try {
+    ({ userId } = await bootstrapSuperadmin(db, email, password));
+  } catch (err) {
+    if (err instanceof PasswordPolicyError) {
+      if (err.code === "password_too_short") {
+        throw new CliError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters.`);
+      }
+      throw new CliError("Password is too common or predictable. Choose a different one.");
+    }
+    throw err;
+  }
   console.log(`Superadmin created: ${userId} (${email})`);
 }
 

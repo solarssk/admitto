@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@admitto/db";
 import { hasScope } from "@admitto/db";
+import { assertPasswordMeetsPolicy } from "./password-policy.js";
 import { createUser } from "./user.js";
 
 /** True when any `superadmin@instance` role assignment exists. */
@@ -20,6 +21,7 @@ export async function bootstrapSuperadmin(
   email: string,
   password: string,
 ): Promise<{ userId: string }> {
+  assertPasswordMeetsPolicy(password);
   const { userId } = await prisma.$transaction(async (tx) => {
     const user = await createUser(tx, { email, password });
     await tx.roleAssignment.create({

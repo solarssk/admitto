@@ -173,6 +173,12 @@ async function lookupSessionByToken(
   if (session.stage === SESSION_STAGE.FULL) {
     const idleTimeoutMs = await resolveIdleTimeoutMs(prisma, session.user_id);
     if (now.getTime() - session.last_seen_at.getTime() >= idleTimeoutMs) {
+      // Revoke permanently so a later idle-timeout increase cannot resurrect a
+      // session that already exceeded its inactivity window.
+      await prisma.session.updateMany({
+        where: { id: session.id, revoked_at: null },
+        data: { revoked_at: now },
+      });
       return null;
     }
   }

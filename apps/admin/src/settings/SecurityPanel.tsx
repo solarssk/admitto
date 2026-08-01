@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { Badge, Button, Card, Input, Switch, Tooltip, useToast } from "@admitto/ui";
 import { fetchSecuritySettings, patchSecuritySettings } from "../api/client.js";
 import { roleLabel } from "../auth/role-labels.js";
@@ -92,6 +93,7 @@ interface SecurityNumericRowProps {
   source: SettingSource;
   warningMessage?: string;
   showDivider?: boolean;
+  syncKey?: number;
   onChange: (value: number) => void;
 }
 
@@ -104,10 +106,35 @@ function SecurityNumericRow({
   source,
   warningMessage,
   showDivider = true,
+  syncKey = 0,
   onChange,
 }: Readonly<SecurityNumericRowProps>) {
   const locked = fieldLocked(source);
   const warned = Boolean(warningMessage);
+  const [text, setText] = useState(String(value));
+
+  useEffect(() => {
+    setText(String(value));
+  }, [value, syncKey]);
+
+  const commit = () => {
+    const trimmed = text.trim();
+    if (trimmed === "") {
+      setText(String(value));
+      return;
+    }
+    const parsed = Number.parseInt(trimmed, 10);
+    if (Number.isNaN(parsed)) {
+      setText(String(value));
+      return;
+    }
+    const clamped = Math.min(max, Math.max(min, parsed));
+    setText(String(clamped));
+    if (clamped !== value) {
+      flushSync(() => onChange(clamped));
+    }
+  };
+
   return (
     <div className="security-settings-item">
       <div className="settings-row__text">
@@ -126,9 +153,10 @@ function SecurityNumericRow({
             max={max}
             style={SECURITY_NUMERIC_INPUT_STYLE}
             className={warned ? "at-input--warn" : undefined}
-            value={String(value)}
+            value={text}
             disabled={locked}
-            onChange={(e) => onChange(Math.max(min, Number.parseInt(e.target.value, 10) || min))}
+            onChange={(e) => setText(e.target.value)}
+            onBlur={commit}
           />
         </div>
         <EnvBadge source={source} />
@@ -147,6 +175,9 @@ export function SecurityPanel() {
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
+  const [numericSyncKey, setNumericSyncKey] = useState(0);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -169,10 +200,15 @@ export function SecurityPanel() {
   }, [load]);
 
   const handleSave = async () => {
-    if (!settings || !draft) return;
+    if (!settings) return;
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    const currentDraft = draftRef.current;
+    if (!currentDraft) return;
     setSaving(true);
 
-    const { body, hasChanges } = buildSecurityPatchBody(settings, draft, fieldLocked);
+    const { body, hasChanges } = buildSecurityPatchBody(settings, currentDraft, fieldLocked);
 
     if (!hasChanges) {
       addToast("No changes to save.", "info");
@@ -195,6 +231,7 @@ export function SecurityPanel() {
   const handleReset = () => {
     if (!settings) return;
     setDraft(draftFromSettings(settings));
+    setNumericSyncKey((key) => key + 1);
   };
 
   const toggleRole = (role: string) => {
@@ -242,6 +279,7 @@ export function SecurityPanel() {
       <Card title={securityCardTitle()}>
         <div className="mail-transport-section security-settings-rows">
           <SecurityNumericRow
+            syncKey={numericSyncKey}
             label="Admin session maximum lifetime (hours)"
             description="Hard cap for admin and superadmin sessions, even if the user stays active. Allowed range: 1–720 hours."
             value={draft.sessionTtlH}
@@ -255,6 +293,7 @@ export function SecurityPanel() {
           />
 
           <SecurityNumericRow
+            syncKey={numericSyncKey}
             label="Admin session inactivity timeout (minutes)"
             description="Sign out admins and superadmins after this long without activity. Allowed range: 5–240 minutes."
             value={draft.sessionIdleM}
@@ -268,6 +307,7 @@ export function SecurityPanel() {
           />
 
           <SecurityNumericRow
+            syncKey={numericSyncKey}
             label="Operator session maximum lifetime (hours)"
             description="Hard cap for operator (check-in) sessions, even if the station stays active. Allowed range: 1–168 hours."
             value={draft.opTtlH}
@@ -281,6 +321,7 @@ export function SecurityPanel() {
           />
 
           <SecurityNumericRow
+            syncKey={numericSyncKey}
             label="Operator session inactivity timeout (minutes)"
             description="Sign out operators after this long without activity at the check-in station. Allowed range: 5–480 minutes."
             value={draft.opIdleM}
@@ -294,6 +335,7 @@ export function SecurityPanel() {
           />
 
           <SecurityNumericRow
+            syncKey={numericSyncKey}
             label="Remember device duration (days)"
             description='How long a trusted device can skip the authenticator app. Set 0 to turn off "remember this device". Allowed range: 0–90 days.'
             value={draft.trustedDays}
