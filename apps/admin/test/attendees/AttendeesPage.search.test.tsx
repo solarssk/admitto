@@ -128,7 +128,7 @@ describe("AttendeesPage search debounce", () => {
     });
 
     renderPage();
-    await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
+    await screen.findByText("Jane Doe");
     expect(fetchEventAttendees).toHaveBeenCalledTimes(1);
 
     // Paginate away from page 1 - inside the mount-scheduled debounce window, since the search
