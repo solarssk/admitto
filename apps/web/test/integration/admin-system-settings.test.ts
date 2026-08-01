@@ -353,6 +353,10 @@ describe("PATCH /api/admin/system-settings", () => {
   });
 
   it("rejects lowering absolute lifetime below the stored idle timeout when only absolute is in the PATCH", async () => {
+    await prisma.systemSettings.create({
+      data: { key: "session_idle_timeout", value_json: "7200000" },
+    });
+
     const res = await app.request("/api/admin/system-settings", {
       method: "PATCH",
       headers: {
@@ -360,8 +364,8 @@ describe("PATCH /api/admin/system-settings", () => {
         "Content-Type": "application/json",
         ...sameOrigin,
       },
-      // Default admin idle is 30 min; absolute is lowered to 15 min.
-      body: JSON.stringify({ session_ttl_ms: 900_000 }),
+      // Stored idle is 2 h; absolute is lowered to the 1 h API minimum.
+      body: JSON.stringify({ session_ttl_ms: 3_600_000 }),
     });
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string; field: string };
