@@ -186,6 +186,50 @@ describe("listDeliveries", () => {
     expect(none).toHaveLength(0);
   });
 
+  it("keeps the sent-with template's label after that template is deleted, and excludes the row from the default filter", async () => {
+    const template = await prisma.mailTemplate.create({
+      data: {
+        scope_type: "event",
+        scope_id: EVENT_A,
+        name: "vip-list-a",
+        label: "VIP invite (list)",
+        subject_template: "Subject",
+        body_template: "<p>Body</p>",
+        template_format: "html",
+        compiled_html_template: "<p>Body</p>",
+      },
+    });
+    const delivery = await prisma.emailDelivery.create({
+      data: {
+        id: "dlv-list-a-deleted-template",
+        organization_id: "org-list",
+        event_id: EVENT_A,
+        attendee_id: "att-list-a",
+        purpose: "resend",
+        provider: "export_only",
+        status: "sent",
+        template_id: template.id,
+        template_label_snapshot: template.label,
+      },
+    });
+
+    // Deleting the template SetNulls template_id (see schema.prisma) - the snapshot must survive
+    // this, so the row stays distinguishable from a genuine default-template send.
+    await prisma.mailTemplate.delete({ where: { id: template.id } });
+
+    const { items } = await listDeliveries({ eventId: EVENT_A }, prisma);
+    const row = items.find((r) => r.id === delivery.id);
+    expect(row).toBeDefined();
+    expect(row!.template_id).toBeNull();
+    expect(row!.template_name).toBe("VIP invite (list)");
+
+    const { items: defaultItems } = await listDeliveries(
+      { eventId: EVENT_A, filters: { templateId: null } },
+      prisma,
+    );
+    expect(defaultItems.some((r) => r.id === delivery.id)).toBe(false);
+  });
+
   it("filters by search (case-insensitive attendee name/email match)", async () => {
     const { items: byName } = await listDeliveries(
       { eventId: EVENT_A, filters: { search: "ALICE" } },

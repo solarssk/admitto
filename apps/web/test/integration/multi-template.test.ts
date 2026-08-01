@@ -406,6 +406,70 @@ describe("multi-template API", () => {
     expect(updatedDelivery.template_id).toBeNull();
   });
 
+  it("keeps a deleted template's label on its past sends and excludes them from the default filter (regression)", async () => {
+    const promo = await postNamedTemplate(app, "Promo blast");
+    const attendee = await prisma.attendee.create({
+      data: {
+        id: "att-custom-del-regression",
+        event_id: EVENT_A,
+        email: "custom-del-regression@example.com",
+        name: "Custom Del Regression",
+      },
+    });
+
+    try {
+      const sendRes = await app.request(`/api/admin/events/${EVENT_A}/send`, {
+        method: "POST",
+        headers: {
+          Cookie: adminCookie,
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify({
+          templateId: promo.id,
+          filter: { type: "attendee_ids", ids: [attendee.id] },
+        }),
+      });
+      expect(sendRes.status).toBe(200);
+      expect((await sendRes.json()) as { queued: number }).toMatchObject({ queued: 1 });
+    } finally {
+      rateLimitStore.reset();
+    }
+
+    const delivery = await prisma.emailDelivery.findFirstOrThrow({
+      where: { event_id: EVENT_A, attendee_id: attendee.id },
+    });
+    expect(delivery.template_id).toBe(promo.id);
+    expect(delivery.template_label_snapshot).toBe("Promo blast");
+
+    const deleteRes = await app.request(`/api/admin/events/${EVENT_A}/templates/${promo.id}`, {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin },
+    });
+    expect(deleteRes.status).toBe(200);
+
+    const listRes = await app.request(`/api/admin/events/${EVENT_A}/deliveries`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(listRes.status).toBe(200);
+    const listBody = (await listRes.json()) as {
+      items: Array<{ id: string; template_id: string | null; template_name: string | null }>;
+    };
+    const row = listBody.items.find((r) => r.id === delivery.id);
+    expect(row).toBeDefined();
+    // The FK is SetNull'd by the delete, but the label snapshot means this still isn't
+    // indistinguishable from a genuine default-template send.
+    expect(row!.template_id).toBeNull();
+    expect(row!.template_name).toBe("Promo blast");
+
+    const defaultFilterRes = await app.request(`/api/admin/events/${EVENT_A}/deliveries?templateId=default`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(defaultFilterRes.status).toBe(200);
+    const defaultBody = (await defaultFilterRes.json()) as { items: Array<{ id: string }> };
+    expect(defaultBody.items.some((r) => r.id === delivery.id)).toBe(false);
+  });
+
   it("POST /send dryRun returns recipientCount", async () => {
     await putTicketTemplate(app);
     const ticket = await prisma.mailTemplate.findUniqueOrThrow({

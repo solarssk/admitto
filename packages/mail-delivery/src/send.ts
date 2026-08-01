@@ -219,6 +219,7 @@ async function processAttendeeForSend({
     attendeeId: attendee.id,
     batchId,
     templateId: resolvedTemplate.templateId,
+    templateLabel: resolvedTemplate.templateLabel,
     provider,
     recipientEmail:
       purpose === "resend" && options.recipientEmail ? options.recipientEmail : attendee.email,

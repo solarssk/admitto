@@ -272,5 +272,7 @@ log "running ticket-type catalog backfill with 120s timeout"
 run_as_node_cmd timeout 120 node packages/db/dist/scripts/backfill-ticket-types.js
 log "running check-in session-id backfill with 120s timeout"
 run_as_node_cmd timeout 120 node packages/db/dist/scripts/backfill-checkin-session-id.js
+log "running email delivery template-label-snapshot backfill with 120s timeout"
+run_as_node_cmd timeout 120 node packages/db/dist/scripts/backfill-email-delivery-template-label-snapshot.js
 
 log "migrate: startup tasks complete"

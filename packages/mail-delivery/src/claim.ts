@@ -17,6 +17,9 @@ export interface ClaimInitialInput {
   attendeeId: string;
   batchId: string;
   templateId?: string;
+  /** The resolved template's label, snapshotted onto EmailDelivery.template_label_snapshot so a
+   * later template deletion (SetNull on template_id) doesn't erase what it was called. */
+  templateLabel?: string;
   provider: string;
   recipientEmail: string;
   renderedSubject: string;
@@ -51,6 +54,7 @@ function deliveryCreateData(input: ClaimInitialInput, purpose: "initial" | "rese
     purpose,
     batch_id: input.batchId,
     template_id: input.templateId,
+    template_label_snapshot: input.templateLabel ?? null,
     provider: input.provider,
     status: "queued" as const,
     attempts: 1,
