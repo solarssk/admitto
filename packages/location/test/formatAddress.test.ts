@@ -1,0 +1,66 @@
+import { describe, expect, it } from "vitest";
+import { formatCompactAddress, formatStreetLine, formatVenueName } from "../src/formatAddress.js";
+
+describe("formatStreetLine", () => {
+  it("joins street and housenumber in European order", () => {
+    expect(formatStreetLine({ street: "Marywilska", housenumber: "62" })).toBe("Marywilska 62");
+  });
+
+  it("returns whichever side is present alone", () => {
+    expect(formatStreetLine({ street: "Marywilska" })).toBe("Marywilska");
+    expect(formatStreetLine({ housenumber: "62" })).toBe("62");
+  });
+});
+
+describe("formatCompactAddress", () => {
+  it("formats a named POI as Country, City - Name", () => {
+    expect(
+      formatCompactAddress({
+        name: "Złote Tarasy",
+        street: "Złota",
+        housenumber: "59",
+        city: "Warszawa",
+        country: "Polska",
+        label: "Złote Tarasy, 59, Złota, Śródmieście, Warszawa, województwo mazowieckie, 00-120, Polska",
+      }),
+    ).toBe("Polska, Warszawa - Złote Tarasy");
+  });
+
+  it("formats a bare street address as Country, City - Street Number", () => {
+    expect(
+      formatCompactAddress({
+        street: "Marywilska",
+        housenumber: "62",
+        city: "Warszawa",
+        country: "Polska",
+        label: "62, Marywilska, Żerań, Białołęka, Warszawa, województwo mazowieckie, 03-042, Polska",
+      }),
+    ).toBe("Polska, Warszawa - Marywilska 62");
+  });
+
+  it("falls back to the first two label segments when structured fields are missing", () => {
+    expect(
+      formatCompactAddress({
+        label: "62, Marywilska, Żerań Wschodni, Żerań, Białołęka, Warszawa, Polska",
+      }),
+    ).toBe("62, Marywilska");
+  });
+
+  it("returns an empty string when nothing useful is present", () => {
+    expect(formatCompactAddress({})).toBe("");
+  });
+});
+
+describe("formatVenueName", () => {
+  it("prefers the POI name", () => {
+    expect(formatVenueName({ name: "Złote Tarasy", street: "Złota", housenumber: "59" })).toBe(
+      "Złote Tarasy",
+    );
+  });
+
+  it("uses street+number when there is no POI name", () => {
+    expect(formatVenueName({ street: "Marywilska", housenumber: "62", city: "Warszawa" })).toBe(
+      "Marywilska 62",
+    );
+  });
+});

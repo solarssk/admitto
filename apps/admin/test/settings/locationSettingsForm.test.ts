@@ -18,6 +18,7 @@ const EMPTY_LOCATION: EventLocationDto = {
   accessibility_text: null,
   geocoding_provider: null,
   geocoded_at: null,
+  address_components: null,
 };
 
 const FULL_LOCATION: EventLocationDto = {
@@ -30,6 +31,14 @@ const FULL_LOCATION: EventLocationDto = {
   accessibility_text: "Step-free access at the north door.",
   geocoding_provider: "nominatim",
   geocoded_at: "2025-01-01T00:00:00.000Z",
+  address_components: {
+    object_name: "Springfield Hall",
+    street: "1 Main St",
+    postcode: null,
+    city: "Springfield",
+    region: null,
+    country: null,
+  },
 };
 
 describe("draftFromLocation", () => {
@@ -42,6 +51,14 @@ describe("draftFromLocation", () => {
       map_zoom: 15,
       directions_text: "",
       accessibility_text: "",
+      address_components: {
+        object_name: null,
+        street: null,
+        postcode: null,
+        city: null,
+        region: null,
+        country: null,
+      },
     });
   });
 

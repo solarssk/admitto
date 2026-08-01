@@ -13,3 +13,13 @@ export {
 export type { NormalizedEventLocationInput } from "./validation.js";
 export { isMapReady } from "./readiness.js";
 export { buildGoogleMapsUrl, buildAppleMapsUrl, buildOsmUrl } from "./links.js";
+export { formatCompactAddress, formatStreetLine, formatVenueName } from "./formatAddress.js";
+export type { CompactAddressParts } from "./formatAddress.js";
+export {
+  EMPTY_ADDRESS_COMPONENTS,
+  addressComponentsFromParts,
+  isAddressComponentsEmpty,
+  normalizeAddressComponents,
+  parseStoredAddressComponents,
+} from "./addressComponents.js";
+export type { AddressComponents } from "./addressComponents.js";

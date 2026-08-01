@@ -51,6 +51,8 @@ import type {
   EventLocationDto,
   SaveEventLocationBody,
   GeocodingSearchResponse,
+  GeocodingReverseResponse,
+  GeocodingTimezoneResponse,
   MapTileConfigDto,
   DeliveryDetailDto,
   RenderedDeliveryDto,
@@ -1532,6 +1534,28 @@ export async function saveEventLocation(
 export async function searchGeocoding(query: string): Promise<GeocodingSearchResponse> {
   const res = await fetch("/api/admin/geocoding/search", jsonPostInit({ query }));
   return parseJson<GeocodingSearchResponse>(res);
+}
+
+/** Resolve an address for a map pin click/drag via the server's geocoding provider. */
+export async function reverseGeocoding(
+  latitude: number,
+  longitude: number,
+): Promise<GeocodingReverseResponse> {
+  const res = await fetch("/api/admin/geocoding/reverse", jsonPostInit({ latitude, longitude }));
+  return parseJson<GeocodingReverseResponse>(res);
+}
+
+/** Resolve the IANA timezone for a map pin (server-side geo-tz — not available in the SPA). */
+export async function fetchTimezoneForCoordinates(
+  latitude: number,
+  longitude: number,
+  signal?: AbortSignal,
+): Promise<GeocodingTimezoneResponse> {
+  const res = await fetch("/api/admin/geocoding/timezone", {
+    ...jsonPostInit({ latitude, longitude }),
+    signal,
+  });
+  return parseJson<GeocodingTimezoneResponse>(res);
 }
 
 /** Deployment-level map tile config (tile server URL, attribution, max zoom) for the

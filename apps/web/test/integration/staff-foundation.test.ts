@@ -635,12 +635,15 @@ describe("GET /api/admin/maps/config", () => {
       tile_url: string;
       attribution: string;
       max_zoom: number;
+      contact_configured: boolean;
     };
     expect(body).toEqual({
       enabled: true,
-      tile_url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      tile_url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
       max_zoom: 19,
+      contact_configured: expect.any(Boolean),
     });
   });
 

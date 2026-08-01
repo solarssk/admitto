@@ -221,4 +221,16 @@ describe("VenueAutocomplete", () => {
     fireEvent.focus(input);
     expect(screen.getByText("10 Downing Street")).toBeTruthy();
   });
+
+  it("Find on map runs search immediately and shows a no-match notice", async () => {
+    mockSearch.mockResolvedValue({ results: [], contact_configured: true });
+    render(<Harness />);
+    fireEvent.change(screen.getByLabelText("Venue name or address"), {
+      target: { value: "Nowhere Hall" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Find on map" }));
+
+    expect(await screen.findByText(/No match found on OpenStreetMap/)).toBeTruthy();
+    expect(mockSearch).toHaveBeenCalledWith("Nowhere Hall");
+  });
 });

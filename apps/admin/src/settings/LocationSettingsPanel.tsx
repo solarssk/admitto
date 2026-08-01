@@ -1,24 +1,30 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useNavigate } from "react-router";
-import { Card, Button, Notice, useToast } from "@admitto/ui";
-import { LOCATION_LIMITS, buildAppleMapsUrl, buildGoogleMapsUrl, buildOsmUrl } from "@admitto/location";
-import { fetchEventLocation, fetchMapTileConfig, saveEventLocation } from "../api/client.js";
+import {
+  EMPTY_ADDRESS_COMPONENTS,
+  LOCATION_LIMITS,
+  buildAppleMapsUrl,
+  buildGoogleMapsUrl,
+  isAddressComponentsEmpty,
+} from "@admitto/location";
+import { Badge, Button, Card, HintLabel, Notice, useToast } from "@admitto/ui";
+import { fetchEventLocation, fetchMapTileConfig, fetchTimezoneForCoordinates, reverseGeocoding, saveEventLocation } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventLocationDto, GeocodingResultDto, MapTileConfigDto } from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { VenueAutocomplete } from "../components/VenueAutocomplete.js";
 import { whenShown, useDelayedLoading } from "../hooks/useDelayedLoading.js";
-import { formatUtcDateTime } from "../utils/event-dates.js";
+import { AddressComponentsGrid } from "./AddressComponentsGrid.js";
 import { MapPicker } from "./MapPicker.js";
 import { SettingsFooter } from "./mailTransportFormParts.js";
 import {
   buildEventLocationPatchBody,
   draftFromLocation,
-  geocodingProviderLabel,
   isLocationDirty,
   type LocationDraft,
 } from "./locationSettingsForm.js";
+import { formatMapCoordinates } from "./locationTimezone.js";
 import "./location-settings.css";
 
 const EMPTY_DRAFT: LocationDraft = {
@@ -29,29 +35,48 @@ const EMPTY_DRAFT: LocationDraft = {
   map_zoom: LOCATION_LIMITS.DEFAULT_ZOOM,
   directions_text: "",
   accessibility_text: "",
+  address_components: { ...EMPTY_ADDRESS_COMPONENTS },
 };
+
+const ADDRESS_CARD_HINT =
+  "Used to show a map, give directions, and check the venue against the event timezone.";
+const DIRECTIONS_HINT =
+  "How attendees find the entrance, parking, or public transit. Shown with the event location.";
+const ACCESSIBILITY_HINT =
+  "Step-free access, accessible restrooms, hearing loop, and similar notes for attendees.";
 
 export type LocationSettingsPanelHandle = {
   save: () => Promise<void>;
   reset: () => void;
 };
 
-/** Location tab: address, an interactive Leaflet map (click/drag to set coordinates, or search
- * an address via the server's Nominatim proxy), and directions/accessibility notes. Mirrors
- * EventMailSettingsCard's own load/draft/dirty/saving shape. */
+/** Location tab: venue search, interactive map, structured address grid, and
+ * directions/accessibility notes. */
 export const LocationSettingsPanel = forwardRef<
   LocationSettingsPanelHandle,
   Readonly<{
     eventId: string;
     isArchived: boolean;
-    /** Notified on every change to hasUnsavedChanges, so the hosting page can fold this
-     * card's dirty state into its own navigation/unload/destructive-action warnings. */
+    eventTimezone: string;
     onDirtyChange?: (dirty: boolean) => void;
-    /** Notified on every change to the in-flight save state, so the page header's hoisted
-     * Save button can disable itself and show "Saving…". */
     onSavingChange?: (saving: boolean) => void;
+    /** Called after a successful location save so the shell can refresh sidebar `event.location`. */
+    onLocationSaved?: () => Promise<void> | void;
+    /** Apply a suggested IANA timezone from the map pin onto the event (General tab field). */
+    onApplyTimezone?: (timezone: string) => Promise<void> | void;
   }>
->(function LocationSettingsPanel({ eventId, isArchived, onDirtyChange, onSavingChange }, ref) {
+>(function LocationSettingsPanel(
+  {
+    eventId,
+    isArchived,
+    eventTimezone,
+    onDirtyChange,
+    onSavingChange,
+    onLocationSaved,
+    onApplyTimezone,
+  },
+  ref,
+) {
   const { addToast } = useToast();
   const { assignments } = useAuth();
   const isSa = isSuperadmin(assignments);
@@ -65,13 +90,16 @@ export const LocationSettingsPanel = forwardRef<
   const showLoading = useDelayedLoading(loading);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [applyingTimezone, setApplyingTimezone] = useState(false);
 
   const [contactConfigured, setContactConfigured] = useState(true);
+  /** Draft-side geocoding provenance (search/reverse) until the next save clears or confirms it. */
+  const [draftVerified, setDraftVerified] = useState(false);
+  const [suggestedTimezone, setSuggestedTimezone] = useState<string | null>(null);
 
   const loadAbortRef = useRef<AbortController | null>(null);
+  const reverseSeqRef = useRef(0);
   const validationErrorsRef = useRef<HTMLUListElement | null>(null);
-  // Set only right after picking a geocoding search result, cleared on any manual pin
-  // move/clear - see buildEventLocationPatchBody's doc comment for why this matters.
   const pendingGeocodingProviderRef = useRef<string | null>(null);
 
   const applyResponse = useCallback((data: EventLocationDto) => {
@@ -80,6 +108,7 @@ export const LocationSettingsPanel = forwardRef<
     setDraft(nextDraft);
     setSavedDraft(nextDraft);
     pendingGeocodingProviderRef.current = null;
+    setDraftVerified(Boolean(data.geocoding_provider));
   }, []);
 
   const loadSettings = useCallback(async () => {
@@ -96,6 +125,7 @@ export const LocationSettingsPanel = forwardRef<
       if (ac.signal.aborted) return;
       applyResponse(location);
       setTileConfig(tiles);
+      setContactConfigured(tiles.contact_configured);
     } catch {
       if (ac.signal.aborted) return;
       setLoadError("Failed to load location settings.");
@@ -119,6 +149,7 @@ export const LocationSettingsPanel = forwardRef<
       const data = await saveEventLocation(eventId, body);
       applyResponse(data);
       addToast("Location saved.", "success");
+      await onLocationSaved?.();
     } catch (err) {
       addToast(operatorApiErrorMessage(err, "Failed to save location."), "error");
     } finally {
@@ -129,6 +160,7 @@ export const LocationSettingsPanel = forwardRef<
   const handleReset = () => {
     setDraft(savedDraft);
     pendingGeocodingProviderRef.current = null;
+    setDraftVerified(Boolean(apiData?.geocoding_provider));
   };
 
   useImperativeHandle(ref, () => ({ save: handleSave, reset: handleReset }));
@@ -143,21 +175,53 @@ export const LocationSettingsPanel = forwardRef<
     onSavingChange?.(saving);
   }, [saving, onSavingChange]);
 
-  function setCoordinates(latitude: number | null, longitude: number | null) {
-    pendingGeocodingProviderRef.current = null;
-    setDraft((prev) => ({ ...prev, latitude, longitude }));
-  }
+  useEffect(() => {
+    if (draft.latitude === null || draft.longitude === null) {
+      setSuggestedTimezone(null);
+      return;
+    }
+    const ac = new AbortController();
+    void fetchTimezoneForCoordinates(draft.latitude, draft.longitude, ac.signal)
+      .then((res) => {
+        if (!ac.signal.aborted) setSuggestedTimezone(res.timezone);
+      })
+      .catch(() => {
+        // Abort or transient API failure — keep the previous suggestion rather than flashing
+        // the notice away mid-drag; clear only when the pin itself is cleared above.
+        if (!ac.signal.aborted) setSuggestedTimezone(null);
+      });
+    return () => {
+      ac.abort();
+    };
+  }, [draft.latitude, draft.longitude]);
 
-  // Clears the address too - a formatted_address with no coordinates has nothing left to
-  // anchor it to (no map, no "Located via ..." provenance). The venue name is left alone: it's
-  // the display label, not part of what the map/geocoding result described.
   const handleClearLocation = () => {
+    reverseSeqRef.current += 1;
     pendingGeocodingProviderRef.current = null;
-    setDraft((prev) => ({ ...prev, latitude: null, longitude: null, formatted_address: "" }));
+    setDraftVerified(false);
+    setDraft((prev) => ({
+      ...prev,
+      latitude: null,
+      longitude: null,
+      formatted_address: "",
+      address_components: { ...EMPTY_ADDRESS_COMPONENTS },
+    }));
   };
 
-  function handleSelectResult(result: GeocodingResultDto) {
+  function componentsFromResult(result: GeocodingResultDto) {
+    if (result.components && !isAddressComponentsEmpty(result.components)) {
+      return result.components;
+    }
+    // Label-only / sparse geocode: keep the grid useful instead of six dashes.
+    return {
+      ...EMPTY_ADDRESS_COMPONENTS,
+      object_name: result.name ?? result.formatted_address,
+    };
+  }
+
+  function applyGeocodingResult(result: GeocodingResultDto) {
     pendingGeocodingProviderRef.current = result.provider;
+    setDraftVerified(true);
     setDraft((prev) => ({
       ...prev,
       venue_name: result.name ?? result.formatted_address,
@@ -165,13 +229,75 @@ export const LocationSettingsPanel = forwardRef<
       latitude: result.latitude,
       longitude: result.longitude,
       map_zoom: LOCATION_LIMITS.DEFAULT_ZOOM,
+      address_components: componentsFromResult(result),
     }));
+  }
+
+  function handleSelectResult(result: GeocodingResultDto) {
+    applyGeocodingResult(result);
+  }
+
+  /** Rule B: always update address + coords from reverse; fill venue_name only when empty. */
+  async function handleMapPick(latitude: number, longitude: number) {
+    const seq = ++reverseSeqRef.current;
+    setDraft((prev) => ({ ...prev, latitude, longitude }));
+
+    try {
+      const res = await reverseGeocoding(latitude, longitude);
+      if (seq !== reverseSeqRef.current) return;
+      setContactConfigured(res.contact_configured);
+      if (!res.result) return;
+      const result = res.result;
+      pendingGeocodingProviderRef.current = result.provider;
+      setDraftVerified(true);
+      setDraft((prev) => ({
+        ...prev,
+        latitude,
+        longitude,
+        formatted_address: result.formatted_address,
+        venue_name: prev.venue_name.trim()
+          ? prev.venue_name
+          : (result.name ?? result.formatted_address),
+        map_zoom: prev.map_zoom || LOCATION_LIMITS.DEFAULT_ZOOM,
+        address_components: componentsFromResult(result),
+      }));
+    } catch {
+      // Coords already applied — a failed reverse must not undo the pin the admin placed.
+    }
+  }
+
+  async function copyMapLink(kind: "google" | "apple") {
+    if (draft.latitude === null || draft.longitude === null) return;
+    const label = draft.venue_name.trim() || draft.formatted_address.trim() || null;
+    const url =
+      kind === "google"
+        ? buildGoogleMapsUrl(draft.latitude, draft.longitude, label)
+        : buildAppleMapsUrl(draft.latitude, draft.longitude, label);
+    try {
+      await navigator.clipboard.writeText(url);
+      addToast(`${kind === "google" ? "Google Maps" : "Apple Maps"} link copied.`, "success");
+    } catch {
+      addToast("Could not copy link.", "error");
+    }
+  }
+
+  async function handleApplyTimezone(suggested: string) {
+    if (!onApplyTimezone) return;
+    setApplyingTimezone(true);
+    try {
+      await onApplyTimezone(suggested);
+      addToast(`Event timezone set to ${suggested}.`, "success");
+    } catch (err) {
+      addToast(operatorApiErrorMessage(err, "Failed to update timezone."), "error");
+    } finally {
+      setApplyingTimezone(false);
+    }
   }
 
   if (loading) {
     return whenShown(
       showLoading,
-      <Card title="Location">
+      <Card title="Address">
         <p>Loading location settings…</p>
       </Card>,
     );
@@ -179,7 +305,7 @@ export const LocationSettingsPanel = forwardRef<
 
   if (loadError || !apiData || !tileConfig) {
     return (
-      <Card title="Location">
+      <Card title="Address">
         <p role="alert" className="text-error">
           {loadError ?? "Failed to load location settings."}{" "}
           <button
@@ -198,119 +324,161 @@ export const LocationSettingsPanel = forwardRef<
 
   const { latitude, longitude } = draft;
   const disabled = isArchived || saving;
+  const hasCoordinates = latitude !== null && longitude !== null;
+  const timezoneMismatch =
+    Boolean(suggestedTimezone) && suggestedTimezone !== eventTimezone;
+  const showVerified = draftVerified;
 
   return (
     <div className="settings-sections">
-      <Card title="Venue">
-        <p className="field-hint">
-          The venue name shown to attendees. Start typing a name or address to search - pick a
-          match to also set the map location below, or keep typing to save free text.
-        </p>
+      <Card
+        title={<HintLabel hint={ADDRESS_CARD_HINT}>Address</HintLabel>}
+        actions={
+          !isArchived && hasCoordinates ? (
+            <Button type="button" variant="ghost" size="sm" disabled={saving} onClick={handleClearLocation}>
+              Clear map
+            </Button>
+          ) : undefined
+        }
+      >
+        <div className="settings-field-stack">
+          {contactConfigured === false && (
+            <Notice
+              variant="warning"
+              role="alert"
+              action={
+                isSa && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => navigate("/admin/settings?tab=general")}
+                  >
+                    Open organisation settings
+                  </Button>
+                )
+              }
+            >
+              {isSa ? (
+                <>
+                  No Support contact is configured for this organisation. Nominatim&apos;s usage
+                  policy asks for an identifiable contact for address lookups - they still work. Set
+                  one in Organisation settings → General (Support contact).
+                </>
+              ) : (
+                <>
+                  No Support contact is configured for this organisation. Nominatim&apos;s usage
+                  policy asks for an identifiable contact for address lookups - they still work. Ask
+                  a superadmin to set one in Organisation settings → General.
+                </>
+              )}
+            </Notice>
+          )}
 
-        {contactConfigured === false && (
-          <Notice
-            variant="warning"
-            role="alert"
-            className="location-address-notice"
-            action={
-              isSa && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => navigate("/admin/settings?tab=general")}
-                >
-                  Open instance settings
-                </Button>
-              )
-            }
-          >
-            No Support contact is configured for this instance. Nominatim&apos;s usage policy asks
-            for an identifiable contact for address lookups - they still work, but consider setting
-            one in Instance Settings.
-          </Notice>
-        )}
-
-        <VenueAutocomplete
-          id="location-venue-name"
-          label="Venue name or address"
-          value={draft.venue_name}
-          maxLength={LOCATION_LIMITS.VENUE_NAME_MAX_LENGTH}
-          disabled={disabled}
-          placeholder="e.g. Convention Center, or a full address"
-          onChange={(text) => setDraft((prev) => ({ ...prev, venue_name: text }))}
-          onSelectResult={handleSelectResult}
-          onContactConfigured={setContactConfigured}
-        />
-
-        {draft.formatted_address && (
-          <p className="field-hint">Address: {draft.formatted_address}</p>
-        )}
-      </Card>
-
-      <Card title="Map">
-        {tileConfig.enabled ? (
-          <>
-            <MapPicker
-              latitude={latitude}
-              longitude={longitude}
-              zoom={draft.map_zoom}
-              tileConfig={tileConfig}
-              disabled={isArchived}
-              onPick={setCoordinates}
+          <div className="settings-field-group">
+            <VenueAutocomplete
+              id="location-venue-name"
+              label="Venue name or address"
+              value={draft.venue_name}
+              maxLength={LOCATION_LIMITS.VENUE_NAME_MAX_LENGTH}
+              disabled={disabled}
+              placeholder="e.g. Convention Center, or a full address"
+              hint="The venue name shown to attendees. Start typing a name or address to search - pick a match to also set the map location below, or keep typing to save free text."
+              onChange={(text) => setDraft((prev) => ({ ...prev, venue_name: text }))}
+              onSelectResult={handleSelectResult}
+              onContactConfigured={setContactConfigured}
             />
-            <p className="field-hint">Click the map to drop a pin, or drag an existing pin to adjust it.</p>
-          </>
-        ) : (
-          <Notice variant="info">
-            Map display is disabled for this instance. Venue search above still works and sets
-            coordinates, but there is no map to click or drag a pin on.
-          </Notice>
-        )}
-
-        {latitude !== null && longitude !== null ? (
-          <div className="location-map-info">
-            <p className="field-hint">
-              {latitude.toFixed(6)}, {longitude.toFixed(6)}
-            </p>
-            {apiData.geocoding_provider && (
-              <p className="field-hint">
-                Located via {geocodingProviderLabel(apiData.geocoding_provider)}
-                {apiData.geocoded_at ? ` on ${formatUtcDateTime(apiData.geocoded_at)}` : ""}.
-              </p>
-            )}
-            <p className="location-map-links">
-              <a href={buildGoogleMapsUrl(latitude, longitude)} target="_blank" rel="noopener noreferrer">
-                Google Maps
-              </a>
-              {" · "}
-              <a
-                href={buildAppleMapsUrl(latitude, longitude, draft.formatted_address)}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Apple Maps
-              </a>
-              {" · "}
-              <a href={buildOsmUrl(latitude, longitude, draft.map_zoom)} target="_blank" rel="noopener noreferrer">
-                OpenStreetMap
-              </a>
-            </p>
-            {!isArchived && (
-              <Button type="button" variant="secondary" size="sm" onClick={handleClearLocation}>
-                Clear map location
-              </Button>
-            )}
           </div>
-        ) : (
-          <p className="field-hint">No coordinates set yet. Search for an address above, or click the map.</p>
-        )}
+
+          {tileConfig.enabled ? (
+            <div className="settings-field-group">
+              <MapPicker
+                latitude={latitude}
+                longitude={longitude}
+                zoom={draft.map_zoom}
+                tileConfig={tileConfig}
+                disabled={isArchived}
+                onPick={(lat, lng) => {
+                  void handleMapPick(lat, lng);
+                }}
+              />
+              <p className="field-hint">Click the map to drop a pin, or drag an existing pin to adjust it.</p>
+            </div>
+          ) : (
+            <Notice variant="info">
+              Map display is disabled for this instance. Venue search above still works and sets
+              coordinates, but there is no map to click or drag a pin on.
+            </Notice>
+          )}
+
+          <AddressComponentsGrid components={draft.address_components} />
+
+          <div className="location-map-footer">
+            <div className="location-map-footer__meta">
+              <span className="location-map-footer__verified">
+                {showVerified ? (
+                  <Badge variant="ok">Verified on OpenStreetMap</Badge>
+                ) : (
+                  <span className="location-map-footer__verified-placeholder" aria-hidden="true" />
+                )}
+              </span>
+              <span className="location-map-footer__coords">
+                <i className="ti ti-map-pin" aria-hidden="true" />
+                {hasCoordinates ? formatMapCoordinates(latitude!, longitude!) : "-"}
+              </span>
+            </div>
+            <div className="location-map-footer__links">
+              <button
+                type="button"
+                className="location-map-footer__link"
+                disabled={!hasCoordinates || isArchived}
+                onClick={() => void copyMapLink("google")}
+              >
+                <i className="ti ti-copy" aria-hidden="true" />
+                Copy Google Maps link
+              </button>
+              <button
+                type="button"
+                className="location-map-footer__link"
+                disabled={!hasCoordinates || isArchived}
+                onClick={() => void copyMapLink("apple")}
+              >
+                <i className="ti ti-copy" aria-hidden="true" />
+                Copy Apple Maps link
+              </button>
+            </div>
+          </div>
+
+          {timezoneMismatch && suggestedTimezone && (
+            <Notice
+              variant="info"
+              icon="clock"
+              role="status"
+              action={
+                !isArchived &&
+                onApplyTimezone && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={applyingTimezone || saving}
+                    onClick={() => void handleApplyTimezone(suggestedTimezone)}
+                  >
+                    Use
+                  </Button>
+                )
+              }
+            >
+              This address seems to be in <strong>{suggestedTimezone}</strong>. The event&apos;s time
+              zone (General tab) is set to <strong>{eventTimezone}</strong>.
+            </Notice>
+          )}
+        </div>
       </Card>
 
-      <Card title="Directions & accessibility">
+      <Card title={<HintLabel hint={DIRECTIONS_HINT}>Directions & accessibility</HintLabel>}>
         <div className="settings-field-stack">
           <div className="settings-field-group">
             <label className="at-label" htmlFor="location-directions">
-              Directions
+              <HintLabel hint={DIRECTIONS_HINT}>Directions</HintLabel>
             </label>
             <textarea
               id="location-directions"
@@ -322,11 +490,10 @@ export const LocationSettingsPanel = forwardRef<
               placeholder="How to find the entrance, parking, public transit…"
               onChange={(e) => setDraft((prev) => ({ ...prev, directions_text: e.target.value }))}
             />
-            <p className="field-hint">Optional. Saved with the event, alongside the map.</p>
           </div>
           <div className="settings-field-group">
             <label className="at-label" htmlFor="location-accessibility">
-              Accessibility
+              <HintLabel hint={ACCESSIBILITY_HINT}>Accessibility</HintLabel>
             </label>
             <textarea
               id="location-accessibility"
@@ -338,7 +505,6 @@ export const LocationSettingsPanel = forwardRef<
               placeholder="Step-free access, accessible restrooms, hearing loop…"
               onChange={(e) => setDraft((prev) => ({ ...prev, accessibility_text: e.target.value }))}
             />
-            <p className="field-hint">Optional. Saved with the event, alongside the map.</p>
           </div>
         </div>
       </Card>

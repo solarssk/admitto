@@ -1,3 +1,8 @@
+import {
+  EMPTY_ADDRESS_COMPONENTS,
+  isAddressComponentsEmpty,
+  type AddressComponents,
+} from "@admitto/location";
 import type { EventLocationDto, SaveEventLocationBody } from "../api/types.js";
 
 export interface LocationDraft {
@@ -8,6 +13,18 @@ export interface LocationDraft {
   map_zoom: number;
   directions_text: string;
   accessibility_text: string;
+  address_components: AddressComponents;
+}
+
+function componentsEqual(a: AddressComponents, b: AddressComponents): boolean {
+  return (
+    (a.object_name ?? null) === (b.object_name ?? null) &&
+    (a.street ?? null) === (b.street ?? null) &&
+    (a.postcode ?? null) === (b.postcode ?? null) &&
+    (a.city ?? null) === (b.city ?? null) &&
+    (a.region ?? null) === (b.region ?? null) &&
+    (a.country ?? null) === (b.country ?? null)
+  );
 }
 
 export function draftFromLocation(data: EventLocationDto): LocationDraft {
@@ -19,6 +36,7 @@ export function draftFromLocation(data: EventLocationDto): LocationDraft {
     map_zoom: data.map_zoom,
     directions_text: data.directions_text ?? "",
     accessibility_text: data.accessibility_text ?? "",
+    address_components: data.address_components ?? { ...EMPTY_ADDRESS_COMPONENTS },
   };
 }
 
@@ -30,7 +48,8 @@ export function isLocationDirty(draft: LocationDraft, saved: LocationDraft): boo
     draft.longitude !== saved.longitude ||
     draft.map_zoom !== saved.map_zoom ||
     draft.directions_text.trim() !== saved.directions_text.trim() ||
-    draft.accessibility_text.trim() !== saved.accessibility_text.trim()
+    draft.accessibility_text.trim() !== saved.accessibility_text.trim() ||
+    !componentsEqual(draft.address_components, saved.address_components)
   );
 }
 
@@ -68,6 +87,12 @@ export function buildEventLocationPatchBody(
   const accessibility = draft.accessibility_text.trim();
   if (accessibility !== saved.accessibility_text.trim()) {
     body.accessibility_text = accessibility || null;
+  }
+
+  if (!componentsEqual(draft.address_components, saved.address_components)) {
+    body.address_components = isAddressComponentsEmpty(draft.address_components)
+      ? null
+      : draft.address_components;
   }
 
   const coordinatesChanged = body.latitude !== undefined || body.longitude !== undefined;

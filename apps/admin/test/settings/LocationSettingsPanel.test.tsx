@@ -15,8 +15,12 @@ class MockResizeObserver {
 }
 vi.stubGlobal("ResizeObserver", MockResizeObserver);
 
+let mockAssignments: Array<{ role: string; scope_type: string; scope_id: string | null }> = [
+  { role: "superadmin", scope_type: "instance", scope_id: null },
+];
+
 vi.mock("../../src/auth/AuthProvider.js", () => ({
-  useAuth: () => ({ assignments: [{ role: "superadmin", scope_type: "instance", scope_id: null }] }),
+  useAuth: () => ({ assignments: mockAssignments }),
 }));
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
@@ -26,13 +30,16 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchEventLocation: vi.fn(),
     saveEventLocation: vi.fn(),
     searchGeocoding: vi.fn(),
+    reverseGeocoding: vi.fn(),
     fetchMapTileConfig: vi.fn(),
+    fetchTimezoneForCoordinates: vi.fn().mockResolvedValue({ timezone: "Europe/London" }),
   };
 });
 
 import {
   fetchEventLocation,
   fetchMapTileConfig,
+  reverseGeocoding,
   saveEventLocation,
   searchGeocoding,
 } from "../../src/api/client.js";
@@ -40,6 +47,7 @@ import {
 const mockFetchLocation = vi.mocked(fetchEventLocation);
 const mockSaveLocation = vi.mocked(saveEventLocation);
 const mockSearch = vi.mocked(searchGeocoding);
+const mockReverse = vi.mocked(reverseGeocoding);
 const mockFetchTiles = vi.mocked(fetchMapTileConfig);
 
 const EMPTY_LOCATION: EventLocationDto = {
@@ -52,6 +60,7 @@ const EMPTY_LOCATION: EventLocationDto = {
   accessibility_text: null,
   geocoding_provider: null,
   geocoded_at: null,
+  address_components: null,
 };
 
 const SAVED_LOCATION: EventLocationDto = {
@@ -64,6 +73,14 @@ const SAVED_LOCATION: EventLocationDto = {
   accessibility_text: "Step-free access at the north door.",
   geocoding_provider: "nominatim",
   geocoded_at: "2025-01-01T00:00:00.000Z",
+  address_components: {
+    object_name: "Springfield Hall",
+    street: "1 Main St",
+    postcode: null,
+    city: "Springfield",
+    region: null,
+    country: null,
+  },
 };
 
 const TILE_CONFIG: MapTileConfigDto = {
@@ -71,6 +88,7 @@ const TILE_CONFIG: MapTileConfigDto = {
   tile_url: "https://tile.example/{z}/{x}/{y}.png",
   attribution: "© OpenStreetMap contributors",
   max_zoom: 19,
+  contact_configured: true,
 };
 
 function searchResult(overrides: Partial<GeocodingResultDto> = {}): GeocodingResultDto {
@@ -85,38 +103,55 @@ function searchResult(overrides: Partial<GeocodingResultDto> = {}): GeocodingRes
 }
 
 function renderPanel(
-  props: Partial<{ eventId: string; isArchived: boolean; onDirtyChange: (d: boolean) => void; onSavingChange: (s: boolean) => void }> = {},
+  props: Partial<{
+    eventId: string;
+    isArchived: boolean;
+    eventTimezone: string;
+    onDirtyChange: (d: boolean) => void;
+    onSavingChange: (s: boolean) => void;
+    onLocationSaved: () => Promise<void> | void;
+  }> = {},
 ) {
   return renderWithToast(
     <MemoryRouter>
-      <LocationSettingsPanel eventId="evt-1" isArchived={false} {...props} />
+      <LocationSettingsPanel
+        eventId="evt-1"
+        isArchived={false}
+        eventTimezone="Europe/Warsaw"
+        {...props}
+      />
     </MemoryRouter>,
   );
 }
 
-/** Renders with a real route table so "Open instance settings" navigation is observable. */
+/** Renders with a real route table so "Open organisation settings" navigation is observable. */
 function renderPanelWithRoutes() {
   return renderWithToast(
     <MemoryRouter initialEntries={["/admin/events/evt-1/settings"]}>
       <Routes>
         <Route
           path="/admin/events/evt-1/settings"
-          element={<LocationSettingsPanel eventId="evt-1" isArchived={false} />}
+          element={
+            <LocationSettingsPanel eventId="evt-1" isArchived={false} eventTimezone="Europe/Warsaw" />
+          }
         />
-        <Route path="/admin/settings" element={<div>instance-settings-page</div>} />
+        <Route path="/admin/settings" element={<div>organisation-settings-page</div>} />
       </Routes>
     </MemoryRouter>,
   );
 }
 
 beforeEach(() => {
+  mockAssignments = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
   mockFetchLocation.mockReset();
   mockSaveLocation.mockReset();
   mockSearch.mockReset();
+  mockReverse.mockReset();
   // Default to "no matches" so a debounced search triggered incidentally by an unrelated test
   // (e.g. typing a new venue name) doesn't reject and log noise - tests that care about search
   // results override this explicitly.
   mockSearch.mockResolvedValue({ results: [], contact_configured: true });
+  mockReverse.mockResolvedValue({ result: null, contact_configured: true });
   mockFetchTiles.mockReset();
   mockFetchTiles.mockResolvedValue(TILE_CONFIG);
 });
@@ -133,11 +168,15 @@ describe("LocationSettingsPanel — loading", () => {
     expect(await screen.findByDisplayValue("Springfield Hall")).toBeTruthy();
   });
 
-  it("shows a placeholder hint when no coordinates are set yet", async () => {
+  it("shows reserved coordinate placeholder when no coordinates are set yet", async () => {
     mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
     renderPanel();
 
-    expect(await screen.findByText(/No coordinates set yet/)).toBeTruthy();
+    expect(await screen.findByLabelText("Address details")).toBeTruthy();
+    expect(await screen.findByText("Find on map")).toBeTruthy();
+    await waitFor(() => {
+      expect(document.querySelector(".location-map-footer__coords")?.textContent).toContain("-");
+    });
   });
 
   it("shows a retry link on load failure", async () => {
@@ -206,7 +245,7 @@ describe("LocationSettingsPanel — venue search", () => {
     const input = await screen.findByLabelText("Venue name or address");
     fireEvent.change(input, { target: { value: "Downing Street" } });
 
-    await waitFor(() => expect(screen.getByText("10 Downing Street")).toBeTruthy());
+    await expect(screen.findByText("10 Downing Street")).resolves.toBeTruthy();
     expect(mockSearch).toHaveBeenCalledWith("Downing Street");
   });
 
@@ -255,46 +294,95 @@ describe("LocationSettingsPanel — venue search", () => {
     fireEvent.click(await screen.findByRole("button", { name: /10 Downing Street/ }));
 
     expect(await screen.findByDisplayValue("10 Downing Street")).toBeTruthy();
-    expect(await screen.findByText("Address: 10 Downing Street, London")).toBeTruthy();
+    expect(await screen.findByText("Verified on OpenStreetMap")).toBeTruthy();
+    expect(await screen.findByText("51.50340, -0.12760")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
-      expect(mockSaveLocation).toHaveBeenCalledWith("evt-1", {
-        venue_name: "10 Downing Street",
-        formatted_address: "10 Downing Street, London",
-        latitude: 51.5034,
-        longitude: -0.1276,
-        geocoding_provider: "nominatim",
-      }),
+      expect(mockSaveLocation).toHaveBeenCalledWith(
+        "evt-1",
+        expect.objectContaining({
+          venue_name: "10 Downing Street",
+          formatted_address: "10 Downing Street, London",
+          latitude: 51.5034,
+          longitude: -0.1276,
+          geocoding_provider: "nominatim",
+          address_components: {
+            object_name: "10 Downing Street",
+            street: null,
+            postcode: null,
+            city: null,
+            region: null,
+            country: null,
+          },
+        }),
+      ),
     );
   });
 
-  it("warns and links to instance settings when the instance has no support contact configured", async () => {
+  it("Find on map shows a no-match notice when OSM returns nothing", async () => {
     mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
-    mockSearch.mockResolvedValue({ results: [searchResult()], contact_configured: false });
-    renderPanelWithRoutes();
+    mockSearch.mockResolvedValue({ results: [], contact_configured: true });
+    renderPanel();
 
     const input = await screen.findByLabelText("Venue name or address");
-    fireEvent.change(input, { target: { value: "Downing Street" } });
+    fireEvent.change(input, { target: { value: "Nowhere Hall" } });
+    fireEvent.click(screen.getByRole("button", { name: "Find on map" }));
+
+    expect(await screen.findByText(/No match found on OpenStreetMap/)).toBeTruthy();
+  });
+
+  it("warns about missing Support contact on load, before any search", async () => {
+    mockAssignments = [{ role: "admin", scope_type: "organization", scope_id: "org-1" }];
+    mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
+    mockFetchTiles.mockResolvedValue({ ...TILE_CONFIG, contact_configured: false });
+    renderPanelWithRoutes();
 
     expect(await screen.findByText(/No Support contact is configured/)).toBeTruthy();
-    fireEvent.click(screen.getByText("Open instance settings"));
-    expect(await screen.findByText("instance-settings-page")).toBeTruthy();
+    expect(screen.getByText(/Ask a superadmin to set one in Organisation settings/)).toBeTruthy();
+    expect(screen.queryByText("Open organisation settings")).toBeNull();
+  });
+
+  it("offers Organisation settings to a superadmin when Support contact is missing", async () => {
+    mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
+    mockFetchTiles.mockResolvedValue({ ...TILE_CONFIG, contact_configured: false });
+    renderPanelWithRoutes();
+
+    expect(await screen.findByText(/Set one in Organisation settings/)).toBeTruthy();
+    fireEvent.click(screen.getByText("Open organisation settings"));
+    expect(await screen.findByText("organisation-settings-page")).toBeTruthy();
+  });
+
+  it("also updates the Support-contact notice from a search response", async () => {
+    mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
+    mockSearch.mockResolvedValue({ results: [searchResult()], contact_configured: false });
+    renderPanel();
+
+    // Start configured (default TILE_CONFIG), then a search flips it off.
+    await screen.findByLabelText("Venue name or address");
+    expect(screen.queryByText(/No Support contact is configured/)).toBeFalsy();
+
+    fireEvent.change(screen.getByLabelText("Venue name or address"), {
+      target: { value: "Downing Street" },
+    });
+    expect(await screen.findByText(/No Support contact is configured/)).toBeTruthy();
   });
 });
 
 describe("LocationSettingsPanel — clearing and map availability", () => {
-  it("clears coordinates and address via 'Clear map location', but keeps the venue name", async () => {
+  it("clears coordinates and address grid via Clear map, but keeps the venue name", async () => {
     mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
     renderPanel();
 
     await screen.findByDisplayValue("Springfield Hall");
-    fireEvent.click(screen.getByRole("button", { name: "Clear map location" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear map" }));
 
-    expect(await screen.findByText(/No coordinates set yet/)).toBeTruthy();
     expect(screen.getByDisplayValue("Springfield Hall")).toBeTruthy();
-    expect(screen.queryByText(/^Address: /)).toBeFalsy();
+    await waitFor(() => {
+      expect(document.querySelector(".location-map-footer__coords")?.textContent).toContain("-");
+    });
+    expect(screen.queryByText("Verified on OpenStreetMap")).toBeFalsy();
     expect(await screen.findByText("Unsaved changes")).toBeTruthy();
   });
 
@@ -308,13 +396,13 @@ describe("LocationSettingsPanel — clearing and map availability", () => {
 });
 
 describe("LocationSettingsPanel — archived event", () => {
-  it("hides the save footer and the clear-location button for an archived event", async () => {
+  it("hides the save footer and the clear-map button for an archived event", async () => {
     mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
     renderPanel({ isArchived: true });
 
     await screen.findByDisplayValue("Springfield Hall");
     expect(screen.queryByRole("button", { name: "Save" })).toBeFalsy();
-    expect(screen.queryByRole("button", { name: "Clear map location" })).toBeFalsy();
+    expect(screen.queryByRole("button", { name: "Clear map" })).toBeFalsy();
     expect(screen.getByText(/location settings cannot be changed/)).toBeTruthy();
   });
 });

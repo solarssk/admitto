@@ -15,7 +15,8 @@ isolation and reused by both the admin API and (later) the public ticket/event-l
   "both coordinates set, or neither" against the *merged* (existing + patch) record.
 - `readiness.ts` — `isMapReady()`: true once both coordinates are present.
 - `links.ts` — `buildGoogleMapsUrl()` / `buildAppleMapsUrl()` / `buildOsmUrl()`: deep links for
-  the three map providers, no API keys required.
+  the three map providers, no API keys required. Google/Apple accept an optional venue label;
+  Google uses `Label@lat,lng` so the pin is titled (true Place ID matching needs Google Places).
 
 ## Usage
 

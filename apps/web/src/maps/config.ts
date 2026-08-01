@@ -6,9 +6,12 @@
 
 type EnvLike = Record<string, string | undefined>;
 
-const DEFAULT_MAP_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+/** CARTO Voyager basemap (public CDN, no API key). Override with MAP_TILE_URL for OSM or a
+ * self-hosted tile server. Leaflet expands `{s}` to a/b/c subdomains. */
+const DEFAULT_MAP_TILE_URL =
+  "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png";
 const DEFAULT_MAP_TILE_ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 const DEFAULT_MAP_TILE_MAX_ZOOM = 19;
 
 const DEFAULT_GEOCODING_PROVIDER = "nominatim";

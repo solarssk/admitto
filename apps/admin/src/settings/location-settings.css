@@ -1,9 +1,5 @@
 /* Event Settings — Location tab. LocationSettingsPanel.tsx + MapPicker.tsx. */
 
-.location-address-notice {
-  margin-top: var(--space-3);
-}
-
 /* Leaflet needs an explicit pixel height on its container - it measures the container at mount
    and renders nothing (a grey box) if it is 0px, which it would be with only `width: 100%` and
    no height. ResizeObserver (MapPicker.tsx) keeps it correctly sized after that, including when
@@ -20,7 +16,7 @@
   height: 360px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  margin-top: var(--space-3);
+  /* No margin-top: spacing to siblings comes from .settings-field-stack / .settings-field-group. */
   cursor: pointer;
   isolation: isolate;
 }
@@ -29,15 +25,138 @@
   cursor: not-allowed;
 }
 
-.location-map-info {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  margin-top: var(--space-3);
+.location-address-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3) var(--space-4);
+  /* External gap to hint above / footer below = .settings-field-stack's --space-4 — do not
+     add a second margin here or Location invents its own rhythm. */
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 6px);
+  box-sizing: border-box;
 }
 
-.location-map-links {
+.location-address-grid__cell {
+  margin: 0;
+  min-width: 0;
+}
+
+.location-address-grid__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0 0 var(--space-1);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted, var(--text-secondary));
+  line-height: 1.2;
+}
+
+.location-address-grid__label .ti {
+  flex-shrink: 0;
+  font-size: 0.95em;
+  line-height: 1;
+  width: 1em;
+  text-align: center;
+  opacity: 0.85;
+}
+
+.location-address-grid__value {
+  margin: 0;
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+  min-height: 1.25em;
+}
+
+.location-map-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  /* Same as grid: stack gap only — no extra margin-top. */
+  margin: 0;
+  min-height: 2rem;
+}
+
+.location-map-footer__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.location-map-footer__verified {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.5rem;
+}
+
+.location-map-footer__verified-placeholder {
+  display: inline-block;
+  width: 10.5rem;
+  height: 1.5rem;
+}
+
+.location-map-footer__coords {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   font-size: var(--fs-sm);
+  /* Tall enough that ti-map-pin's pointed tip is not clipped (looks like a hollow
+   * circle / "target" when the tip is cut off). */
+  line-height: 1.5;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  min-width: 11rem;
+  overflow: visible;
+}
+
+.location-map-footer__coords .ti {
+  display: block;
+  flex-shrink: 0;
+  width: 1em;
+  height: 1em;
+  font-size: 1.05em;
+  line-height: 1;
+  overflow: visible;
+}
+
+.location-map-footer__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.location-map-footer__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--text-link, var(--color-primary, #206bc4));
+  cursor: pointer;
+}
+
+.location-map-footer__link:disabled {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+.location-map-footer__link:not(:disabled):hover {
+  text-decoration: underline;
 }
 
 .location-textarea {
@@ -63,4 +182,10 @@
   background: var(--surface-sunken);
   color: var(--text-disabled);
   cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .location-address-grid {
+    grid-template-columns: 1fr;
+  }
 }

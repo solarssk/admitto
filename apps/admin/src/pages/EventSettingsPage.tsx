@@ -957,8 +957,22 @@ export function EventSettingsPage() {
           key={locationCardResetKey}
           eventId={eventId}
           isArchived={isArchived}
+          eventTimezone={form?.timezone ?? event.timezone}
           onDirtyChange={setLocationDirty}
           onSavingChange={setLocationSaving}
+          onLocationSaved={async () => {
+            await refreshLayoutEvent?.();
+          }}
+          onApplyTimezone={async (timezone) => {
+            if (!form || !original) return;
+            const { event: updated } = await patchEvent(eventId, { timezone });
+            setEvent(updated);
+            const next = { ...form, timezone: updated.timezone };
+            const nextOriginal = { ...original, timezone: updated.timezone };
+            setForm(next);
+            setOriginal(nextOriginal);
+            await refreshLayoutEvent?.();
+          }}
         />
       </EventSettingsTabPanel>
 

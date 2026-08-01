@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 import { resolveGeocodingConfig, resolveMapTileConfig } from "../../src/maps/config.js";
 
 describe("resolveMapTileConfig", () => {
-  it("defaults to the public OSM tile server, enabled", () => {
+  it("defaults to CARTO Voyager tiles, enabled", () => {
     const config = resolveMapTileConfig({});
     expect(config.enabled).toBe(true);
-    expect(config.tileUrl).toBe("https://tile.openstreetmap.org/{z}/{x}/{y}.png");
+    expect(config.tileUrl).toBe(
+      "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+    );
     expect(config.attribution).toContain("OpenStreetMap");
+    expect(config.attribution).toContain("CARTO");
     expect(config.maxZoom).toBe(19);
   });
 

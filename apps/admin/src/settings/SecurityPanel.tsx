@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Badge, Button, Card, Input, Switch, Tooltip, useToast } from "@admitto/ui";
+import { Badge, Button, Card, HintLabel, Input, Switch, Tooltip, useToast } from "@admitto/ui";
 import { fetchSecuritySettings, patchSecuritySettings } from "../api/client.js";
 import { roleLabel } from "../auth/role-labels.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
@@ -46,14 +46,6 @@ function EnvBadge({ source }: Readonly<{ source: SettingSource }>) {
     <Badge variant="neutral" className="mail-field-env-badge">
       Managed by environment
     </Badge>
-  );
-}
-
-function securityCardTitle() {
-  return (
-    <Tooltip content={SECURITY_CARD_HINT} className="audit-log-scope-header">
-      Security <i className="ti ti-info-circle" aria-hidden="true" />
-    </Tooltip>
   );
 }
 
@@ -208,7 +200,7 @@ export function SecurityPanel() {
   if (loading) {
     if (!showLoading) return null;
     return (
-      <Card title={securityCardTitle()}>
+      <Card title={<HintLabel hint={SECURITY_CARD_HINT}>Security</HintLabel>}>
         <p className="sessions-status">Loading…</p>
       </Card>
     );
@@ -216,7 +208,7 @@ export function SecurityPanel() {
 
   if (error || !settings || !draft) {
     return (
-      <Card title={securityCardTitle()}>
+      <Card title={<HintLabel hint={SECURITY_CARD_HINT}>Security</HintLabel>}>
         <div className="sessions-status">
           <p>{error ?? "Unexpected error."}</p>
           <Button type="button" variant="secondary" onClick={load}>
@@ -243,7 +235,7 @@ export function SecurityPanel() {
 
   return (
     <>
-      <Card title={securityCardTitle()}>
+      <Card title={<HintLabel hint={SECURITY_CARD_HINT}>Security</HintLabel>}>
         <div className="mail-transport-section security-settings-rows">
           <SecurityNumericRow
             label="Admin session maximum lifetime (hours)"

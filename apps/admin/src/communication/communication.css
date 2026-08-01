@@ -355,12 +355,6 @@
   padding: 0 var(--space-4) var(--space-4);
 }
 
-/* Card title + info-circle hint icon, same shape as .audit-log-scope-header/.sessions-col-header. */
-.communication-log-title {
-  align-items: center;
-  gap: var(--space-1);
-}
-
 .communication-table {
   width: 100%;
 }

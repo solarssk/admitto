@@ -799,6 +799,18 @@ export interface EventDeliveriesListResponse {
 /** Event Settings "Location" tab — venue name, full address, coordinates, and directions/
  * accessibility notes for an event's venue. The single source of truth for an event's
  * location (no separate Basic Information field). */
+export interface AddressComponentsDto {
+  object_name: string | null;
+  street: string | null;
+  postcode: string | null;
+  city: string | null;
+  region: string | null;
+  country: string | null;
+}
+
+/** Event Settings "Location" tab — full address, map coordinates/zoom, and directions/
+ * accessibility notes for an event's venue. The single source of truth for an event's
+ * location (no separate Basic Information field). */
 export interface EventLocationDto {
   /** Short display name (e.g. "National Stadium") - the single source of truth for an
    * event's location, replacing the old Basic Information "Location" field. */
@@ -813,6 +825,7 @@ export interface EventLocationDto {
    * a manually typed coordinate, or "Clear map location" — see event-location-routes.ts. */
   geocoding_provider: string | null;
   geocoded_at: string | null;
+  address_components: AddressComponentsDto | null;
 }
 
 export interface SaveEventLocationBody {
@@ -824,6 +837,7 @@ export interface SaveEventLocationBody {
   map_zoom?: number | null;
   directions_text?: string | null;
   accessibility_text?: string | null;
+  address_components?: AddressComponentsDto | null;
   /** Only meaningful alongside a latitude/longitude change; omit for a manual pin move so the
    * server clears stale provenance instead of relabeling it as freshly geocoded. */
   geocoding_provider?: string | null;
@@ -837,13 +851,25 @@ export interface GeocodingResultDto {
   latitude: number;
   longitude: number;
   provider: string;
+  components?: AddressComponentsDto;
 }
 
 export interface GeocodingSearchResponse {
   results: GeocodingResultDto[];
-  /** False when the instance has no Support contact configured — Nominatim's usage policy
+  /** False when the organisation has no Support contact configured — Nominatim's usage policy
    * asks for an identifiable contact; search still works, the UI just shows a hint. */
   contact_configured: boolean;
+}
+
+export interface GeocodingReverseResponse {
+  /** Null when the coordinate has no OSM coverage. */
+  result: GeocodingResultDto | null;
+  contact_configured: boolean;
+}
+
+export interface GeocodingTimezoneResponse {
+  /** Primary IANA timezone for the pin, or null when geo-tz has no match. */
+  timezone: string | null;
 }
 
 export interface MapTileConfigDto {
@@ -851,6 +877,9 @@ export interface MapTileConfigDto {
   tile_url: string;
   attribution: string;
   max_zoom: number;
+  /** Same flag as GeocodingSearchResponse.contact_configured — loaded with the map config
+   * so the Location tab can show the Support-contact notice before any search runs. */
+  contact_configured: boolean;
 }
 
 export type SessionRole = "superadmin" | "admin" | "operator";

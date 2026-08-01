@@ -16,10 +16,24 @@ import {
   assertCoordinatePairing,
   LocationValidationError,
   normalizeEventLocationInput,
+  parseStoredAddressComponents,
+  type AddressComponents,
   type EventLocationDto,
 } from "@admitto/location";
 import { z } from "zod";
 import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
+
+const addressComponentsSchema = z
+  .object({
+    object_name: z.string().nullable().optional(),
+    street: z.string().nullable().optional(),
+    postcode: z.string().nullable().optional(),
+    city: z.string().nullable().optional(),
+    region: z.string().nullable().optional(),
+    country: z.string().nullable().optional(),
+  })
+  .strict()
+  .nullable();
 
 const putLocationBodySchema = z
   .object({
@@ -30,6 +44,7 @@ const putLocationBodySchema = z
     map_zoom: z.number().nullish(),
     directions_text: z.string().nullish(),
     accessibility_text: z.string().nullish(),
+    address_components: addressComponentsSchema.optional(),
     // API-layer only — not part of `@admitto/location`'s EventLocationInput, since it isn't a
     // user-editable field with its own validation rules. It only ever rides along with a
     // latitude/longitude change (see the geocoding provenance logic below).
@@ -47,6 +62,7 @@ type EventLocationRow = {
   accessibility_text: string | null;
   geocoding_provider: string | null;
   geocoded_at: Date | null;
+  address_components: Prisma.JsonValue | null;
 };
 
 /** Stable empty shape returned by GET when no `EventLocation` row exists yet — the tab
@@ -61,6 +77,7 @@ const EMPTY_LOCATION_DTO: EventLocationDto = {
   accessibility_text: null,
   geocoding_provider: null,
   geocoded_at: null,
+  address_components: null,
 };
 
 function serializeLocation(row: EventLocationRow | null): EventLocationDto {
@@ -75,7 +92,70 @@ function serializeLocation(row: EventLocationRow | null): EventLocationDto {
     accessibility_text: row.accessibility_text,
     geocoding_provider: row.geocoding_provider,
     geocoded_at: row.geocoded_at ? row.geocoded_at.toISOString() : null,
+    address_components: parseStoredAddressComponents(row.address_components),
   };
+}
+
+function componentsToJson(
+  components: AddressComponents | null | undefined,
+): Prisma.InputJsonValue | typeof Prisma.JsonNull | undefined {
+  if (components === undefined) return undefined;
+  if (components === null) return Prisma.JsonNull;
+  return components as Prisma.InputJsonValue;
+}
+
+type LocationPatch = ReturnType<typeof normalizeEventLocationInput>;
+
+type GeocodingProvenancePatch =
+  | { geocoding_provider: string; geocoded_at: Date }
+  | { geocoding_provider: null; geocoded_at: null }
+  | Record<string, never>;
+
+/** Stamp or clear geocoding provenance when coordinates change; leave untouched otherwise. */
+function geocodingProvenancePatch(
+  coordinatesInPatch: boolean,
+  rawProvider: string | null | undefined,
+): GeocodingProvenancePatch {
+  if (!coordinatesInPatch) return {};
+  const provider = rawProvider?.trim();
+  if (provider) {
+    return { geocoding_provider: provider, geocoded_at: new Date() };
+  }
+  return { geocoding_provider: null, geocoded_at: null };
+}
+
+function mergedCoordinate(
+  patchValue: number | null | undefined,
+  existingValue: number | null | undefined,
+): number | null {
+  return patchValue !== undefined ? patchValue : (existingValue ?? null);
+}
+
+async function parseLocationPutBody(
+  c: Context,
+): Promise<{ patch: LocationPatch; geocodingProvider: string | null | undefined } | Response> {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid json" }, 400);
+  }
+
+  const parsed = putLocationBodySchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: "validation_failed" }, 400);
+  }
+
+  try {
+    const patch = normalizeEventLocationInput(parsed.data);
+    if (Object.keys(patch).length === 0) {
+      return c.json({ error: "validation_failed" }, 400);
+    }
+    return { patch, geocodingProvider: parsed.data.geocoding_provider };
+  } catch (err) {
+    if (err instanceof LocationValidationError) return c.json({ error: err.message }, 400);
+    throw err;
+  }
 }
 
 /** GET /api/admin/events/:eventId/location */
@@ -108,36 +188,16 @@ export async function handlePutEventLocation(c: Context, db: PrismaClient): Prom
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
   const eventId = eventIdOrRes;
 
-  let body: unknown;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ error: "invalid json" }, 400);
-  }
-
-  const parsed = putLocationBodySchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "validation_failed" }, 400);
-  }
-
-  let patch: ReturnType<typeof normalizeEventLocationInput>;
-  try {
-    patch = normalizeEventLocationInput(parsed.data);
-  } catch (err) {
-    if (err instanceof LocationValidationError) return c.json({ error: err.message }, 400);
-    throw err;
-  }
-
-  if (Object.keys(patch).length === 0) {
-    return c.json({ error: "validation_failed" }, 400);
-  }
+  const parsedOrRes = await parseLocationPutBody(c);
+  if (parsedOrRes instanceof Response) return parsedOrRes;
+  const { patch, geocodingProvider } = parsedOrRes;
 
   const event = await db.event.findUnique({ where: { id: eventId }, select: { organization_id: true } });
   if (!event) return c.json({ error: "not_found" }, 404);
 
   const existing = await db.eventLocation.findUnique({ where: { event_id: eventId } });
-  const mergedLatitude = patch.latitude !== undefined ? patch.latitude : (existing?.latitude ?? null);
-  const mergedLongitude = patch.longitude !== undefined ? patch.longitude : (existing?.longitude ?? null);
+  const mergedLatitude = mergedCoordinate(patch.latitude, existing?.latitude);
+  const mergedLongitude = mergedCoordinate(patch.longitude, existing?.longitude);
 
   try {
     assertCoordinatePairing(mergedLatitude, mergedLongitude);
@@ -152,14 +212,13 @@ export async function handlePutEventLocation(c: Context, db: PrismaClient): Prom
   // means the previous provenance no longer describes these coordinates, so both are reset to
   // null. Leaving lat/lng untouched leaves provenance untouched too.
   const coordinatesInPatch = patch.latitude !== undefined || patch.longitude !== undefined;
-  const rawProvider = parsed.data.geocoding_provider?.trim();
-  const geocodingPatch = coordinatesInPatch
-    ? rawProvider
-      ? { geocoding_provider: rawProvider, geocoded_at: new Date() }
-      : { geocoding_provider: null, geocoded_at: null }
-    : {};
+  const geocodingPatch = geocodingProvenancePatch(coordinatesInPatch, geocodingProvider);
 
-  const changedFields = [...Object.keys(patch), ...(coordinatesInPatch ? ["geocoding_provider"] : [])];
+  const componentsJson = componentsToJson(patch.address_components);
+  const changedFields = [
+    ...Object.keys(patch),
+    ...(coordinatesInPatch ? ["geocoding_provider"] : []),
+  ];
   const audit = adminAuditFromContext(c);
   const actorUserId = c.get("auth").userId;
 
@@ -182,6 +241,7 @@ export async function handlePutEventLocation(c: Context, db: PrismaClient): Prom
           ...(patch.map_zoom !== undefined && { map_zoom: patch.map_zoom }),
           directions_text: patch.directions_text ?? null,
           accessibility_text: patch.accessibility_text ?? null,
+          ...(componentsJson !== undefined && { address_components: componentsJson }),
           ...geocodingPatch,
         },
         update: {
@@ -192,6 +252,7 @@ export async function handlePutEventLocation(c: Context, db: PrismaClient): Prom
           ...(patch.map_zoom !== undefined && { map_zoom: patch.map_zoom }),
           ...(patch.directions_text !== undefined && { directions_text: patch.directions_text }),
           ...(patch.accessibility_text !== undefined && { accessibility_text: patch.accessibility_text }),
+          ...(componentsJson !== undefined && { address_components: componentsJson }),
           ...geocodingPatch,
         },
       });

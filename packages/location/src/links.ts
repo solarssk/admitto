@@ -5,9 +5,22 @@ function formatCoordinate(value: number): string {
   return value.toFixed(COORDINATE_DECIMALS);
 }
 
-/** Google Maps deep link centered on a pin (no API key required, works on mobile + desktop). */
-export function buildGoogleMapsUrl(latitude: number, longitude: number): string {
-  const query = `${formatCoordinate(latitude)},${formatCoordinate(longitude)}`;
+/**
+ * Google Maps deep link centered on a pin (no API key required).
+ *
+ * When `label` is set (venue name / address), the query is `Label@lat,lng` so Maps can show
+ * a titled pin and often snap to a nearby POI. Coords alone never show a place name. True
+ * Google Place matching still needs a `query_place_id` from the Places API — we do not have
+ * that without a commercial Google integration.
+ */
+export function buildGoogleMapsUrl(
+  latitude: number,
+  longitude: number,
+  label?: string | null,
+): string {
+  const coords = `${formatCoordinate(latitude)},${formatCoordinate(longitude)}`;
+  const trimmedLabel = label?.trim();
+  const query = trimmedLabel ? `${trimmedLabel}@${coords}` : coords;
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
 }
 

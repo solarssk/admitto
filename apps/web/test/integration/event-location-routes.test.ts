@@ -186,6 +186,7 @@ describe("GET /api/admin/events/:eventId/location", () => {
       accessibility_text: null,
       geocoding_provider: null,
       geocoded_at: null,
+      address_components: null,
     });
   });
 
@@ -269,6 +270,26 @@ describe("PUT /api/admin/events/:eventId/location", () => {
   ])("rejects invalid input: %s", async (_label, patch) => {
     const res = await putLocation(EVENT_LOC, adminCookie, patch);
     expect(res.status).toBe(400);
+  });
+
+  it("persists and clears address_components", async () => {
+    const components = {
+      object_name: "ICE Kraków",
+      street: "Marii Konopnickiej 17",
+      postcode: "30-302",
+      city: "Kraków",
+      region: "Lesser Poland",
+      country: "Poland",
+    };
+    const res = await putLocation(EVENT_LOC, adminCookie, { address_components: components });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as EventLocationDto;
+    expect(body.address_components).toEqual(components);
+
+    const cleared = await putLocation(EVENT_LOC, adminCookie, { address_components: null });
+    expect(cleared.status).toBe(200);
+    const clearedBody = (await cleared.json()) as EventLocationDto;
+    expect(clearedBody.address_components).toBeNull();
   });
 
   it("creates a new row with all fields on first save", async () => {

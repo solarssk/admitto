@@ -169,6 +169,9 @@ model EventLocation {
   // Plain string, not a Prisma enum (see header comment) - e.g. "nominatim".
   geocoding_provider String?
   geocoded_at        DateTime?
+  // Structured address grid from the last geocode/reverse (object_name, street, postcode,
+  // city, region, country). Null when never set or cleared with the map pin.
+  address_components Json?
   created_at         DateTime  @default(now())
   updated_at         DateTime  @updatedAt
 }

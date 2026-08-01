@@ -10,6 +10,19 @@ describe("buildGoogleMapsUrl", () => {
       "https://www.google.com/maps/search/?api=1&query=50.061947%2C19.936856",
     );
   });
+
+  it("prefixes a trimmed label before @lat,lng when provided", () => {
+    const url = buildGoogleMapsUrl(LAT, LNG, "  ICE Kraków  ");
+    expect(url).toBe(
+      "https://www.google.com/maps/search/?api=1&query=ICE%20Krak%C3%B3w%4050.061947%2C19.936856",
+    );
+  });
+
+  it("omits the label when it is empty/whitespace-only", () => {
+    expect(buildGoogleMapsUrl(LAT, LNG, "   ")).toBe(
+      "https://www.google.com/maps/search/?api=1&query=50.061947%2C19.936856",
+    );
+  });
 });
 
 describe("buildAppleMapsUrl", () => {

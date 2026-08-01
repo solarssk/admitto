@@ -218,7 +218,11 @@ import {
   handlePostEventMailSettingsTest,
 } from "./admin/event-mail-settings-routes.js";
 import { handleGetEventLocation, handlePutEventLocation } from "./admin/event-location-routes.js";
-import { handlePostGeocodingSearch } from "./admin/geocoding-routes.js";
+import {
+  handlePostGeocodingReverse,
+  handlePostGeocodingSearch,
+  handlePostGeocodingTimezone,
+} from "./admin/geocoding-routes.js";
 import { handleGetMapsConfig } from "./admin/maps-config-routes.js";
 import { resolveGeocodingConfig } from "./maps/config.js";
 import { buildGeocodingUserAgent } from "./maps/user-agent.js";
@@ -665,7 +669,23 @@ export function createApp(options: CreateAppOptions = {}) {
     adminGeocodingSearchRateLimit,
     (c) => handlePostGeocodingSearch(c, db, geocodingService),
   );
-  app.get("/api/admin/maps/config", staffAdminGate, (c) => handleGetMapsConfig(c));
+  // Shares the same Nominatim budget as search (global 1 req/s) — reverse is the same
+  // upstream provider, so a separate policy would double the allowed traffic.
+  app.post(
+    "/api/admin/geocoding/reverse",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminGeocodingSearchRateLimit,
+    (c) => handlePostGeocodingReverse(c, db, geocodingService),
+  );
+  // Offline geo-tz lookup (no Nominatim) — does not share the Nominatim 1 req/s budget.
+  app.post(
+    "/api/admin/geocoding/timezone",
+    jsonPostCsrf,
+    staffAdminGate,
+    (c) => handlePostGeocodingTimezone(c),
+  );
+  app.get("/api/admin/maps/config", staffAdminGate, (c) => handleGetMapsConfig(c, db));
   app.post(
     "/api/admin/events/:eventId/branding-upload",
     jsonPostCsrf,

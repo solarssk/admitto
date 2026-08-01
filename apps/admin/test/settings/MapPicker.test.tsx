@@ -18,6 +18,7 @@ const TILE_CONFIG: MapTileConfigDto = {
   tile_url: "https://tile.example/{z}/{x}/{y}.png",
   attribution: "© OpenStreetMap contributors",
   max_zoom: 19,
+  contact_configured: true,
 };
 
 /** jsdom defaults every element's getBoundingClientRect to all-zero, which breaks Leaflet's

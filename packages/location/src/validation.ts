@@ -1,3 +1,7 @@
+import {
+  normalizeAddressComponents,
+  type AddressComponents,
+} from "./addressComponents.js";
 import type { EventLocationInput } from "./types.js";
 
 export const LOCATION_LIMITS = {
@@ -62,6 +66,7 @@ export interface NormalizedEventLocationInput {
   map_zoom?: number;
   directions_text?: string | null;
   accessibility_text?: string | null;
+  address_components?: AddressComponents | null;
 }
 
 /** Trims/validates a submitted patch. Keys omitted from `input` stay omitted (meaning "leave
@@ -121,6 +126,16 @@ export function normalizeEventLocationInput(input: EventLocationInput): Normaliz
         );
       }
       result.map_zoom = input.map_zoom;
+    }
+  }
+
+  if (input.address_components !== undefined) {
+    try {
+      result.address_components = normalizeAddressComponents(input.address_components) ?? null;
+    } catch (err) {
+      throw new LocationValidationError(
+        err instanceof Error ? err.message : "address_components is invalid",
+      );
     }
   }
 

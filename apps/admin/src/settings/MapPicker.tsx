@@ -46,7 +46,7 @@ export function MapPicker({
   tileConfig,
   disabled = false,
   onPick,
-}: MapPickerProps) {
+}: Readonly<MapPickerProps>) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.Marker | null>(null);

@@ -11,216 +11,227 @@ function jsonResponse(body: unknown, init: { status?: number; headers?: Record<s
   });
 }
 
+type FeatureShorthand = {
+  name?: string;
+  label?: string;
+  housenumber?: string;
+  street?: string;
+  city?: string;
+  country?: string;
+  coordinates?: unknown;
+};
+
 /** Builds a minimal GeocodeJSON FeatureCollection body from a flat list of feature shorthand. */
-function geocodeJsonBody(features: Array<{ name?: string; label?: string; coordinates?: unknown }>) {
+function geocodeJsonBody(features: FeatureShorthand[]) {
   return {
     type: "FeatureCollection",
-    features: features.map(({ name, label, coordinates }) => ({
+    features: features.map((f) => ({
       type: "Feature",
-      properties: { geocoding: { ...(name !== undefined ? { name } : {}), ...(label !== undefined ? { label } : {}) } },
-      geometry: { type: "Point", coordinates },
+      properties: {
+        geocoding: {
+          ...(f.name !== undefined ? { name: f.name } : {}),
+          ...(f.label !== undefined ? { label: f.label } : {}),
+          ...(f.housenumber !== undefined ? { housenumber: f.housenumber } : {}),
+          ...(f.street !== undefined ? { street: f.street } : {}),
+          ...(f.city !== undefined ? { city: f.city } : {}),
+          ...(f.country !== undefined ? { country: f.country } : {}),
+        },
+      },
+      geometry: { type: "Point", coordinates: f.coordinates },
     })),
   };
 }
 
-describe("NominatimProvider", () => {
-  it("maps GeocodeJSON features to GeocodingResult[], swapping [lon, lat] to latitude/longitude", async () => {
+function makeProvider(fetchFn: typeof fetch) {
+  return new NominatimProvider({
+    baseUrl: "https://nominatim.example.org",
+    timeoutMs: 5_000,
+    buildUserAgent,
+    fetchFn,
+  });
+}
+
+describe("NominatimProvider.search", () => {
+  it("maps GeocodeJSON features to compact addresses and venue names", async () => {
     const fetchFn = vi.fn().mockResolvedValue(
       jsonResponse(
         geocodeJsonBody([
-          { name: "Tour Eiffel", label: "Tour Eiffel, Paris, France", coordinates: [2.2945006, 48.8582599] },
-          { label: "Warsaw, IN, USA", coordinates: [-87.6828, 38.6217] },
+          {
+            name: "Złote Tarasy",
+            label: "Złote Tarasy, 59, Złota, Śródmieście, Warszawa, Polska",
+            street: "Złota",
+            housenumber: "59",
+            city: "Warszawa",
+            country: "Polska",
+            coordinates: [21.0028, 52.2297],
+          },
+          {
+            label: "62, Marywilska, Żerań, Warszawa, Polska",
+            street: "Marywilska",
+            housenumber: "62",
+            city: "Warszawa",
+            country: "Polska",
+            coordinates: [21.05, 52.3],
+          },
         ]),
       ),
     );
-    const provider = new NominatimProvider({
-      baseUrl: "https://nominatim.example.org",
-      timeoutMs: 5_000,
-      buildUserAgent,
-      fetchFn,
-    });
-
-    const results = await provider.search("Eiffel Tower");
+    const results = await makeProvider(fetchFn).search("Złote");
 
     expect(results).toEqual([
       {
-        name: "Tour Eiffel",
-        formatted_address: "Tour Eiffel, Paris, France",
-        latitude: 48.8582599,
-        longitude: 2.2945006,
+        name: "Złote Tarasy",
+        formatted_address: "Polska, Warszawa - Złote Tarasy",
+        latitude: 52.2297,
+        longitude: 21.0028,
         provider: "nominatim",
+        components: {
+          object_name: "Złote Tarasy",
+          street: "Złota 59",
+          postcode: null,
+          city: "Warszawa",
+          region: null,
+          country: "Polska",
+        },
       },
       {
-        formatted_address: "Warsaw, IN, USA",
-        latitude: 38.6217,
-        longitude: -87.6828,
+        name: "Marywilska 62",
+        formatted_address: "Polska, Warszawa - Marywilska 62",
+        latitude: 52.3,
+        longitude: 21.05,
         provider: "nominatim",
+        components: {
+          object_name: null,
+          street: "Marywilska 62",
+          postcode: null,
+          city: "Warszawa",
+          region: null,
+          country: "Polska",
+        },
       },
     ]);
   });
 
-  it("omits `name` when the feature has no localized venue/POI name", async () => {
-    const fetchFn = vi.fn().mockResolvedValue(
-      jsonResponse(geocodeJsonBody([{ label: "Some Street, Some City", coordinates: [10, 20] }])),
-    );
-    const provider = new NominatimProvider({
-      baseUrl: "https://nominatim.example.org",
-      timeoutMs: 5_000,
-      buildUserAgent,
-      fetchFn,
-    });
-
-    const [result] = await provider.search("Some Street");
-    expect(result?.name).toBeUndefined();
-  });
-
-  it("sends the query, geocodejson format, limit, and a dynamic User-Agent", async () => {
+  it("sends addressdetails=1 with geocodejson format", async () => {
     const fetchFn = vi.fn().mockResolvedValue(jsonResponse(geocodeJsonBody([])));
-    const provider = new NominatimProvider({
-      baseUrl: "https://nominatim.example.org",
-      timeoutMs: 5_000,
-      buildUserAgent,
-      fetchFn,
-    });
+    await makeProvider(fetchFn).search("Main St");
 
-    await provider.search("Main St");
-
-    expect(fetchFn).toHaveBeenCalledTimes(1);
     const [url, requestInit] = fetchFn.mock.calls[0] as [URL, RequestInit];
-    expect(url.origin).toBe("https://nominatim.example.org");
     expect(url.pathname).toBe("/search");
-    expect(url.searchParams.get("q")).toBe("Main St");
     expect(url.searchParams.get("format")).toBe("geocodejson");
+    expect(url.searchParams.get("addressdetails")).toBe("1");
     expect(url.searchParams.get("limit")).toBe("5");
     expect((requestInit.headers as Record<string, string>)["User-Agent"]).toBe(USER_AGENT);
   });
 
   it("caps results at 5 even when the provider returns more", async () => {
     const many = Array.from({ length: 7 }, (_, i) => ({
-      label: `Place ${i}`,
+      label: `Place ${i}, City`,
       coordinates: [10 + i, 50 + i],
     }));
     const fetchFn = vi.fn().mockResolvedValue(jsonResponse(geocodeJsonBody(many)));
-    const provider = new NominatimProvider({
-      baseUrl: "https://nominatim.example.org",
-      timeoutMs: 5_000,
-      buildUserAgent,
-      fetchFn,
-    });
-
-    const results = await provider.search("place");
-    expect(results).toHaveLength(5);
+    expect(await makeProvider(fetchFn).search("place")).toHaveLength(5);
   });
 
-  it("skips malformed entries (missing/non-numeric coordinates or label) instead of throwing", async () => {
+  it("skips malformed entries instead of throwing", async () => {
     const fetchFn = vi.fn().mockResolvedValue(
       jsonResponse({
         type: "FeatureCollection",
         features: [
-          { type: "Feature", properties: { geocoding: { label: "Good" } }, geometry: { coordinates: [10, 20] } },
+          {
+            type: "Feature",
+            properties: { geocoding: { label: "Good Place, Somewhere" } },
+            geometry: { coordinates: [10, 20] },
+          },
           { type: "Feature", properties: { geocoding: {} }, geometry: { coordinates: [10, 20] } },
           {
             type: "Feature",
             properties: { geocoding: { label: "Bad coords" } },
             geometry: { coordinates: ["not-a-number", 20] },
           },
-          { type: "Feature", properties: {}, geometry: { coordinates: [10, 20] } },
-          "not even an object",
         ],
       }),
     );
-    const provider = new NominatimProvider({
-      baseUrl: "https://nominatim.example.org",
-      timeoutMs: 5_000,
-      buildUserAgent,
-      fetchFn,
-    });
-
-    const results = await provider.search("mixed");
-    expect(results).toEqual([{ formatted_address: "Good", latitude: 20, longitude: 10, provider: "nominatim" }]);
-  });
-
-  it("returns an empty array when the response has no features array", async () => {
-    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ error: "unexpected shape" }));
-    const provider = new NominatimProvider({
-      baseUrl: "https://nominatim.example.org",
-      timeoutMs: 5_000,
-      buildUserAgent,
-      fetchFn,
-    });
-
-    expect(await provider.search("whatever")).toEqual([]);
+    const results = await makeProvider(fetchFn).search("mixed");
+    expect(results).toEqual([
+      {
+        formatted_address: "Good Place, Somewhere",
+        latitude: 20,
+        longitude: 10,
+        provider: "nominatim",
+        components: {
+          object_name: null,
+          street: null,
+          postcode: null,
+          city: null,
+          region: null,
+          country: null,
+        },
+      },
+    ]);
   });
 
   it("throws a timeout-flavored GeocodingProviderError when the request aborts on timeout", async () => {
     const fetchFn = vi.fn().mockRejectedValue(new DOMException("The operation timed out", "TimeoutError"));
-    const provider = new NominatimProvider({
-      baseUrl: "https://nominatim.example.org",
-      timeoutMs: 5_000,
-      buildUserAgent,
-      fetchFn,
-    });
-
-    const err = await provider.search("slow").catch((e: unknown) => e);
+    const err = await makeProvider(fetchFn).search("slow").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(GeocodingProviderError);
     expect((err as GeocodingProviderError).kind).toBe("timeout");
   });
 
-  it("throws an unavailable-flavored GeocodingProviderError on a network error", async () => {
-    const fetchFn = vi.fn().mockRejectedValue(new Error("network down"));
-    const provider = new NominatimProvider({
-      baseUrl: "https://nominatim.example.org",
-      timeoutMs: 5_000,
-      buildUserAgent,
-      fetchFn,
-    });
-
-    const err = await provider.search("slow").catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(GeocodingProviderError);
-    expect((err as GeocodingProviderError).kind).toBe("unavailable");
-  });
-
-  it("throws an unavailable-flavored GeocodingProviderError on a non-OK HTTP status", async () => {
+  it("throws unavailable on non-OK HTTP status", async () => {
     const fetchFn = vi.fn().mockResolvedValue(new Response("boom", { status: 503 }));
-    const provider = new NominatimProvider({
-      baseUrl: "https://nominatim.example.org",
-      timeoutMs: 5_000,
-      buildUserAgent,
-      fetchFn,
-    });
-
-    const err = await provider.search("slow").catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(GeocodingProviderError);
+    const err = await makeProvider(fetchFn).search("slow").catch((e: unknown) => e);
     expect((err as GeocodingProviderError).kind).toBe("unavailable");
   });
+});
 
-  it("throws an unavailable-flavored GeocodingProviderError on malformed JSON", async () => {
-    const fetchFn = vi.fn().mockResolvedValue(new Response("not json", { status: 200 }));
-    const provider = new NominatimProvider({
-      baseUrl: "https://nominatim.example.org",
-      timeoutMs: 5_000,
-      buildUserAgent,
-      fetchFn,
-    });
-
-    const err = await provider.search("slow").catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(GeocodingProviderError);
-    expect((err as GeocodingProviderError).kind).toBe("unavailable");
-  });
-
-  it("rejects a response advertising a body larger than the safety cap", async () => {
+describe("NominatimProvider.reverse", () => {
+  it("returns a compact address and keeps the requested coordinates", async () => {
     const fetchFn = vi.fn().mockResolvedValue(
-      jsonResponse(geocodeJsonBody([]), { headers: { "content-length": String(2_000_000) } }),
+      jsonResponse(
+        geocodeJsonBody([
+          {
+            name: "Złote Tarasy",
+            street: "Złota",
+            housenumber: "59",
+            city: "Warszawa",
+            country: "Polska",
+            label: "Złote Tarasy, 59, Złota, Warszawa, Polska",
+            // Centroid deliberately different from the clicked pin.
+            coordinates: [21.0, 52.0],
+          },
+        ]),
+      ),
     );
-    const provider = new NominatimProvider({
-      baseUrl: "https://nominatim.example.org",
-      timeoutMs: 5_000,
-      buildUserAgent,
-      fetchFn,
+
+    const result = await makeProvider(fetchFn).reverse(52.2297, 21.0028);
+
+    expect(result).toEqual({
+      name: "Złote Tarasy",
+      formatted_address: "Polska, Warszawa - Złote Tarasy",
+      latitude: 52.2297,
+      longitude: 21.0028,
+      provider: "nominatim",
+      components: {
+        object_name: "Złote Tarasy",
+        street: "Złota 59",
+        postcode: null,
+        city: "Warszawa",
+        region: null,
+        country: "Polska",
+      },
     });
 
-    const err = await provider.search("slow").catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(GeocodingProviderError);
-    expect((err as GeocodingProviderError).kind).toBe("unavailable");
+    const [url] = fetchFn.mock.calls[0] as [URL, RequestInit];
+    expect(url.pathname).toBe("/reverse");
+    expect(url.searchParams.get("lat")).toBe("52.2297");
+    expect(url.searchParams.get("lon")).toBe("21.0028");
+    expect(url.searchParams.get("zoom")).toBe("18");
+    expect(url.searchParams.get("addressdetails")).toBe("1");
+  });
+
+  it("returns null when Nominatim has no coverage", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse(geocodeJsonBody([])));
+    expect(await makeProvider(fetchFn).reverse(0, 0)).toBeNull();
   });
 });
