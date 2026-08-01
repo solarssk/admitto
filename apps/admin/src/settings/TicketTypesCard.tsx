@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, Card, EmptyState, IconButton, Input, TICKET_TYPE_COLORS, TicketTypeBadge, useToast } from "@admitto/ui";
+import { Button, Card, EmptyState, HintLabel, IconButton, Input, TICKET_TYPE_COLORS, TicketTypeBadge, useToast } from "@admitto/ui";
 import type { TicketTypeColor } from "@admitto/ui";
 import { ApiError, createTicketType, deleteTicketType, updateTicketType } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -29,6 +29,9 @@ const COLOR_ENTRIES = Object.entries(TICKET_TYPE_COLORS) as Array<
 function pluralSuffix(count: number): string {
   return count === 1 ? "" : "s";
 }
+
+const TICKET_TYPES_HINT =
+  "Each ticket type's name and color. Used in the attendee form, CSV import, the attendees list, check-in, and reports.";
 
 /** Click the current color to open a small swatch grid — same popover pattern as the app's other
  * menus (ExportMenu, ActionMenu): one clean chip that reveals choices on demand. */
@@ -260,7 +263,7 @@ export function TicketTypesCard({
   return (
     <>
       <Card
-        title="Ticket types"
+        title={<HintLabel hint={TICKET_TYPES_HINT}>Ticket types</HintLabel>}
         className="event-settings-card ticket-types-card"
         actions={
           <>
@@ -298,10 +301,6 @@ export function TicketTypesCard({
           />
         ) : (
           <>
-            <p className="field-hint">
-              Set each ticket type's name and color here. Every other screen in the app uses this
-              list.
-            </p>
             {loading ? (
               whenShown(showLoading, <p className="field-hint">Loading…</p>)
             ) : (
@@ -321,10 +320,6 @@ export function TicketTypesCard({
                 )}
               </div>
             )}
-
-            <p className="field-hint">
-              Used in the add attendee form, CSV import, the attendees list, check-in, and reports.
-            </p>
           </>
         )}
       </Card>

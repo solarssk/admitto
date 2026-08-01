@@ -10,7 +10,7 @@ import {
   type RefObject,
   type SetStateAction,
 } from "react";
-import { Badge, Button, Card, EmptyState, Input, Notice, Tooltip, useToast, type BadgeVariant } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, HintLabel, Input, Notice, useToast, type BadgeVariant } from "@admitto/ui";
 import { exportAuditLog, exportSecurityAuditLog, fetchAdminEvents, fetchAuditLog, fetchSecurityAuditLog } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AuditLogEntryDto, EventDto, SecurityAuditLogEntryDto } from "../api/types.js";
@@ -633,11 +633,7 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
   return [
     {
       key: "time",
-      header: (
-        <Tooltip content={TIME_HINT} className="audit-log-scope-header">
-          Time <i className="ti ti-info-circle" aria-hidden="true" />
-        </Tooltip>
-      ),
+      header: <HintLabel hint={TIME_HINT}>Time</HintLabel>,
       className: "audit-log-time",
       cell: (entry) => (
         <>
@@ -653,11 +649,7 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
     },
     {
       key: "scope",
-      header: (
-        <Tooltip content={SCOPE_HINT} className="audit-log-scope-header">
-          Scope <i className="ti ti-info-circle" aria-hidden="true" />
-        </Tooltip>
-      ),
+      header: <HintLabel hint={SCOPE_HINT}>Scope</HintLabel>,
       cell: (entry) => scopeLabel(entry, eventTitleById),
     },
     {
@@ -793,11 +785,7 @@ function buildSecurityRowSummary(entry: SecurityAuditLogEntryDto): string {
 const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
   {
     key: "time",
-    header: (
-      <Tooltip content={SECURITY_TIME_HINT} className="audit-log-scope-header">
-        Time <i className="ti ti-info-circle" aria-hidden="true" />
-      </Tooltip>
-    ),
+    header: <HintLabel hint={SECURITY_TIME_HINT}>Time</HintLabel>,
     className: "audit-log-time",
     cell: (entry) => (
       <>
@@ -1460,6 +1448,12 @@ const LOGS_VIEW_TITLES: Record<LogsView, string> = {
   security: "Security logs",
 };
 
+const LOGS_VIEW_HINTS: Record<LogsView, string> = {
+  system: "Application errors and background jobs, for debugging. Not a record of admin actions.",
+  audit: "Who changed what in settings, events, and imports.",
+  security: "Login attempts, two-factor checks, and access denials.",
+};
+
 function logsViewTitle(view: LogsView): string {
   return LOGS_VIEW_TITLES[view];
 }
@@ -1885,7 +1879,7 @@ export function AuditLogPanel() {
 
   return (
     <Card
-      title={logsViewTitle(view)}
+      title={<HintLabel hint={LOGS_VIEW_HINTS[view]}>{logsViewTitle(view)}</HintLabel>}
       className="audit-log-header-card"
       actions={
         <LogsCardActions

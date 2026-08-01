@@ -352,9 +352,6 @@ export async function handlePatchAccountPassword(
   if (new_password !== new_password_confirm) {
     return c.json({ error: "passwords do not match" }, 400);
   }
-  if (isPasswordTooCommon(new_password)) {
-    return c.json(passwordTooCommonJsonBody(), 400);
-  }
 
   const user = await db.user.findUnique({
     where: { id: userId },
@@ -367,6 +364,10 @@ export async function handlePatchAccountPassword(
 
   const passwordOk = await verifyPasswordOrDummy(current_password, user.password_hash);
   if (!passwordOk) return c.json({ code: "wrong_password" }, 401);
+
+  if (isPasswordTooCommon(new_password)) {
+    return c.json(passwordTooCommonJsonBody(), 400);
+  }
 
   // The new password is only hashed once step-up has passed (or wasn't required), so a
   // totp_required/invalid_totp/rate-limited request never pays for the hash.

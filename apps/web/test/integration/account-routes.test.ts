@@ -137,6 +137,20 @@ describe("PATCH /api/account/password", () => {
     expect(((await res.json()) as { code: string }).code).toBe("wrong_password");
   });
 
+  it("returns 401 wrong_password for bad current password even when new password is blocklisted", async () => {
+    const res = await app.request("/api/account/password", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        current_password: "wrong",
+        new_password: "aaaaaaaaaaaa",
+        new_password_confirm: "aaaaaaaaaaaa",
+      }),
+    });
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { code: string }).code).toBe("wrong_password");
+  });
+
   it("returns 400 password_too_common for a blocklisted new password", async () => {
     const res = await app.request("/api/account/password", {
       method: "PATCH",

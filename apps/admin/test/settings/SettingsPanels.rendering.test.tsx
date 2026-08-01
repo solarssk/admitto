@@ -600,6 +600,14 @@ describe("AuditLogPanel rendering", () => {
   });
 
   it("resets to page 1 once a retried page no longer exists against the current total", async () => {
+    // shouldAdvanceTime: real wall-clock time still passes (so findBy/waitFor's own polling
+    // keeps working exactly as under real timers), but every setTimeout/setInterval this test
+    // doesn't explicitly control - useDelayedLoading's 200ms grace window, Live's POLL_INTERVAL_MS
+    // - is deterministic rather than racing this sequence's two real network round trips on
+    // whatever CPU happens to be available. Belt-and-suspenders with turning Live off below:
+    // that removes the *trigger*, this removes the *mechanism* regardless of trigger.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
     // Page 1 loads fine; the page-2 request fails (server-side data shrank in the
     // meantime), so Retry re-issues the *same* page-2 request rather than a filter
     // change resetting the page itself — the only way `load()` ever re-runs with
@@ -613,6 +621,11 @@ describe("AuditLogPanel rendering", () => {
     vi.mocked(fetchAuditLog).mockRejectedValueOnce(new Error("network hiccup"));
     renderAuditPanel();
     await screen.findByRole("table");
+    // Live polling (real setInterval, on by default) would otherwise consume one of the
+    // precisely-queued mock responses below on a slow CI run - see the resetAllMocks comment
+    // above. This test cares about the retry/page-reset sequence, not live-refresh, so turn it
+    // off before that sequence starts, same as "stops polling once Live is turned off" above.
+    fireEvent.click(screen.getByRole("button", { name: "Live" }));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     const retry = await screen.findByRole("button", { name: "Retry" });
 
@@ -622,7 +635,13 @@ describe("AuditLogPanel rendering", () => {
       page: 2,
       pageSize: 25,
     });
-    vi.mocked(fetchAuditLog).mockResolvedValueOnce({
+    // mockResolvedValue (not Once): this is the sequence's true end state - the page-1 reset
+    // load that should follow, once the component notices page 2 no longer exists against the
+    // new total. Leaving it as the durable answer to every call from here on (rather than a
+    // single-shot value) means an extra call from any other source during this waitFor gets a
+    // harmless repeat of the same valid response instead of running out of queued mocks and
+    // failing in a way unrelated to what this test actually checks.
+    vi.mocked(fetchAuditLog).mockResolvedValue({
       entries: [makeAuditEntry({ id: "audit-narrowed" })],
       total: 5,
       page: 1,
@@ -630,10 +649,29 @@ describe("AuditLogPanel rendering", () => {
     });
     fireEvent.click(retry);
 
-    await waitFor(() => {
-      expect(screen.getByText("Page 1 of 1")).toBeTruthy();
-    });
-  });
+    // Reaching the final state takes two sequential fetchAuditLog round trips, each through its
+    // own render/commit cycle: the retried page-2 request comes back with the shrunk total,
+    // notices page 2 no longer exists against it, and resets `page` to 1 (which briefly clears
+    // entries - see the `page > maxPage` branch in AuditLogPanel's own `load`) - only *that*
+    // page change then triggers the second request that actually updates `total`. Waiting for
+    // this first hop explicitly, rather than jumping straight to the final assertion, means a
+    // failure here points at which of the two hops didn't land instead of one ambiguous timeout
+    // spanning both.
+    await waitFor(
+      () => {
+        expect(screen.getByText("No audit log entries yet")).toBeTruthy();
+      },
+      { timeout: 4000 },
+    );
+    await waitFor(
+      () => {
+        expect(screen.getByText("Page 1 of 1")).toBeTruthy();
+      },
+      { timeout: 4000 },
+    );
+
+    vi.useRealTimers();
+  }, 10000);
 
   it("falls back to the raw action_type string for an action outside the known label map", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue({

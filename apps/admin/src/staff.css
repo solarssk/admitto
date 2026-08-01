@@ -3728,14 +3728,6 @@ output.mail-field-hint {
   display: block;
 }
 
-/* Instance URL's own description/status text reads one size larger than the rest of the
-   app's equivalent field descriptions (e.g. Organisation name's Input-driven hint, .at-hint,
-   --fs-xs) since .mail-field-hint is --fs-sm - scoped override, keeping .mail-field-hint's
-   own margin/grid-column rules intact for every other call site. */
-.instance-url-hint {
-  font-size: var(--fs-xs);
-}
-
 .mail-transport__desc,
 .mail-transport__env-note {
   margin: 0 0 var(--space-3);
@@ -4651,11 +4643,6 @@ output.mail-field-hint {
   font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
 }
 
-.sessions-col-header {
-  align-items: center;
-  gap: var(--space-1);
-}
-
 .sessions-action-col {
   text-align: center;
 }
@@ -5108,11 +5095,6 @@ output.mail-field-hint {
 
 .audit-log-details__row dd {
   margin: 0;
-}
-
-.audit-log-scope-header {
-  align-items: center;
-  gap: var(--space-1);
 }
 
 /* --fs-mono (13px) matches the table's own 13px body text numerically, but a monospace

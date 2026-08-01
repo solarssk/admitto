@@ -330,6 +330,28 @@ describe("PATCH /api/admin/system-settings", () => {
     expect(res.status).toBe(200);
   });
 
+  it("allows unrelated PATCH keys when idle already exceeds absolute in stored config", async () => {
+    await prisma.systemSettings.createMany({
+      data: [
+        { key: "session_ttl", value_json: "3600000" },
+        { key: "session_idle_timeout", value_json: "7200000" },
+      ],
+    });
+
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ mfa_required_roles: ["superadmin", "admin"] }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SecurityDto;
+    expect(body.mfa_required_roles.value).toEqual(["superadmin", "admin"]);
+  });
+
   it("env-locked idle-timeout key returns 400 'managed by environment'", async () => {
     const prev = process.env.SESSION_IDLE_TIMEOUT_ADMIN_MS;
     process.env.SESSION_IDLE_TIMEOUT_ADMIN_MS = "600000";

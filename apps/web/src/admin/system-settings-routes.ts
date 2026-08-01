@@ -152,15 +152,24 @@ const KEY_MAP = {
 const IDLE_VS_ABSOLUTE_PAIRS = [
   {
     idleField: "session_idle_timeout_ms",
+    absoluteField: "session_ttl_ms",
     getIdle: getSessionIdleTimeoutAdminMs,
     getAbsolute: getSessionTtlAdminMs,
   },
   {
     idleField: "operator_session_idle_timeout_ms",
+    absoluteField: "operator_session_ttl_ms",
     getIdle: getSessionIdleTimeoutOperatorMs,
     getAbsolute: getSessionTtlOperatorMs,
   },
 ] as const;
+
+function idleAbsolutePairTouched(
+  pair: (typeof IDLE_VS_ABSOLUTE_PAIRS)[number],
+  presentKeys: readonly (keyof typeof KEY_MAP)[],
+): boolean {
+  return presentKeys.includes(pair.idleField) || presentKeys.includes(pair.absoluteField);
+}
 
 /** Rolled back the PATCH transaction because an idle timeout would exceed its paired absolute lifetime. */
 class IdleExceedsAbsoluteError extends Error {
@@ -229,7 +238,10 @@ export async function handlePatchSystemSettings(c: Context, db: PrismaClient): P
 
       // An idle timeout longer than its paired absolute lifetime could never trigger —
       // reject the whole PATCH (atomic) rather than silently accepting a no-op value.
+      // Only validate pairs touched by this request so unrelated keys (e.g. MFA roles)
+      // are not blocked by a pre-existing inconsistent configuration.
       for (const pair of IDLE_VS_ABSOLUTE_PAIRS) {
+        if (!idleAbsolutePairTouched(pair, presentKeys)) continue;
         const idleMs = await pair.getIdle(tx);
         const absoluteMs = await pair.getAbsolute(tx);
         if (idleMs > absoluteMs) {
