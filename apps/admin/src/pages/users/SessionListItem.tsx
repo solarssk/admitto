@@ -38,7 +38,7 @@ function viewerLocalTime(iso: string): string {
 export const LOGGED_IN_HINT =
   "Top: when this session started, in UTC. Below: the same moment in your own local time.";
 
-function SignIn({ authMethod }: Readonly<{ authMethod: string }>) {
+export function SessionSignIn({ authMethod }: Readonly<{ authMethod: string }>) {
   return authMethod === "oidc" ? (
     <span className="sessions-signin sessions-signin--sso">
       <i className="ti ti-cloud" aria-hidden="true" /> SSO
@@ -50,7 +50,7 @@ function SignIn({ authMethod }: Readonly<{ authMethod: string }>) {
   );
 }
 
-function RevokeAction({ session, onRevoke }: Readonly<{ session: SessionListDto; onRevoke: (s: SessionListDto) => void }>) {
+export function SessionRevokeAction({ session, onRevoke }: Readonly<{ session: SessionListDto; onRevoke: (s: SessionListDto) => void }>) {
   const button = (
     <IconButton
       icon={<i className="ti ti-logout" aria-hidden="true" />}
@@ -103,7 +103,7 @@ export function SessionTableRow({ session: s, onEdit, onRevoke }: Readonly<Sessi
       </td>
       <td>{formatRelativeTime(s.lastSeenAt)}</td>
       <td className="sessions-col-tablet-hide">
-        <SignIn authMethod={s.authMethod} />
+        <SessionSignIn authMethod={s.authMethod} />
       </td>
       <td>
         <div className="sessions-row-actions">
@@ -113,7 +113,7 @@ export function SessionTableRow({ session: s, onEdit, onRevoke }: Readonly<Sessi
             size="sm"
             onClick={() => onEdit(s)}
           />
-          <RevokeAction session={s} onRevoke={onRevoke} />
+          <SessionRevokeAction session={s} onRevoke={onRevoke} />
         </div>
       </td>
     </tr>
@@ -142,7 +142,7 @@ export function SessionCard({ session: s, onEdit, onRevoke }: Readonly<SessionRo
               size="sm"
               onClick={() => onEdit(s)}
             />
-            <RevokeAction session={s} onRevoke={onRevoke} />
+            <SessionRevokeAction session={s} onRevoke={onRevoke} />
           </div>
         </div>
       </div>
@@ -172,7 +172,7 @@ export function SessionCard({ session: s, onEdit, onRevoke }: Readonly<SessionRo
         <div>
           <dt>Sign-in</dt>
           <dd>
-            <SignIn authMethod={s.authMethod} />
+            <SessionSignIn authMethod={s.authMethod} />
           </dd>
         </div>
       </dl>

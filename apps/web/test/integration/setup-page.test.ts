@@ -155,6 +155,24 @@ describe("POST /setup", () => {
     expect(html).toContain("do not match");
   });
 
+  it("re-renders password_too_common for a blocklisted password", async () => {
+    const res = await app.request("/setup", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        ...sameOrigin,
+      },
+      body: new URLSearchParams({
+        email: SETUP_EMAIL,
+        password: "aaaaaaaaaaaa",
+        confirm_password: "aaaaaaaaaaaa",
+      }).toString(),
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("too common or predictable");
+  });
+
   it("creates superadmin, sets setup_complete false, session cookie, redirects MFA enroll", async () => {
     const res = await app.request("/setup", {
       method: "POST",

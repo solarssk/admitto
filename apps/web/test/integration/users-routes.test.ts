@@ -462,6 +462,17 @@ describe("POST /api/admin/users functional", () => {
     expect(body.code).toBe("email_conflict");
     expect(body.error).toBe("email_taken");
   });
+
+  it("returns 400 password_too_common for a blocklisted password", async () => {
+    const res = await app.request("/api/admin/users", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "blocked-user@example.com", password: "aaaaaaaaaaaa" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("password_too_common");
+  });
 });
 
 describe("POST /api/admin/users/:id/revoke-sessions", () => {
@@ -531,6 +542,17 @@ describe("POST /api/admin/users/:id/reset-password", () => {
 
     const revoked = await prisma.session.findUnique({ where: { id: session.session.id } });
     expect(revoked?.revoked_at).not.toBeNull();
+  });
+
+  it("returns 400 password_too_common for a blocklisted password", async () => {
+    const res = await app.request(`/api/admin/users/${targetId}/reset-password`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: "aaaaaaaaaaaa" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("password_too_common");
   });
 });
 
@@ -789,6 +811,35 @@ describe("POST /change-password", () => {
       where: { id: targetId },
       data: { password_hash: await hashPassword(PASSWORD) },
     });
+  });
+
+  it("re-renders the blocklist rejection when the password is too common", async () => {
+    await prisma.user.update({
+      where: { id: targetId },
+      data: { must_change_password: true },
+    });
+
+    const keepSession = await createSession(prisma, {
+      userId: targetId,
+      stage: SESSION_STAGE.CHANGE_PASSWORD_REQUIRED,
+      ip: "127.0.0.4",
+    });
+
+    const res = await app.request("/change-password", {
+      method: "POST",
+      headers: {
+        Cookie: `admitto_session=${keepSession.rawToken}`,
+        ...sameOrigin,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        password: "aaaaaaaaaaaa",
+        password_confirm: "aaaaaaaaaaaa",
+      }).toString(),
+    });
+    expect(res.status).toBe(400);
+    const html = await res.text();
+    expect(html).toContain("too common or predictable");
   });
 });
 

@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setMailSettings } from "@admitto/mailer-config";
 import type { ExportPayload } from "@admitto/mailer";
 import { resetDb } from "./resetDb.js";
-import { listDeliveries } from "../src/listDeliveries.js";
+import { getDeliveryWithTimeline, getRenderedDelivery, listDeliveries } from "../src/listDeliveries.js";
 import { sendTicketEmails } from "../src/index.js";
 
 const prisma = createTestPrismaClient();
@@ -72,6 +72,22 @@ beforeAll(async () => {
     { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
     { exportSink: (p) => exported.push(p) },
   );
+
+  // A resend to an address other than the attendee's own profile email - the row search must
+  // still find it by the address actually shown in the log, not just the attendee's current
+  // name/email.
+  await prisma.emailDelivery.create({
+    data: {
+      id: "dlv-list-a-forwarded",
+      organization_id: "org-list",
+      event_id: EVENT_A,
+      attendee_id: "att-list-a",
+      purpose: "resend",
+      provider: "export_only",
+      status: "sent",
+      recipient_email: "alice-forwarded@example.org",
+    },
+  });
 });
 
 afterAll(async () => {
@@ -138,5 +154,118 @@ describe("listDeliveries", () => {
     if (page1.total > 1) {
       expect(page1.items[0]?.id).not.toBe(page2.items[0]?.id);
     }
+  });
+
+  it("filters by attendeeId", async () => {
+    const { items } = await listDeliveries(
+      { eventId: EVENT_A, filters: { attendeeId: "att-list-a" } },
+      prisma,
+    );
+    expect(items.length).toBeGreaterThanOrEqual(1);
+    expect(items.every((r) => r.attendee_id === "att-list-a")).toBe(true);
+
+    const { items: none } = await listDeliveries(
+      { eventId: EVENT_A, filters: { attendeeId: "att-does-not-exist" } },
+      prisma,
+    );
+    expect(none).toHaveLength(0);
+  });
+
+  it("filters by templateId, including null for the built-in default ticket template", async () => {
+    const { items } = await listDeliveries(
+      { eventId: EVENT_A, filters: { templateId: null } },
+      prisma,
+    );
+    expect(items.length).toBeGreaterThanOrEqual(1);
+    expect(items.every((r) => r.template_id === null)).toBe(true);
+
+    const { items: none } = await listDeliveries(
+      { eventId: EVENT_A, filters: { templateId: "tmpl-does-not-exist" } },
+      prisma,
+    );
+    expect(none).toHaveLength(0);
+  });
+
+  it("filters by search (case-insensitive attendee name/email match)", async () => {
+    const { items: byName } = await listDeliveries(
+      { eventId: EVENT_A, filters: { search: "ALICE" } },
+      prisma,
+    );
+    expect(byName.length).toBeGreaterThanOrEqual(1);
+    expect(byName.every((r) => r.attendee_id === "att-list-a")).toBe(true);
+
+    const { items: byEmail } = await listDeliveries(
+      { eventId: EVENT_A, filters: { search: "alice@example" } },
+      prisma,
+    );
+    expect(byEmail.length).toBeGreaterThanOrEqual(1);
+
+    const { items: noMatch } = await listDeliveries(
+      { eventId: EVENT_A, filters: { search: "nobody-matches-this" } },
+      prisma,
+    );
+    expect(noMatch).toHaveLength(0);
+  });
+
+  it("also matches a delivery's own recipient_email, e.g. a resend to a different address than the attendee's profile email", async () => {
+    const { items } = await listDeliveries(
+      { eventId: EVENT_A, filters: { search: "alice-forwarded@example.org" } },
+      prisma,
+    );
+    expect(items.map((r) => r.id)).toEqual(["dlv-list-a-forwarded"]);
+  });
+});
+
+describe("getDeliveryWithTimeline", () => {
+  it("returns the delivery detail plus its attendee's timeline, oldest first", async () => {
+    const { items } = await listDeliveries({ eventId: EVENT_A }, prisma);
+    const target = items[0]!;
+
+    const result = await getDeliveryWithTimeline({ eventId: EVENT_A, id: target.id }, prisma);
+
+    expect(result).not.toBeNull();
+    expect(result!.entry.id).toBe(target.id);
+    expect(result!.entry).toHaveProperty("batch_id");
+    expect(result!.entry).toHaveProperty("actor_user_id");
+    expect(result!.entry).toHaveProperty("session_id");
+    expect(result!.timeline.length).toBeGreaterThanOrEqual(1);
+    expect(result!.timeline.some((t) => t.id === target.id)).toBe(true);
+    // Oldest-first: each row's queued_at is <= the next one's.
+    for (let i = 1; i < result!.timeline.length; i++) {
+      expect(result!.timeline[i - 1]!.queued_at.getTime()).toBeLessThanOrEqual(
+        result!.timeline[i]!.queued_at.getTime(),
+      );
+    }
+  });
+
+  it("returns null for an unknown id", async () => {
+    const result = await getDeliveryWithTimeline({ eventId: EVENT_A, id: "dlv-does-not-exist" }, prisma);
+    expect(result).toBeNull();
+  });
+
+  it("returns null for a cross-tenant id (right delivery, wrong event)", async () => {
+    const { items } = await listDeliveries({ eventId: EVENT_B }, prisma);
+    const bDeliveryId = items[0]!.id;
+
+    const result = await getDeliveryWithTimeline({ eventId: EVENT_A, id: bDeliveryId }, prisma);
+    expect(result).toBeNull();
+  });
+});
+
+describe("getRenderedDelivery", () => {
+  it("returns the stored subject/html snapshot for a known delivery", async () => {
+    const { items } = await listDeliveries({ eventId: EVENT_A }, prisma);
+    const target = items[0]!;
+
+    const result = await getRenderedDelivery({ eventId: EVENT_A, id: target.id }, prisma);
+
+    expect(result).not.toBeNull();
+    expect(result).toHaveProperty("rendered_subject");
+    expect(result).toHaveProperty("rendered_html");
+  });
+
+  it("returns null for an unknown id", async () => {
+    const result = await getRenderedDelivery({ eventId: EVENT_A, id: "dlv-does-not-exist" }, prisma);
+    expect(result).toBeNull();
   });
 });

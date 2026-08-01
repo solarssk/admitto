@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Badge, Button, Card, Input, Notice, useToast, type ToastVariant } from "@admitto/ui";
+import { Button, Card, HintLabel, Input, Notice, useToast, type ToastVariant } from "@admitto/ui";
 import {
   fetchSecuritySettings,
   fetchSupportContact,
@@ -21,17 +21,13 @@ const EMPTY_SUPPORT_CONTACT: SetupSupportContactDto = {
   support_contact_email: null,
 };
 
+const INSTANCE_URL_HINT =
+  "Public HTTPS URL of this Admitto instance. Used for ticket links and to turn uploaded logo paths into absolute URLs in outbound email when the BASE_URL environment variable is not set.";
+const SUPPORT_CONTACT_HINT =
+  "Saved for future use, for example identifying this instance if it ever calls external services. Nothing uses these fields yet.";
+
 function fieldLocked(source: SettingSource): boolean {
   return source === "env";
-}
-
-function EnvBadge({ source }: Readonly<{ source: SettingSource }>) {
-  if (!fieldLocked(source)) return null;
-  return (
-    <Badge variant="neutral" className="mail-field-env-badge">
-      Managed by environment
-    </Badge>
-  );
 }
 
 function isValidInstanceUrl(value: string): boolean {
@@ -228,7 +224,7 @@ export function GeneralSettingsPanel() {
   return (
     <>
       <Card
-        title="Instance URL"
+        title={<HintLabel hint={INSTANCE_URL_HINT}>Instance URL</HintLabel>}
         actions={
           !urlLocked ? (
             <Button
@@ -246,27 +242,14 @@ export function GeneralSettingsPanel() {
         <div className="mail-transport-section">
           <div className="mail-field-row">
             <Input
-              label="Instance URL"
+              label="URL"
               type="url"
               value={instanceUrlDraft}
               disabled={urlLocked || saving}
               placeholder="https://tickets.example.com"
               onChange={(e) => setInstanceUrlDraft(e.target.value)}
             />
-            <EnvBadge source={settings.instance_url.source} />
-            <p className="mail-field-hint instance-url-hint">
-              Public HTTPS URL of this Admitto instance. Used for ticket links and to turn uploaded
-              logo paths into absolute URLs in outbound email when the BASE_URL environment variable is
-              not set.
-            </p>
           </div>
-
-          {hasConfiguredUrl && (
-            <Notice variant="success" as="output">
-              Instance URL is configured
-              {settings.instance_url.source === "env" ? " via environment" : ""}.
-            </Notice>
-          )}
 
           {showUrlWarning && (
             <Notice variant="warning" role="alert">
@@ -277,12 +260,8 @@ export function GeneralSettingsPanel() {
         </div>
       </Card>
 
-      <Card title="Support contact">
-        <p className="at-hint branding-scope-hint">
-          Saved for future use, for example identifying this instance if it ever calls external
-          services. Nothing uses these fields yet.
-        </p>
-        <div className="branding-form">
+      <Card title={<HintLabel hint={SUPPORT_CONTACT_HINT}>Support contact</HintLabel>}>
+        <div className="mail-transport-section">
           <Input
             label="Contact name"
             value={supportContactDraft.support_contact_name ?? ""}

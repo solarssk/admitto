@@ -7,11 +7,15 @@ import {
   isSettingEnvLocked,
   getSessionTtlAdminMs,
   getSessionTtlOperatorMs,
+  getSessionIdleTimeoutAdminMs,
+  getSessionIdleTimeoutOperatorMs,
   getTrustedDeviceDays,
   getMfaRequiredRoles,
   getInstanceUrl,
   SETTING_SESSION_TTL,
   SETTING_OPERATOR_SESSION_TTL,
+  SETTING_SESSION_IDLE_TIMEOUT,
+  SETTING_OPERATOR_SESSION_IDLE_TIMEOUT,
   SETTING_TRUSTED_DEVICE_DAYS,
   SETTING_MFA_REQUIRED_ROLES,
   SETTING_INSTANCE_URL,
@@ -41,22 +45,30 @@ async function buildSystemSettingsDto(db: PrismaClient) {
   const [
     adminTtl,
     opTtl,
+    adminIdle,
+    opIdle,
     trustedDays,
     mfaRoles,
     instanceUrl,
     adminTtlSrc,
     opTtlSrc,
+    adminIdleSrc,
+    opIdleSrc,
     trustedDaysSrc,
     mfaRolesSrc,
     instanceUrlSrc,
   ] = await Promise.all([
     getSessionTtlAdminMs(db),
     getSessionTtlOperatorMs(db),
+    getSessionIdleTimeoutAdminMs(db),
+    getSessionIdleTimeoutOperatorMs(db),
     getTrustedDeviceDays(db),
     getMfaRequiredRoles(db),
     getInstanceUrl(db),
     getSettingSource(db, SETTING_SESSION_TTL),
     getSettingSource(db, SETTING_OPERATOR_SESSION_TTL),
+    getSettingSource(db, SETTING_SESSION_IDLE_TIMEOUT),
+    getSettingSource(db, SETTING_OPERATOR_SESSION_IDLE_TIMEOUT),
     getSettingSource(db, SETTING_TRUSTED_DEVICE_DAYS),
     getSettingSource(db, SETTING_MFA_REQUIRED_ROLES),
     getSettingSource(db, SETTING_INSTANCE_URL),
@@ -65,6 +77,8 @@ async function buildSystemSettingsDto(db: PrismaClient) {
   return {
     session_ttl_ms: { value: adminTtl, source: adminTtlSrc },
     operator_session_ttl_ms: { value: opTtl, source: opTtlSrc },
+    session_idle_timeout_ms: { value: adminIdle, source: adminIdleSrc },
+    operator_session_idle_timeout_ms: { value: opIdle, source: opIdleSrc },
     trusted_device_days: { value: trustedDays, source: trustedDaysSrc },
     mfa_required_roles: { value: mfaRoles, source: mfaRolesSrc },
     instance_url: { value: instanceUrl, source: instanceUrlSrc },
@@ -101,6 +115,20 @@ const patchSchema = z
       .max(604_800_000)
       .nullable()
       .optional(),
+    session_idle_timeout_ms: z
+      .number()
+      .int()
+      .min(300_000)
+      .max(14_400_000)
+      .nullable()
+      .optional(),
+    operator_session_idle_timeout_ms: z
+      .number()
+      .int()
+      .min(300_000)
+      .max(28_800_000)
+      .nullable()
+      .optional(),
     trusted_device_days: z.number().int().min(0).max(90).nullable().optional(),
     mfa_required_roles: z
       .array(z.enum(["superadmin", "admin", "operator"]))
@@ -113,10 +141,42 @@ const patchSchema = z
 const KEY_MAP = {
   session_ttl_ms: SETTING_SESSION_TTL,
   operator_session_ttl_ms: SETTING_OPERATOR_SESSION_TTL,
+  session_idle_timeout_ms: SETTING_SESSION_IDLE_TIMEOUT,
+  operator_session_idle_timeout_ms: SETTING_OPERATOR_SESSION_IDLE_TIMEOUT,
   trusted_device_days: SETTING_TRUSTED_DEVICE_DAYS,
   mfa_required_roles: SETTING_MFA_REQUIRED_ROLES,
   instance_url: SETTING_INSTANCE_URL,
 } as const satisfies Record<string, string>;
+
+/** Idle-timeout field paired with the absolute-lifetime field it must not exceed. */
+const IDLE_VS_ABSOLUTE_PAIRS = [
+  {
+    idleField: "session_idle_timeout_ms",
+    absoluteField: "session_ttl_ms",
+    getIdle: getSessionIdleTimeoutAdminMs,
+    getAbsolute: getSessionTtlAdminMs,
+  },
+  {
+    idleField: "operator_session_idle_timeout_ms",
+    absoluteField: "operator_session_ttl_ms",
+    getIdle: getSessionIdleTimeoutOperatorMs,
+    getAbsolute: getSessionTtlOperatorMs,
+  },
+] as const;
+
+function idleAbsolutePairTouched(
+  pair: (typeof IDLE_VS_ABSOLUTE_PAIRS)[number],
+  presentKeys: readonly (keyof typeof KEY_MAP)[],
+): boolean {
+  return presentKeys.includes(pair.idleField) || presentKeys.includes(pair.absoluteField);
+}
+
+/** Rolled back the PATCH transaction because an idle timeout would exceed its paired absolute lifetime. */
+class IdleExceedsAbsoluteError extends Error {
+  constructor(public readonly field: string) {
+    super("idle_timeout_exceeds_absolute_lifetime");
+  }
+}
 
 /** GET /api/admin/system-settings — returns system settings with value and source (env|db|default). Superadmin only. */
 export async function handleGetSystemSettings(c: Context, db: PrismaClient): Promise<Response> {
@@ -161,30 +221,53 @@ export async function handlePatchSystemSettings(c: Context, db: PrismaClient): P
   const audit = adminAuditFromContext(c);
   const actorUserId = c.get("auth").userId;
 
-  await db.$transaction(async (tx) => {
-    for (const bodyKey of presentKeys) {
-      const settingKey = KEY_MAP[bodyKey];
-      let value = data[bodyKey];
-      if (bodyKey === "instance_url" && typeof value === "string") {
-        value = normalizePersistedInstanceUrl(value);
+  try {
+    await db.$transaction(async (tx) => {
+      for (const bodyKey of presentKeys) {
+        const settingKey = KEY_MAP[bodyKey];
+        let value = data[bodyKey];
+        if (bodyKey === "instance_url" && typeof value === "string") {
+          value = normalizePersistedInstanceUrl(value);
+        }
+        if (value === null || value === undefined) {
+          await tx.systemSettings.deleteMany({ where: { key: settingKey } });
+        } else {
+          await setSetting(tx, settingKey, value);
+        }
       }
-      if (value === null || value === undefined) {
-        await tx.systemSettings.deleteMany({ where: { key: settingKey } });
-      } else {
-        await setSetting(tx, settingKey, value);
-      }
-    }
 
-    await writeAdminAuditLog(tx, {
-      organizationId: orgId,
-      actorUserId,
-      sessionId: audit.sessionId,
-      ip: audit.ip,
-      timezone: audit.timezone,
-      actionType: "system_settings_updated",
-      metadata: { fields: presentKeys },
+      // An idle timeout longer than its paired absolute lifetime could never trigger —
+      // reject the whole PATCH (atomic) rather than silently accepting a no-op value.
+      // Only validate pairs touched by this request so unrelated keys (e.g. MFA roles)
+      // are not blocked by a pre-existing inconsistent configuration.
+      for (const pair of IDLE_VS_ABSOLUTE_PAIRS) {
+        if (!idleAbsolutePairTouched(pair, presentKeys)) continue;
+        const idleMs = await pair.getIdle(tx);
+        const absoluteMs = await pair.getAbsolute(tx);
+        if (idleMs > absoluteMs) {
+          throw new IdleExceedsAbsoluteError(pair.idleField);
+        }
+      }
+
+      await writeAdminAuditLog(tx, {
+        organizationId: orgId,
+        actorUserId,
+        sessionId: audit.sessionId,
+        ip: audit.ip,
+        timezone: audit.timezone,
+        actionType: "system_settings_updated",
+        metadata: { fields: presentKeys },
+      });
     });
-  });
+  } catch (err) {
+    if (err instanceof IdleExceedsAbsoluteError) {
+      return c.json(
+        { error: "idle_timeout_exceeds_absolute_lifetime", field: err.field },
+        400,
+      );
+    }
+    throw err;
+  }
 
   emitSystemLog("security", "info", "system_settings_updated", {
     fields: presentKeys,

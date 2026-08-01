@@ -39,7 +39,7 @@ describe("PasswordStrengthMeter", () => {
   it("includes the next-step tip in aria-label for screen readers", () => {
     render(<PasswordStrengthMeter password={PASSWORD_STRENGTH_WEAK} />);
     expect(screen.getByRole("status").getAttribute("aria-label")).toBe(
-      "Password strength: Weak. Add 16+ characters for a stronger score.",
+      "Password strength: Weak. Avoid repeated or sequential characters for a stronger score.",
     );
   });
 });

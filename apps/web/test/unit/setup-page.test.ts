@@ -31,6 +31,12 @@ describe("setup-page", () => {
     );
   });
 
+  it("maps password_too_common to operator-facing copy", () => {
+    expect(setupErrorMessage("password_too_common")).toBe(
+      "This password is too common or predictable. Choose a different one.",
+    );
+  });
+
   it("maps email_taken to mockup copy", () => {
     expect(setupErrorMessage("email_taken")).toBe(
       "An account with this email already exists.",

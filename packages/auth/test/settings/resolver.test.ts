@@ -5,6 +5,8 @@ import {
   getMfaRequiredRoles,
   getSessionTtlAdminMs,
   getSessionTtlOperatorMs,
+  getSessionIdleTimeoutAdminMs,
+  getSessionIdleTimeoutOperatorMs,
   getTrustedDeviceDays,
   setSetting,
 } from "../../src/settings/resolver.js";
@@ -13,6 +15,8 @@ import {
   DEFAULT_TRUSTED_DEVICE_DAYS,
   SESSION_TTL_ADMIN_MS,
   SESSION_TTL_OPERATOR_MS,
+  SESSION_IDLE_TIMEOUT_ADMIN_MS,
+  SESSION_IDLE_TIMEOUT_OPERATOR_MS,
 } from "../../src/constants.js";
 
 const envOnlyMockPrisma = {
@@ -99,6 +103,39 @@ describe("typed settings fallbacks", () => {
     await expect(getSessionTtlAdminMs(prisma)).resolves.toBe(SESSION_TTL_ADMIN_MS);
     await expect(getSessionTtlOperatorMs(prisma)).resolves.toBe(SESSION_TTL_OPERATOR_MS);
     await expect(getTrustedDeviceDays(prisma)).resolves.toBe(DEFAULT_TRUSTED_DEVICE_DAYS);
+  });
+
+  it("falls back when persisted idle timeouts are not valid positive numbers", async () => {
+    const prisma = settingsMockPrisma({
+      session_idle_timeout: 0,
+      operator_session_idle_timeout: -1,
+    });
+
+    await expect(getSessionIdleTimeoutAdminMs(prisma)).resolves.toBe(
+      SESSION_IDLE_TIMEOUT_ADMIN_MS,
+    );
+    await expect(getSessionIdleTimeoutOperatorMs(prisma)).resolves.toBe(
+      SESSION_IDLE_TIMEOUT_OPERATOR_MS,
+    );
+  });
+
+  it("resolves persisted idle timeouts when valid", async () => {
+    const prisma = settingsMockPrisma({
+      session_idle_timeout: 900_000,
+      operator_session_idle_timeout: 1_800_000,
+    });
+
+    await expect(getSessionIdleTimeoutAdminMs(prisma)).resolves.toBe(900_000);
+    await expect(getSessionIdleTimeoutOperatorMs(prisma)).resolves.toBe(1_800_000);
+  });
+
+  it("falls back to defaults for idle timeouts when nothing is persisted", async () => {
+    await expect(getSessionIdleTimeoutAdminMs(envOnlyMockPrisma)).resolves.toBe(
+      SESSION_IDLE_TIMEOUT_ADMIN_MS,
+    );
+    await expect(getSessionIdleTimeoutOperatorMs(envOnlyMockPrisma)).resolves.toBe(
+      SESSION_IDLE_TIMEOUT_OPERATOR_MS,
+    );
   });
 
   it("falls back when persisted setting types do not match their contracts", async () => {

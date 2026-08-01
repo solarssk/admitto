@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Button, Card, EmptyState, Input, useToast } from "@admitto/ui";
+import { Button, Card, EmptyState, HintLabel, Input, useToast } from "@admitto/ui";
 import { createEventImageAsset, deleteEventImageAsset, fetchEventImageAssets } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventImageAssetDto } from "../api/types.js";
@@ -22,6 +22,9 @@ export interface EventImageAssetLibraryProps {
 function pluralSuffix(count: number): string {
   return count === 1 ? "" : "s";
 }
+
+const UPLOAD_IMAGES_HINT =
+  "Upload extra images, like sponsor logos, and give each one a short name to use as {{name}} in an email template.";
 
 /**
  * Named branding image library for an event: upload extra images (e.g. sponsor logos) and give
@@ -230,11 +233,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
 
   return (
     <>
-      <Card title="Upload images" className="event-settings-card">
-        <p className="field-hint">
-          Upload extra images (like sponsor logos) and give each one a short name. Use{" "}
-          <code>{"{{name}}"}</code> in an email template to add it.
-        </p>
+      <Card title={<HintLabel hint={UPLOAD_IMAGES_HINT}>Upload images</HintLabel>} className="event-settings-card">
         <button
           type="button"
           className={[

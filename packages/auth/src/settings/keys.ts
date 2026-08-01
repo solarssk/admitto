@@ -4,6 +4,10 @@ export const SETTING_OPERATOR_SESSION_TTL = "operator_session_ttl";
 export const SETTING_TRUSTED_DEVICE_DAYS = "trusted_device_days";
 export const SETTING_MFA_REQUIRED_ROLES = "mfa_required_roles";
 
+/** Idle timeout for `full` sessions — separate from the absolute lifetime above (P0 security review). */
+export const SETTING_SESSION_IDLE_TIMEOUT = "session_idle_timeout";
+export const SETTING_OPERATOR_SESSION_IDLE_TIMEOUT = "operator_session_idle_timeout";
+
 /** Cloudflare Access (prompt 16c). */
 export const SETTING_CF_ACCESS_ENABLED = "cf_access_enabled";
 export const SETTING_CF_ACCESS_TEAM_DOMAIN = "cf_access_team_domain";
@@ -22,6 +26,8 @@ export const SETTING_INSTANCE_URL = "instance_url";
 export const SYSTEM_SETTING_KEYS = [
   SETTING_SESSION_TTL,
   SETTING_OPERATOR_SESSION_TTL,
+  SETTING_SESSION_IDLE_TIMEOUT,
+  SETTING_OPERATOR_SESSION_IDLE_TIMEOUT,
   SETTING_TRUSTED_DEVICE_DAYS,
   SETTING_MFA_REQUIRED_ROLES,
   SETTING_CF_ACCESS_ENABLED,

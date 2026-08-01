@@ -64,6 +64,8 @@ const mockCancelMfaEnroll = vi.mocked(cancelMfaEnroll);
 const mockConfirmMfaTotp = vi.mocked(confirmMfaTotp);
 const mockResetMfa = vi.mocked(resetMfa);
 
+const REVOKE_SESSION_BUTTON = /Revoke session for admin@example.com/;
+
 const baseAccount: AccountDto = {
   id: "usr-1",
   email: "admin@example.com",
@@ -851,7 +853,11 @@ describe("AccountPage toasts", () => {
     renderWithToast(<AccountPage />);
     await screen.findByRole("button", { name: "Revoke all other sessions" });
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Revoke" })[1]!);
+    const otherSessionRevoke = screen
+      .getAllByRole("button", { name: REVOKE_SESSION_BUTTON })
+      .find((btn) => !(btn as HTMLButtonElement).disabled);
+    expect(otherSessionRevoke).toBeTruthy();
+    fireEvent.click(otherSessionRevoke!);
     let dialog = await screen.findByRole("dialog", { name: "Revoke session" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -1153,10 +1159,10 @@ describe("AccountPage toasts", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getAllByRole("button", { name: "Revoke" }).length).toBeGreaterThan(0);
+      expect(screen.getAllByRole("button", { name: REVOKE_SESSION_BUTTON }).length).toBeGreaterThan(0);
     });
 
-    const revokeButtons = screen.getAllByRole("button", { name: "Revoke" });
+    const revokeButtons = screen.getAllByRole("button", { name: REVOKE_SESSION_BUTTON });
     const otherRevoke = revokeButtons.find((btn) => !btn.hasAttribute("disabled"));
     expect(otherRevoke).toBeTruthy();
     fireEvent.click(otherRevoke!);
@@ -1238,9 +1244,9 @@ describe("AccountPage toasts", () => {
     mockDeleteSession.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getAllByRole("button", { name: "Revoke" }).length).toBeGreaterThan(0);
+      expect(screen.getAllByRole("button", { name: REVOKE_SESSION_BUTTON }).length).toBeGreaterThan(0);
     });
-    fireEvent.click(screen.getAllByRole("button", { name: "Revoke" })[0]!);
+    fireEvent.click(screen.getAllByRole("button", { name: REVOKE_SESSION_BUTTON })[0]!);
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
     await waitFor(() => {

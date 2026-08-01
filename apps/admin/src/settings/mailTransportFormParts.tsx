@@ -4,8 +4,8 @@
  * grid, secret field UI, provider-specific cards, test result preview, and footer
  * are identical between the two scopes; only what fetches/saves/tests differs.
  */
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
-import { Badge, Button, Card, Input, Switch, Tooltip } from "@admitto/ui";
+import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { Badge, Button, Card, HintLabel, Input, Switch, Tooltip } from "@admitto/ui";
 import type {
   MailPlainFieldDto,
   MailProvider,
@@ -100,6 +100,11 @@ export function EnvBadge({ locked }: Readonly<{ locked: boolean }>) {
     </Badge>
   );
 }
+
+const SENDER_HINT = "From, reply-to, and bounce addresses used on every email this sends.";
+// Shared by MailTransportPanel (organization-wide) and EventMailSettingsCard (per-event) - both
+// render their own "Send test email" card against the same underlying test-send flow.
+export const SEND_TEST_EMAIL_HINT = "Verifies transport credentials with a trivial message, not an event template.";
 
 export const PROVIDER_GUIDE: Record<MailProvider | "", string> = {
   "": "No mail will be sent yet.",
@@ -358,7 +363,7 @@ export function SenderCard({
 }>) {
   const isDisabled: FieldLocked = (key) => fieldLocked(key) || disabled;
   return (
-    <Card title="Sender">
+    <Card title={<HintLabel hint={SENDER_HINT}>Sender</HintLabel>}>
       <div className="mail-transport-section">
         <Input
           label="From address"
@@ -426,7 +431,7 @@ export function SmtpConnectionCard({
 }>) {
   const isDisabled: FieldLocked = (key) => fieldLocked(key) || disabled;
   return (
-    <Card title="SMTP connection">
+    <Card title={<HintLabel hint={PROVIDER_GUIDE.smtp}>SMTP connection</HintLabel>}>
       <div className="mail-transport-form">
         <div className="mail-transport-section">
           <Input
@@ -586,7 +591,7 @@ export function GraphCard({
 }>) {
   const isDisabled: FieldLocked = (key) => fieldLocked(key) || disabled;
   return (
-    <Card title="Microsoft Graph">
+    <Card title={<HintLabel hint={PROVIDER_GUIDE.graph}>Microsoft Graph</HintLabel>}>
       <div className="mail-transport-form">
         <details className="mail-graph-setup-info">
           <summary>Entra app registration steps</summary>
@@ -680,7 +685,7 @@ export function PowerAutomateCard({
   disabled?: boolean;
 }>) {
   return (
-    <Card title="Power Automate">
+    <Card title={<HintLabel hint={PROVIDER_GUIDE.powerautomate}>Power Automate</HintLabel>}>
       <div className="mail-transport-section">
         <SecretFieldRow
           label="Flow URL"
@@ -774,6 +779,65 @@ export function TestResultPreview({ testResult }: Readonly<{ testResult: TestRes
   );
 }
 
+/** Shared by MailTransportPanel (organization-wide) and EventMailSettingsCard (per-event) -
+ * identical in both scopes except the disabled-reason element's id, which needs to be unique
+ * when (in principle) both could render on the same page. */
+export function SendTestEmailCard({
+  idPrefix,
+  testEmail,
+  onTestEmailChange,
+  testSendHint,
+  testSendReason,
+  testSending,
+  onTestSend,
+  testResult,
+}: Readonly<{
+  idPrefix: string;
+  testEmail: string;
+  onTestEmailChange: (value: string) => void;
+  testSendHint: string;
+  testSendReason: string | undefined;
+  testSending: boolean;
+  onTestSend: () => void;
+  testResult: TestResult | null;
+}>) {
+  const reasonId = `${idPrefix}-reason`;
+  return (
+    <Card title={<HintLabel hint={SEND_TEST_EMAIL_HINT}>Send test email</HintLabel>}>
+      <p className="mail-test-send__hint">{testSendHint}</p>
+      <div className="mail-test-send__row">
+        <Input
+          label="Recipient"
+          type="text"
+          inputMode="email"
+          value={testEmail}
+          onChange={(e) => onTestEmailChange(e.target.value)}
+          placeholder="you@example.com"
+          disabled={!!testSendReason}
+          {...NO_AUTOFILL_PROPS}
+        />
+        <Tooltip content={testSendReason}>
+          {testSendReason && (
+            <span id={reasonId} className="sr-only">
+              {testSendReason}
+            </span>
+          )}
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={testSending || !!testSendReason}
+            aria-describedby={testSendReason ? reasonId : undefined}
+            onClick={onTestSend}
+          >
+            {testSending ? "Sending…" : "Send test"}
+          </Button>
+        </Tooltip>
+      </div>
+      {testResult && <TestResultPreview testResult={testResult} />}
+    </Card>
+  );
+}
+
 export function MailTransportCard({
   title = "Mail transport",
   description = "Instance-wide outbound transport for tickets and lifecycle mail.",
@@ -783,7 +847,7 @@ export function MailTransportCard({
   onSelectProvider,
 }: Readonly<{
   title?: string;
-  description?: ReactNode;
+  description?: string;
   provider: MailProvider | "";
   providerOptions: ReturnType<typeof buildMailProviderOptions>;
   fieldLocked: FieldLocked;
@@ -791,7 +855,7 @@ export function MailTransportCard({
 }>) {
   return (
     <Card
-      title={title}
+      title={<HintLabel hint={description}>{title}</HintLabel>}
       actions={
         <Badge variant={provider ? "ok" : "neutral"}>{provider ? "Configured" : "Not configured"}</Badge>
       }
@@ -803,7 +867,6 @@ export function MailTransportCard({
             here. Contact your instance administrator if you need to update them.
           </p>
         )}
-        <p className="mail-transport__desc">{description}</p>
         <TransportTileGrid
           provider={provider}
           providerOptions={providerOptions}

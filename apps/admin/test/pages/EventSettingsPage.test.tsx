@@ -318,7 +318,7 @@ describe("EventSettingsPage tabs", () => {
     expect(screen.getByText("Your images")).toBeTruthy();
     expect(await screen.findByText(/No image assets yet/)).toBeTruthy();
     expect(
-      screen.getByText(/leave it blank to use the organization's logo/),
+      screen.getByText(/leave blank to use the organization's logo/),
     ).toBeTruthy();
   });
 

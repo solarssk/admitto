@@ -3728,14 +3728,6 @@ output.mail-field-hint {
   display: block;
 }
 
-/* Instance URL's own description/status text reads one size larger than the rest of the
-   app's equivalent field descriptions (e.g. Organisation name's Input-driven hint, .at-hint,
-   --fs-xs) since .mail-field-hint is --fs-sm - scoped override, keeping .mail-field-hint's
-   own margin/grid-column rules intact for every other call site. */
-.instance-url-hint {
-  font-size: var(--fs-xs);
-}
-
 .mail-transport__desc,
 .mail-transport__env-note {
   margin: 0 0 var(--space-3);
@@ -3904,7 +3896,8 @@ output.mail-field-hint {
 .mail-transport-section > .settings-row,
 .mail-transport-section > .mail-tuning__toggles,
 .mail-transport-section > .mail-tuning__limits,
-.mail-transport-section > .mail-tuning__timeouts {
+.mail-transport-section > .mail-tuning__timeouts,
+.mail-transport-section > .security-settings-rows {
   grid-column: 1 / -1;
 }
 
@@ -3937,6 +3930,147 @@ output.mail-field-hint {
   .mail-tuning__limits,
   .mail-tuning__timeouts {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Security panel — one shared 2-column grid (label block | control) across every row so
+   inputs and switches line up on the same right edge. Items use display:contents so their
+   children participate in the parent grid; Notices and row dividers span both columns. */
+.security-settings-rows {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-4);
+  row-gap: var(--space-2);
+  align-items: center;
+}
+
+.security-settings-item {
+  display: contents;
+}
+
+.security-settings-rows .settings-row__text {
+  min-width: 0;
+}
+
+.security-settings-row__control {
+  justify-self: end;
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-1);
+}
+
+.security-settings-row__control .at-field {
+  margin: 0;
+}
+
+.security-settings-row__control .at-input {
+  text-align: right;
+}
+
+.security-settings-item > .at-notice,
+.security-settings-row-divider {
+  grid-column: 1 / -1;
+}
+
+.security-settings-row-divider {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: var(--space-3);
+  margin-bottom: var(--space-1);
+}
+
+.security-mfa-section__switches {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-4);
+}
+
+.security-settings-field {
+  display: grid;
+  grid-template-columns: 1.125rem 8rem;
+  column-gap: var(--space-2);
+  align-items: center;
+}
+
+.security-settings-field__warning-slot {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  flex: none;
+}
+
+.security-settings-field .at-field {
+  margin: 0;
+  width: 8rem;
+}
+
+.security-field-warning-trigger {
+  align-items: center;
+  color: var(--status-warn);
+  font-size: 1.125rem;
+  line-height: 1;
+  cursor: help;
+}
+
+.at-input.at-input--warn {
+  border-color: var(--status-warn);
+}
+
+.at-input.at-input--warn:focus {
+  border-color: var(--status-warn);
+  box-shadow: 0 0 0 var(--ring-width) var(--status-warn-tint);
+}
+
+/* Security panel — mobile: keep label + control on one row; shrink the numeric input so
+   the text column keeps enough width (full-width stacked inputs were hard to scan). */
+@media (max-width: 640px) {
+  .security-settings-rows {
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: var(--space-2);
+    row-gap: var(--space-3);
+    align-items: start;
+  }
+
+  .security-settings-rows .settings-row__text p {
+    font-size: var(--fs-xs);
+    line-height: 1.45;
+  }
+
+  .security-settings-row__control {
+    justify-self: end;
+    align-self: start;
+    align-items: flex-end;
+  }
+
+  .security-settings-field {
+    grid-template-columns: 1rem 4.75rem;
+    column-gap: var(--space-1);
+  }
+
+  .security-settings-field .at-field {
+    width: 4.75rem;
+  }
+
+  .security-settings-row__control .at-input {
+    width: 4.75rem !important;
+    max-width: 4.75rem;
+    text-align: right;
+    padding-inline: var(--space-2);
+  }
+
+  /* MFA switches need more horizontal room than a numeric field — span below the label. */
+  .security-settings-row__control.security-mfa-section__switches {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    align-items: flex-start;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-3);
   }
 }
 
@@ -4137,7 +4271,11 @@ output.mail-field-hint {
 }
 
 .text-warning {
-  color: var(--status-warning-fg, #b54708);
+  /* --status-warn-fg (not --status-warning-fg, which was never defined — see
+     packages/ui/src/styles/tokens/colors.css). Newly activated by SecurityPanel's P0-4
+     inline warnings below; this class had zero call sites before that, so the typo was
+     silently masked by this same fallback value until now. */
+  color: var(--status-warn-fg, #b54708);
 }
 
 /* Send-test-email result — simulates the received test message (ok) or a
@@ -4419,22 +4557,6 @@ output.mail-field-hint {
   }
 }
 
-/* mfa-roles-fieldset — Security panel "Require 2FA for roles" checkbox group */
-.mfa-roles-fieldset {
-  border: 0;
-  padding: 0;
-  margin: 0;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.mfa-roles-fieldset legend {
-  padding: 0;
-  margin-bottom: var(--space-2);
-}
-
 /* mail-field-label — used as <legend> text in fieldset */
 .mail-field-label {
   font-size: var(--fs-sm);
@@ -4519,11 +4641,6 @@ output.mail-field-hint {
   width: 1.25rem;
   text-align: center;
   font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
-}
-
-.sessions-col-header {
-  align-items: center;
-  gap: var(--space-1);
 }
 
 .sessions-action-col {
@@ -4978,11 +5095,6 @@ output.mail-field-hint {
 
 .audit-log-details__row dd {
   margin: 0;
-}
-
-.audit-log-scope-header {
-  align-items: center;
-  gap: var(--space-1);
 }
 
 /* --fs-mono (13px) matches the table's own 13px body text numerically, but a monospace
