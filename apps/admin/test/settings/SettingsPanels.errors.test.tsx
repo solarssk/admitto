@@ -114,9 +114,9 @@ describe("SecurityPanel operator errors", () => {
     vi.mocked(patchSecuritySettings).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToastAndRouter(<SecurityPanel />);
     await waitFor(() => {
-      expect(screen.getByLabelText("Admin session — maximum lifetime (hours)")).toBeTruthy();
+      expect(screen.getByLabelText("Admin session maximum lifetime (hours)")).toBeTruthy();
     });
-    fireEvent.change(screen.getByLabelText("Admin session — maximum lifetime (hours)"), {
+    fireEvent.change(screen.getByLabelText("Admin session maximum lifetime (hours)"), {
       target: { value: "48" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -125,17 +125,16 @@ describe("SecurityPanel operator errors", () => {
     });
   });
 
-  it("toasts on reset failure", async () => {
+  it("discards unsaved edits on reset", async () => {
     vi.mocked(fetchSecuritySettings).mockResolvedValueOnce(emptySettings);
-    vi.mocked(patchSecuritySettings).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToastAndRouter(<SecurityPanel />);
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Reset to defaults" })).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Reset to defaults" }));
-    await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to reset settings/);
-    });
+    const input = await screen.findByLabelText<HTMLInputElement>(
+      "Admin session maximum lifetime (hours)",
+    );
+    fireEvent.change(input, { target: { value: "48" } });
+    expect(input.value).toBe("48");
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    expect(input.value).toBe("24");
   });
 });
 

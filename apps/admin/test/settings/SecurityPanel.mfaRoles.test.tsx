@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SecurityPanel } from "../../src/settings/SecurityPanel.js";
-import { renderWithToastAndRouter } from "../test-utils.js";
+import { renderWithToastAndRouter, getTooltipText } from "../test-utils.js";
 
 const baseSettings = {
   session_ttl_ms: { value: 86_400_000, source: "default" as const },
@@ -13,6 +13,9 @@ const baseSettings = {
   mfa_required_roles: { value: ["superadmin"], source: "default" as const },
   instance_url: { value: null as string | null, source: "default" as const },
 };
+
+const MFA_EMPTY_WARNING =
+  "Two-factor authentication is off for every role. Not recommended for production.";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -45,11 +48,11 @@ describe("SecurityPanel delayed loading", () => {
 
 describe("SecurityPanel — session/trust duration inputs", () => {
   it.each([
-    { label: "Operator session — maximum lifetime (hours)", floor: "1" },
-    { label: "Admin session — maximum lifetime (hours)", floor: "1" },
-    { label: "Admin session — inactivity timeout (minutes)", floor: "5" },
-    { label: "Operator session — inactivity timeout (minutes)", floor: "5" },
-    { label: '"Remember device" duration (days, 0 = off)', floor: "0" },
+    { label: "Operator session maximum lifetime (hours)", floor: "1" },
+    { label: "Admin session maximum lifetime (hours)", floor: "1" },
+    { label: "Admin session inactivity timeout (minutes)", floor: "5" },
+    { label: "Operator session inactivity timeout (minutes)", floor: "5" },
+    { label: "Remember device duration (days)", floor: "0" },
   ])("clamps a non-numeric $label to the $floor floor instead of NaN", async ({ label, floor }) => {
     vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
     renderWithToastAndRouter(<SecurityPanel />);
@@ -61,8 +64,8 @@ describe("SecurityPanel — session/trust duration inputs", () => {
   });
 });
 
-describe("SecurityPanel — Require 2FA for roles", () => {
-  it("renders three distinct checkboxes with human role labels", async () => {
+describe("SecurityPanel — Authenticator app required by role", () => {
+  it("renders three role switches with human role labels", async () => {
     vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
     renderWithToastAndRouter(<SecurityPanel />);
 
@@ -90,7 +93,7 @@ describe("SecurityPanel — Require 2FA for roles", () => {
     );
   });
 
-  it("env-locked roles render as a disabled but readable group with the env badge", async () => {
+  it("env-locked roles render as disabled switches with the env badge", async () => {
     vi.mocked(fetchSecuritySettings).mockResolvedValue({
       ...baseSettings,
       mfa_required_roles: { value: ["superadmin", "admin"], source: "env" as const },
@@ -98,9 +101,7 @@ describe("SecurityPanel — Require 2FA for roles", () => {
     renderWithToastAndRouter(<SecurityPanel />);
 
     const superadmin = await screen.findByLabelText<HTMLInputElement>("Superadmin");
-    // <fieldset disabled> disables descendants functionally without reflecting
-    // on each input's .disabled property — assert on the fieldset itself.
-    expect(superadmin.closest("fieldset")!.disabled).toBe(true);
+    expect(superadmin.disabled).toBe(true);
     expect(superadmin.checked).toBe(true);
     expect(screen.getByText("Managed by environment")).toBeTruthy();
   });
@@ -110,17 +111,27 @@ describe("SecurityPanel — Require 2FA for roles", () => {
     renderWithToastAndRouter(<SecurityPanel />);
 
     fireEvent.click(await screen.findByLabelText("Superadmin"));
-    expect(screen.getByRole("alert").textContent).toContain("2FA is disabled for all roles");
+    const warning = screen.getByLabelText(MFA_EMPTY_WARNING);
+    expect(getTooltipText(warning)).toContain("Two-factor authentication is off for every role");
   });
 });
 
 describe("SecurityPanel — dangerous-value inline warnings (P0-4)", () => {
+  function warningTriggerFor(label: string): HTMLElement {
+    const input = screen.getByLabelText<HTMLInputElement>(label);
+    const trigger = input
+      .closest(".security-settings-field")
+      ?.querySelector(".security-field-warning-trigger");
+    if (!trigger) throw new Error(`No warning trigger for ${label}`);
+    return trigger as HTMLElement;
+  }
+
   it("shows no warning for the default settings", async () => {
     vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
     renderWithToastAndRouter(<SecurityPanel />);
 
-    await screen.findByLabelText("Admin session — maximum lifetime (hours)");
-    expect(screen.queryByRole("alert")).toBeNull();
+    await screen.findByLabelText("Admin session maximum lifetime (hours)");
+    expect(document.querySelector(".security-field-warning-trigger")).toBeNull();
   });
 
   it("warns when the admin absolute lifetime exceeds 24 hours", async () => {
@@ -128,11 +139,14 @@ describe("SecurityPanel — dangerous-value inline warnings (P0-4)", () => {
     renderWithToastAndRouter(<SecurityPanel />);
 
     const input = await screen.findByLabelText<HTMLInputElement>(
-      "Admin session — maximum lifetime (hours)",
+      "Admin session maximum lifetime (hours)",
     );
     fireEvent.change(input, { target: { value: "48" } });
 
-    expect(screen.getByRole("alert").textContent).toContain("Sessions longer than 24 hours");
+    expect(input.className).toContain("at-input--warn");
+    expect(getTooltipText(warningTriggerFor("Admin session maximum lifetime (hours)"))).toContain(
+      "Sessions longer than 24 hours",
+    );
   });
 
   it("warns when the operator absolute lifetime exceeds 24 hours", async () => {
@@ -140,11 +154,14 @@ describe("SecurityPanel — dangerous-value inline warnings (P0-4)", () => {
     renderWithToastAndRouter(<SecurityPanel />);
 
     const input = await screen.findByLabelText<HTMLInputElement>(
-      "Operator session — maximum lifetime (hours)",
+      "Operator session maximum lifetime (hours)",
     );
     fireEvent.change(input, { target: { value: "48" } });
 
-    expect(screen.getByRole("alert").textContent).toContain("Sessions longer than 24 hours");
+    expect(input.className).toContain("at-input--warn");
+    expect(getTooltipText(warningTriggerFor("Operator session maximum lifetime (hours)"))).toContain(
+      "Sessions longer than 24 hours",
+    );
   });
 
   it("warns when the admin inactivity timeout exceeds 2 hours", async () => {
@@ -152,11 +169,14 @@ describe("SecurityPanel — dangerous-value inline warnings (P0-4)", () => {
     renderWithToastAndRouter(<SecurityPanel />);
 
     const input = await screen.findByLabelText<HTMLInputElement>(
-      "Admin session — inactivity timeout (minutes)",
+      "Admin session inactivity timeout (minutes)",
     );
     fireEvent.change(input, { target: { value: "180" } });
 
-    expect(screen.getByRole("alert").textContent).toContain("unattended admin sessions");
+    expect(input.className).toContain("at-input--warn");
+    expect(getTooltipText(warningTriggerFor("Admin session inactivity timeout (minutes)"))).toContain(
+      "unattended admin sessions",
+    );
   });
 
   it("warns when the operator inactivity timeout exceeds 4 hours", async () => {
@@ -164,11 +184,14 @@ describe("SecurityPanel — dangerous-value inline warnings (P0-4)", () => {
     renderWithToastAndRouter(<SecurityPanel />);
 
     const input = await screen.findByLabelText<HTMLInputElement>(
-      "Operator session — inactivity timeout (minutes)",
+      "Operator session inactivity timeout (minutes)",
     );
     fireEvent.change(input, { target: { value: "300" } });
 
-    expect(screen.getByRole("alert").textContent).toContain("unattended check-in stations");
+    expect(input.className).toContain("at-input--warn");
+    expect(
+      getTooltipText(warningTriggerFor("Operator session inactivity timeout (minutes)")),
+    ).toContain("unattended check-in stations");
   });
 });
 
@@ -185,7 +208,7 @@ describe("SecurityPanel — idle-vs-absolute server error mapping", () => {
     renderWithToastAndRouter(<SecurityPanel />);
 
     const input = await screen.findByLabelText<HTMLInputElement>(
-      "Admin session — inactivity timeout (minutes)",
+      "Admin session inactivity timeout (minutes)",
     );
     fireEvent.change(input, { target: { value: "60" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
