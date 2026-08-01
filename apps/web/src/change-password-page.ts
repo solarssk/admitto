@@ -1,4 +1,5 @@
 import { PASSWORD_MIN_LENGTH } from "@admitto/auth/constants";
+import { PASSWORD_TOO_COMMON_CODE } from "@admitto/auth";
 import {
   passwordStrengthAuthScript,
   renderAuthPasswordStrengthMeterHtml,
@@ -34,6 +35,9 @@ export const PASSWORD_COMPLETE_FAILED = "password_complete_failed";
 function errorMessage(error?: string): string | undefined {
   if (error === PASSWORD_MISMATCH) return "Passwords do not match.";
   if (error === PASSWORD_TOO_SHORT) return `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`;
+  if (error === PASSWORD_TOO_COMMON_CODE) {
+    return "This password is too common or predictable. Choose a different one.";
+  }
   if (error === PASSWORD_INVALID) return "Could not update password. Try again.";
   if (error === PASSWORD_COMPLETE_FAILED) {
     return "Password updated, but sign-in could not be completed. Try logging in again.";
@@ -74,4 +78,4 @@ export function renderChangePasswordForm(scriptNonce: string, error?: string): s
   });
 }
 
-export { PASSWORD_MISMATCH, PASSWORD_TOO_SHORT, PASSWORD_INVALID };
+export { PASSWORD_MISMATCH, PASSWORD_TOO_SHORT, PASSWORD_TOO_COMMON_CODE as PASSWORD_TOO_COMMON, PASSWORD_INVALID };

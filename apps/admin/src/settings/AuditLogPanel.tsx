@@ -10,12 +10,13 @@ import {
   type RefObject,
   type SetStateAction,
 } from "react";
-import { Badge, Button, Card, EmptyState, Input, Notice, Tooltip, useToast, type BadgeVariant } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, HintLabel, Input, Notice, useToast, type BadgeVariant } from "@admitto/ui";
 import { exportAuditLog, exportSecurityAuditLog, fetchAdminEvents, fetchAuditLog, fetchSecurityAuditLog } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AuditLogEntryDto, EventDto, SecurityAuditLogEntryDto } from "../api/types.js";
 import { DatePicker } from "../components/DatePicker.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
+import { GeoCell, geoLocationText } from "../components/GeoCell.js";
 import { PaginationFooter } from "../components/PaginationFooter.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { useClickOutside } from "../components/useClickOutside.js";
@@ -125,6 +126,7 @@ const ACTION_OPTIONS = Object.keys(ACTION_LABELS).sort((a, b) =>
 const SECURITY_EVENT_LABELS: Record<string, string> = {
   "auth.login.success": "Login succeeded",
   "auth.login.fail": "Login failed",
+  "auth.login.repeated_failures": "Repeated login failures",
   "auth.mfa.success": "2FA verified",
   "auth.mfa.fail": "2FA failed",
   "auth.mfa.break_glass": "2FA break-glass override",
@@ -133,6 +135,7 @@ const SECURITY_EVENT_LABELS: Record<string, string> = {
   "auth.oidc.success": "OIDC login succeeded",
   "auth.oidc.superadmin_revoke_blocked": "OIDC superadmin revoke blocked",
   "auth.access.denied": "Access denied",
+  "auth.trusted_device.created": "Trusted device remembered",
 };
 
 function securityEventLabel(type: string): string {
@@ -151,6 +154,7 @@ const TONE_BY_SECURITY_EVENT: Record<string, BadgeVariant> = {
   "auth.oidc.superadmin_revoke_blocked": "error",
   "auth.mfa.break_glass": "warn",
   "auth.mfa.recovery_consumed": "warn",
+  "auth.login.repeated_failures": "warn",
 };
 
 function securityEventTone(type: string): BadgeVariant {
@@ -315,12 +319,14 @@ function buildRowSummary(entry: AuditLogEntryDto, eventTitleById: Map<string, st
   const localTime = actorLocalTime(entry);
   const localTimeSuffix = localTime ? ` (${localTime})` : "";
   const actorEmailSuffix = entry.actor_display_name && entry.actor_email ? ` (${entry.actor_email})` : "";
+  const locationText = entry.ip ? geoLocationText(entry.country) : "";
+  const locationSuffix = locationText ? ` (${locationText})` : "";
   const lines = [
     `Time: ${formatAuditPrimaryTime(entry.created_at)} UTC${localTimeSuffix}`,
     `Action: ${actionLabel(entry.action_type)}`,
     `Scope: ${scopeLabel(entry, eventTitleById)}`,
     `User: ${actorDisplay(entry)}${actorEmailSuffix}`,
-    `IP address: ${entry.ip ?? "-"}`,
+    `IP address: ${entry.ip ?? "-"}${locationSuffix}`,
   ];
   if (hasVisibleMetadata(entry.metadata)) {
     lines.push("Details:");
@@ -630,11 +636,7 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
   return [
     {
       key: "time",
-      header: (
-        <Tooltip content={TIME_HINT} className="audit-log-scope-header">
-          Time <i className="ti ti-info-circle" aria-hidden="true" />
-        </Tooltip>
-      ),
+      header: <HintLabel hint={TIME_HINT}>Time</HintLabel>,
       className: "audit-log-time",
       cell: (entry) => (
         <>
@@ -650,11 +652,7 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
     },
     {
       key: "scope",
-      header: (
-        <Tooltip content={SCOPE_HINT} className="audit-log-scope-header">
-          Scope <i className="ti ti-info-circle" aria-hidden="true" />
-        </Tooltip>
-      ),
+      header: <HintLabel hint={SCOPE_HINT}>Scope</HintLabel>,
       cell: (entry) => scopeLabel(entry, eventTitleById),
     },
     {
@@ -673,7 +671,12 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
     {
       key: "ip",
       header: "IP address",
-      cell: (entry) => entry.ip ?? "-",
+      cell: (entry) => (
+        <>
+          {entry.ip ?? "-"}
+          {entry.ip && <div className="sessions-subdued"><GeoCell location={entry.country} /></div>}
+        </>
+      ),
     },
   ];
 }
@@ -760,11 +763,13 @@ function securityUserEmail(entry: SecurityAuditLogEntryDto): string | undefined 
  * viewer's own (see viewerLocalTime), not an actor's. */
 function buildSecurityRowSummary(entry: SecurityAuditLogEntryDto): string {
   const userEmailSuffix = securityUserEmail(entry) ? ` (${securityUserEmail(entry)})` : "";
+  const locationText = entry.ip ? geoLocationText(entry.country) : "";
+  const locationSuffix = locationText ? ` (${locationText})` : "";
   const lines = [
     `Time: ${formatAuditPrimaryTime(entry.created_at)} UTC (${viewerLocalTime(entry.created_at)})`,
     `Event: ${securityEventLabel(entry.event_type)}`,
     `User: ${securityUserDisplay(entry)}${userEmailSuffix}`,
-    `IP address: ${entry.ip ?? "-"}`,
+    `IP address: ${entry.ip ?? "-"}${locationSuffix}`,
   ];
   if (hasVisibleMetadata(entry.metadata)) {
     lines.push("Details:");
@@ -783,11 +788,7 @@ function buildSecurityRowSummary(entry: SecurityAuditLogEntryDto): string {
 const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
   {
     key: "time",
-    header: (
-      <Tooltip content={SECURITY_TIME_HINT} className="audit-log-scope-header">
-        Time <i className="ti ti-info-circle" aria-hidden="true" />
-      </Tooltip>
-    ),
+    header: <HintLabel hint={SECURITY_TIME_HINT}>Time</HintLabel>,
     className: "audit-log-time",
     cell: (entry) => (
       <>
@@ -817,7 +818,12 @@ const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
   {
     key: "ip",
     header: "IP address",
-    cell: (entry) => entry.ip ?? "-",
+    cell: (entry) => (
+      <>
+        {entry.ip ?? "-"}
+        {entry.ip && <div className="sessions-subdued"><GeoCell location={entry.country} /></div>}
+      </>
+    ),
   },
 ];
 
@@ -1114,10 +1120,25 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
   const searchInputRef = useRef<HTMLInputElement>(null);
   const loadSeqRef = useRef(0);
   const scrollRestoreSeqRef = useRef<number | null>(null);
+  // Lets the debounce timer below compare against the *currently committed* search value without
+  // adding `filters` itself as a dependency (which would reschedule this effect - and delay the
+  // user's own typing - on every unrelated filter change, e.g. the date-range fields).
+  const committedSearchRef = useRef(filters.search);
+  useEffect(() => {
+    committedSearchRef.current = filters.search;
+  });
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      setFilters((f) => ({ ...f, search: searchInput.trim() }));
+      const trimmed = searchInput.trim();
+      // A no-op tick - mount with an empty search box, or typing back to the already-committed
+      // value inside the debounce window - must not touch page/filters. Skipping it here isn't
+      // just an optimization: unconditionally calling setPage(1) on every tick means this timer
+      // fires once on every single mount (nothing to debounce yet) and can reset the page out
+      // from under a user who navigates within the first SEARCH_DEBOUNCE_MS after opening the
+      // panel, independent of anything they typed.
+      if (trimmed === committedSearchRef.current) return;
+      setFilters((f) => ({ ...f, search: trimmed }));
       setPage(1);
     }, SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
@@ -1443,6 +1464,12 @@ const LOGS_VIEW_TITLES: Record<LogsView, string> = {
   system: "System logs",
   audit: "Audit logs",
   security: "Security logs",
+};
+
+const LOGS_VIEW_HINTS: Record<LogsView, string> = {
+  system: "Application errors and background jobs, for debugging. Not a record of admin actions.",
+  audit: "Who changed what in settings, events, and imports.",
+  security: "Login attempts, two-factor checks, and access denials.",
 };
 
 function logsViewTitle(view: LogsView): string {
@@ -1870,7 +1897,7 @@ export function AuditLogPanel() {
 
   return (
     <Card
-      title={logsViewTitle(view)}
+      title={<HintLabel hint={LOGS_VIEW_HINTS[view]}>{logsViewTitle(view)}</HintLabel>}
       className="audit-log-header-card"
       actions={
         <LogsCardActions

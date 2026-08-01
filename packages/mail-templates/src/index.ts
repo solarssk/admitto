@@ -34,6 +34,7 @@ export {
   renderTemplateTrusted,
   renderTemplateTrustedForStorage,
   materializeStoredDeliveryMessage,
+  materializeStoredDeliveryMessageRedacted,
   stripEmptyUrlAttributes,
   STORAGE_DEFERRED_LINK_PLACEHOLDERS,
 } from "./render.js";

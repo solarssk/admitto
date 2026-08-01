@@ -4,11 +4,22 @@ export const SESSION_COOKIE_NAME = "admitto_session";
 /** Trusted-device cookie name (httpOnly). */
 export const TRUSTED_DEVICE_COOKIE_NAME = "admitto_trusted_device";
 
-/** Default session TTL for operator-only users (12 hours). */
+/** Default absolute session lifetime for operator-only users (12 hours), regardless of activity. */
 export const SESSION_TTL_OPERATOR_MS = 12 * 60 * 60 * 1000;
 
-/** Default session TTL for admin/superadmin users (7 days). */
-export const SESSION_TTL_ADMIN_MS = 7 * 24 * 60 * 60 * 1000;
+/**
+ * Default absolute session lifetime for admin/superadmin users (12 hours), regardless of
+ * activity. Was 7 days prior to the P0 security review — a stolen admin cookie stayed valid
+ * for a full week with no idle check. Kept short because elevated roles are the highest-impact
+ * target; idle timeout (below) ends most sessions long before this is ever reached.
+ */
+export const SESSION_TTL_ADMIN_MS = 12 * 60 * 60 * 1000;
+
+/** Default idle timeout for admin/superadmin `full` sessions (30 minutes since last activity). */
+export const SESSION_IDLE_TIMEOUT_ADMIN_MS = 30 * 60 * 1000;
+
+/** Default idle timeout for operator-only `full` sessions (2 hours since last activity). */
+export const SESSION_IDLE_TIMEOUT_OPERATOR_MS = 2 * 60 * 60 * 1000;
 
 /** TTL for mfa_pending / enrollment_required sessions (15 minutes). */
 export const MFA_PENDING_SESSION_TTL_MS = 15 * 60 * 1000;
@@ -32,6 +43,14 @@ export const SESSION_LAST_SEEN_THROTTLE_MS = 60_000;
 
 /** Minimum length for any user-chosen password (forced-change, setup, account). */
 export const PASSWORD_MIN_LENGTH = 12;
+
+/**
+ * Consecutive failed login attempts against a single admin/superadmin account that trigger the
+ * `auth.login.repeated_failures` audit alert (P0 security review). Deliberately a fixed internal
+ * constant, not a SystemSettings value — this is a security backstop, not a per-instance tuning
+ * knob, matching the existing login/MFA rate-limit thresholds.
+ */
+export const PRIVILEGED_LOGIN_FAILURE_ALERT_THRESHOLD = 5;
 
 /** Session stages — only `full` grants protected routes. */
 export const SESSION_STAGE = {

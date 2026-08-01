@@ -137,6 +137,34 @@ describe("PATCH /api/account/password", () => {
     expect(((await res.json()) as { code: string }).code).toBe("wrong_password");
   });
 
+  it("returns 401 wrong_password for bad current password even when new password is blocklisted", async () => {
+    const res = await app.request("/api/account/password", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        current_password: "wrong",
+        new_password: "aaaaaaaaaaaa",
+        new_password_confirm: "aaaaaaaaaaaa",
+      }),
+    });
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { code: string }).code).toBe("wrong_password");
+  });
+
+  it("returns 400 password_too_common for a blocklisted new password", async () => {
+    const res = await app.request("/api/account/password", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        current_password: PASSWORD,
+        new_password: "aaaaaaaaaaaa",
+        new_password_confirm: "aaaaaaaaaaaa",
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("password_too_common");
+  });
+
   it("changes hash, clears must_change_password, revokes other sessions", async () => {
     const other = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
     const res = await app.request("/api/account/password", {
@@ -169,6 +197,21 @@ describe("PATCH /api/account/password", () => {
     expect(res.status).toBe(400);
     expect(((await res.json()) as { code: string }).code).toBe("no_local_password");
     await prisma.session.delete({ where: { id: oidcSession.session.id } });
+  });
+});
+
+describe("GET /api/account/sessions", () => {
+  it("includes the resolved country for each session", async () => {
+    const res = await app.request("/api/account/sessions", {
+      headers: { Cookie: userCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      sessions: { id: string; ip: string | null; country: { kind: string; countryCode?: string } }[];
+    };
+    const current = body.sessions.find((s) => s.id === userSessionId);
+    // Seeded with ip: "127.0.0.1" (loopback) in beforeAll.
+    expect(current?.country).toEqual({ kind: "internal" });
   });
 });
 

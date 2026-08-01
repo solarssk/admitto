@@ -64,6 +64,8 @@ const mockCancelMfaEnroll = vi.mocked(cancelMfaEnroll);
 const mockConfirmMfaTotp = vi.mocked(confirmMfaTotp);
 const mockResetMfa = vi.mocked(resetMfa);
 
+const REVOKE_SESSION_BUTTON = /Revoke session for admin@example.com/;
+
 const baseAccount: AccountDto = {
   id: "usr-1",
   email: "admin@example.com",
@@ -104,6 +106,7 @@ function makeAccountSession(overrides: Partial<SessionListDto> = {}): SessionLis
     role: "superadmin",
     deviceLabel: "This device",
     ip: null,
+    country: { kind: "unknown" },
     userAgent: null,
     loginAt: "2026-01-01T00:00:00.000Z",
     lastSeenAt: "2026-01-01T01:00:00.000Z",
@@ -850,7 +853,11 @@ describe("AccountPage toasts", () => {
     renderWithToast(<AccountPage />);
     await screen.findByRole("button", { name: "Revoke all other sessions" });
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Revoke" })[1]!);
+    const otherSessionRevoke = screen
+      .getAllByRole("button", { name: REVOKE_SESSION_BUTTON })
+      .find((btn) => !(btn as HTMLButtonElement).disabled);
+    expect(otherSessionRevoke).toBeTruthy();
+    fireEvent.click(otherSessionRevoke!);
     let dialog = await screen.findByRole("dialog", { name: "Revoke session" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -907,6 +914,22 @@ describe("AccountPage toasts", () => {
     expect(screen.getByText("Firefox / Linux")).toBeTruthy();
     expect(screen.getByText("Safari / iOS")).toBeTruthy();
     expect(screen.getByText("curl/8.7.1")).toBeTruthy();
+  });
+
+  it("shows the resolved country under the IP address for a session with one", async () => {
+    mockLoadedAccount();
+    mockFetchSessions.mockResolvedValue({
+      sessions: [
+        makeAccountSession({ ip: "192.0.2.10", country: { kind: "resolved", countryCode: "FR" } }),
+      ],
+    });
+
+    renderWithToast(<AccountPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("192.0.2.10")).toBeTruthy();
+    });
+    expect(screen.getByText("France")).toBeTruthy();
   });
 
   it("shows OIDC-only MFA guidance when local password is unavailable", async () => {
@@ -1136,10 +1159,10 @@ describe("AccountPage toasts", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getAllByRole("button", { name: "Revoke" }).length).toBeGreaterThan(0);
+      expect(screen.getAllByRole("button", { name: REVOKE_SESSION_BUTTON }).length).toBeGreaterThan(0);
     });
 
-    const revokeButtons = screen.getAllByRole("button", { name: "Revoke" });
+    const revokeButtons = screen.getAllByRole("button", { name: REVOKE_SESSION_BUTTON });
     const otherRevoke = revokeButtons.find((btn) => !btn.hasAttribute("disabled"));
     expect(otherRevoke).toBeTruthy();
     fireEvent.click(otherRevoke!);
@@ -1207,6 +1230,7 @@ describe("AccountPage toasts", () => {
       role: "superadmin" as const,
       deviceLabel: "Other",
       ip: null,
+      country: { kind: "unknown" as const },
       userAgent: null,
       loginAt: "2026-01-01T00:00:00.000Z",
       lastSeenAt: "2026-01-01T01:00:00.000Z",
@@ -1220,9 +1244,9 @@ describe("AccountPage toasts", () => {
     mockDeleteSession.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getAllByRole("button", { name: "Revoke" }).length).toBeGreaterThan(0);
+      expect(screen.getAllByRole("button", { name: REVOKE_SESSION_BUTTON }).length).toBeGreaterThan(0);
     });
-    fireEvent.click(screen.getAllByRole("button", { name: "Revoke" })[0]!);
+    fireEvent.click(screen.getAllByRole("button", { name: REVOKE_SESSION_BUTTON })[0]!);
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
     await waitFor(() => {
@@ -1240,6 +1264,7 @@ describe("AccountPage toasts", () => {
       role: "superadmin" as const,
       deviceLabel: "This device",
       ip: null,
+      country: { kind: "unknown" as const },
       userAgent: null,
       loginAt: "2026-01-01T00:00:00.000Z",
       lastSeenAt: "2026-01-01T01:00:00.000Z",

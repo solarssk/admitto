@@ -16,6 +16,7 @@ import {
   resolveActorEmailForLog,
 } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
+import { resolveIpLocation } from "../rate-limit/ip-location.js";
 
 async function requireSuperadmin(c: Context, db: PrismaClient): Promise<Response | null> {
   const auth = c.get("auth");
@@ -55,6 +56,7 @@ export async function handleGetSessions(c: Context, db: PrismaClient): Promise<R
     role: highestRole(s.user.role_assignments),
     deviceLabel: s.device_label,
     ip: s.ip,
+    country: resolveIpLocation(s.ip),
     userAgent: s.user_agent,
     loginAt: s.created_at.toISOString(),
     lastSeenAt: s.last_seen_at.toISOString(),

@@ -7,7 +7,7 @@ import {
   useSearchParams,
   type NavigateFunction,
 } from "react-router";
-import { Badge, Button, Card, EmptyState, Input, Notice, PageHeader, useToast, type ToastVariant } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, HintLabel, Input, Notice, PageHeader, useToast, type ToastVariant } from "@admitto/ui";
 import {
   ApiError,
   archiveEvent,
@@ -63,6 +63,11 @@ type SettingsPatch = Partial<{
 }>;
 
 const EVENT_SETTINGS_SUBTITLE = "Manage this event's details, images, and access controls.";
+
+const BASIC_INFORMATION_HINT = "Core event details. Title, date, and location are shown to attendees and printed on tickets.";
+const STATUS_HINT = "Read-only overview of this event's current state. Archive or delete it from the Danger zone tab.";
+const EVENT_LOGO_HINT = "Use a different logo just for this event, or leave it blank to use the organization's logo.";
+const DANGER_ZONE_HINT = "Irreversible actions affecting this event's data or availability. Most require superadmin.";
 
 // Extra "don't act on reflex" pause before the confirm button on the bulk revoke dialogs
 // unlocks — these affect every attendee on the event at once, so they get a brief arming
@@ -834,7 +839,7 @@ export function EventSettingsPage() {
 
       <EventSettingsTabPanel tab="general" activeTab={tab} visited={visitedTabs} label="General">
         <Card
-          title="Basic information"
+          title={<HintLabel hint={BASIC_INFORMATION_HINT}>Basic information</HintLabel>}
           className="event-settings-card"
           actions={
             !isArchived && (
@@ -916,7 +921,7 @@ export function EventSettingsPage() {
           </div>
         </Card>
 
-        <Card title="Status" className="event-settings-card">
+        <Card title={<HintLabel hint={STATUS_HINT}>Status</HintLabel>} className="event-settings-card">
           <div className="settings-status-grid">
             <div className="settings-field-group">
               <p>
@@ -972,7 +977,7 @@ export function EventSettingsPage() {
 
       <EventSettingsTabPanel tab="images" activeTab={tab} visited={visitedTabs} label="Images">
         <Card
-          title="Event logo"
+          title={<HintLabel hint={EVENT_LOGO_HINT}>Event logo</HintLabel>}
           className="event-settings-card"
           actions={
             !isArchived && (
@@ -987,10 +992,6 @@ export function EventSettingsPage() {
             )
           }
         >
-          <p className="field-hint">
-            Use a different logo just for this event, or leave it blank to use the
-            organization&apos;s logo.
-          </p>
           <LogoUploadZone
             label="Event logo"
             hideLabel
@@ -1059,7 +1060,9 @@ export function EventSettingsPage() {
       <EventSettingsTabPanel tab="danger-zone" activeTab={tab} visited={visitedTabs} label="Danger zone">
         <div className="at-card danger-zone-panel">
           <div className="at-card__header danger-zone-panel__header">
-            <div className="at-card__title">Danger zone</div>
+            <div className="at-card__title">
+              <HintLabel hint={DANGER_ZONE_HINT}>Danger zone</HintLabel>
+            </div>
           </div>
 
           <div className="danger-zone__item">

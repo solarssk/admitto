@@ -9,14 +9,16 @@ export {
   serializeConfigDescriptionForCli,
 } from "./configDescribe.js";
 export type { CliConfigDescriptor, SecretPresenceField } from "./configDescribe.js";
-export { listDeliveries } from "./listDeliveries.js";
+export { listDeliveries, getDeliveryWithTimeline, getRenderedDelivery } from "./listDeliveries.js";
 export type {
   DeliveryLogEntry,
   ListDeliveriesParams,
   ListDeliveriesResult,
+  DeliveryDetailEntry,
+  DeliveryTimelineResult,
 } from "./listDeliveries.js";
-export { toDeliveryDto } from "./toDeliveryDto.js";
-export type { DeliveryDto } from "./toDeliveryDto.js";
+export { toDeliveryDto, toDeliveryDetailDto } from "./toDeliveryDto.js";
+export type { DeliveryDto, DeliveryDetailDto } from "./toDeliveryDto.js";
 export { resendTicketEmail } from "./resend.js";
 export type { ResendTicketEmailOptions } from "./resend.js";
 export { retryDelivery } from "./retry.js";

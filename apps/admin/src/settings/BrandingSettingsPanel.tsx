@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   DEFAULT_BRANDING_FONT_FAMILY_NAME,
+  HintLabel,
   IconButton,
   Input,
   Select,
@@ -27,6 +28,10 @@ import { FontFamilyModal, styleLabel } from "./FontFamilyModal.js";
 
 const EMPTY_ORG_DRAFT: SetupOrgBrandingDto = { org_name: "", logo_url: "" };
 const EMPTY_THEME_DRAFT: BrandingThemeDto = {};
+
+const ORG_BRANDING_HINT = "Shown on the public ticket page and emails.";
+const THEME_HINT =
+  "Instance-wide accent colour, plus a font for each surface below. Ticket logos are set in Organisation branding above, not here.";
 
 const THEME_COLORS = [
   { key: "blue", hex: "#066fd1", label: "Admitto blue" },
@@ -623,8 +628,7 @@ export function BrandingSettingsPanel() {
 
   return (
     <>
-      <Card title="Organisation branding">
-        <p className="at-hint branding-scope-hint">Shown on the public ticket page and emails.</p>
+      <Card title={<HintLabel hint={ORG_BRANDING_HINT}>Organisation branding</HintLabel>}>
         <div className="branding-form">
           <Input
             label="Organisation name"
@@ -645,23 +649,18 @@ export function BrandingSettingsPanel() {
       </Card>
 
       <Card
-        title="Theme"
+        title={<HintLabel hint={THEME_HINT}>Theme</HintLabel>}
         actions={
           <Button variant="ghost" size="sm" disabled={formDisabled} onClick={handleRestoreThemeDefaults}>
             Restore defaults
           </Button>
         }
       >
-        <p className="at-hint branding-scope-hint">
-          Instance-wide accent colour, plus a font for each surface below. Ticket logos are set in
-          Organisation branding above, not here.
-        </p>
         <span className="at-label" id="branding-primary-label">
           Primary colour
         </span>
-        {/* Sits directly before its own control (like Organisation logo's own description), not
-            before a whole new section like the card's other .branding-scope-hint paragraphs -
-            same smaller gap as that one, not the bigger between-sections default. */}
+        {/* Sits directly before its own control (like Organisation logo's own description) -
+            smaller gap than the bigger between-sections default. */}
         <p className="at-hint branding-scope-hint" style={{ marginBottom: 8 }}>
           {colorMode === "custom" ? (
             <>

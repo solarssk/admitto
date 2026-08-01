@@ -118,13 +118,15 @@ type SettingField<T> = { value: T; source: "env" | "db" | "default" };
 type SecurityDto = {
   session_ttl_ms: SettingField<number>;
   operator_session_ttl_ms: SettingField<number>;
+  session_idle_timeout_ms: SettingField<number>;
+  operator_session_idle_timeout_ms: SettingField<number>;
   trusted_device_days: SettingField<number>;
   mfa_required_roles: SettingField<string[]>;
   instance_url: SettingField<string | null>;
 };
 
 describe("GET /api/admin/system-settings", () => {
-  it("returns all 5 keys with source=default on fresh DB", async () => {
+  it("returns all 7 keys with source=default on fresh DB", async () => {
     const res = await app.request("/api/admin/system-settings", {
       headers: { Cookie: superCookie },
     });
@@ -132,11 +134,15 @@ describe("GET /api/admin/system-settings", () => {
     const body = (await res.json()) as SecurityDto;
     expect(body.session_ttl_ms.source).toBe("default");
     expect(body.operator_session_ttl_ms.source).toBe("default");
+    expect(body.session_idle_timeout_ms.source).toBe("default");
+    expect(body.operator_session_idle_timeout_ms.source).toBe("default");
     expect(body.trusted_device_days.source).toBe("default");
     expect(body.mfa_required_roles.source).toBe("default");
     expect(body.instance_url.source).toBe("default");
     expect(body.instance_url.value).toBeNull();
     expect(typeof body.session_ttl_ms.value).toBe("number");
+    expect(typeof body.session_idle_timeout_ms.value).toBe("number");
+    expect(typeof body.operator_session_idle_timeout_ms.value).toBe("number");
     expect(Array.isArray(body.mfa_required_roles.value)).toBe(true);
   });
 
@@ -185,6 +191,229 @@ describe("PATCH /api/admin/system-settings", () => {
       fields: { fields: ["session_ttl_ms"], actorUserId: superId, actorEmail: EMAIL_SUPER },
     });
     expect(JSON.stringify(entry)).not.toContain(String(newTtl));
+  });
+
+  it("updates session_idle_timeout_ms and source becomes db", async () => {
+    const newIdle = 900_000; // 15 min
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ session_idle_timeout_ms: newIdle }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SecurityDto;
+    expect(body.session_idle_timeout_ms.value).toBe(newIdle);
+    expect(body.session_idle_timeout_ms.source).toBe("db");
+  });
+
+  it("updates operator_session_idle_timeout_ms and source becomes db", async () => {
+    const newIdle = 3_600_000; // 1h
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ operator_session_idle_timeout_ms: newIdle }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SecurityDto;
+    expect(body.operator_session_idle_timeout_ms.value).toBe(newIdle);
+    expect(body.operator_session_idle_timeout_ms.source).toBe("db");
+  });
+
+  it("rejects session_idle_timeout_ms below the 5-minute minimum", async () => {
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ session_idle_timeout_ms: 60_000 }), // 1 min, below 5 min minimum
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("validation_error");
+  });
+
+  it("rejects session_idle_timeout_ms above the 4-hour admin maximum", async () => {
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ session_idle_timeout_ms: 14_400_001 }), // 1ms above 4h maximum
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("validation_error");
+  });
+
+  it("rejects operator_session_idle_timeout_ms above the 8-hour operator maximum", async () => {
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ operator_session_idle_timeout_ms: 28_800_001 }), // 1ms above 8h maximum
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("validation_error");
+  });
+
+  it("rejects (atomically) an admin idle timeout that would exceed the absolute lifetime", async () => {
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      // absolute lifetime 1h, idle timeout 2h — idle would never trigger.
+      body: JSON.stringify({ session_ttl_ms: 3_600_000, session_idle_timeout_ms: 7_200_000 }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; field: string };
+    expect(body.error).toBe("idle_timeout_exceeds_absolute_lifetime");
+    expect(body.field).toBe("session_idle_timeout_ms");
+
+    // Rejected atomically: neither field should have been persisted.
+    const getRes = await app.request("/api/admin/system-settings", {
+      headers: { Cookie: superCookie },
+    });
+    const getBody = (await getRes.json()) as SecurityDto;
+    expect(getBody.session_ttl_ms.source).toBe("default");
+    expect(getBody.session_idle_timeout_ms.source).toBe("default");
+  });
+
+  it("rejects (atomically) an operator idle timeout that would exceed the absolute lifetime", async () => {
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      // absolute lifetime 1h, idle timeout 2h — idle would never trigger.
+      body: JSON.stringify({
+        operator_session_ttl_ms: 3_600_000,
+        operator_session_idle_timeout_ms: 7_200_000,
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; field: string };
+    expect(body.error).toBe("idle_timeout_exceeds_absolute_lifetime");
+    expect(body.field).toBe("operator_session_idle_timeout_ms");
+  });
+
+  it("allows an idle timeout equal to the absolute lifetime", async () => {
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ session_ttl_ms: 3_600_000, session_idle_timeout_ms: 3_600_000 }),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("allows unrelated PATCH keys when idle already exceeds absolute in stored config", async () => {
+    await prisma.systemSettings.createMany({
+      data: [
+        { key: "session_ttl", value_json: "3600000" },
+        { key: "session_idle_timeout", value_json: "7200000" },
+      ],
+    });
+
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ mfa_required_roles: ["superadmin", "admin"] }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SecurityDto;
+    expect(body.mfa_required_roles.value).toEqual(["superadmin", "admin"]);
+  });
+
+  it("rejects lowering absolute lifetime below the stored idle timeout when only absolute is in the PATCH", async () => {
+    await prisma.systemSettings.create({
+      data: { key: "session_idle_timeout", value_json: "7200000" },
+    });
+
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      // Stored idle is 2 h; absolute is lowered to the 1 h API minimum.
+      body: JSON.stringify({ session_ttl_ms: 3_600_000 }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; field: string };
+    expect(body.error).toBe("idle_timeout_exceeds_absolute_lifetime");
+    expect(body.field).toBe("session_idle_timeout_ms");
+  });
+
+  it("skips operator idle validation when only admin session fields are in the PATCH", async () => {
+    await prisma.systemSettings.createMany({
+      data: [
+        { key: "operator_session_ttl", value_json: "3600000" },
+        { key: "operator_session_idle_timeout", value_json: "7200000" },
+      ],
+    });
+
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ session_idle_timeout_ms: 900_000 }),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("env-locked idle-timeout key returns 400 'managed by environment'", async () => {
+    const prev = process.env.SESSION_IDLE_TIMEOUT_ADMIN_MS;
+    process.env.SESSION_IDLE_TIMEOUT_ADMIN_MS = "600000";
+    try {
+      const res = await app.request("/api/admin/system-settings", {
+        method: "PATCH",
+        headers: {
+          Cookie: superCookie,
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify({ session_idle_timeout_ms: 900_000 }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string; field: string };
+      expect(body.error).toBe("managed by environment");
+      expect(body.field).toBe("session_idle_timeout_ms");
+    } finally {
+      if (prev === undefined) delete process.env.SESSION_IDLE_TIMEOUT_ADMIN_MS;
+      else process.env.SESSION_IDLE_TIMEOUT_ADMIN_MS = prev;
+    }
   });
 
   it("writes AdminAuditLog with fields list when changing a value", async () => {

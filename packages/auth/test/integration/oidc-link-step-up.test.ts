@@ -11,6 +11,7 @@ import {
 import { generateTotpCode, decryptTotpSecret } from "../../src/mfa/totp.js";
 
 const USER_ID = "oidc-link-stepup-user";
+const BOOTSTRAP_TEST_PASSWORD = "bootstrap-pass-xyz";
 
 let prisma: PrismaClient;
 
@@ -60,7 +61,7 @@ describe("verifyOidcLinkStepUp", () => {
     await prisma.roleAssignment.deleteMany({ where: { user: { email: mfaEmail } } });
     await prisma.user.deleteMany({ where: { email: mfaEmail } });
 
-    const { userId } = await bootstrapSuperadmin(prisma, mfaEmail, "pw");
+    const { userId } = await bootstrapSuperadmin(prisma, mfaEmail, BOOTSTRAP_TEST_PASSWORD);
     const enrollment = await startTotpEnrollment(prisma, userId);
     expect(enrollment).not.toBeNull();
 
@@ -72,20 +73,20 @@ describe("verifyOidcLinkStepUp", () => {
 
     const missing = await verifyOidcLinkStepUp(prisma, {
       userId,
-      password: "pw",
+      password: BOOTSTRAP_TEST_PASSWORD,
     });
     expect(missing).toEqual({ ok: false, reason: "totp_required" });
 
     const wrong = await verifyOidcLinkStepUp(prisma, {
       userId,
-      password: "pw",
+      password: BOOTSTRAP_TEST_PASSWORD,
       code: "000000",
     });
     expect(wrong).toEqual({ ok: false, reason: "invalid_totp" });
 
     const ok = await verifyOidcLinkStepUp(prisma, {
       userId,
-      password: "pw",
+      password: BOOTSTRAP_TEST_PASSWORD,
       code: enrollment!.backupCodes[0],
     });
     expect(ok).toEqual({ ok: true });

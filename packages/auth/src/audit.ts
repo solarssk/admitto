@@ -7,7 +7,7 @@ export { redactEmail };
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
-/** The 10 auth/security event types persisted to the durable `SecurityAuditLog` table (issue
+/** The 12 auth/security event types persisted to the durable `SecurityAuditLog` table (issue
  * #473), in addition to the stdout/ring-buffer emit every event in this module already gets.
  * Deliberately narrower than this module's full event surface: `auth.rate_limit.exceeded` (11
  * call sites spanning login, MFA, OIDC, admin imports, check-in — an infra/throttle signal better
@@ -16,6 +16,7 @@ type Db = PrismaClient | Prisma.TransactionClient;
 export type SecurityAuditEventType =
   | "auth.login.success"
   | "auth.login.fail"
+  | "auth.login.repeated_failures"
   | "auth.mfa.success"
   | "auth.mfa.fail"
   | "auth.mfa.break_glass"
@@ -23,7 +24,8 @@ export type SecurityAuditEventType =
   | "auth.logout"
   | "auth.oidc.success"
   | "auth.oidc.superadmin_revoke_blocked"
-  | "auth.access.denied";
+  | "auth.access.denied"
+  | "auth.trusted_device.created";
 
 /**
  * Persist a security/auth event to the durable `SecurityAuditLog` table (issue #473). Never
@@ -359,6 +361,50 @@ export async function logAccessDenied(
     user_id: input.userId ?? null,
     ip: input.ip ?? null,
     metadata: { path: input.path, reason: input.reason, authSource: input.authSource ?? null },
+  });
+}
+
+/** Emit `auth.trusted_device.created` when MFA completion remembers a device (skips MFA on
+ * future logins on that device for its configured lifetime, see `trusted_device_days`), and
+ * persist a durable `SecurityAuditLog` row (P0 security review — this was the one MFA outcome
+ * with no audit trail). */
+export async function logTrustedDeviceCreated(db: Db, ctx: MfaAuditContext): Promise<void> {
+  emitAuditEvent("auth.trusted_device.created", {
+    user_fingerprint: fingerprint(ctx.userId),
+    session_fingerprint: ctx.sessionId ? fingerprint(ctx.sessionId) : null,
+    ip: ctx.ip ?? null,
+    userAgent: ctx.userAgent ?? null,
+  });
+  await writeSecurityAuditLog(db, {
+    event_type: "auth.trusted_device.created",
+    user_id: ctx.userId,
+    ip: ctx.ip ?? null,
+    metadata: { sessionId: ctx.sessionId ?? null, userAgent: ctx.userAgent ?? null },
+  });
+}
+
+/** Emit `auth.login.repeated_failures` once consecutive failed attempts against a single
+ * admin/superadmin account cross `PRIVILEGED_LOGIN_FAILURE_ALERT_THRESHOLD`, and persist a
+ * durable `SecurityAuditLog` row (P0 security review). Deliberately breaks from
+ * `logLoginFailure`'s enumeration-safe `user_id: null` / redacted-email shape: this event only
+ * ever fires for a real, elevated-role account after repeated failures, so identifying *which*
+ * privileged account is under attack is the entire point — a superadmin reviewing the audit log
+ * needs to know that, qualitatively different from the routine per-attempt failure log that must
+ * never reveal whether an arbitrary email belongs to a real user. */
+export async function logRepeatedFailedLogins(
+  db: Db,
+  ctx: { userId: string; email: string; ip?: string; streak: number },
+): Promise<void> {
+  emitAuditEvent("auth.login.repeated_failures", {
+    email: ctx.email,
+    streak: ctx.streak,
+    ip: ctx.ip ?? null,
+  });
+  await writeSecurityAuditLog(db, {
+    event_type: "auth.login.repeated_failures",
+    user_id: ctx.userId,
+    ip: ctx.ip ?? null,
+    metadata: { email: ctx.email, streak: ctx.streak },
   });
 }
 

@@ -85,7 +85,7 @@
 .sessions-table-wrap thead th {
   position: sticky;
   top: 0;
-  background: var(--surface-card, var(--surface));
+  background: var(--surface-sunken);
   z-index: 1;
 }
 
@@ -260,12 +260,18 @@
 .account-password-form .at-password-slot {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1, 0.25rem);
+  gap: var(--space-2, 0.5rem);
 }
 
 .account-password-form .at-password-strength {
   position: static;
   height: auto;
+  margin-top: var(--space-1, 0.25rem);
+}
+
+.account-password-mismatch {
+  font-size: var(--fs-sm);
+  font-weight: 400;
 }
 
 /* Password and 2FA are two independent Cards, side by side — stretch keeps

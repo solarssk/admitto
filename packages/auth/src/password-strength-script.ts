@@ -1,7 +1,10 @@
 import { PASSWORD_MIN_LENGTH } from "./constants.js";
 import {
+  hasNearZeroEntropy,
+  isSimpleAsciiRun,
   passwordStrengthTip,
   scorePasswordStrengthInline,
+  strengthPoints,
   tooShortProgressScore,
 } from "./password-strength.js";
 
@@ -76,12 +79,18 @@ export function renderAuthPasswordStrengthMeterHtml(inputId: string): string {
 /** Inline script for setup / change-password pages — embeds the same scorer as @admitto/auth. */
 export function passwordStrengthAuthScript(scriptNonce: string): string {
   const tooShortSource = tooShortProgressScore.toString();
+  const isSimpleAsciiRunSource = isSimpleAsciiRun.toString();
+  const hasNearZeroEntropySource = hasNearZeroEntropy.toString();
+  const strengthPointsSource = strengthPoints.toString();
   const scorerSource = scorePasswordStrengthInline.toString();
   const tipSource = passwordStrengthTip.toString();
   return String.raw`<script nonce="${scriptNonce}">
 (function () {
   var MIN = ${PASSWORD_MIN_LENGTH};
   var tooShortProgressScore = ${tooShortSource};
+  var isSimpleAsciiRun = ${isSimpleAsciiRunSource};
+  var hasNearZeroEntropy = ${hasNearZeroEntropySource};
+  var strengthPoints = ${strengthPointsSource};
   var score = ${scorerSource};
   var strengthTip = ${tipSource};
 

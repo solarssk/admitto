@@ -181,7 +181,7 @@ describe("applyOidcGroupRoleMappings", () => {
   });
 
   it("does not remove superadmin when groups empty on re-apply", async () => {
-    const { userId } = await bootstrapSuperadmin(prisma, "super-invariant@example.com", "pw");
+    const { userId } = await bootstrapSuperadmin(prisma, "super-invariant@example.com", "bootstrap-pass-xyz");
     const changed = await applyOidcGroupRoleMappings(prisma, PROVIDER_ID, userId, []);
     expect(changed).toBe(0);
     const roles = await prisma.roleAssignment.findMany({ where: { user_id: userId } });
@@ -313,7 +313,7 @@ describe("OIDC instance superadmin revoke floor-guard", () => {
   });
 
   it("allows revoke when two active instance superadmins exist", async () => {
-    const { userId: secondSuperId } = await bootstrapSuperadmin(prisma, SECOND_SUPER_EMAIL, "pw");
+    const { userId: secondSuperId } = await bootstrapSuperadmin(prisma, SECOND_SUPER_EMAIL, "bootstrap-pass-xyz");
     try {
       await removeOtherInstanceSuperadmins([FLOOR_USER_ID, secondSuperId]);
       await grantOidcInstanceSuperadmin(FLOOR_USER_ID);
@@ -381,7 +381,7 @@ describe("OIDC instance superadmin revoke floor-guard", () => {
   });
 
   it("allows revoke for inactive user even when only one other active superadmin remains", async () => {
-    const { userId: secondSuperId } = await bootstrapSuperadmin(prisma, SECOND_SUPER_EMAIL, "pw");
+    const { userId: secondSuperId } = await bootstrapSuperadmin(prisma, SECOND_SUPER_EMAIL, "bootstrap-pass-xyz");
     try {
       await removeOtherInstanceSuperadmins([FLOOR_USER_ID, secondSuperId]);
       await grantOidcInstanceSuperadmin(FLOOR_USER_ID);

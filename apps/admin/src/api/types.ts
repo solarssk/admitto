@@ -1,3 +1,10 @@
+import type { DeliveryDto } from "@admitto/shared";
+
+// DeliveryDto is also used locally below (AttendeeDetailDto.deliveries, the deliveries-list
+// response's items) so this file still needs its own bound import above - DeliveryDetailDto
+// isn't used locally, only re-exported, so it's not repeated in that import (Sonar S1128).
+export type { DeliveryDetailDto, DeliveryDto } from "@admitto/shared";
+
 export type MailerProvider = "smtp" | "graph" | "powerautomate" | "export_only";
 
 export interface MailerStatus {
@@ -216,19 +223,11 @@ export interface AttendeeRowDto {
   has_issued_items: boolean;
 }
 
-export interface DeliveryDto {
-  id: string;
-  purpose: string;
-  status: string;
-  recipient_email: string | null;
-  rendered_subject: string | null;
-  queued_at: string;
-  accepted_at: string | null;
-  sent_at: string | null;
-  failed_at: string | null;
-  error_code: string | null;
-  /** Triggering admin's IANA timezone at send time, when known. */
-  client_timezone: string | null;
+/** Redacted rendered message for the "View sent message" preview — the recipient's real QR
+ * code/ticket link are never included, by design (see communication-api-routes.ts). */
+export interface RenderedDeliveryDto {
+  subject: string | null;
+  html: string | null;
 }
 
 export interface AttendeeActionLogEntryDto {
@@ -783,6 +782,11 @@ export interface EventDeliveriesListParams {
   pageSize?: number;
   status?: "all" | "queued" | "accepted" | "sent" | "delivered" | "failed" | "bounced" | "rejected";
   purpose?: "all" | "initial" | "resend";
+  /** Case-insensitive match against attendee name/email. */
+  search?: string;
+  /** Filter to a specific custom template id, or the literal string "default" for deliveries
+   * sent with the built-in template (`template_id` is null). */
+  templateId?: string;
 }
 
 export interface EventDeliveriesListResponse {
@@ -852,6 +856,14 @@ export interface MapTileConfigDto {
 export type SessionRole = "superadmin" | "admin" | "operator";
 export type SettingSource = "env" | "db" | "default";
 
+export type IpLocationKind = "internal" | "resolved" | "unknown";
+
+/** Mirrors IpLocation from apps/web/src/rate-limit/ip-location.ts. */
+export interface IpLocationDto {
+  kind: IpLocationKind;
+  countryCode?: string;
+}
+
 export interface SessionListDto {
   id: string;
   userId: string;
@@ -860,6 +872,7 @@ export interface SessionListDto {
   role: SessionRole;
   deviceLabel: string | null;
   ip: string | null;
+  country: IpLocationDto;
   userAgent: string | null;
   loginAt: string;
   lastSeenAt: string;
@@ -881,6 +894,8 @@ export interface SecuritySettingField<T> {
 export interface SystemSettingsDto {
   session_ttl_ms: SecuritySettingField<number>;
   operator_session_ttl_ms: SecuritySettingField<number>;
+  session_idle_timeout_ms: SecuritySettingField<number>;
+  operator_session_idle_timeout_ms: SecuritySettingField<number>;
   trusted_device_days: SecuritySettingField<number>;
   mfa_required_roles: SecuritySettingField<string[]>;
   instance_url: SecuritySettingField<string | null>;
@@ -889,6 +904,8 @@ export interface SystemSettingsDto {
 export interface PatchSystemSettingsBody {
   session_ttl_ms?: number | null;
   operator_session_ttl_ms?: number | null;
+  session_idle_timeout_ms?: number | null;
+  operator_session_idle_timeout_ms?: number | null;
   trusted_device_days?: number | null;
   mfa_required_roles?: string[] | null;
   instance_url?: string | null;
@@ -1017,6 +1034,7 @@ export interface AuditLogEntryDto {
   actor_display_name: string | null;
   actor_timezone: string | null;
   ip: string | null;
+  country: IpLocationDto;
   metadata: Record<string, unknown> | null;
   created_at: string;
 }
@@ -1040,6 +1058,7 @@ export interface SecurityAuditLogEntryDto {
   user_email: string | null;
   user_display_name: string | null;
   ip: string | null;
+  country: IpLocationDto;
   metadata: Record<string, unknown> | null;
   created_at: string;
 }

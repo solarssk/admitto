@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 
@@ -637,12 +637,14 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     expect(within(itemsList).getByText("Not yet")).toBeTruthy();
   });
 
-  it("lists mail delivery history when deliveries exist", async () => {
+  it("lists mail delivery history when deliveries exist, with a working row menu", async () => {
     mockLoad(
       baseDetail({
         deliveries: [
           {
             id: "del-1",
+            attendee_id: "att-1",
+            attendee_name: "Anna",
             purpose: "initial",
             status: "sent",
             recipient_email: "anna@example.com",
@@ -662,6 +664,85 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     expect(screen.getByText("Delivery history")).toBeTruthy();
     expect(screen.getByText("Your ticket")).toBeTruthy();
     expect(screen.queryByText("No delivery attempts yet")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Anna's message" }));
+    const menu = screen.getByRole("menu");
+    const items = within(menu).getAllByRole("menuitem");
+    expect(items.map((item) => item.textContent?.trim())).toEqual([
+      "View sent message",
+      "View delivery details",
+    ]);
+  });
+
+  it("shows the actual send-to address when it differs from the attendee's own email, and a generic placeholder for an unset subject", async () => {
+    mockLoad(
+      baseDetail({
+        deliveries: [
+          {
+            id: "del-1",
+            attendee_id: "att-1",
+            attendee_name: "Anna",
+            purpose: "resend",
+            status: "sent",
+            recipient_email: "forwarded@example.com",
+            rendered_subject: null,
+            queued_at: "2026-01-05T09:31:00.000Z",
+            accepted_at: "2026-01-05T09:31:05.000Z",
+            sent_at: "2026-01-05T09:31:05.000Z",
+            failed_at: null,
+            error_code: null,
+          },
+        ],
+      }),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    expect(screen.getByText("Ticket email")).toBeTruthy();
+    expect(screen.getByText("to forwarded@example.com")).toBeTruthy();
+  });
+
+  it("opens and closes both delivery modals from the row menu, including the details-to-sent-message swap", async () => {
+    mockLoad(
+      baseDetail({
+        deliveries: [
+          {
+            id: "del-1",
+            attendee_id: "att-1",
+            attendee_name: "Anna",
+            purpose: "initial",
+            status: "sent",
+            recipient_email: "anna@example.com",
+            rendered_subject: "Your ticket",
+            queued_at: "2026-01-05T09:31:00.000Z",
+            accepted_at: "2026-01-05T09:31:05.000Z",
+            sent_at: "2026-01-05T09:31:05.000Z",
+            failed_at: null,
+            error_code: null,
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {}))); // never resolves - modals stay loading
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    // Open then close the Details modal directly.
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Anna's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
+    const detailsDialog = await screen.findByRole("dialog", { name: "Delivery details" });
+    fireEvent.click(within(detailsDialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog", { name: "Delivery details" })).toBeNull();
+
+    // Re-open, then swap to the Sent Message preview via the footer button, then close that too.
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Anna's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
+    const detailsDialog2 = await screen.findByRole("dialog", { name: "Delivery details" });
+    fireEvent.click(within(detailsDialog2).getByRole("button", { name: "View sent message" }));
+    expect(screen.queryByRole("dialog", { name: "Delivery details" })).toBeNull();
+    const sentDialog = await screen.findByRole("dialog", { name: "Sent message preview" });
+    fireEvent.click(within(sentDialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog", { name: "Sent message preview" })).toBeNull();
   });
 
   it("shows an icon+text empty-state placeholder in Mail delivery history when nothing was ever sent", async () => {
@@ -671,5 +752,64 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
 
     expect(screen.getByText("Delivery history")).toBeTruthy();
     expect(screen.getByText("No delivery attempts yet")).toBeTruthy();
+  });
+
+  it("closes an open delivery modal when navigating to a different attendee (React Router reuses the page instance)", async () => {
+    mockLoad(
+      baseDetail({
+        deliveries: [
+          {
+            id: "del-1",
+            attendee_id: "att-1",
+            attendee_name: "Anna",
+            purpose: "initial",
+            status: "sent",
+            recipient_email: "anna@example.com",
+            rendered_subject: "Your ticket",
+            queued_at: "2026-01-05T09:31:00.000Z",
+            accepted_at: "2026-01-05T09:31:05.000Z",
+            sent_at: "2026-01-05T09:31:05.000Z",
+            failed_at: null,
+            error_code: null,
+          },
+        ],
+      }),
+    );
+    mockLoad(baseDetail({ id: "att-2", name: "Ben", deliveries: [] }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockReturnValue(new Promise(() => {})), // never resolves - modal stays in its loading state
+    );
+
+    function Harness() {
+      return (
+        <>
+          <Link to="/admin/events/evt-1/attendees/att-2">Go to Ben</Link>
+          <Routes>
+            <Route path="/admin/events/:eventId/attendees/:attendeeId" element={<AttendeeDetailPage />} />
+          </Routes>
+        </>
+      );
+    }
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/attendees/att-1"]}>
+        <Harness />
+      </MemoryRouter>,
+    );
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Anna's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "View sent message" }));
+    expect(await screen.findByRole("dialog", { name: "Sent message preview" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("link", { name: "Go to Ben" }));
+    await screen.findByRole("heading", { name: "Ben" });
+    // The identity-reset effect runs after commit, not synchronously with the "Ben" heading's
+    // own paint - poll instead of asserting immediately, so this isn't a timing-sensitive race.
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Sent message preview" })).toBeNull();
+    });
+
+    vi.unstubAllGlobals();
   });
 });

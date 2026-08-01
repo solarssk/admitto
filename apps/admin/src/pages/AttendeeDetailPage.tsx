@@ -33,7 +33,7 @@ import {
   type EventFullMeta,
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { AttendeeDetailDto, EventDto, NoteAuthorRole, RsvpStatus, TicketTypeDto, UpdateAttendeePatch } from "../api/types.js";
+import type { AttendeeDetailDto, DeliveryDto, EventDto, NoteAuthorRole, RsvpStatus, TicketTypeDto, UpdateAttendeePatch } from "../api/types.js";
 import {
   loadAttendeeDetailData,
   mergeFormAfterReload,
@@ -75,6 +75,10 @@ import {
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { canRevokeCheckIn } from "../checkin/revokeEligibility.js";
+import { DeliveryDetailsModal } from "../communication/DeliveryDetailsModal.js";
+import { formatDateTime, rowTimestamp } from "../communication/delivery-format.js";
+import { DeliveryRowMenu } from "../communication/DeliveryRowMenu.js";
+import { SentMessagePreviewModal } from "../communication/SentMessagePreviewModal.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isOrgAdmin, isSuperadmin } from "../auth/capabilities.js";
@@ -480,6 +484,17 @@ function AttendeeOverviewTab({
   eventItems: AttendeeDetailDto["event_items"];
   event: EventDto;
 }>) {
+  const [sentMessageRow, setSentMessageRow] = useState<DeliveryDto | null>(null);
+  const [detailsRow, setDetailsRow] = useState<DeliveryDto | null>(null);
+
+  // React Router reuses this same AttendeeDetailPage/AttendeeOverviewTab instance across
+  // :attendeeId param changes - without this, a delivery modal left open while navigating to a
+  // different attendee would keep showing the previous attendee's delivery.
+  useEffect(() => {
+    setSentMessageRow(null);
+    setDetailsRow(null);
+  }, [detail.id]);
+
   return (
     <div className="attendee-detail-grid">
       <div className="attendee-detail-main">
@@ -593,17 +608,19 @@ function AttendeeOverviewTab({
             <ul className="attendee-deliveries">
               {detail.deliveries.map((delivery) => (
                 <li className="attendee-delivery" key={delivery.id}>
-                  <div className="attendee-delivery__subject">
-                    {delivery.rendered_subject ?? "Ticket email"}
+                  <div className="attendee-delivery__top">
+                    <div className="attendee-delivery__subject">
+                      {delivery.rendered_subject ?? "Ticket email"}
+                    </div>
+                    <DeliveryRowMenu
+                      row={delivery}
+                      onViewSentMessage={setSentMessageRow}
+                      onViewDetails={setDetailsRow}
+                    />
                   </div>
                   <div className="attendee-delivery__meta">
                     <MailStatusBadge status={delivery.status} />
-                    <span className="mono">
-                      {formatEventDateTime(
-                        delivery.sent_at ?? delivery.accepted_at ?? delivery.queued_at,
-                        delivery.client_timezone ?? event.timezone,
-                      )}
-                    </span>
+                    <span className="mono">{formatDateTime(rowTimestamp(delivery))}</span>
                     {delivery.recipient_email && delivery.recipient_email !== detail.email && (
                       <span>to {delivery.recipient_email}</span>
                     )}
@@ -617,6 +634,24 @@ function AttendeeOverviewTab({
           )}
         </Card>
       </div>
+      {sentMessageRow && (
+        <SentMessagePreviewModal
+          eventId={event.id}
+          row={sentMessageRow}
+          onClose={() => setSentMessageRow(null)}
+        />
+      )}
+      {detailsRow && (
+        <DeliveryDetailsModal
+          eventId={event.id}
+          row={detailsRow}
+          onClose={() => setDetailsRow(null)}
+          onViewSentMessage={(row) => {
+            setDetailsRow(null);
+            setSentMessageRow(row);
+          }}
+        />
+      )}
     </div>
   );
 }
