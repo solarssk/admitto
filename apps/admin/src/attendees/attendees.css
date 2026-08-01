@@ -654,9 +654,16 @@
   font-size: var(--fs-sm);
 }
 
+.attendee-delivery__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
 .attendee-delivery__subject {
   font-weight: 600;
-  margin-bottom: var(--space-1);
 }
 
 .attendee-delivery__meta {
@@ -665,6 +672,13 @@
   flex-wrap: wrap;
   gap: var(--space-2);
   align-items: center;
+}
+
+/* --fs-mono (13px) matches this row's own body text numerically, but a monospace typeface's
+   glyphs read visually larger than a proportional one at the same size - --fs-xs is what
+   actually looks the same size as the subject/badge next to it (same fix as .audit-log-time). */
+.attendee-delivery__meta .mono {
+  font-size: var(--fs-xs);
 }
 
 .attendee-delivery__error {

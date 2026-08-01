@@ -367,6 +367,14 @@
   background: var(--surface-sunken);
   color: var(--text-muted);
 }
+/* The genuinely blue tone - same tokens as `.at-badge--info` / `.status-circle--info` - for a
+   callout that should actually stand out (e.g. a privacy note), as opposed to the neutral
+   "info" variant above. */
+.at-notice--highlight {
+  border-color: var(--status-info);
+  background: var(--status-info-tint);
+  color: var(--status-info-fg);
+}
 .at-notice--success {
   border-color: var(--status-ok);
   background: var(--status-ok-tint);

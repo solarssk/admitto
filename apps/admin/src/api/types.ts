@@ -1,3 +1,10 @@
+import type { DeliveryDto } from "@admitto/shared";
+
+// DeliveryDto is also used locally below (AttendeeDetailDto.deliveries, the deliveries-list
+// response's items) so this file still needs its own bound import above - DeliveryDetailDto
+// isn't used locally, only re-exported, so it's not repeated in that import (Sonar S1128).
+export type { DeliveryDetailDto, DeliveryDto } from "@admitto/shared";
+
 export type MailerProvider = "smtp" | "graph" | "powerautomate" | "export_only";
 
 export interface MailerStatus {
@@ -203,19 +210,11 @@ export interface AttendeeRowDto {
   has_issued_items: boolean;
 }
 
-export interface DeliveryDto {
-  id: string;
-  purpose: string;
-  status: string;
-  recipient_email: string | null;
-  rendered_subject: string | null;
-  queued_at: string;
-  accepted_at: string | null;
-  sent_at: string | null;
-  failed_at: string | null;
-  error_code: string | null;
-  /** Triggering admin's IANA timezone at send time, when known. */
-  client_timezone: string | null;
+/** Redacted rendered message for the "View sent message" preview — the recipient's real QR
+ * code/ticket link are never included, by design (see communication-api-routes.ts). */
+export interface RenderedDeliveryDto {
+  subject: string | null;
+  html: string | null;
 }
 
 export interface AttendeeActionLogEntryDto {
@@ -770,6 +769,11 @@ export interface EventDeliveriesListParams {
   pageSize?: number;
   status?: "all" | "queued" | "accepted" | "sent" | "delivered" | "failed" | "bounced" | "rejected";
   purpose?: "all" | "initial" | "resend";
+  /** Case-insensitive match against attendee name/email. */
+  search?: string;
+  /** Filter to a specific custom template id, or the literal string "default" for deliveries
+   * sent with the built-in template (`template_id` is null). */
+  templateId?: string;
 }
 
 export interface EventDeliveriesListResponse {

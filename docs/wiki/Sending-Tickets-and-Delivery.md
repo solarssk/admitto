@@ -21,7 +21,7 @@ Save and test the selected template. Review attendee pass status, email addresse
 4. If the count is wrong, cancel and correct the filter or attendee data.
 5. Select **Send**.
 6. Watch **Queued**, **Sent**, and **Failed** progress until the batch completes.
-7. Open the delivery log and filter by status or purpose.
+7. Open the delivery log; filter by status, purpose, or template, or search by recipient name or email. Use a row's **…** menu to view the sent message or the full delivery details for that attendee.
 
 ## Expected result
 
@@ -46,7 +46,7 @@ Sending creates delivery records and can issue the attendee's ticket when needed
 
 - **The count is zero:** verify the selected template, filter, and attendee data.
 - **Ticket types fail to load:** retry before sending; do not fall back to all attendees by guesswork.
-- **Some deliveries fail:** review [Email Delivery Statuses](Email-Delivery-Statuses), correct the cause, then use the permitted resend.
+- **Some deliveries fail:** open that row's **View delivery details** for the exact provider error, then review [Email Delivery Statuses](Email-Delivery-Statuses), correct the cause, and use the permitted resend.
 - **The batch stays queued:** ask a Superadmin to review mail configuration and logs.
 
 ## Related pages

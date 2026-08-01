@@ -1,6 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { Hono } from "hono";
 import { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE, setSetting, SETTING_INSTANCE_URL } from "@admitto/auth";
@@ -15,8 +16,16 @@ import {
   UnquotedAttributePlaceholderError,
 } from "@admitto/mail-templates";
 import type { ExportPayload } from "@admitto/mailer";
+import { EXPORT_ROW_CAP } from "@admitto/tickets";
 import { createApp } from "../../src/app.js";
-import { MAX_TEMPLATE_BODY_BYTES, MAX_TEMPLATE_TEST_SEND_BODY_BYTES } from "../../src/admin/communication-api-routes.js";
+import {
+  handleExportEventDeliveries,
+  handleGetEventDelivery,
+  handleGetRenderedEventDelivery,
+  handleListEventDeliveries,
+  MAX_TEMPLATE_BODY_BYTES,
+  MAX_TEMPLATE_TEST_SEND_BODY_BYTES,
+} from "../../src/admin/communication-api-routes.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
@@ -26,12 +35,26 @@ const ORG_A = "org-admin-comm-a";
 const ORG_B = "org-admin-comm-b";
 const EVENT_A = "evt-admin-comm-a";
 const EVENT_B = "evt-admin-comm-b";
+const EVENT_C = "evt-admin-comm-c";
 
 const EMAIL_ADMIN = "admin-comm-admin@example.com";
 const EMAIL_OP = "admin-comm-op@example.com";
 const PASSWORD = "admin-comm-pass-123";
 
 const ATT_A1 = "att-admin-comm-a1";
+const ATT_A2 = "att-admin-comm-a2";
+const ATT_A3 = "att-admin-comm-a3";
+const ATT_A4 = "att-admin-comm-a4";
+const ATT_A5 = "att-admin-comm-a5";
+const ATT_C1 = "att-admin-comm-c1";
+
+const DLV_A1_INITIAL = "dlv-admin-comm-a1-initial";
+const DLV_A1_RESEND = "dlv-admin-comm-a1-resend";
+const DLV_A2_TEMPLATED = "dlv-admin-comm-a2-templated";
+const DLV_A3_FAILED = "dlv-admin-comm-a3-failed";
+const DLV_A4_EXPIRED = "dlv-admin-comm-a4-expired";
+const DLV_A5_SUBJECT_ONLY = "dlv-admin-comm-a5-subject-only";
+const DLV_A6_HTML_ONLY = "dlv-admin-comm-a6-html-only";
 
 const exported: ExportPayload[] = [];
 
@@ -41,6 +64,7 @@ let adminId: string;
 let opId: string;
 let adminCookie = "";
 let opCookie = "";
+let vipTemplateId = "";
 
 const validTemplate = {
   subject_template: DEFAULT_SUBJECT_TEMPLATE,
@@ -50,17 +74,17 @@ const validTemplate = {
 
 async function seed(client: PrismaClient) {
   await client.attendeeActionLog.deleteMany({
-    where: { event_id: { in: [EVENT_A, EVENT_B] } },
+    where: { event_id: { in: [EVENT_A, EVENT_B, EVENT_C] } },
   });
   await client.emailDelivery.deleteMany({
-    where: { event_id: { in: [EVENT_A, EVENT_B] } },
+    where: { event_id: { in: [EVENT_A, EVENT_B, EVENT_C] } },
   });
   await client.mailTemplate.deleteMany({
-    where: { scope_id: { in: [EVENT_A, EVENT_B, ORG_A, ORG_B] } },
+    where: { scope_id: { in: [EVENT_A, EVENT_B, EVENT_C, ORG_A, ORG_B] } },
   });
-  await client.attendee.deleteMany({ where: { event_id: { in: [EVENT_A, EVENT_B] } } });
+  await client.attendee.deleteMany({ where: { event_id: { in: [EVENT_A, EVENT_B, EVENT_C] } } });
   await client.roleAssignment.deleteMany({
-    where: { OR: [{ scope_id: { in: [ORG_A, ORG_B, EVENT_A, EVENT_B] } }] },
+    where: { OR: [{ scope_id: { in: [ORG_A, ORG_B, EVENT_A, EVENT_B, EVENT_C] } }] },
   });
   await client.session.deleteMany({
     where: { user: { email: { in: [EMAIL_ADMIN, EMAIL_OP] } } },
@@ -69,7 +93,7 @@ async function seed(client: PrismaClient) {
     where: { user: { email: { in: [EMAIL_ADMIN] } } },
   });
   await client.user.deleteMany({ where: { email: { in: [EMAIL_ADMIN, EMAIL_OP] } } });
-  await client.event.deleteMany({ where: { id: { in: [EVENT_A, EVENT_B] } } });
+  await client.event.deleteMany({ where: { id: { in: [EVENT_A, EVENT_B, EVENT_C] } } });
   await client.organization.deleteMany({ where: { id: { in: [ORG_A, ORG_B] } } });
 
   const password_hash = await hashPassword(PASSWORD);
@@ -96,6 +120,13 @@ async function seed(client: PrismaClient) {
         slug: "event-admin-comm-b",
         date: new Date("2026-11-01"),
         organization_id: ORG_B,
+      },
+      {
+        id: EVENT_C,
+        title: "Event C",
+        slug: "event-admin-comm-c",
+        date: new Date("2026-12-01"),
+        organization_id: ORG_A,
       },
     ],
   });
@@ -135,9 +166,64 @@ async function seed(client: PrismaClient) {
       name: "Anna Alpha",
     },
   });
+  await client.attendee.create({
+    data: {
+      id: ATT_A2,
+      event_id: EVENT_A,
+      email: "bob@example.com",
+      name: "Bob Beta",
+    },
+  });
+  await client.attendee.create({
+    data: {
+      id: ATT_A3,
+      event_id: EVENT_A,
+      email: "carol@example.com",
+      name: "Carol Gamma",
+    },
+  });
+  await client.attendee.create({
+    data: {
+      id: ATT_A4,
+      event_id: EVENT_A,
+      email: "dana@example.com",
+      name: "Dana Delta",
+    },
+  });
+  await client.attendee.create({
+    data: {
+      id: ATT_A5,
+      event_id: EVENT_A,
+      email: "eve@example.com",
+      name: "Eve Epsilon",
+    },
+  });
+  await client.attendee.create({
+    data: {
+      id: ATT_C1,
+      event_id: EVENT_C,
+      email: "cap@example.com",
+      name: "Cap Case",
+    },
+  });
+
+  const vipTemplate = await client.mailTemplate.create({
+    data: {
+      scope_type: "event",
+      scope_id: EVENT_A,
+      name: "vip",
+      label: "VIP invite",
+      subject_template: DEFAULT_SUBJECT_TEMPLATE,
+      body_template: DEFAULT_BODY_MJML,
+      template_format: "mjml",
+      compiled_html_template: DEFAULT_BODY_MJML,
+    },
+  });
+  vipTemplateId = vipTemplate.id;
 
   await client.emailDelivery.create({
     data: {
+      id: DLV_A1_INITIAL,
       organization_id: ORG_A,
       event_id: EVENT_A,
       attendee_id: ATT_A1,
@@ -153,6 +239,7 @@ async function seed(client: PrismaClient) {
 
   await client.emailDelivery.create({
     data: {
+      id: DLV_A1_RESEND,
       organization_id: ORG_A,
       event_id: EVENT_A,
       attendee_id: ATT_A1,
@@ -163,6 +250,114 @@ async function seed(client: PrismaClient) {
       rendered_subject: "Your ticket (resend)",
       rendered_html: "<p>secret resend html</p>",
       sent_at: new Date("2026-09-02T12:00:00Z"),
+      actor_user_id: adminId,
+    },
+  });
+
+  // Custom-template delivery with unresolved link placeholders still literal in storage (as the
+  // real send pipeline leaves them, see renderTemplateTrustedForStorage) — exercises the
+  // template filter/name AND is the one row that can meaningfully prove the rendered-preview
+  // route redacts a real placeholder rather than just happening to have nothing to redact.
+  await client.emailDelivery.create({
+    data: {
+      id: DLV_A2_TEMPLATED,
+      organization_id: ORG_A,
+      event_id: EVENT_A,
+      attendee_id: ATT_A2,
+      purpose: "initial",
+      template_id: vipTemplateId,
+      provider: "smtp",
+      provider_message_id: "msg-vip-123",
+      status: "sent",
+      recipient_email: "bob@example.com",
+      rendered_subject: "Ticket for {{first_name}}, link: {{ticket_url}}",
+      rendered_html:
+        '<a href="{{ticket_url}}">Open ticket</a><img src="{{qr_image_url}}" alt="QR" width="200" height="200" />',
+      sent_at: new Date("2026-09-03T12:00:00Z"),
+    },
+  });
+
+  // Failed/retryable delivery with sanitized error text — exercises the new diagnostic fields
+  // (provider, error, error_code, retryable, attempts) end-to-end through list/detail/export.
+  await client.emailDelivery.create({
+    data: {
+      id: DLV_A3_FAILED,
+      organization_id: ORG_A,
+      event_id: EVENT_A,
+      attendee_id: ATT_A3,
+      purpose: "initial",
+      provider: "smtp",
+      status: "failed",
+      error_code: "smtp_connect",
+      error: "Connection refused",
+      retryable: true,
+      attempts: 2,
+      recipient_email: "carol@example.com",
+      rendered_subject: "Your ticket",
+      rendered_html: "<p>secret ticket html</p>",
+      failed_at: new Date("2026-09-04T12:00:00Z"),
+    },
+  });
+
+  // Simulates a delivery whose stored rendered snapshot was already nulled by the retention job
+  // (see retention.ts nullifyDeliverySnapshots) — the rendered-preview route must tell this apart
+  // from "not found" and return an explicit null/null pair instead of empty strings.
+  await client.emailDelivery.create({
+    data: {
+      id: DLV_A4_EXPIRED,
+      organization_id: ORG_A,
+      event_id: EVENT_A,
+      attendee_id: ATT_A4,
+      purpose: "initial",
+      provider: "export_only",
+      status: "sent",
+      recipient_email: "dana@example.com",
+      rendered_subject: null,
+      rendered_html: null,
+      sent_at: new Date("2026-09-05T12:00:00Z"),
+    },
+  });
+
+  // Partial-retention edge case: only one half of the stored snapshot was nulled, so the
+  // both-null early-return in handleGetRenderedEventDelivery doesn't apply and the per-field
+  // `??`/`!= null` handling for subject and html run independently of each other. Also carries
+  // retryable: false to exercise the CSV "no" value, distinct from blank (never retried) and
+  // "yes" (DLV_A3_FAILED).
+  await client.emailDelivery.create({
+    data: {
+      id: DLV_A5_SUBJECT_ONLY,
+      organization_id: ORG_A,
+      event_id: EVENT_A,
+      attendee_id: ATT_A5,
+      purpose: "initial",
+      provider: "export_only",
+      status: "sent",
+      retryable: false,
+      recipient_email: "eve@example.com",
+      rendered_subject: "Your ticket",
+      rendered_html: null,
+      sent_at: new Date("2026-09-06T12:00:00Z"),
+    },
+  });
+  await client.emailDelivery.create({
+    data: {
+      id: DLV_A6_HTML_ONLY,
+      organization_id: ORG_A,
+      event_id: EVENT_A,
+      attendee_id: ATT_A5,
+      // ATT_A5 already has one "initial" delivery (DLV_A5_SUBJECT_ONLY) - EmailDelivery_initial_unique
+      // (attendee_id, event_id) WHERE purpose='initial' allows only one per attendee/event.
+      purpose: "resend",
+      provider: "export_only",
+      status: "sent",
+      recipient_email: "eve@example.com",
+      rendered_subject: null,
+      rendered_html: "<p>only html survived</p>",
+      sent_at: new Date("2026-09-07T12:00:00Z"),
+      // Orphaned actor: the triggering user was since deleted, so resolveUserDisplayMap won't
+      // find an entry for it - distinct from DLV_A1_RESEND's resolvable actor and DLV_A3_FAILED's
+      // null actor, exercising the optional-chaining fallback in handleGetEventDelivery.
+      actor_user_id: "user-admin-comm-deleted-orphan",
     },
   });
 }
@@ -510,7 +705,7 @@ describe("POST /api/admin/events/:eventId/template/test-send", () => {
 });
 
 describe("GET /api/admin/events/:eventId/deliveries", () => {
-  it("returns paginated event-wide log without rendered_html", async () => {
+  it("returns paginated event-wide log with diagnostic fields but no rendered_html", async () => {
     const res = await app.request(
       `/api/admin/events/${EVENT_A}/deliveries?page=1&pageSize=10`,
       { headers: { Cookie: adminCookie } },
@@ -522,12 +717,41 @@ describe("GET /api/admin/events/:eventId/deliveries", () => {
       page: number;
       pageSize: number;
     };
-    expect(body.total).toBeGreaterThanOrEqual(1);
-    expect(body.items.length).toBeGreaterThanOrEqual(1);
+    expect(body.total).toBe(7);
+    expect(body.items).toHaveLength(7);
     for (const row of body.items) {
       expect(row).not.toHaveProperty("rendered_html");
       expect(row).not.toHaveProperty("token");
     }
+
+    const failedRow = body.items.find((r) => r.id === DLV_A3_FAILED) as
+      | Record<string, unknown>
+      | undefined;
+    expect(failedRow).toBeDefined();
+    expect(failedRow).toMatchObject({
+      attendee_id: ATT_A3,
+      attendee_name: "Carol Gamma",
+      provider: "smtp",
+      provider_message_id: null,
+      attempts: 2,
+      retryable: true,
+      status: "failed",
+      error_code: "smtp_connect",
+      error: "Connection refused",
+      template_id: null,
+      template_name: null,
+    });
+
+    const templatedRow = body.items.find((r) => r.id === DLV_A2_TEMPLATED) as
+      | Record<string, unknown>
+      | undefined;
+    expect(templatedRow).toMatchObject({
+      attendee_name: "Bob Beta",
+      provider: "smtp",
+      provider_message_id: "msg-vip-123",
+      template_id: vipTemplateId,
+      template_name: "VIP invite",
+    });
   });
 
   it("filters by status", async () => {
@@ -547,7 +771,7 @@ describe("GET /api/admin/events/:eventId/deliveries", () => {
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as { items: { purpose: string }[]; total: number };
-    expect(body.total).toBe(1);
+    expect(body.total).toBe(2);
     expect(body.items.every((r) => r.purpose === "resend")).toBe(true);
   });
 
@@ -567,11 +791,390 @@ describe("GET /api/admin/events/:eventId/deliveries", () => {
     expect(res.status).toBe(400);
   });
 
+  it("filters by search matching attendee name or email, case-insensitively", async () => {
+    const byName = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries?search=anna`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(byName.status).toBe(200);
+    const nameBody = (await byName.json()) as { items: { attendee_id: string }[]; total: number };
+    expect(nameBody.total).toBe(2);
+    expect(nameBody.items.every((r) => r.attendee_id === ATT_A1)).toBe(true);
+
+    const byEmail = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries?search=${encodeURIComponent("bob@example.com")}`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(byEmail.status).toBe(200);
+    const emailBody = (await byEmail.json()) as { items: { attendee_id: string }[]; total: number };
+    expect(emailBody.total).toBe(1);
+    expect(emailBody.items[0]?.attendee_id).toBe(ATT_A2);
+
+    const noMatch = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries?search=nobody-matches-this`,
+      { headers: { Cookie: adminCookie } },
+    );
+    const noMatchBody = (await noMatch.json()) as { total: number };
+    expect(noMatchBody.total).toBe(0);
+  });
+
+  it("filters by templateId, with the \"default\" sentinel matching the built-in template", async () => {
+    const custom = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries?templateId=${vipTemplateId}`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(custom.status).toBe(200);
+    const customBody = (await custom.json()) as { items: { id: string }[]; total: number };
+    expect(customBody.total).toBe(1);
+    expect(customBody.items[0]?.id).toBe(DLV_A2_TEMPLATED);
+
+    const builtin = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries?templateId=default`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(builtin.status).toBe(200);
+    const builtinBody = (await builtin.json()) as { items: { id: string }[]; total: number };
+    expect(builtinBody.items.some((r) => r.id === DLV_A2_TEMPLATED)).toBe(false);
+    expect(builtinBody.total).toBeGreaterThanOrEqual(4);
+  });
+
   it("rejects operator", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/deliveries`, {
       headers: { Cookie: opCookie },
     });
     expect(res.status).toBe(403);
+  });
+
+  it("rejects cross-org access", async () => {
+    // EVENT_B belongs to ORG_B; adminCookie's admin only manages ORG_A.
+    const res = await app.request(`/api/admin/events/${EVENT_B}/deliveries`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("GET /api/admin/events/:eventId/deliveries/:deliveryId", () => {
+  it("returns full detail with the attendee's timeline ordered oldest-first", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries/${DLV_A1_RESEND}`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      id: string;
+      attendee_id: string;
+      attendee_name: string;
+      actor_user_id: string | null;
+      actor_display: string | null;
+      timeline: { id: string }[];
+    };
+    expect(body).not.toHaveProperty("rendered_html");
+    expect(body.id).toBe(DLV_A1_RESEND);
+    expect(body.attendee_id).toBe(ATT_A1);
+    expect(body.attendee_name).toBe("Anna Alpha");
+    // Resend triggered by an admin - the actor id/email resolve via resolveUserDisplayMap,
+    // distinct from DLV_A3_FAILED's null/null (an automated initial send below).
+    expect(body.actor_user_id).toBe(adminId);
+    expect(body.actor_display).toBe(EMAIL_ADMIN);
+    expect(body.timeline.map((t) => t.id)).toEqual([DLV_A1_INITIAL, DLV_A1_RESEND]);
+  });
+
+  it("surfaces sanitized error diagnostics for a failed, retryable delivery", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries/${DLV_A3_FAILED}`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown> & { timeline: unknown[] };
+    expect(body).toMatchObject({
+      status: "failed",
+      provider: "smtp",
+      error_code: "smtp_connect",
+      error: "Connection refused",
+      retryable: true,
+      attempts: 2,
+      actor_user_id: null,
+      actor_display: null,
+      batch_id: null,
+      session_id: null,
+    });
+    expect(body.timeline).toHaveLength(1);
+  });
+
+  it("leaves actor_display null when the recorded actor_user_id no longer resolves to a user", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries/${DLV_A6_HTML_ONLY}`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { actor_user_id: string | null; actor_display: string | null };
+    expect(body.actor_user_id).toBe("user-admin-comm-deleted-orphan");
+    expect(body.actor_display).toBeNull();
+  });
+
+  it("returns 404 for an unknown delivery id", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries/dlv-does-not-exist`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects cross-org access before ever checking whether the delivery id exists", async () => {
+    // EVENT_B belongs to ORG_B; adminCookie's admin only manages ORG_A. The access check must
+    // run (and reject) before the delivery lookup, so this is 403 rather than 404 — the API must
+    // not tell an unauthorized admin whether a given id exists in another org's event.
+    const res = await app.request(
+      `/api/admin/events/${EVENT_B}/deliveries/${DLV_A1_INITIAL}`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects operator", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries/${DLV_A1_INITIAL}`,
+      { headers: { Cookie: opCookie } },
+    );
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("GET /api/admin/events/:eventId/deliveries/:deliveryId/rendered", () => {
+  it("redacts the ticket link and QR image placeholders, never exposing a real URL", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries/${DLV_A2_TEMPLATED}/rendered`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { subject: string | null; html: string | null };
+
+    expect(body.subject).toBe("Ticket for {{first_name}}, link: #");
+    expect(body.subject).not.toContain("{{ticket_url}}");
+
+    expect(body.html).not.toContain("{{ticket_url}}");
+    expect(body.html).not.toContain("{{qr_image_url}}");
+    expect(body.html).toContain('href="#"');
+    expect(body.html).toContain("data:image/svg+xml");
+    expect(body.html).not.toContain("http://");
+    expect(body.html).not.toContain("https://");
+  });
+
+  it("returns null subject/html once the retention window has nulled the stored snapshot", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries/${DLV_A4_EXPIRED}/rendered`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { subject: string | null; html: string | null };
+    expect(body).toEqual({ subject: null, html: null });
+  });
+
+  it("returns the subject alone when only the html half of the snapshot was nulled", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries/${DLV_A5_SUBJECT_ONLY}/rendered`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { subject: string | null; html: string | null };
+    expect(body.subject).toBe("Your ticket");
+    expect(body.html).toBeNull();
+  });
+
+  it("returns the html alone when only the subject half of the snapshot was nulled", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries/${DLV_A6_HTML_ONLY}/rendered`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { subject: string | null; html: string | null };
+    expect(body.subject).toBeNull();
+    expect(body.html).toContain("only html survived");
+  });
+
+  it("returns 404 for an unknown delivery id", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries/dlv-does-not-exist/rendered`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects operator", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries/${DLV_A2_TEMPLATED}/rendered`,
+      { headers: { Cookie: opCookie } },
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects cross-org access", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_B}/deliveries/${DLV_A2_TEMPLATED}/rendered`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("GET /api/admin/events/:eventId/deliveries/export", () => {
+  it("exports the filtered delivery log as CSV with the new diagnostic columns", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries/export?format=csv&status=failed`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/csv");
+    expect(res.headers.get("Content-Disposition")).toContain('filename="delivery-log-');
+
+    const text = await res.text();
+    const lines = text.replace(/^\uFEFF/, "").split("\r\n");
+    expect(lines[0]).toContain('"Provider"');
+    expect(lines[0]).toContain('"Attempts"');
+    expect(lines[0]).toContain('"Retryable"');
+    expect(lines[0]).toContain('"Error code"');
+    expect(lines[0]).toContain('"Error"');
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toContain('"Carol Gamma"');
+    expect(lines[1]).toContain('"smtp_connect"');
+    expect(lines[1]).toContain('"Connection refused"');
+    expect(lines[1]).toContain('"yes"');
+  });
+
+  it("rejects a missing format", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/deliveries/export`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects an invalid status filter", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries/export?format=csv&status=not-a-status`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects operator", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries/export?format=csv`,
+      { headers: { Cookie: opCookie } },
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects cross-org access", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_B}/deliveries/export?format=csv`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("leaves Retryable blank for a delivery that never recorded a retry outcome, distinct from yes/no", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries/export?format=csv`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+
+    const text = await res.text();
+    const lines = text.replace(/^﻿/, "").split("\r\n").filter(Boolean);
+    const cellsOf = (line: string) => Array.from(line.matchAll(/"((?:[^"]|"")*)"/g), (m) => m[1]!.replaceAll('""', '"'));
+    const header = cellsOf(lines[0]!);
+    const retryableCol = header.indexOf("Retryable");
+    const purposeCol = header.indexOf("Purpose");
+    const nameCol = header.indexOf("Recipient name");
+
+    const initialRow = lines.slice(1).map(cellsOf).find(
+      (cells) => cells[nameCol] === "Anna Alpha" && cells[purposeCol] === "initial",
+    );
+    expect(initialRow?.[retryableCol]).toBe("");
+
+    const failedRow = lines.slice(1).map(cellsOf).find((cells) => cells[nameCol] === "Carol Gamma");
+    expect(failedRow?.[retryableCol]).toBe("yes");
+
+    const eveRows = lines.slice(1).map(cellsOf).filter((cells) => cells[nameCol] === "Eve Epsilon");
+    expect(eveRows.some((cells) => cells[retryableCol] === "no")).toBe(true);
+  });
+
+  it(
+    "rejects an export whose result would exceed the row cap",
+    async () => {
+      const CHUNK = 5000;
+      const totalRows = EXPORT_ROW_CAP + 1;
+      for (let start = 0; start < totalRows; start += CHUNK) {
+        const end = Math.min(start + CHUNK, totalRows);
+        await prisma.emailDelivery.createMany({
+          data: Array.from({ length: end - start }, (_, j) => ({
+            id: `dlv-admin-comm-cap-${start + j}`,
+            organization_id: ORG_A,
+            event_id: EVENT_C,
+            attendee_id: ATT_C1,
+            // EmailDelivery_initial_unique allows only one purpose="initial" row per
+            // attendee/event - "resend" has no such constraint, and purpose is irrelevant to
+            // the row-cap check itself.
+            purpose: "resend",
+            provider: "export_only",
+          })),
+        });
+      }
+
+      const res = await app.request(
+        `/api/admin/events/${EVENT_C}/deliveries/export?format=csv`,
+        { headers: { Cookie: adminCookie } },
+      );
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string; count: number; cap: number };
+      expect(body.error).toBe("export_too_large");
+      expect(body.cap).toBe(EXPORT_ROW_CAP);
+      expect(body.count).toBe(totalRows);
+    },
+    30_000,
+  );
+});
+
+describe("delivery route handlers - missing :eventId/:deliveryId guards", () => {
+  // requireEventId's/the handlers' own "!deliveryId" checks defend against an empty path
+  // segment, but Hono's router 404s before ever matching :eventId/:deliveryId to "" (verified:
+  // both a doubled slash and a trailing/missing segment fail to route at all) - so these branches
+  // are unreachable through the real app. Exercised here by calling the exported handlers
+  // directly against a permissive test route with optional params, auth stubbed the same way the
+  // real session middleware would set it.
+  function guardTestApp() {
+    const testApp = new Hono();
+    testApp.use("*", async (c, next) => {
+      c.set("auth", { userId: adminId });
+      await next();
+    });
+    testApp.get("/list/:eventId?", (c) => handleListEventDeliveries(c, prisma));
+    testApp.get("/get/:eventId?/:deliveryId?", (c) => handleGetEventDelivery(c, prisma));
+    testApp.get("/rendered/:eventId?/:deliveryId?", (c) => handleGetRenderedEventDelivery(c, prisma));
+    testApp.get("/export/:eventId?", (c) => handleExportEventDeliveries(c, prisma));
+    return testApp;
+  }
+
+  it.each([
+    { label: "handleListEventDeliveries, missing eventId", path: "/list", error: "eventId required" },
+    { label: "handleGetEventDelivery, missing eventId", path: "/get", error: "eventId required" },
+    {
+      label: "handleGetEventDelivery, missing deliveryId",
+      path: `/get/${EVENT_A}`,
+      error: "deliveryId required",
+    },
+    { label: "handleGetRenderedEventDelivery, missing eventId", path: "/rendered", error: "eventId required" },
+    {
+      label: "handleGetRenderedEventDelivery, missing deliveryId",
+      path: `/rendered/${EVENT_A}`,
+      error: "deliveryId required",
+    },
+    { label: "handleExportEventDeliveries, missing eventId", path: "/export", error: "eventId required" },
+  ])("returns 400 - $label", async ({ path, error }) => {
+    const res = await guardTestApp().request(path);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error });
   });
 });
 
