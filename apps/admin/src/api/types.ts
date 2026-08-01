@@ -1,9 +1,8 @@
-import type { DeliveryDetailDto, DeliveryDto } from "@admitto/shared";
+import type { DeliveryDto } from "@admitto/shared";
 
 // DeliveryDto is also used locally below (AttendeeDetailDto.deliveries, the deliveries-list
-// response's items) so this file still needs its own bound import above - the export-from form
-// (Sonar S7763) is a separate, self-contained re-export statement for this file's own existing
-// consumers, not a substitute for that import.
+// response's items) so this file still needs its own bound import above - DeliveryDetailDto
+// isn't used locally, only re-exported, so it's not repeated in that import (Sonar S1128).
 export type { DeliveryDetailDto, DeliveryDto } from "@admitto/shared";
 
 export type MailerProvider = "smtp" | "graph" | "powerautomate" | "export_only";
