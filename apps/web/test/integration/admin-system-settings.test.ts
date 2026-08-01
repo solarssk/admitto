@@ -352,6 +352,43 @@ describe("PATCH /api/admin/system-settings", () => {
     expect(body.mfa_required_roles.value).toEqual(["superadmin", "admin"]);
   });
 
+  it("rejects lowering absolute lifetime below the stored idle timeout when only absolute is in the PATCH", async () => {
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      // Default admin idle is 30 min; absolute is lowered to 15 min.
+      body: JSON.stringify({ session_ttl_ms: 900_000 }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; field: string };
+    expect(body.error).toBe("idle_timeout_exceeds_absolute_lifetime");
+    expect(body.field).toBe("session_idle_timeout_ms");
+  });
+
+  it("skips operator idle validation when only admin session fields are in the PATCH", async () => {
+    await prisma.systemSettings.createMany({
+      data: [
+        { key: "operator_session_ttl", value_json: "3600000" },
+        { key: "operator_session_idle_timeout", value_json: "7200000" },
+      ],
+    });
+
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ session_idle_timeout_ms: 900_000 }),
+    });
+    expect(res.status).toBe(200);
+  });
+
   it("env-locked idle-timeout key returns 400 'managed by environment'", async () => {
     const prev = process.env.SESSION_IDLE_TIMEOUT_ADMIN_MS;
     process.env.SESSION_IDLE_TIMEOUT_ADMIN_MS = "600000";

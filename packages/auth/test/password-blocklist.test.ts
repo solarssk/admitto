@@ -56,6 +56,14 @@ describe("hasTrivialCharacterPattern", () => {
   it("returns false for an empty string", () => {
     expect(hasTrivialCharacterPattern("")).toBe(false);
   });
+
+  it("does not flag ascending runs shorter than six characters", () => {
+    expect(hasTrivialCharacterPattern("abcde")).toBe(false);
+  });
+
+  it("does not flag a sequence that breaks before the end", () => {
+    expect(hasTrivialCharacterPattern("abcdefgxyz")).toBe(false);
+  });
 });
 
 describe("isPasswordTooCommon", () => {

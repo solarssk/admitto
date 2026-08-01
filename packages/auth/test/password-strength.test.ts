@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { PASSWORD_MIN_LENGTH } from "../src/constants.js";
 import {
+  hasNearZeroEntropy,
+  isSimpleAsciiRun,
   passwordStrengthTip,
   scorePasswordStrength,
   scorePasswordStrengthInline,
+  strengthPoints,
+  tooShortProgressScore,
 } from "../src/password-strength.js";
 import { passwordStrengthAuthScript } from "../src/password-strength-script.js";
 import {
@@ -48,6 +52,39 @@ describe("scorePasswordStrength", () => {
 
   it("floors passwords with points === 1 to Weak after minlength", () => {
     expect(scorePasswordStrength("abcdefghijklm").label).toBe("Weak");
+    // Low variety but above the near-zero-entropy threshold — only the base point applies.
+    expect(scorePasswordStrength("aabbccddeeff").label).toBe("Weak");
+  });
+});
+
+describe("tooShortProgressScore", () => {
+  it("returns 0 for non-positive length", () => {
+    expect(tooShortProgressScore(0, PASSWORD_MIN_LENGTH)).toBe(0);
+  });
+});
+
+describe("isSimpleAsciiRun", () => {
+  it("returns false for runs shorter than six characters", () => {
+    expect(isSimpleAsciiRun("abcde")).toBe(false);
+  });
+
+  it("returns false when the sequence breaks before the end", () => {
+    expect(isSimpleAsciiRun("abcdefgxyz")).toBe(false);
+  });
+
+  it("detects ascending and descending runs of six or more", () => {
+    expect(isSimpleAsciiRun("abcdef")).toBe(true);
+    expect(isSimpleAsciiRun("fedcba")).toBe(true);
+  });
+});
+
+describe("hasNearZeroEntropy and strengthPoints", () => {
+  it("flags low-variety passwords without a full run", () => {
+    expect(hasNearZeroEntropy("aaaabbbb")).toBe(true);
+  });
+
+  it("awards a single point when length and variety bonuses are not met", () => {
+    expect(strengthPoints("aabbccddeeff")).toBe(1);
   });
 });
 
