@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 import { ToastProvider } from "@admitto/ui";
@@ -98,27 +98,48 @@ describe("UsersPage search debounce", () => {
       pageSize: 25,
     });
 
-    renderAt("/admin/users");
-    // Rendered once for the desktop table row and once for the mobile card (CSS-only switch).
-    await screen.findAllByText("Jane Doe");
-    expect(fetchAdminUsers).toHaveBeenCalledTimes(1);
+    // Fake timers under full manual control (no shouldAdvanceTime) so the mount-scheduled
+    // debounce timer cannot fire until explicitly advanced below. With a real (or
+    // auto-advancing) clock, a slow/contended test worker could let this test's own initial
+    // `waitFor`/`findByText` eat past SEARCH_DEBOUNCE_MS, so the timer fires while page is
+    // still 1 (harmless) and *before* the Next click below - the pre-fix code would then pass
+    // this test too, a false negative (bot review finding on #675).
+    vi.useFakeTimers();
+    try {
+      renderAt("/admin/users");
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      // Rendered once for the desktop table row and once for the mobile card (CSS-only switch).
+      expect(screen.getAllByText("Jane Doe").length).toBeGreaterThan(0);
+      expect(fetchAdminUsers).toHaveBeenCalledTimes(1);
 
-    // Paginate away from page 1 - inside the mount-scheduled debounce window, since the search
-    // box was never touched (starts and stays empty).
-    fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    await waitFor(() => expect(fetchAdminUsers).toHaveBeenCalledTimes(2));
-    expect(fetchAdminUsers).toHaveBeenLastCalledWith(
-      expect.objectContaining({ page: 2 }),
-      expect.anything(),
-    );
-    expect(screen.getByText("Page 2 of 2")).toBeTruthy();
+      // Paginate away from page 1 - still before the mount-scheduled debounce timer has been
+      // allowed to fire, since the search box was never touched (starts and stays empty).
+      fireEvent.click(screen.getByRole("button", { name: "Next" }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(fetchAdminUsers).toHaveBeenCalledTimes(2);
+      expect(fetchAdminUsers).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 2 }),
+        expect.anything(),
+      );
+      expect(screen.getByText("Page 2 of 2")).toBeTruthy();
 
-    // Past SEARCH_DEBOUNCE_MS (300ms) from mount. The buggy version calls setPage(1)
-    // unconditionally here (the debounced value never actually changed), triggering an
-    // unplanned 3rd fetch for page 1 and silently snapping the operator back to it.
-    await new Promise((r) => setTimeout(r, 400));
+      // Only now let the mount-scheduled timer (SEARCH_DEBOUNCE_MS = 300) actually fire,
+      // deterministically after pagination - this is what exercises the regression. The
+      // buggy version calls setPage(1) unconditionally here (the debounced value never
+      // actually changed), triggering an unplanned 3rd fetch for page 1 and silently
+      // snapping the operator back to it.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400);
+      });
 
-    expect(fetchAdminUsers).toHaveBeenCalledTimes(2);
-    expect(screen.getByText("Page 2 of 2")).toBeTruthy();
+      expect(fetchAdminUsers).toHaveBeenCalledTimes(2);
+      expect(screen.getByText("Page 2 of 2")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
