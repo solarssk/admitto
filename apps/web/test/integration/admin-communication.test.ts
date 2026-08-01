@@ -1156,40 +1156,25 @@ describe("delivery route handlers - missing :eventId/:deliveryId guards", () => 
     return testApp;
   }
 
-  it("handleListEventDeliveries returns 400 when eventId is missing", async () => {
-    const res = await guardTestApp().request("/list");
+  it.each([
+    { label: "handleListEventDeliveries, missing eventId", path: "/list", error: "eventId required" },
+    { label: "handleGetEventDelivery, missing eventId", path: "/get", error: "eventId required" },
+    {
+      label: "handleGetEventDelivery, missing deliveryId",
+      path: `/get/${EVENT_A}`,
+      error: "deliveryId required",
+    },
+    { label: "handleGetRenderedEventDelivery, missing eventId", path: "/rendered", error: "eventId required" },
+    {
+      label: "handleGetRenderedEventDelivery, missing deliveryId",
+      path: `/rendered/${EVENT_A}`,
+      error: "deliveryId required",
+    },
+    { label: "handleExportEventDeliveries, missing eventId", path: "/export", error: "eventId required" },
+  ])("returns 400 - $label", async ({ path, error }) => {
+    const res = await guardTestApp().request(path);
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "eventId required" });
-  });
-
-  it("handleGetEventDelivery returns 400 when eventId is missing", async () => {
-    const res = await guardTestApp().request("/get");
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "eventId required" });
-  });
-
-  it("handleGetEventDelivery returns 400 when deliveryId is missing", async () => {
-    const res = await guardTestApp().request(`/get/${EVENT_A}`);
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "deliveryId required" });
-  });
-
-  it("handleGetRenderedEventDelivery returns 400 when eventId is missing", async () => {
-    const res = await guardTestApp().request("/rendered");
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "eventId required" });
-  });
-
-  it("handleGetRenderedEventDelivery returns 400 when deliveryId is missing", async () => {
-    const res = await guardTestApp().request(`/rendered/${EVENT_A}`);
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "deliveryId required" });
-  });
-
-  it("handleExportEventDeliveries returns 400 when eventId is missing", async () => {
-    const res = await guardTestApp().request("/export");
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "eventId required" });
+    expect(await res.json()).toEqual({ error });
   });
 });
 
