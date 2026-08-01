@@ -52,10 +52,9 @@ import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
-import { DELIVERY_POLL_INTERVAL_MS } from "../communication/DeliveryLogTable.js";
 import { CommunicationSendDialog } from "../communication/CommunicationSendDialog.js";
 import { CreateTemplateDialog } from "../communication/CreateTemplateDialog.js";
-import { DELIVERY_PAGE_SIZE_DEFAULT, DeliveryLogTab } from "../communication/DeliveryLogTable.js";
+import { DELIVERY_PAGE_SIZE_DEFAULT, DELIVERY_POLL_INTERVAL_MS, DeliveryLogTab } from "../communication/DeliveryLogTable.js";
 import "../communication/communication.css";
 import { isTemplateDirty } from "../communication/templateDirty.js";
 

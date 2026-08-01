@@ -1,7 +1,7 @@
 import type { DeliveryDetailDto, DeliveryDto } from "@admitto/shared";
 import type { DeliveryDetailEntry, DeliveryLogEntry } from "./listDeliveries.js";
 
-export type { DeliveryDetailDto, DeliveryDto };
+export type { DeliveryDetailDto, DeliveryDto } from "@admitto/shared";
 
 /** Format a Date as ISO string or null for delivery DTOs. */
 function isoOrNull(d: Date | null): string | null {
