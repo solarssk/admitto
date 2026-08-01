@@ -13,6 +13,7 @@ import {
   logMfaFailure,
   logMfaRecoveryConsumed,
   logMfaSuccess,
+  logTrustedDeviceCreated,
   type LoginAuditContext,
   type MfaAuditContext,
   type MfaMethod,
@@ -27,6 +28,7 @@ import { userRequiresMfa, userHasConfirmedTotp, userHasUnacknowledgedBackupCodes
 import { validateTrustedDevice, createTrustedDevice } from "./mfa/trusted-device.js";
 import { verifyTotpOrRecoveryCodeDetailed } from "./mfa/verify-step-up-code.js";
 import { getTrustedDeviceDays } from "./settings/resolver.js";
+import { recordFailedLoginFailureSideEffects, resetFailedLoginStreak } from "./privileged-login-alert.js";
 
 /** Credentials and request metadata for `login()`. */
 export interface LoginInput {
@@ -60,6 +62,7 @@ export async function login(
   const passwordOk = await verifyPasswordOrDummy(input.password, user?.password_hash ?? null);
   if (!user || !passwordOk) {
     await logLoginFailure(prisma, audit ?? { email, ip: input.ip, userAgent: input.userAgent });
+    await recordFailedLoginFailureSideEffects(prisma, user, { ip: input.ip });
     return INVALID;
   }
 
@@ -115,6 +118,7 @@ export async function login(
     ...(audit ?? { email, ip: input.ip, userAgent: input.userAgent }),
     userId: user.id,
   });
+  await resetFailedLoginStreak(prisma, user.id);
 
   return {
     ok: true,
@@ -219,6 +223,9 @@ async function emitMfaAudit(
     await logMfaRecoveryConsumed(db, auditCtx, result.recoveryMethod);
   }
   await logMfaSuccess(db, auditCtx, result.method);
+  if (result.trustedDeviceRawToken) {
+    await logTrustedDeviceCreated(db, auditCtx);
+  }
 }
 
 /**

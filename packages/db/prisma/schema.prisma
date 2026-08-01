@@ -513,6 +513,10 @@ model User {
   preferred_locale     String? // IETF BCP 47 tag, e.g. "pl-PL"; null = browser default
   is_active            Boolean            @default(true)
   must_change_password Boolean            @default(false)
+  // Consecutive failed login attempts, tracked only for admin/superadmin accounts (P0 security
+  // review) to alert when a privileged account is under attack; reset to 0 on a successful
+  // login or once the streak crosses the alert threshold (see auth.login.repeated_failures).
+  failed_login_streak  Int                @default(0)
   created_at           DateTime           @default(now())
   updated_at           DateTime           @updatedAt
   sessions             Session[]
