@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LocationSettingsPanel } from "../../src/settings/LocationSettingsPanel.js";
@@ -395,7 +395,11 @@ describe("LocationSettingsPanel — venue search", () => {
         components: { object_name: "First venue", street: "Late Street", postcode: null, city: null, region: null, country: null },
       }),
     });
-    await waitFor(() => expect(screen.getByDisplayValue("Second venue")).toBeTruthy());
+    // Let the late reverse settle; the later selection must still win.
+    await act(async () => {
+      await slowReverse.promise;
+    });
+    expect(await screen.findByDisplayValue("Second venue")).toBeTruthy();
     expect(screen.getByText("52.22970, 21.01220")).toBeTruthy();
   });
 

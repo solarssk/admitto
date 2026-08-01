@@ -5,7 +5,6 @@ import {
   LOCATION_LIMITS,
   buildAppleMapsUrl,
   buildGoogleMapsUrl,
-  isAddressComponentsEmpty,
 } from "@admitto/location";
 import { Badge, Button, Card, HintLabel, Notice, useToast } from "@admitto/ui";
 import {
