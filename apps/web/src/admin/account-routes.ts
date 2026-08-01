@@ -7,6 +7,7 @@ import {
   getOrStartTotpEnrollment,
   hashPassword,
   isPasswordTooCommon,
+  passwordTooCommonJsonBody,
   markBackupCodesAcknowledged,
   revokeAllTrustedDevicesForUser,
   revokeOtherSessions,
@@ -352,7 +353,7 @@ export async function handlePatchAccountPassword(
     return c.json({ error: "passwords do not match" }, 400);
   }
   if (isPasswordTooCommon(new_password)) {
-    return c.json({ code: "password_too_common", error: "password_too_common" }, 400);
+    return c.json(passwordTooCommonJsonBody(), 400);
   }
 
   const user = await db.user.findUnique({

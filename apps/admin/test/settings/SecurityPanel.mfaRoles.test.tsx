@@ -195,6 +195,45 @@ describe("SecurityPanel — dangerous-value inline warnings (P0-4)", () => {
   });
 });
 
+describe("SecurityPanel — save and reset", () => {
+  it("shows an info toast when Save is clicked with no draft changes", async () => {
+    vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
+    renderWithToastAndRouter(<SecurityPanel />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchSecuritySettings).not.toHaveBeenCalled();
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/No changes to save/);
+    });
+  });
+
+  it("discards unsaved edits when Reset is clicked", async () => {
+    vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
+    renderWithToastAndRouter(<SecurityPanel />);
+
+    const input = await screen.findByLabelText<HTMLInputElement>(
+      "Admin session maximum lifetime (hours)",
+    );
+    fireEvent.change(input, { target: { value: "48" } });
+    expect(input.value).toBe("48");
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    expect(input.value).toBe("24");
+  });
+
+  it("retries after a load failure", async () => {
+    vi.mocked(fetchSecuritySettings)
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockResolvedValueOnce(baseSettings);
+    renderWithToastAndRouter(<SecurityPanel />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    await screen.findByLabelText("Admin session maximum lifetime (hours)");
+    expect(fetchSecuritySettings).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("SecurityPanel — idle-vs-absolute server error mapping", () => {
   it("toasts a friendly message when the server rejects idle > absolute lifetime", async () => {
     vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);

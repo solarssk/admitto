@@ -20,6 +20,37 @@ export function tooShortProgressScore(length: number, minLength: number): number
   return Math.min(4, Math.max(1, Math.ceil((length / minLength) * 4)));
 }
 
+/** True when a password has very low character variety or is a simple ascending/descending run. */
+export function hasNearZeroEntropy(password: string): boolean {
+  const lower = password.toLowerCase();
+  const uniqueRatio = new Set(lower).size / lower.length;
+  if (uniqueRatio <= 0.25) return true;
+  return isSimpleAsciiRun(lower);
+}
+
+export function isSimpleAsciiRun(lower: string): boolean {
+  if (lower.length < 6) return false;
+  let ascending = true;
+  let descending = true;
+  for (let i = 1; i < lower.length; i++) {
+    const step = (lower.codePointAt(i) ?? 0) - (lower.codePointAt(i - 1) ?? 0);
+    if (step !== 1) ascending = false;
+    if (step !== -1) descending = false;
+    if (!ascending && !descending) return false;
+  }
+  return ascending || descending;
+}
+
+export function strengthPoints(password: string): number {
+  const lower = password.toLowerCase();
+  const uniqueRatio = new Set(lower).size / lower.length;
+  let points = 1;
+  if (password.length >= 16) points += 1;
+  if (password.length >= 20) points += 1;
+  if (uniqueRatio >= 0.6) points += 1;
+  return points;
+}
+
 /**
  * NIST SP 800-63B-4 §3.1.1.2 recommends scoring length and unpredictability
  * over character-composition rules — requiring "upper + lower + digit +
@@ -55,29 +86,11 @@ export function scorePasswordStrengthInline(
     };
   }
 
-  const lower = password.toLowerCase();
-  const uniqueRatio = new Set(lower).size / lower.length;
-
-  let isSimpleRun = false;
-  if (lower.length >= 6) {
-    let ascending = true;
-    let descending = true;
-    for (let i = 1; i < lower.length; i++) {
-      const step = lower.charCodeAt(i) - lower.charCodeAt(i - 1);
-      if (step !== 1) ascending = false;
-      if (step !== -1) descending = false;
-    }
-    isSimpleRun = ascending || descending;
-  }
-  if (uniqueRatio <= 0.25 || isSimpleRun) {
+  if (hasNearZeroEntropy(password)) {
     return { score: 1, label: "Weak", level: "weak" };
   }
 
-  let points = 1;
-  if (password.length >= 16) points += 1;
-  if (password.length >= 20) points += 1;
-  if (uniqueRatio >= 0.6) points += 1;
-
+  const points = strengthPoints(password);
   if (points <= 1) return { score: 1, label: "Weak", level: "weak" };
   if (points === 2) return { score: 2, label: "Fair", level: "fair" };
   if (points === 3) return { score: 3, label: "Good", level: "good" };
@@ -107,23 +120,12 @@ export function scorePasswordStrength(password: string): PasswordStrengthResult 
 export function passwordStrengthTip(password: string, minLength: number): string {
   if (!password || password.length < minLength) return "";
 
-  const lower = password.toLowerCase();
-  const uniqueRatio = new Set(lower).size / lower.length;
-
-  let isSimpleRun = false;
-  if (lower.length >= 6) {
-    let ascending = true;
-    let descending = true;
-    for (let i = 1; i < lower.length; i++) {
-      const step = lower.charCodeAt(i) - lower.charCodeAt(i - 1);
-      if (step !== 1) ascending = false;
-      if (step !== -1) descending = false;
-    }
-    isSimpleRun = ascending || descending;
-  }
-  if (uniqueRatio <= 0.25 || isSimpleRun) {
+  if (hasNearZeroEntropy(password)) {
     return "Avoid repeated or sequential characters for a stronger score.";
   }
+
+  const lower = password.toLowerCase();
+  const uniqueRatio = new Set(lower).size / lower.length;
 
   let missing = "";
   if (password.length < 16) missing = "16+ characters";

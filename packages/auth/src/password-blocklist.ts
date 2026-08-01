@@ -225,7 +225,7 @@ function isSimpleCharacterRun(lower: string): boolean {
   let ascending = true;
   let descending = true;
   for (let i = 1; i < lower.length; i++) {
-    const step = lower.charCodeAt(i) - lower.charCodeAt(i - 1);
+    const step = (lower.codePointAt(i) ?? 0) - (lower.codePointAt(i - 1) ?? 0);
     if (step !== 1) ascending = false;
     if (step !== -1) descending = false;
     if (!ascending && !descending) return false;
@@ -236,4 +236,15 @@ function isSimpleCharacterRun(lower: string): boolean {
 /** Combined SHALL-level check used by password-setting routes (setup, change, admin create/reset). */
 export function isPasswordTooCommon(password: string): boolean {
   return isPasswordBlocklisted(password) || hasTrivialCharacterPattern(password);
+}
+
+/** Stable API error code returned when a candidate password fails the blocklist check. */
+export const PASSWORD_TOO_COMMON_CODE = "password_too_common" as const;
+
+/** JSON body shape shared by every password-setting route that rejects a common password. */
+export function passwordTooCommonJsonBody(): {
+  code: typeof PASSWORD_TOO_COMMON_CODE;
+  error: typeof PASSWORD_TOO_COMMON_CODE;
+} {
+  return { code: PASSWORD_TOO_COMMON_CODE, error: PASSWORD_TOO_COMMON_CODE };
 }

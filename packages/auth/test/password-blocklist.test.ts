@@ -3,6 +3,8 @@ import {
   hasTrivialCharacterPattern,
   isPasswordBlocklisted,
   isPasswordTooCommon,
+  passwordTooCommonJsonBody,
+  PASSWORD_TOO_COMMON_CODE,
 } from "../src/password-blocklist.js";
 
 describe("isPasswordBlocklisted", () => {
@@ -77,5 +79,14 @@ describe("isPasswordTooCommon", () => {
     ]) {
       expect(isPasswordTooCommon(candidate)).toBe(false);
     }
+  });
+});
+
+describe("passwordTooCommonJsonBody", () => {
+  it("returns the stable API error code used by password-setting routes", () => {
+    expect(passwordTooCommonJsonBody()).toEqual({
+      code: PASSWORD_TOO_COMMON_CODE,
+      error: PASSWORD_TOO_COMMON_CODE,
+    });
   });
 });

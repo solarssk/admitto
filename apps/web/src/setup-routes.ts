@@ -9,6 +9,7 @@ import {
   markSetupIncomplete,
   normalizeEmail,
   PASSWORD_MIN_LENGTH,
+  PASSWORD_TOO_COMMON_CODE,
 } from "@admitto/auth";
 import { resolveClientIp } from "./rate-limit/client-ip.js";
 import { setSessionCookie } from "./auth/routes.js";
@@ -63,7 +64,7 @@ async function parseSetupForm(c: Context): Promise<Record<string, string>> {
 }
 
 /** Validate first-run setup form fields before creating the superadmin user. */
-function validateSetupForm(form: Record<string, string>): {
+export function validateSetupForm(form: Record<string, string>): {
   ok: true;
   email: string;
   password: string;
@@ -94,7 +95,7 @@ function validateSetupForm(form: Record<string, string>): {
     return { ok: false, code: "password_too_short", values };
   }
   if (isPasswordTooCommon(password)) {
-    return { ok: false, code: "password_too_common", values };
+    return { ok: false, code: PASSWORD_TOO_COMMON_CODE, values };
   }
   // eslint-disable-next-line security/detect-possible-timing-attacks -- non-secret auth probe status string
   if (password !== confirm) {

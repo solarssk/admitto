@@ -41,13 +41,13 @@ describe("scorePasswordStrength", () => {
   });
 
   it("floors near-zero-entropy passwords to Weak regardless of length", () => {
-    // 20-char ascending run: long, and every character is different, but
-    // fully predictable once the pattern is guessed.
     expect(scorePasswordStrength("abcdefghijklmnopqrst").label).toBe("Weak");
-    // 20-char descending run.
     expect(scorePasswordStrength("tsrqponmlkjihgfedcba").label).toBe("Weak");
-    // 20 chars, single repeated character.
     expect(scorePasswordStrength("a".repeat(20)).label).toBe("Weak");
+  });
+
+  it("floors passwords with points === 1 to Weak after minlength", () => {
+    expect(scorePasswordStrength("abcdefghijklm").label).toBe("Weak");
   });
 });
 

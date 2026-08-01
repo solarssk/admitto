@@ -3,6 +3,7 @@ import type { PrismaClient } from "@admitto/db";
 import {
   hashPassword,
   isPasswordTooCommon,
+  PASSWORD_TOO_COMMON_CODE,
   revokeOtherSessions,
   promoteSessionToFull,
   PASSWORD_MIN_LENGTH,
@@ -16,7 +17,6 @@ import {
   PASSWORD_INVALID,
   PASSWORD_MISMATCH,
   PASSWORD_TOO_SHORT,
-  PASSWORD_TOO_COMMON,
   PASSWORD_COMPLETE_FAILED,
 } from "../change-password-page.js";
 import { createAuthPageScriptNonce } from "../auth-page-security.js";
@@ -91,7 +91,7 @@ export async function handlePostChangePassword(c: Context, db: PrismaClient): Pr
   }
   if (isPasswordTooCommon(password)) {
     const scriptNonce = createAuthPageScriptNonce();
-    return htmlResponse(c, renderChangePasswordForm(scriptNonce, PASSWORD_TOO_COMMON), scriptNonce, 400);
+    return htmlResponse(c, renderChangePasswordForm(scriptNonce, PASSWORD_TOO_COMMON_CODE), scriptNonce, 400);
   }
   // eslint-disable-next-line security/detect-possible-timing-attacks -- non-secret auth probe status string
   if (password !== confirm) {

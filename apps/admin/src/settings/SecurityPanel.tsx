@@ -4,8 +4,9 @@ import { fetchSecuritySettings, patchSecuritySettings } from "../api/client.js";
 import { roleLabel } from "../auth/role-labels.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { PatchSystemSettingsBody, SystemSettingsDto, SettingSource } from "../api/types.js";
+import type { SystemSettingsDto, SettingSource } from "../api/types.js";
 import { SettingsFooter } from "./mailTransportFormParts.js";
+import { buildSecurityPatchBody } from "./securitySettingsPatch.js";
 
 const MS_PER_HOUR = 3_600_000;
 const MS_PER_MINUTE = 60_000;
@@ -79,31 +80,7 @@ function draftFromSettings(s: SystemSettingsDto): Draft {
 }
 
 function securityDraftHasChanges(settings: SystemSettingsDto, draft: Draft): boolean {
-  if (!fieldLocked(settings.session_ttl_ms.source)) {
-    if (draft.sessionTtlH !== Math.round(settings.session_ttl_ms.value / MS_PER_HOUR)) return true;
-  }
-  if (!fieldLocked(settings.operator_session_ttl_ms.source)) {
-    if (draft.opTtlH !== Math.round(settings.operator_session_ttl_ms.value / MS_PER_HOUR)) return true;
-  }
-  if (!fieldLocked(settings.session_idle_timeout_ms.source)) {
-    if (draft.sessionIdleM !== Math.round(settings.session_idle_timeout_ms.value / MS_PER_MINUTE)) {
-      return true;
-    }
-  }
-  if (!fieldLocked(settings.operator_session_idle_timeout_ms.source)) {
-    if (draft.opIdleM !== Math.round(settings.operator_session_idle_timeout_ms.value / MS_PER_MINUTE)) {
-      return true;
-    }
-  }
-  if (!fieldLocked(settings.trusted_device_days.source)) {
-    if (draft.trustedDays !== settings.trusted_device_days.value) return true;
-  }
-  if (!fieldLocked(settings.mfa_required_roles.source)) {
-    const sorted = [...draft.mfaRoles].sort((a, b) => a.localeCompare(b)).join(",");
-    const current = [...settings.mfa_required_roles.value].sort((a, b) => a.localeCompare(b)).join(",");
-    if (sorted !== current) return true;
-  }
-  return false;
+  return buildSecurityPatchBody(settings, draft, fieldLocked).hasChanges;
 }
 
 interface SecurityNumericRowProps {
@@ -195,53 +172,7 @@ export function SecurityPanel() {
     if (!settings || !draft) return;
     setSaving(true);
 
-    const body: PatchSystemSettingsBody = {};
-    let hasChanges = false;
-
-    if (!fieldLocked(settings.session_ttl_ms.source)) {
-      if (draft.sessionTtlH !== Math.round(settings.session_ttl_ms.value / MS_PER_HOUR)) {
-        body.session_ttl_ms = draft.sessionTtlH * MS_PER_HOUR;
-        hasChanges = true;
-      }
-    }
-    if (!fieldLocked(settings.operator_session_ttl_ms.source)) {
-      if (draft.opTtlH !== Math.round(settings.operator_session_ttl_ms.value / MS_PER_HOUR)) {
-        body.operator_session_ttl_ms = draft.opTtlH * MS_PER_HOUR;
-        hasChanges = true;
-      }
-    }
-    if (!fieldLocked(settings.session_idle_timeout_ms.source)) {
-      if (
-        draft.sessionIdleM !==
-        Math.round(settings.session_idle_timeout_ms.value / MS_PER_MINUTE)
-      ) {
-        body.session_idle_timeout_ms = draft.sessionIdleM * MS_PER_MINUTE;
-        hasChanges = true;
-      }
-    }
-    if (!fieldLocked(settings.operator_session_idle_timeout_ms.source)) {
-      if (
-        draft.opIdleM !==
-        Math.round(settings.operator_session_idle_timeout_ms.value / MS_PER_MINUTE)
-      ) {
-        body.operator_session_idle_timeout_ms = draft.opIdleM * MS_PER_MINUTE;
-        hasChanges = true;
-      }
-    }
-    if (!fieldLocked(settings.trusted_device_days.source)) {
-      if (draft.trustedDays !== settings.trusted_device_days.value) {
-        body.trusted_device_days = draft.trustedDays;
-        hasChanges = true;
-      }
-    }
-    if (!fieldLocked(settings.mfa_required_roles.source)) {
-      const sorted = [...draft.mfaRoles].sort((a, b) => a.localeCompare(b)).join(",");
-      const current = [...settings.mfa_required_roles.value].sort((a, b) => a.localeCompare(b)).join(",");
-      if (sorted !== current) {
-        body.mfa_required_roles = draft.mfaRoles;
-        hasChanges = true;
-      }
-    }
+    const { body, hasChanges } = buildSecurityPatchBody(settings, draft, fieldLocked);
 
     if (!hasChanges) {
       addToast("No changes to save.", "info");
