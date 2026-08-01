@@ -4,6 +4,11 @@ import { PRIVILEGED_LOGIN_FAILURE_ALERT_THRESHOLD } from "./constants.js";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
+/** Stable nil user id for timing-equalized probes when no account row exists. */
+const TIMING_PAD_USER_ID = "00000000-0000-0000-0000-000000000000";
+
+type StreakBumpRow = { should_alert: boolean };
+
 /**
  * Whether a user holds the `admin` or `superadmin` role in any scope. Deliberately a local,
  * private copy of the same check `session.ts` uses for TTL selection, rather than an import —
@@ -18,33 +23,59 @@ async function hasElevatedRole(db: Db, userId: string): Promise<boolean> {
   return assignments.some((a) => a.role === "superadmin" || a.role === "admin");
 }
 
+/** No-op streak write with the same shape as the privileged path, for timing parity. */
+async function runTimingPadStreakWrite(db: Db): Promise<void> {
+  await db.user.updateMany({
+    where: { id: TIMING_PAD_USER_ID },
+    data: { failed_login_streak: { increment: 1 } },
+  });
+}
+
 /**
- * Track consecutive failed login attempts against admin/superadmin accounts (P0 security
- * review). Non-elevated accounts are intentionally never tracked here — brute-forcing an
- * operator account is already covered by the existing per-IP/per-email rate limits, and
- * `User.failed_login_streak` exists specifically to answer "is a *privileged* account under
- * attack", not to duplicate that throttling. Increments the streak and, once it crosses
- * `PRIVILEGED_LOGIN_FAILURE_ALERT_THRESHOLD`, emits `auth.login.repeated_failures` and resets
- * the streak immediately — so a sustained attack re-alerts every N attempts instead of firing
- * once and going silent for the rest of the attack.
+ * Atomically increment the persisted streak and wrap to 0 once the threshold is reached.
+ * Concurrent failures serialize on the row lock, so only one caller observes the wrap and
+ * emits `auth.login.repeated_failures` per block of N attempts.
  */
-export async function recordFailedLoginForPrivilegedUser(
+async function bumpPrivilegedLoginStreakAtomic(
   db: Db,
   user: Pick<User, "id" | "email">,
   ctx: { ip?: string },
 ): Promise<void> {
-  if (!(await hasElevatedRole(db, user.id))) return;
-
-  const updated = await db.user.update({
-    where: { id: user.id },
-    data: { failed_login_streak: { increment: 1 } },
-    select: { failed_login_streak: true },
-  });
-  const streak = updated.failed_login_streak;
-  if (streak >= PRIVILEGED_LOGIN_FAILURE_ALERT_THRESHOLD) {
-    await db.user.update({ where: { id: user.id }, data: { failed_login_streak: 0 } });
-    await logRepeatedFailedLogins(db, { userId: user.id, email: user.email, ip: ctx.ip, streak });
+  const rows = await db.$queryRaw<StreakBumpRow[]>`
+    UPDATE "User"
+    SET "failed_login_streak" = ("failed_login_streak" + 1) % ${PRIVILEGED_LOGIN_FAILURE_ALERT_THRESHOLD}
+    WHERE "id" = ${user.id}
+    RETURNING ("failed_login_streak" = 0) AS "should_alert"
+  `;
+  if (rows[0]?.should_alert) {
+    await logRepeatedFailedLogins(db, {
+      userId: user.id,
+      email: user.email,
+      ip: ctx.ip,
+      streak: PRIVILEGED_LOGIN_FAILURE_ALERT_THRESHOLD,
+    });
   }
+}
+
+/**
+ * Side effects after a failed password login. Always performs two database round trips
+ * (role probe + streak write) so unknown-email failures stay timing-aligned with
+ * `verifyPasswordOrDummy` and cannot be distinguished from existing accounts.
+ */
+export async function recordFailedLoginFailureSideEffects(
+  db: Db,
+  user: Pick<User, "id" | "email"> | null,
+  ctx: { ip?: string },
+): Promise<void> {
+  const roleProbeUserId = user?.id ?? TIMING_PAD_USER_ID;
+  const elevated = await hasElevatedRole(db, roleProbeUserId);
+
+  if (!user || !elevated) {
+    await runTimingPadStreakWrite(db);
+    return;
+  }
+
+  await bumpPrivilegedLoginStreakAtomic(db, user, ctx);
 }
 
 /** Reset the consecutive-failure streak after a successful login — the attack ended, or it was

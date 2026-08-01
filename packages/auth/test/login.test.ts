@@ -3,7 +3,7 @@ import type { PrismaClient } from "@admitto/db";
 import { SESSION_STAGE } from "../src/constants.js";
 
 const mocks = vi.hoisted(() => ({
-  recordFailedLoginForPrivilegedUser: vi.fn().mockResolvedValue(undefined),
+  recordFailedLoginFailureSideEffects: vi.fn().mockResolvedValue(undefined),
   resetFailedLoginStreak: vi.fn().mockResolvedValue(undefined),
   findUserByEmail: vi.fn(),
   verifyPasswordOrDummy: vi.fn(),
@@ -25,7 +25,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../src/privileged-login-alert.js", () => ({
-  recordFailedLoginForPrivilegedUser: mocks.recordFailedLoginForPrivilegedUser,
+  recordFailedLoginFailureSideEffects: mocks.recordFailedLoginFailureSideEffects,
   resetFailedLoginStreak: mocks.resetFailedLoginStreak,
 }));
 
@@ -93,14 +93,25 @@ describe("login privileged failure tracking", () => {
     });
   });
 
-  it("records failed privileged logins when the user exists but the password is wrong", async () => {
+  it("records failed-login side effects for both unknown and existing accounts", async () => {
+    mocks.findUserByEmail.mockResolvedValue(null);
+    mocks.verifyPasswordOrDummy.mockResolvedValue(false);
+
+    await login(prisma, { email: "missing@example.com", password: "wrong" });
+
+    expect(mocks.recordFailedLoginFailureSideEffects).toHaveBeenCalledWith(prisma, null, {
+      ip: undefined,
+    });
+  });
+
+  it("records failed-login side effects when the user exists but the password is wrong", async () => {
     mocks.findUserByEmail.mockResolvedValue(testUser);
     mocks.verifyPasswordOrDummy.mockResolvedValue(false);
 
     const result = await login(prisma, { email: testUser.email, password: "wrong" });
 
     expect(result).toEqual({ ok: false, reason: "invalid_credentials" });
-    expect(mocks.recordFailedLoginForPrivilegedUser).toHaveBeenCalledWith(prisma, testUser, {
+    expect(mocks.recordFailedLoginFailureSideEffects).toHaveBeenCalledWith(prisma, testUser, {
       ip: undefined,
     });
     expect(mocks.resetFailedLoginStreak).not.toHaveBeenCalled();
@@ -114,7 +125,7 @@ describe("login privileged failure tracking", () => {
 
     expect(result.ok).toBe(true);
     expect(mocks.resetFailedLoginStreak).toHaveBeenCalledWith(prisma, testUser.id);
-    expect(mocks.recordFailedLoginForPrivilegedUser).not.toHaveBeenCalled();
+    expect(mocks.recordFailedLoginFailureSideEffects).not.toHaveBeenCalled();
   });
 });
 

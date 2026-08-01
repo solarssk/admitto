@@ -28,7 +28,7 @@ import { userRequiresMfa, userHasConfirmedTotp, userHasUnacknowledgedBackupCodes
 import { validateTrustedDevice, createTrustedDevice } from "./mfa/trusted-device.js";
 import { verifyTotpOrRecoveryCodeDetailed } from "./mfa/verify-step-up-code.js";
 import { getTrustedDeviceDays } from "./settings/resolver.js";
-import { recordFailedLoginForPrivilegedUser, resetFailedLoginStreak } from "./privileged-login-alert.js";
+import { recordFailedLoginFailureSideEffects, resetFailedLoginStreak } from "./privileged-login-alert.js";
 
 /** Credentials and request metadata for `login()`. */
 export interface LoginInput {
@@ -62,9 +62,7 @@ export async function login(
   const passwordOk = await verifyPasswordOrDummy(input.password, user?.password_hash ?? null);
   if (!user || !passwordOk) {
     await logLoginFailure(prisma, audit ?? { email, ip: input.ip, userAgent: input.userAgent });
-    if (user) {
-      await recordFailedLoginForPrivilegedUser(prisma, user, { ip: input.ip });
-    }
+    await recordFailedLoginFailureSideEffects(prisma, user, { ip: input.ip });
     return INVALID;
   }
 
