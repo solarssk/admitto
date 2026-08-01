@@ -69,6 +69,35 @@ export interface NormalizedEventLocationInput {
   address_components?: AddressComponents | null;
 }
 
+function normalizeMapZoom(value: number | null | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  // `null` resets zoom to the default rather than storing NULL - the column always has a value.
+  if (value === null) return LOCATION_LIMITS.DEFAULT_ZOOM;
+  if (
+    !Number.isInteger(value) ||
+    value < LOCATION_LIMITS.ZOOM_MIN ||
+    value > LOCATION_LIMITS.ZOOM_MAX
+  ) {
+    throw new LocationValidationError(
+      `map_zoom must be an integer between ${LOCATION_LIMITS.ZOOM_MIN} and ${LOCATION_LIMITS.ZOOM_MAX}`,
+    );
+  }
+  return value;
+}
+
+function normalizeAddressComponentsField(
+  value: EventLocationInput["address_components"],
+): AddressComponents | null | undefined {
+  if (value === undefined) return undefined;
+  try {
+    return normalizeAddressComponents(value) ?? null;
+  } catch (err) {
+    throw new LocationValidationError(
+      err instanceof Error ? err.message : "address_components is invalid",
+    );
+  }
+}
+
 /** Trims/validates a submitted patch. Keys omitted from `input` stay omitted (meaning "leave
  * unchanged" to the caller); explicit `null`/`""` means "clear". Throws `LocationValidationError`
  * on the first invalid field.
@@ -111,33 +140,11 @@ export function normalizeEventLocationInput(input: EventLocationInput): Normaliz
   );
   if (longitude !== undefined) result.longitude = longitude;
 
-  if (input.map_zoom !== undefined) {
-    // `null` resets zoom to the default rather than storing NULL - the column always has a value.
-    if (input.map_zoom === null) {
-      result.map_zoom = LOCATION_LIMITS.DEFAULT_ZOOM;
-    } else {
-      if (
-        !Number.isInteger(input.map_zoom) ||
-        input.map_zoom < LOCATION_LIMITS.ZOOM_MIN ||
-        input.map_zoom > LOCATION_LIMITS.ZOOM_MAX
-      ) {
-        throw new LocationValidationError(
-          `map_zoom must be an integer between ${LOCATION_LIMITS.ZOOM_MIN} and ${LOCATION_LIMITS.ZOOM_MAX}`,
-        );
-      }
-      result.map_zoom = input.map_zoom;
-    }
-  }
+  const mapZoom = normalizeMapZoom(input.map_zoom);
+  if (mapZoom !== undefined) result.map_zoom = mapZoom;
 
-  if (input.address_components !== undefined) {
-    try {
-      result.address_components = normalizeAddressComponents(input.address_components) ?? null;
-    } catch (err) {
-      throw new LocationValidationError(
-        err instanceof Error ? err.message : "address_components is invalid",
-      );
-    }
-  }
+  const components = normalizeAddressComponentsField(input.address_components);
+  if (components !== undefined) result.address_components = components;
 
   return result;
 }

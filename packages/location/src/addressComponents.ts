@@ -47,6 +47,32 @@ export function addressComponentsFromParts(
   };
 }
 
+/** Pop the last segment when it matches `predicate`; otherwise leave the list unchanged. */
+function popMatchingTail(parts: string[], predicate: (segment: string) => boolean): string | null {
+  const tail = parts.at(-1);
+  if (!tail || !predicate(tail)) return null;
+  parts.pop();
+  return tail;
+}
+
+function parseStreetFromLeadingSegments(parts: string[]): string | null {
+  if (parts.length >= 2 && HOUSE_NUMBER_RE.test(parts[0]!)) {
+    return cleanComponent(formatStreetLine({ street: parts[1], housenumber: parts[0] }));
+  }
+  if (parts.length === 0) return null;
+
+  const numberIdx = parts.findIndex((s) => HOUSE_NUMBER_RE.test(s));
+  if (numberIdx >= 0 && parts.length >= 2) {
+    const housenumber = parts[numberIdx]!;
+    const streetName = parts.find((s, i) => i !== numberIdx && !HOUSE_NUMBER_RE.test(s));
+    return cleanComponent(formatStreetLine({ street: streetName, housenumber }));
+  }
+  if (parts.length === 1 && !HOUSE_NUMBER_RE.test(parts[0]!)) {
+    return cleanComponent(parts[0]);
+  }
+  return null;
+}
+
 /**
  * Best-effort parse of a Nominatim comma-separated `label` when GeocodeJSON omits structured
  * street/city fields (common for amenity POIs that only carry `name` + hierarchical label).
@@ -65,48 +91,17 @@ export function addressComponentsFromNominatimLabel(
     return { ...EMPTY_ADDRESS_COMPONENTS, object_name: cleanComponent(name) };
   }
 
-  let parts = segments;
+  const parts = [...segments];
   const cleanedName = cleanComponent(name);
   if (cleanedName && parts[0]?.toLowerCase() === cleanedName.toLowerCase()) {
-    parts = parts.slice(1);
+    parts.shift();
   }
 
-  let country: string | null = null;
-  let region: string | null = null;
-  let city: string | null = null;
-  let postcode: string | null = null;
-
-  if (parts.length > 0) {
-    country = parts.at(-1) ?? null;
-    parts = parts.slice(0, -1);
-  }
-  if (parts.length > 0 && POSTCODE_RE.test(parts.at(-1)!)) {
-    postcode = parts.at(-1) ?? null;
-    parts = parts.slice(0, -1);
-  }
-  if (parts.length > 0 && REGION_RE.test(parts.at(-1)!)) {
-    region = parts.at(-1) ?? null;
-    parts = parts.slice(0, -1);
-  }
-  if (parts.length > 0) {
-    city = parts.at(-1) ?? null;
-    parts = parts.slice(0, -1);
-  }
-
-  // Leftover leading segments: housenumber + street (+ optional suburb we ignore).
-  let street: string | null = null;
-  if (parts.length >= 2 && HOUSE_NUMBER_RE.test(parts[0]!)) {
-    street = cleanComponent(formatStreetLine({ street: parts[1], housenumber: parts[0] }));
-  } else if (parts.length >= 1) {
-    const numberIdx = parts.findIndex((s) => HOUSE_NUMBER_RE.test(s));
-    if (numberIdx >= 0 && parts.length >= 2) {
-      const housenumber = parts[numberIdx]!;
-      const streetName = parts.find((s, i) => i !== numberIdx && !HOUSE_NUMBER_RE.test(s));
-      street = cleanComponent(formatStreetLine({ street: streetName, housenumber }));
-    } else if (parts.length === 1 && !HOUSE_NUMBER_RE.test(parts[0]!)) {
-      street = cleanComponent(parts[0]);
-    }
-  }
+  const country = popMatchingTail(parts, () => true);
+  const postcode = popMatchingTail(parts, (s) => POSTCODE_RE.test(s));
+  const region = popMatchingTail(parts, (s) => REGION_RE.test(s));
+  const city = popMatchingTail(parts, () => true);
+  const street = parseStreetFromLeadingSegments(parts);
 
   return {
     object_name: cleanedName,
@@ -163,14 +158,14 @@ export function normalizeAddressComponents(
   if (value === undefined) return undefined;
   if (value === null) return null;
   if (typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("address_components must be an object or null");
+    throw new TypeError("address_components must be an object or null");
   }
   const raw = value as Record<string, unknown>;
   const read = (key: keyof AddressComponents): string | null => {
     const v = raw[key];
     if (v === null || v === undefined) return null;
     if (typeof v !== "string") {
-      throw new Error(`address_components.${key} must be a string or null`);
+      throw new TypeError(`address_components.${key} must be a string or null`);
     }
     return cleanComponent(v);
   };

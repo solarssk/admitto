@@ -15,7 +15,8 @@ export interface CompactAddressParts {
 
 function clean(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
-  return trimmed ? trimmed : null;
+  if (!trimmed) return null;
+  return trimmed;
 }
 
 /** "Marywilska 62" (street before number — common European order) or just the street / number. */

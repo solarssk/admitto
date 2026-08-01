@@ -19,6 +19,7 @@ import {
   parseStoredAddressComponents,
   type AddressComponents,
   type EventLocationDto,
+  type EventLocationInput,
 } from "@admitto/location";
 import { z } from "zod";
 import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
@@ -101,7 +102,8 @@ function componentsToJson(
 ): Prisma.InputJsonValue | typeof Prisma.JsonNull | undefined {
   if (components === undefined) return undefined;
   if (components === null) return Prisma.JsonNull;
-  return components as Prisma.InputJsonValue;
+  // AddressComponents has no index signature; Prisma JSON input requires one.
+  return components as unknown as Prisma.InputJsonValue;
 }
 
 type LocationPatch = ReturnType<typeof normalizeEventLocationInput>;
@@ -147,7 +149,9 @@ async function parseLocationPutBody(
   }
 
   try {
-    const patch = normalizeEventLocationInput(parsed.data);
+    // Zod's partial nullish fields are wider than AddressComponents; normalizeEventLocationInput
+    // re-validates address_components via normalizeAddressComponents(unknown).
+    const patch = normalizeEventLocationInput(parsed.data as EventLocationInput);
     if (Object.keys(patch).length === 0) {
       return c.json({ error: "validation_failed" }, 400);
     }

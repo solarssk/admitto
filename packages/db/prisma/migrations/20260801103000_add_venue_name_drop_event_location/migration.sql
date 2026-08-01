@@ -34,4 +34,5 @@ ALTER TABLE "EventLocation"
   ADD CONSTRAINT "EventLocation_venue_name_length" CHECK (char_length("venue_name") <= 300);
 
 -- 5. Now safe to drop - every non-null value has been copied to EventLocation.venue_name above.
+-- destructive-approved: Event.location replaced by EventLocation.venue_name after in-migration backfill (ADR 0027).
 ALTER TABLE "Event" DROP COLUMN "location";

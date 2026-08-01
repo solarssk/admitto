@@ -6,8 +6,6 @@ import {
   buildAppleMapsUrl,
   buildGoogleMapsUrl,
   isAddressComponentsEmpty,
-  isAddressComponentsSparse,
-  mergeAddressComponents,
 } from "@admitto/location";
 import { Badge, Button, Card, HintLabel, Notice, useToast } from "@admitto/ui";
 import {
@@ -18,12 +16,13 @@ import {
   saveEventLocation,
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { AddressComponentsDto, EventLocationDto, GeocodingResultDto, MapTileConfigDto } from "../api/types.js";
+import type { EventLocationDto, GeocodingResultDto, MapTileConfigDto } from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { VenueAutocomplete } from "../components/VenueAutocomplete.js";
 import { whenShown, useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { AddressComponentsGrid } from "./AddressComponentsGrid.js";
+import { componentsFromResult, enrichComponentsFromReverse } from "./locationGeocode.js";
 import { MapPicker } from "./MapPicker.js";
 import { SettingsFooter } from "./mailTransportFormParts.js";
 import {
@@ -216,52 +215,20 @@ export const LocationSettingsPanel = forwardRef<
     }));
   };
 
-  function componentsFromResult(result: GeocodingResultDto): AddressComponentsDto {
-    if (result.components && !isAddressComponentsEmpty(result.components)) {
-      return result.components;
-    }
-    // Label-only / sparse geocode: keep the grid useful instead of six dashes.
-    return {
-      ...EMPTY_ADDRESS_COMPONENTS,
-      object_name: result.name ?? result.formatted_address,
-    };
-  }
-
   /**
    * Nominatim POI hits often return only `name` + `label` (no street/city in GeocodeJSON).
    * Reverse at the pin fills the address grid from nearby OSM address tags without replacing
    * the venue name the admin just picked.
    */
-  async function enrichComponentsFromReverse(
-    result: GeocodingResultDto,
-    base: AddressComponentsDto,
-  ): Promise<{ components: AddressComponentsDto; formatted_address: string }> {
-    if (!isAddressComponentsSparse(base)) {
-      return { components: base, formatted_address: result.formatted_address };
-    }
-    try {
-      const res = await reverseGeocoding(result.latitude, result.longitude);
-      setContactConfigured(res.contact_configured);
-      if (!res.result) {
-        return { components: base, formatted_address: result.formatted_address };
-      }
-      const fromReverse = componentsFromResult(res.result);
-      const merged = mergeAddressComponents(base, fromReverse);
-      const formatted_address =
-        !isAddressComponentsSparse(merged) && res.result.formatted_address
-          ? res.result.formatted_address
-          : result.formatted_address;
-      return { components: merged, formatted_address };
-    } catch {
-      return { components: base, formatted_address: result.formatted_address };
-    }
-  }
-
   async function applyGeocodingResult(result: GeocodingResultDto) {
     pendingGeocodingProviderRef.current = result.provider;
     setDraftVerified(true);
     const baseComponents = componentsFromResult(result);
-    const { components, formatted_address } = await enrichComponentsFromReverse(result, baseComponents);
+    const { components, formatted_address } = await enrichComponentsFromReverse(
+      result,
+      baseComponents,
+      setContactConfigured,
+    );
     setDraft((prev) => ({
       ...prev,
       venue_name: result.name ?? result.formatted_address,
@@ -474,7 +441,7 @@ export const LocationSettingsPanel = forwardRef<
                 onClick={() => void copyMapLink("google")}
               >
                 <i className="ti ti-copy" aria-hidden="true" />
-                Copy Google Maps link
+                <span>Copy Google Maps link</span>
               </button>
               <button
                 type="button"
@@ -483,7 +450,7 @@ export const LocationSettingsPanel = forwardRef<
                 onClick={() => void copyMapLink("apple")}
               >
                 <i className="ti ti-copy" aria-hidden="true" />
-                Copy Apple Maps link
+                <span>Copy Apple Maps link</span>
               </button>
             </div>
           </div>
