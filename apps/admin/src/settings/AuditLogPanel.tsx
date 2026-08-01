@@ -1117,10 +1117,25 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
   const searchInputRef = useRef<HTMLInputElement>(null);
   const loadSeqRef = useRef(0);
   const scrollRestoreSeqRef = useRef<number | null>(null);
+  // Lets the debounce timer below compare against the *currently committed* search value without
+  // adding `filters` itself as a dependency (which would reschedule this effect - and delay the
+  // user's own typing - on every unrelated filter change, e.g. the date-range fields).
+  const committedSearchRef = useRef(filters.search);
+  useEffect(() => {
+    committedSearchRef.current = filters.search;
+  });
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      setFilters((f) => ({ ...f, search: searchInput.trim() }));
+      const trimmed = searchInput.trim();
+      // A no-op tick - mount with an empty search box, or typing back to the already-committed
+      // value inside the debounce window - must not touch page/filters. Skipping it here isn't
+      // just an optimization: unconditionally calling setPage(1) on every tick means this timer
+      // fires once on every single mount (nothing to debounce yet) and can reset the page out
+      // from under a user who navigates within the first SEARCH_DEBOUNCE_MS after opening the
+      // panel, independent of anything they typed.
+      if (trimmed === committedSearchRef.current) return;
+      setFilters((f) => ({ ...f, search: trimmed }));
       setPage(1);
     }, SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
