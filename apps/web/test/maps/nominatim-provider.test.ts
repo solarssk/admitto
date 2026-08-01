@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   NominatimProvider,
   GeocodingProviderError,
@@ -9,6 +9,10 @@ import {
 
 const USER_AGENT = "Admitto/0.0.0-test (+https://example.com; ops@example.com)";
 const buildUserAgent = async () => USER_AGENT;
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 function jsonResponse(body: unknown, init: { status?: number; headers?: Record<string, string> } = {}) {
   return new Response(JSON.stringify(body), {
@@ -322,6 +326,24 @@ describe("NominatimProvider.search", () => {
     await expect(makeProvider(fetchFn).search("unexpected")).resolves.toEqual([]);
   });
 
+  it("treats a null response body as an empty result set", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse(null));
+    await expect(makeProvider(fetchFn).search("unexpected")).resolves.toEqual([]);
+  });
+
+  it("uses global fetch when no fetch function is injected", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse(geocodeJsonBody([])));
+    vi.stubGlobal("fetch", fetchFn);
+    const provider = new NominatimProvider({
+      baseUrl: "https://nominatim.example.org",
+      timeoutMs: 5_000,
+      buildUserAgent,
+    });
+
+    await expect(provider.search("Warsaw")).resolves.toEqual([]);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
   it("maps User-Agent construction failures to unavailable", async () => {
     const fetchFn = vi.fn();
     const provider = makeProvider(fetchFn, {
@@ -379,6 +401,27 @@ describe("NominatimProvider.reverse", () => {
 
   it("returns null when Nominatim has no coverage", async () => {
     const fetchFn = vi.fn().mockResolvedValue(jsonResponse(geocodeJsonBody([])));
+    expect(await makeProvider(fetchFn).reverse(0, 0)).toBeNull();
+  });
+
+  it("uses global fetch for reverse when no fetch function is injected", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse(geocodeJsonBody([])));
+    vi.stubGlobal("fetch", fetchFn);
+    const provider = new NominatimProvider({
+      baseUrl: "https://nominatim.example.org",
+      timeoutMs: 5_000,
+      buildUserAgent,
+      minIntervalMs: 0,
+    });
+
+    await expect(provider.reverse(0, 0)).resolves.toBeNull();
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns null when reverse only contains malformed features", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse(geocodeJsonBody([{ label: "Bad coordinates", coordinates: [] }])),
+    );
     expect(await makeProvider(fetchFn).reverse(0, 0)).toBeNull();
   });
 

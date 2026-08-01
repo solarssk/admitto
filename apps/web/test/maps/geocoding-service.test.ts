@@ -120,6 +120,15 @@ describe("GeocodingService.reverse", () => {
     expect(provider.reverse).not.toHaveBeenCalled();
   });
 
+  it("returns null for a cached empty reverse result without calling the provider", async () => {
+    const cache = fakeCache({ "nominatim:v2:rev:0.000000,0.000000": [] });
+    const provider = fakeProvider();
+    const service = new GeocodingService(provider, cache);
+
+    expect(await service.reverse(0, 0)).toBeNull();
+    expect(provider.reverse).not.toHaveBeenCalled();
+  });
+
   it("negative-caches a miss as an empty array", async () => {
     const cache = fakeCache();
     const provider = fakeProvider(SAMPLE_RESULTS, null);

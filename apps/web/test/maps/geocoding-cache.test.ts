@@ -157,3 +157,35 @@ describe("createGeocodingCache", () => {
     expect(cache).toBeInstanceOf(InMemoryGeocodingCache);
   });
 });
+
+describe("RedisGeocodingCache ensureConnected readiness", () => {
+  it("fail-opens when connect resolves but the client never becomes ready", async () => {
+    vi.resetModules();
+    vi.doMock("redis", () => ({
+      createClient: () => {
+        const client = {
+          isReady: false,
+          isOpen: false,
+          on: vi.fn(),
+          connect: vi.fn(async () => undefined),
+          quit: vi.fn(async () => undefined),
+          withAbortSignal: () => ({
+            get: vi.fn(),
+            set: vi.fn(),
+          }),
+        };
+        return client;
+      },
+    }));
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { RedisGeocodingCache: FreshRedisCache } = await import("../../src/maps/geocoding-cache.js");
+    const cache = new FreshRedisCache("redis://127.0.0.1:1", unreachableRedis);
+    await expect(cache.get("warsaw")).resolves.toBeNull();
+    expect(warnSpy).toHaveBeenCalled();
+    await cache.disconnect();
+    warnSpy.mockRestore();
+    vi.doUnmock("redis");
+    vi.resetModules();
+  });
+});

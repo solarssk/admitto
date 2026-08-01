@@ -31,6 +31,8 @@ export interface MapPickerProps {
   disabled?: boolean;
   /** Called with the picked point on map click or pin drag. */
   onPick: (latitude: number, longitude: number) => void;
+  /** Called when the operator changes Leaflet zoom (controls or pinch) so draft.map_zoom persists. */
+  onZoomChange?: (zoom: number) => void;
 }
 
 /**
@@ -46,13 +48,16 @@ export function MapPicker({
   tileConfig,
   disabled = false,
   onPick,
+  onZoomChange,
 }: Readonly<MapPickerProps>) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.Marker | null>(null);
   const onPickRef = useRef(onPick);
+  const onZoomChangeRef = useRef(onZoomChange);
   const disabledRef = useRef(disabled);
   onPickRef.current = onPick;
+  onZoomChangeRef.current = onZoomChange;
   disabledRef.current = disabled;
 
   // Mount the map once. Initial center/tile config intentionally isn't re-applied on prop
@@ -73,6 +78,9 @@ export function MapPicker({
     map.on("click", (e: L.LeafletMouseEvent) => {
       if (disabledRef.current) return;
       onPickRef.current(e.latlng.lat, e.latlng.lng);
+    });
+    map.on("zoomend", () => {
+      onZoomChangeRef.current?.(map.getZoom());
     });
     mapRef.current = map;
 

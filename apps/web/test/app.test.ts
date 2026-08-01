@@ -1,7 +1,32 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const nominatimCtor = vi.fn();
+
+vi.mock("../src/maps/nominatim-provider.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/maps/nominatim-provider.js")>();
+  return {
+    ...actual,
+    NominatimProvider: vi.fn().mockImplementation(function MockNominatim(
+      this: unknown,
+      options: { buildUserAgent: () => Promise<string> },
+    ) {
+      nominatimCtor(options);
+      return {
+        name: "nominatim",
+        search: vi.fn(),
+        reverse: vi.fn(),
+      };
+    }),
+  };
+});
+
 import { createApp } from "../src/app.js";
 
 describe("createApp", () => {
+  beforeEach(() => {
+    nominatimCtor.mockClear();
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
   });
@@ -43,5 +68,18 @@ describe("createApp", () => {
     });
 
     expect(res.status).toBe(401);
+  });
+
+  it("wires the default Nominatim provider User-Agent builder when none is injected", async () => {
+    createApp({
+      checkinToken: null,
+      allowCheckinBearer: false,
+      baseUrl: "https://tickets.example.com",
+      skipCheckinBootValidation: true,
+    });
+
+    expect(nominatimCtor).toHaveBeenCalled();
+    const options = nominatimCtor.mock.calls[0]?.[0] as { buildUserAgent: () => Promise<string> };
+    await expect(options.buildUserAgent()).resolves.toEqual(expect.any(String));
   });
 });

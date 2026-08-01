@@ -211,6 +211,17 @@ export function LocationSettingsPanel({
     pendingGeocodingProviderRef.current = result.provider;
     setDraftVerified(true);
     const baseComponents = componentsFromResult(result);
+    // Apply the search hit immediately so Save during reverse enrichment persists the pin
+    // the admin just picked, not the previous typed query / map state.
+    setDraft((prev) => ({
+      ...prev,
+      venue_name: result.name ?? result.formatted_address,
+      formatted_address: result.formatted_address,
+      latitude: result.latitude,
+      longitude: result.longitude,
+      map_zoom: LOCATION_LIMITS.DEFAULT_ZOOM,
+      address_components: baseComponents,
+    }));
     const { components, formatted_address } = await enrichComponentsFromReverse(
       result,
       baseComponents,
@@ -219,11 +230,7 @@ export function LocationSettingsPanel({
     if (seq !== reverseSeqRef.current) return;
     setDraft((prev) => ({
       ...prev,
-      venue_name: result.name ?? result.formatted_address,
       formatted_address,
-      latitude: result.latitude,
-      longitude: result.longitude,
-      map_zoom: LOCATION_LIMITS.DEFAULT_ZOOM,
       address_components: components,
     }));
   }
@@ -431,6 +438,9 @@ export function LocationSettingsPanel({
                 disabled={disabled}
                 onPick={(lat, lng) => {
                   void handleMapPick(lat, lng);
+                }}
+                onZoomChange={(nextZoom) => {
+                  setDraft((prev) => (prev.map_zoom === nextZoom ? prev : { ...prev, map_zoom: nextZoom }));
                 }}
               />
               <p className="field-hint">Click the map to drop a pin, or drag an existing pin to adjust it.</p>

@@ -188,4 +188,30 @@ describe("MapPicker", () => {
     expect(invalidateSize).toHaveBeenCalledTimes(1);
     invalidateSize.mockRestore();
   });
+
+  it("reports zoom changes via onZoomChange", () => {
+    const onZoomChange = vi.fn();
+    const originalMap = L.map;
+    let map: L.Map | undefined;
+    const mapSpy = vi.spyOn(L, "map").mockImplementation((...args) => {
+      map = originalMap(...args);
+      return map;
+    });
+
+    render(
+      <MapPicker
+        latitude={51.5074}
+        longitude={-0.1278}
+        zoom={15}
+        tileConfig={TILE_CONFIG}
+        onPick={() => {}}
+        onZoomChange={onZoomChange}
+      />,
+    );
+
+    expect(map).toBeDefined();
+    map!.setZoom(12);
+    expect(onZoomChange).toHaveBeenCalledWith(12);
+    mapSpy.mockRestore();
+  });
 });

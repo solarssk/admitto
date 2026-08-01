@@ -40,18 +40,25 @@ vi.mock("../../src/settings/MapPicker.js", () => ({
   MapPicker: ({
     disabled,
     onPick,
+    onZoomChange,
   }: {
     disabled?: boolean;
     onPick: (latitude: number, longitude: number) => void;
+    onZoomChange?: (zoom: number) => void;
   }) => (
-    <button
-      type="button"
-      data-testid="map-picker"
-      disabled={disabled}
-      onClick={() => onPick(40.7128, -74.006)}
-    >
-      Pick New York
-    </button>
+    <div>
+      <button
+        type="button"
+        data-testid="map-picker"
+        disabled={disabled}
+        onClick={() => onPick(40.7128, -74.006)}
+      >
+        Pick New York
+      </button>
+      <button type="button" data-testid="map-zoom" onClick={() => onZoomChange?.(12)}>
+        Zoom out
+      </button>
+    </div>
   ),
 }));
 
@@ -395,6 +402,74 @@ describe("LocationSettingsPanel — venue search", () => {
     await waitFor(() => {
       expect(document.querySelector(".location-map-footer__coords")?.textContent?.trim()).toBe("-");
     });
+  });
+
+  it("applies a selected result immediately so Save during reverse enrichment keeps the pin", async () => {
+    const slowReverse = createDeferred<Awaited<ReturnType<typeof reverseGeocoding>>>();
+    mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
+    mockSearch.mockResolvedValue({ results: [searchResult()], contact_configured: true });
+    mockReverse.mockReturnValueOnce(slowReverse.promise);
+    mockSaveLocation.mockResolvedValue({
+      ...EMPTY_LOCATION,
+      venue_name: "10 Downing Street",
+      formatted_address: "10 Downing Street, London",
+      latitude: 51.5034,
+      longitude: -0.1276,
+      geocoding_provider: "nominatim",
+    });
+    renderPanel();
+
+    const input = await screen.findByLabelText("Venue name or address");
+    fireEvent.change(input, { target: { value: "Downing Street" } });
+    fireEvent.click(await screen.findByRole("button", { name: /10 Downing Street/ }));
+
+    expect(await screen.findByDisplayValue("10 Downing Street")).toBeTruthy();
+    expect(await screen.findByText("51.50340, -0.12760")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(mockSaveLocation).toHaveBeenCalledWith(
+        "evt-1",
+        expect.objectContaining({
+          venue_name: "10 Downing Street",
+          latitude: 51.5034,
+          longitude: -0.1276,
+          geocoding_provider: "nominatim",
+        }),
+      ),
+    );
+
+    slowReverse.resolve({
+      contact_configured: true,
+      result: searchResult({
+        formatted_address: "Enriched address",
+        components: {
+          object_name: "10 Downing Street",
+          street: "Downing Street",
+          postcode: null,
+          city: "London",
+          region: null,
+          country: "UK",
+        },
+      }),
+    });
+    await act(async () => {
+      await slowReverse.promise;
+    });
+  });
+
+  it("persists map zoom changes from the map control", async () => {
+    mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
+    mockSaveLocation.mockResolvedValue({ ...SAVED_LOCATION, map_zoom: 12 });
+    renderPanel();
+
+    await screen.findByDisplayValue("Springfield Hall");
+    fireEvent.click(screen.getByTestId("map-zoom"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(mockSaveLocation).toHaveBeenCalledWith("evt-1", expect.objectContaining({ map_zoom: 12 })),
+    );
   });
 
   it("does not let a slow reverse lookup overwrite a later selected venue", async () => {
