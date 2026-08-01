@@ -149,6 +149,24 @@ function detailFixture(): DeliveryDetailDto {
   };
 }
 
+/** Same shape as detailFixture, but every optional field genuinely unset - exercises the "-"/
+ * "no email on file"/"System" fallback branches that a fully-populated fixture never reaches. */
+function sparseDetailFixture(): DeliveryDetailDto {
+  return {
+    ...detailFixture(),
+    recipient_email: null,
+    provider_message_id: null,
+    error_code: null,
+    error: null,
+    batch_id: null,
+    actor_user_id: null,
+    actor_display: null,
+    session_id: null,
+    client_timezone: null,
+    timeline: [detailFixture()],
+  };
+}
+
 function renderPage() {
   return renderWithToast(
     <MemoryRouter initialEntries={["/admin/events/evt-1/communication"]}>
@@ -308,6 +326,79 @@ describe("CommunicationPage delivery log - filters, search, pagination", () => {
     expect(screen.getByRole("button", { name: "Previous" })).toHaveProperty("disabled", true);
   });
 
+  it("changes rows per page and resets to page 1", async () => {
+    fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 60 });
+
+    renderPage();
+    await goToDeliveryLogTab();
+    await screen.findByText(/Showing 1.*25 of 60/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => {
+      expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
+        "evt-1",
+        expect.objectContaining({ page: 2 }),
+        expect.any(AbortSignal),
+      );
+    });
+
+    fireEvent.change(screen.getByLabelText("Rows per page"), { target: { value: "50" } });
+    await waitFor(() => {
+      expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
+        "evt-1",
+        expect.objectContaining({ page: 1, pageSize: 50 }),
+        expect.any(AbortSignal),
+      );
+    });
+  });
+
+  it("lists a custom template in the Template filter alongside the built-in default", async () => {
+    fetchEventTemplates.mockResolvedValue([
+      {
+        id: "tmpl-1",
+        name: "vip",
+        label: "VIP invite",
+        template_format: "mjml",
+        subject_template: "You're on the list",
+        updated_at: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+    fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 1 });
+
+    renderPage();
+    await goToDeliveryLogTab();
+    await screen.findByText("Guest One");
+
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    const templateSelect = screen.getByLabelText("Template") as HTMLSelectElement;
+    const optionLabels = Array.from(templateSelect.options).map((o) => o.textContent);
+    expect(optionLabels).toEqual(["All templates", "Default ticket template", "VIP invite"]);
+
+    fireEvent.change(templateSelect, { target: { value: "tmpl-1" } });
+    await waitFor(() => {
+      expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
+        "evt-1",
+        expect.objectContaining({ templateId: "tmpl-1" }),
+        expect.any(AbortSignal),
+      );
+    });
+  });
+
+  it("Live toggles to Paused and back, and stops the count from going stale (regression: it used to stay blank until the tab was opened)", async () => {
+    fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 1 });
+
+    renderPage();
+    await goToDeliveryLogTab();
+    await screen.findByText("Guest One");
+
+    const liveButton = screen.getByRole("button", { name: "Live" });
+    fireEvent.click(liveButton);
+    expect(screen.getByRole("button", { name: "Paused" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Paused" }));
+    expect(screen.getByRole("button", { name: "Live" })).toBeTruthy();
+  });
+
   it("debounces the search box, resets to page 1, and clears via the clear button", async () => {
     fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 1 });
 
@@ -442,6 +533,26 @@ describe("CommunicationPage delivery log - sent message preview modal", () => {
     const dialog = await screen.findByRole("dialog", { name: "Sent message preview" });
     expect(await within(dialog).findByText("Failed to load the sent message.")).toBeTruthy();
   });
+
+  it("shows a not-available message once the retention window has cleared the stored snapshot", async () => {
+    fetchEventDeliveries.mockResolvedValue({
+      items: [{ ...acceptedRow, recipient_email: null }],
+      total: 1,
+    });
+    fetchRenderedDelivery.mockResolvedValue({ subject: null, html: null });
+
+    renderPage();
+    await goToDeliveryLogTab();
+    await screen.findByText("Guest One");
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "View sent message" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Sent message preview" });
+    expect(
+      await within(dialog).findByText("This message's stored content is no longer available."),
+    ).toBeTruthy();
+    expect(within(dialog).getByText(/no email on file/)).toBeTruthy();
+  });
 });
 
 describe("CommunicationPage delivery log - delivery details modal", () => {
@@ -469,6 +580,28 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
     expect(within(dialog).getByText("Resend 1")).toBeTruthy();
 
     expect(fetchEventDelivery).toHaveBeenCalledWith("evt-1", "dlv-2", expect.any(AbortSignal));
+  });
+
+  it("falls back to placeholders for every unset optional field", async () => {
+    fetchEventDeliveries.mockResolvedValue({
+      items: [{ ...failedResendRow, recipient_email: null }],
+      total: 1,
+    });
+    fetchEventDelivery.mockResolvedValue(sparseDetailFixture());
+
+    renderPage();
+    await goToDeliveryLogTab();
+    await screen.findByText("Guest Two");
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest Two's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Delivery details" });
+    await within(dialog).findByText("Overview");
+
+    expect(within(dialog).getByText(/no email on file/)).toBeTruthy();
+    expect(within(dialog).getByText("System")).toBeTruthy();
+    // error_code, batch_id, session_id, client_timezone all render as a bare "-".
+    expect(within(dialog).getAllByText("-").length).toBeGreaterThanOrEqual(4);
   });
 
   it("shows an error state when the fetch fails", async () => {
@@ -519,6 +652,22 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
     await within(dialog).findByText("Overview");
     const link = within(dialog).getByRole("link", { name: "Open attendee" });
     expect(link.getAttribute("href")).toBe("/admin/events/evt-1/attendees/att-2");
+  });
+
+  it("closes via the header Close button", async () => {
+    fetchEventDeliveries.mockResolvedValue({ items: [failedResendRow], total: 1 });
+    fetchEventDelivery.mockResolvedValue(detailFixture());
+
+    renderPage();
+    await goToDeliveryLogTab();
+    await screen.findByText("Guest Two");
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest Two's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Delivery details" });
+    await within(dialog).findByText("Overview");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog", { name: "Delivery details" })).toBeNull();
   });
 
   it("Export as .txt downloads the real captured fields as plain text, no fabricated transcript", async () => {
@@ -616,5 +765,95 @@ describe("CommunicationPage delivery log - mobile card layout", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
     expect(screen.getByRole("menuitem", { name: "View delivery details" })).toBeTruthy();
+  });
+});
+
+describe("CommunicationPage delivery log - error handling, tab URL sync, live polling", () => {
+  it("redirects to login on a 401 and reports it, without surfacing a generic error banner", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventDeliveries.mockRejectedValueOnce(new ApiError(401, "authentication_required"));
+    const assignSpy = vi.fn();
+    const locationDescriptor = Object.getOwnPropertyDescriptor(window, "location");
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { pathname: "/admin/events/evt-1/communication", assign: assignSpy },
+    });
+
+    try {
+      renderPage();
+      await goToDeliveryLogTab();
+      await waitFor(() =>
+        expect(assignSpy).toHaveBeenCalledWith("/login?next=%2Fadmin%2Fevents%2Fevt-1%2Fcommunication"),
+      );
+      expect(connectionState.reportApiError).toHaveBeenCalledWith(401);
+      expect(screen.queryByText("Failed to load deliveries.")).toBeNull();
+    } finally {
+      if (locationDescriptor) Object.defineProperty(window, "location", locationDescriptor);
+    }
+  });
+
+  it("reports a non-401 ApiError and shows the generic error banner, without redirecting", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventDeliveries.mockRejectedValueOnce(new ApiError(500, "internal_error"));
+
+    renderPage();
+    await goToDeliveryLogTab();
+
+    expect(await screen.findByText("Failed to load deliveries.")).toBeTruthy();
+    expect(connectionState.reportApiError).toHaveBeenCalledWith(500);
+  });
+
+  it("clears ?tab=log from the URL when switching back to Compose", async () => {
+    fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 1 });
+
+    renderPage();
+    await goToDeliveryLogTab();
+    await screen.findByText("Guest One");
+
+    fireEvent.click(screen.getByRole("tab", { name: /Compose/i }));
+    await screen.findByRole("tab", { name: /Compose/i, selected: true });
+
+    fireEvent.click(screen.getByRole("tab", { name: /Delivery log/i }));
+    const tab = await screen.findByRole("tab", { name: /Delivery log/i, selected: true });
+    expect(tab).toBeTruthy();
+  });
+
+  it("keeps polling on a timer while Live, and clamps the page back once the total shrinks below it", async () => {
+    fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 60 });
+    renderPage();
+    await goToDeliveryLogTab();
+    await screen.findByText(/Showing 1.*25 of 60/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() =>
+      expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
+        "evt-1",
+        expect.objectContaining({ page: 2 }),
+        expect.any(AbortSignal),
+      ),
+    );
+
+    fetchEventDeliveries.mockClear();
+    fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 10 });
+
+    // shouldAdvanceTime lets real microtask/promise resolution (the mocked fetch) keep working
+    // alongside the faked setInterval, so testing-library's own waitFor polling (real setTimeout
+    // under the hood) doesn't deadlock against a fully-frozen clock.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await vi.advanceTimersByTimeAsync(1750);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    // The silent poll's own response (total=10, still on page 2) clamps deliveryPage back to 1
+    // (maxPage = ceil(10/25)); that page change then triggers one more, non-silent load.
+    await waitFor(() =>
+      expect(fetchEventDeliveries).toHaveBeenCalledWith(
+        "evt-1",
+        expect.objectContaining({ page: 1 }),
+        expect.any(AbortSignal),
+      ),
+    );
   });
 });

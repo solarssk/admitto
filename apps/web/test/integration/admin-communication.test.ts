@@ -920,6 +920,30 @@ describe("GET /api/admin/events/:eventId/deliveries/export", () => {
     );
     expect(res.status).toBe(403);
   });
+
+  it("leaves Retryable blank for a delivery that never recorded a retry outcome, distinct from yes/no", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries/export?format=csv`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+
+    const text = await res.text();
+    const lines = text.replace(/^﻿/, "").split("\r\n").filter(Boolean);
+    const cellsOf = (line: string) => Array.from(line.matchAll(/"((?:[^"]|"")*)"/g), (m) => m[1]!.replaceAll('""', '"'));
+    const header = cellsOf(lines[0]!);
+    const retryableCol = header.indexOf("Retryable");
+    const purposeCol = header.indexOf("Purpose");
+    const nameCol = header.indexOf("Recipient name");
+
+    const initialRow = lines.slice(1).map(cellsOf).find(
+      (cells) => cells[nameCol] === "Anna Alpha" && cells[purposeCol] === "initial",
+    );
+    expect(initialRow?.[retryableCol]).toBe("");
+
+    const failedRow = lines.slice(1).map(cellsOf).find((cells) => cells[nameCol] === "Carol Gamma");
+    expect(failedRow?.[retryableCol]).toBe("yes");
+  });
 });
 
 describe("POST /api/admin/events/:eventId/templates", () => {

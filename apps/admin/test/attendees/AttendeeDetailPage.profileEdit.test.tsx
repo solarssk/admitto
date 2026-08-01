@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 
@@ -681,5 +681,64 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
 
     expect(screen.getByText("Delivery history")).toBeTruthy();
     expect(screen.getByText("No delivery attempts yet")).toBeTruthy();
+  });
+
+  it("closes an open delivery modal when navigating to a different attendee (React Router reuses the page instance)", async () => {
+    mockLoad(
+      baseDetail({
+        deliveries: [
+          {
+            id: "del-1",
+            attendee_id: "att-1",
+            attendee_name: "Anna",
+            purpose: "initial",
+            status: "sent",
+            recipient_email: "anna@example.com",
+            rendered_subject: "Your ticket",
+            queued_at: "2026-01-05T09:31:00.000Z",
+            accepted_at: "2026-01-05T09:31:05.000Z",
+            sent_at: "2026-01-05T09:31:05.000Z",
+            failed_at: null,
+            error_code: null,
+          },
+        ],
+      }),
+    );
+    mockLoad(baseDetail({ id: "att-2", name: "Ben", deliveries: [] }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockReturnValue(new Promise(() => {})), // never resolves - modal stays in its loading state
+    );
+
+    function Harness() {
+      return (
+        <>
+          <Link to="/admin/events/evt-1/attendees/att-2">Go to Ben</Link>
+          <Routes>
+            <Route path="/admin/events/:eventId/attendees/:attendeeId" element={<AttendeeDetailPage />} />
+          </Routes>
+        </>
+      );
+    }
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/attendees/att-1"]}>
+        <Harness />
+      </MemoryRouter>,
+    );
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Anna's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "View sent message" }));
+    expect(await screen.findByRole("dialog", { name: "Sent message preview" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("link", { name: "Go to Ben" }));
+    await screen.findByRole("heading", { name: "Ben" });
+    // The identity-reset effect runs after commit, not synchronously with the "Ben" heading's
+    // own paint - poll instead of asserting immediately, so this isn't a timing-sensitive race.
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Sent message preview" })).toBeNull();
+    });
+
+    vi.unstubAllGlobals();
   });
 });

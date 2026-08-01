@@ -438,4 +438,16 @@ describe("materializeStoredDeliveryMessageRedacted", () => {
     expect(redacted.subject).toBe("Hi {{first_name}}");
     expect(redacted.html).toBe("<p>{{event_name}}</p>");
   });
+
+  it("redacts a ticket_url/qr_image_url placeholder that appears in HTML text content, not inside a quoted attribute", () => {
+    const redacted = materializeStoredDeliveryMessageRedacted({
+      subject: "See {{ticket_url}}",
+      html: "<p>Link: {{ticket_url}}</p><p>QR: {{qr_image_url}}</p>",
+    });
+
+    expect(redacted.html).not.toContain("{{ticket_url}}");
+    expect(redacted.html).not.toContain("{{qr_image_url}}");
+    expect(redacted.html).toContain("<p>Link: #</p>");
+    expect(redacted.html).toMatch(/<p>QR: data:image\/svg\+xml/);
+  });
 });
