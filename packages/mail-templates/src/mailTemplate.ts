@@ -128,6 +128,7 @@ function parseTemplateFormat(value: string, source: ResolvedTemplate["source"]):
 function rowToResolved(
   row: {
     id: string;
+    label: string;
     subject_template: string;
     compiled_html_template: string;
     template_format: string;
@@ -140,6 +141,7 @@ function rowToResolved(
     templateFormat: parseTemplateFormat(row.template_format, source),
     source,
     templateId: row.id,
+    templateLabel: row.label,
   };
 }
 

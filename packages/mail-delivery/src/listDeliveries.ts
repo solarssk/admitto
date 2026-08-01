@@ -16,8 +16,11 @@ export interface DeliveryLogEntry {
   recipient_email: string | null;
   rendered_subject: string | null;
   template_id: string | null;
-  /** Human-readable template label (joined), null when template_id is null (built-in default
-   * ticket template) — callers should show a "Default ticket email" fallback in that case. */
+  /** Human-readable template label as of send time (template_label_snapshot), falling back to
+   * the live MailTemplate join for rows predating that column. Null only for a genuine built-in
+   * default send (no template was ever used) — callers should show a "Default ticket email"
+   * fallback in that case. A deleted custom template still resolves here via the snapshot, so it
+   * stays distinguishable from a true default send even after template_id is SetNull'd. */
   template_name: string | null;
   error_code: string | null;
   error: string | null;
@@ -67,6 +70,7 @@ const DELIVERY_LOG_SELECT = {
   rendered_subject: true,
   template_id: true,
   template: { select: { label: true } },
+  template_label_snapshot: true,
   error_code: true,
   error: true,
   queued_at: true,
@@ -86,6 +90,17 @@ function normalizeStatusFilter(
   return Array.isArray(status) ? status : [status];
 }
 
+/** Build the `where` fragment for a defined `templateId` filter. `null` means the "Default
+ * ticket template" bucket, which must also require no label snapshot - otherwise a deleted
+ * custom template's now-null template_id would wrongly match it too (see
+ * template_label_snapshot on the schema). */
+function templateIdFilter(templateId: string | null) {
+  if (templateId === null) {
+    return { template_id: null, template_label_snapshot: null };
+  }
+  return { template_id: templateId };
+}
+
 /** Build Prisma `where` clause for delivery log queries. */
 function buildWhere(params: ListDeliveriesParams) {
   const { eventId, filters } = params;
@@ -96,7 +111,7 @@ function buildWhere(params: ListDeliveriesParams) {
       : {}),
     ...(filters?.purpose ? { purpose: filters.purpose } : {}),
     ...(filters?.attendeeId ? { attendee_id: filters.attendeeId } : {}),
-    ...(filters?.templateId !== undefined ? { template_id: filters.templateId } : {}),
+    ...(filters?.templateId !== undefined ? templateIdFilter(filters.templateId) : {}),
     ...(filters?.search
       ? {
           OR: [
@@ -125,6 +140,7 @@ function mapRow(row: {
   rendered_subject: string | null;
   template_id: string | null;
   template: { label: string } | null;
+  template_label_snapshot: string | null;
   error_code: string | null;
   error: string | null;
   queued_at: Date;
@@ -136,11 +152,14 @@ function mapRow(row: {
   created_at: Date;
   client_timezone: string | null;
 }): DeliveryLogEntry {
-  const { attendee, template, ...rest } = row;
+  const { attendee, template, template_label_snapshot, ...rest } = row;
   return {
     ...rest,
     attendee_name: attendee.name,
-    template_name: template?.label ?? null,
+    // Prefer the send-time snapshot over the live join - it alone survives the template being
+    // deleted later, and also stays accurate if the template is renamed afterward. Rows predating
+    // this column (snapshot null) fall back to the live label, matching pre-existing behavior.
+    template_name: template_label_snapshot ?? template?.label ?? null,
     error: sanitizeDeliveryError(row.error ?? undefined) ?? null,
   };
 }
