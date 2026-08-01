@@ -147,6 +147,10 @@ export function VenueAutocomplete({
   };
 
   const handleFocus = () => {
+    if (blurTimerRef.current != null) {
+      window.clearTimeout(blurTimerRef.current);
+      blurTimerRef.current = null;
+    }
     if (results.length > 0) setVisible(true);
   };
 

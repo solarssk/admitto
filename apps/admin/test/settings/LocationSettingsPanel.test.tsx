@@ -237,7 +237,16 @@ describe("LocationSettingsPanel — dirty state and save", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
-      expect(mockSaveLocation).toHaveBeenCalledWith("evt-1", { venue_name: "New Hall" }),
+      expect(mockSaveLocation).toHaveBeenCalledWith(
+        "evt-1",
+        expect.objectContaining({
+          venue_name: "New Hall",
+          latitude: null,
+          longitude: null,
+          formatted_address: null,
+          address_components: null,
+        }),
+      ),
     );
     await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
     expect(await screen.findByText("Location saved.")).toBeTruthy();
@@ -354,6 +363,25 @@ describe("LocationSettingsPanel — venue search", () => {
         }),
       ),
     );
+  });
+
+  it("clears pin, address grid, and verified state when the venue text is edited after a pick", async () => {
+    mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
+    renderPanel();
+
+    await screen.findByDisplayValue("Springfield Hall");
+    expect(await screen.findByText("Verified on OpenStreetMap")).toBeTruthy();
+    expect(screen.getByText("51.50740, -0.12780")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Venue name or address"), {
+      target: { value: "Springfield Hall Annex" },
+    });
+
+    expect(screen.getByDisplayValue("Springfield Hall Annex")).toBeTruthy();
+    expect(screen.queryByText("Verified on OpenStreetMap")).toBeFalsy();
+    await waitFor(() => {
+      expect(document.querySelector(".location-map-footer__coords")?.textContent?.trim()).toBe("-");
+    });
   });
 
   it("does not let a slow reverse lookup overwrite a later selected venue", async () => {
@@ -524,14 +552,22 @@ describe("LocationSettingsPanel — clearing and map availability", () => {
     expect(await screen.findByDisplayValue("Unnamed pin, New York")).toBeTruthy();
   });
 
-  it("keeps a manually picked pin and clears stale provider after a reverse failure", async () => {
+  it("keeps a manually picked pin and clears stale address after a reverse failure", async () => {
     mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
     mockReverse.mockRejectedValue(new Error("reverse unavailable"));
-    mockSaveLocation.mockResolvedValue({ ...SAVED_LOCATION, latitude: 40.7128, longitude: -74.006 });
+    mockSaveLocation.mockResolvedValue({
+      ...SAVED_LOCATION,
+      latitude: 40.7128,
+      longitude: -74.006,
+      formatted_address: null,
+      address_components: null,
+    });
     renderPanel();
 
     fireEvent.click(await screen.findByTestId("map-picker"));
     expect(await screen.findByText("40.71280, -74.00600")).toBeTruthy();
+    expect(screen.getByLabelText("Address details").textContent).not.toContain("Springfield");
+    expect(screen.queryByText("Verified on OpenStreetMap")).toBeFalsy();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
@@ -540,6 +576,8 @@ describe("LocationSettingsPanel — clearing and map availability", () => {
         expect.objectContaining({
           latitude: 40.7128,
           longitude: -74.006,
+          formatted_address: null,
+          address_components: null,
         }),
       ),
     );

@@ -271,7 +271,16 @@ export function LocationSettingsPanel({
       }));
     } catch {
       // Coords already applied — a failed reverse must not undo the pin the admin placed.
-      // Provenance stays cleared so a later save does not stamp a stale provider.
+      // Clear address-derived fields so save cannot pair new coords with a stale address.
+      if (seq !== reverseSeqRef.current) return;
+      setDraftVerified(false);
+      setDraft((prev) => ({
+        ...prev,
+        latitude,
+        longitude,
+        formatted_address: "",
+        address_components: { ...EMPTY_ADDRESS_COMPONENTS },
+      }));
     }
   }
 
@@ -392,7 +401,21 @@ export function LocationSettingsPanel({
               disabled={disabled}
               placeholder="e.g. Convention Center, or a full address"
               hint="The venue name shown to attendees. Start typing a name or address to search - pick a match to also set the map location below, or keep typing to save free text."
-              onChange={(text) => setDraft((prev) => ({ ...prev, venue_name: text }))}
+              onChange={(text) => {
+                // Manual edits invalidate any previously selected/geocoded pin — same rule as
+                // Create event / setup wizard — so venue name cannot drift from stored coordinates.
+                reverseSeqRef.current += 1;
+                pendingGeocodingProviderRef.current = null;
+                setDraftVerified(false);
+                setDraft((prev) => ({
+                  ...prev,
+                  venue_name: text,
+                  latitude: null,
+                  longitude: null,
+                  formatted_address: "",
+                  address_components: { ...EMPTY_ADDRESS_COMPONENTS },
+                }));
+              }}
               onSelectResult={handleSelectResult}
               onContactConfigured={setContactConfigured}
             />

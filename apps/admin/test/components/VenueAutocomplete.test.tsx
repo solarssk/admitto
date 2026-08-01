@@ -228,6 +228,20 @@ describe("VenueAutocomplete", () => {
     expect(screen.getByText("10 Downing Street")).toBeTruthy();
   });
 
+  it("keeps the dropdown open when focus returns before the blur timer fires", async () => {
+    mockSearch.mockResolvedValue({ results: [makeResult()], contact_configured: true });
+    renderWithToast(<Harness />);
+    const input = screen.getByLabelText("Venue name or address");
+    fireEvent.change(input, { target: { value: "Downing St" } });
+    await screen.findByText("10 Downing Street");
+
+    fireEvent.blur(input);
+    fireEvent.focus(input);
+    // Still within the 150ms blur delay — focus must cancel that timer.
+    await new Promise((resolve) => window.setTimeout(resolve, 200));
+    expect(screen.getByText("10 Downing Street")).toBeTruthy();
+  });
+
   it("Find on map runs search immediately and shows a no-match notice", async () => {
     mockSearch.mockResolvedValue({ results: [], contact_configured: true });
     renderWithToast(<Harness />);
