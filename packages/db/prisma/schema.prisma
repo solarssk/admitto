@@ -262,6 +262,9 @@ model EmailDelivery {
   // is SetNull'd if that row is later deleted (templates may be deleted even once used, see
   // multi-template.test.ts), which would otherwise make a deleted-template send indistinguishable
   // from a genuine default-template send. Null when no custom template was used (builtin default).
+  // Rows predating this column are backfilled from their still-live MailTemplate join (see
+  // backfill-email-delivery-template-label-snapshot.ts) - null here for a pre-existing row means
+  // its template was already deleted before the backfill ran, which is unrecoverable.
   template_label_snapshot String?
   provider                String
   provider_message_id     String?
