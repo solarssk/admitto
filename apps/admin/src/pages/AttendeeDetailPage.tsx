@@ -487,6 +487,14 @@ function AttendeeOverviewTab({
   const [sentMessageRow, setSentMessageRow] = useState<DeliveryDto | null>(null);
   const [detailsRow, setDetailsRow] = useState<DeliveryDto | null>(null);
 
+  // React Router reuses this same AttendeeDetailPage/AttendeeOverviewTab instance across
+  // :attendeeId param changes - without this, a delivery modal left open while navigating to a
+  // different attendee would keep showing the previous attendee's delivery.
+  useEffect(() => {
+    setSentMessageRow(null);
+    setDetailsRow(null);
+  }, [detail.id]);
+
   return (
     <div className="attendee-detail-grid">
       <div className="attendee-detail-main">

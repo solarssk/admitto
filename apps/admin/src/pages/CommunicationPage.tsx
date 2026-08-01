@@ -52,7 +52,7 @@ import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
-import { POLL_INTERVAL_MS } from "../settings/SystemLogsPanel.js";
+import { DELIVERY_POLL_INTERVAL_MS } from "../communication/DeliveryLogTable.js";
 import { CommunicationSendDialog } from "../communication/CommunicationSendDialog.js";
 import { CreateTemplateDialog } from "../communication/CreateTemplateDialog.js";
 import { DELIVERY_PAGE_SIZE_DEFAULT, DeliveryLogTab } from "../communication/DeliveryLogTable.js";
@@ -319,6 +319,30 @@ function handleInitialTemplateLoadError(
     return;
   }
   setError(err.status === 403 ? "You do not have access to this event." : "Failed to load template.");
+}
+
+/** Maps a failed deliveries load to UI state, or suppresses it for a silent poll tick (mirrors
+ * AuditLogPanel's useLogQuery: a single missed live-refresh is normal noise, not worth surfacing
+ * over rows already on screen). Extracted from loadDeliveries so that function's own cognitive
+ * complexity stays low. */
+function handleDeliveriesLoadError(
+  err: unknown,
+  silent: boolean,
+  aborted: boolean,
+  reportApiError: (status: number) => void,
+  setDeliveriesError: (message: string) => void,
+): void {
+  if (aborted || (err instanceof DOMException && err.name === "AbortError")) return;
+  if (silent) return;
+  if (err instanceof ApiError) {
+    reportApiError(err.status);
+    if (err.status === 401) {
+      const next = encodeURIComponent(window.location.pathname);
+      window.location.assign(`/login?next=${next}`);
+      return;
+    }
+  }
+  setDeliveriesError("Failed to load deliveries.");
 }
 
 /** Retries loading the "ticket" template detail after a delete (the template that just got deleted
@@ -1196,21 +1220,7 @@ export function CommunicationPage() {
       // its fresh rows must clear the stale error state too (mirrors AuditLogPanel's useLogQuery).
       if (silent) setDeliveriesError(null);
     } catch (err) {
-      if (signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) {
-        return;
-      }
-      // A single missed live-refresh tick is normal network noise, not worth surfacing as a
-      // hard error over rows already on screen (matches AuditLogPanel's useLogQuery).
-      if (silent) return;
-      if (err instanceof ApiError) {
-        reportApiError(err.status);
-        if (err.status === 401) {
-          const next = encodeURIComponent(window.location.pathname);
-          window.location.assign(`/login?next=${next}`);
-          return;
-        }
-      }
-      setDeliveriesError("Failed to load deliveries.");
+      handleDeliveriesLoadError(err, silent, Boolean(signal?.aborted), reportApiError, setDeliveriesError);
     } finally {
       if (!signal?.aborted && !silent) {
         setDeliveriesLoading(false);
@@ -1321,8 +1331,15 @@ export function CommunicationPage() {
   // and the table, once opened, both stay current without a manual refresh.
   useEffect(() => {
     if (!deliveriesLive) return;
-    const intervalId = window.setInterval(() => void loadDeliveries(undefined, { silent: true }), POLL_INTERVAL_MS);
-    return () => window.clearInterval(intervalId);
+    const controller = new AbortController();
+    const intervalId = window.setInterval(
+      () => void loadDeliveries(controller.signal, { silent: true }),
+      DELIVERY_POLL_INTERVAL_MS,
+    );
+    return () => {
+      window.clearInterval(intervalId);
+      controller.abort();
+    };
   }, [deliveriesLive, loadDeliveries]);
 
   useEffect(() => {

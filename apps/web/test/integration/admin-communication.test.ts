@@ -636,8 +636,8 @@ describe("GET /api/admin/events/:eventId/deliveries", () => {
       page: number;
       pageSize: number;
     };
-    expect(body.total).toBeGreaterThanOrEqual(5);
-    expect(body.items.length).toBeGreaterThanOrEqual(5);
+    expect(body.total).toBe(5);
+    expect(body.items).toHaveLength(5);
     for (const row of body.items) {
       expect(row).not.toHaveProperty("rendered_html");
       expect(row).not.toHaveProperty("token");

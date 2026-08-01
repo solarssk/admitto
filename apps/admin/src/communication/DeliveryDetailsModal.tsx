@@ -5,7 +5,7 @@ import { fetchEventDelivery } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { DeliveryDetailDto, DeliveryDto } from "../api/types.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
-import { formatDateTime, purposeLabel, templateLabel } from "./delivery-format.js";
+import { formatDateTime, purposeLabel, rowTimestamp, templateLabel } from "./delivery-format.js";
 import "./delivery-modals.css";
 
 export interface DeliveryDetailsModalProps {
@@ -37,7 +37,7 @@ function timelineStepLabel(timeline: DeliveryDto[], index: number): string {
 }
 
 function timelineItemTime(item: DeliveryDto): string {
-  return formatDateTime(item.sent_at ?? item.accepted_at ?? item.failed_at ?? item.queued_at);
+  return formatDateTime(rowTimestamp(item));
 }
 
 /** "-" when unknown (not yet failed, or a status this app never retries), else Yes/No. */

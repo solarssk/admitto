@@ -186,6 +186,12 @@ export interface DeliveryTimelineResult {
   timeline: DeliveryLogEntry[];
 }
 
+/** Defensive upper bound on one attendee's delivery timeline - matches the delivery log's own
+ * largest page size (DELIVERY_PAGE_SIZE_OPTIONS' 200 in apps/admin). A real attendee never
+ * approaches this; it only guards against an unbounded response if a bulk-resend loop ever
+ * malfunctions for one attendee. */
+const DELIVERY_TIMELINE_CAP = 200;
+
 const DELIVERY_DETAIL_SELECT = {
   ...DELIVERY_LOG_SELECT,
   batch_id: true,
@@ -196,9 +202,10 @@ const DELIVERY_DETAIL_SELECT = {
 /**
  * Fetch one delivery's full detail plus its attendee's whole delivery history (the "Delivery
  * Timeline"), ordered oldest-to-newest. Returns null when not found (wrong id/event, or a
- * cross-tenant id). Deliberately excludes `rendered_html`/`rendered_subject` — see
- * `getRenderedDelivery` for the privacy-redacted message preview, kept as a separate fetch so
- * this detail view never carries the (potentially large) HTML blob unless staff actually open it.
+ * cross-tenant id). `rendered_subject` is included (DELIVERY_LOG_SELECT) since it's the row's own
+ * title everywhere it's shown — `rendered_html` deliberately is not; see `getRenderedDelivery` for
+ * the privacy-redacted message preview, kept as a separate fetch so this detail view never carries
+ * the (potentially large) HTML blob unless staff actually open it.
  */
 export async function getDeliveryWithTimeline(
   params: { eventId: string; id: string },
@@ -218,13 +225,17 @@ export async function getDeliveryWithTimeline(
     session_id,
   };
 
+  // Newest-first + take, then reversed below - if this attendee ever exceeds the cap, the
+  // truncation drops their oldest history rather than the most recent ones (which must include
+  // the very row this modal is open for).
   const timelineRows = await prisma.emailDelivery.findMany({
     where: { attendee_id: row.attendee_id, event_id: params.eventId },
     select: DELIVERY_LOG_SELECT,
-    orderBy: [{ created_at: "asc" }, { id: "asc" }],
+    orderBy: [{ created_at: "desc" }, { id: "desc" }],
+    take: DELIVERY_TIMELINE_CAP,
   });
 
-  return { entry, timeline: timelineRows.map(mapRow) };
+  return { entry, timeline: timelineRows.map(mapRow).reverse() };
 }
 
 /**

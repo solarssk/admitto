@@ -15,6 +15,10 @@ import { SentMessagePreviewModal } from "./SentMessagePreviewModal.js";
 
 export const DELIVERY_PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 export const DELIVERY_PAGE_SIZE_DEFAULT = 25;
+/** Matches SystemLogsPanel's own POLL_INTERVAL_MS by convention (not by import - a shared
+ * numeric constant would couple this feature's polling cadence to an unrelated settings page's
+ * own tuning). */
+export const DELIVERY_POLL_INTERVAL_MS = 1750;
 
 const SENT_QUEUED_TIME_HINT =
   "Top: when this happened, in UTC. Below: the same moment in the local time of whoever's browser triggered the send, when known.";
