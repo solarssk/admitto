@@ -13,11 +13,11 @@ const baseSettings: SystemSettingsDto = {
 };
 
 const baseDraft = {
-  sessionTtlH: 24,
-  opTtlH: 12,
-  sessionIdleM: 30,
-  opIdleM: 120,
-  trustedDays: 30,
+  sessionTtlH: "24",
+  opTtlH: "12",
+  sessionIdleM: "30",
+  opIdleM: "120",
+  trustedDays: "30",
   mfaRoles: ["superadmin"],
 };
 
@@ -35,7 +35,7 @@ describe("buildSecurityPatchBody", () => {
   it("includes only editable fields that changed", () => {
     const result = buildSecurityPatchBody(
       baseSettings,
-      { ...baseDraft, sessionTtlH: 48, trustedDays: 14 },
+      { ...baseDraft, sessionTtlH: "48", trustedDays: "14" },
       fieldLocked,
     );
     expect(result.hasChanges).toBe(true);
@@ -45,6 +45,16 @@ describe("buildSecurityPatchBody", () => {
     });
   });
 
+  it("parses string draft fields when building the PATCH body", () => {
+    const result = buildSecurityPatchBody(
+      baseSettings,
+      { ...baseDraft, sessionIdleM: "60" },
+      fieldLocked,
+    );
+    expect(result.hasChanges).toBe(true);
+    expect(result.body.session_idle_timeout_ms).toBe(60 * 60_000);
+  });
+
   it("skips env-locked fields even when the draft differs", () => {
     const result = buildSecurityPatchBody(
       {
@@ -52,7 +62,7 @@ describe("buildSecurityPatchBody", () => {
         session_ttl_ms: { value: 86_400_000, source: "env" },
         mfa_required_roles: { value: ["superadmin", "admin"], source: "env" },
       },
-      { ...baseDraft, sessionTtlH: 48, mfaRoles: ["operator"] },
+      { ...baseDraft, sessionTtlH: "48", mfaRoles: ["operator"] },
       fieldLocked,
     );
     expect(result.hasChanges).toBe(false);

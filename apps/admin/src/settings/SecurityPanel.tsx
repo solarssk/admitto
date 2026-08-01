@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import { Badge, Button, Card, Input, Switch, Tooltip, useToast } from "@admitto/ui";
 import { fetchSecuritySettings, patchSecuritySettings } from "../api/client.js";
 import { roleLabel } from "../auth/role-labels.js";
@@ -7,7 +6,13 @@ import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { SystemSettingsDto, SettingSource } from "../api/types.js";
 import { SettingsFooter } from "./mailTransportFormParts.js";
-import { buildSecurityPatchBody } from "./securitySettingsPatch.js";
+import {
+  buildSecurityPatchBody,
+  draftFromSettings,
+  parseDraftInt,
+  previewDraftInt,
+  type SecuritySettingsDraft,
+} from "./securitySettingsPatch.js";
 
 const MS_PER_HOUR = 3_600_000;
 const MS_PER_MINUTE = 60_000;
@@ -60,42 +65,21 @@ function SecurityFieldWarning({ message }: Readonly<{ message: string }>) {
   );
 }
 
-interface Draft {
-  sessionTtlH: number;
-  opTtlH: number;
-  sessionIdleM: number;
-  opIdleM: number;
-  trustedDays: number;
-  mfaRoles: string[];
-}
-
-function draftFromSettings(s: SystemSettingsDto): Draft {
-  return {
-    sessionTtlH: Math.round(s.session_ttl_ms.value / MS_PER_HOUR),
-    opTtlH: Math.round(s.operator_session_ttl_ms.value / MS_PER_HOUR),
-    sessionIdleM: Math.round(s.session_idle_timeout_ms.value / MS_PER_MINUTE),
-    opIdleM: Math.round(s.operator_session_idle_timeout_ms.value / MS_PER_MINUTE),
-    trustedDays: s.trusted_device_days.value,
-    mfaRoles: [...s.mfa_required_roles.value],
-  };
-}
-
-function securityDraftHasChanges(settings: SystemSettingsDto, draft: Draft): boolean {
+function securityDraftHasChanges(settings: SystemSettingsDto, draft: SecuritySettingsDraft): boolean {
   return buildSecurityPatchBody(settings, draft, fieldLocked).hasChanges;
 }
 
 interface SecurityNumericRowProps {
   label: string;
   description: string;
-  value: number;
+  value: string;
   min: number;
   max: number;
+  savedValue: number;
   source: SettingSource;
   warningMessage?: string;
   showDivider?: boolean;
-  syncKey?: number;
-  onChange: (value: number) => void;
-  registerFlush?: (flush: () => void) => () => void;
+  onChange: (value: string) => void;
 }
 
 function SecurityNumericRow({
@@ -104,43 +88,18 @@ function SecurityNumericRow({
   value,
   min,
   max,
+  savedValue,
   source,
   warningMessage,
   showDivider = true,
-  syncKey = 0,
   onChange,
-  registerFlush,
 }: Readonly<SecurityNumericRowProps>) {
   const locked = fieldLocked(source);
   const warned = Boolean(warningMessage);
-  const [text, setText] = useState(String(value));
 
-  useEffect(() => {
-    setText(String(value));
-  }, [value, syncKey]);
-
-  const commit = useCallback(() => {
-    const trimmed = text.trim();
-    if (trimmed === "") {
-      setText(String(value));
-      return;
-    }
-    const parsed = Number.parseInt(trimmed, 10);
-    if (Number.isNaN(parsed)) {
-      setText(String(value));
-      return;
-    }
-    const clamped = Math.min(max, Math.max(min, parsed));
-    setText(String(clamped));
-    if (clamped !== value) {
-      flushSync(() => onChange(clamped));
-    }
-  }, [max, min, onChange, text, value]);
-
-  useEffect(() => {
-    if (!registerFlush) return;
-    return registerFlush(commit);
-  }, [commit, registerFlush]);
+  const commit = () => {
+    onChange(String(parseDraftInt(value, min, max, savedValue)));
+  };
 
   return (
     <div className="security-settings-item">
@@ -160,9 +119,9 @@ function SecurityNumericRow({
             max={max}
             style={SECURITY_NUMERIC_INPUT_STYLE}
             className={warned ? "at-input--warn" : undefined}
-            value={text}
+            value={value}
             disabled={locked}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => onChange(e.target.value)}
             onBlur={commit}
           />
         </div>
@@ -180,19 +139,8 @@ export function SecurityPanel() {
   const [settings, setSettings] = useState<SystemSettingsDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [draft, setDraft] = useState<Draft | null>(null);
+  const [draft, setDraft] = useState<SecuritySettingsDraft | null>(null);
   const [saving, setSaving] = useState(false);
-  const [numericSyncKey, setNumericSyncKey] = useState(0);
-  const draftRef = useRef(draft);
-  const numericFlushersRef = useRef(new Set<() => void>());
-  draftRef.current = draft;
-
-  const registerNumericFlush = useCallback((flush: () => void) => {
-    numericFlushersRef.current.add(flush);
-    return () => {
-      numericFlushersRef.current.delete(flush);
-    };
-  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -215,13 +163,10 @@ export function SecurityPanel() {
   }, [load]);
 
   const handleSave = async () => {
-    if (!settings) return;
-    for (const flush of numericFlushersRef.current) flush();
-    const currentDraft = draftRef.current;
-    if (!currentDraft) return;
+    if (!settings || !draft) return;
     setSaving(true);
 
-    const { body, hasChanges } = buildSecurityPatchBody(settings, currentDraft, fieldLocked);
+    const { body, hasChanges } = buildSecurityPatchBody(settings, draft, fieldLocked);
 
     if (!hasChanges) {
       addToast("No changes to save.", "info");
@@ -244,7 +189,6 @@ export function SecurityPanel() {
   const handleReset = () => {
     if (!settings) return;
     setDraft(draftFromSettings(settings));
-    setNumericSyncKey((key) => key + 1);
   };
 
   const toggleRole = (role: string) => {
@@ -287,78 +231,91 @@ export function SecurityPanel() {
   const mfaEmpty = draft.mfaRoles.length === 0;
   const hasUnsavedChanges = securityDraftHasChanges(settings, draft);
 
+  const savedSessionTtlH = Math.round(settings.session_ttl_ms.value / MS_PER_HOUR);
+  const savedOpTtlH = Math.round(settings.operator_session_ttl_ms.value / MS_PER_HOUR);
+  const savedSessionIdleM = Math.round(settings.session_idle_timeout_ms.value / MS_PER_MINUTE);
+  const savedOpIdleM = Math.round(settings.operator_session_idle_timeout_ms.value / MS_PER_MINUTE);
+
+  const sessionTtlH = previewDraftInt(draft.sessionTtlH);
+  const sessionIdleM = previewDraftInt(draft.sessionIdleM);
+  const opTtlH = previewDraftInt(draft.opTtlH);
+  const opIdleM = previewDraftInt(draft.opIdleM);
+
   return (
     <>
       <Card title={securityCardTitle()}>
         <div className="mail-transport-section security-settings-rows">
           <SecurityNumericRow
-            syncKey={numericSyncKey}
-            registerFlush={registerNumericFlush}
             label="Admin session maximum lifetime (hours)"
             description="Hard cap for admin and superadmin sessions, even if the user stays active. Allowed range: 1–720 hours."
             value={draft.sessionTtlH}
             min={1}
             max={720}
+            savedValue={savedSessionTtlH}
             source={settings.session_ttl_ms.source}
             warningMessage={
-              draft.sessionTtlH > ABSOLUTE_LIFETIME_WARNING_HOURS ? ABSOLUTE_LIFETIME_WARNING : undefined
+              sessionTtlH !== null && sessionTtlH > ABSOLUTE_LIFETIME_WARNING_HOURS
+                ? ABSOLUTE_LIFETIME_WARNING
+                : undefined
             }
             onChange={(sessionTtlH) => setDraft({ ...draft, sessionTtlH })}
           />
 
           <SecurityNumericRow
-            syncKey={numericSyncKey}
-            registerFlush={registerNumericFlush}
             label="Admin session inactivity timeout (minutes)"
             description="Sign out admins and superadmins after this long without activity. Allowed range: 5–240 minutes."
             value={draft.sessionIdleM}
             min={5}
             max={240}
+            savedValue={savedSessionIdleM}
             source={settings.session_idle_timeout_ms.source}
             warningMessage={
-              draft.sessionIdleM > ADMIN_IDLE_WARNING_MINUTES ? ADMIN_IDLE_WARNING : undefined
+              sessionIdleM !== null && sessionIdleM > ADMIN_IDLE_WARNING_MINUTES
+                ? ADMIN_IDLE_WARNING
+                : undefined
             }
             onChange={(sessionIdleM) => setDraft({ ...draft, sessionIdleM })}
           />
 
           <SecurityNumericRow
-            syncKey={numericSyncKey}
-            registerFlush={registerNumericFlush}
             label="Operator session maximum lifetime (hours)"
             description="Hard cap for operator (check-in) sessions, even if the station stays active. Allowed range: 1–168 hours."
             value={draft.opTtlH}
             min={1}
             max={168}
+            savedValue={savedOpTtlH}
             source={settings.operator_session_ttl_ms.source}
             warningMessage={
-              draft.opTtlH > ABSOLUTE_LIFETIME_WARNING_HOURS ? ABSOLUTE_LIFETIME_WARNING : undefined
+              opTtlH !== null && opTtlH > ABSOLUTE_LIFETIME_WARNING_HOURS
+                ? ABSOLUTE_LIFETIME_WARNING
+                : undefined
             }
             onChange={(opTtlH) => setDraft({ ...draft, opTtlH })}
           />
 
           <SecurityNumericRow
-            syncKey={numericSyncKey}
-            registerFlush={registerNumericFlush}
             label="Operator session inactivity timeout (minutes)"
             description="Sign out operators after this long without activity at the check-in station. Allowed range: 5–480 minutes."
             value={draft.opIdleM}
             min={5}
             max={480}
+            savedValue={savedOpIdleM}
             source={settings.operator_session_idle_timeout_ms.source}
             warningMessage={
-              draft.opIdleM > OPERATOR_IDLE_WARNING_MINUTES ? OPERATOR_IDLE_WARNING : undefined
+              opIdleM !== null && opIdleM > OPERATOR_IDLE_WARNING_MINUTES
+                ? OPERATOR_IDLE_WARNING
+                : undefined
             }
             onChange={(opIdleM) => setDraft({ ...draft, opIdleM })}
           />
 
           <SecurityNumericRow
-            syncKey={numericSyncKey}
-            registerFlush={registerNumericFlush}
             label="Remember device duration (days)"
             description='How long a trusted device can skip the authenticator app. Set 0 to turn off "remember this device". Allowed range: 0–90 days.'
             value={draft.trustedDays}
             min={0}
             max={90}
+            savedValue={settings.trusted_device_days.value}
             source={settings.trusted_device_days.source}
             onChange={(trustedDays) => setDraft({ ...draft, trustedDays })}
           />
