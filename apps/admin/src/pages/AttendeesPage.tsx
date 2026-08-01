@@ -916,9 +916,23 @@ export function AttendeesPage() {
     [passActionBusyVersion],
   );
 
+  // Lets the debounce timer below compare against the *currently committed* search value
+  // without adding `searchQuery` itself as a dependency (which would reschedule this effect
+  // on every unrelated re-render that changes it, e.g. a status/type/RSVP filter reload).
+  const committedSearchRef = useRef(searchQuery);
+  useEffect(() => {
+    committedSearchRef.current = searchQuery;
+  });
+
   useEffect(() => {
     const t = window.setTimeout(() => {
-      setSearchQuery(searchInput.trim());
+      const trimmed = searchInput.trim();
+      // A no-op tick - mount with an empty search box, or typing back to the already-committed
+      // value inside the debounce window - must not touch page/query: unconditionally calling
+      // setPage(1) here fires once on every mount (nothing to debounce yet) and can reset the
+      // page out from under an operator who paginates within DEBOUNCE_MS of opening the list.
+      if (trimmed === committedSearchRef.current) return;
+      setSearchQuery(trimmed);
       setPage(1);
     }, DEBOUNCE_MS);
     return () => window.clearTimeout(t);
