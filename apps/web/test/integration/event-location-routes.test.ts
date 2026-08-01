@@ -221,6 +221,15 @@ describe("GET /api/admin/events/:eventId/location", () => {
 });
 
 describe("PUT /api/admin/events/:eventId/location", () => {
+  it("returns 400 on malformed JSON", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_LOC}/location`, {
+      method: "PUT",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: "{not json",
+    });
+    expect(res.status).toBe(400);
+  });
+
   it("returns 403 for operator (no manage access)", async () => {
     const res = await putLocation(EVENT_LOC, opCookie, { formatted_address: "Somewhere" });
     expect(res.status).toBe(403);

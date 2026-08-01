@@ -33,10 +33,10 @@ let prevInstanceOrgId: string | undefined;
 // Mutable behavior for the injected fake provider — reset before every test so one test's
 // configured result/error/call log never leaks into the next.
 let searchResults: GeocodingResult[] = SAMPLE_RESULTS;
-let searchError: GeocodingProviderError | null = null;
+let searchError: Error | null = null;
 let searchCalls: string[] = [];
 let reverseResult: GeocodingResult | null = SAMPLE_RESULTS[0] ?? null;
-let reverseError: GeocodingProviderError | null = null;
+let reverseError: Error | null = null;
 let reverseCalls: Array<{ lat: number; lng: number }> = [];
 
 const fakeProvider: GeocodingProvider = {
@@ -267,6 +267,12 @@ describe("POST /api/admin/geocoding/search", () => {
     expect(body.error).toBe("geocoding_unavailable");
   });
 
+  it("returns 500 when the provider throws an unexpected Error", async () => {
+    searchError = new Error("unexpected upstream failure");
+    const res = await search(adminCookie, { query: "Unexpected failure" });
+    expect(res.status).toBe(500);
+  });
+
   describe("rate limiting", () => {
     it("allows consecutive search requests within a second (Nominatim 1/s is provider-side)", async () => {
       const first = await search(adminCookie, { query: "Global Limit First" });
@@ -301,8 +307,21 @@ describe("POST /api/admin/geocoding/reverse", () => {
     expect(res.status).toBe(403);
   });
 
+  it("returns 400 on malformed JSON", async () => {
+    const res = await reverse(adminCookie, undefined, "{not json");
+    expect(res.status).toBe(400);
+  });
+
   it("returns 400 when coordinates are out of range", async () => {
     const res = await reverse(adminCookie, { latitude: 99, longitude: 21 });
+    expect(res.status).toBe(400);
+  });
+
+  it.each([
+    ["a non-finite latitude", '{"latitude":1e999,"longitude":21}'],
+    ["an unknown field", JSON.stringify({ latitude: 52.23, longitude: 21.01, extra: true })],
+  ])("returns 400 for %s", async (_label, rawBody) => {
+    const res = await reverse(adminCookie, undefined, rawBody);
     expect(res.status).toBe(400);
   });
 
@@ -346,6 +365,12 @@ describe("POST /api/admin/geocoding/reverse", () => {
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({ error: "geocoding_unavailable" });
   });
+
+  it("returns 500 when the provider throws an unexpected Error", async () => {
+    reverseError = new Error("unexpected upstream failure");
+    const res = await reverse(adminCookie, { latitude: 1, longitude: 2 });
+    expect(res.status).toBe(500);
+  });
 });
 
 describe("POST /api/admin/geocoding/timezone", () => {
@@ -357,6 +382,11 @@ describe("POST /api/admin/geocoding/timezone", () => {
   it("returns 403 for a user without admin panel access (operator)", async () => {
     const res = await timezone(opCookie, { latitude: 52.23, longitude: 21.01 });
     expect(res.status).toBe(403);
+  });
+
+  it("returns 400 on malformed JSON", async () => {
+    const res = await timezone(adminCookie, undefined, "{not json");
+    expect(res.status).toBe(400);
   });
 
   it("returns 400 when coordinates are out of range", async () => {

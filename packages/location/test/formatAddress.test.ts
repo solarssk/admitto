@@ -46,6 +46,21 @@ describe("formatCompactAddress", () => {
     ).toBe("62, Marywilska");
   });
 
+  it.each([
+    ["place and country", { name: "Venue", country: "Poland" }, "Poland - Venue"],
+    ["place and city", { name: "Venue", city: "Warsaw" }, "Warsaw - Venue"],
+    ["place alone", { name: "Venue" }, "Venue"],
+    ["country and city without a place", { country: "Poland", city: "Warsaw" }, "Poland, Warsaw"],
+    ["country alone", { country: "Poland" }, "Poland"],
+    ["city alone", { city: "Warsaw" }, "Warsaw"],
+  ])("formats %s without relying on a label", (_case, parts, expected) => {
+    expect(formatCompactAddress(parts)).toBe(expected);
+  });
+
+  it("keeps a short label intact when structured fields are missing", () => {
+    expect(formatCompactAddress({ label: "Warsaw, Poland" })).toBe("Warsaw, Poland");
+  });
+
   it("returns an empty string when nothing useful is present", () => {
     expect(formatCompactAddress({})).toBe("");
   });
@@ -62,5 +77,9 @@ describe("formatVenueName", () => {
     expect(formatVenueName({ street: "Marywilska", housenumber: "62", city: "Warszawa" })).toBe(
       "Marywilska 62",
     );
+  });
+
+  it("falls back to the compact address when no name or street is available", () => {
+    expect(formatVenueName({ city: "Warsaw", country: "Poland" })).toBe("Poland, Warsaw");
   });
 });

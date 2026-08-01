@@ -202,6 +202,41 @@ describe("VenueAutocomplete", () => {
     expect(screen.getByText("Correct match")).toBeTruthy();
   });
 
+  it("also ignores a stale rejection after a newer search completes", async () => {
+    const first = createDeferred<GeocodingSearchResponse>();
+    mockSearch.mockImplementationOnce(() => first.promise);
+    mockSearch.mockResolvedValueOnce({
+      results: [makeResult({ name: "Correct match" })],
+      contact_configured: true,
+    });
+    renderWithToast(<Harness />);
+    const input = screen.getByLabelText("Venue name or address");
+
+    fireEvent.change(input, { target: { value: "Downing" } });
+    await waitFor(() => expect(mockSearch).toHaveBeenNthCalledWith(1, "Downing"));
+    fireEvent.change(input, { target: { value: "Downing Street" } });
+    await waitFor(() => expect(mockSearch).toHaveBeenNthCalledWith(2, "Downing Street"));
+    expect(await screen.findByText("Correct match")).toBeTruthy();
+
+    first.reject(new Error("stale request failed"));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(screen.getByText("Correct match")).toBeTruthy();
+  });
+
+  it("clears a pending debounce timer when unmounted", () => {
+    vi.useFakeTimers();
+    const rendered = renderWithToast(<Harness />);
+    fireEvent.change(screen.getByLabelText("Venue name or address"), {
+      target: { value: "Downing Street" },
+    });
+
+    rendered.unmount();
+    vi.advanceTimersByTime(500);
+
+    expect(mockSearch).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
   it("closes the dropdown on Escape without clearing the typed text", async () => {
     mockSearch.mockResolvedValue({ results: [makeResult()], contact_configured: true });
     renderWithToast(<Harness />);

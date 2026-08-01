@@ -220,6 +220,19 @@ describe("LocationSettingsPanel — loading", () => {
     fireEvent.click(await screen.findByText("Retry"));
     expect(await screen.findByDisplayValue("Springfield Hall")).toBeTruthy();
   });
+
+  it("ignores a stale aborted load rather than showing its error", async () => {
+    const first = createDeferred<EventLocationDto>();
+    mockFetchLocation.mockImplementationOnce(() => first.promise).mockResolvedValueOnce(SAVED_LOCATION);
+    const rendered = renderPanel({ eventId: "evt-1" });
+
+    rendered.unmount();
+    renderPanel({ eventId: "evt-2" });
+    first.reject(new Error("stale request failed"));
+
+    expect(await screen.findByDisplayValue("Springfield Hall")).toBeTruthy();
+    expect(screen.queryByText("Failed to load location settings.")).toBeNull();
+  });
 });
 
 describe("LocationSettingsPanel — dirty state and save", () => {
@@ -535,6 +548,67 @@ describe("LocationSettingsPanel — clearing and map availability", () => {
     expect(await screen.findByText("Verified on OpenStreetMap")).toBeTruthy();
   });
 
+  it("keeps the existing venue name and restores the default zoom after a map pick", async () => {
+    mockFetchLocation.mockResolvedValue({ ...SAVED_LOCATION, map_zoom: 0 });
+    mockReverse.mockResolvedValue({
+      result: searchResult({ name: "Different OSM name", formatted_address: "New address, New York" }),
+      contact_configured: true,
+    });
+    mockSaveLocation.mockResolvedValue({ ...SAVED_LOCATION, map_zoom: 15 });
+    renderPanel();
+
+    fireEvent.click(await screen.findByTestId("map-picker"));
+    expect(await screen.findByDisplayValue("Springfield Hall")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(mockSaveLocation).toHaveBeenCalledWith(
+        "evt-1",
+        expect.objectContaining({ map_zoom: 15 }),
+      ),
+    );
+  });
+
+  it("does not restore an address when a slow reverse lookup resolves after Clear map", async () => {
+    const slowReverse = createDeferred<Awaited<ReturnType<typeof reverseGeocoding>>>();
+    mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
+    mockReverse.mockReturnValueOnce(slowReverse.promise);
+    renderPanel();
+
+    fireEvent.click(await screen.findByTestId("map-picker"));
+    fireEvent.click(screen.getByRole("button", { name: "Clear map" }));
+    slowReverse.resolve({
+      result: searchResult({ formatted_address: "Late address, New York" }),
+      contact_configured: true,
+    });
+    await act(async () => {
+      await slowReverse.promise;
+    });
+
+    expect(document.querySelector(".location-map-footer__coords")?.textContent?.trim()).toBe("-");
+    expect(screen.getByLabelText("Address details").textContent).not.toContain("Late address");
+  });
+
+  it("does not clear later state when a slow reverse lookup rejects after Clear map", async () => {
+    const slowReverse = createDeferred<Awaited<ReturnType<typeof reverseGeocoding>>>();
+    mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
+    mockReverse.mockReturnValueOnce(slowReverse.promise);
+    renderPanel();
+
+    fireEvent.click(await screen.findByTestId("map-picker"));
+    fireEvent.click(screen.getByRole("button", { name: "Clear map" }));
+    slowReverse.reject(new Error("late reverse failure"));
+    await act(async () => {
+      try {
+        await slowReverse.promise;
+      } catch {
+        // The component intentionally ignores this stale rejection.
+      }
+    });
+
+    expect(document.querySelector(".location-map-footer__coords")?.textContent?.trim()).toBe("-");
+  });
+
   it("uses formatted_address as venue name when reverse has no name", async () => {
     mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
     mockReverse.mockResolvedValue({
@@ -649,6 +723,28 @@ describe("LocationSettingsPanel — map links and timezone", () => {
     await waitFor(() => {
       expect(screen.queryByText(/This address seems to be in/)).toBeNull();
     });
+  });
+
+  it("keeps the newer timezone suggestion when an aborted earlier lookup rejects", async () => {
+    const firstLookup = createDeferred<{ timezone: string | null }>();
+    mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
+    mockFetchTimezone
+      .mockReturnValueOnce(firstLookup.promise)
+      .mockResolvedValueOnce({ timezone: "America/New_York" });
+    renderPanel({ eventTimezone: "Europe/Warsaw" });
+
+    fireEvent.click(await screen.findByTestId("map-picker"));
+    expect((await screen.findByText(/This address seems to be in/)).textContent).toContain("America/New_York");
+
+    firstLookup.reject(new Error("aborted lookup failed"));
+    await act(async () => {
+      try {
+        await firstLookup.promise;
+      } catch {
+        // The effect's aborted request deliberately cannot clear the newer suggestion.
+      }
+    });
+    expect(screen.getByText(/This address seems to be in/).textContent).toContain("America/New_York");
   });
 });
 

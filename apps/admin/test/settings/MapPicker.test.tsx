@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, render } from "@testing-library/react";
+import L from "leaflet";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MapPicker } from "../../src/settings/MapPicker.js";
 import type { MapTileConfigDto } from "../../src/api/types.js";
@@ -7,9 +8,20 @@ import type { MapTileConfigDto } from "../../src/api/types.js";
 // jsdom doesn't implement ResizeObserver - MapPicker uses it to fix Leaflet's size once its
 // tab panel becomes visible (see MapPicker.tsx's comment on this). Not exercised by these tests.
 class MockResizeObserver {
+  static instances: MockResizeObserver[] = [];
   observe = vi.fn();
   unobserve = vi.fn();
   disconnect = vi.fn();
+  private readonly callback: ResizeObserverCallback;
+
+  constructor(callback: ResizeObserverCallback) {
+    this.callback = callback;
+    MockResizeObserver.instances.push(this);
+  }
+
+  trigger() {
+    this.callback([], this as unknown as ResizeObserver);
+  }
 }
 vi.stubGlobal("ResizeObserver", MockResizeObserver);
 
@@ -102,5 +114,78 @@ describe("MapPicker", () => {
 
     rerender(<MapPicker latitude={null} longitude={null} zoom={15} tileConfig={TILE_CONFIG} onPick={() => {}} />);
     expect(container.querySelector(".leaflet-marker-icon")).toBeFalsy();
+  });
+
+  it("moves the existing marker and pans when coordinates change", () => {
+    const setLatLng = vi.spyOn(L.Marker.prototype, "setLatLng");
+    const panTo = vi.spyOn(L.Map.prototype, "panTo");
+    const { rerender } = render(
+      <MapPicker latitude={40.7128} longitude={-74.006} zoom={15} tileConfig={TILE_CONFIG} onPick={() => {}} />,
+    );
+
+    rerender(
+      <MapPicker latitude={51.5074} longitude={-0.1278} zoom={15} tileConfig={TILE_CONFIG} onPick={() => {}} />,
+    );
+
+    expect(setLatLng).toHaveBeenCalledWith([51.5074, -0.1278]);
+    expect(panTo).toHaveBeenCalledWith([51.5074, -0.1278]);
+    setLatLng.mockRestore();
+    panTo.mockRestore();
+  });
+
+  it("reports the marker position when dragging ends", () => {
+    const onPick = vi.fn();
+    const originalMarker = L.marker;
+    let marker: L.Marker | undefined;
+    const markerSpy = vi.spyOn(L, "marker").mockImplementation((...args) => {
+      marker = originalMarker(...args);
+      return marker;
+    });
+    render(
+      <MapPicker latitude={40.7128} longitude={-74.006} zoom={15} tileConfig={TILE_CONFIG} onPick={onPick} />,
+    );
+
+    marker!.setLatLng([41, -73]);
+    marker!.fire("dragend");
+
+    expect(onPick).toHaveBeenCalledWith(41, -73);
+    markerSpy.mockRestore();
+  });
+
+  it("enables and disables dragging when disabled changes", () => {
+    const originalMarker = L.marker;
+    let marker: L.Marker | undefined;
+    const markerSpy = vi.spyOn(L, "marker").mockImplementation((...args) => {
+      marker = originalMarker(...args);
+      return marker;
+    });
+    const { rerender } = render(
+      <MapPicker latitude={40.7128} longitude={-74.006} zoom={15} tileConfig={TILE_CONFIG} onPick={() => {}} />,
+    );
+    const disable = vi.spyOn(marker!.dragging, "disable");
+    const enable = vi.spyOn(marker!.dragging, "enable");
+
+    rerender(
+      <MapPicker latitude={40.7128} longitude={-74.006} zoom={15} tileConfig={TILE_CONFIG} disabled onPick={() => {}} />,
+    );
+    rerender(
+      <MapPicker latitude={40.7128} longitude={-74.006} zoom={15} tileConfig={TILE_CONFIG} onPick={() => {}} />,
+    );
+
+    expect(disable).toHaveBeenCalled();
+    expect(enable).toHaveBeenCalled();
+    disable.mockRestore();
+    enable.mockRestore();
+    markerSpy.mockRestore();
+  });
+
+  it("invalidates the map size when its container is resized", () => {
+    const invalidateSize = vi.spyOn(L.Map.prototype, "invalidateSize");
+    render(<MapPicker latitude={null} longitude={null} zoom={15} tileConfig={TILE_CONFIG} onPick={() => {}} />);
+
+    MockResizeObserver.instances.at(-1)!.trigger();
+
+    expect(invalidateSize).toHaveBeenCalledTimes(1);
+    invalidateSize.mockRestore();
   });
 });

@@ -352,6 +352,28 @@ describe("EventSettingsPage tabs", () => {
     );
   });
 
+  it("applies the suggested location timezone through the event patch", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchEventLocation).mockResolvedValueOnce({
+      ...emptyLocation,
+      latitude: 40.7128,
+      longitude: -74.006,
+      venue_name: "New York Hall",
+    });
+    vi.mocked(fetchTimezoneForCoordinates).mockResolvedValueOnce({ timezone: "America/New_York" });
+    vi.mocked(patchEvent).mockResolvedValueOnce({
+      event: { ...activeEvent, timezone: "America/New_York" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=location");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Use" }));
+
+    await waitFor(() =>
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { timezone: "America/New_York" }),
+    );
+    expect(await screen.findByText("Event timezone set to America/New_York.")).toBeTruthy();
+  });
+
   it("shows the created date and an active hint in the Status card", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();

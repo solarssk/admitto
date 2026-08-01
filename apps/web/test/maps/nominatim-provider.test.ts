@@ -382,6 +382,22 @@ describe("NominatimProvider.reverse", () => {
     expect(await makeProvider(fetchFn).reverse(0, 0)).toBeNull();
   });
 
+  it("accepts a bare Feature response from reverse", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        type: "Feature",
+        properties: { geocoding: { label: "Warsaw, Poland" } },
+        geometry: { type: "Point", coordinates: [21.01, 52.23] },
+      }),
+    );
+
+    await expect(makeProvider(fetchFn).reverse(52.2297, 21.0122)).resolves.toMatchObject({
+      formatted_address: "Warsaw, Poland",
+      latitude: 52.2297,
+      longitude: 21.0122,
+    });
+  });
+
   it("maps unavailable reverse requests to GeocodingProviderError", async () => {
     const fetchFn = vi.fn().mockRejectedValue(new Error("connection refused"));
     await expect(makeProvider(fetchFn).reverse(0, 0)).rejects.toMatchObject({
@@ -423,6 +439,19 @@ describe("NominatimProvider response size / timeout hardening", () => {
     });
   });
 
+  it("rejects a negative Content-Length header", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response("{}", {
+        status: 200,
+        headers: { "content-type": "application/json", "content-length": "-1" },
+      }),
+    );
+
+    await expect(makeProvider(fetchFn).search("Warsaw")).rejects.toMatchObject({
+      kind: "unavailable",
+    });
+  });
+
   it("aborts while streaming once the body exceeds the byte cap (chunked / no Content-Length)", async () => {
     const oversized = new Uint8Array(MAX_RESPONSE_BYTES + 64).fill(0x61);
     const stream = new ReadableStream<Uint8Array>({
@@ -455,6 +484,20 @@ describe("NominatimProvider response size / timeout hardening", () => {
     });
     const res = new Response(stream, { status: 200 });
     await expect(readBodyCapped(res, 10)).rejects.toMatchObject({ kind: "unavailable" });
+  });
+
+  it("readBodyCapped skips empty chunks", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array());
+        controller.enqueue(new TextEncoder().encode("ok"));
+        controller.close();
+      },
+    });
+
+    await expect(readBodyCapped(new Response(stream), 10)).resolves.toEqual(
+      new TextEncoder().encode("ok"),
+    );
   });
 
   it("rejects empty, absent, and interrupted response bodies", async () => {
@@ -507,6 +550,14 @@ describe("NominatimProvider response size / timeout hardening", () => {
     ).rejects.toMatchObject({ name: "TimeoutError" });
   });
 
+  it("awaitWithAbortSignal rejects when aborted after its listener is attached", async () => {
+    const controller = new AbortController();
+    const pending = awaitWithAbortSignal(new Promise<string>(() => {}), controller.signal);
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: "TimeoutError" });
+  });
+
   it("serializes upstream calls with the configured min interval", async () => {
     const fetchFn = vi
       .fn()
@@ -518,6 +569,27 @@ describe("NominatimProvider response size / timeout hardening", () => {
     await provider.search("one");
     await provider.search("two");
     expect(Date.now() - t0).toBeGreaterThanOrEqual(35);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it("queues parallel searches so only one upstream request runs at a time", async () => {
+    let resolveFirst!: (response: Response) => void;
+    const firstResponse = new Promise<Response>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const fetchFn = vi
+      .fn()
+      .mockReturnValueOnce(firstResponse)
+      .mockResolvedValueOnce(jsonResponse(geocodeJsonBody([])));
+    const provider = makeProvider(fetchFn, { minIntervalMs: 0 });
+
+    const first = provider.search("one");
+    const second = provider.search("two");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+
+    resolveFirst(jsonResponse(geocodeJsonBody([])));
+    await Promise.all([first, second]);
     expect(fetchFn).toHaveBeenCalledTimes(2);
   });
 });
