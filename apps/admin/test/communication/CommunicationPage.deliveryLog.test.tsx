@@ -271,7 +271,8 @@ describe("CommunicationPage delivery log - filters, search, pagination", () => {
       );
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /Filters/i }));
+    // Exact match - the Card header's own "Clear filters" button also matches a loose /Filters/i.
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     fireEvent.change(screen.getByLabelText("Status"), { target: { value: "failed" } });
     await waitFor(() => {
       expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
@@ -329,6 +330,43 @@ describe("CommunicationPage delivery log - filters, search, pagination", () => {
     fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
     expect(search).toHaveProperty("value", "");
   });
+
+  it("Clear filters (Card header) resets status/purpose/template/search and re-fetches", async () => {
+    fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 1 });
+
+    renderPage();
+    await goToDeliveryLogTab();
+    await screen.findByText("Guest One");
+
+    expect(screen.getByRole("button", { name: "Clear filters" })).toHaveProperty("disabled", true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    fireEvent.change(screen.getByLabelText("Status"), { target: { value: "failed" } });
+    await waitFor(() => {
+      expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
+        "evt-1",
+        expect.objectContaining({ status: "failed" }),
+        expect.any(AbortSignal),
+      );
+    });
+    expect(screen.getByRole("button", { name: "Clear filters" })).toHaveProperty("disabled", false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    await waitFor(() => {
+      expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
+        "evt-1",
+        expect.objectContaining({
+          page: 1,
+          status: "all",
+          purpose: "all",
+          templateId: "all",
+          search: undefined,
+        }),
+        expect.any(AbortSignal),
+      );
+    });
+    expect(screen.getByRole("button", { name: "Clear filters" })).toHaveProperty("disabled", true);
+  });
 });
 
 describe("CommunicationPage delivery log - row menu", () => {
@@ -385,10 +423,9 @@ describe("CommunicationPage delivery log - sent message preview modal", () => {
     expect(srcdoc).not.toContain("{{ticket_url}}");
     expect(fetchRenderedDelivery).toHaveBeenCalledWith("evt-1", "dlv-1", expect.any(AbortSignal));
 
-    // Two "Close" buttons resolve to the same accessible name (the header IconButton and the
-    // footer Button) - scope to the footer to disambiguate.
-    const footer = dialog.querySelector(".delivery-modal__footer") as HTMLElement;
-    fireEvent.click(within(footer).getByRole("button", { name: "Close" }));
+    // Only the header IconButton closes it now - the redundant footer Close button (the header
+    // X already did the same thing) was removed.
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("dialog", { name: "Sent message preview" })).toBeNull();
   });
 

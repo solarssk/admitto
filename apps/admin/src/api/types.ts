@@ -1,3 +1,7 @@
+import type { DeliveryDetailDto, DeliveryDto } from "@admitto/shared";
+
+export type { DeliveryDetailDto, DeliveryDto };
+
 export type MailerProvider = "smtp" | "graph" | "powerautomate" | "export_only";
 
 export interface MailerStatus {
@@ -201,43 +205,6 @@ export interface AttendeeRowDto {
   /** Whether this attendee currently has at least one issued/returned item hand-out — lets the
    * bulk "Revoke items" action report how many of the selection it would actually affect. */
   has_issued_items: boolean;
-}
-
-export interface DeliveryDto {
-  id: string;
-  attendee_id: string;
-  attendee_name: string;
-  purpose: string;
-  status: string;
-  provider: string;
-  provider_message_id: string | null;
-  attempts: number;
-  retryable: boolean | null;
-  recipient_email: string | null;
-  rendered_subject: string | null;
-  template_id: string | null;
-  /** Human-readable template label, null for the built-in default ticket template. */
-  template_name: string | null;
-  queued_at: string;
-  accepted_at: string | null;
-  sent_at: string | null;
-  failed_at: string | null;
-  error_code: string | null;
-  /** Sanitized send-error text (safe to display to staff), null when not applicable. */
-  error: string | null;
-  /** Triggering admin's IANA timezone at send time, when known. */
-  client_timezone: string | null;
-}
-
-/** Full single-delivery detail — superset of `DeliveryDto` used only by the Delivery Details
- * modal, plus the attendee's full delivery timeline (this row included, oldest first). */
-export interface DeliveryDetailDto extends DeliveryDto {
-  batch_id: string | null;
-  actor_user_id: string | null;
-  /** Resolved display label for `actor_user_id`, null when unknown/unset. */
-  actor_display: string | null;
-  session_id: string | null;
-  timeline: DeliveryDto[];
 }
 
 /** Redacted rendered message for the "View sent message" preview — the recipient's real QR

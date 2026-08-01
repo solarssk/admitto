@@ -95,7 +95,7 @@ export function DeliveryRowMenu({ row, onViewSentMessage, onViewDetails }: Reado
               onViewSentMessage(row);
             }}
           >
-            <i className="ti ti-mail-opened" aria-hidden="true" />
+            <i className="ti ti-mail-opened" aria-hidden="true" />{" "}
             View sent message
           </button>
           <button
@@ -107,7 +107,7 @@ export function DeliveryRowMenu({ row, onViewSentMessage, onViewDetails }: Reado
               onViewDetails(row);
             }}
           >
-            <i className="ti ti-list-details" aria-hidden="true" />
+            <i className="ti ti-list-details" aria-hidden="true" />{" "}
             View delivery details
           </button>
         </div>

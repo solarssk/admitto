@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, IconButton, ModalBackdrop, Notice, Skeleton } from "@admitto/ui";
+import { IconButton, ModalBackdrop, Notice, Skeleton } from "@admitto/ui";
 import { fetchRenderedDelivery } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { DeliveryDto, RenderedDeliveryDto } from "../api/types.js";
@@ -88,11 +88,6 @@ export function SentMessagePreviewModal({ eventId, row, onClose }: Readonly<Sent
               />
             </>
           )}
-        </div>
-        <div className="delivery-modal__footer">
-          <Button type="button" variant="secondary" onClick={onClose}>
-            Close
-          </Button>
         </div>
       </div>
     </dialog>

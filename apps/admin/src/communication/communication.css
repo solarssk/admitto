@@ -346,6 +346,21 @@
   overflow-x: auto;
 }
 
+/* PaginationFooter (.audit-log-footer) carries no horizontal padding of its own - it assumes
+   a padded Card body (its only other two call sites, AuditLogPanel and EventArchivingPanel,
+   both use the default padded Card). This Card is padded={false} so the table can bleed
+   edge-to-edge for horizontal scroll, so the footer needs its own inset here, matching
+   .communication-toolbar's own var(--space-4) compensation above it. */
+.communication-log-footer {
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+/* Card title + info-circle hint icon, same shape as .audit-log-scope-header/.sessions-col-header. */
+.communication-log-title {
+  align-items: center;
+  gap: var(--space-1);
+}
+
 .communication-table {
   width: 100%;
 }

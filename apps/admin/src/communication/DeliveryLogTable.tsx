@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Link } from "react-router";
-import { Button, Card, EmptyState, Input, Select, StatusBadge, useToast } from "@admitto/ui";
+import { Button, Card, EmptyState, Input, Select, StatusBadge, Tooltip, useToast } from "@admitto/ui";
 import { exportDeliveryLog } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { DeliveryDto, EventDeliveriesListParams, MailTemplateListItem } from "../api/types.js";
@@ -8,13 +8,16 @@ import { FiltersMenu } from "../components/FiltersMenu.js";
 import { PaginationFooter } from "../components/PaginationFooter.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
-import { formatDateTime, purposeLabel, rowTimestamp, templateLabel } from "./delivery-format.js";
+import { deliveryLocalTime, formatDateTime, purposeLabel, rowTimestamp, templateLabel } from "./delivery-format.js";
 import { DeliveryDetailsModal } from "./DeliveryDetailsModal.js";
 import { DeliveryRowMenu } from "./DeliveryRowMenu.js";
 import { SentMessagePreviewModal } from "./SentMessagePreviewModal.js";
 
 export const DELIVERY_PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 export const DELIVERY_PAGE_SIZE_DEFAULT = 25;
+
+const SENT_QUEUED_TIME_HINT =
+  "Top: when this happened, in UTC. Below: the same moment in the local time of whoever's browser triggered the send, when known.";
 
 interface DeliveryToolbarProps {
   searchInput: string;
@@ -26,13 +29,11 @@ interface DeliveryToolbarProps {
   templateId: string;
   onTemplateIdChange: (value: string) => void;
   templates: MailTemplateListItem[];
-  exportParams: EventDeliveriesListParams;
-  eventId: string;
 }
 
-/** Search box (name/email) + collapsible Filters (Status/Purpose/Template) + Export log button -
- * same composition as Attendees' FilterToolbar, with a single "Export logs" button (AuditLogPanel's
- * simpler template) instead of a multi-format export menu, since the log only ever exports CSV. */
+/** Search box (name/email) + collapsible Filters (Status/Purpose/Template) - same composition as
+ * Attendees' FilterToolbar. "Export log" lives in the Card header instead (see DeliveryLogTab),
+ * matching Organisation settings' Logs pattern. */
 function DeliveryToolbar({
   searchInput,
   onSearchChange,
@@ -43,25 +44,10 @@ function DeliveryToolbar({
   templateId,
   onTemplateIdChange,
   templates,
-  exportParams,
-  eventId,
 }: Readonly<DeliveryToolbarProps>) {
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const [exporting, setExporting] = useState(false);
-  const { addToast } = useToast();
   const activeFilterCount =
     (status !== "all" ? 1 : 0) + (purpose !== "all" ? 1 : 0) + (templateId !== "all" ? 1 : 0);
-
-  async function handleExport() {
-    setExporting(true);
-    try {
-      await exportDeliveryLog(eventId, exportParams);
-    } catch (err) {
-      addToast(operatorApiErrorMessage(err, "Failed to export the delivery log."), "error");
-    } finally {
-      setExporting(false);
-    }
-  }
 
   return (
     <div className="communication-toolbar">
@@ -137,9 +123,6 @@ function DeliveryToolbar({
           </Select>
         </div>
       </FiltersMenu>
-      <Button type="button" variant="secondary" size="sm" disabled={exporting} onClick={() => void handleExport()}>
-        {exporting ? "Exporting…" : "Export log"}
-      </Button>
     </div>
   );
 }
@@ -177,7 +160,11 @@ function DeliveryListContent({
   }
   if (deliveries.length === 0) {
     return isUnfilteredEmpty ? (
-      <EmptyState icon={<i className="ti ti-mail-off" aria-hidden="true" />} title="No messages sent yet" />
+      <EmptyState
+        icon={<i className="ti ti-mail-off" aria-hidden="true" />}
+        title="No messages sent yet"
+        description="Ticket emails and resends will appear here once one is sent."
+      />
     ) : (
       <EmptyState
         icon={<i className="ti ti-search-off" aria-hidden="true" />}
@@ -208,7 +195,12 @@ function DeliveryListContent({
               </span>
               <span className="communication-card__meta-item">
                 <i className="ti ti-clock" aria-hidden="true" />
-                {formatDateTime(rowTimestamp(row))}
+                <span>
+                  {formatDateTime(rowTimestamp(row))}
+                  {deliveryLocalTime(row, rowTimestamp(row)) && (
+                    <div className="sessions-subdued">{deliveryLocalTime(row, rowTimestamp(row))}</div>
+                  )}
+                </span>
               </span>
               <span className="communication-card__meta-item">
                 <i className="ti ti-file-text" aria-hidden="true" />
@@ -232,7 +224,11 @@ function DeliveryListContent({
             <th>Template</th>
             <th>Purpose</th>
             <th>Status</th>
-            <th>Sent / Queued</th>
+            <th>
+              <Tooltip content={SENT_QUEUED_TIME_HINT} className="communication-log-title">
+                Sent / Queued <i className="ti ti-info-circle" aria-hidden="true" />
+              </Tooltip>
+            </th>
             <th className="communication-row-menu-cell" aria-label="Actions">
               <span className="sr-only">Actions</span>
             </th>
@@ -255,7 +251,12 @@ function DeliveryListContent({
               <td>
                 <StatusBadge status={row.status} />
               </td>
-              <td className="mono muted">{formatDateTime(rowTimestamp(row))}</td>
+              <td className="mono muted">
+                {formatDateTime(rowTimestamp(row))}
+                {deliveryLocalTime(row, rowTimestamp(row)) && (
+                  <div className="sessions-subdued">{deliveryLocalTime(row, rowTimestamp(row))}</div>
+                )}
+              </td>
               <td className="communication-row-menu-cell">
                 <DeliveryRowMenu row={row} onViewSentMessage={onViewSentMessage} onViewDetails={onViewDetails} />
               </td>
@@ -286,7 +287,14 @@ export interface DeliveryLogTabProps {
   onTemplateIdChange: (value: string) => void;
   searchInput: string;
   onSearchChange: (value: string) => void;
+  live: boolean;
+  onLiveChange: (live: boolean) => void;
+  hasActiveFilters: boolean;
+  onClearFilters: () => void;
 }
+
+const DELIVERY_LOG_HINT =
+  "Every ticket email and resend attempt for this event, with delivery status and diagnostics.";
 
 /** Delivery log tab: search + filters toolbar, the deliveries table/cards (with its own
  * loading/error/empty states), pagination footer, and the two row-menu-triggered modals. Owns
@@ -311,10 +319,16 @@ export function DeliveryLogTab({
   onTemplateIdChange,
   searchInput,
   onSearchChange,
+  live,
+  onLiveChange,
+  hasActiveFilters,
+  onClearFilters,
 }: Readonly<DeliveryLogTabProps>) {
   const isDesktop = useIsDesktop();
   const [sentMessageRow, setSentMessageRow] = useState<DeliveryDto | null>(null);
   const [detailsRow, setDetailsRow] = useState<DeliveryDto | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const { addToast } = useToast();
   const showLoadingText = useDelayedLoading(deliveriesLoading && deliveries.length === 0);
 
   const totalPages = Math.max(1, Math.ceil(deliveryTotal / pageSize));
@@ -322,8 +336,44 @@ export function DeliveryLogTab({
   const isUnfilteredEmpty =
     searchInput.trim() === "" && status === "all" && purpose === "all" && templateId === "all";
 
+  async function handleExport() {
+    setExporting(true);
+    try {
+      await exportDeliveryLog(eventId, { status, purpose, search: searchInput.trim() || undefined, templateId });
+    } catch (err) {
+      addToast(operatorApiErrorMessage(err, "Failed to export the delivery log."), "error");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
-    <Card padded={false}>
+    <Card
+      padded={false}
+      title={
+        <Tooltip content={DELIVERY_LOG_HINT} className="communication-log-title">
+          Delivery log <i className="ti ti-info-circle" aria-hidden="true" />
+        </Tooltip>
+      }
+      actions={
+        <>
+          <Button type="button" variant="secondary" size="sm" disabled={!hasActiveFilters} onClick={onClearFilters}>
+            Clear filters
+          </Button>
+          <Button type="button" variant="secondary" size="sm" disabled={exporting} onClick={() => void handleExport()}>
+            {exporting ? "Exporting…" : "Export log"}
+          </Button>
+          <Button
+            type="button"
+            variant={live ? "success" : "secondary"}
+            size="sm"
+            onClick={() => onLiveChange(!live)}
+          >
+            {live ? "Live" : "Paused"}
+          </Button>
+        </>
+      }
+    >
       <DeliveryToolbar
         searchInput={searchInput}
         onSearchChange={(value) => {
@@ -346,8 +396,6 @@ export function DeliveryLogTab({
           onPageChange(1);
         }}
         templates={templates}
-        exportParams={{ status, purpose, search: searchInput.trim() || undefined, templateId }}
-        eventId={eventId}
       />
       <DeliveryListContent
         eventId={eventId}
@@ -361,20 +409,22 @@ export function DeliveryLogTab({
         onViewDetails={setDetailsRow}
       />
       {deliveryTotal > 0 && (
-        <PaginationFooter
-          idPrefix="communication-log"
-          page={safePage}
-          pageSize={pageSize}
-          totalPages={totalPages}
-          totalRows={deliveryTotal}
-          pageSizeOptions={DELIVERY_PAGE_SIZE_OPTIONS}
-          onPageSizeChange={(size) => {
-            onPageSizeChange(size);
-            onPageChange(1);
-          }}
-          onPrevious={() => onPageChange(Math.max(1, safePage - 1))}
-          onNext={() => onPageChange(safePage + 1)}
-        />
+        <div className="communication-log-footer">
+          <PaginationFooter
+            idPrefix="communication-log"
+            page={safePage}
+            pageSize={pageSize}
+            totalPages={totalPages}
+            totalRows={deliveryTotal}
+            pageSizeOptions={DELIVERY_PAGE_SIZE_OPTIONS}
+            onPageSizeChange={(size) => {
+              onPageSizeChange(size);
+              onPageChange(1);
+            }}
+            onPrevious={() => onPageChange(Math.max(1, safePage - 1))}
+            onNext={() => onPageChange(safePage + 1)}
+          />
+        </div>
       )}
       {sentMessageRow && (
         <SentMessagePreviewModal

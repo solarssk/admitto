@@ -76,6 +76,7 @@ import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { canRevokeCheckIn } from "../checkin/revokeEligibility.js";
 import { DeliveryDetailsModal } from "../communication/DeliveryDetailsModal.js";
+import { formatDateTime, rowTimestamp } from "../communication/delivery-format.js";
 import { DeliveryRowMenu } from "../communication/DeliveryRowMenu.js";
 import { SentMessagePreviewModal } from "../communication/SentMessagePreviewModal.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
@@ -611,12 +612,7 @@ function AttendeeOverviewTab({
                   </div>
                   <div className="attendee-delivery__meta">
                     <MailStatusBadge status={delivery.status} />
-                    <span className="mono">
-                      {formatEventDateTime(
-                        delivery.sent_at ?? delivery.accepted_at ?? delivery.queued_at,
-                        delivery.client_timezone ?? event.timezone,
-                      )}
-                    </span>
+                    <span className="mono">{formatDateTime(rowTimestamp(delivery))}</span>
                     {delivery.recipient_email && delivery.recipient_email !== detail.email && (
                       <span>to {delivery.recipient_email}</span>
                     )}

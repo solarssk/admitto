@@ -9,7 +9,7 @@ import {
   type RefObject,
   type SetStateAction,
 } from "react";
-import { useBlocker, useOutletContext, useParams } from "react-router";
+import { useBlocker, useOutletContext, useParams, useSearchParams } from "react-router";
 import {
   Badge,
   Button,
@@ -52,6 +52,7 @@ import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { POLL_INTERVAL_MS } from "../settings/SystemLogsPanel.js";
 import { CommunicationSendDialog } from "../communication/CommunicationSendDialog.js";
 import { CreateTemplateDialog } from "../communication/CreateTemplateDialog.js";
 import { DELIVERY_PAGE_SIZE_DEFAULT, DeliveryLogTab } from "../communication/DeliveryLogTable.js";
@@ -850,7 +851,25 @@ export function CommunicationPage() {
   const { reportApiError } = useConnectionState();
   const { addToast } = useToast();
 
-  const [tab, setTab] = useState("compose");
+  // URL is the source of truth for the active tab (matches Organisation settings' own
+  // General/Mail/.../Logs tabs) - a refresh or shared link lands back on the same tab instead
+  // of always resetting to Compose.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get("tab") === "log" ? "log" : "compose";
+  const setTab = useCallback(
+    (next: string) => {
+      setSearchParams(
+        (prev) => {
+          const params = new URLSearchParams(prev);
+          if (next === "log") params.set("tab", "log");
+          else params.delete("tab");
+          return params;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -897,6 +916,7 @@ export function CommunicationPage() {
   const [deliverySearch, setDeliverySearch] = useState("");
   const [deliveriesLoading, setDeliveriesLoading] = useState(false);
   const [deliveriesError, setDeliveriesError] = useState<string | null>(null);
+  const [deliveriesLive, setDeliveriesLive] = useState(true);
   const [emailBounced, setEmailBounced] = useState(0);
 
   const bodyRef = useRef<HTMLTextAreaElement>(null);
@@ -1149,10 +1169,13 @@ export function CommunicationPage() {
 
   const sendTemplateId = resolveSendTemplateId(editorSnapshotMissing, activeKey, templates);
 
-  const loadDeliveries = useCallback(async (signal?: AbortSignal) => {
+  const loadDeliveries = useCallback(async (signal?: AbortSignal, opts?: { silent?: boolean }) => {
     if (!eventId) return;
-    setDeliveriesLoading(true);
-    setDeliveriesError(null);
+    const silent = opts?.silent ?? false;
+    if (!silent) {
+      setDeliveriesLoading(true);
+      setDeliveriesError(null);
+    }
     try {
       const data = await fetchEventDeliveries(
         eventId,
@@ -1169,10 +1192,16 @@ export function CommunicationPage() {
       if (signal?.aborted) return;
       setDeliveries(data.items);
       setDeliveryTotal(data.total);
+      // A silent poll can be the first successful response after an initial/request error -
+      // its fresh rows must clear the stale error state too (mirrors AuditLogPanel's useLogQuery).
+      if (silent) setDeliveriesError(null);
     } catch (err) {
       if (signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) {
         return;
       }
+      // A single missed live-refresh tick is normal network noise, not worth surfacing as a
+      // hard error over rows already on screen (matches AuditLogPanel's useLogQuery).
+      if (silent) return;
       if (err instanceof ApiError) {
         reportApiError(err.status);
         if (err.status === 401) {
@@ -1183,7 +1212,7 @@ export function CommunicationPage() {
       }
       setDeliveriesError("Failed to load deliveries.");
     } finally {
-      if (!signal?.aborted) {
+      if (!signal?.aborted && !silent) {
         setDeliveriesLoading(false);
       }
     }
@@ -1277,12 +1306,24 @@ export function CommunicationPage() {
     return () => ac.abort();
   }, [eventId, reportApiError]);
 
+  // Loads regardless of which tab is active (not gated on tab === "log") so the "Delivery log"
+  // tab's own count badge is correct as soon as the page mounts, instead of staying blank until
+  // the operator actually clicks into that tab - same fix already applied to Active sessions'
+  // own tab count (see ActiveSessionsTab's onCountChange).
   useEffect(() => {
-    if (tab !== "log") return;
     const controller = new AbortController();
     void loadDeliveries(controller.signal);
     return () => controller.abort();
-  }, [tab, loadDeliveries]);
+  }, [loadDeliveries]);
+
+  // Keeps polling regardless of which tab is active, mirroring AuditLogPanel's Audit/Security
+  // views (both poll continuously even while the operator is looking at System) - so the count
+  // and the table, once opened, both stay current without a manual refresh.
+  useEffect(() => {
+    if (!deliveriesLive) return;
+    const intervalId = window.setInterval(() => void loadDeliveries(undefined, { silent: true }), POLL_INTERVAL_MS);
+    return () => window.clearInterval(intervalId);
+  }, [deliveriesLive, loadDeliveries]);
 
   useEffect(() => {
     const maxPage = Math.max(1, Math.ceil(deliveryTotal / deliveryPageSize));
@@ -1487,6 +1528,21 @@ export function CommunicationPage() {
   const unsavedTemplateLabel = isDirty ? "Save *" : "Saved";
   const saveButtonLabel = saving ? "Saving…" : unsavedTemplateLabel;
 
+  const hasActiveDeliveryFilters =
+    deliveryStatus !== "all" ||
+    deliveryPurpose !== "all" ||
+    deliveryTemplateId !== "all" ||
+    deliverySearchInput.trim() !== "";
+
+  function clearDeliveryFilters() {
+    setDeliveryStatus("all");
+    setDeliveryPurpose("all");
+    setDeliveryTemplateId("all");
+    setDeliverySearchInput("");
+    setDeliverySearch("");
+    setDeliveryPage(1);
+  }
+
   return (
     <div className="screen">
       <PageHeader
@@ -1503,15 +1559,6 @@ export function CommunicationPage() {
             </ArchivedGuard>
           ) : undefined
         }
-      />
-
-      <EmailBounceBanner
-        count={emailBounced}
-        onViewLog={() => {
-          setTab("log");
-          setDeliveryStatus("bounced");
-          setDeliveryPage(1);
-        }}
       />
 
       <Tabs
@@ -1595,8 +1642,25 @@ export function CommunicationPage() {
           onTemplateIdChange={setDeliveryTemplateId}
           searchInput={deliverySearchInput}
           onSearchChange={setDeliverySearchInput}
+          live={deliveriesLive}
+          onLiveChange={setDeliveriesLive}
+          hasActiveFilters={hasActiveDeliveryFilters}
+          onClearFilters={clearDeliveryFilters}
         />
       )}
+
+      {/* Below the tab content (not above the tabs) so the tab bar sits at the same height as
+          every other page's, whether or not there's a bounce to report - parked here for now,
+          exact placement/treatment still under discussion. */}
+      <EmailBounceBanner
+        count={emailBounced}
+        onViewLog={() => {
+          setTab("log");
+          setDeliveryStatus("bounced");
+          setDeliveryPage(1);
+        }}
+      />
+
       <ConfirmDialog
         open={dirtyConfirmOpen}
         title="Discard unsaved changes?"

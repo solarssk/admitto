@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
-import { Button, IconButton, ModalBackdrop, Skeleton, StatusBadge } from "@admitto/ui";
+import { Button, IconButton, ModalBackdrop, Notice, Skeleton, StatusBadge } from "@admitto/ui";
 import { fetchEventDelivery } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { DeliveryDetailDto, DeliveryDto } from "../api/types.js";
@@ -40,6 +40,12 @@ function timelineItemTime(item: DeliveryDto): string {
   return formatDateTime(item.sent_at ?? item.accepted_at ?? item.failed_at ?? item.queued_at);
 }
 
+/** "-" when unknown (not yet failed, or a status this app never retries), else Yes/No. */
+function retryableLabel(retryable: boolean | null): string {
+  if (retryable == null) return "-";
+  return retryable ? "Yes" : "No";
+}
+
 /** Plain-text dump for the "Export as .txt" footer action - real captured fields only, no
  * fabricated provider transcript (plan.md's load-bearing constraint: no Postmark integration
  * exists, so nothing like a fake SMTP transcript is invented here). */
@@ -56,7 +62,7 @@ function buildExportText(detail: DeliveryDetailDto): string {
     `Provider: ${detail.provider}`,
     `Provider message ID: ${detail.provider_message_id ?? "-"}`,
     `Attempts: ${detail.attempts}`,
-    `Retryable: ${detail.retryable == null ? "-" : detail.retryable ? "Yes" : "No"}`,
+    `Retryable: ${retryableLabel(detail.retryable)}`,
     `Queued at: ${formatDateTime(detail.queued_at)}`,
     `Accepted at: ${formatDateTime(detail.accepted_at)}`,
     `Sent at: ${formatDateTime(detail.sent_at)}`,
@@ -200,10 +206,14 @@ export function DeliveryDetailsModal({
                   </div>
                   <div>
                     <dt>Retryable</dt>
-                    <dd>{detail.retryable == null ? "-" : detail.retryable ? "Yes" : "No"}</dd>
+                    <dd>{retryableLabel(detail.retryable)}</dd>
                   </div>
                 </dl>
-                {detail.error && <div className="delivery-modal-error">{detail.error}</div>}
+                {detail.error && (
+                  <Notice variant="error" role="alert">
+                    {detail.error}
+                  </Notice>
+                )}
               </div>
 
               <div>
@@ -280,9 +290,6 @@ export function DeliveryDetailsModal({
           >
             Open attendee
           </Link>
-          <Button type="button" variant="secondary" onClick={onClose}>
-            Close
-          </Button>
         </div>
       </div>
     </dialog>

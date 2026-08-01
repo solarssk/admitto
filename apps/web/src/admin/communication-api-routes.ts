@@ -712,6 +712,11 @@ const DELIVERY_CSV_COLUMNS = [
 ] as const;
 
 /** Build CSV text for the delivery log export (CRLF, quoted, formula-injection-safe fields). */
+function retryableCsvValue(retryable: boolean | null): string {
+  if (retryable === null) return "";
+  return retryable ? "yes" : "no";
+}
+
 function buildDeliveryLogCsv(rows: DeliveryDto[]): string {
   const header = DELIVERY_CSV_COLUMNS.map((col) => quoteCsvCell(col)).join(",");
   const csvRows = rows.map((r) =>
@@ -724,7 +729,7 @@ function buildDeliveryLogCsv(rows: DeliveryDto[]): string {
       r.provider,
       r.provider_message_id,
       String(r.attempts),
-      r.retryable === null ? "" : r.retryable ? "yes" : "no",
+      retryableCsvValue(r.retryable),
       r.queued_at,
       r.accepted_at,
       r.sent_at,
