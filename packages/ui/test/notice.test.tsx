@@ -5,6 +5,7 @@ import { Notice } from "../src/components/Notice.js";
 describe("Notice", () => {
   it.each([
     ["info", "info-circle"],
+    ["highlight", "info-circle"],
     ["success", "circle-check"],
     ["warning", "alert-triangle"],
     ["error", "circle-x"],
@@ -13,6 +14,17 @@ describe("Notice", () => {
     const notice = screen.getByText("Message").closest("p");
     expect(notice?.className).toContain(`at-notice--${variant}`);
     expect(notice?.querySelector(`i.ti-${icon}`)).toBeTruthy();
+  });
+
+  it("overrides the variant's default icon when icon is given", () => {
+    render(
+      <Notice variant="highlight" icon="qrcode-off">
+        Message
+      </Notice>,
+    );
+    const notice = screen.getByText("Message").closest("p");
+    expect(notice?.querySelector("i.ti-qrcode-off")).toBeTruthy();
+    expect(notice?.querySelector("i.ti-info-circle")).toBeNull();
   });
 
   it("renders children", () => {

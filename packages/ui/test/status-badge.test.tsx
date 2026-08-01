@@ -15,11 +15,11 @@ describe("StatusBadge", () => {
   });
 
   it("maps accepted to Sent with ok variant (ADR 0007 accepted_only)", () => {
-    expect(resolveStatusMeta("accepted")).toEqual({ variant: "ok", label: "Sent", dot: true });
+    expect(resolveStatusMeta("accepted")).toEqual({ variant: "ok", label: "Sent" });
   });
 
   it("keeps queued as warn Pending", () => {
-    expect(resolveStatusMeta("queued")).toEqual({ variant: "warn", label: "Pending", dot: true });
+    expect(resolveStatusMeta("queued")).toEqual({ variant: "warn", label: "Pending" });
   });
 
   it("maps VALID check-in outcome", () => {
@@ -36,7 +36,6 @@ describe("StatusBadge", () => {
     expect(resolveStatusMeta("toString")).toEqual({
       variant: "neutral",
       label: "toString",
-      dot: true,
     });
   });
 });

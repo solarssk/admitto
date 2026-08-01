@@ -6,11 +6,10 @@ import {
   useState,
   type Dispatch,
   type MutableRefObject,
-  type ReactNode,
   type RefObject,
   type SetStateAction,
 } from "react";
-import { useBlocker, useOutletContext, useParams } from "react-router";
+import { useBlocker, useOutletContext, useParams, useSearchParams } from "react-router";
 import {
   Badge,
   Button,
@@ -18,8 +17,6 @@ import {
   Input,
   Notice,
   PageHeader,
-  Select,
-  StatusBadge,
   Tabs,
   Tooltip,
   useToast,
@@ -57,9 +54,9 @@ import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../comp
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { CommunicationSendDialog } from "../communication/CommunicationSendDialog.js";
 import { CreateTemplateDialog } from "../communication/CreateTemplateDialog.js";
+import { DELIVERY_PAGE_SIZE_DEFAULT, DELIVERY_POLL_INTERVAL_MS, DeliveryLogTab } from "../communication/DeliveryLogTable.js";
 import "../communication/communication.css";
 import { isTemplateDirty } from "../communication/templateDirty.js";
-import { formatUtcDateTime } from "../utils/event-dates.js";
 
 type ActiveField = "subject" | "body";
 type TemplateFormat = "mjml" | "html";
@@ -72,12 +69,6 @@ type TemplateFormat = "mjml" | "html";
  * to fill it in. Filtered client-side, not removed from the server's ALLOWED_PLACEHOLDERS
  * whitelist, so it's not a backward-compat break for any already-saved template. */
 const HIDDEN_PLACEHOLDERS = new Set(["header_image_url"]);
-
-/** Format an ISO timestamp for the delivery log table. */
-function formatDateTime(iso: string | null): string {
-  if (!iso) return "-";
-  return formatUtcDateTime(iso);
-}
 
 /** Insert placeholder text at the textarea cursor selection. */
 function insertAtCursor(value: string, insertion: string, start: number, end: number): string {
@@ -236,8 +227,6 @@ function resolveMjmlInsertion(
   return { start: fallbackIdx, end: fallbackIdx, insertion };
 }
 
-const DELIVERY_PAGE_SIZE = 25;
-
 type DirtyProtectedAction =
   | { kind: "select"; key: string }
   | { kind: "create" }
@@ -329,6 +318,30 @@ function handleInitialTemplateLoadError(
     return;
   }
   setError(err.status === 403 ? "You do not have access to this event." : "Failed to load template.");
+}
+
+/** Maps a failed deliveries load to UI state, or suppresses it for a silent poll tick (mirrors
+ * AuditLogPanel's useLogQuery: a single missed live-refresh is normal noise, not worth surfacing
+ * over rows already on screen). Extracted from loadDeliveries so that function's own cognitive
+ * complexity stays low. */
+function handleDeliveriesLoadError(
+  err: unknown,
+  silent: boolean,
+  aborted: boolean,
+  reportApiError: (status: number) => void,
+  setDeliveriesError: (message: string) => void,
+): void {
+  if (aborted || (err instanceof DOMException && err.name === "AbortError")) return;
+  if (silent) return;
+  if (err instanceof ApiError) {
+    reportApiError(err.status);
+    if (err.status === 401) {
+      const next = encodeURIComponent(window.location.pathname);
+      window.location.assign(`/login?next=${next}`);
+      return;
+    }
+  }
+  setDeliveriesError("Failed to load deliveries.");
 }
 
 /** Retries loading the "ticket" template detail after a delete (the template that just got deleted
@@ -854,99 +867,6 @@ function SendTestCard({
   );
 }
 
-/** Delivery log tab: status/purpose filters, the deliveries table (with its own loading/error/empty
- * states), and pagination. */
-function DeliveryLogTab({
-  deliveryStatus,
-  setDeliveryStatus,
-  deliveryPurpose,
-  setDeliveryPurpose,
-  setDeliveryPage,
-  deliveryLogContent,
-  deliveriesError,
-  deliveryTotal,
-  deliveryRangeStart,
-  deliveryRangeEnd,
-  effectiveDeliveryPage,
-  deliveryPages,
-}: Readonly<{
-  deliveryStatus: EventDeliveriesListParams["status"];
-  setDeliveryStatus: Dispatch<SetStateAction<EventDeliveriesListParams["status"]>>;
-  deliveryPurpose: EventDeliveriesListParams["purpose"];
-  setDeliveryPurpose: Dispatch<SetStateAction<EventDeliveriesListParams["purpose"]>>;
-  setDeliveryPage: Dispatch<SetStateAction<number>>;
-  deliveryLogContent: ReactNode;
-  deliveriesError: string | null;
-  deliveryTotal: number;
-  deliveryRangeStart: number;
-  deliveryRangeEnd: number;
-  effectiveDeliveryPage: number;
-  deliveryPages: number;
-}>) {
-  return (
-    <>
-      <div className="communication-log-toolbar">
-        <Select
-          label="Status"
-          value={deliveryStatus}
-          onChange={(e) => {
-            setDeliveryStatus(e.target.value as EventDeliveriesListParams["status"]);
-            setDeliveryPage(1);
-          }}
-        >
-          <option value="all">All</option>
-          <option value="queued">Queued</option>
-          <option value="accepted">Accepted</option>
-          <option value="sent">Sent</option>
-          <option value="delivered">Delivered</option>
-          <option value="failed">Failed</option>
-          <option value="bounced">Bounced</option>
-          <option value="rejected">Rejected</option>
-        </Select>
-        <Select
-          label="Purpose"
-          value={deliveryPurpose}
-          onChange={(e) => {
-            setDeliveryPurpose(e.target.value as EventDeliveriesListParams["purpose"]);
-            setDeliveryPage(1);
-          }}
-        >
-          <option value="all">All purposes</option>
-          <option value="initial">Initial send</option>
-          <option value="resend">Resend</option>
-        </Select>
-      </div>
-
-      <Card padded={false}>
-        {deliveryLogContent}
-        {!deliveriesError && deliveryTotal > 0 && (
-          <div className="communication-pager">
-            <span>
-              Showing {deliveryRangeStart}–{deliveryRangeEnd} of {deliveryTotal}
-            </span>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={effectiveDeliveryPage <= 1}
-              onClick={() => setDeliveryPage((p) => Math.max(1, p - 1))}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={effectiveDeliveryPage >= deliveryPages}
-              onClick={() => setDeliveryPage((p) => p + 1)}
-            >
-              Next
-            </Button>
-          </div>
-        )}
-      </Card>
-    </>
-  );
-}
-
 /** Admin screen for event mail template editing, preview, test-send, and delivery log. */
 export function CommunicationPage() {
   const { eventId } = useParams();
@@ -954,7 +874,25 @@ export function CommunicationPage() {
   const { reportApiError } = useConnectionState();
   const { addToast } = useToast();
 
-  const [tab, setTab] = useState("compose");
+  // URL is the source of truth for the active tab (matches Organisation settings' own
+  // General/Mail/.../Logs tabs) - a refresh or shared link lands back on the same tab instead
+  // of always resetting to Compose.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get("tab") === "log" ? "log" : "compose";
+  const setTab = useCallback(
+    (next: string) => {
+      setSearchParams(
+        (prev) => {
+          const params = new URLSearchParams(prev);
+          if (next === "log") params.set("tab", "log");
+          else params.delete("tab");
+          return params;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -993,10 +931,15 @@ export function CommunicationPage() {
   const [deliveries, setDeliveries] = useState<DeliveryDto[]>([]);
   const [deliveryTotal, setDeliveryTotal] = useState(0);
   const [deliveryPage, setDeliveryPage] = useState(1);
+  const [deliveryPageSize, setDeliveryPageSize] = useState(DELIVERY_PAGE_SIZE_DEFAULT);
   const [deliveryStatus, setDeliveryStatus] = useState<EventDeliveriesListParams["status"]>("all");
   const [deliveryPurpose, setDeliveryPurpose] = useState<EventDeliveriesListParams["purpose"]>("all");
+  const [deliveryTemplateId, setDeliveryTemplateId] = useState("all");
+  const [deliverySearchInput, setDeliverySearchInput] = useState("");
+  const [deliverySearch, setDeliverySearch] = useState("");
   const [deliveriesLoading, setDeliveriesLoading] = useState(false);
   const [deliveriesError, setDeliveriesError] = useState<string | null>(null);
+  const [deliveriesLive, setDeliveriesLive] = useState(true);
   const [emailBounced, setEmailBounced] = useState(0);
 
   const bodyRef = useRef<HTMLTextAreaElement>(null);
@@ -1249,43 +1192,57 @@ export function CommunicationPage() {
 
   const sendTemplateId = resolveSendTemplateId(editorSnapshotMissing, activeKey, templates);
 
-  const loadDeliveries = useCallback(async (signal?: AbortSignal) => {
+  const loadDeliveries = useCallback(async (signal?: AbortSignal, opts?: { silent?: boolean }) => {
     if (!eventId) return;
-    setDeliveriesLoading(true);
-    setDeliveriesError(null);
+    const silent = opts?.silent ?? false;
+    if (!silent) {
+      setDeliveriesLoading(true);
+      setDeliveriesError(null);
+    }
     try {
       const data = await fetchEventDeliveries(
         eventId,
         {
           page: deliveryPage,
-          pageSize: DELIVERY_PAGE_SIZE,
+          pageSize: deliveryPageSize,
           status: deliveryStatus,
           purpose: deliveryPurpose,
+          search: deliverySearch || undefined,
+          templateId: deliveryTemplateId,
         },
         signal,
       );
       if (signal?.aborted) return;
       setDeliveries(data.items);
       setDeliveryTotal(data.total);
+      // A silent poll can be the first successful response after an initial/request error -
+      // its fresh rows must clear the stale error state too (mirrors AuditLogPanel's useLogQuery).
+      if (silent) setDeliveriesError(null);
     } catch (err) {
-      if (signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) {
-        return;
-      }
-      if (err instanceof ApiError) {
-        reportApiError(err.status);
-        if (err.status === 401) {
-          const next = encodeURIComponent(window.location.pathname);
-          window.location.assign(`/login?next=${next}`);
-          return;
-        }
-      }
-      setDeliveriesError("Failed to load deliveries.");
+      handleDeliveriesLoadError(err, silent, Boolean(signal?.aborted), reportApiError, setDeliveriesError);
     } finally {
-      if (!signal?.aborted) {
+      if (!signal?.aborted && !silent) {
         setDeliveriesLoading(false);
       }
     }
-  }, [eventId, deliveryPage, deliveryStatus, deliveryPurpose, reportApiError]);
+  }, [
+    eventId,
+    deliveryPage,
+    deliveryPageSize,
+    deliveryStatus,
+    deliveryPurpose,
+    deliverySearch,
+    deliveryTemplateId,
+    reportApiError,
+  ]);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setDeliverySearch(deliverySearchInput.trim());
+      setDeliveryPage(1);
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [deliverySearchInput]);
 
   useEffect(() => {
     currentEventIdRef.current = eventId;
@@ -1358,21 +1315,40 @@ export function CommunicationPage() {
     return () => ac.abort();
   }, [eventId, reportApiError]);
 
+  // Loads regardless of which tab is active (not gated on tab === "log") so the "Delivery log"
+  // tab's own count badge is correct as soon as the page mounts, instead of staying blank until
+  // the operator actually clicks into that tab - same fix already applied to Active sessions'
+  // own tab count (see ActiveSessionsTab's onCountChange).
   useEffect(() => {
-    if (tab !== "log") return;
     const controller = new AbortController();
     void loadDeliveries(controller.signal);
     return () => controller.abort();
-  }, [tab, loadDeliveries]);
+  }, [loadDeliveries]);
+
+  // Keeps polling regardless of which tab is active, mirroring AuditLogPanel's Audit/Security
+  // views (both poll continuously even while the operator is looking at System) - so the count
+  // and the table, once opened, both stay current without a manual refresh.
+  useEffect(() => {
+    if (!deliveriesLive) return;
+    const controller = new AbortController();
+    const intervalId = window.setInterval(
+      () => void loadDeliveries(controller.signal, { silent: true }),
+      DELIVERY_POLL_INTERVAL_MS,
+    );
+    return () => {
+      window.clearInterval(intervalId);
+      controller.abort();
+    };
+  }, [deliveriesLive, loadDeliveries]);
 
   useEffect(() => {
-    const maxPage = Math.max(1, Math.ceil(deliveryTotal / DELIVERY_PAGE_SIZE));
+    const maxPage = Math.max(1, Math.ceil(deliveryTotal / deliveryPageSize));
     if (deliveryTotal === 0) {
       if (deliveryPage !== 1) setDeliveryPage(1);
     } else if (deliveryPage > maxPage) {
       setDeliveryPage(maxPage);
     }
-  }, [deliveryTotal, deliveryPage]);
+  }, [deliveryTotal, deliveryPage, deliveryPageSize]);
 
   useEffect(() => {
     if (!isDirty) return;
@@ -1560,60 +1536,27 @@ export function CommunicationPage() {
   // these "Loading…" placeholders on and off faster than they can register as loading —
   // show them only once the fetch has genuinely taken a moment.
   const showLoading = useDelayedLoading(loading);
-  const showDeliveriesLoading = useDelayedLoading(deliveriesLoading);
 
   if (!eventId) return <p>Missing event.</p>;
   if (loading) return whenShown(showLoading, <p>Loading communication…</p>);
   if (error) return <p>{error}</p>;
 
-  const deliveryPages = Math.max(1, Math.ceil(deliveryTotal / DELIVERY_PAGE_SIZE));
-  const effectiveDeliveryPage = Math.min(deliveryPage, deliveryPages);
-  const deliveryRangeStart = (effectiveDeliveryPage - 1) * DELIVERY_PAGE_SIZE + 1;
-  const deliveryRangeEnd = Math.min(effectiveDeliveryPage * DELIVERY_PAGE_SIZE, deliveryTotal);
   const unsavedTemplateLabel = isDirty ? "Save *" : "Saved";
   const saveButtonLabel = saving ? "Saving…" : unsavedTemplateLabel;
 
-  let deliveryLogContent: ReactNode;
-  if (deliveriesLoading) {
-    deliveryLogContent = whenShown(
-      showDeliveriesLoading,
-      <div className="communication-empty">Loading deliveries…</div>,
-    );
-  } else if (deliveriesError) {
-    deliveryLogContent = <div className="communication-empty">{deliveriesError}</div>;
-  } else if (deliveries.length === 0) {
-    deliveryLogContent = <div className="communication-empty">No messages sent yet.</div>;
-  } else {
-    deliveryLogContent = (
-      <table className="table communication-table">
-        <thead>
-          <tr>
-            <th>Recipient</th>
-            <th>Subject</th>
-            <th>Purpose</th>
-            <th>Status</th>
-            <th>Queued</th>
-            <th>Sent / Failed</th>
-            <th>Error</th>
-          </tr>
-        </thead>
-        <tbody>
-          {deliveries.map((row) => (
-            <tr key={row.id}>
-              <td className="mono">{row.recipient_email ?? "-"}</td>
-              <td>{row.rendered_subject ?? "-"}</td>
-              <td>{row.purpose === "resend" ? "Resend" : "Initial"}</td>
-              <td>
-                <StatusBadge status={row.status} />
-              </td>
-              <td className="mono muted">{formatDateTime(row.queued_at)}</td>
-              <td className="mono muted">{formatDateTime(row.sent_at ?? row.accepted_at ?? row.failed_at)}</td>
-              <td className="muted">{row.error_code ?? "-"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    );
+  const hasActiveDeliveryFilters =
+    deliveryStatus !== "all" ||
+    deliveryPurpose !== "all" ||
+    deliveryTemplateId !== "all" ||
+    deliverySearchInput.trim() !== "";
+
+  function clearDeliveryFilters() {
+    setDeliveryStatus("all");
+    setDeliveryPurpose("all");
+    setDeliveryTemplateId("all");
+    setDeliverySearchInput("");
+    setDeliverySearch("");
+    setDeliveryPage(1);
   }
 
   return (
@@ -1632,15 +1575,6 @@ export function CommunicationPage() {
             </ArchivedGuard>
           ) : undefined
         }
-      />
-
-      <EmailBounceBanner
-        count={emailBounced}
-        onViewLog={() => {
-          setTab("log");
-          setDeliveryStatus("bounced");
-          setDeliveryPage(1);
-        }}
       />
 
       <Tabs
@@ -1706,20 +1640,45 @@ export function CommunicationPage() {
         </>
       ) : (
         <DeliveryLogTab
-          deliveryStatus={deliveryStatus}
-          setDeliveryStatus={setDeliveryStatus}
-          deliveryPurpose={deliveryPurpose}
-          setDeliveryPurpose={setDeliveryPurpose}
-          setDeliveryPage={setDeliveryPage}
-          deliveryLogContent={deliveryLogContent}
-          deliveriesError={deliveriesError}
+          eventId={eventId}
+          deliveries={deliveries}
           deliveryTotal={deliveryTotal}
-          deliveryRangeStart={deliveryRangeStart}
-          deliveryRangeEnd={deliveryRangeEnd}
-          effectiveDeliveryPage={effectiveDeliveryPage}
-          deliveryPages={deliveryPages}
+          deliveriesLoading={deliveriesLoading}
+          deliveriesError={deliveriesError}
+          templates={templates}
+          page={deliveryPage}
+          onPageChange={setDeliveryPage}
+          pageSize={deliveryPageSize}
+          onPageSizeChange={setDeliveryPageSize}
+          status={deliveryStatus}
+          onStatusChange={setDeliveryStatus}
+          purpose={deliveryPurpose}
+          onPurposeChange={setDeliveryPurpose}
+          templateId={deliveryTemplateId}
+          onTemplateIdChange={setDeliveryTemplateId}
+          searchInput={deliverySearchInput}
+          search={deliverySearch}
+          onSearchChange={setDeliverySearchInput}
+          live={deliveriesLive}
+          onLiveChange={setDeliveriesLive}
+          hasActiveFilters={hasActiveDeliveryFilters}
+          onClearFilters={clearDeliveryFilters}
+          onRetry={() => void loadDeliveries()}
         />
       )}
+
+      {/* Below the tab content (not above the tabs) so the tab bar sits at the same height as
+          every other page's, whether or not there's a bounce to report - parked here for now,
+          exact placement/treatment still under discussion. */}
+      <EmailBounceBanner
+        count={emailBounced}
+        onViewLog={() => {
+          setTab("log");
+          setDeliveryStatus("bounced");
+          setDeliveryPage(1);
+        }}
+      />
+
       <ConfirmDialog
         open={dirtyConfirmOpen}
         title="Discard unsaved changes?"

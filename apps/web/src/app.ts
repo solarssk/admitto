@@ -175,6 +175,9 @@ import {
   handleTestSendEventTemplate,
   handleTestSendEventTemplateById,
   handleListEventDeliveries,
+  handleGetEventDelivery,
+  handleGetRenderedEventDelivery,
+  handleExportEventDeliveries,
   handleListEventTemplates,
   handleGetEventTemplateById,
   handlePutEventTemplateById,
@@ -885,6 +888,15 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.get("/api/admin/events/:eventId/deliveries", staffAdminGate, (c) =>
     handleListEventDeliveries(c, db),
+  );
+  app.get("/api/admin/events/:eventId/deliveries/export", staffAdminGate, adminExportRateLimit, (c) =>
+    handleExportEventDeliveries(c, db),
+  );
+  app.get("/api/admin/events/:eventId/deliveries/:deliveryId", staffAdminGate, (c) =>
+    handleGetEventDelivery(c, db),
+  );
+  app.get("/api/admin/events/:eventId/deliveries/:deliveryId/rendered", staffAdminGate, (c) =>
+    handleGetRenderedEventDelivery(c, db),
   );
   app.get("/api/admin/events/:eventId/import/template", staffAdminGate, (c) =>
     handleGetImportTemplate(c, db),

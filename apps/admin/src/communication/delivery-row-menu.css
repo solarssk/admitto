@@ -1,0 +1,51 @@
+/* Per-delivery "..." menu (DeliveryRowMenu.tsx) - used by the Communication tab's Delivery log
+ * table/cards and the Attendee Detail page's "Delivery history" card, so this lives in its own
+ * file instead of communication.css (which only CommunicationPage.tsx imports).
+ *
+ * The panel's position (top/left) is computed and inlined by DeliveryRowMenu.tsx itself
+ * (Tooltip.tsx's viewport-flip/clamp algorithm) rather than declared here - same convention as
+ * .at-tooltip-bubble, which also carries no static position in CSS. */
+
+.delivery-row-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.delivery-row-menu__panel {
+  z-index: var(--z-dropdown);
+  width: 220px;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.delivery-row-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  text-decoration: none;
+}
+
+.delivery-row-menu__item:hover {
+  background: var(--surface-hover);
+}
+
+.delivery-row-menu__item i {
+  color: var(--text-muted);
+  font-size: 1rem;
+}

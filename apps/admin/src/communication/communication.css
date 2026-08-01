@@ -256,22 +256,136 @@
   min-width: 220px;
 }
 
-.communication-log-toolbar {
+/* Toolbar lives inside the log Card (like attendees-toolbar), not above it - search fills
+   remaining space, Filters + Export sit at the trailing edge. */
+.communication-toolbar {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   gap: var(--space-3);
-  margin-bottom: var(--space-3);
+  padding: var(--space-4);
+  min-height: calc(var(--control-h) + 2 * var(--space-4) + 1px);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
 }
 
-.communication-pager {
-  display: flex;
+.communication-toolbar__search {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 180px;
+}
+
+.communication-toolbar__search .at-input {
+  padding-right: var(--space-6);
+}
+
+.communication-toolbar__search-clear {
+  position: absolute;
+  top: 50%;
+  right: var(--space-2);
+  transform: translateY(-50%);
+  display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  font-size: var(--fs-sm);
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
+  cursor: pointer;
+}
+
+.communication-toolbar__search-clear:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+/* Same trigger+panel mechanism as attendees-filters-menu/reports-log-filters-menu - kept as its
+   own copy so this page's sizing stays independent (FiltersMenu.tsx convention). */
+.communication-filters-menu {
+  position: relative;
+  flex: none;
+}
+
+.communication-filters-menu__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  margin-left: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+  color: var(--text-on-primary);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.communication-filters-menu__panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: var(--z-dropdown);
+  width: 240px;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.communication-toolbar__filter .at-select {
+  width: 100%;
+}
+
+.communication-table-wrap {
+  overflow-x: auto;
+}
+
+/* PaginationFooter (.audit-log-footer) carries no horizontal padding of its own - it assumes
+   a padded Card body (its only other two call sites, AuditLogPanel and EventArchivingPanel,
+   both use the default padded Card). This Card is padded={false} so the table can bleed
+   edge-to-edge for horizontal scroll, so the footer needs its own inset here, matching
+   .communication-toolbar's own var(--space-4) compensation above it. */
+.communication-log-footer {
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+/* Card title + info-circle hint icon, same shape as .audit-log-scope-header/.sessions-col-header. */
+.communication-log-title {
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.communication-table {
+  width: 100%;
+}
+
+.communication-table th,
+.communication-table td {
+  vertical-align: middle;
+}
+
+.communication-user {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.communication-user:hover,
+.communication-user:focus-visible {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.communication-user strong {
+  font-weight: 600;
 }
 
 .communication-table .mono {
@@ -280,6 +394,70 @@
 }
 
 .communication-table .muted {
+  color: var(--text-muted);
+}
+
+/* Trailing kebab column - narrow, never wraps, aligned with the row's vertical center. */
+.communication-row-menu-cell {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* Mobile card list (< 768px, same useIsDesktop-driven split as Attendees/Reports). */
+.communication-cards {
+  display: flex;
+  flex-direction: column;
+}
+
+.communication-card {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.communication-card:last-child {
+  border-bottom: 0;
+}
+
+.communication-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.communication-card__name {
+  font-weight: 600;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.communication-card__name:hover,
+.communication-card__name:focus-visible {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.communication-card__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: 4px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+/* Icon-prefixed fields (email, time, template) - an icon per field disambiguates without a text
+   label that would wrap awkwardly on narrow cards (reports-log-card__meta-item convention). */
+.communication-card__meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.communication-card__meta-item i {
+  font-size: var(--fs-sm);
   color: var(--text-muted);
 }
 

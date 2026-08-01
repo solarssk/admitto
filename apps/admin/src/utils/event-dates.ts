@@ -71,6 +71,19 @@ export function zonedTimeLabel(iso: string, timezone = "UTC"): string {
   return offset ? `(${timezone}, ${offset})` : `(${timezone})`;
 }
 
+/** Category 2 companion — "HH:MM (IANA, UTC±offset)", the secondary line under a Category 2 UTC
+ * primary time showing the same instant in a specific known zone (an actor's or a delivery's
+ * client_timezone) - not a full date, since this always sits directly under a line that already
+ * carries one. Same composition as Audit/Security log's own actorLocalTime. */
+export function formatZonedClockTime(iso: string, timezone: string): string {
+  const hhmm = new Date(iso).toLocaleString(getPreferredLocale(), {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: timezone,
+  });
+  return `${hhmm} ${zonedTimeLabel(iso, timezone)}`;
+}
+
 /** Category 1 — event operational timestamps in event timezone with a numeric UTC offset. */
 export function formatEventDateTime(iso: string, timezone?: string): string {
   const base = new Date(iso).toLocaleString(getPreferredLocale(), {
