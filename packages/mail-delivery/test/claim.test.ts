@@ -84,6 +84,47 @@ describe("claimInitialDelivery", () => {
     expect(row?.session_id).toBe("session-claim-actor");
   });
 
+  it("persists template_label_snapshot when templateLabel is provided", async () => {
+    const template = await prisma.mailTemplate.create({
+      data: {
+        scope_type: "event",
+        scope_id: EVENT_ID,
+        name: "vip-claim",
+        label: "VIP invite",
+        subject_template: "Subject",
+        body_template: "<p>Body</p>",
+        template_format: "html",
+        compiled_html_template: "<p>Body</p>",
+      },
+    });
+
+    const result = await claimInitialDelivery(
+      { ...claimInput, batchId: "fresh-batch", templateId: template.id, templateLabel: template.label },
+      prisma,
+    );
+
+    expect(result.action).toBe("send");
+    const row = await prisma.emailDelivery.findFirst({
+      where: { attendee_id: ATT_ID, purpose: "initial" },
+    });
+    expect(row?.template_id).toBe(template.id);
+    expect(row?.template_label_snapshot).toBe("VIP invite");
+  });
+
+  it("leaves template_label_snapshot null when no templateLabel is provided (builtin default)", async () => {
+    const result = await claimInitialDelivery(
+      { ...claimInput, batchId: "fresh-batch" },
+      prisma,
+    );
+
+    expect(result.action).toBe("send");
+    const row = await prisma.emailDelivery.findFirst({
+      where: { attendee_id: ATT_ID, purpose: "initial" },
+    });
+    expect(row?.template_id).toBeNull();
+    expect(row?.template_label_snapshot).toBeNull();
+  });
+
   it("skips when initial delivery is already sent", async () => {
     await prisma.emailDelivery.create({
       data: {

@@ -82,3 +82,7 @@ export {
   backfillEventCreatedByUserId,
   backfillEventArchivedByUserId,
 } from './backfill-event-actor-attribution.js';
+
+export {
+  backfillEmailDeliveryTemplateLabelSnapshot,
+} from './backfill-email-delivery-template-label-snapshot.js';
