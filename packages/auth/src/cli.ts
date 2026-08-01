@@ -13,6 +13,8 @@ import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 import { prisma } from "@admitto/db";
 import { bootstrapSuperadmin, superadminInstanceExists, userIsInstanceSuperadmin } from "./bootstrap.js";
+import { PASSWORD_MIN_LENGTH } from "./constants.js";
+import { PasswordPolicyError } from "./password-policy.js";
 import { findUserByEmail, normalizeEmail } from "./user.js";
 import { verifyPassword } from "./password.js";
 import { resetUserMfa } from "./mfa/enrollment.js";
@@ -114,7 +116,20 @@ async function runBootstrapSuperadmin(): Promise<void> {
   }
 
   const password = await readPasswordFromStdin();
-  const { userId } = await bootstrapSuperadmin(prisma, email, password);
+  let userId: string;
+  try {
+    ({ userId } = await bootstrapSuperadmin(prisma, email, password));
+  } catch (err) {
+    if (err instanceof PasswordPolicyError) {
+      if (err.code === "password_too_short") {
+        throw new CliError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters.`);
+      }
+      throw new CliError(
+        "Password is too common or predictable. Choose a different one.",
+      );
+    }
+    throw err;
+  }
   console.log(`Superadmin created: ${userId} (${email})`);
 }
 

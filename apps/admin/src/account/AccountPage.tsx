@@ -16,6 +16,7 @@ import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-er
 import type { AccountDto, MfaEnrollResponse, SessionListDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { GeoCell } from "../components/GeoCell.js";
+import { SessionRevokeAction, SessionSignIn } from "../pages/users/SessionListItem.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { formatRelativeTime, formatUtcDateTime } from "../utils/event-dates.js";
 import { LOCALE_OPTIONS, setPreferredLocale as setPreferredLocaleStore } from "../utils/locale-store.js";
@@ -372,7 +373,18 @@ export function AccountPage() {
               </div>
             </div>
             <div className="mail-field-row">
-              <label className="mail-field-label" htmlFor="account-confirm-password">Confirm new password</label>
+              <div className="mail-secret-field__label-row">
+                <label className="mail-field-label" htmlFor="account-confirm-password">Confirm new password</label>
+                {passwordMismatch && (
+                  <span
+                    id="account-confirm-password-error"
+                    className="account-password-mismatch text-error"
+                    role="alert"
+                  >
+                    Passwords do not match.
+                  </span>
+                )}
+              </div>
               <Input
                 id="account-confirm-password"
                 name="confirm-new-password"
@@ -385,11 +397,6 @@ export function AccountPage() {
                 aria-invalid={passwordMismatch || undefined}
                 aria-describedby={passwordMismatch ? "account-confirm-password-error" : undefined}
               />
-              {passwordMismatch && (
-                <p id="account-confirm-password-error" className="text-error" role="alert">
-                  Passwords do not match.
-                </p>
-              )}
             </div>
             <div className="mail-transport-footer">
               <Button type="submit" variant="primary" disabled={passwordSaving || !passwordFormValid}>
@@ -621,7 +628,18 @@ export function AccountPage() {
         {!sessionsLoading && !sessionsError && sessions.length > 0 && (
           <div className="sessions-table-wrap">
             <table className="table">
-              <thead><tr><th>Device</th><th>IP address</th><th>Login at</th><th>Last seen</th><th>Auth method</th><th>Action</th></tr></thead>
+              <thead>
+                <tr>
+                  <th>Device</th>
+                  <th>IP address</th>
+                  <th>Logged in</th>
+                  <th>Last active</th>
+                  <th>Sign-in</th>
+                  <th className="sessions-action-col" aria-label="Actions">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
               <tbody>
                 {sessions.map((s) => (
                   <tr key={s.id}>
@@ -635,13 +653,19 @@ export function AccountPage() {
                     </td>
                     <td>{formatDate(s.loginAt)}</td>
                     <td>{formatRelativeTime(s.lastSeenAt)}</td>
-                    <td>{s.authMethod === "oidc" ? "OIDC" : "Local"}</td>
                     <td>
-                      {s.isCurrent ? (
-                        <Button type="button" variant="danger" disabled title="Cannot revoke current session">Revoke</Button>
-                      ) : (
-                        <Button type="button" variant="danger" onClick={() => { setRevokeError(null); setRevokeTarget(s); }}>Revoke</Button>
-                      )}
+                      <SessionSignIn authMethod={s.authMethod} />
+                    </td>
+                    <td>
+                      <div className="sessions-row-actions">
+                        <SessionRevokeAction
+                          session={s}
+                          onRevoke={(session) => {
+                            setRevokeError(null);
+                            setRevokeTarget(session);
+                          }}
+                        />
+                      </div>
                     </td>
                   </tr>
                 ))}

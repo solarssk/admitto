@@ -100,6 +100,26 @@ export async function getSessionTtlOperatorMs(
     : (SETTING_DEFAULTS.get("operator_session_ttl") as number);
 }
 
+/** Admin/superadmin idle timeout in ms from SystemSettings (`session_idle_timeout`). */
+export async function getSessionIdleTimeoutAdminMs(
+  prisma: PrismaClient | Prisma.TransactionClient,
+): Promise<number> {
+  const v = await getSetting<number>(prisma, "session_idle_timeout");
+  return typeof v === "number" && v > 0
+    ? v
+    : (SETTING_DEFAULTS.get("session_idle_timeout") as number);
+}
+
+/** Operator idle timeout in ms from SystemSettings (`operator_session_idle_timeout`). */
+export async function getSessionIdleTimeoutOperatorMs(
+  prisma: PrismaClient | Prisma.TransactionClient,
+): Promise<number> {
+  const v = await getSetting<number>(prisma, "operator_session_idle_timeout");
+  return typeof v === "number" && v > 0
+    ? v
+    : (SETTING_DEFAULTS.get("operator_session_idle_timeout") as number);
+}
+
 /** Trusted-device cookie lifetime in days from SystemSettings (`trusted_device_days`). */
 export async function getTrustedDeviceDays(
   prisma: PrismaClient | Prisma.TransactionClient,

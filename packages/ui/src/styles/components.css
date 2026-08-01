@@ -273,6 +273,15 @@
   gap: var(--space-3);
   height: 0.5rem;
   pointer-events: none;
+  animation: at-password-strength-enter var(--dur-slow) var(--ease-out);
+}
+@keyframes at-password-strength-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 .at-password-strength__bar {
   flex: 1;
@@ -308,6 +317,9 @@
 @media (prefers-reduced-motion: reduce) {
   .at-switch__thumb {
     transition: none;
+  }
+  .at-password-strength {
+    animation: none;
   }
 }
 

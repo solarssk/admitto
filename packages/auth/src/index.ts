@@ -6,6 +6,8 @@ export {
   TRUSTED_DEVICE_COOKIE_NAME,
   SESSION_TTL_ADMIN_MS,
   SESSION_TTL_OPERATOR_MS,
+  SESSION_IDLE_TIMEOUT_ADMIN_MS,
+  SESSION_IDLE_TIMEOUT_OPERATOR_MS,
   MFA_PENDING_SESSION_TTL_MS,
   BACKUP_CODES_STEP_TTL_MS,
   SESSION_STAGE,
@@ -20,6 +22,12 @@ export {
 } from "./constants.js";
 
 export { hashPassword, verifyPassword, verifyPasswordOrDummy } from "./password.js";
+export {
+  assertPasswordMeetsPolicy,
+  PasswordPolicyError,
+  type PasswordPolicyFailureCode,
+} from "./password-policy.js";
+export { isPasswordTooCommon, isPasswordBlocklisted, hasTrivialCharacterPattern, PASSWORD_TOO_COMMON_CODE, passwordTooCommonJsonBody } from "./password-blocklist.js";
 export {
   scorePasswordStrength,
   scorePasswordStrengthInline,
@@ -54,12 +62,16 @@ export {
   isSettingEnvLocked,
   getSessionTtlAdminMs,
   getSessionTtlOperatorMs,
+  getSessionIdleTimeoutAdminMs,
+  getSessionIdleTimeoutOperatorMs,
   getTrustedDeviceDays,
   getMfaRequiredRoles,
 } from "./settings/resolver.js";
 export {
   SETTING_SESSION_TTL,
   SETTING_OPERATOR_SESSION_TTL,
+  SETTING_SESSION_IDLE_TIMEOUT,
+  SETTING_OPERATOR_SESSION_IDLE_TIMEOUT,
   SETTING_TRUSTED_DEVICE_DAYS,
   SETTING_MFA_REQUIRED_ROLES,
   SETTING_CF_ACCESS_ENABLED,

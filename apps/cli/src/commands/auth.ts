@@ -5,6 +5,8 @@ import {
   generateEmergencyRecoveryCode,
   logMfaBreakGlass,
   normalizeEmail,
+  PASSWORD_MIN_LENGTH,
+  PasswordPolicyError,
   resetUserMfa,
   superadminInstanceExists,
   userIsInstanceSuperadmin,
@@ -19,6 +21,39 @@ import { confirmYes } from "../lib/confirm.js";
 
 async function confirmForce(): Promise<boolean> {
   return confirmYes("A superadmin@instance already exists. Type 'yes' to create another: ");
+}
+
+async function assertBootstrapForceAllowed(db: PrismaClient, force: boolean): Promise<void> {
+  const exists = await superadminInstanceExists(db);
+  if (!exists) return;
+  if (!force) {
+    throw new CliError(
+      "superadmin@instance already exists. Use --force to create another (with confirmation).",
+    );
+  }
+  if (hasFlag("yes")) return;
+  if (!(await confirmForce())) {
+    throw new CliError("Aborted.");
+  }
+}
+
+async function bootstrapSuperadminChecked(
+  db: PrismaClient,
+  email: string,
+  password: string,
+): Promise<string> {
+  try {
+    const { userId } = await bootstrapSuperadmin(db, email, password);
+    return userId;
+  } catch (err) {
+    if (err instanceof PasswordPolicyError) {
+      if (err.code === "password_too_short") {
+        throw new CliError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters.`);
+      }
+      throw new CliError("Password is too common or predictable. Choose a different one.");
+    }
+    throw err;
+  }
 }
 
 async function verifyTargetUserPassword(
@@ -52,25 +87,11 @@ export async function runAuthBootstrapSuperadmin(db: PrismaClient): Promise<void
     throw new CliError("Usage: admitto auth bootstrap-superadmin --email <email> [--force]");
   }
 
-  const force = hasFlag("force");
-  const exists = await superadminInstanceExists(db);
-  if (exists && !force) {
-    throw new CliError(
-      "superadmin@instance already exists. Use --force to create another (with confirmation).",
-    );
-  }
-  if (exists && force) {
-    if (!hasFlag("yes")) {
-      const ok = await confirmForce();
-      if (!ok) {
-        throw new CliError("Aborted.");
-      }
-    }
-  }
+  await assertBootstrapForceAllowed(db, hasFlag("force"));
 
   assertNoPasswordArgv(process.argv);
   const password = await readPasswordFromStdin();
-  const { userId } = await bootstrapSuperadmin(db, email, password);
+  const userId = await bootstrapSuperadminChecked(db, email, password);
   console.log(`Superadmin created: ${userId} (${email})`);
 }
 

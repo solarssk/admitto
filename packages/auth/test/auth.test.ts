@@ -14,7 +14,7 @@ import {
   validatePartialSession,
   promoteSessionToFull,
 } from "../src/session.js";
-import { SESSION_STAGE } from "../src/constants.js";
+import { SESSION_STAGE, SESSION_IDLE_TIMEOUT_OPERATOR_MS } from "../src/constants.js";
 import {
   canPerformCheckIn,
   canManageEvent,
@@ -234,6 +234,51 @@ describe("session", () => {
     expect(await validateSession(prisma, rawToken)).toBeNull();
   });
 
+  it("rejects full session after idle timeout (last_seen_at beyond the idle window)", async () => {
+    const { rawToken, session } = await createSession(prisma, { userId: USER_OP_A });
+    await prisma.session.update({
+      where: { id: session.id },
+      data: {
+        last_seen_at: new Date(Date.now() - SESSION_IDLE_TIMEOUT_OPERATOR_MS - 1000),
+      },
+    });
+    expect(await validateSession(prisma, rawToken)).toBeNull();
+    const revoked = await prisma.session.findUnique({ where: { id: session.id } });
+    expect(revoked?.revoked_at).not.toBeNull();
+  });
+
+  it("does not resurrect an idle-expired session when the idle timeout is increased", async () => {
+    const { rawToken, session } = await createSession(prisma, { userId: USER_OP_A });
+    await prisma.session.update({
+      where: { id: session.id },
+      data: {
+        last_seen_at: new Date(Date.now() - SESSION_IDLE_TIMEOUT_OPERATOR_MS - 1000),
+      },
+    });
+    expect(await validateSession(prisma, rawToken)).toBeNull();
+
+    await prisma.systemSettings.upsert({
+      where: { key: "operator_session_idle_timeout" },
+      create: { key: "operator_session_idle_timeout", value_json: String(24 * 60 * 60 * 1000) },
+      update: { value_json: String(24 * 60 * 60 * 1000) },
+    });
+
+    expect(await validateSession(prisma, rawToken)).toBeNull();
+    const stillRevoked = await prisma.session.findUnique({ where: { id: session.id } });
+    expect(stillRevoked?.revoked_at).not.toBeNull();
+  });
+
+  it("keeps full session alive within the idle window", async () => {
+    const { rawToken, session } = await createSession(prisma, { userId: USER_OP_A });
+    await prisma.session.update({
+      where: { id: session.id },
+      data: {
+        last_seen_at: new Date(Date.now() - SESSION_IDLE_TIMEOUT_OPERATOR_MS + 60_000),
+      },
+    });
+    expect(await validateSession(prisma, rawToken)).not.toBeNull();
+  });
+
   it("defaults MFA-required users to partial stage when stage omitted", async () => {
     const { rawToken, session } = await createSession(prisma, { userId: USER_ADMIN_A });
     expect(session.stage).toBe(SESSION_STAGE.MFA_PENDING);
@@ -402,6 +447,13 @@ describe("bootstrap", () => {
       where: { user_id: user!.id, role: "superadmin", scope_type: "instance" },
     });
     expect(assignment).not.toBeNull();
+  });
+
+  it("rejects bootstrap passwords that fail shared policy checks", async () => {
+    const email = "bootstrap-weak@example.com";
+    await expect(bootstrapSuperadmin(prisma, email, "password123")).rejects.toThrow();
+    await expect(bootstrapSuperadmin(prisma, email, "short")).rejects.toThrow();
+    expect(await prisma.user.count({ where: { email } })).toBe(0);
   });
 });
 

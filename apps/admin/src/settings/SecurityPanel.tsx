@@ -1,48 +1,145 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router";
-import { Button, Card, Checkbox, HintLabel, Input, useToast } from "@admitto/ui";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Badge, Button, Card, Input, Switch, Tooltip, useToast } from "@admitto/ui";
 import { fetchSecuritySettings, patchSecuritySettings } from "../api/client.js";
 import { roleLabel } from "../auth/role-labels.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { PatchSystemSettingsBody, SystemSettingsDto, SettingSource } from "../api/types.js";
+import type { SystemSettingsDto, SettingSource } from "../api/types.js";
+import { SettingsFooter } from "./mailTransportFormParts.js";
+import {
+  buildSecurityPatchBody,
+  draftFromSettings,
+  parseDraftInt,
+  previewDraftInt,
+  type SecuritySettingsDraft,
+} from "./securitySettingsPatch.js";
 
-const SECURITY_HINT =
-  "Controls session lifetimes, trusted-device duration, and which roles must enroll two-factor authentication.";
 const MS_PER_HOUR = 3_600_000;
+const MS_PER_MINUTE = 60_000;
+/** Inline-warning thresholds (P0-4): flag values that weaken session security without blocking them. */
+const ABSOLUTE_LIFETIME_WARNING_HOURS = 24;
+const ADMIN_IDLE_WARNING_MINUTES = 120;
+const OPERATOR_IDLE_WARNING_MINUTES = 240;
+const ABSOLUTE_LIFETIME_WARNING = `Sessions longer than ${ABSOLUTE_LIFETIME_WARNING_HOURS} hours increase the impact of a stolen session.`;
+const ADMIN_IDLE_WARNING = "A long inactivity timeout leaves unattended admin sessions open longer.";
+const OPERATOR_IDLE_WARNING = "A long inactivity timeout leaves unattended check-in stations open longer.";
+const MFA_EMPTY_WARNING =
+  "Two-factor authentication is off for every role. Not recommended for production.";
 const MFA_ROLES = [
   { value: "superadmin", label: roleLabel("superadmin") },
   { value: "admin", label: roleLabel("admin") },
   { value: "operator", label: roleLabel("operator") },
 ] as const;
+/** Shared control column width — mirrors Branding's FONT_SURFACE_SELECT_STYLE minWidth pattern
+ * so every row's input lines up on the same right edge inside the parent grid. */
+const SECURITY_NUMERIC_INPUT_STYLE = { width: "8rem", flexShrink: 0 } as const;
+const SECURITY_CARD_HINT =
+  "How long staff stay signed in, how long a device can skip the authenticator app, and which roles must use one.";
 
 function fieldLocked(source: SettingSource): boolean {
   return source === "env";
 }
 
-interface Draft {
-  sessionTtlH: number;
-  opTtlH: number;
-  trustedDays: number;
-  mfaRoles: string[];
+function EnvBadge({ source }: Readonly<{ source: SettingSource }>) {
+  if (!fieldLocked(source)) return null;
+  return (
+    <Badge variant="neutral" className="mail-field-env-badge">
+      Managed by environment
+    </Badge>
+  );
 }
 
-function draftFromSettings(s: SystemSettingsDto): Draft {
-  return {
-    sessionTtlH: Math.round(s.session_ttl_ms.value / MS_PER_HOUR),
-    opTtlH: Math.round(s.operator_session_ttl_ms.value / MS_PER_HOUR),
-    trustedDays: s.trusted_device_days.value,
-    mfaRoles: [...s.mfa_required_roles.value],
+function securityCardTitle() {
+  return (
+    <Tooltip content={SECURITY_CARD_HINT} className="audit-log-scope-header">
+      Security <i className="ti ti-info-circle" aria-hidden="true" />
+    </Tooltip>
+  );
+}
+
+function SecurityFieldWarning({ message }: Readonly<{ message: string }>) {
+  return (
+    <Tooltip content={message} className="security-field-warning-trigger">
+      <i className="ti ti-alert-circle" aria-label={message} />
+    </Tooltip>
+  );
+}
+
+function securityDraftHasChanges(settings: SystemSettingsDto, draft: SecuritySettingsDraft): boolean {
+  return buildSecurityPatchBody(settings, draft, fieldLocked).hasChanges;
+}
+
+interface SecurityNumericRowProps {
+  label: string;
+  description: string;
+  value: string;
+  min: number;
+  max: number;
+  savedValue: number;
+  source: SettingSource;
+  warningMessage?: string;
+  showDivider?: boolean;
+  onChange: (value: string) => void;
+}
+
+function SecurityNumericRow({
+  label,
+  description,
+  value,
+  min,
+  max,
+  savedValue,
+  source,
+  warningMessage,
+  showDivider = true,
+  onChange,
+}: Readonly<SecurityNumericRowProps>) {
+  const locked = fieldLocked(source);
+  const warned = Boolean(warningMessage);
+
+  const commit = () => {
+    onChange(String(parseDraftInt(value, min, max, savedValue)));
   };
+
+  return (
+    <div className="security-settings-item">
+      <div className="settings-row__text">
+        <strong>{label}</strong>
+        <p>{description}</p>
+      </div>
+      <div className="security-settings-row__control">
+        <div className="security-settings-field">
+          <div className="security-settings-field__warning-slot">
+            {warningMessage ? <SecurityFieldWarning message={warningMessage} /> : null}
+          </div>
+          <Input
+            aria-label={label}
+            type="number"
+            min={min}
+            max={max}
+            style={SECURITY_NUMERIC_INPUT_STYLE}
+            className={warned ? "at-input--warn" : undefined}
+            value={value}
+            disabled={locked}
+            onChange={(e) => onChange(e.target.value)}
+            onBlur={commit}
+          />
+        </div>
+        <EnvBadge source={source} />
+      </div>
+      {showDivider && <div className="security-settings-row-divider" aria-hidden="true" />}
+    </div>
+  );
 }
 
 /** Settings panel — security policies: session TTL, remember-device duration, and MFA role requirements. Env-locked fields are read-only. */
 export function SecurityPanel() {
   const { addToast } = useToast();
+  const validationErrorsRef = useRef<HTMLUListElement>(null);
   const [settings, setSettings] = useState<SystemSettingsDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [draft, setDraft] = useState<Draft | null>(null);
+  const [draft, setDraft] = useState<SecuritySettingsDraft | null>(null);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -69,35 +166,7 @@ export function SecurityPanel() {
     if (!settings || !draft) return;
     setSaving(true);
 
-    const body: PatchSystemSettingsBody = {};
-    let hasChanges = false;
-
-    if (!fieldLocked(settings.session_ttl_ms.source)) {
-      if (draft.sessionTtlH !== Math.round(settings.session_ttl_ms.value / MS_PER_HOUR)) {
-        body.session_ttl_ms = draft.sessionTtlH * MS_PER_HOUR;
-        hasChanges = true;
-      }
-    }
-    if (!fieldLocked(settings.operator_session_ttl_ms.source)) {
-      if (draft.opTtlH !== Math.round(settings.operator_session_ttl_ms.value / MS_PER_HOUR)) {
-        body.operator_session_ttl_ms = draft.opTtlH * MS_PER_HOUR;
-        hasChanges = true;
-      }
-    }
-    if (!fieldLocked(settings.trusted_device_days.source)) {
-      if (draft.trustedDays !== settings.trusted_device_days.value) {
-        body.trusted_device_days = draft.trustedDays;
-        hasChanges = true;
-      }
-    }
-    if (!fieldLocked(settings.mfa_required_roles.source)) {
-      const sorted = [...draft.mfaRoles].sort((a, b) => a.localeCompare(b)).join(",");
-      const current = [...settings.mfa_required_roles.value].sort((a, b) => a.localeCompare(b)).join(",");
-      if (sorted !== current) {
-        body.mfa_required_roles = draft.mfaRoles;
-        hasChanges = true;
-      }
-    }
+    const { body, hasChanges } = buildSecurityPatchBody(settings, draft, fieldLocked);
 
     if (!hasChanges) {
       addToast("No changes to save.", "info");
@@ -117,26 +186,9 @@ export function SecurityPanel() {
     }
   };
 
-  const handleReset = async () => {
+  const handleReset = () => {
     if (!settings) return;
-    setSaving(true);
-
-    const body: PatchSystemSettingsBody = {};
-    if (!fieldLocked(settings.session_ttl_ms.source)) body.session_ttl_ms = null;
-    if (!fieldLocked(settings.operator_session_ttl_ms.source)) body.operator_session_ttl_ms = null;
-    if (!fieldLocked(settings.trusted_device_days.source)) body.trusted_device_days = null;
-    if (!fieldLocked(settings.mfa_required_roles.source)) body.mfa_required_roles = null;
-
-    try {
-      const updated = await patchSecuritySettings(body);
-      setSettings(updated);
-      setDraft(draftFromSettings(updated));
-      addToast("Reset to defaults.", "success");
-    } catch (err) {
-      addToast(operatorApiErrorMessage(err, "Failed to reset settings."), "error");
-    } finally {
-      setSaving(false);
-    }
+    setDraft(draftFromSettings(settings));
   };
 
   const toggleRole = (role: string) => {
@@ -156,7 +208,7 @@ export function SecurityPanel() {
   if (loading) {
     if (!showLoading) return null;
     return (
-      <Card title="Security">
+      <Card title={securityCardTitle()}>
         <p className="sessions-status">Loading…</p>
       </Card>
     );
@@ -164,7 +216,7 @@ export function SecurityPanel() {
 
   if (error || !settings || !draft) {
     return (
-      <Card title="Security">
+      <Card title={securityCardTitle()}>
         <div className="sessions-status">
           <p>{error ?? "Unexpected error."}</p>
           <Button type="button" variant="secondary" onClick={load}>
@@ -175,122 +227,134 @@ export function SecurityPanel() {
     );
   }
 
+  const mfaLocked = fieldLocked(settings.mfa_required_roles.source);
+  const mfaEmpty = draft.mfaRoles.length === 0;
+  const hasUnsavedChanges = securityDraftHasChanges(settings, draft);
+
+  const savedSessionTtlH = Math.round(settings.session_ttl_ms.value / MS_PER_HOUR);
+  const savedOpTtlH = Math.round(settings.operator_session_ttl_ms.value / MS_PER_HOUR);
+  const savedSessionIdleM = Math.round(settings.session_idle_timeout_ms.value / MS_PER_MINUTE);
+  const savedOpIdleM = Math.round(settings.operator_session_idle_timeout_ms.value / MS_PER_MINUTE);
+
+  const sessionTtlH = previewDraftInt(draft.sessionTtlH);
+  const sessionIdleM = previewDraftInt(draft.sessionIdleM);
+  const opTtlH = previewDraftInt(draft.opTtlH);
+  const opIdleM = previewDraftInt(draft.opIdleM);
+
   return (
-    <Card
-      title={<HintLabel hint={SECURITY_HINT}>Security</HintLabel>}
-      footer={
-        <div className="mail-transport-footer">
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={saving}
-            onClick={() => void handleReset()}
-          >
-            Reset to defaults
-          </Button>
-          <Button
-            type="button"
-            variant="primary"
-            disabled={saving}
-            onClick={() => void handleSave()}
-          >
-            {saving ? "Saving…" : "Save"}
-          </Button>
-        </div>
-      }
-    >
-      <div className="mail-transport-section">
-        <div className="mail-field-row">
-          <Input
-            label="Admin session lifetime (hours)"
-            type="number"
+    <>
+      <Card title={securityCardTitle()}>
+        <div className="mail-transport-section security-settings-rows">
+          <SecurityNumericRow
+            label="Admin session maximum lifetime (hours)"
+            description="Hard cap for admin and superadmin sessions, even if the user stays active. Allowed range: 1–720 hours."
+            value={draft.sessionTtlH}
             min={1}
             max={720}
-            value={String(draft.sessionTtlH)}
-            disabled={fieldLocked(settings.session_ttl_ms.source)}
-            onChange={(e) =>
-              setDraft({
-                ...draft,
-                sessionTtlH: Math.max(1, Number.parseInt(e.target.value, 10) || 1),
-              })
+            savedValue={savedSessionTtlH}
+            source={settings.session_ttl_ms.source}
+            warningMessage={
+              sessionTtlH !== null && sessionTtlH > ABSOLUTE_LIFETIME_WARNING_HOURS
+                ? ABSOLUTE_LIFETIME_WARNING
+                : undefined
             }
+            onChange={(sessionTtlH) => setDraft({ ...draft, sessionTtlH })}
           />
-          <p className="mail-field-hint">
-            How long admin and superadmin sessions stay active (1–720 h).
-          </p>
-        </div>
 
-        <div className="mail-field-row">
-          <Input
-            label="Operator session lifetime (hours)"
-            type="number"
+          <SecurityNumericRow
+            label="Admin session inactivity timeout (minutes)"
+            description="Sign out admins and superadmins after this long without activity. Allowed range: 5–240 minutes."
+            value={draft.sessionIdleM}
+            min={5}
+            max={240}
+            savedValue={savedSessionIdleM}
+            source={settings.session_idle_timeout_ms.source}
+            warningMessage={
+              sessionIdleM !== null && sessionIdleM > ADMIN_IDLE_WARNING_MINUTES
+                ? ADMIN_IDLE_WARNING
+                : undefined
+            }
+            onChange={(sessionIdleM) => setDraft({ ...draft, sessionIdleM })}
+          />
+
+          <SecurityNumericRow
+            label="Operator session maximum lifetime (hours)"
+            description="Hard cap for operator (check-in) sessions, even if the station stays active. Allowed range: 1–168 hours."
+            value={draft.opTtlH}
             min={1}
             max={168}
-            value={String(draft.opTtlH)}
-            disabled={fieldLocked(settings.operator_session_ttl_ms.source)}
-            onChange={(e) =>
-              setDraft({
-                ...draft,
-                opTtlH: Math.max(1, Number.parseInt(e.target.value, 10) || 1),
-              })
+            savedValue={savedOpTtlH}
+            source={settings.operator_session_ttl_ms.source}
+            warningMessage={
+              opTtlH !== null && opTtlH > ABSOLUTE_LIFETIME_WARNING_HOURS
+                ? ABSOLUTE_LIFETIME_WARNING
+                : undefined
             }
+            onChange={(opTtlH) => setDraft({ ...draft, opTtlH })}
           />
-          <p className="mail-field-hint">
-            How long operator (check-in staff) sessions stay active (1–168 h).
-          </p>
-        </div>
 
-        <div className="mail-field-row">
-          <Input
-            label='"Remember device" duration (days, 0 = off)'
-            type="number"
+          <SecurityNumericRow
+            label="Operator session inactivity timeout (minutes)"
+            description="Sign out operators after this long without activity at the check-in station. Allowed range: 5–480 minutes."
+            value={draft.opIdleM}
+            min={5}
+            max={480}
+            savedValue={savedOpIdleM}
+            source={settings.operator_session_idle_timeout_ms.source}
+            warningMessage={
+              opIdleM !== null && opIdleM > OPERATOR_IDLE_WARNING_MINUTES
+                ? OPERATOR_IDLE_WARNING
+                : undefined
+            }
+            onChange={(opIdleM) => setDraft({ ...draft, opIdleM })}
+          />
+
+          <SecurityNumericRow
+            label="Remember device duration (days)"
+            description='How long a trusted device can skip the authenticator app. Set 0 to turn off "remember this device". Allowed range: 0–90 days.'
+            value={draft.trustedDays}
             min={0}
             max={90}
-            value={String(draft.trustedDays)}
-            disabled={fieldLocked(settings.trusted_device_days.source)}
-            onChange={(e) =>
-              setDraft({
-                ...draft,
-                trustedDays: Math.max(0, Number.parseInt(e.target.value, 10) || 0),
-              })
-            }
+            savedValue={settings.trusted_device_days.value}
+            source={settings.trusted_device_days.source}
+            onChange={(trustedDays) => setDraft({ ...draft, trustedDays })}
           />
-          <p className="mail-field-hint">
-            Days before a trusted device must re-verify 2FA. Set 0 to disable device trust entirely.
-          </p>
+
+          <div className="security-settings-item">
+            <div className="settings-row__text">
+              <strong>Authenticator app required by role</strong>
+              <p>
+                Which roles must enter a code from an authenticator app at sign-in. Local accounts
+                only; single sign-on is exempt.
+              </p>
+            </div>
+            <div className="security-settings-row__control security-mfa-section__switches">
+              <div className="security-settings-field__warning-slot">
+                {mfaEmpty ? <SecurityFieldWarning message={MFA_EMPTY_WARNING} /> : null}
+              </div>
+              {MFA_ROLES.map((role) => (
+                <Switch
+                  key={role.value}
+                  label={role.label}
+                  checked={draft.mfaRoles.includes(role.value)}
+                  disabled={mfaLocked}
+                  onChange={() => toggleRole(role.value)}
+                />
+              ))}
+              <EnvBadge source={settings.mfa_required_roles.source} />
+            </div>
+          </div>
         </div>
+      </Card>
 
-        <p className="mail-field-hint">
-          Manage individual sessions in <Link to="/admin/users?tab=sessions">Users &amp; roles</Link>.
-        </p>
-
-        <div className="mail-field-row">
-          <fieldset
-            className="mfa-roles-fieldset"
-            disabled={fieldLocked(settings.mfa_required_roles.source)}
-          >
-            <legend className="mail-field-label">Require 2FA for roles</legend>
-            {MFA_ROLES.map((role) => (
-              <Checkbox
-                key={role.value}
-                label={role.label}
-                checked={draft.mfaRoles.includes(role.value)}
-                onChange={() => toggleRole(role.value)}
-              />
-            ))}
-          </fieldset>
-          <p className="mail-field-hint">
-            Roles that must complete TOTP 2FA on every login. Local accounts only; OIDC sessions
-            are exempt.
-          </p>
-        </div>
-
-        {draft.mfaRoles.length === 0 && (
-          <p role="alert" className="text-warning">
-            2FA is disabled for all roles. This is not recommended for production.
-          </p>
-        )}
-      </div>
-    </Card>
+      <SettingsFooter
+        validationErrors={[]}
+        validationErrorsRef={validationErrorsRef}
+        hasUnsavedChanges={hasUnsavedChanges}
+        saving={saving}
+        onReset={handleReset}
+        onSave={() => void handleSave()}
+      />
+    </>
   );
 }
