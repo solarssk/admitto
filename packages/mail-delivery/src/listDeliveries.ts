@@ -90,6 +90,17 @@ function normalizeStatusFilter(
   return Array.isArray(status) ? status : [status];
 }
 
+/** Build the `where` fragment for a defined `templateId` filter. `null` means the "Default
+ * ticket template" bucket, which must also require no label snapshot - otherwise a deleted
+ * custom template's now-null template_id would wrongly match it too (see
+ * template_label_snapshot on the schema). */
+function templateIdFilter(templateId: string | null) {
+  if (templateId === null) {
+    return { template_id: null, template_label_snapshot: null };
+  }
+  return { template_id: templateId };
+}
+
 /** Build Prisma `where` clause for delivery log queries. */
 function buildWhere(params: ListDeliveriesParams) {
   const { eventId, filters } = params;
@@ -100,14 +111,7 @@ function buildWhere(params: ListDeliveriesParams) {
       : {}),
     ...(filters?.purpose ? { purpose: filters.purpose } : {}),
     ...(filters?.attendeeId ? { attendee_id: filters.attendeeId } : {}),
-    // `templateId: null` means "the default filter" - must also require no label snapshot, or a
-    // deleted custom template's now-null template_id would wrongly match it too (see
-    // template_label_snapshot on the schema).
-    ...(filters?.templateId !== undefined
-      ? filters.templateId === null
-        ? { template_id: null, template_label_snapshot: null }
-        : { template_id: filters.templateId }
-      : {}),
+    ...(filters?.templateId !== undefined ? templateIdFilter(filters.templateId) : {}),
     ...(filters?.search
       ? {
           OR: [
