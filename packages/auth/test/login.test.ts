@@ -113,7 +113,7 @@ describe("login privileged failure tracking", () => {
     const result = await login(prisma, { email: testUser.email, password: "correct" });
 
     expect(result.ok).toBe(true);
-    expect(mocks.resetFailedLoginStreak).toHaveBeenCalledWith(prisma, testUser);
+    expect(mocks.resetFailedLoginStreak).toHaveBeenCalledWith(prisma, testUser.id);
     expect(mocks.recordFailedLoginForPrivilegedUser).not.toHaveBeenCalled();
   });
 });

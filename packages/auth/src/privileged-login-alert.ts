@@ -30,27 +30,30 @@ async function hasElevatedRole(db: Db, userId: string): Promise<boolean> {
  */
 export async function recordFailedLoginForPrivilegedUser(
   db: Db,
-  user: Pick<User, "id" | "email" | "failed_login_streak">,
+  user: Pick<User, "id" | "email">,
   ctx: { ip?: string },
 ): Promise<void> {
   if (!(await hasElevatedRole(db, user.id))) return;
 
-  const streak = user.failed_login_streak + 1;
+  const updated = await db.user.update({
+    where: { id: user.id },
+    data: { failed_login_streak: { increment: 1 } },
+    select: { failed_login_streak: true },
+  });
+  const streak = updated.failed_login_streak;
   if (streak >= PRIVILEGED_LOGIN_FAILURE_ALERT_THRESHOLD) {
     await db.user.update({ where: { id: user.id }, data: { failed_login_streak: 0 } });
     await logRepeatedFailedLogins(db, { userId: user.id, email: user.email, ip: ctx.ip, streak });
-    return;
   }
-  await db.user.update({ where: { id: user.id }, data: { failed_login_streak: streak } });
 }
 
 /** Reset the consecutive-failure streak after a successful login — the attack ended, or it was
- * the legitimate owner mistyping their password a few times first. No-op when already 0, to
- * avoid an extra write on the overwhelmingly common case (no prior failures). */
-export async function resetFailedLoginStreak(
-  db: Db,
-  user: Pick<User, "id" | "failed_login_streak">,
-): Promise<void> {
-  if (user.failed_login_streak === 0) return;
-  await db.user.update({ where: { id: user.id }, data: { failed_login_streak: 0 } });
+ * the legitimate owner mistyping their password a few times first. Reads the persisted counter
+ * in the database instead of the in-memory user row loaded at the start of `login()`, so a
+ * concurrent failed attempt cannot leave a nonzero streak behind after success. */
+export async function resetFailedLoginStreak(db: Db, userId: string): Promise<void> {
+  await db.user.updateMany({
+    where: { id: userId, failed_login_streak: { gt: 0 } },
+    data: { failed_login_streak: 0 },
+  });
 }

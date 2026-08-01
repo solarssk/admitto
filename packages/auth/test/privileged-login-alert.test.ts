@@ -4,15 +4,19 @@ import { recordFailedLoginForPrivilegedUser, resetFailedLoginStreak } from "../s
 import { resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
 /** Fake `db` covering exactly what this module touches: role lookup (for `hasElevatedRole`)
- * and `user.update` (for the streak read-modify-write) - matching the DI pattern used by
- * audit.test.ts's own fakeDb. */
+ * and `user.update` / `user.updateMany` (for the streak counter) - matching the DI pattern
+ * used by audit.test.ts's own fakeDb. */
 function fakeDb(opts: {
   roles?: Array<{ role: string }>;
   update?: ReturnType<typeof vi.fn>;
+  updateMany?: ReturnType<typeof vi.fn>;
 } = {}): PrismaClient {
   return {
     roleAssignment: { findMany: vi.fn().mockResolvedValue(opts.roles ?? []) },
-    user: { update: opts.update ?? vi.fn().mockResolvedValue({}) },
+    user: {
+      update: opts.update ?? vi.fn().mockResolvedValue({ failed_login_streak: 0 }),
+      updateMany: opts.updateMany ?? vi.fn().mockResolvedValue({ count: 0 }),
+    },
     securityAuditLog: { create: vi.fn().mockResolvedValue({}) },
   } as unknown as PrismaClient;
 }
@@ -33,7 +37,7 @@ describe("privileged-login-alert", () => {
       const db = fakeDb({ roles: [{ role: "operator" }], update });
       await recordFailedLoginForPrivilegedUser(
         db,
-        { id: "user-1", email: "op@example.com", failed_login_streak: 0 },
+        { id: "user-1", email: "op@example.com" },
         { ip: "1.2.3.4" },
       );
       expect(update).not.toHaveBeenCalled();
@@ -44,36 +48,48 @@ describe("privileged-login-alert", () => {
       const db = fakeDb({ roles: [], update });
       await recordFailedLoginForPrivilegedUser(
         db,
-        { id: "user-1", email: "nobody@example.com", failed_login_streak: 0 },
+        { id: "user-1", email: "nobody@example.com" },
         {},
       );
       expect(update).not.toHaveBeenCalled();
     });
 
-    it("increments the streak for an admin account below the alert threshold", async () => {
-      const update = vi.fn().mockResolvedValue({});
+    it("atomically increments the streak for an admin account below the alert threshold", async () => {
+      const update = vi.fn().mockResolvedValue({ failed_login_streak: 4 });
       const db = fakeDb({ roles: [{ role: "admin" }], update });
       await recordFailedLoginForPrivilegedUser(
         db,
-        { id: "user-1", email: "admin@example.com", failed_login_streak: 3 },
+        { id: "user-1", email: "admin@example.com" },
         { ip: "1.2.3.4" },
       );
-      expect(update).toHaveBeenCalledWith({ where: { id: "user-1" }, data: { failed_login_streak: 4 } });
+      expect(update).toHaveBeenCalledWith({
+        where: { id: "user-1" },
+        data: { failed_login_streak: { increment: 1 } },
+        select: { failed_login_streak: true },
+      });
+      expect(update).toHaveBeenCalledTimes(1);
     });
 
     it("treats superadmin the same as admin", async () => {
-      const update = vi.fn().mockResolvedValue({});
+      const update = vi.fn().mockResolvedValue({ failed_login_streak: 1 });
       const db = fakeDb({ roles: [{ role: "superadmin" }], update });
       await recordFailedLoginForPrivilegedUser(
         db,
-        { id: "user-1", email: "root@example.com", failed_login_streak: 0 },
+        { id: "user-1", email: "root@example.com" },
         {},
       );
-      expect(update).toHaveBeenCalledWith({ where: { id: "user-1" }, data: { failed_login_streak: 1 } });
+      expect(update).toHaveBeenCalledWith({
+        where: { id: "user-1" },
+        data: { failed_login_streak: { increment: 1 } },
+        select: { failed_login_streak: true },
+      });
     });
 
     it("resets the streak to 0 and emits an audit alert once the threshold is crossed", async () => {
-      const update = vi.fn().mockResolvedValue({});
+      const update = vi
+        .fn()
+        .mockResolvedValueOnce({ failed_login_streak: 5 })
+        .mockResolvedValueOnce({});
       const create = vi.fn().mockResolvedValue({});
       const db = {
         roleAssignment: { findMany: vi.fn().mockResolvedValue([{ role: "admin" }]) },
@@ -81,14 +97,21 @@ describe("privileged-login-alert", () => {
         securityAuditLog: { create },
       } as unknown as PrismaClient;
 
-      // Threshold is 5: a user already at streak 4 crosses it on this failure.
       await recordFailedLoginForPrivilegedUser(
         db,
-        { id: "user-1", email: "admin@example.com", failed_login_streak: 4 },
+        { id: "user-1", email: "admin@example.com" },
         { ip: "9.9.9.9" },
       );
 
-      expect(update).toHaveBeenCalledWith({ where: { id: "user-1" }, data: { failed_login_streak: 0 } });
+      expect(update).toHaveBeenNthCalledWith(1, {
+        where: { id: "user-1" },
+        data: { failed_login_streak: { increment: 1 } },
+        select: { failed_login_streak: true },
+      });
+      expect(update).toHaveBeenNthCalledWith(2, {
+        where: { id: "user-1" },
+        data: { failed_login_streak: 0 },
+      });
       expect(create).toHaveBeenCalledWith({
         data: {
           event_type: "auth.login.repeated_failures",
@@ -101,18 +124,24 @@ describe("privileged-login-alert", () => {
   });
 
   describe("resetFailedLoginStreak", () => {
-    it("does nothing when the streak is already 0", async () => {
-      const update = vi.fn();
-      const db = fakeDb({ update });
-      await resetFailedLoginStreak(db, { id: "user-1", failed_login_streak: 0 });
-      expect(update).not.toHaveBeenCalled();
+    it("clears only a persisted nonzero streak in the database", async () => {
+      const updateMany = vi.fn().mockResolvedValue({ count: 0 });
+      const db = fakeDb({ updateMany });
+      await resetFailedLoginStreak(db, "user-1");
+      expect(updateMany).toHaveBeenCalledWith({
+        where: { id: "user-1", failed_login_streak: { gt: 0 } },
+        data: { failed_login_streak: 0 },
+      });
     });
 
-    it("resets a nonzero streak to 0", async () => {
-      const update = vi.fn().mockResolvedValue({});
-      const db = fakeDb({ update });
-      await resetFailedLoginStreak(db, { id: "user-1", failed_login_streak: 2 });
-      expect(update).toHaveBeenCalledWith({ where: { id: "user-1" }, data: { failed_login_streak: 0 } });
+    it("resets a nonzero persisted streak to 0", async () => {
+      const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+      const db = fakeDb({ updateMany });
+      await resetFailedLoginStreak(db, "user-1");
+      expect(updateMany).toHaveBeenCalledWith({
+        where: { id: "user-1", failed_login_streak: { gt: 0 } },
+        data: { failed_login_streak: 0 },
+      });
     });
   });
 });

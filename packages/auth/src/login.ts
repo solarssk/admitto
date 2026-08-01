@@ -120,7 +120,7 @@ export async function login(
     ...(audit ?? { email, ip: input.ip, userAgent: input.userAgent }),
     userId: user.id,
   });
-  await resetFailedLoginStreak(prisma, user);
+  await resetFailedLoginStreak(prisma, user.id);
 
   return {
     ok: true,
