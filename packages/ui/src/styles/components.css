@@ -62,6 +62,13 @@
   display: inline-flex;
 }
 
+/* HintLabel's trigger wrapper - centers the icon on the label text and adds a small gap,
+   for a card title or column header rather than a full-width control. */
+.at-hint-label {
+  align-items: center;
+  gap: var(--space-1);
+}
+
 /* Bubble is portal-rendered into document.body with JS-computed position (Tooltip.tsx) - same
    visual treatment the old .at-tooltip::after pseudo-element used, just on a real, measurable
    element instead of one JS can't read the size of. */

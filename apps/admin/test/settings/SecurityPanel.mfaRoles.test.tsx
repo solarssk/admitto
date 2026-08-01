@@ -86,7 +86,7 @@ describe("SecurityPanel — Require 2FA for roles", () => {
     );
   });
 
-  it("env-locked roles render as a disabled but readable group with the env badge", async () => {
+  it("env-locked roles render as a disabled but readable group", async () => {
     vi.mocked(fetchSecuritySettings).mockResolvedValue({
       ...baseSettings,
       mfa_required_roles: { value: ["superadmin", "admin"], source: "env" as const },
@@ -98,7 +98,6 @@ describe("SecurityPanel — Require 2FA for roles", () => {
     // on each input's .disabled property — assert on the fieldset itself.
     expect(superadmin.closest("fieldset")!.disabled).toBe(true);
     expect(superadmin.checked).toBe(true);
-    expect(screen.getByText("Managed by environment")).toBeTruthy();
   });
 
   it("warns when no roles are selected", async () => {

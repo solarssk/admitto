@@ -184,6 +184,7 @@ describe("GET /api/admin/security-audit-log", () => {
         user_email: string | null;
         user_display_name: string | null;
         ip: string | null;
+        country: { kind: string; countryCode?: string };
         metadata: Record<string, unknown> | null;
         created_at: string;
       }[];
@@ -198,6 +199,8 @@ describe("GET /api/admin/security-audit-log", () => {
     // Newest first.
     expect(body.entries[0]?.event_type).toBe("auth.access.denied");
     expect(body.entries.at(-1)?.event_type).toBe("auth.login.success");
+    // Every seeded row uses a public-looking IP (1.2.3.x) - never misclassified as internal.
+    expect(body.entries.every((e) => e.country.kind !== "internal")).toBe(true);
   });
 
   it("resolves user_email/user_display_name for rows with a user_id", async () => {

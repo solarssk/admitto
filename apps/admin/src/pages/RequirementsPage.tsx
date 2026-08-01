@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { useOutletContext, useParams } from "react-router";
-import { Button, Card, EmptyState, IconButton, PageHeader, Switch, useToast } from "@admitto/ui";
+import { Button, Card, EmptyState, HintLabel, IconButton, PageHeader, Switch, useToast } from "@admitto/ui";
 import {
   ApiError,
   createEventItem,
@@ -23,6 +23,11 @@ import { EventItemDrawer } from "../requirements/EventItemDrawer.js";
 import { DEFAULT_EVENT_ITEM_ICON } from "../requirements/IconPicker.js";
 import { slugifyItemKey, uniqueItemKey } from "../requirements/itemKey.js";
 import "../requirements/requirements.css";
+
+const EVENT_ITEMS_HINT =
+  "Once an item has been issued to attendees, you can't disable it until its returns are recorded.";
+const CHECK_IN_BEHAVIOUR_HINT =
+  "Controls how the check-in screen behaves for operators: confirmation prompts, manual lookup, and what happens automatically after a valid scan.";
 
 /** Redirect to the login page, preserving the current path to return to after auth. */
 function redirectToLogin(): void {
@@ -129,7 +134,7 @@ function EventItemsTableBody({
   );
 }
 
-function EventBehaviourContent({
+function CheckInBehaviourContent({
   opsConfig,
   loading,
   showLoading,
@@ -467,7 +472,7 @@ export function RequirementsPage() {
       addToast(updated.enabled ? "Item enabled" : "Item disabled", "success");
       if (updated.key === "badge" && !updated.enabled) {
         // Server auto-disables badge_at_entry when the badge item is turned
-        // off — refresh so the Event behaviour toggle doesn't show stale ON.
+        // off — refresh so the Check-in behaviour toggle doesn't show stale ON.
         // Best-effort: the item update already succeeded and was already
         // toasted above, so a failure here shouldn't surface as an error —
         // opsConfig just stays stale until the next full page load.
@@ -545,7 +550,7 @@ export function RequirementsPage() {
           "warning",
         );
       } else {
-        addToast(operatorApiErrorMessage(err, "Failed to save event behaviour."), "error");
+        addToast(operatorApiErrorMessage(err, "Failed to save check-in behaviour."), "error");
       }
     } finally {
       finishOpsToggle(field);
@@ -576,7 +581,7 @@ export function RequirementsPage() {
       <section className="requirements-section">
         <Card
           padded={false}
-          title="Event items"
+          title={<HintLabel hint={EVENT_ITEMS_HINT}>Event items</HintLabel>}
           actions={
             <ArchivedGuard event={event} reasonId="add-item-reason">
               {(guard) => (
@@ -631,8 +636,11 @@ export function RequirementsPage() {
       />
 
       <section className="requirements-section">
-        <Card title="Event behaviour" padded={false}>
-          <EventBehaviourContent
+        <Card
+          title={<HintLabel hint={CHECK_IN_BEHAVIOUR_HINT}>Check-in behaviour</HintLabel>}
+          padded={false}
+        >
+          <CheckInBehaviourContent
             opsConfig={opsConfig}
             loading={loading}
             showLoading={showLoading}

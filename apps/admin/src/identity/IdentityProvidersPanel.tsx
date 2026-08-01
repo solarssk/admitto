@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useParams } from "react-router";
-import { Badge, Button, Card, EmptyState, Skeleton, Switch, Tooltip, useToast } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, HintLabel, Skeleton, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
   ApiError,
   fetchCfAccessSummary,
@@ -55,6 +55,11 @@ function providerEditPath(id: string): string {
 }
 
 const PROVIDER_NEW_PATH = `${IDENTITY_PROVIDERS_ROUTE}/new`;
+
+const IDENTITY_PROVIDERS_HINT =
+  "Lets staff sign in with an external identity provider instead of email and password.";
+const CLOUDFLARE_ACCESS_HINT =
+  "Shows whether Cloudflare Access is protecting this deployment as an extra login layer.";
 
 function cfStatusBadge(cf: CfAccessSummaryDto): ReactNode {
   return cf.enabled ? <Badge variant="ok">Active</Badge> : <Badge variant="neutral">Inactive</Badge>;
@@ -235,7 +240,7 @@ export function IdentityProvidersPanel() {
   return (
     <div className="settings-sections">
       <Card
-        title="Identity providers"
+        title={<HintLabel hint={IDENTITY_PROVIDERS_HINT}>Identity providers</HintLabel>}
         actions={
           <Link className="at-btn at-btn--primary at-btn--sm" to={PROVIDER_NEW_PATH}>
             <span>Add provider</span>
@@ -272,7 +277,7 @@ export function IdentityProvidersPanel() {
       </Card>
 
       <Card
-        title="Cloudflare Access"
+        title={<HintLabel hint={CLOUDFLARE_ACCESS_HINT}>Cloudflare Access</HintLabel>}
         actions={cfState === "ready" && cf ? cfStatusBadge(cf) : undefined}
       >
         {cfState === "loading" && showCfSkeleton && <Skeleton height={56} />}

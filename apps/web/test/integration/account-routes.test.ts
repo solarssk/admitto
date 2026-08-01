@@ -172,6 +172,21 @@ describe("PATCH /api/account/password", () => {
   });
 });
 
+describe("GET /api/account/sessions", () => {
+  it("includes the resolved country for each session", async () => {
+    const res = await app.request("/api/account/sessions", {
+      headers: { Cookie: userCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      sessions: { id: string; ip: string | null; country: { kind: string; countryCode?: string } }[];
+    };
+    const current = body.sessions.find((s) => s.id === userSessionId);
+    // Seeded with ip: "127.0.0.1" (loopback) in beforeAll.
+    expect(current?.country).toEqual({ kind: "internal" });
+  });
+});
+
 describe("DELETE /api/account/sessions/:id", () => {
   it("returns 409 when revoking current session", async () => {
     const res = await app.request(`/api/account/sessions/${userSessionId}`, {

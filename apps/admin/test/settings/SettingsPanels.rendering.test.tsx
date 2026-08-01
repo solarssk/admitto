@@ -59,6 +59,7 @@ function makeAuditEntry(overrides: Partial<AuditLogEntryDto> = {}): AuditLogEntr
     actor_display_name: "Alice Admin",
     actor_timezone: null,
     ip: "192.0.2.10",
+    country: { kind: "unknown" },
     metadata: { event_id: "evt-1" },
     created_at: "2026-01-01T12:00:00.000Z",
     ...overrides,
@@ -73,6 +74,7 @@ function makeSecurityEntry(overrides: Partial<SecurityAuditLogEntryDto> = {}): S
     user_email: "alice@example.com",
     user_display_name: "Alice Admin",
     ip: "192.0.2.10",
+    country: { kind: "unknown" },
     metadata: { email: "alice@example.com", userAgent: "curl/8.0" },
     created_at: "2026-01-01T12:00:00.000Z",
     ...overrides,
@@ -403,7 +405,11 @@ describe("AuditLogPanel rendering", () => {
   it("copies a plain-text row summary (with local time and Details) to the clipboard and toasts on success", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue({
       entries: [
-        makeAuditEntry({ actor_timezone: "Europe/Warsaw", metadata: { event_id: "evt-1", note: "hello" } }),
+        makeAuditEntry({
+          actor_timezone: "Europe/Warsaw",
+          metadata: { event_id: "evt-1", note: "hello" },
+          country: { kind: "resolved", countryCode: "US" },
+        }),
       ],
       total: 1,
       page: 1,
@@ -416,6 +422,7 @@ describe("AuditLogPanel rendering", () => {
     try {
       renderAuditPanel();
       const table = await screen.findByRole("table");
+      expect(within(table).getByText("United States")).toBeTruthy();
       fireEvent.click(within(table).getByRole("button", { name: "Copy row" }));
 
       expect(writeText).toHaveBeenCalledTimes(1);
@@ -423,6 +430,7 @@ describe("AuditLogPanel rendering", () => {
       expect(summary).toContain("Action: Event created");
       expect(summary).toContain("User: Alice Admin (alice@example.com)");
       expect(summary).toMatch(/Time: 2026-01-01 12:00:00 UTC \(13:00 \(Europe\/Warsaw, UTC\+1\)\)/);
+      expect(summary).toContain("IP address: 192.0.2.10 (United States)");
       expect(summary).toContain("Details:");
       expect(summary).toContain("Note: hello");
       expect(await screen.findByText("Row copied to clipboard")).toBeTruthy();
@@ -592,6 +600,14 @@ describe("AuditLogPanel rendering", () => {
   });
 
   it("resets to page 1 once a retried page no longer exists against the current total", async () => {
+    // shouldAdvanceTime: real wall-clock time still passes (so findBy/waitFor's own polling
+    // keeps working exactly as under real timers), but every setTimeout/setInterval this test
+    // doesn't explicitly control - useDelayedLoading's 200ms grace window, Live's POLL_INTERVAL_MS
+    // - is deterministic rather than racing this sequence's two real network round trips on
+    // whatever CPU happens to be available. Belt-and-suspenders with turning Live off below:
+    // that removes the *trigger*, this removes the *mechanism* regardless of trigger.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
     // Page 1 loads fine; the page-2 request fails (server-side data shrank in the
     // meantime), so Retry re-issues the *same* page-2 request rather than a filter
     // change resetting the page itself — the only way `load()` ever re-runs with
@@ -605,6 +621,11 @@ describe("AuditLogPanel rendering", () => {
     vi.mocked(fetchAuditLog).mockRejectedValueOnce(new Error("network hiccup"));
     renderAuditPanel();
     await screen.findByRole("table");
+    // Live polling (real setInterval, on by default) would otherwise consume one of the
+    // precisely-queued mock responses below on a slow CI run - see the resetAllMocks comment
+    // above. This test cares about the retry/page-reset sequence, not live-refresh, so turn it
+    // off before that sequence starts, same as "stops polling once Live is turned off" above.
+    fireEvent.click(screen.getByRole("button", { name: "Live" }));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     const retry = await screen.findByRole("button", { name: "Retry" });
 
@@ -614,7 +635,13 @@ describe("AuditLogPanel rendering", () => {
       page: 2,
       pageSize: 25,
     });
-    vi.mocked(fetchAuditLog).mockResolvedValueOnce({
+    // mockResolvedValue (not Once): this is the sequence's true end state - the page-1 reset
+    // load that should follow, once the component notices page 2 no longer exists against the
+    // new total. Leaving it as the durable answer to every call from here on (rather than a
+    // single-shot value) means an extra call from any other source during this waitFor gets a
+    // harmless repeat of the same valid response instead of running out of queued mocks and
+    // failing in a way unrelated to what this test actually checks.
+    vi.mocked(fetchAuditLog).mockResolvedValue({
       entries: [makeAuditEntry({ id: "audit-narrowed" })],
       total: 5,
       page: 1,
@@ -622,10 +649,29 @@ describe("AuditLogPanel rendering", () => {
     });
     fireEvent.click(retry);
 
-    await waitFor(() => {
-      expect(screen.getByText("Page 1 of 1")).toBeTruthy();
-    });
-  });
+    // Reaching the final state takes two sequential fetchAuditLog round trips, each through its
+    // own render/commit cycle: the retried page-2 request comes back with the shrunk total,
+    // notices page 2 no longer exists against it, and resets `page` to 1 (which briefly clears
+    // entries - see the `page > maxPage` branch in AuditLogPanel's own `load`) - only *that*
+    // page change then triggers the second request that actually updates `total`. Waiting for
+    // this first hop explicitly, rather than jumping straight to the final assertion, means a
+    // failure here points at which of the two hops didn't land instead of one ambiguous timeout
+    // spanning both.
+    await waitFor(
+      () => {
+        expect(screen.getByText("No audit log entries yet")).toBeTruthy();
+      },
+      { timeout: 4000 },
+    );
+    await waitFor(
+      () => {
+        expect(screen.getByText("Page 1 of 1")).toBeTruthy();
+      },
+      { timeout: 4000 },
+    );
+
+    vi.useRealTimers();
+  }, 10000);
 
   it("falls back to the raw action_type string for an action outside the known label map", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue({
@@ -1203,6 +1249,22 @@ describe("AuditLogPanel Security view rendering", () => {
     expect(within(table).getByText("192.0.2.10")).toBeTruthy();
   });
 
+  it("renders a safe fallback and no location line when a security entry has no IP address", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
+      entries: [makeSecurityEntry({ ip: null, country: { kind: "internal" } })],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderSecurityPanel();
+
+    const table = await screen.findByRole("table");
+    await screen.findByText("Login succeeded");
+    expect(within(table).getByText("-")).toBeTruthy();
+    expect(within(table).queryByText("Internal network")).toBeNull();
+  });
+
   it("shows the viewer's own local time as a secondary line under the UTC timestamp, not the actor's", async () => {
     const resolvedOptionsSpy = vi
       .spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions")
@@ -1350,7 +1412,12 @@ describe("AuditLogPanel Security view rendering", () => {
       .spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions")
       .mockReturnValue({ timeZone: "Europe/Warsaw" } as Intl.ResolvedDateTimeFormatOptions);
     vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
-      entries: [makeSecurityEntry({ metadata: { email: "alice@example.com", userAgent: "curl/8.0" } })],
+      entries: [
+        makeSecurityEntry({
+          metadata: { email: "alice@example.com", userAgent: "curl/8.0" },
+          country: { kind: "internal" },
+        }),
+      ],
       total: 1,
       page: 1,
       pageSize: 25,
@@ -1362,6 +1429,7 @@ describe("AuditLogPanel Security view rendering", () => {
     try {
       renderSecurityPanel();
       const table = await screen.findByRole("table");
+      expect(within(table).getByText("Internal network")).toBeTruthy();
       fireEvent.click(within(table).getByRole("button", { name: "Copy row" }));
 
       expect(writeText).toHaveBeenCalledTimes(1);
@@ -1369,6 +1437,7 @@ describe("AuditLogPanel Security view rendering", () => {
       expect(summary).toMatch(/Time: 2026-01-01 12:00:00 UTC \(13:00 \(Europe\/Warsaw, UTC\+1\)\)/);
       expect(summary).toContain("Event: Login succeeded");
       expect(summary).toContain("User: Alice Admin");
+      expect(summary).toContain("IP address: 192.0.2.10 (Internal network)");
       expect(summary).toContain("Details:");
       expect(summary).toContain("User agent: curl/8.0");
       expect(await screen.findByText("Row copied to clipboard")).toBeTruthy();

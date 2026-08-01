@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, Card, IconButton, useToast } from "@admitto/ui";
+import { Button, Card, HintLabel, IconButton, useToast } from "@admitto/ui";
 import { ApiError, deleteEventCustomField } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventCustomFieldDto, EventDto } from "../api/types.js";
@@ -7,6 +7,9 @@ import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { customFieldTypeIcon } from "./customFieldType.js";
 import { EventCustomFieldModal } from "./EventCustomFieldModal.js";
+
+const CUSTOM_FIELDS_HINT =
+  "Also used in the attendee form, CSV import, and exports. Fields used as item hints can't be deleted until removed from the item.";
 
 export interface EventCustomFieldsCardProps {
   readonly eventId: string;
@@ -141,7 +144,7 @@ export function EventCustomFieldsCard({ eventId, event, fields, loading, showLoa
     <section className="requirements-section">
       <Card
         padded={false}
-        title="Custom attendee fields"
+        title={<HintLabel hint={CUSTOM_FIELDS_HINT}>Custom attendee fields</HintLabel>}
         actions={
           <ArchivedGuard event={event} reasonId="add-custom-field-reason">
             {(guard) => (

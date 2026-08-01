@@ -17,6 +17,7 @@ import {
   verifyTotpOrRecoveryCode,
 } from "@admitto/auth";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "../auth/mfa-rate-limit.js";
+import { resolveIpLocation } from "../rate-limit/ip-location.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import {
   isSupportedLocale,
@@ -193,6 +194,7 @@ function serializeAccountSession(
     role: highestRole(row.user.role_assignments),
     deviceLabel: row.device_label,
     ip: row.ip,
+    country: resolveIpLocation(row.ip),
     userAgent: row.user_agent,
     loginAt: row.created_at.toISOString(),
     lastSeenAt: row.last_seen_at.toISOString(),

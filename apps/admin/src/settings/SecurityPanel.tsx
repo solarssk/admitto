@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
-import { Badge, Button, Card, Checkbox, Input, useToast } from "@admitto/ui";
+import { Button, Card, Checkbox, HintLabel, Input, useToast } from "@admitto/ui";
 import { fetchSecuritySettings, patchSecuritySettings } from "../api/client.js";
 import { roleLabel } from "../auth/role-labels.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { PatchSystemSettingsBody, SystemSettingsDto, SettingSource } from "../api/types.js";
 
+const SECURITY_HINT =
+  "Controls session lifetimes, trusted-device duration, and which roles must enroll two-factor authentication.";
 const MS_PER_HOUR = 3_600_000;
 const MFA_ROLES = [
   { value: "superadmin", label: roleLabel("superadmin") },
@@ -16,15 +18,6 @@ const MFA_ROLES = [
 
 function fieldLocked(source: SettingSource): boolean {
   return source === "env";
-}
-
-function EnvBadge({ source }: Readonly<{ source: SettingSource }>) {
-  if (!fieldLocked(source)) return null;
-  return (
-    <Badge variant="neutral" className="mail-field-env-badge">
-      Managed by environment
-    </Badge>
-  );
 }
 
 interface Draft {
@@ -184,7 +177,7 @@ export function SecurityPanel() {
 
   return (
     <Card
-      title="Security"
+      title={<HintLabel hint={SECURITY_HINT}>Security</HintLabel>}
       footer={
         <div className="mail-transport-footer">
           <Button
@@ -222,7 +215,6 @@ export function SecurityPanel() {
               })
             }
           />
-          <EnvBadge source={settings.session_ttl_ms.source} />
           <p className="mail-field-hint">
             How long admin and superadmin sessions stay active (1–720 h).
           </p>
@@ -243,7 +235,6 @@ export function SecurityPanel() {
               })
             }
           />
-          <EnvBadge source={settings.operator_session_ttl_ms.source} />
           <p className="mail-field-hint">
             How long operator (check-in staff) sessions stay active (1–168 h).
           </p>
@@ -264,7 +255,6 @@ export function SecurityPanel() {
               })
             }
           />
-          <EnvBadge source={settings.trusted_device_days.source} />
           <p className="mail-field-hint">
             Days before a trusted device must re-verify 2FA. Set 0 to disable device trust entirely.
           </p>
@@ -289,7 +279,6 @@ export function SecurityPanel() {
               />
             ))}
           </fieldset>
-          <EnvBadge source={settings.mfa_required_roles.source} />
           <p className="mail-field-hint">
             Roles that must complete TOTP 2FA on every login. Local accounts only; OIDC sessions
             are exempt.

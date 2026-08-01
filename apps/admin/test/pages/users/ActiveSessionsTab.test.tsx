@@ -18,6 +18,7 @@ function makeSession(overrides: Partial<SessionListDto> = {}): SessionListDto {
     role: "admin",
     deviceLabel: null,
     ip: "192.0.2.10",
+    country: { kind: "unknown" },
     userAgent: null,
     loginAt: "2026-01-01T12:00:00.000Z",
     lastSeenAt: "2026-01-01T12:30:00.000Z",

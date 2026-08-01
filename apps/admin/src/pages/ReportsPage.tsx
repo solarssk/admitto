@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
-import { Badge, Button, Card, EmptyState, PageHeader, Select, Skeleton, ticketTypeChartColor, useToast } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, HintLabel, PageHeader, Select, Skeleton, ticketTypeChartColor, useToast } from "@admitto/ui";
 import {
   ApiError,
   eventReportsPrintUrl,
@@ -26,6 +26,8 @@ import "./reports-page.css";
 const LOG_PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 const LOG_PAGE_SIZE_DEFAULT = 50;
 const REPORT_SUBTITLE = "Admission statistics and event-day analytics";
+const ATTENDANCE_CONFIRMATION_HINT =
+  "Shows RSVP status only for attendees who have already checked in, not everyone registered for the event.";
 
 const STATUS_DOT_COLOR: Record<"neutral" | "ok" | "warn" | "error", string> = {
   neutral: "var(--at-gray-400)",
@@ -1048,7 +1050,7 @@ export function ReportsPage() {
 
           <h2 className="reports-section-title">Check-in details</h2>
           <div className="reports-grid-3">
-            <Card title="Attendance confirmation">
+            <Card title={<HintLabel hint={ATTENDANCE_CONFIRMATION_HINT}>Attendance confirmation</HintLabel>}>
               <BreakdownRows rows={rsvpBreakdownRows(data.by_rsvp_status, data.summary.admitted)} />
             </Card>
             <Card title="Check-in method">

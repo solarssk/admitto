@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Button, Card, EmptyState, Tooltip, useToast } from "@admitto/ui";
+import { Button, Card, EmptyState, HintLabel, useToast } from "@admitto/ui";
 import {
   fetchAdminEvents,
   fetchSessions,
@@ -193,9 +193,7 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
                       <th className="sessions-col-tablet-hide">Device</th>
                       <th className="sessions-col-tablet-hide">IP address</th>
                       <th>
-                        <Tooltip content={LOGGED_IN_HINT} className="sessions-col-header">
-                          Logged in <i className="ti ti-info-circle" aria-hidden="true" />
-                        </Tooltip>
+                        <HintLabel hint={LOGGED_IN_HINT}>Logged in</HintLabel>
                       </th>
                       <th>Last active</th>
                       <th className="sessions-col-tablet-hide">Sign-in</th>

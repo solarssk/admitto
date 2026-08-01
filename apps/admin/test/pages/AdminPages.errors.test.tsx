@@ -412,13 +412,13 @@ describe("UsersPage tab count", () => {
       sessions: [
         {
           id: "s1", userId: "u1", userEmail: "a@example.com", userDisplayName: null,
-          role: "admin", deviceLabel: null, ip: null, userAgent: null,
+          role: "admin", deviceLabel: null, ip: null, country: { kind: "unknown" }, userAgent: null,
           loginAt: "2026-01-01T00:00:00.000Z", lastSeenAt: "2026-01-01T00:00:00.000Z",
           expiresAt: "2026-01-02T00:00:00.000Z", authMethod: "local", stage: "active", isCurrent: false,
         },
         {
           id: "s2", userId: "u2", userEmail: "b@example.com", userDisplayName: null,
-          role: "operator", deviceLabel: null, ip: null, userAgent: null,
+          role: "operator", deviceLabel: null, ip: null, country: { kind: "unknown" }, userAgent: null,
           loginAt: "2026-01-01T00:00:00.000Z", lastSeenAt: "2026-01-01T00:00:00.000Z",
           expiresAt: "2026-01-02T00:00:00.000Z", authMethod: "local", stage: "active", isCurrent: false,
         },
@@ -587,7 +587,7 @@ describe("RequirementsPage operator errors", () => {
     });
     fireEvent.click(screen.getByRole("switch", { name: "Issue badge at entry" }));
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to save event behaviour/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to save check-in behaviour/);
     });
   });
 
