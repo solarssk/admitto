@@ -520,6 +520,39 @@ describe("CommunicationPage delivery log - sent message preview modal", () => {
     expect(screen.queryByRole("dialog", { name: "Sent message preview" })).toBeNull();
   });
 
+  it("silently ignores the fetch outcome once the modal is closed before it settles", async () => {
+    fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 1 });
+    fetchRenderedDelivery.mockImplementation(
+      (_eventId: string, _id: string, signal: AbortSignal) =>
+        new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+        }),
+    );
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    renderPage();
+    await goToDeliveryLogTab();
+    await screen.findByText("Guest One");
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "View sent message" }));
+    await screen.findByRole("dialog", { name: "Sent message preview" });
+
+    // Closing unmounts the modal, whose cleanup aborts the in-flight fetch - the resulting
+    // rejection must be swallowed (controller.signal.aborted guards) rather than trying to
+    // setError/setLoading on an unmounted component.
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog", { name: "Sent message preview" })).toBeNull();
+
+    // Flush the aborted promise's reject -> catch -> finally chain before asserting.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const stateUpdateWarning = consoleError.mock.calls.some((call) =>
+      String(call[0]).includes("Can't perform a React state update"),
+    );
+    expect(stateUpdateWarning).toBe(false);
+
+    consoleError.mockRestore();
+  });
+
   it("shows an error state when the fetch fails", async () => {
     fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 1 });
     fetchRenderedDelivery.mockRejectedValueOnce(new Error("boom"));
@@ -602,6 +635,38 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
     expect(within(dialog).getByText("System")).toBeTruthy();
     // error_code, batch_id, session_id, client_timezone all render as a bare "-".
     expect(within(dialog).getAllByText("-").length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("silently ignores the fetch outcome once the modal is closed before it settles", async () => {
+    fetchEventDeliveries.mockResolvedValue({ items: [failedResendRow], total: 1 });
+    fetchEventDelivery.mockImplementation(
+      (_eventId: string, _id: string, signal: AbortSignal) =>
+        new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+        }),
+    );
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    renderPage();
+    await goToDeliveryLogTab();
+    await screen.findByText("Guest Two");
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest Two's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
+    await screen.findByRole("dialog", { name: "Delivery details" });
+
+    // Closing unmounts the modal, whose cleanup aborts the in-flight fetch - the resulting
+    // rejection must be swallowed (controller.signal.aborted guards) rather than trying to
+    // setError/setLoading on an unmounted component.
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog", { name: "Delivery details" })).toBeNull();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const stateUpdateWarning = consoleError.mock.calls.some((call) =>
+      String(call[0]).includes("Can't perform a React state update"),
+    );
+    expect(stateUpdateWarning).toBe(false);
+
+    consoleError.mockRestore();
   });
 
   it("shows an error state when the fetch fails", async () => {
@@ -720,6 +785,73 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
       URL.revokeObjectURL = originalRevoke;
     }
   });
+
+  it("Export as .txt falls back to placeholders for every unset optional field, retryable unknown", async () => {
+    fetchEventDeliveries.mockResolvedValue({
+      items: [{ ...failedResendRow, recipient_email: null }],
+      total: 1,
+    });
+    fetchEventDelivery.mockResolvedValue({ ...sparseDetailFixture(), retryable: null });
+
+    renderPage();
+    await goToDeliveryLogTab();
+    await screen.findByText("Guest Two");
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest Two's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
+    const dialog = await screen.findByRole("dialog", { name: "Delivery details" });
+    await within(dialog).findByText("Overview");
+
+    const createObjectURL = vi.fn((_blob: Blob | MediaSource) => "blob:mock-delivery-sparse");
+    const revokeObjectURL = vi.fn();
+    const originalCreate = URL.createObjectURL;
+    const originalRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = createObjectURL;
+    URL.revokeObjectURL = revokeObjectURL;
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+
+    try {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Export as .txt" }));
+
+      expect(createObjectURL).toHaveBeenCalledOnce();
+      const blob = createObjectURL.mock.calls[0]![0] as Blob;
+      const text = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsText(blob);
+      });
+
+      expect(text).toContain("Recipient: Guest Two <no email on file>");
+      expect(text).toContain("Retryable: -");
+      expect(text).toContain("Error code: -");
+      expect(text).toContain("Error: -");
+      expect(text).toContain("Sent by: System");
+      expect(text).toContain("Batch ID: -");
+      expect(text).toContain("Session ID: -");
+      expect(text).toContain("Client timezone: -");
+    } finally {
+      clickSpy.mockRestore();
+      URL.createObjectURL = originalCreate;
+      URL.revokeObjectURL = originalRevoke;
+    }
+  });
+
+  it("shows \"No\" for a delivery that was checked and found not retryable", async () => {
+    fetchEventDeliveries.mockResolvedValue({ items: [failedResendRow], total: 1 });
+    fetchEventDelivery.mockResolvedValue({ ...detailFixture(), retryable: false });
+
+    renderPage();
+    await goToDeliveryLogTab();
+    await screen.findByText("Guest Two");
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest Two's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Delivery details" });
+    await within(dialog).findByText("Overview");
+    expect(within(dialog).getByText("No")).toBeTruthy();
+  });
 });
 
 describe("CommunicationPage delivery log - export log button", () => {
@@ -766,6 +898,23 @@ describe("CommunicationPage delivery log - mobile card layout", () => {
     fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
     expect(screen.getByRole("menuitem", { name: "View delivery details" })).toBeTruthy();
   });
+
+  it("shows a local-time line for a row with a known client timezone, a placeholder email for one without", async () => {
+    mockMatchMedia(false);
+    const noEmailRow = { ...acceptedRow, id: "dlv-3", attendee_name: "Guest Three", recipient_email: null };
+    fetchEventDeliveries.mockResolvedValue({ items: [failedRow, noEmailRow], total: 2 });
+
+    renderPage();
+    await goToDeliveryLogTab();
+    await screen.findByText("Guest Two");
+
+    // failedRow carries client_timezone: "Europe/Warsaw" - the card's local-time secondary line.
+    expect(screen.getByText(/Europe\/Warsaw/)).toBeTruthy();
+    // noEmailRow has no recipient_email - the card falls back to a bare "-" instead of blank.
+    const noEmailCard = screen.getByText("Guest Three").closest(".communication-card");
+    const emailMeta = noEmailCard?.querySelector(".ti-mail")?.parentElement;
+    expect(emailMeta?.textContent).toContain("-");
+  });
 });
 
 describe("CommunicationPage delivery log - error handling, tab URL sync, live polling", () => {
@@ -801,6 +950,62 @@ describe("CommunicationPage delivery log - error handling, tab URL sync, live po
 
     expect(await screen.findByText("Failed to load deliveries.")).toBeTruthy();
     expect(connectionState.reportApiError).toHaveBeenCalledWith(500);
+  });
+
+  it("ignores an aborted delivery fetch instead of flashing an error banner (e.g. filters changing again before the first request finishes)", async () => {
+    let callCount = 0;
+    fetchEventDeliveries.mockImplementation(
+      (_eventId: string, _params: unknown, signal: AbortSignal) => {
+        callCount += 1;
+        if (callCount === 1) {
+          return new Promise((_resolve, reject) => {
+            signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+          });
+        }
+        return Promise.resolve({ items: [acceptedRow], total: 1 });
+      },
+    );
+
+    renderPage();
+    await goToDeliveryLogTab();
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    // Changing the filter while the first (page-load) request is still pending re-runs the
+    // mount effect, aborting it before it ever settles.
+    fireEvent.change(screen.getByLabelText("Status"), { target: { value: "sent" } });
+
+    await screen.findByText("Guest One");
+    expect(screen.queryByText("Failed to load deliveries.")).toBeNull();
+    expect(callCount).toBeGreaterThanOrEqual(2);
+  });
+
+  it("ignores a stale response that resolves after being superseded by a newer request", async () => {
+    let callCount = 0;
+    let resolveFirst: (value: { items: DeliveryDto[]; total: number }) => void = () => {};
+    fetchEventDeliveries.mockImplementation(() => {
+      callCount += 1;
+      if (callCount === 1) {
+        // Never listens to the abort signal - simulates a slow response that keeps resolving
+        // even after the request that produced it has been superseded.
+        return new Promise((resolve) => {
+          resolveFirst = resolve;
+        });
+      }
+      return Promise.resolve({ items: [acceptedRow], total: 1 });
+    });
+
+    renderPage();
+    await goToDeliveryLogTab();
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    fireEvent.change(screen.getByLabelText("Status"), { target: { value: "sent" } });
+    await screen.findByText("Guest One");
+    expect(await screen.findByText(/Showing 1.*1 of 1/)).toBeTruthy();
+
+    // The superseded first request finally resolves - its (very different) total must not
+    // clobber the current, correct state.
+    resolveFirst({ items: [failedRow], total: 999 });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByText(/999/)).toBeNull();
+    expect(screen.getByText(/Showing 1.*1 of 1/)).toBeTruthy();
   });
 
   it("clears ?tab=log from the URL when switching back to Compose", async () => {
@@ -855,5 +1060,105 @@ describe("CommunicationPage delivery log - error handling, tab URL sync, live po
         expect.any(AbortSignal),
       ),
     );
+  });
+
+  it("silently ignores a failed poll tick, without showing an error banner over the rows already on screen", async () => {
+    fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 1 });
+    renderPage();
+    await goToDeliveryLogTab();
+    await screen.findByText("Guest One");
+
+    fetchEventDeliveries.mockRejectedValueOnce(new Error("network blip"));
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await vi.advanceTimersByTimeAsync(1750);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    // The row that was already on screen stays - a silently-failed poll is normal noise, not
+    // worth surfacing as an error over data that's already there.
+    expect(screen.getByText("Guest One")).toBeTruthy();
+    expect(screen.queryByText("Failed to load deliveries.")).toBeNull();
+  });
+
+  it("clamps back to the last valid page once a silent poll's shrunken total makes it invalid", async () => {
+    // Reset rather than just re-set: clearAllMocks (afterEach) doesn't drain a still-queued
+    // mockRejectedValueOnce left behind by a preceding test, which would otherwise reject this
+    // test's first (mount) fetch instead of resolving it.
+    fetchEventDeliveries.mockReset();
+    fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 60 });
+    renderPage();
+    await goToDeliveryLogTab();
+    await screen.findByText(/Showing 1.*25 of 60/);
+
+    // Page (via the Next button) rather than a filter/search change: those reset the page to 1
+    // themselves (see DeliveryLogTable's onStatusChange/onSearchChange/onPurposeChange wrappers),
+    // which would mask the clamp effect under test here.
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() =>
+      expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
+        "evt-1",
+        expect.objectContaining({ page: 3 }),
+        expect.any(AbortSignal),
+      ),
+    );
+
+    // The next silent poll tick resolves with a much smaller total - page 3 no longer exists
+    // (maxPage=1) - real timers (not vi.useFakeTimers) so the interval's own callback keeps
+    // normal coverage instrumentation.
+    fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 5 });
+    await waitFor(
+      () =>
+        expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
+          "evt-1",
+          expect.objectContaining({ page: 1 }),
+          expect.any(AbortSignal),
+        ),
+      { timeout: 3000 },
+    );
+  }, 10_000);
+
+  it("resets to page 1 (not a no-op) once a silent poll empties the total while on a later page", async () => {
+    fetchEventDeliveries.mockReset();
+    fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 60 });
+    renderPage();
+    await goToDeliveryLogTab();
+    await screen.findByText(/Showing 1.*25 of 60/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() =>
+      expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
+        "evt-1",
+        expect.objectContaining({ page: 2 }),
+        expect.any(AbortSignal),
+      ),
+    );
+
+    fetchEventDeliveries.mockResolvedValue({ items: [], total: 0 });
+    await waitFor(
+      () =>
+        expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
+          "evt-1",
+          expect.objectContaining({ page: 1 }),
+          expect.any(AbortSignal),
+        ),
+      { timeout: 3000 },
+    );
+  }, 10_000);
+
+  it("shows a plain placeholder instead of crashing when the route has no eventId", async () => {
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/communication-no-event"]}>
+        <Routes>
+          <Route path="/admin/communication-no-event" element={<CommunicationPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Missing event.")).toBeTruthy();
+    expect(fetchEventDeliveries).not.toHaveBeenCalled();
   });
 });

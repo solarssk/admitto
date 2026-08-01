@@ -1,6 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { Hono } from "hono";
 import { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE, setSetting, SETTING_INSTANCE_URL } from "@admitto/auth";
@@ -17,7 +18,14 @@ import {
 import type { ExportPayload } from "@admitto/mailer";
 import { EXPORT_ROW_CAP } from "@admitto/tickets";
 import { createApp } from "../../src/app.js";
-import { MAX_TEMPLATE_BODY_BYTES, MAX_TEMPLATE_TEST_SEND_BODY_BYTES } from "../../src/admin/communication-api-routes.js";
+import {
+  handleExportEventDeliveries,
+  handleGetEventDelivery,
+  handleGetRenderedEventDelivery,
+  handleListEventDeliveries,
+  MAX_TEMPLATE_BODY_BYTES,
+  MAX_TEMPLATE_TEST_SEND_BODY_BYTES,
+} from "../../src/admin/communication-api-routes.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
@@ -1126,6 +1134,63 @@ describe("GET /api/admin/events/:eventId/deliveries/export", () => {
     },
     30_000,
   );
+});
+
+describe("delivery route handlers - missing :eventId/:deliveryId guards", () => {
+  // requireEventId's/the handlers' own "!deliveryId" checks defend against an empty path
+  // segment, but Hono's router 404s before ever matching :eventId/:deliveryId to "" (verified:
+  // both a doubled slash and a trailing/missing segment fail to route at all) - so these branches
+  // are unreachable through the real app. Exercised here by calling the exported handlers
+  // directly against a permissive test route with optional params, auth stubbed the same way the
+  // real session middleware would set it.
+  function guardTestApp() {
+    const testApp = new Hono();
+    testApp.use("*", async (c, next) => {
+      c.set("auth", { userId: adminId });
+      await next();
+    });
+    testApp.get("/list/:eventId?", (c) => handleListEventDeliveries(c, prisma));
+    testApp.get("/get/:eventId?/:deliveryId?", (c) => handleGetEventDelivery(c, prisma));
+    testApp.get("/rendered/:eventId?/:deliveryId?", (c) => handleGetRenderedEventDelivery(c, prisma));
+    testApp.get("/export/:eventId?", (c) => handleExportEventDeliveries(c, prisma));
+    return testApp;
+  }
+
+  it("handleListEventDeliveries returns 400 when eventId is missing", async () => {
+    const res = await guardTestApp().request("/list");
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "eventId required" });
+  });
+
+  it("handleGetEventDelivery returns 400 when eventId is missing", async () => {
+    const res = await guardTestApp().request("/get");
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "eventId required" });
+  });
+
+  it("handleGetEventDelivery returns 400 when deliveryId is missing", async () => {
+    const res = await guardTestApp().request(`/get/${EVENT_A}`);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "deliveryId required" });
+  });
+
+  it("handleGetRenderedEventDelivery returns 400 when eventId is missing", async () => {
+    const res = await guardTestApp().request("/rendered");
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "eventId required" });
+  });
+
+  it("handleGetRenderedEventDelivery returns 400 when deliveryId is missing", async () => {
+    const res = await guardTestApp().request(`/rendered/${EVENT_A}`);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "deliveryId required" });
+  });
+
+  it("handleExportEventDeliveries returns 400 when eventId is missing", async () => {
+    const res = await guardTestApp().request("/export");
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "eventId required" });
+  });
 });
 
 describe("POST /api/admin/events/:eventId/templates", () => {

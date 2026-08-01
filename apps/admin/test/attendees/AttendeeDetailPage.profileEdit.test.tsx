@@ -674,6 +674,77 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     ]);
   });
 
+  it("shows the actual send-to address when it differs from the attendee's own email, and a generic placeholder for an unset subject", async () => {
+    mockLoad(
+      baseDetail({
+        deliveries: [
+          {
+            id: "del-1",
+            attendee_id: "att-1",
+            attendee_name: "Anna",
+            purpose: "resend",
+            status: "sent",
+            recipient_email: "forwarded@example.com",
+            rendered_subject: null,
+            queued_at: "2026-01-05T09:31:00.000Z",
+            accepted_at: "2026-01-05T09:31:05.000Z",
+            sent_at: "2026-01-05T09:31:05.000Z",
+            failed_at: null,
+            error_code: null,
+          },
+        ],
+      }),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    expect(screen.getByText("Ticket email")).toBeTruthy();
+    expect(screen.getByText("to forwarded@example.com")).toBeTruthy();
+  });
+
+  it("opens and closes both delivery modals from the row menu, including the details-to-sent-message swap", async () => {
+    mockLoad(
+      baseDetail({
+        deliveries: [
+          {
+            id: "del-1",
+            attendee_id: "att-1",
+            attendee_name: "Anna",
+            purpose: "initial",
+            status: "sent",
+            recipient_email: "anna@example.com",
+            rendered_subject: "Your ticket",
+            queued_at: "2026-01-05T09:31:00.000Z",
+            accepted_at: "2026-01-05T09:31:05.000Z",
+            sent_at: "2026-01-05T09:31:05.000Z",
+            failed_at: null,
+            error_code: null,
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {}))); // never resolves - modals stay loading
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    // Open then close the Details modal directly.
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Anna's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
+    const detailsDialog = await screen.findByRole("dialog", { name: "Delivery details" });
+    fireEvent.click(within(detailsDialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog", { name: "Delivery details" })).toBeNull();
+
+    // Re-open, then swap to the Sent Message preview via the footer button, then close that too.
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Anna's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
+    const detailsDialog2 = await screen.findByRole("dialog", { name: "Delivery details" });
+    fireEvent.click(within(detailsDialog2).getByRole("button", { name: "View sent message" }));
+    expect(screen.queryByRole("dialog", { name: "Delivery details" })).toBeNull();
+    const sentDialog = await screen.findByRole("dialog", { name: "Sent message preview" });
+    fireEvent.click(within(sentDialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog", { name: "Sent message preview" })).toBeNull();
+  });
+
   it("shows an icon+text empty-state placeholder in Mail delivery history when nothing was ever sent", async () => {
     mockLoad(baseDetail({ deliveries: [] }));
     renderPage();

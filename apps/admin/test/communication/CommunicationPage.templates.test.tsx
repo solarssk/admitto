@@ -237,6 +237,17 @@ describe("CommunicationPage templates", () => {
     expect(reportApiError).toHaveBeenCalledWith(403);
   });
 
+  it("gives the generic message (not the 403 access one) for a non-403 API error on initial load", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventTemplates.mockRejectedValueOnce(new ApiError(500, "internal_error"));
+    fetchEventTemplate.mockResolvedValue(legacyTemplate);
+
+    renderPage();
+
+    expect(await screen.findByText("Failed to load template.")).toBeTruthy();
+    expect(reportApiError).toHaveBeenCalledWith(500);
+  });
+
   it("redirects to login when the initial template load returns 401", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     fetchEventTemplates.mockRejectedValueOnce(new ApiError(401, "authentication_required"));
