@@ -45,8 +45,6 @@ body.ticket-page { margin: 0; background: var(--surface-page, #f1f5f9); min-heig
 .ticket__map-frame { position: relative; border: 1px solid var(--border, #e6e7e9); border-radius: 8px; overflow: hidden; background: var(--surface-sunken, #f8fafc); }
 .ticket__map { display: block; height: auto; max-width: 100%; width: 100%; min-height: 150px; border: 0; }
 .ticket__map-fallback { color: var(--text-muted, #64748b); font-size: 0.8125rem; margin: 0; padding: 28px 16px; text-align: center; }
-.ticket__map-attribution { color: var(--text-muted, #64748b); font-size: 0.6875rem; line-height: 1.35; margin: 5px 0 0; text-align: right; }
-.ticket__map-attribution a { color: inherit; }
 .ticket__map-links { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 14px; }
 .ticket__map-link { align-items: center; border: 1px solid var(--border, #e6e7e9); border-radius: 8px; color: var(--text-primary, #1d273b); display: inline-flex; gap: 6px; font-size: 0.8125rem; font-weight: 600; justify-content: center; min-height: 40px; text-decoration: none; }
 .ticket__map-link svg { width: 16px; height: 16px; flex: 0 0 auto; }

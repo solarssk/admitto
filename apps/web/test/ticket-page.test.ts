@@ -113,7 +113,7 @@ describe("renderTicket", () => {
     expect(html).not.toContain("<style>boom</style>");
   });
 
-  it("renders Getting there with a static map, navigation links, and safe default attribution", () => {
+  it("renders Getting there with a static map and navigation links (attribution is burned into the PNG)", () => {
     const html = renderTicket(
       {
         ...ticketFor(null),
@@ -140,8 +140,6 @@ describe("renderTicket", () => {
       undefined,
       {
         displayToken: "abcdefgh…wxyz",
-        mapAttribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
       },
     );
 
@@ -156,7 +154,8 @@ describe("renderTicket", () => {
     expect(html).toContain("Enter through the east gate.");
     expect(html).toContain("Step-free entrance on the south side.");
     expect(html).toContain("abcdefgh…wxyz");
-    expect(html).toContain('href="https://www.openstreetmap.org/copyright"');
+    expect(html).not.toContain('class="ticket__map-attribution"');
+    expect(html).not.toContain("openstreetmap.org/copyright");
   });
 
   it("strips HTML from the venue name so tags are not shown as text", () => {
@@ -225,7 +224,7 @@ describe("renderTicket", () => {
     expect(html).not.toContain("Google Maps");
   });
 
-  it("escapes custom map attribution and keeps street-only addresses on one line", () => {
+  it("keeps street-only addresses on one line and omits HTML map attribution", () => {
     const html = renderTicket(
       {
         ...ticketFor(null),
@@ -245,34 +244,11 @@ describe("renderTicket", () => {
         },
       },
       "data:image/png;base64,abc",
-      undefined,
-      {
-        mapAttribution: '© OSM <script>alert(1)</script>',
-      },
     );
 
     expect(html).toContain("12 Example Road");
-    expect(html).toContain("ticket__map-attribution");
-    expect(html).toContain("© OSM scriptalert(1)/script");
-    expect(html).not.toContain("<script>");
-  });
-
-  it("falls back when map attribution is empty after sanitizing", () => {
-    const html = renderTicket(
-      {
-        ...ticketFor(null),
-        event: {
-          ...ticketFor(null).event,
-          latitude: 50.06,
-          longitude: 19.93,
-          mapZoom: 15,
-        },
-      },
-      "data:image/png;base64,abc",
-      undefined,
-      { mapAttribution: "<>" },
-    );
-    expect(html).toContain("Map data attribution unavailable");
+    expect(html).not.toContain("ticket__map-attribution");
+    expect(html).not.toContain("Map data attribution unavailable");
   });
 
   it("renders Getting there from coordinates alone without an address block", () => {

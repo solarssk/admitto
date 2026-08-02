@@ -591,7 +591,6 @@ export function createApp(options: CreateAppOptions = {}) {
       c,
       renderTicket(resolvedForDisplay, qrDataUrl, theme, {
         displayToken,
-        mapAttribution: mapTiles.attribution,
         staticMapEnabled: mapTiles.enabled,
       }),
       200,

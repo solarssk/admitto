@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Static map tile outages no longer break ticket/mail map images:** `GET /m/{eventId}.png` retries tile composite once, then serves a short-cached “Map unavailable” placeholder PNG (HTTP 200) instead of an empty 502, so mail clients do not show a broken image while a dead tile CDN recovers.
+- **Static map attribution is burned into the PNG only** (bottom-right, no white bar), so the ticket no longer shows a duplicate HTML credit under the image; mail still gets the required OSM/CARTO credit from the image itself.
 - **Getting there / `{{event_address}}` no longer repeats a name-only venue** when structured address components only have `object_name` and a richer `formatted_address` is already stored.
 - **Public `/m/{eventId}.png` cache-buster includes map zoom** so a zoom-only Location save does not leave mail clients and browsers showing a day-old zoomed image.
 - **Static map PNG attribution strip keeps provider names** by stripping HTML tags (not just `<`/`>`) from `MAP_TILE_ATTRIBUTION` before burn-in.

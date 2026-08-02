@@ -1,8 +1,8 @@
 /**
  * Server-side static map PNG compositor for the public ticket / mail `{{event_map_url}}`.
  * Fetches raster tiles from the configured `MAP_TILE_URL` (never from the request), stitches
- * them with sharp, and draws a center pin plus a burned-in attribution strip (mail has no
- * surrounding HTML credit).
+ * them with sharp, and burns a bottom-right attribution credit into the PNG (tickets and mail
+ * have no separate HTML credit under the image).
  */
 import { createHash } from "node:crypto";
 import {
@@ -19,7 +19,9 @@ const TILE_SIZE = 256;
 const DEFAULT_TILE_TIMEOUT_MS = 8_000;
 const MAX_TILE_BYTES = 512 * 1024;
 const MAX_TILE_REDIRECTS = 3;
-const ATTRIBUTION_BAR_HEIGHT = 18;
+const ATTRIBUTION_OVERLAY_HEIGHT = 18;
+/** Bump when burn-in layout changes so Redis/memory caches miss the old white-bar PNGs. */
+const ATTRIBUTION_OVERLAY_VERSION = "br-halo-1";
 /** PNG signature (ISO 15948) — reject non-image bodies before sharp composite. */
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -98,7 +100,7 @@ export class StaticMapRenderError extends Error {
   }
 }
 
-/** Plain-text credit for the PNG strip (mail has no HTML attribution under the image). */
+/** Plain-text credit for the PNG burn-in (mail/ticket have no HTML attribution under the image). */
 export function plainMapAttribution(attribution: string): string {
   return attribution
     .replaceAll("&copy;", "©")
@@ -129,6 +131,7 @@ export function buildStaticMapCacheKey(
     String(height),
     tileUrl,
     plainMapAttribution(attribution),
+    ATTRIBUTION_OVERLAY_VERSION,
   ].join("|");
   return createHash("sha256").update(payload).digest("hex");
 }
@@ -174,14 +177,22 @@ function escXmlText(s: string): string {
     .replaceAll("'", "&apos;");
 }
 
+/**
+ * Bottom-right credit without an opaque bar (Leaflet-style halo text).
+ * OSM requires legible attribution in a map corner — no fixed pt size; ~9px + stroke halo
+ * matches common interactive map credits and stays readable on light/dark tiles.
+ */
 function buildAttributionOverlay(width: number, attribution: string): Buffer | null {
   const text = plainMapAttribution(attribution);
   if (!text) return null;
   const safe = escXmlText(text);
+  const x = width - 6;
   return Buffer.from(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${ATTRIBUTION_BAR_HEIGHT}">
-      <rect width="100%" height="100%" fill="rgba(255,255,255,0.82)"/>
-      <text x="6" y="12" font-size="9" font-family="DejaVu Sans, Arial, Helvetica, sans-serif" fill="#334155">${safe}</text>
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${ATTRIBUTION_OVERLAY_HEIGHT}">
+      <text x="${x}" y="13" text-anchor="end" font-size="9"
+        font-family="DejaVu Sans, Arial, Helvetica, sans-serif"
+        fill="#0f172a" stroke="rgba(255,255,255,0.92)" stroke-width="3"
+        paint-order="stroke fill">${safe}</text>
     </svg>`,
   );
 }
@@ -380,7 +391,7 @@ export async function renderStaticMapPng(
 
   const attrOverlay = buildAttributionOverlay(width, options.tileConfig.attribution);
   if (attrOverlay) {
-    composites.push({ input: attrOverlay, left: 0, top: height - ATTRIBUTION_BAR_HEIGHT });
+    composites.push({ input: attrOverlay, left: 0, top: height - ATTRIBUTION_OVERLAY_HEIGHT });
   }
 
   try {
