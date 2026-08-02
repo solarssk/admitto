@@ -14,6 +14,7 @@ const LOCATION = {
   },
   latitude: 50.06,
   longitude: 19.94,
+  map_zoom: 16,
   directions_text: "North door",
   accessibility_text: "Step-free",
 };
@@ -24,7 +25,9 @@ describe("buildEventLocationTemplateVars", () => {
       LOCATION_MAPS_ENABLED: "true",
     });
     expect(vars.event_location).toBe("Hall");
-    expect(vars.event_map_url).toBe("https://tickets.example.com/m/evt-1.png?v=2_50.060000_19.940000");
+    expect(vars.event_map_url).toBe(
+      "https://tickets.example.com/m/evt-1.png?v=2_50.060000_19.940000_z16",
+    );
     expect(vars.google_maps_url).toContain("50.06");
     expect(vars.apple_maps_url).toContain("50.06");
     expect(vars.directions_text).toBe("North door");

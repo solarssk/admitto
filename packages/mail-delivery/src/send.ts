@@ -127,6 +127,7 @@ interface EventForSend extends EventLinkInput {
     address_components?: unknown;
     latitude: number | null;
     longitude: number | null;
+    map_zoom?: number | null;
     directions_text: string | null;
     accessibility_text: string | null;
   } | null;

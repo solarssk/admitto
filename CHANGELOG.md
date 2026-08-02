@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Public ticket page polish (mockup alignment):** Admitto mark SVG instead of a plain blue square, top accent strip, QR frame border, no “Registered” status badge, official Apple Wallet badge (`US_UK` RGB SVG) and Google Wallet badge (`enUS` add-wallet-badge SVG), subdued “How do I add this to my phone?” disclosure, street-first Getting There address on two lines (non-breaking postcodes), wheelchair/signpost icons, neutral map-link icons (not Google/Apple brand marks), Nominatim `accept-language=en` for English address labels on new geocodes, static map one zoom level closer with © OSM © CARTO burned into the PNG corner.
 
 ### Fixed
+- **Getting there / `{{event_address}}` no longer repeats a name-only venue** when structured address components only have `object_name` and a richer `formatted_address` is already stored.
+- **Public `/m/{eventId}.png` cache-buster includes map zoom** so a zoom-only Location save does not leave mail clients and browsers showing a day-old zoomed image.
+- **Static map PNG attribution strip keeps provider names** by stripping HTML tags (not just `<`/`>`) from `MAP_TILE_ATTRIBUTION` before burn-in.
+- **Public ticket map failure shows “Map unavailable”** instead of a broken image icon (`<object>` fallback; CSP allows same-origin `object-src`).
+- **Ticket venue labels strip accidental HTML** so escaped tags are not shown as visible markup; wallet help copy states the badges are placeholders and not tappable yet; long address tokens wrap with `overflow-wrap: anywhere`.
 - **Static map image omitted when `LOCATION_MAPS_ENABLED=false`:** ticket pages and mail `{{event_map_url}}` no longer embed a `/m/...png` that always 404s; Google/Apple Maps links still work when coordinates exist.
 - **Static map tile downloads abort once they exceed 512 KiB** (streamed, same pattern as Nominatim), so a misconfigured or malicious tile server cannot force unbounded `arrayBuffer()` allocations on the public `/m/` route.
 - **`ALLOW_PRIVATE_MAIL_DESTINATIONS=true` is honored at mail-config validation** as well as connect time, so a lab SMTP host that is a literal RFC1918 address (e.g. `192.168.1.10`) can be saved instead of only hostnames that later resolve privately.

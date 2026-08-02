@@ -533,7 +533,7 @@ describe("renderStaticMapPng", () => {
 
   it("follows a safe https redirect and composites the final PNG", async () => {
     const tile = await solidTilePng({ r: 70, g: 80, b: 90 });
-    const fetchFn = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+    const fetchFn = vi.fn().mockImplementation(async (input: string | URL | Request) => {
       const href = String(input);
       if (href.includes("tiles.example")) {
         return new Response(null, {
@@ -619,9 +619,14 @@ describe("renderStaticMapPng", () => {
 });
 
 describe("plainMapAttribution", () => {
-  it("strips angle brackets and decodes &copy;", () => {
+  it("strips tags while keeping link text and decodes &copy;", () => {
     expect(plainMapAttribution("&copy; OpenStreetMap")).toBe("© OpenStreetMap");
-    expect(plainMapAttribution('x <script>y</script>')).toBe("x scripty/script");
+    expect(
+      plainMapAttribution(
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      ),
+    ).toBe("© OpenStreetMap contributors © CARTO");
+    expect(plainMapAttribution('x <script>y</script>')).toBe("x y");
     expect(plainMapAttribution("  ")).toBe("");
   });
 });

@@ -15,6 +15,7 @@ export type EventLocationForTemplateVars = {
   address_components?: unknown;
   latitude: number | null;
   longitude: number | null;
+  map_zoom?: number | null;
   directions_text: string | null;
   accessibility_text: string | null;
 } | null;
@@ -43,7 +44,11 @@ export function buildEventLocationTemplateVars(
 > {
   const mapCoordinates =
     location !== null && location !== undefined && isMapReady(location)
-      ? { latitude: location.latitude!, longitude: location.longitude! }
+      ? {
+          latitude: location.latitude!,
+          longitude: location.longitude!,
+          zoom: location.map_zoom ?? undefined,
+        }
       : undefined;
   const mapLabel = location?.venue_name ?? location?.formatted_address;
   const staticMapsEnabled = isLocationMapsEnabled(env);

@@ -106,6 +106,8 @@ describe("renderTicket", () => {
     expect(html).toContain("wallet-badge-frame");
     expect(html).toContain("wallet-badge--apple");
     expect(html).toContain("How do I add this to my phone?");
+    expect(html).toContain("coming soon");
+    expect(html).toContain("not tappable yet");
     expect(html).toContain('aria-disabled="true"');
     expect(html).not.toContain("badge-\"><style>boom</style>");
     expect(html).not.toContain("<style>boom</style>");
@@ -146,14 +148,34 @@ describe("renderTicket", () => {
     expect(html).toContain("Getting there");
     expect(html).toContain("1 Example Street");
     expect(html).toContain("Exampletown, Poland");
-    expect(html).toContain('src="/m/e1.png?v=2_50.061947_19.936856"');
-    expect(html).toContain('alt="Map of event location"');
+    expect(html).toContain('data="/m/e1.png?v=2_50.061947_19.936856_z16"');
+    expect(html).toContain('aria-label="Map of event location"');
+    expect(html).toContain("Map unavailable");
     expect(html).toContain("Google Maps");
     expect(html).toContain("Apple Maps");
     expect(html).toContain("Enter through the east gate.");
     expect(html).toContain("Step-free entrance on the south side.");
     expect(html).toContain("abcdefgh…wxyz");
     expect(html).toContain('href="https://www.openstreetmap.org/copyright"');
+  });
+
+  it("strips HTML from the venue name so tags are not shown as text", () => {
+    const html = renderTicket(
+      {
+        ...ticketFor(null),
+        event: {
+          ...ticketFor(null).event,
+          location: 'Hall <b>Main</b>',
+          formattedAddress: "1 Example Street",
+          latitude: null,
+          longitude: null,
+        },
+      },
+      "data:image/png;base64,abc",
+    );
+    expect(html).toContain("Hall Main");
+    expect(html).not.toContain("&lt;b&gt;");
+    expect(html).not.toContain("<b>Main</b>");
   });
 
   it("keeps Google/Apple links but omits the static map image when maps are disabled", () => {
@@ -178,6 +200,7 @@ describe("renderTicket", () => {
     expect(html).toContain("Google Maps");
     expect(html).toContain("Apple Maps");
     expect(html).not.toContain('src="/m/e1.png');
+    expect(html).not.toContain('data="/m/e1.png');
     expect(html).not.toContain('class="ticket__map-attribution"');
   });
 
@@ -198,6 +221,7 @@ describe("renderTicket", () => {
     expect(html).toContain("1 Example Street, Exampletown");
     expect(html).toContain("Use the main entrance.");
     expect(html).not.toContain('src="/m/e1.png"');
+    expect(html).not.toContain('data="/m/e1.png"');
     expect(html).not.toContain("Google Maps");
   });
 
@@ -281,6 +305,7 @@ describe("renderTicket", () => {
 
     expect(html).not.toContain("Getting there");
     expect(html).not.toContain('src="/m/e1.png"');
+    expect(html).not.toContain('data="/m/e1.png"');
   });
 
   it("shows the configured logo instead of the Admitto wordmark (#419)", () => {
@@ -313,6 +338,7 @@ describe("getTicketPageSecurityHeaders", () => {
     expect(headers["Content-Security-Policy"]).toContain("default-src 'none'");
     expect(headers["Content-Security-Policy"]).toContain("img-src 'self' data:");
     expect(headers["Content-Security-Policy"]).toContain("font-src 'self'");
+    expect(headers["Content-Security-Policy"]).toContain("object-src 'self'");
     expect(headers["Referrer-Policy"]).toBe("no-referrer");
     expect(headers["X-Content-Type-Options"]).toBe("nosniff");
   });

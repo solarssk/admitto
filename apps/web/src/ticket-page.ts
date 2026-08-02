@@ -30,7 +30,7 @@ const MAP_LINK_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" s
 export type TicketPageOptions = {
   displayToken?: string | null;
   mapAttribution?: string | null;
-  /** When false, omit the static map `<img>` (`LOCATION_MAPS_ENABLED=false`). Google/Apple links still render when coordinates exist. Defaults to true. */
+  /** When false, omit the static map (`LOCATION_MAPS_ENABLED=false`). Google/Apple links still render when coordinates exist. Defaults to true. */
   staticMapEnabled?: boolean;
 };
 
@@ -117,7 +117,7 @@ export function getTicketPageSecurityHeaders(
   return {
     "Cache-Control": "private, no-store, max-age=0",
     "Content-Security-Policy":
-      `default-src 'none'; style-src 'unsafe-inline'; img-src ${imgSrc}; script-src 'none'; connect-src 'none'; font-src ${fontSrc}; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+      `default-src 'none'; style-src 'unsafe-inline'; img-src ${imgSrc}; script-src 'none'; connect-src 'none'; font-src ${fontSrc}; object-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",
   };
@@ -130,6 +130,14 @@ function ticketDirectionsAddress(event: ResolvedTicket["event"]): string {
   );
   if (fromComponents) return fromComponents;
   return event.formattedAddress?.trim() || "";
+}
+
+/** Drop HTML tags from staff-entered copy before escaping for the public ticket. */
+function plainStaffText(value: string): string {
+  return value
+    .replace(/<\/?[a-zA-Z][^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** Keep postcodes like `03-724` on one line (ASCII hyphen is a wrap opportunity). */
@@ -164,7 +172,7 @@ export function renderTicket(
   const styles = buildTicketPageStyles(theme);
   const mapReady = isMapReady(event);
   const showStaticMap = mapReady && options.staticMapEnabled !== false;
-  const venueLabel = event.location || event.formattedAddress;
+  const venueLabel = plainStaffText(event.location || event.formattedAddress || "") || null;
   const directionsText = event.directionsText?.trim();
   const accessibilityText = event.accessibilityText?.trim();
   const directionsAddress = ticketDirectionsAddress(event);
@@ -181,8 +189,17 @@ export function renderTicket(
   const addressHtml = renderDirectionsAddressHtml(event);
   let staticMapHtml = "";
   if (showStaticMap) {
+    const mapPath = buildEventStaticMapPath(event.id, {
+      latitude: event.latitude!,
+      longitude: event.longitude!,
+      zoom: event.mapZoom,
+    });
+    // <object> (not <img>): CSP script-src is 'none', so onerror cannot hide a broken image.
+    // object-src 'self' allows the same-origin PNG; failed loads show the inline fallback.
     staticMapHtml = `<div class="ticket__map-frame">
-      <img class="ticket__map" src="${esc(buildEventStaticMapPath(event.id, { latitude: event.latitude!, longitude: event.longitude! }))}" alt="Map of event location" width="600" height="300">
+      <object class="ticket__map" data="${esc(mapPath)}" type="image/png" aria-label="Map of event location">
+        <p class="ticket__map-fallback">Map unavailable</p>
+      </object>
     </div>
       <p class="ticket__map-attribution">${renderMapAttribution(options.mapAttribution)}</p>`;
   }
@@ -227,7 +244,7 @@ export function renderTicket(
       <h1 class="ticket__event-name">${esc(event.title)}</h1>
       <div class="ticket__meta">
         <span>${CALENDAR_ICON}<span class="ticket__meta-text">${esc(formatDate(event.date))}</span></span>
-        ${event.location ? `<span>${PIN_ICON}<span class="ticket__meta-text">${esc(event.location)}</span></span>` : ""}
+        ${event.location ? `<span>${PIN_ICON}<span class="ticket__meta-text">${esc(plainStaffText(event.location))}</span></span>` : ""}
       </div>
       <div class="ticket__attendee">
         <p class="ticket__attendee-name">${esc(attendee.name)}</p>
@@ -243,8 +260,8 @@ export function renderTicket(
     </div>
     <details class="ticket__wallet-help">
       <summary>How do I add this to my phone?</summary>
-      <p><strong>iPhone:</strong> tap Add to Apple Wallet, then Add on the next screen. Find it later under Wallet.</p>
-      <p><strong>Android:</strong> tap Add to Google Wallet and sign in if asked. Find it later under Google Wallet.</p>
+      <p>Apple Wallet and Google Wallet are coming soon. The badges above are placeholders and are not tappable yet.</p>
+      <p>When wallet passes ship, you will add this ticket from those badges and find it later in Apple Wallet or Google Wallet.</p>
     </details>
     ${gettingThereHtml}
     <footer class="ticket__foot">Present this QR code at the entrance.</footer>

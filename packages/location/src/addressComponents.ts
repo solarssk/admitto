@@ -241,9 +241,20 @@ export function formatDirectionsAddressFromComponents(
   components: AddressComponents | null | undefined,
   fallbackLabel?: string | null,
 ): string {
+  const label = fallbackLabel?.trim() || "";
   if (!components || isAddressComponentsEmpty(components)) {
-    const label = fallbackLabel?.trim();
-    return label || "";
+    return label;
+  }
+  // Name-only grids (POI pick without reverse street/city) must not suppress a richer
+  // `formatted_address` — otherwise Getting there / {{event_address}} just repeats the venue name.
+  if (isAddressComponentsSparse(components)) {
+    return (
+      label ||
+      formatDirectionsAddress({
+        name: components.object_name,
+        label: fallbackLabel,
+      })
+    );
   }
   return formatDirectionsAddress({
     name: components.object_name,

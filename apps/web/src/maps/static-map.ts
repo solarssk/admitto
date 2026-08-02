@@ -102,6 +102,9 @@ export class StaticMapRenderError extends Error {
 export function plainMapAttribution(attribution: string): string {
   return attribution
     .replaceAll("&copy;", "©")
+    // Drop tags, keep their text (default MAP_TILE_ATTRIBUTION is HTML with <a href=…>).
+    .replace(/<\/?[a-zA-Z][^>]*>/g, " ")
+    // Residual angle brackets (malformed markup) must not reach the SVG text node.
     .replaceAll("<", "")
     .replaceAll(">", "")
     .replace(/\s+/g, " ")
@@ -226,6 +229,20 @@ async function readTileBodyCapped(res: Response, maxBytes: number, url: string):
   return Buffer.concat(chunks.map((c) => Buffer.from(c)));
 }
 
+/** Resolve a 3xx Location against `current`, or throw. Cancels the redirect response body. */
+async function nextTileRedirectUrl(response: Response, current: string): Promise<string> {
+  const location = response.headers.get("location");
+  await response.body?.cancel().catch(() => undefined);
+  if (!location) {
+    throw new StaticMapRenderError(`Tile redirect without Location: ${current}`);
+  }
+  try {
+    return new URL(location, current).href;
+  } catch {
+    throw new StaticMapRenderError(`Tile redirect to invalid URL: ${location}`);
+  }
+}
+
 async function fetchTilePng(
   url: string,
   userAgent: string,
@@ -251,16 +268,7 @@ async function fetchTilePng(
     }
 
     if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get("location");
-      await response.body?.cancel().catch(() => undefined);
-      if (!location) {
-        throw new StaticMapRenderError(`Tile redirect without Location: ${current}`);
-      }
-      try {
-        current = new URL(location, current).href;
-      } catch {
-        throw new StaticMapRenderError(`Tile redirect to invalid URL: ${location}`);
-      }
+      current = await nextTileRedirectUrl(response, current);
       continue;
     }
 

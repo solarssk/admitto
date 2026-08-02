@@ -387,4 +387,36 @@ describe("formatDirectionsAddressFromComponents", () => {
       }),
     ).toContain("Main 1");
   });
+
+  it("prefers formatted_address when the grid is name-only (sparse)", () => {
+    expect(
+      formatDirectionsAddressFromComponents(
+        {
+          object_name: "Złote Tarasy",
+          street: null,
+          postcode: null,
+          city: null,
+          region: null,
+          country: null,
+        },
+        "Poland, Warszawa - Złote Tarasy",
+      ),
+    ).toBe("Poland, Warszawa - Złote Tarasy");
+  });
+
+  it("falls back to the POI name when sparse and no formatted_address exists", () => {
+    expect(
+      formatDirectionsAddressFromComponents(
+        {
+          object_name: "Only Name",
+          street: null,
+          postcode: null,
+          city: null,
+          region: null,
+          country: null,
+        },
+        null,
+      ),
+    ).toBe("Only Name");
+  });
 });

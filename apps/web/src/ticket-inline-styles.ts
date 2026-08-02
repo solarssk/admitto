@@ -40,10 +40,11 @@ body.ticket-page { margin: 0; background: var(--surface-page, #f1f5f9); min-heig
 .ticket__getting-there { padding: 2px 24px 22px; border-top: 1px solid var(--border, #e6e7e9); }
 .ticket__getting-there h2 { color: var(--text-muted, #64748b); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; margin: 20px 0 10px; text-transform: uppercase; }
 .ticket__address { color: var(--text-secondary, #475569); font-size: 0.875rem; line-height: 1.4; margin: 0 0 12px; display: flex; flex-direction: column; gap: 2px; }
-.ticket__address-line { display: block; }
-.ticket__address-locality { white-space: nowrap; }
+.ticket__address-line { display: block; overflow-wrap: anywhere; word-break: break-word; }
+.ticket__address-locality { overflow-wrap: anywhere; word-break: break-word; }
 .ticket__map-frame { position: relative; border: 1px solid var(--border, #e6e7e9); border-radius: 8px; overflow: hidden; background: var(--surface-sunken, #f8fafc); }
-.ticket__map { display: block; height: auto; max-width: 100%; width: 100%; }
+.ticket__map { display: block; height: auto; max-width: 100%; width: 100%; min-height: 150px; border: 0; }
+.ticket__map-fallback { color: var(--text-muted, #64748b); font-size: 0.8125rem; margin: 0; padding: 28px 16px; text-align: center; }
 .ticket__map-attribution { color: var(--text-muted, #64748b); font-size: 0.6875rem; line-height: 1.35; margin: 5px 0 0; text-align: right; }
 .ticket__map-attribution a { color: inherit; }
 .ticket__map-links { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 14px; }
