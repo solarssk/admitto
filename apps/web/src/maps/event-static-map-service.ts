@@ -8,6 +8,7 @@ import { resolveMapTileConfig } from "./config.js";
 import {
   buildStaticMapCacheKey,
   buildUnavailableStaticMapPng,
+  redactTileUrlForLogs,
   renderStaticMapPng,
   StaticMapRenderError,
   type RenderStaticMapOptions,
@@ -42,6 +43,13 @@ export interface EventStaticMapServiceOptions {
 
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Defense in depth: never put credential-bearing tile URLs into system logs. */
+function sanitizeStaticMapLogReason(message: string): string {
+  return message
+    .replace(/https?:\/\/\S+/gi, (url) => redactTileUrlForLogs(url))
+    .slice(0, 200);
 }
 
 export class EventStaticMapService {
@@ -175,13 +183,15 @@ export class EventStaticMapService {
           // Once per negative-cache window (not on every subsequent placeholder hit).
           emitSystemLog("cache", "warn", "static_map_unavailable", {
             eventId,
-            reason: err.message.slice(0, 200),
+            reason: sanitizeStaticMapLogReason(err.message),
           });
         } else {
           console.error("static_map_unexpected_error:", err);
           emitSystemLog("cache", "error", "static_map_unexpected_error", {
             eventId,
-            reason: err instanceof Error ? err.message.slice(0, 200) : "unknown",
+            reason: sanitizeStaticMapLogReason(
+              err instanceof Error ? err.message : "unknown",
+            ),
           });
         }
         this.markNegative(cacheKey);

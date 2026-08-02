@@ -8,6 +8,7 @@ import {
   isAllowedDeclaredTileSize,
   latLngToTileFraction,
   plainMapAttribution,
+  redactTileUrlForLogs,
   renderStaticMapPng,
   STATIC_MAP_HEIGHT,
   STATIC_MAP_WIDTH,
@@ -21,6 +22,21 @@ async function solidTilePng(color: { r: number; g: number; b: number }): Promise
     .png()
     .toBuffer();
 }
+
+describe("redactTileUrlForLogs", () => {
+  it("strips query strings and fragments that may hold API keys", () => {
+    expect(
+      redactTileUrlForLogs("https://tiles.example/16/1/2.png?api_key=super-secret&x=1"),
+    ).toBe("https://tiles.example/16/1/2.png");
+    expect(redactTileUrlForLogs("https://tiles.example/a.png#token=abc")).toBe(
+      "https://tiles.example/a.png",
+    );
+  });
+
+  it("falls back safely for unparseable input", () => {
+    expect(redactTileUrlForLogs("not a url?api_key=leak")).toBe("not a url");
+  });
+});
 
 describe("assertSafeTileFetchUrl", () => {
   it("allows https public hosts and blocks private or metadata targets", () => {
@@ -355,28 +371,32 @@ describe("renderStaticMapPng", () => {
     ).rejects.toMatchObject({ message: expect.stringContaining("Tile read failed") });
   });
 
-  it("cancels the response body on non-OK tile HTTP status", async () => {
+  it("cancels the response body on non-OK tile HTTP status without leaking query credentials", async () => {
     const cancel = vi.fn().mockResolvedValue(undefined);
     const fetchFn = vi.fn().mockResolvedValue({
       ok: false,
       status: 502,
       body: { cancel },
     });
-    await expect(
-      renderStaticMapPng(
-        { latitude: 52.23, longitude: 21.01, zoom: 14 },
-        {
-          tileConfig: {
-            enabled: true,
-            tileUrl: "https://tiles.example/{z}/{x}/{y}.png",
-            attribution: "",
-            maxZoom: 19,
-          },
-          userAgent: "Admitto/test",
-          fetchFn: fetchFn as unknown as typeof fetch,
+    const rejected = renderStaticMapPng(
+      { latitude: 52.23, longitude: 21.01, zoom: 14 },
+      {
+        tileConfig: {
+          enabled: true,
+          tileUrl: "https://tiles.example/{z}/{x}/{y}.png?api_key=secret-token",
+          attribution: "",
+          maxZoom: 19,
         },
-      ),
-    ).rejects.toMatchObject({ message: expect.stringContaining("Tile HTTP 502") });
+        userAgent: "Admitto/test",
+        fetchFn: fetchFn as unknown as typeof fetch,
+      },
+    );
+    await expect(rejected).rejects.toMatchObject({
+      message: expect.stringMatching(/^Tile HTTP 502: https:\/\/tiles\.example\/\d+\/\d+\/\d+\.png$/),
+    });
+    await expect(rejected).rejects.not.toMatchObject({
+      message: expect.stringContaining("secret-token"),
+    });
     expect(cancel).toHaveBeenCalled();
   });
 

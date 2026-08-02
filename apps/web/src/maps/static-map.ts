@@ -58,7 +58,7 @@ export function assertSafeTileFetchUrl(raw: string, env: EnvLike = process.env):
   try {
     url = new URL(raw);
   } catch {
-    throw new StaticMapRenderError(`Invalid tile URL: ${raw}`);
+    throw new StaticMapRenderError(`Invalid tile URL: ${redactTileUrlForLogs(raw)}`);
   }
 
   if (url.protocol === "https:") {
@@ -66,7 +66,7 @@ export function assertSafeTileFetchUrl(raw: string, env: EnvLike = process.env):
   } else if (isDevLocalhostHttp(url, env)) {
     return;
   } else {
-    throw new StaticMapRenderError(`Tile URL must use https: ${raw}`);
+    throw new StaticMapRenderError(`Tile URL must use https: ${redactTileUrlForLogs(raw)}`);
   }
 
   const host = unbracketHostname(url.hostname);
@@ -97,6 +97,20 @@ export class StaticMapRenderError extends Error {
     super(message);
     this.name = "StaticMapRenderError";
     this.cause = cause;
+  }
+}
+
+/**
+ * Strip query/hash/userinfo from tile URLs before they enter error messages or logs.
+ * Commercial `MAP_TILE_URL` templates often carry `?api_key=` / tokens in the query string.
+ */
+export function redactTileUrlForLogs(raw: string): string {
+  try {
+    const u = new URL(raw);
+    return `${u.protocol}//${u.host}${u.pathname}`;
+  } catch {
+    const stripped = raw.replace(/\?[^#\s]*/, "").replace(/#[^\s]*/, "").trim();
+    return stripped.slice(0, 200) || "[invalid-url]";
   }
 }
 
@@ -221,8 +235,9 @@ export async function buildUnavailableStaticMapPng(): Promise<Buffer> {
  * header must not let an oversized body buffer into process memory.
  */
 async function readTileBodyCapped(res: Response, maxBytes: number, url: string): Promise<Buffer> {
+  const safeUrl = redactTileUrlForLogs(url);
   if (!res.body) {
-    throw new StaticMapRenderError(`Tile empty body: ${url}`);
+    throw new StaticMapRenderError(`Tile empty body: ${safeUrl}`);
   }
 
   const contentLength = res.headers.get("content-length");
@@ -230,7 +245,7 @@ async function readTileBodyCapped(res: Response, maxBytes: number, url: string):
     const declared = Number(contentLength);
     if (!isAllowedDeclaredTileSize(declared, maxBytes)) {
       await res.body.cancel().catch(() => undefined);
-      throw new StaticMapRenderError(`Tile too large (declared ${declared} bytes): ${url}`);
+      throw new StaticMapRenderError(`Tile too large (declared ${declared} bytes): ${safeUrl}`);
     }
   }
 
@@ -246,13 +261,13 @@ async function readTileBodyCapped(res: Response, maxBytes: number, url: string):
       total += value.byteLength;
       if (total > maxBytes) {
         await reader.cancel().catch(() => undefined);
-        throw new StaticMapRenderError(`Tile too large (${total} bytes): ${url}`);
+        throw new StaticMapRenderError(`Tile too large (${total} bytes): ${safeUrl}`);
       }
       chunks.push(value);
     }
   } catch (err) {
     if (err instanceof StaticMapRenderError) throw err;
-    throw new StaticMapRenderError(`Tile read failed: ${url}`, err);
+    throw new StaticMapRenderError(`Tile read failed: ${safeUrl}`, err);
   }
 
   return Buffer.concat(chunks.map((c) => Buffer.from(c)));
@@ -263,12 +278,12 @@ async function nextTileRedirectUrl(response: Response, current: string): Promise
   const location = response.headers.get("location");
   await response.body?.cancel().catch(() => undefined);
   if (!location) {
-    throw new StaticMapRenderError(`Tile redirect without Location: ${current}`);
+    throw new StaticMapRenderError(`Tile redirect without Location: ${redactTileUrlForLogs(current)}`);
   }
   try {
     return new URL(location, current).href;
   } catch {
-    throw new StaticMapRenderError(`Tile redirect to invalid URL: ${location}`);
+    throw new StaticMapRenderError(`Tile redirect to invalid URL: ${redactTileUrlForLogs(location)}`);
   }
 }
 
@@ -299,7 +314,7 @@ async function fetchTilePng(
         signal,
       });
     } catch (err) {
-      throw new StaticMapRenderError(`Tile fetch failed: ${current}`, err);
+      throw new StaticMapRenderError(`Tile fetch failed: ${redactTileUrlForLogs(current)}`, err);
     }
 
     if (response.status >= 300 && response.status < 400) {
@@ -309,17 +324,17 @@ async function fetchTilePng(
 
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
-      throw new StaticMapRenderError(`Tile HTTP ${response.status}: ${current}`);
+      throw new StaticMapRenderError(`Tile HTTP ${response.status}: ${redactTileUrlForLogs(current)}`);
     }
 
     const body = await readTileBodyCapped(response, MAX_TILE_BYTES, current);
     if (!bufferLooksLikePng(body)) {
-      throw new StaticMapRenderError(`Tile is not a PNG: ${current}`);
+      throw new StaticMapRenderError(`Tile is not a PNG: ${redactTileUrlForLogs(current)}`);
     }
     return body;
   }
 
-  throw new StaticMapRenderError(`Too many tile redirects: ${url}`);
+  throw new StaticMapRenderError(`Too many tile redirects: ${redactTileUrlForLogs(url)}`);
 }
 
 /**
