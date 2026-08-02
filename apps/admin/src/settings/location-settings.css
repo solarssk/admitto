@@ -19,6 +19,9 @@
   /* No margin-top: spacing to siblings comes from .settings-field-stack / .settings-field-group. */
   cursor: pointer;
   isolation: isolate;
+  /* Belt-and-suspenders with Leaflet's `.leaflet-container { overflow: hidden }` — React must
+     never wipe that class via controlled `className`, but keep clipping here too. */
+  overflow: hidden;
 }
 
 .location-map-picker--disabled {
