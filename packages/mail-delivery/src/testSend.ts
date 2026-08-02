@@ -65,6 +65,7 @@ export async function sendTestEmail(
     } else {
       rendered = await previewTemplate(params.eventId, prisma, undefined, {
         baseUrl,
+        env,
       });
     }
     const result = await mailer.send({

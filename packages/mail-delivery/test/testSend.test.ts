@@ -106,7 +106,8 @@ describe("sendTestEmail", () => {
     );
 
     expect(result.status).toBe("accepted");
-    expect(exported[0]?.message.html).toContain('src=""');
+    // Empty optional URL placeholders omit the attribute entirely (no src="").
+    expect(exported[0]?.message.html).toContain("<img alt=\"Map\" />");
     expect(exported[0]?.message.html).not.toContain("/m/evt-test-send.png");
   });
 });
