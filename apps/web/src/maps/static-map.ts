@@ -5,6 +5,11 @@
  * surrounding HTML credit).
  */
 import { createHash } from "node:crypto";
+import {
+  isBlockedPrivateOrMetadataHost,
+  isLoopbackHost,
+  unbracketHostname,
+} from "@admitto/shared/ssrf-guard";
 import sharp, { type OverlayOptions } from "sharp";
 import type { MapTileConfig } from "./config.js";
 
@@ -13,7 +18,12 @@ export const STATIC_MAP_HEIGHT = 300;
 const TILE_SIZE = 256;
 const DEFAULT_TILE_TIMEOUT_MS = 8_000;
 const MAX_TILE_BYTES = 512 * 1024;
+const MAX_TILE_REDIRECTS = 3;
 const ATTRIBUTION_BAR_HEIGHT = 18;
+/** PNG signature (ISO 15948) — reject non-image bodies before sharp composite. */
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+type EnvLike = Record<string, string | undefined>;
 
 /** True when a Content-Length value is a usable tile size (finite, non-negative, within cap). */
 export function isAllowedDeclaredTileSize(declared: number, maxBytes: number): boolean {
@@ -21,6 +31,46 @@ export function isAllowedDeclaredTileSize(declared: number, maxBytes: number): b
   if (declared < 0) return false;
   if (declared > maxBytes) return false;
   return true;
+}
+
+/** True when the buffer starts with the PNG file signature. */
+export function bufferLooksLikePng(buf: Buffer): boolean {
+  return buf.length >= PNG_MAGIC.length && buf.subarray(0, PNG_MAGIC.length).equals(PNG_MAGIC);
+}
+
+function isDevLocalhostHttp(url: URL, env: EnvLike): boolean {
+  return (
+    env["NODE_ENV"] === "development" &&
+    url.protocol === "http:" &&
+    (url.hostname === "localhost" || url.hostname === "127.0.0.1")
+  );
+}
+
+/**
+ * Reject tile fetch URLs that are not https (except http://localhost in development) or that
+ * target private / loopback / link-local / cloud-metadata hosts. Used for the initial expanded
+ * tile URL and every redirect Location hop (`redirect: "manual"`).
+ */
+export function assertSafeTileFetchUrl(raw: string, env: EnvLike = process.env): void {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new StaticMapRenderError(`Invalid tile URL: ${raw}`);
+  }
+
+  if (url.protocol === "https:") {
+    // allowed
+  } else if (isDevLocalhostHttp(url, env)) {
+    return;
+  } else {
+    throw new StaticMapRenderError(`Tile URL must use https: ${raw}`);
+  }
+
+  const host = unbracketHostname(url.hostname);
+  if (isLoopbackHost(host) || isBlockedPrivateOrMetadataHost(host)) {
+    throw new StaticMapRenderError(`Tile URL host is blocked: ${host}`);
+  }
 }
 
 export interface StaticMapRequest {
@@ -182,23 +232,51 @@ async function fetchTilePng(
   fetchFn: typeof fetch,
   timeoutMs: number,
 ): Promise<Buffer> {
-  let response: Response;
-  try {
-    response = await fetchFn(url, {
-      headers: {
-        "User-Agent": userAgent,
-        Accept: "image/png,image/*;q=0.8,*/*;q=0.5",
-      },
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-  } catch (err) {
-    throw new StaticMapRenderError(`Tile fetch failed: ${url}`, err);
+  let current = url;
+  for (let hop = 0; hop <= MAX_TILE_REDIRECTS; hop++) {
+    assertSafeTileFetchUrl(current);
+
+    let response: Response;
+    try {
+      response = await fetchFn(current, {
+        headers: {
+          "User-Agent": userAgent,
+          Accept: "image/png,image/*;q=0.8,*/*;q=0.5",
+        },
+        redirect: "manual",
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (err) {
+      throw new StaticMapRenderError(`Tile fetch failed: ${current}`, err);
+    }
+
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location");
+      await response.body?.cancel().catch(() => undefined);
+      if (!location) {
+        throw new StaticMapRenderError(`Tile redirect without Location: ${current}`);
+      }
+      try {
+        current = new URL(location, current).href;
+      } catch {
+        throw new StaticMapRenderError(`Tile redirect to invalid URL: ${location}`);
+      }
+      continue;
+    }
+
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new StaticMapRenderError(`Tile HTTP ${response.status}: ${current}`);
+    }
+
+    const body = await readTileBodyCapped(response, MAX_TILE_BYTES, current);
+    if (!bufferLooksLikePng(body)) {
+      throw new StaticMapRenderError(`Tile is not a PNG: ${current}`);
+    }
+    return body;
   }
-  if (!response.ok) {
-    await response.body?.cancel().catch(() => undefined);
-    throw new StaticMapRenderError(`Tile HTTP ${response.status}: ${url}`);
-  }
-  return readTileBodyCapped(response, MAX_TILE_BYTES, url);
+
+  throw new StaticMapRenderError(`Too many tile redirects: ${url}`);
 }
 
 /**

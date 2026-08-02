@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import sharp from "sharp";
 import {
+  assertSafeTileFetchUrl,
+  bufferLooksLikePng,
   buildStaticMapCacheKey,
   isAllowedDeclaredTileSize,
   latLngToTileFraction,
@@ -18,6 +20,35 @@ async function solidTilePng(color: { r: number; g: number; b: number }): Promise
     .png()
     .toBuffer();
 }
+
+describe("assertSafeTileFetchUrl", () => {
+  it("allows https public hosts and blocks private or metadata targets", () => {
+    expect(() => assertSafeTileFetchUrl("https://tiles.example/0/0/0.png")).not.toThrow();
+    expect(() => assertSafeTileFetchUrl("http://169.254.169.254/latest")).toThrow(/https/);
+    expect(() => assertSafeTileFetchUrl("https://169.254.169.254/latest")).toThrow(/blocked/);
+    expect(() => assertSafeTileFetchUrl("https://127.0.0.1/tile.png")).toThrow(/blocked/);
+    expect(() => assertSafeTileFetchUrl("https://192.168.1.10/tile.png")).toThrow(/blocked/);
+  });
+
+  it("allows http://localhost only in development", () => {
+    expect(() =>
+      assertSafeTileFetchUrl("http://localhost:8080/tile.png", { NODE_ENV: "development" }),
+    ).not.toThrow();
+    expect(() =>
+      assertSafeTileFetchUrl("http://localhost:8080/tile.png", { NODE_ENV: "production" }),
+    ).toThrow(/https/);
+  });
+});
+
+describe("bufferLooksLikePng", () => {
+  it("accepts real PNG signatures and rejects other payloads", async () => {
+    const tile = await solidTilePng({ r: 1, g: 2, b: 3 });
+    expect(bufferLooksLikePng(tile)).toBe(true);
+    expect(bufferLooksLikePng(Buffer.from("not-a-png"))).toBe(false);
+    expect(bufferLooksLikePng(Buffer.alloc(4))).toBe(false);
+  });
+});
+
 
 describe("latLngToTileFraction", () => {
   it("maps the equator/prime meridian near the world center at zoom 1", () => {
@@ -447,9 +478,99 @@ describe("renderStaticMapPng", () => {
     expect(cancel).toHaveBeenCalled();
   });
 
-  it("wraps sharp composite failures", async () => {
+  it("rejects non-PNG tile bodies before sharp composite", async () => {
     const fetchFn = vi.fn().mockImplementation(async () =>
       new Response(Buffer.from("not-a-valid-png"), {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      }),
+    );
+    await expect(
+      renderStaticMapPng(
+        { latitude: 52.23, longitude: 21.01, zoom: 14 },
+        {
+          tileConfig: {
+            enabled: true,
+            tileUrl: "https://tiles.example/{z}/{x}/{y}.png",
+            attribution: "",
+            maxZoom: 19,
+          },
+          userAgent: "Admitto/test",
+          fetchFn,
+        },
+      ),
+    ).rejects.toMatchObject({ message: expect.stringContaining("not a PNG") });
+  });
+
+  it("rejects redirects to private or metadata hosts", async () => {
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    const fetchFn = vi.fn().mockResolvedValue({
+      status: 302,
+      ok: false,
+      headers: {
+        get: (name: string) =>
+          name.toLowerCase() === "location" ? "https://169.254.169.254/latest/meta-data" : null,
+      },
+      body: { cancel },
+    });
+    await expect(
+      renderStaticMapPng(
+        { latitude: 52.23, longitude: 21.01, zoom: 14 },
+        {
+          tileConfig: {
+            enabled: true,
+            tileUrl: "https://tiles.example/{z}/{x}/{y}.png",
+            attribution: "",
+            maxZoom: 19,
+          },
+          userAgent: "Admitto/test",
+          fetchFn: fetchFn as unknown as typeof fetch,
+        },
+      ),
+    ).rejects.toMatchObject({ message: expect.stringContaining("blocked") });
+    expect(cancel).toHaveBeenCalled();
+  });
+
+  it("follows a safe https redirect and composites the final PNG", async () => {
+    const tile = await solidTilePng({ r: 70, g: 80, b: 90 });
+    const fetchFn = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const href = String(input);
+      if (href.includes("tiles.example")) {
+        return new Response(null, {
+          status: 302,
+          headers: { Location: "https://cdn.example/final.png" },
+        });
+      }
+      return new Response(tile, {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      });
+    });
+    const png = await renderStaticMapPng(
+      { latitude: 52.23, longitude: 21.01, zoom: 14, width: 256, height: 256 },
+      {
+        tileConfig: {
+          enabled: true,
+          tileUrl: "https://tiles.example/{z}/{x}/{y}.png",
+          attribution: "",
+          maxZoom: 19,
+        },
+        userAgent: "Admitto/test",
+        fetchFn,
+      },
+    );
+    expect(png.subarray(0, 4)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    expect(fetchFn.mock.calls.some((call) => String(call[0]).includes("cdn.example"))).toBe(true);
+  });
+
+  it("wraps sharp composite failures for corrupt PNG payloads", async () => {
+    // Valid PNG signature, but truncated / garbage IHDR so sharp still fails.
+    const corrupt = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from("not-a-valid-png-chunk"),
+    ]);
+    const fetchFn = vi.fn().mockImplementation(async () =>
+      new Response(corrupt, {
         status: 200,
         headers: { "content-type": "image/png" },
       }),
