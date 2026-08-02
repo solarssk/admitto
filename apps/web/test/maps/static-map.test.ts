@@ -36,6 +36,11 @@ describe("redactTileUrlForLogs", () => {
   it("falls back safely for unparseable input", () => {
     expect(redactTileUrlForLogs("not a url?api_key=leak")).toBe("not a url");
   });
+
+  it("strips userinfo from unparseable credential-bearing URLs", () => {
+    expect(redactTileUrlForLogs("https://user:secret@")).toBe("https://");
+    expect(redactTileUrlForLogs("https://token@host.invalid/%")).not.toContain("token");
+  });
 });
 
 describe("assertSafeTileFetchUrl", () => {

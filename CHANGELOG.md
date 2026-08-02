@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Location map pan/zoom no longer steals the pin:** single-click explores freely; **double-click** drops or relocates the pin; drag still fine-tunes. Zoom-only draft updates no longer `panTo` the pin (so exploring away from the marker stays put).
+- **Location “Verified” restore works when only `geocoding_provider` is sent** (same OSM result re-select): the PUT no longer rejects that body as an empty patch.
+- **Static map attribution stays readable on dark custom tiles** with a light text outline (cache-buster `?v=5`).
+- **Malformed tile URLs with userinfo are redacted in error logs** (e.g. `https://user:secret@` no longer leaks credentials when `new URL` fails).
 - **Location pin provenance is always visible:** with coordinates the Address footer shows **From OpenStreetMap** (search pick / successful reverse) or **Set manually** (pin without OSM provenance, or after a free-text venue rename). Re-selecting the same map pin now also persists `geocoding_provider` again so OSM status survives reload.
 - **Static map tile outages no longer break ticket/mail map images:** `GET /m/{eventId}.png` retries tile composite once, then serves a short-cached “Map unavailable” placeholder PNG (HTTP 200) instead of an empty 502, so mail clients do not show a broken image while a dead tile CDN recovers.
 - **Static map attribution is burned into the PNG only** (bottom-right, no white bar), so the ticket no longer shows a duplicate HTML credit under the image; mail still gets the required OSM/CARTO credit from the image itself.

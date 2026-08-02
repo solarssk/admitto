@@ -21,7 +21,7 @@ const MAX_TILE_BYTES = 512 * 1024;
 const MAX_TILE_REDIRECTS = 3;
 const ATTRIBUTION_OVERLAY_HEIGHT = 22;
 /** Bump when burn-in layout changes so Redis/memory caches miss stale PNGs. */
-const ATTRIBUTION_OVERLAY_VERSION = "br-plain-4";
+const ATTRIBUTION_OVERLAY_VERSION = "br-outline-5";
 /** PNG signature (ISO 15948) — reject non-image bodies before sharp composite. */
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -109,7 +109,12 @@ export function redactTileUrlForLogs(raw: string): string {
     const u = new URL(raw);
     return `${u.protocol}//${u.host}${u.pathname}`;
   } catch {
-    const stripped = raw.replace(/\?[^#\s]*/, "").replace(/#[^\s]*/, "").trim();
+    // Unparseable URLs (e.g. `https://user:secret@`) still must not leak credentials.
+    const stripped = raw
+      .replace(/\?[^#\s]*/, "")
+      .replace(/#[^\s]*/, "")
+      .replace(/\/\/[^/@\s]*@/g, "//")
+      .trim();
     return stripped.slice(0, 200) || "[invalid-url]";
   }
 }
@@ -192,9 +197,8 @@ function escXmlText(s: string): string {
 }
 
 /**
- * Bottom-right credit — plain dark text only (no fill bar, no white stroke halo).
- * OSM asks for a legible corner credit, not a fixed pt size; ~11px reads on a 600×300
- * ticket/mail map without needing a background strip.
+ * Bottom-right credit — dark text with a light outline so it stays readable on both light
+ * CARTO/OSM tiles and dark custom `MAP_TILE_URL` basemaps (ticket HTML attribution was removed).
  */
 function buildAttributionOverlay(width: number, attribution: string): Buffer | null {
   const text = plainMapAttribution(attribution);
@@ -205,7 +209,8 @@ function buildAttributionOverlay(width: number, attribution: string): Buffer | n
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${ATTRIBUTION_OVERLAY_HEIGHT}">
       <text x="${x}" y="16" text-anchor="end" font-size="11"
         font-family="DejaVu Sans, Arial, Helvetica, sans-serif"
-        fill="#1e293b">${safe}</text>
+        fill="#1e293b" stroke="#ffffff" stroke-width="3" stroke-linejoin="round"
+        paint-order="stroke fill">${safe}</text>
     </svg>`,
   );
 }

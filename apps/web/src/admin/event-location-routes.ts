@@ -169,7 +169,12 @@ async function parseLocationPutBody(
     // Zod's partial nullish fields are wider than AddressComponents; normalizeEventLocationInput
     // re-validates address_components via normalizeAddressComponents(unknown).
     const patch = normalizeEventLocationInput(parsed.data as EventLocationInput);
-    if (Object.keys(patch).length === 0) {
+    // Provider is API-only (not in normalizeEventLocationInput). A same-OSM re-select can send
+    // only `geocoding_provider` — treat non-empty or explicit null as a valid patch.
+    const providerRaw = parsed.data.geocoding_provider;
+    const providerOnlyPatch =
+      providerRaw === null || (typeof providerRaw === "string" && providerRaw.trim() !== "");
+    if (Object.keys(patch).length === 0 && !providerOnlyPatch) {
       return c.json({ error: "validation_failed" }, 400);
     }
     return { patch, geocodingProvider: parsed.data.geocoding_provider };
