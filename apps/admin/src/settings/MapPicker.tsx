@@ -125,17 +125,18 @@ export function MapPicker({
   }, [latitude, longitude, zoom]);
 
   // Keep pin draggability in sync with `disabled` (e.g. the event gets archived mid-edit).
+  // Also toggle the disabled CSS class via classList — never via React `className`, which would
+  // wipe Leaflet's own classes (`leaflet-container`, …) and drop `overflow: hidden` (map tiles
+  // then paint outside the frame after Save flips `saving` → `disabled`).
   useEffect(() => {
+    containerRef.current?.classList.toggle("location-map-picker--disabled", disabled);
     const marker = markerRef.current;
     if (!marker?.dragging) return;
     if (disabled) marker.dragging.disable();
     else marker.dragging.enable();
   }, [disabled, latitude, longitude]);
 
-  return (
-    <div
-      ref={containerRef}
-      className={disabled ? "location-map-picker location-map-picker--disabled" : "location-map-picker"}
-    />
-  );
+  // Stable className only — Leaflet appends `leaflet-container` etc. on mount; React must not
+  // replace the attribute on later renders (see disabled effect above).
+  return <div ref={containerRef} className="location-map-picker" />;
 }
