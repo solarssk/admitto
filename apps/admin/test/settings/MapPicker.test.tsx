@@ -145,6 +145,25 @@ describe("MapPicker", () => {
     panTo.mockRestore();
   });
 
+  it("setViews when coordinates and zoom both change on an existing pin", () => {
+    const setView = vi.spyOn(L.Map.prototype, "setView");
+    const panTo = vi.spyOn(L.Map.prototype, "panTo");
+    const { rerender } = render(
+      <MapPicker latitude={40.7128} longitude={-74.006} zoom={15} tileConfig={TILE_CONFIG} onPick={() => {}} />,
+    );
+    setView.mockClear();
+    panTo.mockClear();
+
+    rerender(
+      <MapPicker latitude={51.5074} longitude={-0.1278} zoom={12} tileConfig={TILE_CONFIG} onPick={() => {}} />,
+    );
+
+    expect(setView).toHaveBeenCalledWith([51.5074, -0.1278], 12);
+    expect(panTo).not.toHaveBeenCalled();
+    setView.mockRestore();
+    panTo.mockRestore();
+  });
+
   it("does not pan back to the pin when only zoom changes", () => {
     const panTo = vi.spyOn(L.Map.prototype, "panTo");
     const setView = vi.spyOn(L.Map.prototype, "setView");
