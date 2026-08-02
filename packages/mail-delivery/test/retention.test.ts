@@ -62,7 +62,6 @@ beforeAll(async () => {
       title: "Retention Event",
       slug: "retention-event",
       date: new Date("2026-05-01"),
-      location: "Warsaw",
     },
   });
   await prisma.attendee.create({

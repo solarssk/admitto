@@ -25,6 +25,7 @@ import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-er
 import type { EventSettingsDto, TicketTypeDto } from "../api/types.js";
 import { TicketTypesCard } from "../settings/TicketTypesCard.js";
 import { EventMailSettingsCard } from "../settings/EventMailSettingsCard.js";
+import { LocationSettingsPanel } from "../settings/LocationSettingsPanel.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
@@ -49,7 +50,6 @@ type SettingsForm = {
   title: string;
   date: string;
   timezone: string;
-  location: string;
   capacity: string;
   logoUrl: string;
 };
@@ -58,14 +58,14 @@ type SettingsPatch = Partial<{
   title: string;
   date: string;
   timezone: string;
-  location: string | null;
   capacity: number | null;
   logo_url: string | null;
 }>;
 
 const EVENT_SETTINGS_SUBTITLE = "Manage this event's details, images, and access controls.";
 
-const BASIC_INFORMATION_HINT = "Core event details. Title, date, and location are shown to attendees and printed on tickets.";
+const BASIC_INFORMATION_HINT =
+  "Core event details. Title and date are shown to attendees and printed on tickets. Set the venue in the Location tab.";
 const STATUS_HINT = "Read-only overview of this event's current state. Archive or delete it from the Danger zone tab.";
 const EVENT_LOGO_HINT = "Use a different logo just for this event, or leave it blank to use the organization's logo.";
 const DANGER_ZONE_HINT = "Irreversible actions affecting this event's data or availability. Most require superadmin.";
@@ -93,7 +93,6 @@ function toForm(data: EventSettingsDto): SettingsForm {
     title: data.title,
     date: data.date.split("T")[0] ?? "",
     timezone: data.timezone,
-    location: data.location ?? "",
     capacity: data.capacity?.toString() ?? "",
     logoUrl: data.logo_url ?? "",
   };
@@ -116,9 +115,6 @@ function buildSettingsPatch(form: SettingsForm, original: SettingsForm): Setting
   if (title !== original.title.trim()) patch.title = title;
   if (form.date !== original.date) patch.date = form.date;
   if (form.timezone !== original.timezone) patch.timezone = form.timezone;
-  const location = form.location.trim() || null;
-  const originalLocation = original.location.trim() || null;
-  if (location !== originalLocation) patch.location = location;
   if (form.capacity.trim() !== original.capacity.trim()) {
     patch.capacity = parseCapacityInput(form.capacity);
   }
@@ -315,6 +311,7 @@ interface ArchiveToggleDeps {
   setArchiving: (value: boolean) => void;
   setArchiveOpen: (value: boolean) => void;
   setMailCardResetKey: (updater: (n: number) => number) => void;
+  setLocationCardResetKey: (updater: (n: number) => number) => void;
   addToast: AddToast;
   load: () => Promise<void>;
   refreshLayoutEvent?: () => Promise<void>;
@@ -328,6 +325,7 @@ async function confirmArchiveToggle(deps: ArchiveToggleDeps): Promise<void> {
     setArchiving,
     setArchiveOpen,
     setMailCardResetKey,
+    setLocationCardResetKey,
     addToast,
     load,
     refreshLayoutEvent,
@@ -343,6 +341,7 @@ async function confirmArchiveToggle(deps: ArchiveToggleDeps): Promise<void> {
     }
     setArchiveOpen(false);
     setMailCardResetKey((n) => n + 1);
+    setLocationCardResetKey((n) => n + 1);
     await load();
     await refreshLayoutEvent?.();
   } catch (err) {
@@ -420,6 +419,7 @@ interface RevokeCheckinsDeps {
   setRevokingCheckins: (value: boolean) => void;
   setRevokeCheckinsOpen: (value: boolean) => void;
   setMailCardResetKey: (updater: (n: number) => number) => void;
+  setLocationCardResetKey: (updater: (n: number) => number) => void;
   addToast: AddToast;
   load: () => Promise<void>;
   refreshLayoutEvent?: () => Promise<void>;
@@ -432,6 +432,7 @@ async function confirmRevokeCheckins(deps: RevokeCheckinsDeps): Promise<void> {
     setRevokingCheckins,
     setRevokeCheckinsOpen,
     setMailCardResetKey,
+    setLocationCardResetKey,
     addToast,
     load,
     refreshLayoutEvent,
@@ -447,6 +448,7 @@ async function confirmRevokeCheckins(deps: RevokeCheckinsDeps): Promise<void> {
     );
     setRevokeCheckinsOpen(false);
     setMailCardResetKey((n) => n + 1);
+    setLocationCardResetKey((n) => n + 1);
     await load();
     await refreshLayoutEvent?.();
   } catch (err) {
@@ -461,6 +463,7 @@ interface RevokeItemsDeps {
   setRevokingItems: (value: boolean) => void;
   setRevokeItemsOpen: (value: boolean) => void;
   setMailCardResetKey: (updater: (n: number) => number) => void;
+  setLocationCardResetKey: (updater: (n: number) => number) => void;
   addToast: AddToast;
   load: () => Promise<void>;
   refreshLayoutEvent?: () => Promise<void>;
@@ -473,6 +476,7 @@ async function confirmRevokeItems(deps: RevokeItemsDeps): Promise<void> {
     setRevokingItems,
     setRevokeItemsOpen,
     setMailCardResetKey,
+    setLocationCardResetKey,
     addToast,
     load,
     refreshLayoutEvent,
@@ -488,6 +492,7 @@ async function confirmRevokeItems(deps: RevokeItemsDeps): Promise<void> {
     );
     setRevokeItemsOpen(false);
     setMailCardResetKey((n) => n + 1);
+    setLocationCardResetKey((n) => n + 1);
     await load();
     await refreshLayoutEvent?.();
   } catch (err) {
@@ -559,6 +564,10 @@ export function EventSettingsPage() {
   // (CodeRabbit review). Bumping this key remounts the card, discarding its draft and
   // re-fetching current server state.
   const [mailCardResetKey, setMailCardResetKey] = useState(0);
+  const [locationDirty, setLocationDirty] = useState(false);
+  const [locationSaving, setLocationSaving] = useState(false);
+  // Same reasoning as mailCardResetKey above, applied to LocationSettingsPanel's own draft state.
+  const [locationCardResetKey, setLocationCardResetKey] = useState(0);
 
   const initialTab = inPageTabFromSearch(searchParams, isSa);
   const [tab, setTab] = useState<EventSettingsTab>(initialTab);
@@ -586,13 +595,14 @@ export function EventSettingsPage() {
 
   const dirty =
     form !== null && original !== null && JSON.stringify(form) !== JSON.stringify(original);
-  // Combines the General form's own dirty state with the Mail tab's — navigating away or
-  // running a page action that reloads state (archive, revoke) would otherwise silently
-  // discard unsaved mail transport edits and pending secret replacements (CodeRabbit review).
-  const pageDirty = dirty || mailDirty;
+  // Combines the General form's own dirty state with the Mail and Location tabs' — navigating
+  // away or running a page action that reloads state (archive, revoke) would otherwise silently
+  // discard unsaved mail transport edits, pending secret replacements, or a pending pin move
+  // (CodeRabbit review).
+  const pageDirty = dirty || mailDirty || locationDirty;
   // Same combination for "a save request is in flight" - a Danger Zone action firing while the
-  // Mail tab's own save is still in flight would race against it on the same event record.
-  const pageBusy = saving || mailSaving;
+  // Mail or Location tab's own save is still in flight would race against it on the same event record.
+  const pageBusy = saving || mailSaving || locationSaving;
   const saveButtonLabel = computeSaveButtonLabel(saving, logoUploading);
   // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
   // these "Loading…" placeholders on and off faster than they can register as loading —
@@ -683,6 +693,7 @@ export function EventSettingsPage() {
       setArchiving,
       setArchiveOpen,
       setMailCardResetKey,
+      setLocationCardResetKey,
       addToast,
       load,
       refreshLayoutEvent,
@@ -706,6 +717,7 @@ export function EventSettingsPage() {
       setRevokingCheckins,
       setRevokeCheckinsOpen,
       setMailCardResetKey,
+      setLocationCardResetKey,
       addToast,
       load,
       refreshLayoutEvent,
@@ -719,6 +731,7 @@ export function EventSettingsPage() {
       setRevokingItems,
       setRevokeItemsOpen,
       setMailCardResetKey,
+      setLocationCardResetKey,
       addToast,
       load,
       refreshLayoutEvent,
@@ -893,18 +906,6 @@ export function EventSettingsPage() {
               <p className="field-hint">All check-in times and reports use this timezone.</p>
             </div>
 
-            <div className="settings-field-group">
-              <Input
-                label="Location"
-                value={form.location}
-                disabled={isArchived || saving}
-                placeholder="Convention Center, Warsaw"
-                icon={<i className="ti ti-map-pin" aria-hidden="true" />}
-                onChange={(e) => setForm({ ...form, location: e.target.value })}
-              />
-              <p className="field-hint">Optional. Shown on tickets and calendar invites.</p>
-            </div>
-
             <div className="settings-field-group slug-field">
               <Input
                 label="Event link ID"
@@ -950,6 +951,30 @@ export function EventSettingsPage() {
             </div>
           </div>
         </Card>
+      </EventSettingsTabPanel>
+
+      <EventSettingsTabPanel tab="location" activeTab={tab} visited={visitedTabs} label="Location">
+        <LocationSettingsPanel
+          key={locationCardResetKey}
+          eventId={eventId}
+          isArchived={isArchived}
+          eventTimezone={form.timezone}
+          onDirtyChange={setLocationDirty}
+          onSavingChange={setLocationSaving}
+          onLocationSaved={async () => {
+            await refreshLayoutEvent?.();
+          }}
+          onApplyTimezone={async (timezone) => {
+            // `form`/`original` are set whenever this panel mounts (gated by `!form` above).
+            const { event: updated } = await patchEvent(eventId, { timezone });
+            setEvent(updated);
+            const next = { ...form, timezone: updated.timezone };
+            const nextOriginal = { ...original!, timezone: updated.timezone };
+            setForm(next);
+            setOriginal(nextOriginal);
+            await refreshLayoutEvent?.();
+          }}
+        />
       </EventSettingsTabPanel>
 
       <EventSettingsTabPanel tab="ticket-types" activeTab={tab} visited={visitedTabs} label="Ticket types">

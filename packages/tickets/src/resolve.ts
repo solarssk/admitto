@@ -50,11 +50,11 @@ export async function resolveTicket(
     const row = context.eventId
       ? await prisma.attendee.findFirst({
           where: { token_hash: hash, event_id: context.eventId },
-          include: { event: { include: { organization: true } } },
+          include: { event: { include: { organization: true, location_details: true } } },
         })
       : await prisma.attendee.findUnique({
           where: { token_hash: hash },
-          include: { event: { include: { organization: true } } },
+          include: { event: { include: { organization: true, location_details: true } } },
         });
     if (row) return toResolved(row, "internal");
   }
@@ -65,7 +65,7 @@ export async function resolveTicket(
   // Mode B — agency qr_payload. Ambiguous matches are treated as unresolved.
   const byQr = await prisma.attendee.findMany({
     where: { event_id: context.eventId, qr_payload: scanned },
-    include: { event: { include: { organization: true } } },
+    include: { event: { include: { organization: true, location_details: true } } },
     take: 2,
   });
   if (byQr.length > 1) return null;
@@ -73,7 +73,7 @@ export async function resolveTicket(
   // Mode B — agency external_uuid
   const byUuid = await prisma.attendee.findFirst({
     where: { event_id: context.eventId, external_uuid: scanned },
-    include: { event: { include: { organization: true } } },
+    include: { event: { include: { organization: true, location_details: true } } },
   });
 
   if (byQr[0] && byUuid && byQr[0].id !== byUuid.id) {
@@ -95,7 +95,8 @@ export function toResolved(
     token_hash: string | null; qr_payload: string | null; external_uuid: string | null;
     ticket_type: string | null;
     event: {
-      id: string; title: string; date: Date; location: string | null;
+      id: string; title: string; date: Date;
+      location_details?: { venue_name: string | null } | null;
       logo_url: string | null; header_image_url: string | null;
       organization: { logo_url: string | null; header_image_url: string | null };
     };
@@ -119,7 +120,7 @@ export function toResolved(
       id: row.event.id,
       title: row.event.title,
       date: row.event.date,
-      location: row.event.location,
+      location: row.event.location_details?.venue_name ?? null,
       logoUrl: resolveTicketLogoUrl(row.event),
     },
   };

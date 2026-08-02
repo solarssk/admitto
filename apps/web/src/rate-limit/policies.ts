@@ -265,6 +265,35 @@ export const RATE_POLICIES = {
       },
     ],
   },
+  /** Nominatim's Usage Policy caps at 1 request/second for the whole deployment, not per
+   * user — hence a single shared global key, plus a lighter per-user check so one admin
+   * mashing "Find on map" can't eat the entire global budget alone. */
+  "admin:geocoding-search": {
+    // Per-user API budget only. Nominatim's ≤1 req/s Usage Policy is enforced inside
+    // `NominatimProvider` around real upstream calls so Redis cache hits (and the common
+    // search-then-reverse enrich path) are not rejected with 429 before the provider runs.
+    checks: [
+      {
+        keyOf: (c) => `admin:geocoding-search:user:${c.get("auth").userId}`,
+        windowMs: 60_000,
+        max: 40,
+        onExceeded: (c) => c.json({ error: "geocoding_rate_limited" }, 429),
+        logOnExceeded: { scope: "admin_geocoding_search", keyHint: "user" },
+      },
+    ],
+  },
+  // Offline geo-tz only — no Nominatim budget; still bound per staff user.
+  "admin:geocoding-timezone": {
+    checks: [
+      {
+        keyOf: (c) => `admin:geocoding-timezone:user:${c.get("auth").userId}`,
+        windowMs: 60_000,
+        max: 60,
+        onExceeded: (c) => c.json({ error: "geocoding_rate_limited" }, 429),
+        logOnExceeded: { scope: "admin_geocoding_timezone", keyHint: "user" },
+      },
+    ],
+  },
   "admin:resend": {
     beforeCheck: (c) => {
       if (!c.req.param("id")) return c.json({ error: "id required" }, 400);

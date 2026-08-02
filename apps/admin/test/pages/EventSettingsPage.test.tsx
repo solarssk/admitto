@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RouterProvider } from "react-router/dom";
-import { createMemoryRouter, MemoryRouter, Route, Routes } from "react-router";
+import { createMemoryRouter, MemoryRouter, Outlet, Route, Routes } from "react-router";
 import { EventSettingsPage } from "../../src/pages/EventSettingsPage.js";
 import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 import type { RoleAssignment, TicketTypeDto } from "../../src/api/types.js";
@@ -55,24 +55,45 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchTicketTypes: vi.fn().mockResolvedValue([]),
     updateTicketType: vi.fn(),
     fetchEventMailSettings: vi.fn(),
+    fetchEventLocation: vi.fn(),
+    fetchMapTileConfig: vi.fn(),
+    saveEventLocation: vi.fn(),
+    searchGeocoding: vi.fn(),
+    reverseGeocoding: vi.fn(),
+    fetchTimezoneForCoordinates: vi.fn(),
   };
 });
+
+vi.mock("../../src/settings/MapPicker.js", () => ({
+  MapPicker: () => <div data-testid="map-picker" />,
+}));
 
 import {
   archiveEvent,
   deleteEvent,
   fetchEventImageAssets,
   fetchEventMailSettings,
+  fetchEventLocation,
   fetchEventSettings,
   fetchTicketTypes,
+  fetchMapTileConfig,
+  fetchTimezoneForCoordinates,
   patchEvent,
   revokeAllCheckIns,
   revokeAllItemsIssued,
+  reverseGeocoding,
+  saveEventLocation,
+  searchGeocoding,
   unarchiveEvent,
   updateTicketType,
   uploadEventBrandingFile,
 } from "../../src/api/client.js";
-import type { EventMailSettingsResponse, MailSettingsFieldsDto } from "../../src/api/types.js";
+import type {
+  EventLocationDto,
+  EventMailSettingsResponse,
+  MailSettingsFieldsDto,
+  MapTileConfigDto,
+} from "../../src/api/types.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
 import { formatUtcDateTime } from "../../src/utils/event-dates.js";
 
@@ -82,7 +103,6 @@ const activeEvent = {
   slug: "summit",
   date: "2026-06-01",
   timezone: "Europe/Warsaw",
-  location: "Hall A",
   capacity: 100,
   status: "active" as const,
   archived_at: null as string | null,
@@ -104,6 +124,27 @@ const archivedEvent = {
   status: "archived" as const,
   archived_at: "2026-01-01T00:00:00.000Z",
   capacity: null,
+};
+
+const emptyLocation: EventLocationDto = {
+  venue_name: null,
+  formatted_address: null,
+  latitude: null,
+  longitude: null,
+  map_zoom: 15,
+  directions_text: null,
+  accessibility_text: null,
+  geocoding_provider: null,
+  geocoded_at: null,
+  address_components: null,
+};
+
+const mapTileConfig: MapTileConfigDto = {
+  enabled: true,
+  tile_url: "https://tile.example/{z}/{x}/{y}.png",
+  attribution: "© OpenStreetMap contributors",
+  max_zoom: 19,
+  contact_configured: true,
 };
 
 function plainField<T>(value: T) {
@@ -172,6 +213,12 @@ beforeEach(() => {
   vi.mocked(fetchEventImageAssets).mockResolvedValue([]);
   vi.mocked(fetchTicketTypes).mockResolvedValue([]);
   vi.mocked(fetchEventMailSettings).mockResolvedValue(inheritedMailSettingsResponse());
+  vi.mocked(fetchEventLocation).mockResolvedValue(emptyLocation);
+  vi.mocked(fetchMapTileConfig).mockResolvedValue(mapTileConfig);
+  vi.mocked(saveEventLocation).mockResolvedValue(emptyLocation);
+  vi.mocked(searchGeocoding).mockResolvedValue({ results: [], contact_configured: true });
+  vi.mocked(reverseGeocoding).mockResolvedValue({ result: null, contact_configured: true });
+  vi.mocked(fetchTimezoneForCoordinates).mockResolvedValue({ timezone: null });
   mockBlocker = { state: "unblocked", proceed: vi.fn(), reset: vi.fn() };
   // window.matchMedia isn't implemented by jsdom; default to desktop so any component on
   // this page relying on useIsDesktop() (elsewhere in the app, not this page's Save button)
@@ -186,13 +233,27 @@ afterEach(() => {
   mockAssignments = superadminAssignments;
 });
 
-function renderSettings(entry = "/admin/events/evt-1/settings") {
+function renderSettings(
+  entry = "/admin/events/evt-1/settings",
+  outletContext?: { refreshEvent?: () => Promise<void> },
+) {
+  function SettingsWithOutlet() {
+    return (
+      <Outlet context={outletContext} />
+    );
+  }
   renderWithToast(
     <MemoryRouter initialEntries={[entry]}>
       <Routes>
         <Route path="/admin" element={<div>events picker</div>} />
         <Route path="/admin/events/:eventId/overview" element={<div>event overview</div>} />
-        <Route path="/admin/events/:eventId/settings" element={<EventSettingsPage />} />
+        {outletContext ? (
+          <Route path="/admin/events/:eventId" element={<SettingsWithOutlet />}>
+            <Route path="settings" element={<EventSettingsPage />} />
+          </Route>
+        ) : (
+          <Route path="/admin/events/:eventId/settings" element={<EventSettingsPage />} />
+        )}
       </Routes>
     </MemoryRouter>,
   );
@@ -284,6 +345,49 @@ describe("EventSettingsPage tabs", () => {
     );
     expect(screen.getByText("Basic information")).toBeTruthy();
     expect(screen.getByText("Status")).toBeTruthy();
+  });
+
+  it("deep links to Location and keeps venue guidance out of Basic information", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings("/admin/events/evt-1/settings?tab=location");
+
+    expect(await screen.findByLabelText("Address details")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Location" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(await screen.findByText("Find on map")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("tab", { name: "General" }));
+    await screen.findByText("Basic information");
+    const basicInformationHint = screen.getByText("Basic information").closest(".at-tooltip-trigger");
+    fireEvent.mouseEnter(basicInformationHint!);
+    expect(screen.getByRole("tooltip").textContent).toBe(
+      "Core event details. Title and date are shown to attendees and printed on tickets. Set the venue in the Location tab.",
+    );
+  });
+
+  it("applies the suggested location timezone through the event patch", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchEventLocation).mockResolvedValueOnce({
+      ...emptyLocation,
+      latitude: 40.7128,
+      longitude: -74.006,
+      venue_name: "New York Hall",
+    });
+    vi.mocked(fetchTimezoneForCoordinates).mockResolvedValueOnce({ timezone: "America/New_York" });
+    vi.mocked(patchEvent).mockResolvedValueOnce({
+      event: { ...activeEvent, timezone: "America/New_York" },
+    });
+    const refreshEvent = vi.fn().mockResolvedValue(undefined);
+    renderSettings("/admin/events/evt-1/settings?tab=location", { refreshEvent });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Use" }));
+
+    await waitFor(() =>
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { timezone: "America/New_York" }),
+    );
+    expect(await screen.findByText("Event timezone set to America/New_York.")).toBeTruthy();
+    await waitFor(() => expect(refreshEvent).toHaveBeenCalled());
   });
 
   it("shows the created date and an active hint in the Status card", async () => {

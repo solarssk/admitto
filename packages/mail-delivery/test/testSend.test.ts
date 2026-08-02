@@ -23,7 +23,6 @@ beforeAll(async () => {
       title: "Test Send Event",
       slug: "test-send-event",
       date: new Date("2026-09-01"),
-      location: "Warsaw",
     },
   });
 

@@ -8,6 +8,7 @@ import type {
   CheckInHistoryEntry,
   CheckInScanResponse,
   CheckInStatsResponse,
+  CreateEventBody,
   DeliveryDto,
   EventDto,
   EventSettingsDto,
@@ -47,6 +48,12 @@ import type {
   SaveMailSettingsBody,
   EventDeliveriesListParams,
   EventDeliveriesListResponse,
+  EventLocationDto,
+  SaveEventLocationBody,
+  GeocodingSearchResponse,
+  GeocodingReverseResponse,
+  GeocodingTimezoneResponse,
+  MapTileConfigDto,
   DeliveryDetailDto,
   RenderedDeliveryDto,
   SessionsResponse,
@@ -349,13 +356,7 @@ export async function fetchAdminEvents(
 }
 
 /** Create a new event (superadmin or org admin). */
-export async function createEvent(body: {
-  title: string;
-  slug: string;
-  date: string;
-  timezone: string;
-  location?: string;
-}): Promise<EventDto> {
+export async function createEvent(body: CreateEventBody): Promise<EventDto> {
   const res = await fetch("/api/admin/events", jsonPostInit(body));
   const data = await parseJson<{ event: EventDto }>(res);
   return data.event;
@@ -1502,6 +1503,66 @@ export async function sendEventMailTransportTest(
     jsonPostInit({ to }),
   );
   return parseJson<MailTransportTestSendResponse>(res);
+}
+
+/** Load an event's Location tab data, or the stable empty DTO when nothing has been saved yet. */
+export async function fetchEventLocation(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<EventLocationDto> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/location`, {
+    credentials: "same-origin",
+    signal,
+  });
+  return parseJson<EventLocationDto>(res);
+}
+
+/** Save (partial patch) an event's Location tab data. */
+export async function saveEventLocation(
+  eventId: string,
+  body: SaveEventLocationBody,
+): Promise<EventLocationDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/location`,
+    jsonPutInit(body),
+  );
+  return parseJson<EventLocationDto>(res);
+}
+
+/** Search for an address via the server's geocoding provider (Nominatim by default). Not
+ * event-scoped — any event's Location tab can call it. */
+export async function searchGeocoding(query: string): Promise<GeocodingSearchResponse> {
+  const res = await fetch("/api/admin/geocoding/search", jsonPostInit({ query }));
+  return parseJson<GeocodingSearchResponse>(res);
+}
+
+/** Resolve an address for a map pin click/drag via the server's geocoding provider. */
+export async function reverseGeocoding(
+  latitude: number,
+  longitude: number,
+): Promise<GeocodingReverseResponse> {
+  const res = await fetch("/api/admin/geocoding/reverse", jsonPostInit({ latitude, longitude }));
+  return parseJson<GeocodingReverseResponse>(res);
+}
+
+/** Resolve the IANA timezone for a map pin (server-side geo-tz — not available in the SPA). */
+export async function fetchTimezoneForCoordinates(
+  latitude: number,
+  longitude: number,
+  signal?: AbortSignal,
+): Promise<GeocodingTimezoneResponse> {
+  const res = await fetch("/api/admin/geocoding/timezone", {
+    ...jsonPostInit({ latitude, longitude }),
+    signal,
+  });
+  return parseJson<GeocodingTimezoneResponse>(res);
+}
+
+/** Deployment-level map tile config (tile server URL, attribution, max zoom) for the
+ * Location tab's Leaflet map. */
+export async function fetchMapTileConfig(signal?: AbortSignal): Promise<MapTileConfigDto> {
+  const res = await fetch("/api/admin/maps/config", { credentials: "same-origin", signal });
+  return parseJson<MapTileConfigDto>(res);
 }
 
 export async function fetchSessions(

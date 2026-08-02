@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { PrismaClient } from "@admitto/db";
+import { PrismaClient, Prisma } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
@@ -164,7 +164,7 @@ describe("POST /api/admin/events", () => {
       slug: "autumn-summit-2026",
       date: "2026-09-29",
       timezone: "UTC",
-      location: "Convention Center, Warsaw",
+      venue_name: "Convention Center, Warsaw",
     });
 
     expect(res.status).toBe(201);
@@ -174,14 +174,19 @@ describe("POST /api/admin/events", () => {
         title: string;
         slug: string;
         organization_id: string;
+        location: string | null;
       };
     };
     expect(body.event.title).toBe("Autumn Summit 2026");
     expect(body.event.slug).toBe("autumn-summit-2026");
     expect(body.event.organization_id).toBe(ORG_CREATE);
+    expect(body.event.location).toBe("Convention Center, Warsaw");
 
-    const row = await prisma.event.findUnique({ where: { id: body.event.id } });
-    expect(row?.location).toBe("Convention Center, Warsaw");
+    const row = await prisma.event.findUnique({
+      where: { id: body.event.id },
+      include: { location_details: true },
+    });
+    expect(row?.location_details?.venue_name).toBe("Convention Center, Warsaw");
     expect(row?.created_by_user_id).toBe(superId);
 
     const afterAudit = await prisma.adminAuditLog.count({
@@ -197,6 +202,114 @@ describe("POST /api/admin/events", () => {
       fields: { eventId: body.event.id, orgId: ORG_CREATE, actorUserId: superId, actorEmail: EMAIL_SUPER },
     });
     expect(JSON.stringify(entry)).not.toContain("Autumn Summit 2026");
+  });
+
+  it("creates a geocoded EventLocation row from the selected location fields", async () => {
+    const res = await postCreateEvent(superCookie, {
+      title: "Geocoded Event",
+      slug: "geocoded-event",
+      date: "2026-09-29",
+      timezone: "UTC",
+      venue_name: "Convention Center",
+      formatted_address: "1 Example Street, Warsaw",
+      latitude: 52.2297,
+      longitude: 21.0122,
+      geocoding_provider: "nominatim",
+    });
+    expect(res.status).toBe(201);
+    const { event } = (await res.json()) as { event: { id: string } };
+
+    const location = await prisma.eventLocation.findUnique({ where: { event_id: event.id } });
+    expect(location).toMatchObject({
+      venue_name: "Convention Center",
+      formatted_address: "1 Example Street, Warsaw",
+      latitude: 52.2297,
+      longitude: 21.0122,
+      geocoding_provider: "nominatim",
+    });
+    expect(location?.geocoded_at).toBeInstanceOf(Date);
+  });
+
+  it("stores coordinates without a geocoding_provider when none was selected", async () => {
+    const res = await postCreateEvent(superCookie, {
+      title: "Pin Only Event",
+      slug: "pin-only-event",
+      date: "2026-09-29",
+      timezone: "UTC",
+      latitude: 52.2297,
+      longitude: 21.0122,
+    });
+    expect(res.status).toBe(201);
+    const { event } = (await res.json()) as { event: { id: string } };
+
+    const location = await prisma.eventLocation.findUnique({ where: { event_id: event.id } });
+    expect(location).toMatchObject({
+      latitude: 52.2297,
+      longitude: 21.0122,
+      geocoding_provider: null,
+    });
+    expect(location?.geocoded_at).toBeInstanceOf(Date);
+  });
+
+  it("treats a blank geocoding_provider as null when coordinates are set", async () => {
+    const res = await postCreateEvent(superCookie, {
+      title: "Blank Provider Event",
+      slug: "blank-provider-event",
+      date: "2026-09-29",
+      timezone: "UTC",
+      latitude: 52.2297,
+      longitude: 21.0122,
+      geocoding_provider: "   ",
+    });
+    expect(res.status).toBe(201);
+    const { event } = (await res.json()) as { event: { id: string } };
+
+    const location = await prisma.eventLocation.findUnique({ where: { event_id: event.id } });
+    expect(location?.geocoding_provider).toBeNull();
+    expect(location?.geocoded_at).toBeInstanceOf(Date);
+  });
+
+  it("rejects create when only one coordinate is provided", async () => {
+    const res = await postCreateEvent(superCookie, {
+      title: "Half Pin Event",
+      slug: "half-pin-event",
+      date: "2026-09-29",
+      timezone: "UTC",
+      latitude: 52.2297,
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/latitude|longitude|coordinate/i);
+  });
+
+  it("creates a location row for an address-only event", async () => {
+    const res = await postCreateEvent(superCookie, {
+      title: "Address Only Event",
+      slug: "address-only-event",
+      date: "2026-09-29",
+      timezone: "UTC",
+      formatted_address: "1 Example Street, Warsaw",
+    });
+    expect(res.status).toBe(201);
+    const { event } = (await res.json()) as { event: { id: string } };
+
+    const location = await prisma.eventLocation.findUnique({ where: { event_id: event.id } });
+    expect(location?.formatted_address).toBe("1 Example Street, Warsaw");
+    expect(location?.venue_name).toBeNull();
+  });
+
+  it("does not create a location row for a blank venue without address or coordinates", async () => {
+    const res = await postCreateEvent(superCookie, {
+      title: "No Location Event",
+      slug: "no-location-event",
+      date: "2026-09-29",
+      timezone: "UTC",
+      venue_name: "   ",
+    });
+    expect(res.status).toBe(201);
+    const { event } = (await res.json()) as { event: { id: string } };
+
+    expect(await prisma.eventLocation.findUnique({ where: { event_id: event.id } })).toBeNull();
   });
 
   it("records a safe System-log category when the create transaction fails", async () => {
@@ -264,6 +377,30 @@ describe("POST /api/admin/events", () => {
       timezone: "UTC",
     });
     expect(res.status).toBe(403);
+  });
+
+  it("returns 409 when a concurrent create races on slug (P2002)", async () => {
+    const spy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+        code: "P2002",
+        clientVersion: "test",
+      }),
+    );
+    try {
+      const res = await postCreateEvent(superCookie, {
+        title: "Race Event",
+        slug: "race-slug-event",
+        date: "2026-09-29",
+        timezone: "UTC",
+      });
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({
+        code: "slug_taken",
+        error: "Slug is already in use.",
+      });
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("returns 409 when slug is taken", async () => {

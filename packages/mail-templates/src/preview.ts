@@ -5,7 +5,7 @@ import { validateHttpUrl } from "./escape.js";
 import { formatEventDate, resolvePreviewEventTimeZone } from "./formatEventDate.js";
 import { resolveTemplateForEvent } from "./mailTemplate.js";
 import { renderTemplate } from "./render.js";
-import type { RenderedTemplate, TemplateVars } from "./types.js";
+import type { BrandingUrls, RenderedTemplate, TemplateVars } from "./types.js";
 
 export interface PreviewTemplateOptions {
   /** IANA timezone for calendar `event_date` (e.g. Europe/Warsaw). Falls back to ADMITTO_DEFAULT_EVENT_TIMEZONE or UTC. */
@@ -41,6 +41,31 @@ export const DEFAULT_SAMPLE_VARS: TemplateVars = {
   download_page_url: "",
 };
 
+type EventForBaseTemplateVars = {
+  title: string;
+  date: Date;
+  location_details?: { venue_name: string | null } | null;
+};
+
+/**
+ * Shared base vars for preview + test-send so event/branding fields cannot drift
+ * between the two call sites.
+ */
+export function buildBaseTemplateVars(
+  event: EventForBaseTemplateVars,
+  timeZone: string | undefined,
+  branding: BrandingUrls,
+): TemplateVars {
+  return {
+    ...DEFAULT_SAMPLE_VARS,
+    event_name: event.title,
+    event_date: formatEventDate(event.date, resolvePreviewEventTimeZone(timeZone)),
+    event_location: event.location_details?.venue_name ?? "",
+    logo_url: branding.logo_url,
+    header_image_url: branding.header_image_url,
+  };
+}
+
 /**
  * Renders the resolved template with sample data — no mail send.
  */
@@ -52,22 +77,14 @@ export async function previewTemplate(
 ): Promise<RenderedTemplate> {
   const event = await prisma.event.findUniqueOrThrow({
     where: { id: eventId },
-    include: { organization: true },
+    include: { organization: true, location_details: true },
   });
   const resolved = await resolveTemplateForEvent(event, prisma);
   const branding = resolveBrandingFromEvent(event);
   const customAssets = await resolveEventImageAssetVars(eventId, prisma);
 
   const vars: TemplateVars = {
-    ...DEFAULT_SAMPLE_VARS,
-    event_name: event.title,
-    event_date: formatEventDate(
-      event.date,
-      resolvePreviewEventTimeZone(options?.timeZone),
-    ),
-    event_location: event.location ?? "",
-    logo_url: branding.logo_url,
-    header_image_url: branding.header_image_url,
+    ...buildBaseTemplateVars(event, options?.timeZone, branding),
     ...customAssets.vars,
     ...sampleVars,
   };

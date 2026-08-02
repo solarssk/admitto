@@ -62,6 +62,7 @@ export { resolveBranding, resolveBrandingFromEvent, setBranding, resolveEventIma
 export {
   previewTemplate,
   DEFAULT_SAMPLE_VARS,
+  buildBaseTemplateVars,
 } from "./preview.js";
 export type { PreviewTemplateOptions } from "./preview.js";
 export { formatEventDate, resolvePreviewEventTimeZone } from "./formatEventDate.js";

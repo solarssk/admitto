@@ -120,7 +120,7 @@ interface EventForSend extends EventLinkInput {
   id: string;
   title: string;
   date: Date;
-  location: string | null;
+  location_details?: { venue_name: string | null } | null;
   organization_id: string;
 }
 
@@ -202,7 +202,7 @@ async function processAttendeeForSend({
       email: attendee.email,
       event_name: event.title,
       event_date: formatEventDate(event.date, "UTC"),
-      event_location: event.location ?? "",
+      event_location: event.location_details?.venue_name ?? "",
       logo_url: branding.logo_url,
       header_image_url: branding.header_image_url,
       apple_wallet_url: "",
@@ -335,7 +335,7 @@ export async function sendTicketEmails(
 
   const event = await prisma.event.findUniqueOrThrow({
     where: { id: eventId },
-    include: { organization: true },
+    include: { organization: true, location_details: true },
   });
 
   const mailConfig = await resolveMailConfig(eventId, prisma, env);

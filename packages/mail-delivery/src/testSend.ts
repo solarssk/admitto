@@ -1,12 +1,10 @@
 import type { PrismaClient } from "@admitto/db";
 import {
-  DEFAULT_SAMPLE_VARS,
-  formatEventDate,
+  buildBaseTemplateVars,
   previewTemplate,
   renderTemplate,
   resolveBrandingFromEvent,
   resolveEventImageAssetVars,
-  resolvePreviewEventTimeZone,
   resolveTemplateById,
 } from "@admitto/mail-templates";
 import { closeMailer, createMailer, type SendResult } from "@admitto/mailer";
@@ -47,18 +45,13 @@ export async function sendTestEmail(
     if (params.templateId) {
       const event = await prisma.event.findUniqueOrThrow({
         where: { id: params.eventId },
-        include: { organization: true },
+        include: { organization: true, location_details: true },
       });
       const resolved = await resolveTemplateById(params.templateId, params.eventId, prisma);
       const branding = resolveBrandingFromEvent(event);
       const customAssets = await resolveEventImageAssetVars(params.eventId, prisma);
       const vars = {
-        ...DEFAULT_SAMPLE_VARS,
-        event_name: event.title,
-        event_date: formatEventDate(event.date, resolvePreviewEventTimeZone()),
-        event_location: event.location ?? "",
-        logo_url: branding.logo_url,
-        header_image_url: branding.header_image_url,
+        ...buildBaseTemplateVars(event, undefined, branding),
         ...customAssets.vars,
       };
       rendered = renderTemplate(

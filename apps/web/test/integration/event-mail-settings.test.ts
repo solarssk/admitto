@@ -73,7 +73,6 @@ async function seed(client: PrismaClient) {
         title: "Event Mail Settings Event",
         slug: "event-mail-settings",
         date: new Date("2026-10-01T12:00:00.000Z"),
-        location: "Warsaw",
         organization_id: ORG_A,
       },
       {
@@ -81,7 +80,6 @@ async function seed(client: PrismaClient) {
         title: "Event Mail Settings Archived Event",
         slug: "event-mail-settings-archived",
         date: new Date("2026-11-01T12:00:00.000Z"),
-        location: "Warsaw",
         organization_id: ORG_A,
         archived_at: new Date(),
       },
@@ -90,7 +88,6 @@ async function seed(client: PrismaClient) {
         title: "Event Mail Settings Event B",
         slug: "event-mail-settings-b",
         date: new Date("2026-12-01T12:00:00.000Z"),
-        location: "Warsaw",
         organization_id: ORG_B,
       },
     ],
@@ -651,7 +648,6 @@ describe("PUT /api/admin/events/:eventId/mail-settings", () => {
         title: "Event Mail Settings Race Event",
         slug: "event-mail-settings-race",
         date: new Date("2026-10-05T12:00:00.000Z"),
-        location: "Warsaw",
         organization_id: ORG_A,
       },
     });

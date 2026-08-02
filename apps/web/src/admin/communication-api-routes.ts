@@ -238,7 +238,7 @@ async function renderDraftPreview(
 
   const event = await db.event.findUniqueOrThrow({
     where: { id: eventId },
-    include: { organization: true },
+    include: { organization: true, location_details: true },
   });
   const branding = resolveBrandingFromEvent(event);
   const customAssets = await resolveEventImageAssetVars(eventId, db);
@@ -247,7 +247,7 @@ async function renderDraftPreview(
     ...DEFAULT_SAMPLE_VARS,
     event_name: event.title,
     event_date: formatEventDate(event.date, "UTC"),
-    event_location: event.location ?? "",
+    event_location: event.location_details?.venue_name ?? "",
     logo_url: branding.logo_url,
     header_image_url: branding.header_image_url,
     ...customAssets.vars,

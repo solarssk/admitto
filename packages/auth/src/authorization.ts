@@ -145,7 +145,7 @@ const eventSelect = {
   slug: true,
   date: true,
   timezone: true,
-  location: true,
+  location_details: { select: { venue_name: true } },
   organization_id: true,
   archived_at: true,
   created_at: true,
@@ -155,17 +155,28 @@ const eventSelect = {
   archived_by_timezone: true,
 } as const;
 
+/** Maps the raw `eventSelect` row (which has `location_details.venue_name`, a relation) to the
+ * flat `EventSummary` shape callers expect (`location: string | null`) — keeps this internal
+ * schema detail from leaking into every call site. */
+function toEventSummary(
+  row: Prisma.EventGetPayload<{ select: typeof eventSelect }>,
+): EventSummary {
+  const { location_details, ...rest } = row;
+  return { ...rest, location: location_details?.venue_name ?? null };
+}
+
 /** Events where user has check-in capability (matches canPerformCheckIn). Excludes archived events — archiving an event ends check-in for it, same as admin mutating APIs. */
 export async function listCheckInEvents(
   prisma: PrismaClient | Prisma.TransactionClient,
   userId: string,
 ): Promise<EventSummary[]> {
   if (await hasScope(prisma, userId, "superadmin", "instance")) {
-    return prisma.event.findMany({
+    const rows = await prisma.event.findMany({
       where: { archived_at: null },
       select: eventSelect,
       orderBy: { date: "asc" },
     });
+    return rows.map(toEventSummary);
   }
 
   const assignments = await prisma.roleAssignment.findMany({
@@ -195,11 +206,12 @@ export async function listCheckInEvents(
     or.push({ id: { in: [...eventIds] } });
   }
 
-  return prisma.event.findMany({
+  const rows = await prisma.event.findMany({
     where: { archived_at: null, OR: or },
     select: eventSelect,
     orderBy: { date: "asc" },
   });
+  return rows.map(toEventSummary);
 }
 
 /** Events visible on admin picker (superadmin: all; org admin: org events). Set includeArchived to list archived rows. */
@@ -213,11 +225,12 @@ export async function listAdminEvents(
   const archivedWhere = options?.includeArchived ? undefined : { archived_at: null };
 
   if (await hasScope(prisma, userId, "superadmin", "instance")) {
-    return prisma.event.findMany({
+    const rows = await prisma.event.findMany({
       ...(archivedWhere ? { where: archivedWhere } : {}),
       select: eventSelect,
       orderBy: { date: "asc" },
     });
+    return rows.map(toEventSummary);
   }
 
   const orgAssignments = await prisma.roleAssignment.findMany({
@@ -227,7 +240,7 @@ export async function listAdminEvents(
   const orgIds = orgAssignments.map((a) => a.scope_id).filter((id): id is string => !!id);
   if (orgIds.length === 0) return [];
 
-  return prisma.event.findMany({
+  const rows = await prisma.event.findMany({
     where: {
       organization_id: { in: orgIds },
       ...archivedWhere,
@@ -235,6 +248,7 @@ export async function listAdminEvents(
     select: eventSelect,
     orderBy: { date: "asc" },
   });
+  return rows.map(toEventSummary);
 }
 
 /** Dispatch a capability check; `eventId` required for event-scoped capabilities. */

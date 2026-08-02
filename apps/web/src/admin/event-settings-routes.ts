@@ -34,7 +34,6 @@ const patchEventSchema = z
   .object({
     title: z.string().trim().min(1).max(200).optional(),
     date: z.union([z.string().datetime(), dateOnlyField]).optional(),
-    location: z.string().trim().max(300).nullish(),
     capacity: z.number().int().positive().max(PG_INT_MAX).nullish(),
     timezone: timezoneField.optional(),
     logo_url: z.string().trim().max(2000).nullish(),
@@ -48,7 +47,6 @@ export type EventSettingsDto = {
   slug: string;
   date: string;
   timezone: string;
-  location: string | null;
   capacity: number | null;
   status: "active" | "archived";
   /** Null unless status is "archived". */
@@ -77,7 +75,6 @@ type EventSettingsRow = {
   slug: string;
   date: Date;
   timezone: string;
-  location: string | null;
   capacity: number | null;
   archived_at: Date | null;
   created_at: Date;
@@ -116,7 +113,6 @@ function serializeEventSettings(
     slug: event.slug,
     date: event.date.toISOString(),
     timezone: event.timezone,
-    location: event.location,
     capacity: event.capacity,
     status: event.archived_at ? "archived" : "active",
     archived_at: event.archived_at ? event.archived_at.toISOString() : null,
@@ -143,7 +139,6 @@ const EVENT_SETTINGS_SELECT = {
   slug: true,
   date: true,
   timezone: true,
-  location: true,
   capacity: true,
   archived_at: true,
   created_at: true,
@@ -234,16 +229,12 @@ function buildBasicFieldsPatch(patch: PatchEventBody): {
   title?: string;
   date?: Date;
   timezone?: string;
-  location?: string | null;
   capacity?: number | null;
 } {
   const data: ReturnType<typeof buildBasicFieldsPatch> = {};
   if (patch.title !== undefined) data.title = patch.title.trim();
   if (patch.date !== undefined) data.date = parseEventDateInput(patch.date);
   if (patch.timezone !== undefined) data.timezone = patch.timezone;
-  if (patch.location !== undefined) {
-    data.location = patch.location?.trim() ? patch.location.trim() : null;
-  }
   if (patch.capacity !== undefined) data.capacity = patch.capacity;
   return data;
 }
@@ -309,7 +300,6 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     title?: string;
     date?: Date;
     timezone?: string;
-    location?: string | null;
     capacity?: number | null;
     logo_url?: string | null;
     header_image_url?: string | null;

@@ -245,7 +245,7 @@ jobs:
           npm run coverage --if-present
           -w @admitto/db -w @admitto/tickets -w @admitto/auth -w @admitto/import
           -w @admitto/mail-delivery -w @admitto/mail-templates -w @admitto/mailer
-          -w @admitto/mailer-config -w @admitto/crypto -w @admitto/ui -w @admitto/cli
+          -w @admitto/mailer-config -w @admitto/crypto -w @admitto/location -w @admitto/ui -w @admitto/cli
           -w @admitto/shared
           -- --reporter=default --reporter=junit --outputFile.junit=./junit.xml
       - name: Upload coverage to Codecov

@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Link } from "react-router";
-import { Button, Card, EmptyState, Input, Select, StatusBadge, Tooltip, useToast } from "@admitto/ui";
+import { Button, Card, EmptyState, HintLabel, Input, Select, StatusBadge, useToast } from "@admitto/ui";
 import { exportDeliveryLog } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { DeliveryDto, EventDeliveriesListParams, MailTemplateListItem } from "../api/types.js";
@@ -241,9 +241,7 @@ function DeliveryListContent({
             <th>Purpose</th>
             <th>Status</th>
             <th>
-              <Tooltip content={SENT_QUEUED_TIME_HINT} className="communication-log-title">
-                Sent / Queued <i className="ti ti-info-circle" aria-hidden="true" />
-              </Tooltip>
+              <HintLabel hint={SENT_QUEUED_TIME_HINT}>Sent / Queued</HintLabel>
             </th>
             <th className="communication-row-menu-cell" aria-label="Actions">
               <span className="sr-only">Actions</span>
@@ -373,11 +371,7 @@ export function DeliveryLogTab({
   return (
     <Card
       padded={false}
-      title={
-        <Tooltip content={DELIVERY_LOG_HINT} className="communication-log-title">
-          Delivery log <i className="ti ti-info-circle" aria-hidden="true" />
-        </Tooltip>
-      }
+      title={<HintLabel hint={DELIVERY_LOG_HINT}>Delivery log</HintLabel>}
       actions={
         <>
           <Button type="button" variant="secondary" size="sm" disabled={!hasActiveFilters} onClick={onClearFilters}>

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { canManageInstance, listAdminEvents } from "@admitto/auth";
 import { ensureBadgeEventItem, ensureStandardTicketType, writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
+import { assertCoordinatePairing, LOCATION_LIMITS, LocationValidationError } from "@admitto/location";
 import {
   adminAuditFromContext,
   countAttendeesByEvent,
@@ -27,12 +28,22 @@ const dateOnlyField = z
   .regex(/^\d{4}-\d{2}-\d{2}$/)
   .refine((value) => isValidCalendarDate(value), "Invalid date");
 
+// Location is a single free-typed field in the UI (styled like the check-in name/email
+// suggester): `venue_name` is always whatever the admin typed or picked, while
+// `formatted_address`/`latitude`/`longitude`/`geocoding_provider` are only present together
+// when a geocoding search result was actually selected — plain typed text carries just
+// `venue_name`. Ranges/lengths mirror `@admitto/location`'s `EventLocationInput` so the
+// create-event form and the Location tab agree on limits.
 const createEventSchema = z.object({
   title: z.string().trim().min(1).max(200),
   slug: slugField,
   date: z.union([z.string().datetime({ offset: true }), dateOnlyField]),
-  location: z.string().trim().max(300).optional(),
   timezone: timezoneField,
+  venue_name: z.string().trim().max(LOCATION_LIMITS.VENUE_NAME_MAX_LENGTH).optional(),
+  formatted_address: z.string().trim().max(LOCATION_LIMITS.ADDRESS_MAX_LENGTH).optional(),
+  latitude: z.number().min(LOCATION_LIMITS.LATITUDE_MIN).max(LOCATION_LIMITS.LATITUDE_MAX).optional(),
+  longitude: z.number().min(LOCATION_LIMITS.LONGITUDE_MIN).max(LOCATION_LIMITS.LONGITUDE_MAX).optional(),
+  geocoding_provider: z.string().trim().max(50).optional(),
 });
 
 type EventJsonRow = {
@@ -161,8 +172,16 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
     return c.json({ error: message }, 400);
   }
 
-  const { title, slug, date, location, timezone } = parsed.data;
+  const { title, slug, date, timezone, venue_name, formatted_address, latitude, longitude, geocoding_provider } =
+    parsed.data;
   const dateValue = parseEventDateInput(date);
+
+  try {
+    assertCoordinatePairing(latitude ?? null, longitude ?? null);
+  } catch (err) {
+    if (err instanceof LocationValidationError) return c.json({ error: err.message }, 400);
+    throw err;
+  }
 
   const isSuperadmin = await canManageInstance(db, auth.userId);
   const orgIdOrRes = await resolveCreateEventOrgId(db, auth.userId, isSuperadmin);
@@ -176,6 +195,9 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
 
   const audit = adminAuditFromContext(c);
   const actorUserId = auth.userId;
+  const trimmedVenueName = venue_name?.trim() || null;
+  const trimmedAddress = formatted_address?.trim() || null;
+  const hasLocation = trimmedVenueName !== null || trimmedAddress !== null || latitude !== undefined;
 
   try {
     const event = await db.$transaction(async (tx) => {
@@ -185,12 +207,29 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
           slug,
           date: dateValue,
           timezone,
-          location: location?.trim() ? location.trim() : null,
           organization_id: orgId,
           created_by_user_id: actorUserId,
           created_by_timezone: audit.timezone,
         },
       });
+
+      // Location is optional at creation — the Location tab (Event Settings) is where an
+      // admin can add/edit it after the fact, so we only write a row when the form actually
+      // carried something.
+      if (hasLocation) {
+        await tx.eventLocation.create({
+          data: {
+            event_id: created.id,
+            venue_name: trimmedVenueName,
+            formatted_address: trimmedAddress,
+            latitude: latitude ?? null,
+            longitude: longitude ?? null,
+            ...(latitude !== undefined
+              ? { geocoding_provider: geocoding_provider?.trim() || null, geocoded_at: new Date() }
+              : {}),
+          },
+        });
+      }
 
       // Seed the "badge" item eagerly so Requirements lists it right after
       // create — the badge_at_entry ops-config toggle defaults to on and is
@@ -211,7 +250,7 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
         metadata: { eventId: created.id, title: created.title, slug: created.slug },
       });
 
-      return created;
+      return { ...created, location: trimmedVenueName };
     });
 
     emitSystemLog("admin", "info", "event_created", {

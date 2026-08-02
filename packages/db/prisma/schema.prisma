@@ -35,7 +35,6 @@ model Event {
   slug                 String              @unique
   date                 DateTime
   timezone             String              @default("UTC")
-  location             String?
   capacity             Int?
   logo_url             String?
   header_image_url     String?
@@ -67,6 +66,7 @@ model Event {
   image_assets         EventImageAsset[]
   custom_fields        EventCustomField[]
   ticket_types         TicketType[]
+  location_details     EventLocation?
 
   @@index([organization_id])
   @@index([organization_id, archived_at])
@@ -144,6 +144,36 @@ model EventCustomField {
 
   @@unique([event_id, source_field])
   @@index([event_id])
+}
+
+// Event Settings "Location" tab (1:1 with Event) - the venue's short display name, full address,
+// map coordinates, and free-text directions/accessibility notes. This is now the single source of
+// truth for an event's location (shown on the event list/card and in ticket emails via
+// `venue_name`) - the former separate `Event.location` text field was removed to eliminate a
+// duplicate "where is this event" input (previously one in Basic Information, one here).
+// `latitude`/`longitude` are both-or-neither (see assertCoordinatePairing in @admitto/location) -
+// checked again at the DB layer below.
+model EventLocation {
+  id                 String    @id @default(cuid())
+  event_id           String    @unique
+  event              Event     @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  // Short display name (e.g. "National Stadium") - picked from a geocoding suggestion or typed
+  // free-text. Mirrors the old Event.location in meaning/limits (trimmed, max 300 chars).
+  venue_name         String?
+  formatted_address  String?
+  latitude           Float?
+  longitude          Float?
+  map_zoom           Int       @default(15)
+  directions_text    String?   @db.Text
+  accessibility_text String?   @db.Text
+  // Plain string, not a Prisma enum (see header comment) - e.g. "nominatim".
+  geocoding_provider String?
+  geocoded_at        DateTime?
+  // Structured address grid from the last geocode/reverse (object_name, street, postcode,
+  // city, region, country). Null when never set or cleared with the map pin.
+  address_components Json?
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
 }
 
 // Per-event catalog of ticket types (batch 04 / #351) - replaces free-text Attendee.ticket_type.

@@ -51,8 +51,16 @@ async function main() {
       title: "Test Event 2024",
       slug: "test-event-2024",
       date: new Date("2024-09-01T10:00:00Z"),
-      location: "Convention Center, City",
       organization_id: org.id,
+    },
+  });
+
+  await prisma.eventLocation.upsert({
+    where: { event_id: event.id },
+    update: {},
+    create: {
+      event_id: event.id,
+      venue_name: "Convention Center, City",
     },
   });
 

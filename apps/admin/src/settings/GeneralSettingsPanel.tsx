@@ -24,7 +24,7 @@ const EMPTY_SUPPORT_CONTACT: SetupSupportContactDto = {
 const INSTANCE_URL_HINT =
   "Public HTTPS URL of this Admitto instance. Used for ticket links and to turn uploaded logo paths into absolute URLs in outbound email when the BASE_URL environment variable is not set.";
 const SUPPORT_CONTACT_HINT =
-  "Saved for future use, for example identifying this instance if it ever calls external services. Nothing uses these fields yet.";
+  "Used to identify this instance to external services such as the geocoding provider used by the Location tab on event settings.";
 
 function fieldLocked(source: SettingSource): boolean {
   return source === "env";

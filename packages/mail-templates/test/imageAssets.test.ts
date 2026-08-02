@@ -29,7 +29,6 @@ beforeAll(async () => {
       title: "Asset Event",
       slug: "asset-event",
       date: new Date("2026-11-01"),
-      location: "Krakow",
     },
   });
   await prisma.eventImageAsset.create({
