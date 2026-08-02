@@ -136,7 +136,7 @@ export function LocationSettingsPanel({
   }, [loadSettings]);
 
   const handleSave = async () => {
-    if (!apiData) return;
+    // Save controls only render after a successful load (apiData is set).
     const body = buildEventLocationPatchBody(draft, savedDraft, pendingGeocodingProviderRef.current);
     if (Object.keys(body).length === 0) return;
     setSaving(true);
@@ -292,12 +292,14 @@ export function LocationSettingsPanel({
   }
 
   async function copyMapLink(kind: "google" | "apple") {
-    if (draft.latitude === null || draft.longitude === null) return;
+    // Buttons are disabled when coordinates are missing.
+    const lat = draft.latitude!;
+    const lng = draft.longitude!;
     const label = draft.venue_name.trim() || draft.formatted_address.trim() || null;
     const url =
       kind === "google"
-        ? buildGoogleMapsUrl(draft.latitude, draft.longitude, label)
-        : buildAppleMapsUrl(draft.latitude, draft.longitude, label);
+        ? buildGoogleMapsUrl(lat, lng, label)
+        : buildAppleMapsUrl(lat, lng, label);
     try {
       await navigator.clipboard.writeText(url);
       addToast(`${kind === "google" ? "Google Maps" : "Apple Maps"} link copied.`, "success");
@@ -307,10 +309,10 @@ export function LocationSettingsPanel({
   }
 
   async function handleApplyTimezone(suggested: string) {
-    if (!onApplyTimezone) return;
+    // Button only renders when onApplyTimezone is provided.
     setApplyingTimezone(true);
     try {
-      await onApplyTimezone(suggested);
+      await onApplyTimezone!(suggested);
       addToast(`Event timezone set to ${suggested}.`, "success");
     } catch (err) {
       addToast(operatorApiErrorMessage(err, "Failed to update timezone."), "error");
@@ -332,7 +334,7 @@ export function LocationSettingsPanel({
     return (
       <Card title="Address">
         <p role="alert" className="text-error">
-          {loadError ?? "Failed to load location settings."}{" "}
+          Failed to load location settings.{" "}
           <button
             type="button"
             className="settings-retry-link"

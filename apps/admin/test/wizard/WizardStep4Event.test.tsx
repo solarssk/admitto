@@ -129,6 +129,19 @@ describe("WizardStep4Event", () => {
     await waitFor(() => expect(onHasExistingEventsChange).toHaveBeenCalledWith(false));
   });
 
+  it("reports and summarizes the sole existing event", async () => {
+    const onHasExistingEventsChange = vi.fn();
+    mockFetchAdminEvents.mockResolvedValueOnce([{ id: "evt-1", title: "Existing event" }]);
+    renderWithToast(
+      <WizardProvider>
+        <WizardStep4Event onCanContinueChange={() => {}} onHasExistingEventsChange={onHasExistingEventsChange} />
+      </WizardProvider>,
+    );
+
+    expect(await screen.findByText(/You already have\s+an event/)).toBeTruthy();
+    expect(onHasExistingEventsChange).toHaveBeenCalledWith(true);
+  });
+
   it("marks the step dirty when the timezone changes", async () => {
     const onDirtyChange = vi.fn();
     renderWithToast(
@@ -152,7 +165,50 @@ describe("WizardStep4Event", () => {
     expect(onDirtyChange).toHaveBeenCalledWith(true);
   });
 
-  it("aborts the event-list request on unmount", async () => {
+  it("shows the plural existing-events notice when more than one event already exists", async () => {
+    mockFetchAdminEvents.mockResolvedValueOnce([
+      {
+        id: "evt-1",
+        title: "First",
+        slug: "first",
+        date: "2026-01-01",
+        timezone: "UTC",
+        location: null,
+        organization_id: "org-1",
+        archived_at: null,
+      },
+      {
+        id: "evt-2",
+        title: "Second",
+        slug: "second",
+        date: "2026-01-02",
+        timezone: "UTC",
+        location: null,
+        organization_id: "org-1",
+        archived_at: null,
+      },
+    ]);
+    renderWithToast(
+      <WizardProvider>
+        <WizardStep4Event onCanContinueChange={() => {}} onHasExistingEventsChange={() => {}} />
+      </WizardProvider>,
+    );
+    expect(await screen.findByText(/You already have 2 events/)).toBeTruthy();
+  });
+
+  it("returns false from createAndContinue when the form is incomplete", async () => {
+    const ref = createRef<WizardStep4EventHandle>();
+    renderWithToast(
+      <WizardProvider>
+        <WizardStep4Event ref={ref} onCanContinueChange={() => {}} onHasExistingEventsChange={() => {}} />
+      </WizardProvider>,
+    );
+    await screen.findByLabelText("Event name");
+    await expect(ref.current?.createAndContinue()).resolves.toBe(false);
+    expect(mockCreateEvent).not.toHaveBeenCalled();
+  });
+
+  it("aborts the in-flight event-list request on unmount", async () => {
     let signal: AbortSignal | undefined;
     mockFetchAdminEvents.mockImplementationOnce(({ signal: requestSignal }) => {
       signal = requestSignal;
@@ -167,6 +223,58 @@ describe("WizardStep4Event", () => {
 
     rendered.unmount();
     expect(signal!.aborted).toBe(true);
+  });
+
+  it("ignores a rejected event-list request that aborted on unmount", async () => {
+    const onHasExistingEventsChange = vi.fn();
+    let rejectFetch!: (err: Error) => void;
+    mockFetchAdminEvents.mockImplementationOnce(({ signal }) => {
+      return new Promise((_resolve, reject) => {
+        rejectFetch = reject;
+        signal?.addEventListener("abort", () => {
+          reject(new Error("aborted"));
+        });
+      });
+    });
+    const rendered = renderWithToast(
+      <WizardProvider>
+        <WizardStep4Event
+          onCanContinueChange={() => {}}
+          onHasExistingEventsChange={onHasExistingEventsChange}
+        />
+      </WizardProvider>,
+    );
+    await waitFor(() => expect(mockFetchAdminEvents).toHaveBeenCalled());
+    rendered.unmount();
+    await act(async () => {
+      rejectFetch(new Error("aborted"));
+      await Promise.resolve();
+    });
+    expect(onHasExistingEventsChange).not.toHaveBeenCalledWith(false);
+  });
+
+  it("does not apply a completed event-list request after unmount", async () => {
+    let resolveEvents!: (events: Array<{ id: string; title: string }>) => void;
+    mockFetchAdminEvents.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveEvents = resolve;
+      }),
+    );
+    const onHasExistingEventsChange = vi.fn();
+    const rendered = renderWithToast(
+      <WizardProvider>
+        <WizardStep4Event onCanContinueChange={() => {}} onHasExistingEventsChange={onHasExistingEventsChange} />
+      </WizardProvider>,
+    );
+    await waitFor(() => expect(mockFetchAdminEvents).toHaveBeenCalled());
+
+    rendered.unmount();
+    resolveEvents([{ id: "evt-1", title: "Late event" }]);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(onHasExistingEventsChange).not.toHaveBeenCalledWith(true);
   });
 
   it("drops a selected suggestion's coordinates after manually editing the location", async () => {
@@ -231,5 +339,31 @@ describe("WizardStep4Event", () => {
         geocoding_provider: undefined,
       });
     });
+  });
+
+  it("uses formatted_address as the location when a suggestion has no POI name", async () => {
+    mockSearchGeocoding.mockResolvedValueOnce({
+      results: [
+        {
+          formatted_address: "1 Parade Square, Warsaw",
+          latitude: 52.2319,
+          longitude: 21.0067,
+          provider: "nominatim",
+        },
+      ],
+      contact_configured: true,
+    });
+    renderWithToast(
+      <WizardProvider>
+        <WizardStep4Event onCanContinueChange={() => {}} onHasExistingEventsChange={() => {}} />
+      </WizardProvider>,
+    );
+
+    const location = await screen.findByLabelText("Location (optional)");
+    fireEvent.change(location, { target: { value: "Parade" } });
+    fireEvent.click(screen.getByRole("button", { name: "Find on map" }));
+    fireEvent.click(await screen.findByRole("button", { name: /1 Parade Square/ }));
+
+    expect((location as HTMLInputElement).value).toBe("1 Parade Square, Warsaw");
   });
 });

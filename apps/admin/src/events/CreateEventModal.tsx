@@ -65,7 +65,7 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
   const canSubmit = Boolean(title.trim() && slug.trim() && date && timezone);
 
   const handleSubmit = async () => {
-    if (submitting || !canSubmit) return;
+    // Create is disabled while submitting or while the form is incomplete.
     setSubmitting(true);
     setError(null);
     try {

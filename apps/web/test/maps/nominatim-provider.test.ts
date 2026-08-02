@@ -281,19 +281,45 @@ describe("NominatimProvider.search", () => {
   });
 
   it("skips non-finite and missing coordinate arrays", async () => {
+    // JSON.stringify turns Infinity into null (caught by typeof !== "number"). Build a raw
+    // body with 1e999 so JSON.parse yields real Infinity and hits Number.isFinite.
+    const body = `{
+      "type":"FeatureCollection",
+      "features":[
+        {"type":"Feature","properties":{"geocoding":{"label":"Huge longitude, Poland"}},"geometry":{"type":"Point","coordinates":[1e999,52]}},
+        {"type":"Feature","properties":{"geocoding":{"label":"Huge latitude, Poland"}},"geometry":{"type":"Point","coordinates":[21,1e999]}},
+        {"type":"Feature","properties":{"geocoding":{"label":"Missing, Poland"}},"geometry":{"type":"Point"}},
+        {"type":"Feature","properties":{"geocoding":{"label":"Valid, Poland"}},"geometry":{"type":"Point","coordinates":[21,52]}}
+      ]
+    }`;
     const fetchFn = vi.fn().mockResolvedValue(
-      jsonResponse(
-        geocodeJsonBody([
-          { label: "Infinite, Poland", coordinates: [Infinity, 52] },
-          { label: "Missing, Poland" },
-          { label: "Valid, Poland", coordinates: [21, 52] },
-        ]),
-      ),
+      new Response(body, { status: 200, headers: { "content-type": "application/json" } }),
     );
 
     await expect(makeProvider(fetchFn).search("coordinates")).resolves.toMatchObject([
       { formatted_address: "Valid, Poland", latitude: 52, longitude: 21 },
     ]);
+  });
+
+  it("skips null and non-object features in a FeatureCollection", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        type: "FeatureCollection",
+        features: [null, "nope", { type: "Feature", properties: { geocoding: { label: "Ok" } }, geometry: { type: "Point", coordinates: [21, 52] } }],
+      }),
+    );
+    await expect(makeProvider(fetchFn).search("mixed")).resolves.toMatchObject([
+      { formatted_address: expect.any(String), latitude: 52, longitude: 21 },
+    ]);
+  });
+
+  it("maps a TimeoutError raised while parsing JSON to timeout", async () => {
+    const parseSpy = vi.spyOn(JSON, "parse").mockImplementationOnce(() => {
+      throw new DOMException("The operation timed out", "TimeoutError");
+    });
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse(geocodeJsonBody([])));
+    await expect(makeProvider(fetchFn).search("parse-timeout")).rejects.toMatchObject({ kind: "timeout" });
+    parseSpy.mockRestore();
   });
 
   it("throws a timeout-flavored GeocodingProviderError when the request aborts on timeout", async () => {
@@ -495,6 +521,17 @@ describe("NominatimProvider response size / timeout hardening", () => {
     });
   });
 
+  it("accepts a valid zero Content-Length header", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response("{}", {
+        status: 200,
+        headers: { "content-type": "application/json", "content-length": "0" },
+      }),
+    );
+
+    await expect(makeProvider(fetchFn).search("Warsaw")).resolves.toEqual([]);
+  });
+
   it("aborts while streaming once the body exceeds the byte cap (chunked / no Content-Length)", async () => {
     const oversized = new Uint8Array(MAX_RESPONSE_BYTES + 64).fill(0x61);
     const stream = new ReadableStream<Uint8Array>({
@@ -556,6 +593,18 @@ describe("NominatimProvider response size / timeout hardening", () => {
     });
     await expect(readBodyCapped(new Response(interruptedStream), 10)).rejects.toMatchObject({
       kind: "timeout",
+    });
+  });
+
+  it("maps a non-timeout stream interruption to unavailable", async () => {
+    const interruptedStream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(new Error("stream interrupted"));
+      },
+    });
+
+    await expect(readBodyCapped(new Response(interruptedStream), 10)).rejects.toMatchObject({
+      kind: "unavailable",
     });
   });
 

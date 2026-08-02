@@ -63,8 +63,7 @@ export function MapPicker({
   // Mount the map once. Initial center/tile config intentionally isn't re-applied on prop
   // changes - later position updates go through the effect below instead.
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return undefined;
+    const container = containerRef.current!;
 
     const hasInitialPosition = latitude !== null && longitude !== null;
     const map = L.map(container, {
@@ -101,8 +100,7 @@ export function MapPicker({
   // Sync the pin with the current coordinates. A brand-new pin snaps the view to it (zoomed
   // in); once a pin exists, only pan to follow it so we don't fight the user's own zoom level.
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
+    const map = mapRef.current!;
 
     if (latitude === null || longitude === null) {
       markerRef.current?.remove();

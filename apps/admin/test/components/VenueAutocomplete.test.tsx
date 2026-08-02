@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { useState } from "react";
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VenueAutocomplete } from "../../src/components/VenueAutocomplete.js";
 import type { GeocodingResultDto, GeocodingSearchResponse } from "../../src/api/types.js";
@@ -237,6 +237,25 @@ describe("VenueAutocomplete", () => {
     vi.useRealTimers();
   });
 
+  it("clears a pending blur timer when unmounted", async () => {
+    vi.useFakeTimers();
+    mockSearch.mockResolvedValue({ results: [makeResult()], contact_configured: true });
+    const rendered = renderWithToast(<Harness />);
+    const input = screen.getByLabelText("Venue name or address");
+    fireEvent.change(input, { target: { value: "Downing St" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(350);
+    });
+    expect(screen.getByText("10 Downing Street")).toBeTruthy();
+
+    fireEvent.blur(input);
+    rendered.unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    vi.useRealTimers();
+  });
+
   it("closes the dropdown on Escape without clearing the typed text", async () => {
     mockSearch.mockResolvedValue({ results: [makeResult()], contact_configured: true });
     renderWithToast(<Harness />);
@@ -275,6 +294,15 @@ describe("VenueAutocomplete", () => {
     // Still within the 150ms blur delay — focus must cancel that timer.
     await new Promise((resolve) => window.setTimeout(resolve, 200));
     expect(screen.getByText("10 Downing Street")).toBeTruthy();
+  });
+
+  it("does not reopen suggestions on focus when the cached result list is empty", () => {
+    renderWithToast(<Harness />);
+    const input = screen.getByLabelText("Venue name or address");
+
+    fireEvent.focus(input);
+
+    expect(input.getAttribute("aria-expanded")).toBe("false");
   });
 
   it("Find on map runs search immediately and shows a no-match notice", async () => {

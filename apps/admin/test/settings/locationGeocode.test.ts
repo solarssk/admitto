@@ -97,6 +97,22 @@ describe("enrichComponentsFromReverse", () => {
     });
   });
 
+  it("keeps the original formatted address when reverse components remain sparse", async () => {
+    const base = { ...EMPTY, object_name: "Venue" };
+    mockReverse.mockResolvedValue({
+      result: result({
+        formatted_address: "Reverse address",
+        components: { ...EMPTY, object_name: "Another venue" },
+      }),
+      contact_configured: true,
+    });
+
+    await expect(enrichComponentsFromReverse(result(), base)).resolves.toEqual({
+      components: { ...EMPTY, object_name: "Venue" },
+      formatted_address: "Original address",
+    });
+  });
+
   it("keeps sparse components when reverse geocoding fails", async () => {
     const base = { ...EMPTY, object_name: "Venue" };
     mockReverse.mockRejectedValue(new Error("unavailable"));

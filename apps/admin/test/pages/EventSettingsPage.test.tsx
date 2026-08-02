@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RouterProvider } from "react-router/dom";
-import { createMemoryRouter, MemoryRouter, Route, Routes } from "react-router";
+import { createMemoryRouter, MemoryRouter, Outlet, Route, Routes } from "react-router";
 import { EventSettingsPage } from "../../src/pages/EventSettingsPage.js";
 import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 import type { RoleAssignment, TicketTypeDto } from "../../src/api/types.js";
@@ -233,13 +233,27 @@ afterEach(() => {
   mockAssignments = superadminAssignments;
 });
 
-function renderSettings(entry = "/admin/events/evt-1/settings") {
+function renderSettings(
+  entry = "/admin/events/evt-1/settings",
+  outletContext?: { refreshEvent?: () => Promise<void> },
+) {
+  function SettingsWithOutlet() {
+    return (
+      <Outlet context={outletContext} />
+    );
+  }
   renderWithToast(
     <MemoryRouter initialEntries={[entry]}>
       <Routes>
         <Route path="/admin" element={<div>events picker</div>} />
         <Route path="/admin/events/:eventId/overview" element={<div>event overview</div>} />
-        <Route path="/admin/events/:eventId/settings" element={<EventSettingsPage />} />
+        {outletContext ? (
+          <Route path="/admin/events/:eventId" element={<SettingsWithOutlet />}>
+            <Route path="settings" element={<EventSettingsPage />} />
+          </Route>
+        ) : (
+          <Route path="/admin/events/:eventId/settings" element={<EventSettingsPage />} />
+        )}
       </Routes>
     </MemoryRouter>,
   );
@@ -364,7 +378,8 @@ describe("EventSettingsPage tabs", () => {
     vi.mocked(patchEvent).mockResolvedValueOnce({
       event: { ...activeEvent, timezone: "America/New_York" },
     });
-    renderSettings("/admin/events/evt-1/settings?tab=location");
+    const refreshEvent = vi.fn().mockResolvedValue(undefined);
+    renderSettings("/admin/events/evt-1/settings?tab=location", { refreshEvent });
 
     fireEvent.click(await screen.findByRole("button", { name: "Use" }));
 
@@ -372,6 +387,7 @@ describe("EventSettingsPage tabs", () => {
       expect(patchEvent).toHaveBeenCalledWith("evt-1", { timezone: "America/New_York" }),
     );
     expect(await screen.findByText("Event timezone set to America/New_York.")).toBeTruthy();
+    await waitFor(() => expect(refreshEvent).toHaveBeenCalled());
   });
 
   it("shows the created date and an active hint in the Status card", async () => {

@@ -11,8 +11,17 @@ vi.mock("@admitto/location", async (importOriginal) => {
   };
 });
 
+vi.mock("../../src/admin/admin-helpers.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/admin/admin-helpers.js")>();
+  return {
+    ...actual,
+    assertEventManageAccess: vi.fn(actual.assertEventManageAccess),
+  };
+});
+
 import { assertCoordinatePairing, normalizeEventLocationInput } from "@admitto/location";
-import { handlePutEventLocation } from "../../src/admin/event-location-routes.js";
+import { assertEventManageAccess } from "../../src/admin/admin-helpers.js";
+import { handleGetEventLocation, handlePutEventLocation } from "../../src/admin/event-location-routes.js";
 
 function fkMissingEventError(): Prisma.PrismaClientKnownRequestError {
   return new Prisma.PrismaClientKnownRequestError("Foreign key constraint violated", {
@@ -21,10 +30,10 @@ function fkMissingEventError(): Prisma.PrismaClientKnownRequestError {
   });
 }
 
-function fakeContext(body: unknown): Context {
+function fakeContext(body: unknown, eventId: string | undefined = "evt-1"): Context {
   return {
     req: {
-      param: (key: string) => (key === "eventId" ? "evt-1" : undefined),
+      param: (key: string) => (key === "eventId" ? eventId : undefined),
       json: async () => body,
       header: () => undefined,
       raw: { headers: new Headers() },
@@ -63,8 +72,8 @@ describe("handlePutEventLocation — transaction failure mapping", () => {
     expect(await res.json()).toEqual({ error: "not_found" });
   });
 
-  it("rethrows a non-Prisma transaction failure", async () => {
-    const unexpected = new Error("database unavailable");
+  it("rethrows unexpected transaction failures", async () => {
+    const unexpected = new Error("write failed");
     const db = {
       event: {
         findUnique: vi.fn().mockResolvedValue({ organization_id: "org-1" }),
@@ -82,10 +91,8 @@ describe("handlePutEventLocation — transaction failure mapping", () => {
       ),
     ).rejects.toBe(unexpected);
   });
-});
 
-describe("handlePutEventLocation — unexpected location validation failures", () => {
-  it("rethrows an unexpected normalization error", async () => {
+  it("rethrows a non-LocationValidationError from normalizeEventLocationInput", async () => {
     const unexpected = new Error("normalizer unavailable");
     vi.mocked(normalizeEventLocationInput).mockImplementationOnce(() => {
       throw unexpected;
@@ -96,7 +103,7 @@ describe("handlePutEventLocation — unexpected location validation failures", (
     ).rejects.toBe(unexpected);
   });
 
-  it("rethrows an unexpected coordinate-pairing error", async () => {
+  it("rethrows a non-LocationValidationError from coordinate pairing", async () => {
     const unexpected = new Error("coordinate validator unavailable");
     vi.mocked(assertCoordinatePairing).mockImplementationOnce(() => {
       throw unexpected;
@@ -116,5 +123,61 @@ describe("handlePutEventLocation — unexpected location validation failures", (
         db,
       ),
     ).rejects.toBe(unexpected);
+  });
+});
+
+describe("event-location handlers — access guards", () => {
+  it("GET returns 400 when eventId is missing from the route", async () => {
+    const res = await handleGetEventLocation(fakeContext({}, ""), {} as PrismaClient);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "eventId required" });
+  });
+
+  it("PUT returns 400 when eventId is missing from the route", async () => {
+    const res = await handlePutEventLocation(fakeContext({ venue_name: "Hall" }, ""), {} as PrismaClient);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "eventId required" });
+  });
+
+  it("GET returns the forbidden response from assertEventManageAccess", async () => {
+    vi.mocked(assertEventManageAccess).mockResolvedValueOnce(
+      Response.json({ error: "forbidden" }, { status: 403 }),
+    );
+    const res = await handleGetEventLocation(fakeContext({}), {} as PrismaClient);
+    expect(res.status).toBe(403);
+  });
+
+  it("GET returns 404 when the event does not exist", async () => {
+    vi.mocked(assertEventManageAccess).mockResolvedValueOnce(null);
+    const db = {
+      event: { findUnique: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaClient;
+    const res = await handleGetEventLocation(fakeContext({}), db);
+    expect(res.status).toBe(404);
+  });
+
+  it("GET serializes a found location after access succeeds", async () => {
+    vi.mocked(assertEventManageAccess).mockResolvedValueOnce(null);
+    const db = {
+      event: { findUnique: vi.fn().mockResolvedValue({ id: "evt-1" }) },
+      eventLocation: {
+        findUnique: vi.fn().mockResolvedValue({
+          event_id: "evt-1",
+          venue_name: "Hall",
+          formatted_address: null,
+          address_components: null,
+          latitude: null,
+          longitude: null,
+          map_zoom: null,
+          directions: null,
+          accessibility: null,
+          geocoding_provider: null,
+          updated_at: new Date("2026-01-01T00:00:00.000Z"),
+        }),
+      },
+    } as unknown as PrismaClient;
+    const res = await handleGetEventLocation(fakeContext({}), db);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ venue_name: "Hall" });
   });
 });

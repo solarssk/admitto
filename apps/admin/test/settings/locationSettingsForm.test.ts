@@ -133,6 +133,13 @@ describe("buildEventLocationPatchBody", () => {
     });
   });
 
+  it("clears accessibility text to null when emptied", () => {
+    const draft: LocationDraft = { ...saved, accessibility_text: "" };
+    expect(buildEventLocationPatchBody(draft, saved, null)).toEqual({
+      accessibility_text: null,
+    });
+  });
+
   it("trims the address and clears it to null when only whitespace remains", () => {
     const draft: LocationDraft = { ...saved, formatted_address: "   " };
     expect(buildEventLocationPatchBody(draft, saved, null)).toEqual({

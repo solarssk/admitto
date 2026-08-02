@@ -85,6 +85,121 @@ describe("CreateEventModal", () => {
     expect(screen.queryByText("secret_internal")).toBeNull();
   });
 
+  it("shows a slug-specific error when creation returns 409", async () => {
+    mockCreateEvent.mockRejectedValueOnce(new ApiError(409, "slug_taken"));
+    render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
+    pickEventDate("2026-09-29");
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    expect(await screen.findByText("Slug is already in use. Choose another.")).toBeTruthy();
+  });
+
+  it("keeps a manually edited slug when the title changes", () => {
+    render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
+    fireEvent.change(screen.getByLabelText(/URL slug/), { target: { value: "custom-event" } });
+    fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Renamed Event" } });
+
+    expect((screen.getByLabelText(/URL slug/) as HTMLInputElement).value).toBe("custom-event");
+  });
+
+  it("ignores close while submission is pending", async () => {
+    let resolveCreate!: () => void;
+    mockCreateEvent.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCreate = () => resolve({
+          id: "evt-1",
+          title: "Test Event",
+          slug: "test-event",
+          date: "2026-09-29",
+          timezone: "Europe/Warsaw",
+          location: null,
+          organization_id: "org-1",
+          archived_at: null,
+        });
+      }),
+    );
+    const onClose = vi.fn();
+    render(<CreateEventModal open onClose={onClose} onCreated={() => {}} />);
+    fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
+    pickEventDate("2026-09-29");
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    expect(await screen.findByRole("button", { name: "Creating…" })).toBeTruthy();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose).not.toHaveBeenCalled();
+    resolveCreate();
+  });
+
+  it("closes and resets when Escape is pressed while idle", () => {
+    const onClose = vi.fn();
+    render(<CreateEventModal open onClose={onClose} onCreated={() => {}} />);
+    fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Draft" } });
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders nothing when closed", () => {
+    const { container } = render(
+      <CreateEventModal open={false} onClose={() => {}} onCreated={() => {}} />,
+    );
+    expect(container.firstChild).toBeNull();
+  });
+
+  it("keeps Create disabled until the required fields are filled", () => {
+    render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
+    const submit = screen.getByRole("button", { name: "Create event" }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    fireEvent.click(submit);
+    expect(mockCreateEvent).not.toHaveBeenCalled();
+  });
+
+  it("uses formatted_address as the venue name when a suggestion has no POI name", async () => {
+    mockSearchGeocoding.mockResolvedValueOnce({
+      results: [
+        {
+          formatted_address: "1 Example Square, Warsaw",
+          latitude: 52.2297,
+          longitude: 21.0122,
+          provider: "nominatim",
+        },
+      ],
+      contact_configured: true,
+    });
+    mockCreateEvent.mockResolvedValueOnce({
+      id: "evt-1",
+      title: "Test Event",
+      slug: "test-event",
+      date: "2026-09-29",
+      timezone: "Europe/Warsaw",
+      location: null,
+      organization_id: "org-1",
+      archived_at: null,
+    });
+    render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
+
+    fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
+    pickEventDate("2026-09-29");
+    fireEvent.change(screen.getByLabelText("Location (optional)"), {
+      target: { value: "Example Square" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Find on map" }));
+    fireEvent.click(await screen.findByRole("button", { name: /1 Example Square/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() => {
+      expect(mockCreateEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          venue_name: "1 Example Square, Warsaw",
+          formatted_address: "1 Example Square, Warsaw",
+          latitude: 52.2297,
+          longitude: 21.0122,
+        }),
+      );
+    });
+  });
+
   it("drops a selected suggestion's coordinates after manually editing the venue", async () => {
     const result = {
       name: "Convention Center",

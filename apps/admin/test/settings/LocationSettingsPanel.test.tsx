@@ -240,6 +240,21 @@ describe("LocationSettingsPanel — loading", () => {
     expect(await screen.findByDisplayValue("Springfield Hall")).toBeTruthy();
     expect(screen.queryByText("Failed to load location settings.")).toBeNull();
   });
+
+  it("does not apply a successful location response after its load is aborted", async () => {
+    const location = createDeferred<EventLocationDto>();
+    mockFetchLocation.mockReturnValueOnce(location.promise);
+    const rendered = renderPanel();
+    await waitFor(() => expect(mockFetchLocation).toHaveBeenCalled());
+
+    rendered.unmount();
+    location.resolve(SAVED_LOCATION);
+    await act(async () => {
+      await location.promise;
+    });
+
+    expect(screen.queryByDisplayValue("Springfield Hall")).toBeNull();
+  });
 });
 
 describe("LocationSettingsPanel — dirty state and save", () => {
@@ -385,6 +400,20 @@ describe("LocationSettingsPanel — venue search", () => {
     );
   });
 
+  it("uses a selected result's formatted address when it has no venue name", async () => {
+    mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
+    mockSearch.mockResolvedValue({
+      results: [searchResult({ name: undefined, formatted_address: "Address-only result" })],
+      contact_configured: true,
+    });
+    renderPanel();
+
+    fireEvent.change(await screen.findByLabelText("Venue name or address"), { target: { value: "Address-only" } });
+    fireEvent.click(await screen.findByRole("button", { name: /Address-only result/ }));
+
+    expect(await screen.findByDisplayValue("Address-only result")).toBeTruthy();
+  });
+
   it("clears pin, address grid, and verified state when the venue text is edited after a pick", async () => {
     mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
     renderPanel();
@@ -470,6 +499,17 @@ describe("LocationSettingsPanel — venue search", () => {
     await waitFor(() =>
       expect(mockSaveLocation).toHaveBeenCalledWith("evt-1", expect.objectContaining({ map_zoom: 12 })),
     );
+  });
+
+  it("does not create a new draft when the map reports the current zoom again", async () => {
+    mockFetchLocation.mockResolvedValue({ ...SAVED_LOCATION, map_zoom: 12 });
+    renderPanel();
+
+    await screen.findByDisplayValue("Springfield Hall");
+    fireEvent.click(screen.getByTestId("map-zoom"));
+    fireEvent.click(screen.getByTestId("map-zoom"));
+
+    expect(screen.getByTestId("map-zoom")).toBeTruthy();
   });
 
   it("does not let a slow reverse lookup overwrite a later selected venue", async () => {
@@ -582,6 +622,34 @@ describe("LocationSettingsPanel — clearing and map availability", () => {
     });
     expect(screen.queryByText("Verified on OpenStreetMap")).toBeFalsy();
     expect(await screen.findByText("Unsaved changes")).toBeTruthy();
+  });
+
+  it("no-ops Save when there are no draft changes", async () => {
+    mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
+    renderPanel();
+    await screen.findByDisplayValue("Springfield Hall");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(mockSaveLocation).not.toHaveBeenCalled();
+  });
+
+  it("ignores copy-link clicks after the pin has been cleared", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
+    renderPanel();
+
+    await screen.findByDisplayValue("Springfield Hall");
+    fireEvent.click(screen.getByRole("button", { name: "Clear map" }));
+    await waitFor(() => {
+      expect(document.querySelector(".location-map-footer__coords")?.textContent?.trim()).toBe("-");
+    });
+
+    const copy = screen.getByRole("button", { name: "Copy Google Maps link" }) as HTMLButtonElement;
+    expect(copy.disabled).toBe(true);
+    fireEvent.click(copy);
+    expect(writeText).not.toHaveBeenCalled();
   });
 
   it("shows a notice instead of the map when tiles are disabled", async () => {
@@ -748,6 +816,34 @@ describe("LocationSettingsPanel — map links and timezone", () => {
     fireEvent.click(screen.getByRole("button", { name: "Copy Apple Maps link" }));
     await waitFor(() => expect(writeText).toHaveBeenLastCalledWith(expect.stringContaining("maps.apple.com")));
     expect(await screen.findByText("Apple Maps link copied.")).toBeTruthy();
+  });
+
+  it("uses the formatted address, then coordinates alone, as the Google Maps link label", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    mockFetchLocation.mockResolvedValue({
+      ...SAVED_LOCATION,
+      venue_name: null,
+      formatted_address: "1 Main St, Springfield",
+    });
+    renderPanel();
+
+    await screen.findByLabelText("Venue name or address");
+    fireEvent.click(screen.getByRole("button", { name: "Copy Google Maps link" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    expect(writeText.mock.calls[0]?.[0]).toContain(encodeURIComponent("1 Main St, Springfield"));
+
+    mockFetchLocation.mockResolvedValue({
+      ...SAVED_LOCATION,
+      venue_name: null,
+      formatted_address: null,
+    });
+    cleanup();
+    renderPanel();
+    await screen.findByLabelText("Venue name or address");
+    fireEvent.click(screen.getByRole("button", { name: "Copy Google Maps link" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2));
+    expect(writeText.mock.calls[1]?.[0]).not.toContain("q=");
   });
 
   it("offers the coordinate timezone and applies it", async () => {
