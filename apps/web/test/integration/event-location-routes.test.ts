@@ -525,6 +525,30 @@ describe("PUT /api/admin/events/:eventId/location", () => {
       expect(body.geocoded_at).toBe(created.geocoded_at?.toISOString());
     });
 
+    it("stamps geocoding_provider without a coordinate change when an explicit provider is sent", async () => {
+      await prisma.eventLocation.create({
+        data: {
+          event_id: EVENT_LOC,
+          venue_name: "Old Hall",
+          latitude: 50.06,
+          longitude: 19.94,
+          geocoding_provider: null,
+          geocoded_at: null,
+        },
+      });
+
+      const res = await putLocation(EVENT_LOC, adminCookie, {
+        venue_name: "Old Hall",
+        geocoding_provider: "nominatim",
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as EventLocationDto;
+      expect(body.geocoding_provider).toBe("nominatim");
+      expect(body.geocoded_at).not.toBeNull();
+      expect(body.latitude).toBe(50.06);
+      expect(body.longitude).toBe(19.94);
+    });
+
     it("clears geocoding_provider when explicitly null without a coordinate change (venue rename)", async () => {
       await prisma.eventLocation.create({
         data: {
