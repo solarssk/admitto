@@ -10,6 +10,7 @@ import {
   parseStoredAddressComponents,
   preferNumberedStreet,
   streetLineLooksNumbered,
+  formatDirectionsAddressFromComponents,
 } from "../src/addressComponents.js";
 
 describe("addressComponentsFromParts", () => {
@@ -187,6 +188,23 @@ describe("preferNumberedStreet / streetLineLooksNumbered", () => {
       ).street,
     ).toBe("Wybrzeże Szczecińskie 1");
   });
+
+  it("keeps the primary street when it is already numbered", () => {
+    expect(
+      preferNumberedStreet(
+        {
+          ...EMPTY_ADDRESS_COMPONENTS,
+          street: "Main 1",
+          city: "Warsaw",
+        },
+        {
+          ...EMPTY_ADDRESS_COMPONENTS,
+          street: "Other 9",
+          city: "Warsaw",
+        },
+      ).street,
+    ).toBe("Main 1");
+  });
 });
 
 describe("isAddressComponentsSparse / mergeAddressComponents", () => {
@@ -316,5 +334,25 @@ describe("parseStoredAddressComponents / isAddressComponentsEmpty", () => {
       region: null,
       country: null,
     });
+  });
+});
+
+describe("formatDirectionsAddressFromComponents", () => {
+  it("falls back to the long label when the grid is empty", () => {
+    expect(formatDirectionsAddressFromComponents(null, "  Hall, City  ")).toBe("Hall, City");
+    expect(formatDirectionsAddressFromComponents(EMPTY_ADDRESS_COMPONENTS, null)).toBe("");
+  });
+
+  it("formats a structured grid address for attendees", () => {
+    expect(
+      formatDirectionsAddressFromComponents({
+        object_name: "Arena",
+        street: "Main 1",
+        postcode: "00-001",
+        city: "Warsaw",
+        region: null,
+        country: "Poland",
+      }),
+    ).toContain("Main 1");
   });
 });

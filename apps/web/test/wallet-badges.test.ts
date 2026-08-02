@@ -17,6 +17,10 @@ describe("wallet / ticket mark assets", () => {
       const body = await res.text();
       expect(body.length, path).toBeGreaterThan(40);
       expect(body, path).toContain("<svg");
+      // Second hit exercises the in-memory asset cache path.
+      const cached = await app.request(path);
+      expect(cached.status, path).toBe(200);
+      expect(await cached.text()).toBe(body);
     }
   });
 

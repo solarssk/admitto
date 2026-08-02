@@ -390,4 +390,24 @@ describe("CommunicationPage placeholder chip list", () => {
     expect(screen.getByRole("button", { name: "{{logo_url}}" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "{{header_image_url}}" })).toBeNull();
   });
+
+  it("inserts event_map_url with Event location map alt text", async () => {
+    fetchEventTemplate.mockResolvedValue({
+      ...legacyTemplate,
+      allowed_placeholders: ["first_name", "event_map_url"],
+      image_placeholders: ["event_map_url"],
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("MJML body")).toBeTruthy();
+    });
+
+    const bodyTextarea = screen.getByLabelText("MJML body") as HTMLTextAreaElement;
+    focusAtEnd(bodyTextarea);
+    fireEvent.click(screen.getByRole("button", { name: "{{event_map_url}}" }));
+
+    expect(bodyTextarea.value).toContain(
+      '<mj-image src="{{event_map_url}}" alt="Event location map" width="200px" />',
+    );
+  });
 });

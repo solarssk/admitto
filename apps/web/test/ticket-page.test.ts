@@ -3,6 +3,7 @@ import {
   buildTicketFontSrc,
   buildTicketImgSrc,
   getTicketPageSecurityHeaders,
+  renderNotFound,
   renderRevoked,
   renderServerError,
   renderTicket,
@@ -197,6 +198,42 @@ describe("renderTicket", () => {
     expect(html).not.toContain("Google Maps");
   });
 
+  it("escapes custom map attribution and keeps street-only addresses on one line", () => {
+    const html = renderTicket(
+      {
+        ...ticketFor(null),
+        event: {
+          ...ticketFor(null).event,
+          addressComponents: {
+            object_name: null,
+            street: "12 Example Road",
+            postcode: null,
+            city: null,
+            region: null,
+            country: null,
+          },
+          latitude: 50.06,
+          longitude: 19.93,
+          mapZoom: 15,
+        },
+      },
+      "data:image/png;base64,abc",
+      undefined,
+      {
+        mapAttribution: '© OSM <script>alert(1)</script>',
+      },
+    );
+
+    expect(html).toContain("12 Example Road");
+    expect(html).toContain("ticket__map-attribution");
+    expect(html).toContain("© OSM scriptalert(1)/script");
+    expect(html).not.toContain("<script>");
+  });
+
+  it("renders the not-found page", () => {
+    expect(renderNotFound()).toContain("Ticket not found");
+  });
+
   it("omits Getting there when no attendee-facing location details exist", () => {
     const html = renderTicket(ticketFor(null), "data:image/png;base64,abc");
 
@@ -335,6 +372,17 @@ describe("buildTicketFontSrc", () => {
         font_family_name: "Brand Sans",
         custom_font_families: [
           { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: "http://evil.example/x.woff2" }] },
+        ],
+      }),
+    ).toBe("'self'");
+  });
+
+  it("ignores unparseable font URLs", () => {
+    expect(
+      buildTicketFontSrc({
+        font_family_name: "Brand Sans",
+        custom_font_families: [
+          { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: "not a url" }] },
         ],
       }),
     ).toBe("'self'");
