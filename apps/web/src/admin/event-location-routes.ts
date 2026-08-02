@@ -114,8 +114,12 @@ type GeocodingProvenancePatch =
   | { geocoding_provider: null; geocoded_at: null }
   | Record<string, never>;
 
-/** Stamp or clear geocoding provenance when coordinates change; leave untouched otherwise.
- * Explicit `null` provider also clears provenance without a coordinate change (free-text venue rename). */
+/** Stamp or clear geocoding provenance.
+ * - Coordinate change + non-empty provider → stamp; coordinate change without → clear.
+ * - Explicit non-empty provider without a coordinate change → stamp (re-select same pin / restore Verified).
+ * - Explicit `null` without a coordinate change → clear (free-text venue rename).
+ * - Omitted provider without a coordinate change → leave untouched.
+ */
 function geocodingProvenancePatch(
   coordinatesInPatch: boolean,
   rawProvider: string | null | undefined,
@@ -129,6 +133,12 @@ function geocodingProvenancePatch(
   }
   if (rawProvider === null) {
     return { geocoding_provider: null, geocoded_at: null };
+  }
+  if (typeof rawProvider === "string") {
+    const provider = rawProvider.trim();
+    if (provider) {
+      return { geocoding_provider: provider, geocoded_at: new Date() };
+    }
   }
   return {};
 }
@@ -159,7 +169,12 @@ async function parseLocationPutBody(
     // Zod's partial nullish fields are wider than AddressComponents; normalizeEventLocationInput
     // re-validates address_components via normalizeAddressComponents(unknown).
     const patch = normalizeEventLocationInput(parsed.data as EventLocationInput);
-    if (Object.keys(patch).length === 0) {
+    // Provider is API-only (not in normalizeEventLocationInput). A same-OSM re-select can send
+    // only `geocoding_provider` — treat non-empty or explicit null as a valid patch.
+    const providerRaw = parsed.data.geocoding_provider;
+    const providerOnlyPatch =
+      providerRaw === null || (typeof providerRaw === "string" && providerRaw.trim() !== "");
+    if (Object.keys(patch).length === 0 && !providerOnlyPatch) {
       return c.json({ error: "validation_failed" }, 400);
     }
     return { patch, geocodingProvider: parsed.data.geocoding_provider };
@@ -217,12 +232,12 @@ export async function handlePutEventLocation(c: Context, db: PrismaClient): Prom
     throw err;
   }
 
-  // Geocoding provenance: a coordinate change made by picking a search result carries a
-  // `geocoding_provider` (e.g. "nominatim") and is stamped `geocoded_at: now()`. A coordinate
-  // change with no provider - a dragged pin, a manually typed lat/lng, or a "clear location" -
-  // means the previous provenance no longer describes these coordinates, so both are reset to
-  // null. Explicit `geocoding_provider: null` without a coordinate change also clears provenance
-  // (free-text venue rename). Omitting the field leaves provenance untouched.
+  // Geocoding provenance: a search pick or successful reverse carries `geocoding_provider`
+  // (e.g. "nominatim") and is stamped `geocoded_at: now()`, including when coordinates are
+  // unchanged (re-selecting the same OSM hit to restore Verified). A coordinate change with no
+  // provider - a dragged pin before reverse succeeds, or a "clear location" - resets both to
+  // null. Explicit `geocoding_provider: null` without a coordinate change also clears
+  // provenance (free-text venue rename). Omitting the field leaves provenance untouched.
   const coordinatesInPatch = patch.latitude !== undefined || patch.longitude !== undefined;
   const geocodingPatch = geocodingProvenancePatch(coordinatesInPatch, geocodingProvider);
 

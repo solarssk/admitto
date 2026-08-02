@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 import {
   EMPTY_ADDRESS_COMPONENTS,
@@ -355,6 +355,16 @@ export function LocationSettingsPanel({
   const timezoneMismatch =
     Boolean(suggestedTimezone) && suggestedTimezone !== eventTimezone;
   const showVerified = draftVerified;
+  let provenanceBadge: ReactNode;
+  if (!hasCoordinates) {
+    provenanceBadge = (
+      <span className="location-map-footer__verified-placeholder" aria-hidden="true" />
+    );
+  } else if (showVerified) {
+    provenanceBadge = <Badge variant="ok">From OpenStreetMap</Badge>;
+  } else {
+    provenanceBadge = <Badge variant="neutral">Set manually</Badge>;
+  }
 
   return (
     <div className="settings-sections">
@@ -410,7 +420,7 @@ export function LocationSettingsPanel({
               maxLength={LOCATION_LIMITS.VENUE_NAME_MAX_LENGTH}
               disabled={disabled}
               placeholder="e.g. Convention Center, or a full address"
-              hint="The venue name shown to attendees. Search OpenStreetMap by name or street address - pick a match to set the map. If the venue is missing from the map data, search a nearby street address or drop a pin below, then type the display name here (the pin stays)."
+              hint="The venue name shown to attendees. Search OpenStreetMap by name or street address - pick a match to set the map. If the venue is missing from the map data, search a nearby street address or double-click the map below to drop a pin, then type the display name here (the pin stays)."
               onChange={(text) => {
                 // Keep the map pin and address grid when renaming - OSM often lacks the
                 // building POI, so the intended workflow is pin (or street search) + manual
@@ -450,8 +460,9 @@ export function LocationSettingsPanel({
                 }}
               />
               <p className="field-hint">
-                Click the map to drop a pin, or drag an existing pin to adjust it. Editing the venue
-                name above keeps the pin - use Clear map to remove it.
+                Double-click the map to drop or move the pin, or drag an existing pin to fine-tune
+                it. Pan and zoom freely without losing the pin. Editing the venue name above keeps
+                it - use Clear map to remove it.
               </p>
             </div>
           ) : (
@@ -465,13 +476,7 @@ export function LocationSettingsPanel({
 
           <div className="location-map-footer">
             <div className="location-map-footer__meta">
-              <span className="location-map-footer__verified">
-                {showVerified ? (
-                  <Badge variant="ok">Verified on OpenStreetMap</Badge>
-                ) : (
-                  <span className="location-map-footer__verified-placeholder" aria-hidden="true" />
-                )}
-              </span>
+              <span className="location-map-footer__verified">{provenanceBadge}</span>
               <span className="location-map-footer__coords">
                 <i className="ti ti-map-pin" aria-hidden="true" />
                 {hasCoordinates ? formatMapCoordinates(latitude!, longitude!) : "-"}

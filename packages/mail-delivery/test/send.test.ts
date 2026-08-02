@@ -152,7 +152,7 @@ describe("sendTicketEmails", () => {
     expect(result.sent).toBe(1);
     expect(exported[0]?.message.subject).toBe("Mail venue");
     expect(exported[0]?.message.html).toContain(
-      'src="https://tickets.example.com/m/evt-mail-send.png?v=2_52.229700_21.012200_z15"',
+      'src="https://tickets.example.com/m/evt-mail-send.png?v=5_52.229700_21.012200_z15"',
     );
     expect(exported[0]?.message.html).toContain("Example Street 1, Warsaw");
     expect(exported[0]?.message.html).toContain("Enter through gate A.");

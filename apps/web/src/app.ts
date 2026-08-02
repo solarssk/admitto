@@ -28,6 +28,7 @@ import { EventStaticMapService } from "./maps/event-static-map-service.js";
 import { resolveGeocodingConfig, resolveMapTileConfig } from "./maps/config.js";
 import {
   parseEventIdFromStaticMapFilename,
+  staticMapCacheControl,
   staticMapFailureStatus,
 } from "./maps/static-map-route.js";
 import { handleGetAdmittoMark, handleGetAppleWalletBadge, handleGetGoogleWalletBadge } from "./wallet-badges.js";
@@ -590,7 +591,6 @@ export function createApp(options: CreateAppOptions = {}) {
       c,
       renderTicket(resolvedForDisplay, qrDataUrl, theme, {
         displayToken,
-        mapAttribution: mapTiles.attribution,
         staticMapEnabled: mapTiles.enabled,
       }),
       200,
@@ -1328,7 +1328,8 @@ export function createApp(options: CreateAppOptions = {}) {
       return c.body(null, staticMapFailureStatus(result.reason));
     }
     c.header("Content-Type", "image/png");
-    c.header("Cache-Control", "public, max-age=86400");
+    // Placeholders use a short max-age so a tile CDN recovery is visible within minutes.
+    c.header("Cache-Control", staticMapCacheControl(result.placeholder));
     c.header("X-Content-Type-Options", "nosniff");
     return c.body(new Uint8Array(result.png), 200);
   });

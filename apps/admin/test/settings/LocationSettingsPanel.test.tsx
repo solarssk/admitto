@@ -379,7 +379,7 @@ describe("LocationSettingsPanel — venue search", () => {
     fireEvent.click(await screen.findByRole("button", { name: /10 Downing Street/ }));
 
     expect(await screen.findByDisplayValue("10 Downing Street")).toBeTruthy();
-    expect(await screen.findByText("Verified on OpenStreetMap")).toBeTruthy();
+    expect(await screen.findByText("From OpenStreetMap")).toBeTruthy();
     expect(await screen.findByText("51.50340, -0.12760")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -425,7 +425,7 @@ describe("LocationSettingsPanel — venue search", () => {
     renderPanel();
 
     await screen.findByDisplayValue("Springfield Hall");
-    expect(await screen.findByText("Verified on OpenStreetMap")).toBeTruthy();
+    expect(await screen.findByText("From OpenStreetMap")).toBeTruthy();
     expect(screen.getByText("51.50740, -0.12780")).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("Venue name or address"), {
@@ -433,7 +433,8 @@ describe("LocationSettingsPanel — venue search", () => {
     });
 
     expect(screen.getByDisplayValue("Springfield Hall Annex")).toBeTruthy();
-    expect(screen.queryByText("Verified on OpenStreetMap")).toBeFalsy();
+    expect(screen.queryByText("From OpenStreetMap")).toBeFalsy();
+    expect(screen.getByText("Set manually")).toBeTruthy();
     expect(screen.getByText("51.50740, -0.12780")).toBeTruthy();
   });
 
@@ -472,6 +473,57 @@ describe("LocationSettingsPanel — venue search", () => {
     );
     expect(mockSaveLocation.mock.calls[0]?.[1]).not.toHaveProperty("latitude");
     expect(mockSaveLocation.mock.calls[0]?.[1]).not.toHaveProperty("longitude");
+  });
+
+  it("re-selecting the same coordinates restores Verified and saves geocoding_provider", async () => {
+    const unverified: EventLocationDto = {
+      ...SAVED_LOCATION,
+      geocoding_provider: null,
+      geocoded_at: null,
+    };
+    mockFetchLocation.mockResolvedValue(unverified);
+    mockSearch.mockResolvedValue({
+      results: [
+        searchResult({
+          name: "Springfield Hall",
+          formatted_address: "1 Main St, Springfield",
+          latitude: 51.5074,
+          longitude: -0.1278,
+        }),
+      ],
+      contact_configured: true,
+    });
+    mockSaveLocation.mockResolvedValue({
+      ...unverified,
+      geocoding_provider: "nominatim",
+      geocoded_at: "2026-08-02T00:00:00.000Z",
+    });
+    renderPanel();
+
+    await screen.findByDisplayValue("Springfield Hall");
+    expect(screen.getByText("Set manually")).toBeTruthy();
+    expect(screen.queryByText("From OpenStreetMap")).toBeFalsy();
+
+    fireEvent.change(screen.getByLabelText("Venue name or address"), {
+      target: { value: "Springfield" },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: /Springfield Hall/ }));
+
+    expect(await screen.findByText("From OpenStreetMap")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(mockSaveLocation).toHaveBeenCalledWith(
+        "evt-1",
+        expect.objectContaining({
+          geocoding_provider: "nominatim",
+        }),
+      ),
+    );
+    // Same pin: save must not require a coordinate rewrite to stamp provenance.
+    const body = mockSaveLocation.mock.calls.at(-1)?.[1] as Record<string, unknown>;
+    expect(body.latitude).toBeUndefined();
+    expect(body.longitude).toBeUndefined();
   });
 
   it("clears object_name when the venue field is whitespace-only", async () => {
@@ -694,7 +746,8 @@ describe("LocationSettingsPanel — clearing and map availability", () => {
     await waitFor(() => {
       expect(document.querySelector(".location-map-footer__coords")?.textContent?.trim()).toBe("-");
     });
-    expect(screen.queryByText("Verified on OpenStreetMap")).toBeFalsy();
+    expect(screen.queryByText("From OpenStreetMap")).toBeFalsy();
+    expect(screen.queryByText("Set manually")).toBeFalsy();
     expect(await screen.findByText("Unsaved changes")).toBeTruthy();
   });
 
@@ -743,7 +796,8 @@ describe("LocationSettingsPanel — clearing and map availability", () => {
 
     expect(await screen.findByText("40.71280, -74.00600")).toBeTruthy();
     expect(screen.getByLabelText("Address details").textContent).not.toContain("Springfield");
-    expect(screen.queryByText("Verified on OpenStreetMap")).toBeFalsy();
+    expect(screen.getByText("Set manually")).toBeTruthy();
+    expect(screen.queryByText("From OpenStreetMap")).toBeFalsy();
   });
 
   it("fills an empty venue name from reverse geocoding after a manual pin pick", async () => {
@@ -762,7 +816,7 @@ describe("LocationSettingsPanel — clearing and map availability", () => {
     fireEvent.click(await screen.findByTestId("map-picker"));
 
     expect(await screen.findByDisplayValue("Empire State")).toBeTruthy();
-    expect(await screen.findByText("Verified on OpenStreetMap")).toBeTruthy();
+    expect(await screen.findByText("From OpenStreetMap")).toBeTruthy();
   });
 
   it("keeps the existing venue name and restores the default zoom after a map pick", async () => {
@@ -858,7 +912,8 @@ describe("LocationSettingsPanel — clearing and map availability", () => {
     fireEvent.click(await screen.findByTestId("map-picker"));
     expect(await screen.findByText("40.71280, -74.00600")).toBeTruthy();
     expect(screen.getByLabelText("Address details").textContent).not.toContain("Springfield");
-    expect(screen.queryByText("Verified on OpenStreetMap")).toBeFalsy();
+    expect(screen.getByText("Set manually")).toBeTruthy();
+    expect(screen.queryByText("From OpenStreetMap")).toBeFalsy();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>

@@ -55,7 +55,7 @@ describe("GET /m/:filename", () => {
     expect((await app.request("/m/.png")).status).toBe(404);
   });
 
-  it("returns PNG bytes on success and maps failure reasons to status codes", async () => {
+  it("returns PNG bytes on success and maps miss reasons to 404", async () => {
     const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
     const appOk = createApp({
       eventStaticMapService: {
@@ -65,20 +65,25 @@ describe("GET /m/:filename", () => {
     const ok = await appOk.request("/m/evt_1.png");
     expect(ok.status).toBe(200);
     expect(ok.headers.get("content-type")).toContain("image/png");
+    expect(ok.headers.get("cache-control")).toBe("public, max-age=86400");
     expect(Buffer.from(await ok.arrayBuffer())).toEqual(png);
 
-    for (const [reason, status] of [
-      ["disabled", 404],
-      ["not_found", 404],
-      ["no_coordinates", 404],
-      ["render_failed", 502],
-    ] as const) {
+    const appPlaceholder = createApp({
+      eventStaticMapService: {
+        getForEvent: async () => ({ ok: true, png, cacheHit: false, placeholder: true }),
+      },
+    });
+    const placeholder = await appPlaceholder.request("/m/evt_1.png");
+    expect(placeholder.status).toBe(200);
+    expect(placeholder.headers.get("cache-control")).toBe("public, max-age=120");
+
+    for (const reason of ["disabled", "not_found", "no_coordinates"] as const) {
       const app = createApp({
         eventStaticMapService: {
           getForEvent: async () => ({ ok: false, reason }),
         },
       });
-      expect((await app.request("/m/evt_1.png")).status).toBe(status);
+      expect((await app.request("/m/evt_1.png")).status).toBe(404);
     }
   });
 });

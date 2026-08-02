@@ -161,7 +161,7 @@ describe("buildEventLocationPatchBody", () => {
     });
   });
 
-  it("includes geocoding_provider only when coordinates changed and a pending provider is set", () => {
+  it("includes geocoding_provider when coordinates changed and a pending provider is set", () => {
     const draft: LocationDraft = { ...saved, latitude: 10, longitude: 20 };
     expect(buildEventLocationPatchBody(draft, saved, "nominatim")).toEqual({
       latitude: 10,
@@ -172,20 +172,29 @@ describe("buildEventLocationPatchBody", () => {
 
   it("omits geocoding_provider for a manual pin move even if coordinates changed", () => {
     const draft: LocationDraft = { ...saved, latitude: 10, longitude: 20 };
-    // pendingGeocodingProvider is null: the caller (LocationSettingsPanel) clears it on every
-    // manual map click/drag/clear, so a manual move never carries stale search provenance.
+    // pendingGeocodingProvider is null until reverse succeeds (or stays null on clear/failed
+    // reverse); a bare coordinate change must not carry a stale search provider.
     expect(buildEventLocationPatchBody(draft, saved, null)).toEqual({
       latitude: 10,
       longitude: 20,
     });
   });
 
-  it("omits geocoding_provider when coordinates are unchanged, even if a pending provider is set", () => {
+  it("stamps geocoding_provider when a pending provider is set even if coordinates are unchanged", () => {
     const draft: LocationDraft = { ...saved, directions_text: "Updated directions" };
-    // Defensive: this combination shouldn't happen in practice (picking a search result always
-    // sets coordinates), but the provider must never leak onto an unrelated text-only save.
+    // Re-selecting the same OSM hit (or saving right after reverse enrichment) must restore
+    // Verified provenance without requiring the pin to move.
     expect(buildEventLocationPatchBody(draft, saved, "nominatim")).toEqual({
       directions_text: "Updated directions",
+      geocoding_provider: "nominatim",
+    });
+  });
+
+  it("stamps pending provider on a same-coordinates re-select instead of clearing via venue rename", () => {
+    const draft: LocationDraft = { ...saved, venue_name: "Springfield Hall Annex" };
+    expect(buildEventLocationPatchBody(draft, saved, "nominatim")).toEqual({
+      venue_name: "Springfield Hall Annex",
+      geocoding_provider: "nominatim",
     });
   });
 
