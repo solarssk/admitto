@@ -118,7 +118,7 @@ export function MapPicker({
 
     const latLng: L.LatLngTuple = [latitude, longitude];
     const prev = syncedCoordsRef.current;
-    const coordsChanged = !prev || prev.lat !== latitude || prev.lng !== longitude;
+    const coordsChanged = prev?.lat !== latitude || prev?.lng !== longitude;
     syncedCoordsRef.current = { lat: latitude, lng: longitude };
 
     if (markerRef.current) {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 import {
   EMPTY_ADDRESS_COMPONENTS,
@@ -355,6 +355,16 @@ export function LocationSettingsPanel({
   const timezoneMismatch =
     Boolean(suggestedTimezone) && suggestedTimezone !== eventTimezone;
   const showVerified = draftVerified;
+  let provenanceBadge: ReactNode;
+  if (!hasCoordinates) {
+    provenanceBadge = (
+      <span className="location-map-footer__verified-placeholder" aria-hidden="true" />
+    );
+  } else if (showVerified) {
+    provenanceBadge = <Badge variant="ok">From OpenStreetMap</Badge>;
+  } else {
+    provenanceBadge = <Badge variant="neutral">Set manually</Badge>;
+  }
 
   return (
     <div className="settings-sections">
@@ -466,17 +476,7 @@ export function LocationSettingsPanel({
 
           <div className="location-map-footer">
             <div className="location-map-footer__meta">
-              <span className="location-map-footer__verified">
-                {hasCoordinates ? (
-                  showVerified ? (
-                    <Badge variant="ok">From OpenStreetMap</Badge>
-                  ) : (
-                    <Badge variant="neutral">Set manually</Badge>
-                  )
-                ) : (
-                  <span className="location-map-footer__verified-placeholder" aria-hidden="true" />
-                )}
-              </span>
+              <span className="location-map-footer__verified">{provenanceBadge}</span>
               <span className="location-map-footer__coords">
                 <i className="ti ti-map-pin" aria-hidden="true" />
                 {hasCoordinates ? formatMapCoordinates(latitude!, longitude!) : "-"}
