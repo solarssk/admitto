@@ -13,10 +13,9 @@ body.ticket-page { margin: 0; background: var(--surface-page, #f1f5f9); min-heig
 .ticket__body { padding: 22px 24px 18px; text-align: center; }
 .ticket__event-name { font-size: 1.25rem; font-weight: 700; margin: 0; }
 .ticket__meta { color: var(--text-secondary, #475569); font-size: 0.875rem; margin-top: 6px; display: flex; flex-direction: column; align-items: center; gap: 3px; }
-/* Keep icon glued to the text: center the whole row as a unit, not the text inside a full-width flex. */
-.ticket__meta > span { display: inline-flex; align-items: flex-start; justify-content: flex-start; gap: 6px; max-width: 100%; width: fit-content; margin-inline: auto; }
-.ticket__meta svg { width: 15px; height: 15px; flex: 0 0 auto; margin-top: 2px; }
-.ticket__meta-text { flex: 0 1 auto; min-width: 0; text-align: start; text-wrap: balance; line-height: 1.35; }
+/* Icon + label as one centered text run so multi-line venues stay balanced (no flex gap drift). */
+.ticket__meta > span { display: block; max-width: 100%; text-align: center; text-wrap: balance; line-height: 1.35; }
+.ticket__meta svg { display: inline-block; width: 15px; height: 15px; vertical-align: -0.15em; margin-right: 6px; }
 .ticket__attendee { margin: 16px 0 18px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .ticket__attendee-name { font-size: 1.125rem; font-weight: 600; margin: 0 0 8px; }
 .ticket__type { display: inline-flex; align-items: center; padding: 0.2em 0.55em; border-radius: 6px; background: var(--surface-sunken, #f1f5f9); color: var(--text-secondary, #475569); font-size: 0.75rem; font-weight: 600; }
