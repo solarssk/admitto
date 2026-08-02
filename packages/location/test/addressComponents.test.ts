@@ -222,6 +222,21 @@ describe("preferNumberedStreet / streetLineLooksNumbered", () => {
       ).street,
     ).toBe("Route 66 100");
   });
+
+  it("treats null streets as empty when deciding whether a fallback extends the primary", () => {
+    expect(
+      preferNumberedStreet(
+        { ...EMPTY_ADDRESS_COMPONENTS, street: null, city: "Warsaw" },
+        { ...EMPTY_ADDRESS_COMPONENTS, street: "Main 1", city: "Warsaw" },
+      ).street,
+    ).toBe("Main 1");
+    expect(
+      preferNumberedStreet(
+        { ...EMPTY_ADDRESS_COMPONENTS, street: "Main", city: "Warsaw" },
+        { ...EMPTY_ADDRESS_COMPONENTS, street: null, city: "Warsaw" },
+      ).street,
+    ).toBe("Main");
+  });
 });
 
 describe("isAddressComponentsSparse / mergeAddressComponents", () => {

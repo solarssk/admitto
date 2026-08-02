@@ -15,6 +15,14 @@ const DEFAULT_TILE_TIMEOUT_MS = 8_000;
 const MAX_TILE_BYTES = 512 * 1024;
 const ATTRIBUTION_BAR_HEIGHT = 18;
 
+/** True when a Content-Length value is a usable tile size (finite, non-negative, within cap). */
+export function isAllowedDeclaredTileSize(declared: number, maxBytes: number): boolean {
+  if (!Number.isFinite(declared)) return false;
+  if (declared < 0) return false;
+  if (declared > maxBytes) return false;
+  return true;
+}
+
 export interface StaticMapRequest {
   latitude: number;
   longitude: number;
@@ -138,8 +146,7 @@ async function readTileBodyCapped(res: Response, maxBytes: number, url: string):
   const contentLength = res.headers.get("content-length");
   if (contentLength != null) {
     const declared = Number(contentLength);
-    // NaN and negatives fail `declared >= 0`; oversize fails the upper bound.
-    if (!(declared >= 0 && declared <= maxBytes)) {
+    if (!isAllowedDeclaredTileSize(declared, maxBytes)) {
       await res.body.cancel().catch(() => undefined);
       throw new StaticMapRenderError(`Tile too large (declared ${declared} bytes): ${url}`);
     }

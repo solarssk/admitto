@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import sharp from "sharp";
 import {
   buildStaticMapCacheKey,
+  isAllowedDeclaredTileSize,
   latLngToTileFraction,
   plainMapAttribution,
   renderStaticMapPng,
@@ -23,6 +24,49 @@ describe("latLngToTileFraction", () => {
     const { x, y } = latLngToTileFraction(0, 0, 1);
     expect(x).toBeCloseTo(1, 5);
     expect(y).toBeCloseTo(1, 5);
+  });
+});
+
+describe("isAllowedDeclaredTileSize", () => {
+  it("accepts finite sizes within the cap", () => {
+    expect(isAllowedDeclaredTileSize(0, 512)).toBe(true);
+    expect(isAllowedDeclaredTileSize(512, 512)).toBe(true);
+  });
+
+  it("rejects non-finite, negative, and oversize values", () => {
+    expect(isAllowedDeclaredTileSize(Number.NaN, 512)).toBe(false);
+    expect(isAllowedDeclaredTileSize(Number.POSITIVE_INFINITY, 512)).toBe(false);
+    expect(isAllowedDeclaredTileSize(-1, 512)).toBe(false);
+    expect(isAllowedDeclaredTileSize(513, 512)).toBe(false);
+  });
+});
+
+describe("renderStaticMapPng content-length accept path", () => {
+  it("reads the body when Content-Length is present and within the cap", async () => {
+    const tile = await solidTilePng({ r: 40, g: 50, b: 60 });
+    const fetchFn = vi.fn().mockImplementation(async () =>
+      new Response(tile, {
+        status: 200,
+        headers: {
+          "content-type": "image/png",
+          "content-length": String(tile.byteLength),
+        },
+      }),
+    );
+    const png = await renderStaticMapPng(
+      { latitude: 52.23, longitude: 21.01, zoom: 14, width: 256, height: 256 },
+      {
+        tileConfig: {
+          enabled: true,
+          tileUrl: "https://tiles.example/{z}/{x}/{y}.png",
+          attribution: "",
+          maxZoom: 19,
+        },
+        userAgent: "Admitto/test",
+        fetchFn,
+      },
+    );
+    expect(png.subarray(0, 4)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
   });
 });
 

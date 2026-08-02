@@ -126,6 +126,37 @@ describe("EventStaticMapService.getForEvent", () => {
     ).resolves.toEqual({ ok: false, reason: "render_failed" });
   });
 
+  it("logs unexpected errors and still returns render_failed", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const service = new EventStaticMapService({
+      cache: fakeCache(),
+      renderPng: vi.fn(async () => {
+        throw new Error("unexpected");
+      }),
+      buildUserAgent: async () => "Admitto/test",
+    });
+
+    await expect(
+      service.getForEvent(fakeDb({ latitude: 1, longitude: 2, map_zoom: 10 }), "evt"),
+    ).resolves.toEqual({ ok: false, reason: "render_failed" });
+    expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it("uses default cache and render seams when constructed without options", async () => {
+    const prev = process.env["LOCATION_MAPS_ENABLED"];
+    process.env["LOCATION_MAPS_ENABLED"] = "false";
+    try {
+      const service = new EventStaticMapService();
+      await expect(
+        service.getForEvent(fakeDb({ latitude: 1, longitude: 2, map_zoom: 15 }), "evt"),
+      ).resolves.toEqual({ ok: false, reason: "disabled" });
+    } finally {
+      if (prev === undefined) delete process.env["LOCATION_MAPS_ENABLED"];
+      else process.env["LOCATION_MAPS_ENABLED"] = prev;
+    }
+  });
+
   it("coalesces concurrent cold-cache renders for the same key", async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
