@@ -23,6 +23,9 @@ describe("formatInvalidUrlMessage", () => {
     expect(formatInvalidUrlMessage("qr_image_url", "template")).toBe(
       "QR image URL must be a full http:// or https:// URL when rendering the email.",
     );
+    expect(formatInvalidUrlMessage("event_map_url", "template")).toBe(
+      "Event map image URL must be a full http:// or https:// URL when rendering the email.",
+    );
   });
 });
 

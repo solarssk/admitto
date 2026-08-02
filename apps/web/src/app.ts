@@ -22,7 +22,15 @@ import {
   renderNotFound,
   renderRevoked,
   renderServerError,
+  resolveDisplayToken,
 } from "./ticket-page.js";
+import { EventStaticMapService } from "./maps/event-static-map-service.js";
+import { resolveGeocodingConfig, resolveMapTileConfig } from "./maps/config.js";
+import {
+  parseEventIdFromStaticMapFilename,
+  staticMapFailureStatus,
+} from "./maps/static-map-route.js";
+import { handleGetAdmittoMark, handleGetAppleWalletBadge, handleGetGoogleWalletBadge } from "./wallet-badges.js";
 import {
   resolveBaseUrl,
   resolveCheckinToken,
@@ -224,7 +232,6 @@ import {
   handlePostGeocodingTimezone,
 } from "./admin/geocoding-routes.js";
 import { handleGetMapsConfig } from "./admin/maps-config-routes.js";
-import { resolveGeocodingConfig } from "./maps/config.js";
 import { buildGeocodingUserAgent } from "./maps/user-agent.js";
 import { NominatimProvider } from "./maps/nominatim-provider.js";
 import { createGeocodingCache } from "./maps/geocoding-cache.js";
@@ -322,6 +329,8 @@ export interface CreateAppOptions {
   mailDeliveryDeps?: MailDeliveryDeps;
   /** Test-only injection point — bypasses the real Nominatim HTTP adapter. */
   geocodingProvider?: GeocodingProvider;
+  /** Test-only injection point - static map PNG resolver for `/m/:eventId.png`. */
+  eventStaticMapService?: Pick<EventStaticMapService, "getForEvent">;
   opsHealthToken?: string | null;
   /** JSON access log per request (defaults to `LOG_HTTP_REQUESTS` env). */
   logHttpRequests?: boolean;
@@ -390,6 +399,7 @@ export function createApp(options: CreateAppOptions = {}) {
       buildUserAgent: () => buildGeocodingUserAgent(db),
     });
   const geocodingService = new GeocodingService(geocodingProvider, createGeocodingCache());
+  const eventStaticMapService = options.eventStaticMapService ?? new EventStaticMapService();
 
   const app = new Hono();
   // Catch route errors once with enough request context in System logs. Keep raw exception
@@ -518,6 +528,7 @@ export function createApp(options: CreateAppOptions = {}) {
     resolved: NonNullable<Awaited<ReturnType<typeof resolveTicket>>>,
     internalToken?: string,
     route = "/t/:token",
+    agencyPublicRef?: string,
   ) {
     const { attendee, event } = resolved;
 
@@ -572,10 +583,16 @@ export function createApp(options: CreateAppOptions = {}) {
     }
 
     const resolvedForDisplay = await resolveTicketPageDisplay(resolved);
+    const displayToken = resolveDisplayToken(internalToken, agencyPublicRef);
 
+    const mapTiles = resolveMapTileConfig();
     return htmlWithSecurityHeaders(
       c,
-      renderTicket(resolvedForDisplay, qrDataUrl, theme),
+      renderTicket(resolvedForDisplay, qrDataUrl, theme, {
+        displayToken,
+        mapAttribution: mapTiles.attribution,
+        staticMapEnabled: mapTiles.enabled,
+      }),
       200,
       theme,
       resolvedForDisplay.event.logoUrl,
@@ -588,6 +605,9 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/favicon.ico", handleGetFaviconIco);
   app.get("/apple-touch-icon.png", handleGetAppleTouchIcon);
   app.get("/apple-touch-icon-precomposed.png", handleGetAppleTouchIconPrecomposed);
+  app.get("/assets/admitto-mark.svg", handleGetAdmittoMark);
+  app.get("/assets/apple-wallet-badge.svg", handleGetAppleWalletBadge);
+  app.get("/assets/google-wallet-badge.svg", handleGetGoogleWalletBadge);
   app.get("/readyz", readyzRateLimit, (c) =>
     handleReadyz(c, {
       db,
@@ -1294,6 +1314,24 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.use("/t/*", publicRateLimit);
   app.use("/q/*", publicRateLimit);
+  app.use("/m/*", publicRateLimit);
+
+  // Public static map PNG for tickets / mail {{event_map_url}} - event-scoped, no token
+  // (venue coordinates are intended for attendees). Filename is "{eventId}.png".
+  app.get("/m/:filename", async (c) => {
+    const eventId = parseEventIdFromStaticMapFilename(c.req.param("filename"));
+    if (!eventId) {
+      return c.body(null, 404);
+    }
+    const result = await eventStaticMapService.getForEvent(db, eventId);
+    if (!result.ok) {
+      return c.body(null, staticMapFailureStatus(result.reason));
+    }
+    c.header("Content-Type", "image/png");
+    c.header("Cache-Control", "public, max-age=86400");
+    c.header("X-Content-Type-Options", "nosniff");
+    return c.body(new Uint8Array(result.png), 200);
+  });
 
   // Mode B ticket page — must be registered before /t/:token
   app.get("/t/:eventSlug/a/:ref", async (c) => {
@@ -1314,7 +1352,7 @@ export function createApp(options: CreateAppOptions = {}) {
     if (resolved?.mode !== "agency") {
       return htmlWithSecurityHeaders(c, renderNotFound(), 404);
     }
-    return renderTicketPage(c, resolved, undefined, "/t/:eventSlug/a/:ref");
+    return renderTicketPage(c, resolved, undefined, "/t/:eventSlug/a/:ref", ref);
   });
 
   // Mode A ticket page

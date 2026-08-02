@@ -134,6 +134,7 @@ describe("NominatimProvider.search", () => {
     expect(url.searchParams.get("format")).toBe("geocodejson");
     expect(url.searchParams.get("addressdetails")).toBe("1");
     expect(url.searchParams.get("limit")).toBe("5");
+    expect(url.searchParams.get("accept-language")).toBe("en");
     expect((requestInit.headers as Record<string, string>)["User-Agent"]).toBe(USER_AGENT);
   });
 
@@ -204,6 +205,38 @@ describe("NominatimProvider.search", () => {
       city: "Warszawa",
       region: "województwo mazowieckie",
       country: "Polska",
+    });
+  });
+
+  it("keeps GeocodeJSON components when the feature has no label", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            properties: {
+              geocoding: {
+                name: "Hall",
+                street: "Main",
+                housenumber: "1",
+                city: "Warsaw",
+                country: "Poland",
+              },
+            },
+            geometry: { type: "Point", coordinates: [21.01, 52.23] },
+          },
+        ],
+      }),
+    );
+    const results = await makeProvider(fetchFn).search("hall");
+    expect(results[0]?.components).toEqual({
+      object_name: "Hall",
+      street: "Main 1",
+      postcode: null,
+      city: "Warsaw",
+      region: null,
+      country: "Poland",
     });
   });
 
@@ -423,6 +456,7 @@ describe("NominatimProvider.reverse", () => {
     expect(url.searchParams.get("lon")).toBe("21.0028");
     expect(url.searchParams.get("zoom")).toBe("18");
     expect(url.searchParams.get("addressdetails")).toBe("1");
+    expect(url.searchParams.get("accept-language")).toBe("en");
   });
 
   it("returns null when Nominatim has no coverage", async () => {

@@ -1,4 +1,4 @@
-import { formatStreetLine, type CompactAddressParts } from "./formatAddress.js";
+import { formatDirectionsAddress, formatStreetLine, type CompactAddressParts } from "./formatAddress.js";
 
 /** Structured address fields shown in the Location tab's always-visible grid (and persisted
  * on `EventLocation.address_components`). Null means "not set" / show a placeholder dash. */
@@ -25,7 +25,10 @@ const COMPONENT_MAX_LENGTH = 200;
 /** PL `00-120`, generic 4–6 digit, UK-ish outward codes — enough for Nominatim labels. */
 const POSTCODE_RE = /^(?:\d{2}-\d{3}|\d{4,6}|[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})$/i;
 const REGION_RE = /województwo|voivodeship|province|canton|oblast|région|region\b|state of/i;
-const HOUSE_NUMBER_RE = /^\d+[a-zA-Z]?$/;
+/** Standalone house-number token: `12`, `12A`, `12/14`, `1-3`. */
+const HOUSE_NUMBER_RE = /^\d+[a-zA-Z]?(?:[/-]\d+[a-zA-Z]?)?$/;
+/** "Wybrzeże Szczecińskie 1" - number glued to the street name in one Nominatim segment. */
+const TRAILING_NUMBER_IN_SEGMENT_RE = /^(.*\S)\s+(\d+[a-zA-Z]?(?:[/-]\d+[a-zA-Z]?)?)$/;
 
 function cleanComponent(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
@@ -55,6 +58,22 @@ function popMatchingTail(parts: string[], predicate: (segment: string) => boolea
   return tail;
 }
 
+/** True when a Street & number field already includes a house number. */
+export function streetLineLooksNumbered(street: string | null | undefined): boolean {
+  const trimmed = street?.trim();
+  if (!trimmed) return false;
+  // Prefer token split over one complex alternation regex (Sonar S5843).
+  return trimmed.split(/\s+/).some((token) => HOUSE_NUMBER_RE.test(token));
+}
+
+function streetLineFromSegment(segment: string): string | null {
+  const match = TRAILING_NUMBER_IN_SEGMENT_RE.exec(segment);
+  if (match) {
+    return cleanComponent(formatStreetLine({ street: match[1], housenumber: match[2] }));
+  }
+  return cleanComponent(segment);
+}
+
 function parseStreetFromLeadingSegments(parts: string[]): string | null {
   if (parts.length >= 2 && HOUSE_NUMBER_RE.test(parts[0]!)) {
     return cleanComponent(formatStreetLine({ street: parts[1], housenumber: parts[0] }));
@@ -68,9 +87,35 @@ function parseStreetFromLeadingSegments(parts: string[]): string | null {
     return cleanComponent(formatStreetLine({ street: streetName, housenumber }));
   }
   if (!HOUSE_NUMBER_RE.test(parts[0]!)) {
-    return cleanComponent(parts[0]);
+    return streetLineFromSegment(parts[0]!);
   }
   return null;
+}
+
+/**
+ * Prefer a street line that already includes a house number when merging geocode + reverse
+ * (or label) results. GeocodeJSON often returns street-only for large POIs.
+ */
+export function preferNumberedStreet(
+  primary: AddressComponents,
+  fallback: AddressComponents,
+): AddressComponents {
+  const merged = mergeAddressComponents(primary, fallback);
+  const primaryStreet = primary.street?.trim() ?? "";
+  const fallbackStreet = fallback.street?.trim() ?? "";
+  // e.g. primary "Route 66" + fallback "Route 66 100" (numeric street name + house number).
+  const fallbackExtendsPrimary =
+    Boolean(primaryStreet && fallbackStreet) &&
+    fallbackStreet.startsWith(`${primaryStreet} `) &&
+    HOUSE_NUMBER_RE.test(fallbackStreet.slice(primaryStreet.length + 1));
+
+  if (
+    streetLineLooksNumbered(fallback.street) &&
+    (!streetLineLooksNumbered(primary.street) || fallbackExtendsPrimary)
+  ) {
+    return { ...merged, street: fallback.street };
+  }
+  return merged;
 }
 
 /**
@@ -189,4 +234,34 @@ export function parseStoredAddressComponents(value: unknown): AddressComponents 
   } catch {
     return null;
   }
+}
+
+/** Attendee-facing directions address from persisted grid fields (+ optional long label fallback). */
+export function formatDirectionsAddressFromComponents(
+  components: AddressComponents | null | undefined,
+  fallbackLabel?: string | null,
+): string {
+  const label = fallbackLabel?.trim() || "";
+  if (!components || isAddressComponentsEmpty(components)) {
+    return label;
+  }
+  // Name-only grids (POI pick without reverse street/city) must not suppress a richer
+  // `formatted_address` — otherwise Getting there / {{event_address}} just repeats the venue name.
+  if (isAddressComponentsSparse(components)) {
+    return (
+      label ||
+      formatDirectionsAddress({
+        name: components.object_name,
+        label: fallbackLabel,
+      })
+    );
+  }
+  return formatDirectionsAddress({
+    name: components.object_name,
+    street: components.street,
+    city: components.city,
+    country: components.country,
+    postcode: components.postcode,
+    label: fallbackLabel,
+  });
 }

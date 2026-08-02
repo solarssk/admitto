@@ -106,6 +106,117 @@ describe("sendTicketEmails", () => {
     expect(aliceExport?.message.html).toContain("https://tickets.example.com");
   });
 
+  it("renders saved event location and map tokens", async () => {
+    await prisma.eventLocation.create({
+      data: {
+        event_id: EVENT_ID,
+        venue_name: "Mail venue",
+        formatted_address: "Example Street 1, Warsaw",
+        latitude: 52.2297,
+        longitude: 21.0122,
+        directions_text: "Enter through gate A.",
+        accessibility_text: "A step-free entrance is available.",
+      },
+    });
+    const template = await prisma.mailTemplate.create({
+      data: {
+        scope_type: "event",
+        scope_id: EVENT_ID,
+        name: "location",
+        label: "Location",
+        subject_template: "{{event_location}}",
+        body_template: "<p>{{event_address}}</p>",
+        compiled_html_template:
+          '<img src="{{event_map_url}}" alt="Map" /><p>{{event_address}}</p><p>{{directions_text}}</p><p>{{accessibility_text}}</p><a href="{{google_maps_url}}">Google</a><a href="{{apple_maps_url}}">Apple</a>',
+        template_format: "html",
+      },
+    });
+    await prisma.attendee.create({
+      data: {
+        id: "att-location",
+        event_id: EVENT_ID,
+        email: "location@example.com",
+        name: "Location Example",
+      },
+    });
+
+    exported.length = 0;
+    const result = await sendTicketEmails(
+      EVENT_ID,
+      { attendeeIds: ["att-location"], templateId: template.id },
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
+
+    expect(result.sent).toBe(1);
+    expect(exported[0]?.message.subject).toBe("Mail venue");
+    expect(exported[0]?.message.html).toContain(
+      'src="https://tickets.example.com/m/evt-mail-send.png?v=2_52.229700_21.012200_z15"',
+    );
+    expect(exported[0]?.message.html).toContain("Example Street 1, Warsaw");
+    expect(exported[0]?.message.html).toContain("Enter through gate A.");
+    expect(exported[0]?.message.html).toContain("A step-free entrance is available.");
+    expect(exported[0]?.message.html).toContain("https://www.google.com/maps/search/");
+    expect(exported[0]?.message.html).toContain("https://maps.apple.com/");
+  });
+
+  it("omits event_map_url when LOCATION_MAPS_ENABLED=false despite a saved pin", async () => {
+    await prisma.eventLocation.upsert({
+      where: { event_id: EVENT_ID },
+      create: {
+        event_id: EVENT_ID,
+        venue_name: "Mail venue",
+        formatted_address: "Example Street 1, Warsaw",
+        latitude: 52.2297,
+        longitude: 21.0122,
+      },
+      update: {
+        venue_name: "Mail venue",
+        latitude: 52.2297,
+        longitude: 21.0122,
+      },
+    });
+    const template = await prisma.mailTemplate.create({
+      data: {
+        scope_type: "event",
+        scope_id: EVENT_ID,
+        name: "location-maps-off",
+        label: "Location maps off",
+        subject_template: "{{event_location}}",
+        body_template: "<p>{{event_address}}</p>",
+        compiled_html_template: '<img src="{{event_map_url}}" alt="Map" />',
+        template_format: "html",
+      },
+    });
+    await prisma.attendee.create({
+      data: {
+        id: "att-maps-off",
+        event_id: EVENT_ID,
+        email: "maps-off@example.com",
+        name: "Maps Off",
+      },
+    });
+
+    exported.length = 0;
+    const result = await sendTicketEmails(
+      EVENT_ID,
+      { attendeeIds: ["att-maps-off"], templateId: template.id },
+      prisma,
+      {
+        NODE_ENV: "test",
+        BASE_URL: "https://tickets.example.com",
+        LOCATION_MAPS_ENABLED: "false",
+      },
+      { exportSink: (p) => exported.push(p) },
+    );
+
+    expect(result.sent).toBe(1);
+    // Empty optional URL placeholders omit the attribute entirely (no src="").
+    expect(exported[0]?.message.html).toContain("<img alt=\"Map\" />");
+    expect(exported[0]?.message.html).not.toContain("/m/evt-mail-send.png");
+  });
+
   it("dedups second initial send", async () => {
     exported.length = 0;
     const result = await sendTicketEmails(

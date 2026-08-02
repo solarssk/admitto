@@ -38,3 +38,40 @@ export function buildOsmUrl(latitude: number, longitude: number, zoom: number): 
   const lng = formatCoordinate(longitude);
   return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=${zoom}/${lat}/${lng}`;
 }
+
+export type StaticMapCacheBustCoords = {
+  latitude: number;
+  longitude: number;
+  /** Persisted `EventLocation.map_zoom` (or effective render zoom) — browsers cache `/m/` for a day. */
+  zoom?: number | null;
+};
+
+/**
+ * Same-origin path for the public static map PNG (`GET /m/:eventId.png`).
+ * `v` is a cache-busting query only (the route ignores it). Include pin coordinates and zoom so a
+ * venue move or zoom-only save invalidates browser / mail-proxy caches; bump the compositor
+ * prefix when PNG output shape changes.
+ */
+export function buildEventStaticMapPath(
+  eventId: string,
+  coords?: StaticMapCacheBustCoords | null,
+): string {
+  const compositor = "2";
+  let pin = "";
+  if (coords && Number.isFinite(coords.latitude) && Number.isFinite(coords.longitude)) {
+    pin = `_${formatCoordinate(coords.latitude)}_${formatCoordinate(coords.longitude)}`;
+    if (coords.zoom != null && Number.isFinite(coords.zoom)) {
+      pin += `_z${Math.round(coords.zoom)}`;
+    }
+  }
+  return `/m/${encodeURIComponent(eventId)}.png?v=${compositor}${pin}`;
+}
+
+/** Absolute URL for `{{event_map_url}}` / ticket `<img src>` when an absolute base is required. */
+export function buildEventStaticMapUrl(
+  baseUrl: string,
+  eventId: string,
+  coords?: StaticMapCacheBustCoords | null,
+): string {
+  return `${baseUrl.replace(/\/$/, "")}${buildEventStaticMapPath(eventId, coords)}`;
+}

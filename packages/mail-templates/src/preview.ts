@@ -3,6 +3,10 @@ import { resolvePublicBaseUrl } from "./baseUrl.js";
 import { resolveBrandingFromEvent, resolveEventImageAssetVars } from "./branding.js";
 import { validateHttpUrl } from "./escape.js";
 import { formatEventDate, resolvePreviewEventTimeZone } from "./formatEventDate.js";
+import {
+  buildEventLocationTemplateVars,
+  type EventLocationForTemplateVars,
+} from "./locationVars.js";
 import { resolveTemplateForEvent } from "./mailTemplate.js";
 import { renderTemplate } from "./render.js";
 import type { BrandingUrls, RenderedTemplate, TemplateVars } from "./types.js";
@@ -10,7 +14,7 @@ import type { BrandingUrls, RenderedTemplate, TemplateVars } from "./types.js";
 export interface PreviewTemplateOptions {
   /** IANA timezone for calendar `event_date` (e.g. Europe/Warsaw). Falls back to ADMITTO_DEFAULT_EVENT_TIMEZONE or UTC. */
   timeZone?: string;
-  /** Public instance URL — absolutizes `/uploads/…` branding assets in rendered HTML. */
+  /** Public instance URL - absolutizes `/uploads/…` branding assets in rendered HTML. */
   baseUrl?: string;
   /** Env for resolving `BASE_URL` when `baseUrl` is omitted (defaults to `process.env`). */
   env?: Record<string, string | undefined>;
@@ -32,6 +36,12 @@ export const DEFAULT_SAMPLE_VARS: TemplateVars = {
   event_name: "Sample Event",
   event_date: "2026-09-01",
   event_location: "Warsaw",
+  event_map_url: "",
+  event_address: "",
+  directions_text: "",
+  accessibility_text: "",
+  google_maps_url: "",
+  apple_maps_url: "",
   ticket_url: "https://tickets.example.com/t/sample-token",
   qr_image_url: "https://tickets.example.com/q/sample-token.png",
   logo_url: "",
@@ -42,9 +52,10 @@ export const DEFAULT_SAMPLE_VARS: TemplateVars = {
 };
 
 type EventForBaseTemplateVars = {
+  id: string;
   title: string;
   date: Date;
-  location_details?: { venue_name: string | null } | null;
+  location_details?: EventLocationForTemplateVars;
 };
 
 /**
@@ -55,19 +66,21 @@ export function buildBaseTemplateVars(
   event: EventForBaseTemplateVars,
   timeZone: string | undefined,
   branding: BrandingUrls,
+  baseUrl: string,
+  env: Record<string, string | undefined> = process.env,
 ): TemplateVars {
   return {
     ...DEFAULT_SAMPLE_VARS,
     event_name: event.title,
     event_date: formatEventDate(event.date, resolvePreviewEventTimeZone(timeZone)),
-    event_location: event.location_details?.venue_name ?? "",
+    ...buildEventLocationTemplateVars(event.id, event.location_details, baseUrl, env),
     logo_url: branding.logo_url,
     header_image_url: branding.header_image_url,
   };
 }
 
 /**
- * Renders the resolved template with sample data — no mail send.
+ * Renders the resolved template with sample data - no mail send.
  */
 export async function previewTemplate(
   eventId: string,
@@ -75,6 +88,7 @@ export async function previewTemplate(
   sampleVars?: Partial<TemplateVars>,
   options?: PreviewTemplateOptions,
 ): Promise<RenderedTemplate> {
+  const baseUrl = resolvePreviewBaseUrl(options);
   const event = await prisma.event.findUniqueOrThrow({
     where: { id: eventId },
     include: { organization: true, location_details: true },
@@ -84,7 +98,7 @@ export async function previewTemplate(
   const customAssets = await resolveEventImageAssetVars(eventId, prisma);
 
   const vars: TemplateVars = {
-    ...buildBaseTemplateVars(event, options?.timeZone, branding),
+    ...buildBaseTemplateVars(event, options?.timeZone, branding, baseUrl, options?.env),
     ...customAssets.vars,
     ...sampleVars,
   };
@@ -95,6 +109,6 @@ export async function previewTemplate(
       compiledHtml: resolved.compiledHtmlTemplate,
     },
     vars,
-    { baseUrl: resolvePreviewBaseUrl(options), customAssetPlaceholders: customAssets.names },
+    { baseUrl, customAssetPlaceholders: customAssets.names },
   );
 }

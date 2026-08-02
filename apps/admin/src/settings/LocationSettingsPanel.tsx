@@ -373,6 +373,7 @@ export function LocationSettingsPanel({
             <Notice
               variant="warning"
               role="alert"
+              className="location-contact-notice"
               action={
                 isSa && (
                   <Button
@@ -409,20 +410,23 @@ export function LocationSettingsPanel({
               maxLength={LOCATION_LIMITS.VENUE_NAME_MAX_LENGTH}
               disabled={disabled}
               placeholder="e.g. Convention Center, or a full address"
-              hint="The venue name shown to attendees. Start typing a name or address to search - pick a match to also set the map location below, or keep typing to save free text."
+              hint="The venue name shown to attendees. Search OpenStreetMap by name or street address - pick a match to set the map. If the venue is missing from the map data, search a nearby street address or drop a pin below, then type the display name here (the pin stays)."
               onChange={(text) => {
-                // Manual edits invalidate any previously selected/geocoded pin — same rule as
-                // Create event / setup wizard — so venue name cannot drift from stored coordinates.
+                // Keep the map pin and address grid when renaming - OSM often lacks the
+                // building POI, so the intended workflow is pin (or street search) + manual
+                // venue display name. Clear map / a new suggestion still replace coordinates.
+                // Verified badge clears because the free-text name is no longer an OSM pick.
+                // Sync object_name so Getting there / {{event_address}} do not keep a stale POI.
                 reverseSeqRef.current += 1;
                 pendingGeocodingProviderRef.current = null;
                 setDraftVerified(false);
                 setDraft((prev) => ({
                   ...prev,
                   venue_name: text,
-                  latitude: null,
-                  longitude: null,
-                  formatted_address: "",
-                  address_components: { ...EMPTY_ADDRESS_COMPONENTS },
+                  address_components: {
+                    ...prev.address_components,
+                    object_name: text.trim() || null,
+                  },
                 }));
               }}
               onSelectResult={handleSelectResult}
@@ -445,7 +449,10 @@ export function LocationSettingsPanel({
                   setDraft((prev) => (prev.map_zoom === nextZoom ? prev : { ...prev, map_zoom: nextZoom }));
                 }}
               />
-              <p className="field-hint">Click the map to drop a pin, or drag an existing pin to adjust it.</p>
+              <p className="field-hint">
+                Click the map to drop a pin, or drag an existing pin to adjust it. Editing the venue
+                name above keeps the pin - use Clear map to remove it.
+              </p>
             </div>
           ) : (
             <Notice variant="info">

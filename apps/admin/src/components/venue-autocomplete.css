@@ -37,8 +37,13 @@
   margin-top: var(--space-1);
 }
 
+/* Keep clear air under the field hint - a multi-line hint + error notice otherwise reads glued. */
+.venue-autocomplete__hint + .venue-autocomplete__notice {
+  margin-top: var(--space-5);
+}
+
 .venue-autocomplete__notice {
-  margin-top: var(--space-2);
+  margin-top: var(--space-4);
 }
 
 .venue-suggest {

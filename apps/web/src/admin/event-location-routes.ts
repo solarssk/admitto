@@ -114,17 +114,23 @@ type GeocodingProvenancePatch =
   | { geocoding_provider: null; geocoded_at: null }
   | Record<string, never>;
 
-/** Stamp or clear geocoding provenance when coordinates change; leave untouched otherwise. */
+/** Stamp or clear geocoding provenance when coordinates change; leave untouched otherwise.
+ * Explicit `null` provider also clears provenance without a coordinate change (free-text venue rename). */
 function geocodingProvenancePatch(
   coordinatesInPatch: boolean,
   rawProvider: string | null | undefined,
 ): GeocodingProvenancePatch {
-  if (!coordinatesInPatch) return {};
-  const provider = rawProvider?.trim();
-  if (provider) {
-    return { geocoding_provider: provider, geocoded_at: new Date() };
+  if (coordinatesInPatch) {
+    const provider = rawProvider?.trim();
+    if (provider) {
+      return { geocoding_provider: provider, geocoded_at: new Date() };
+    }
+    return { geocoding_provider: null, geocoded_at: null };
   }
-  return { geocoding_provider: null, geocoded_at: null };
+  if (rawProvider === null) {
+    return { geocoding_provider: null, geocoded_at: null };
+  }
+  return {};
 }
 
 function mergedCoordinate(
@@ -213,16 +219,17 @@ export async function handlePutEventLocation(c: Context, db: PrismaClient): Prom
 
   // Geocoding provenance: a coordinate change made by picking a search result carries a
   // `geocoding_provider` (e.g. "nominatim") and is stamped `geocoded_at: now()`. A coordinate
-  // change with no provider — a dragged pin, a manually typed lat/lng, or a "clear location" —
+  // change with no provider - a dragged pin, a manually typed lat/lng, or a "clear location" -
   // means the previous provenance no longer describes these coordinates, so both are reset to
-  // null. Leaving lat/lng untouched leaves provenance untouched too.
+  // null. Explicit `geocoding_provider: null` without a coordinate change also clears provenance
+  // (free-text venue rename). Omitting the field leaves provenance untouched.
   const coordinatesInPatch = patch.latitude !== undefined || patch.longitude !== undefined;
   const geocodingPatch = geocodingProvenancePatch(coordinatesInPatch, geocodingProvider);
 
   const componentsJson = componentsToJson(patch.address_components);
   const changedFields = [
     ...Object.keys(patch),
-    ...(coordinatesInPatch ? ["geocoding_provider"] : []),
+    ...("geocoding_provider" in geocodingPatch ? ["geocoding_provider"] : []),
   ];
   const audit = adminAuditFromContext(c);
   const actorUserId = c.get("auth").userId;

@@ -176,7 +176,27 @@ export type ResolvedTicket = {
     id: string;
     title: string;
     date: Date;
+    /** Short venue display name (`EventLocation.venue_name`). */
     location: string | null;
     logoUrl: string | null;
+    /** Full address line from geocoding / Location tab; null when unset. */
+    formattedAddress: string | null;
+    /**
+     * Structured Location-tab address grid when persisted (preferred for Getting There /
+     * mail `{{event_address}}` over the long Nominatim `formatted_address`).
+     */
+    addressComponents: {
+      object_name: string | null;
+      street: string | null;
+      postcode: string | null;
+      city: string | null;
+      region: string | null;
+      country: string | null;
+    } | null;
+    latitude: number | null;
+    longitude: number | null;
+    mapZoom: number | null;
+    directionsText: string | null;
+    accessibilityText: string | null;
   };
 };

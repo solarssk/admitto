@@ -838,8 +838,9 @@ export interface SaveEventLocationBody {
   directions_text?: string | null;
   accessibility_text?: string | null;
   address_components?: AddressComponentsDto | null;
-  /** Only meaningful alongside a latitude/longitude change; omit for a manual pin move so the
-   * server clears stale provenance instead of relabeling it as freshly geocoded. */
+  /** Only meaningful alongside a latitude/longitude change for stamping a provider; send `null`
+   * without a coordinate change to clear stale Verified provenance (e.g. free-text venue rename).
+   * Omit for a manual pin move so the server clears provenance via the coordinate-change path. */
   geocoding_provider?: string | null;
 }
 

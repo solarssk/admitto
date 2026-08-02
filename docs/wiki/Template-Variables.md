@@ -10,7 +10,8 @@ Use the variable buttons shown in **Communication**. The editor is the source of
 | Group | Variables | Use |
 |---|---|---|
 | Attendee | `first_name`, `last_name`, `full_name`, `email` | Personalise visible text. Avoid putting personal data in the subject unless it is necessary. |
-| Event | `event_name`, `event_date`, `event_location` | Show event details from the current event. An optional value can be empty. |
+| Event | `event_name`, `event_date`, `event_location`, `event_address`, `directions_text`, `accessibility_text` | Show event details from the current event. `event_location` is the venue name. Optional location values can be empty. |
+| Maps and directions | `event_map_url`, `google_maps_url`, `apple_maps_url` | Add a static map image or links to Google Maps and Apple Maps. These values are empty until the event has a saved map pin. |
 | Ticket links | `ticket_url` | Link to the attendee's browser ticket. |
 | Images | `qr_image_url`, `logo_url` | Use through the image button so the editor inserts image markup. |
 | Wallet and download page | `apple_wallet_url`, `google_wallet_url`, `download_page_url` | Planned; these values currently render empty. |
@@ -24,7 +25,7 @@ Use the variable buttons shown in **Communication**. The editor is the source of
 - Use the exact lowercase form, for example `{{event_name}}`.
 - Do not add spaces inside the braces.
 - Do not invent a variable that is not offered by the editor.
-- Put URL variables in a link destination and image variables in image markup. The editor buttons help place them safely.
+- Put URL variables in a link destination and image variables in image markup. The editor buttons help place them safely; use the `event_map_url` button to insert a map image.
 - Event image assets can add event-specific image variables. Use only assets listed by the editor.
 
 ## Related pages

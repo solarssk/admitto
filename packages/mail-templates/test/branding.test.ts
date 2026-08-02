@@ -148,6 +148,41 @@ describe("previewTemplate", () => {
     expect(result.html).toMatch(/@example\.com/i);
   });
 
+  it("renders location and map vars when the event has a saved pin", async () => {
+    await prisma.eventLocation.create({
+      data: {
+        event_id: "evt-br",
+        venue_name: "Sample venue",
+        formatted_address: "Example Street 1, Warsaw",
+        latitude: 52.2297,
+        longitude: 21.0122,
+        directions_text: "Use the main entrance.",
+        accessibility_text: "Step-free access is available.",
+      },
+    });
+    await setMailTemplate(
+      { scopeType: "event", scopeId: "evt-br" },
+      {
+        subject: "{{event_location}}",
+        body:
+          '<img src="{{event_map_url}}" alt="Map" /><p>{{event_address}}</p><p>{{directions_text}}</p><p>{{accessibility_text}}</p><a href="{{google_maps_url}}">Google</a><a href="{{apple_maps_url}}">Apple</a>',
+        format: "html",
+      },
+      prisma,
+    );
+
+    const result = await previewTemplate("evt-br", prisma, undefined, {
+      baseUrl: "https://tickets.example.com/",
+    });
+    expect(result.subject).toBe("Sample venue");
+    expect(result.html).toContain('src="https://tickets.example.com/m/evt-br.png?v=2_52.229700_21.012200_z15"');
+    expect(result.html).toContain("Example Street 1, Warsaw");
+    expect(result.html).toContain("Use the main entrance.");
+    expect(result.html).toContain("Step-free access is available.");
+    expect(result.html).toContain("https://www.google.com/maps/search/");
+    expect(result.html).toContain("https://maps.apple.com/");
+  });
+
   it("requires BASE_URL outside development when resolving preview base URL", async () => {
     await expect(
       previewTemplate("evt-br", prisma, undefined, { env: { NODE_ENV: "production" } }),

@@ -216,7 +216,8 @@ export function VenueAutocomplete({
       )}
       {noMatch && (
         <Notice variant="error" role="status" className="venue-autocomplete__notice">
-          No match found on OpenStreetMap. Try adding a city or country.
+          No match found on OpenStreetMap. Try a street address with city or country. On the
+          Location tab you can also drop a pin and type the venue display name manually.
         </Notice>
       )}
       {searchError && (

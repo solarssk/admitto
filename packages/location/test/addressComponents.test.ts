@@ -8,6 +8,9 @@ import {
   mergeAddressComponents,
   normalizeAddressComponents,
   parseStoredAddressComponents,
+  preferNumberedStreet,
+  streetLineLooksNumbered,
+  formatDirectionsAddressFromComponents,
 } from "../src/addressComponents.js";
 
 describe("addressComponentsFromParts", () => {
@@ -89,6 +92,22 @@ describe("addressComponentsFromNominatimLabel", () => {
     });
   });
 
+  it("parses housenumber glued onto the street segment", () => {
+    expect(
+      addressComponentsFromNominatimLabel(
+        "PGE Narodowy, Wybrzeże Szczecińskie 1, Warszawa, województwo mazowieckie, Polska",
+        "PGE Narodowy",
+      ),
+    ).toEqual({
+      object_name: "PGE Narodowy",
+      street: "Wybrzeże Szczecińskie 1",
+      postcode: null,
+      city: "Warszawa",
+      region: "województwo mazowieckie",
+      country: "Polska",
+    });
+  });
+
   it("parses housenumber not in the first leftover segment", () => {
     expect(
       addressComponentsFromNominatimLabel("Venue, Złota, 12, Warszawa, Polska", "Venue"),
@@ -137,6 +156,86 @@ describe("addressComponentsFromNominatimLabel", () => {
       region: null,
       country: "Polska",
     });
+  });
+});
+
+describe("preferNumberedStreet / streetLineLooksNumbered", () => {
+  it("detects a trailing house number on a street line", () => {
+    expect(streetLineLooksNumbered("Wybrzeże Szczecińskie 1")).toBe(true);
+    expect(streetLineLooksNumbered("12 Main Street")).toBe(true);
+    expect(streetLineLooksNumbered("12A")).toBe(true);
+    expect(streetLineLooksNumbered("Dr. Rajkumar Road")).toBe(false);
+    expect(streetLineLooksNumbered(null)).toBe(false);
+    expect(streetLineLooksNumbered("   ")).toBe(false);
+  });
+
+  it("overwrites a street-only primary with a numbered fallback", () => {
+    expect(
+      preferNumberedStreet(
+        {
+          ...EMPTY_ADDRESS_COMPONENTS,
+          object_name: "Stadium",
+          street: "Wybrzeże Szczecińskie",
+          city: "Warszawa",
+          country: "Polska",
+        },
+        {
+          ...EMPTY_ADDRESS_COMPONENTS,
+          street: "Wybrzeże Szczecińskie 1",
+          city: "Warszawa",
+          country: "Polska",
+        },
+      ).street,
+    ).toBe("Wybrzeże Szczecińskie 1");
+  });
+
+  it("keeps the primary street when it is already numbered", () => {
+    expect(
+      preferNumberedStreet(
+        {
+          ...EMPTY_ADDRESS_COMPONENTS,
+          street: "Main 1",
+          city: "Warsaw",
+        },
+        {
+          ...EMPTY_ADDRESS_COMPONENTS,
+          street: "Other 9",
+          city: "Warsaw",
+        },
+      ).street,
+    ).toBe("Main 1");
+  });
+
+  it("prefers a fallback that appends a house number to a numeric street name", () => {
+    expect(
+      preferNumberedStreet(
+        {
+          ...EMPTY_ADDRESS_COMPONENTS,
+          street: "Route 66",
+          city: "Springfield",
+        },
+        {
+          ...EMPTY_ADDRESS_COMPONENTS,
+          street: "Route 66 100",
+          city: "Springfield",
+        },
+      ).street,
+    ).toBe("Route 66 100");
+  });
+
+  it("treats null streets as empty when deciding whether a fallback extends the primary", () => {
+    expect(
+      preferNumberedStreet(
+        { ...EMPTY_ADDRESS_COMPONENTS, street: null, city: "Warsaw" },
+        { ...EMPTY_ADDRESS_COMPONENTS, street: "Main 1", city: "Warsaw" },
+      ).street,
+    ).toBe("Main 1");
+    expect(
+      preferNumberedStreet(
+        { ...EMPTY_ADDRESS_COMPONENTS, street: "Main", city: "Warsaw" },
+        { ...EMPTY_ADDRESS_COMPONENTS, street: null, city: "Warsaw" },
+      ).street,
+    ).toBe("Main");
   });
 });
 
@@ -267,5 +366,57 @@ describe("parseStoredAddressComponents / isAddressComponentsEmpty", () => {
       region: null,
       country: null,
     });
+  });
+});
+
+describe("formatDirectionsAddressFromComponents", () => {
+  it("falls back to the long label when the grid is empty", () => {
+    expect(formatDirectionsAddressFromComponents(null, "  Hall, City  ")).toBe("Hall, City");
+    expect(formatDirectionsAddressFromComponents(EMPTY_ADDRESS_COMPONENTS, null)).toBe("");
+  });
+
+  it("formats a structured grid address for attendees", () => {
+    expect(
+      formatDirectionsAddressFromComponents({
+        object_name: "Arena",
+        street: "Main 1",
+        postcode: "00-001",
+        city: "Warsaw",
+        region: null,
+        country: "Poland",
+      }),
+    ).toContain("Main 1");
+  });
+
+  it("prefers formatted_address when the grid is name-only (sparse)", () => {
+    expect(
+      formatDirectionsAddressFromComponents(
+        {
+          object_name: "Złote Tarasy",
+          street: null,
+          postcode: null,
+          city: null,
+          region: null,
+          country: null,
+        },
+        "Poland, Warszawa - Złote Tarasy",
+      ),
+    ).toBe("Poland, Warszawa - Złote Tarasy");
+  });
+
+  it("falls back to the POI name when sparse and no formatted_address exists", () => {
+    expect(
+      formatDirectionsAddressFromComponents(
+        {
+          object_name: "Only Name",
+          street: null,
+          postcode: null,
+          city: null,
+          region: null,
+          country: null,
+        },
+        null,
+      ),
+    ).toBe("Only Name");
   });
 });

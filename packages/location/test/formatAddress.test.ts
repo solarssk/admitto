@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { formatCompactAddress, formatStreetLine, formatVenueName } from "../src/formatAddress.js";
+import {
+  formatCompactAddress,
+  formatDirectionsAddress,
+  formatStreetLine,
+  formatVenueName,
+} from "../src/formatAddress.js";
 
 describe("formatStreetLine", () => {
   it("joins street and housenumber in European order", () => {
@@ -63,6 +68,54 @@ describe("formatCompactAddress", () => {
 
   it("returns an empty string when nothing useful is present", () => {
     expect(formatCompactAddress({})).toBe("");
+  });
+});
+
+describe("formatDirectionsAddress", () => {
+  it("prefers street + locality over the POI name", () => {
+    expect(
+      formatDirectionsAddress({
+        name: "Sheraton Grand Bangalore Hotel at Brigade Gateway",
+        street: "Dr. Rajkumar Road",
+        housenumber: "26/1",
+        postcode: "560055",
+        city: "Bengaluru",
+        country: "India",
+      }),
+    ).toBe("Dr. Rajkumar Road 26/1, 560055 Bengaluru, India");
+  });
+
+  it("falls back to compact address when there is no street line", () => {
+    expect(
+      formatDirectionsAddress({
+        name: "Convention Center",
+        city: "Warsaw",
+        country: "Poland",
+      }),
+    ).toBe("Poland, Warsaw - Convention Center");
+  });
+
+  it("covers shorter street-only locality combinations and label fallback", () => {
+    expect(
+      formatDirectionsAddress({
+        street: "Main St",
+        housenumber: "1",
+        postcode: "00-001",
+        city: "Warsaw",
+      }),
+    ).toBe("Main St 1, 00-001 Warsaw");
+    expect(
+      formatDirectionsAddress({
+        street: "Main St",
+        housenumber: "1",
+        country: "Poland",
+      }),
+    ).toBe("Main St 1, Poland");
+    expect(formatDirectionsAddress({ street: "Main St", housenumber: "1" })).toBe("Main St 1");
+    expect(formatDirectionsAddress({ label: "Only a long hierarchy label, district, country" })).toBe(
+      "Only a long hierarchy label, district",
+    );
+    expect(formatDirectionsAddress({})).toBe("");
   });
 });
 

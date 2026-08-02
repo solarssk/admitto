@@ -17,6 +17,31 @@ type TicketLogoSource = {
   organization: { logo_url: string | null; header_image_url: string | null };
 };
 
+/** Best-effort read of Location-tab `address_components` JSON without pulling `@admitto/location`
+ * into this package (tickets is also bundled into the admin SPA). */
+export function parseTicketAddressComponents(
+  value: unknown,
+): ResolvedTicket["event"]["addressComponents"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  const read = (key: string): string | null => {
+    const v = raw[key];
+    if (typeof v !== "string") return null;
+    const trimmed = v.trim();
+    return trimmed || null;
+  };
+  const components = {
+    object_name: read("object_name"),
+    street: read("street"),
+    postcode: read("postcode"),
+    city: read("city"),
+    region: read("region"),
+    country: read("country"),
+  };
+  if (!Object.values(components).some(Boolean)) return null;
+  return components;
+}
+
 /** Event logo, falling back to the organization's when the event has none set - null when
  * neither is configured (#419). Shared by both public ticket page resolvers (token-based
  * resolveTicket below, and apps/web's public_ref-based findAttendeeForEventRoute) so they can't
@@ -89,6 +114,17 @@ export async function resolveTicket(
 /** Exported so apps/web's public_ref-based findAttendeeForEventRoute (a second ResolvedTicket
  * producer, outside this module) can build the exact same shape instead of maintaining its own
  * copy of this mapping (CodeRabbit review). */
+type LocationDetailsForTicket = {
+  venue_name: string | null;
+  formatted_address: string | null;
+  address_components: unknown;
+  latitude: number | null;
+  longitude: number | null;
+  map_zoom: number;
+  directions_text: string | null;
+  accessibility_text: string | null;
+} | null;
+
 export function toResolved(
   row: {
     id: string; event_id: string; email: string; name: string; status: string;
@@ -96,13 +132,14 @@ export function toResolved(
     ticket_type: string | null;
     event: {
       id: string; title: string; date: Date;
-      location_details?: { venue_name: string | null } | null;
+      location_details?: LocationDetailsForTicket;
       logo_url: string | null; header_image_url: string | null;
       organization: { logo_url: string | null; header_image_url: string | null };
     };
   },
   mode: ResolvedTicket["mode"],
 ): ResolvedTicket {
+  const loc = row.event.location_details;
   return {
     mode,
     attendee: {
@@ -120,8 +157,15 @@ export function toResolved(
       id: row.event.id,
       title: row.event.title,
       date: row.event.date,
-      location: row.event.location_details?.venue_name ?? null,
+      location: loc?.venue_name ?? null,
       logoUrl: resolveTicketLogoUrl(row.event),
+      formattedAddress: loc?.formatted_address ?? null,
+      addressComponents: loc ? parseTicketAddressComponents(loc.address_components) : null,
+      latitude: loc?.latitude ?? null,
+      longitude: loc?.longitude ?? null,
+      mapZoom: loc ? loc.map_zoom : null,
+      directionsText: loc?.directions_text ?? null,
+      accessibilityText: loc?.accessibility_text ?? null,
     },
   };
 }
