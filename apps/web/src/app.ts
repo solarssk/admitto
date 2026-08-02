@@ -24,7 +24,7 @@ import {
   renderServerError,
 } from "./ticket-page.js";
 import { EventStaticMapService } from "./maps/event-static-map-service.js";
-import { resolveMapTileConfig } from "./maps/config.js";
+import { resolveGeocodingConfig, resolveMapTileConfig } from "./maps/config.js";
 import { handleGetAdmittoMark, handleGetAppleWalletBadge, handleGetGoogleWalletBadge } from "./wallet-badges.js";
 import {
   resolveBaseUrl,
@@ -227,7 +227,6 @@ import {
   handlePostGeocodingTimezone,
 } from "./admin/geocoding-routes.js";
 import { handleGetMapsConfig } from "./admin/maps-config-routes.js";
-import { resolveGeocodingConfig } from "./maps/config.js";
 import { buildGeocodingUserAgent } from "./maps/user-agent.js";
 import { NominatimProvider } from "./maps/nominatim-provider.js";
 import { createGeocodingCache } from "./maps/geocoding-cache.js";

@@ -42,7 +42,9 @@ function renderMapAttribution(attribution?: string | null): string {
   ) {
     return `© <a href="https://www.openstreetmap.org/copyright" rel="noreferrer">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions" rel="noreferrer">CARTO</a>`;
   }
-  return esc(normalized?.replace(/<[^>]*>/g, "") || "Map data attribution unavailable");
+  // Strip simple HTML tags without nested `>` (avoids regex backtracking on crafted input).
+  const plain = normalized?.replace(/<[^<>]*>/g, "") || "Map data attribution unavailable";
+  return esc(plain);
 }
 
 /** Origin of `url` when it's a safe (https, no embedded credentials) absolute URL - null for
@@ -163,6 +165,31 @@ export function renderTicket(
         </div>`
       : "";
 
+  const addressHtml = directionsAddress ? renderDirectionsAddressHtml(event) : "";
+  let staticMapHtml = "";
+  if (showStaticMap) {
+    staticMapHtml = `<div class="ticket__map-frame">
+      <img class="ticket__map" src="${esc(buildEventStaticMapPath(event.id))}" alt="Map of event location" width="600" height="300">
+    </div>
+      <p class="ticket__map-attribution">${renderMapAttribution(options.mapAttribution)}</p>`;
+  }
+  const directionsHtml = directionsText
+    ? `<div class="ticket__travel-note"><h3>${DIRECTIONS_ICON}<span>Directions</span></h3><p>${esc(directionsText)}</p></div>`
+    : "";
+  const accessibilityHtml = accessibilityText
+    ? `<div class="ticket__travel-note"><h3>${ACCESSIBILITY_ICON}<span>Accessibility</span></h3><p>${esc(accessibilityText)}</p></div>`
+    : "";
+  const gettingThereHtml = hasGettingThere
+    ? `<section class="ticket__getting-there" aria-labelledby="getting-there-heading">
+      <h2 id="getting-there-heading">Getting there</h2>
+      ${addressHtml}
+      ${staticMapHtml}
+      ${mapsLinks}
+      ${directionsHtml}
+      ${accessibilityHtml}
+    </section>`
+    : "";
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -206,25 +233,7 @@ export function renderTicket(
       <p><strong>iPhone:</strong> tap Add to Apple Wallet, then Add on the next screen. Find it later under Wallet.</p>
       <p><strong>Android:</strong> tap Add to Google Wallet and sign in if asked. Find it later under Google Wallet.</p>
     </details>
-    ${
-      hasGettingThere
-        ? `<section class="ticket__getting-there" aria-labelledby="getting-there-heading">
-      <h2 id="getting-there-heading">Getting there</h2>
-      ${directionsAddress ? renderDirectionsAddressHtml(event) : ""}
-      ${
-        showStaticMap
-          ? `<div class="ticket__map-frame">
-      <img class="ticket__map" src="${esc(buildEventStaticMapPath(event.id))}" alt="Map of event location" width="600" height="300">
-    </div>
-      <p class="ticket__map-attribution">${renderMapAttribution(options.mapAttribution)}</p>`
-          : ""
-      }
-      ${mapsLinks}
-      ${directionsText ? `<div class="ticket__travel-note"><h3>${DIRECTIONS_ICON}<span>Directions</span></h3><p>${esc(directionsText)}</p></div>` : ""}
-      ${accessibilityText ? `<div class="ticket__travel-note"><h3>${ACCESSIBILITY_ICON}<span>Accessibility</span></h3><p>${esc(accessibilityText)}</p></div>` : ""}
-    </section>`
-        : ""
-    }
+    ${gettingThereHtml}
     <footer class="ticket__foot">Present this QR code at the entrance.</footer>
   </article>
 </body>

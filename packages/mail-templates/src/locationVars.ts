@@ -17,7 +17,7 @@ export type EventLocationForTemplateVars = {
   longitude: number | null;
   directions_text: string | null;
   accessibility_text: string | null;
-} | null | undefined;
+} | null;
 
 /**
  * Location-related template placeholders shared by preview, test-send, and real sends
@@ -28,7 +28,7 @@ export type EventLocationForTemplateVars = {
  */
 export function buildEventLocationTemplateVars(
   eventId: string,
-  location: EventLocationForTemplateVars,
+  location: EventLocationForTemplateVars | undefined,
   baseUrl: string,
   env: Record<string, string | undefined> = process.env,
 ): Pick<

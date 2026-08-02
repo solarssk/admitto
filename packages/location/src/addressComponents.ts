@@ -27,10 +27,7 @@ const POSTCODE_RE = /^(?:\d{2}-\d{3}|\d{4,6}|[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})$
 const REGION_RE = /województwo|voivodeship|province|canton|oblast|région|region\b|state of/i;
 /** Standalone house-number token: `12`, `12A`, `12/14`, `1-3`. */
 const HOUSE_NUMBER_RE = /^\d+[a-zA-Z]?(?:[/-]\d+[a-zA-Z]?)?$/;
-/** Trailing (or leading) number on a combined "Street & number" grid value. */
-const STREET_LINE_NUMBER_RE =
-  /(?:^|\s)\d+[a-zA-Z]?(?:[/-]\d+[a-zA-Z]?)?\s*$|^\d+[a-zA-Z]?(?:[/-]\d+[a-zA-Z]?)?(?:\s|$)/;
-/** "Wybrzeże Szczecińskie 1" — number glued to the street name in one Nominatim segment. */
+/** "Wybrzeże Szczecińskie 1" - number glued to the street name in one Nominatim segment. */
 const TRAILING_NUMBER_IN_SEGMENT_RE = /^(.*\S)\s+(\d+[a-zA-Z]?(?:[/-]\d+[a-zA-Z]?)?)$/;
 
 function cleanComponent(value: string | null | undefined): string | null {
@@ -65,11 +62,12 @@ function popMatchingTail(parts: string[], predicate: (segment: string) => boolea
 export function streetLineLooksNumbered(street: string | null | undefined): boolean {
   const trimmed = street?.trim();
   if (!trimmed) return false;
-  return STREET_LINE_NUMBER_RE.test(trimmed);
+  // Prefer token split over one complex alternation regex (Sonar S5843).
+  return trimmed.split(/\s+/).some((token) => HOUSE_NUMBER_RE.test(token));
 }
 
 function streetLineFromSegment(segment: string): string | null {
-  const match = segment.match(TRAILING_NUMBER_IN_SEGMENT_RE);
+  const match = TRAILING_NUMBER_IN_SEGMENT_RE.exec(segment);
   if (match) {
     return cleanComponent(formatStreetLine({ street: match[1], housenumber: match[2] }));
   }
