@@ -51,7 +51,7 @@ export async function sendTestEmail(
       const branding = resolveBrandingFromEvent(event);
       const customAssets = await resolveEventImageAssetVars(params.eventId, prisma);
       const vars = {
-        ...buildBaseTemplateVars(event, undefined, branding, baseUrl),
+        ...buildBaseTemplateVars(event, undefined, branding, baseUrl, env),
         ...customAssets.vars,
       };
       rendered = renderTemplate(

@@ -145,7 +145,7 @@ describe("renderTicket", () => {
     expect(html).toContain("Getting there");
     expect(html).toContain("1 Example Street");
     expect(html).toContain("Exampletown, Poland");
-    expect(html).toContain('src="/m/e1.png?v=2"');
+    expect(html).toContain('src="/m/e1.png?v=2_50.061947_19.936856"');
     expect(html).toContain('alt="Map of event location"');
     expect(html).toContain("Google Maps");
     expect(html).toContain("Apple Maps");

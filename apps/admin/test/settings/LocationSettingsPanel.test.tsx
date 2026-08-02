@@ -471,6 +471,7 @@ describe("LocationSettingsPanel — venue search", () => {
       ),
     );
     expect(mockSaveLocation.mock.calls[0]?.[1]).not.toHaveProperty("latitude");
+    expect(mockSaveLocation.mock.calls[0]?.[1]).not.toHaveProperty("longitude");
   });
 
   it("applies a selected result immediately so Save during reverse enrichment keeps the pin", async () => {

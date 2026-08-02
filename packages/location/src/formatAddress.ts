@@ -70,8 +70,8 @@ export function formatVenueName(parts: CompactAddressParts): string {
 
 /**
  * Attendee-facing address under Getting There / `{{event_address}}`.
- * Prefers street + number (with locality) over the POI name — venue name already appears
- * in the ticket header, and dumping Nominatim's long label is unreadable on a phone.
+ * Prefers street + number (with locality) over the POI name (venue name already appears
+ * in the ticket header, and dumping Nominatim's long label is unreadable on a phone).
  */
 export function formatDirectionsAddress(
   parts: CompactAddressParts & { postcode?: string | null },
@@ -87,7 +87,7 @@ export function formatDirectionsAddress(
   if (streetLine && country) return `${streetLine}, ${country}`;
   if (streetLine) return streetLine;
 
-  // No street line — fall back to compact (name-oriented) rather than the raw label dump.
+  // No street line: fall back to compact (name-oriented) rather than the raw label dump.
   const compact = formatCompactAddress(parts);
   if (compact) return compact;
   return clean(parts.label) ?? "";

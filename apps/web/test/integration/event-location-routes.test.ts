@@ -545,6 +545,7 @@ describe("PUT /api/admin/events/:eventId/location", () => {
       const body = (await res.json()) as EventLocationDto;
       expect(body.venue_name).toBe("New Hall");
       expect(body.latitude).toBe(50.06);
+      expect(body.longitude).toBe(19.94);
       expect(body.geocoding_provider).toBeNull();
       expect(body.geocoded_at).toBeNull();
     });

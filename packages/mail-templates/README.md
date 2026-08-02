@@ -17,7 +17,7 @@ Closed whitelist — `{{snake_case}}` only, no interior whitespace (use `{{first
 |-------------|-------|
 | `first_name`, `last_name`, `full_name`, `email` | Attendee |
 | `event_name`, `event_date`, `event_location`, `event_address`, `directions_text`, `accessibility_text` | Event location text; `event_location` is the venue name |
-| `event_map_url` | Optional static map image URL; empty until the event has a saved pin |
+| `event_map_url` | Optional static map image URL; empty until the event has a saved pin, or when `LOCATION_MAPS_ENABLED=false` |
 | `google_maps_url`, `apple_maps_url` | Optional directions links; empty until the event has a saved pin |
 | `ticket_url`, `qr_image_url` | Required URLs — missing/empty values fail render |
 | `logo_url`, `header_image_url` | Optional URLs — empty omits `src`/`href` (no `src=""`) |

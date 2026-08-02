@@ -182,8 +182,8 @@ export type ResolvedTicket = {
     /** Full address line from geocoding / Location tab; null when unset. */
     formattedAddress: string | null;
     /**
-     * Structured Location-tab address grid when persisted — preferred for Getting There /
-     * mail `{{event_address}}` over the long Nominatim `formatted_address`.
+     * Structured Location-tab address grid when persisted (preferred for Getting There /
+     * mail `{{event_address}}` over the long Nominatim `formatted_address`).
      */
     addressComponents: {
       object_name: string | null;

@@ -144,6 +144,7 @@ interface ProcessAttendeeForSendInput {
   branding: BrandingUrls;
   customAssets: EventImageAssetPlaceholders;
   baseUrl: string;
+  env: NodeJS.ProcessEnv;
   purpose: "initial" | "resend";
   options: SendTicketEmailsOptions;
   batchId: string;
@@ -163,6 +164,7 @@ async function processAttendeeForSend({
   branding,
   customAssets,
   baseUrl,
+  env,
   purpose,
   options,
   batchId,
@@ -202,6 +204,7 @@ async function processAttendeeForSend({
     event.id,
     event.location_details,
     baseUrl,
+    env,
   );
 
   const rendered = renderTemplateTrustedForStorage(
@@ -383,6 +386,7 @@ export async function sendTicketEmails(
         branding,
         customAssets,
         baseUrl,
+        env,
         purpose,
         options,
         batchId,

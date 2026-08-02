@@ -223,20 +223,22 @@ export async function renderStaticMapPng(
   const tileY1 = Math.floor((topLeftPxY + height - 1) / TILE_SIZE);
   const n = 2 ** zoom;
 
-  const composites: OverlayOptions[] = [];
+  const tileJobs: Array<Promise<OverlayOptions>> = [];
   for (let ty = tileY0; ty <= tileY1; ty++) {
     if (ty < 0 || ty >= n) continue;
     for (let tx = tileX0; tx <= tileX1; tx++) {
       const wrappedX = ((tx % n) + n) % n;
       const url = expandTileUrl(options.tileConfig.tileUrl, zoom, wrappedX, ty);
-      const tilePng = await fetchTilePng(url, options.userAgent, fetchFn, timeoutMs);
-      composites.push({
-        input: tilePng,
-        left: Math.round(tx * TILE_SIZE - topLeftPxX),
-        top: Math.round(ty * TILE_SIZE - topLeftPxY),
-      });
+      tileJobs.push(
+        fetchTilePng(url, options.userAgent, fetchFn, timeoutMs).then((tilePng) => ({
+          input: tilePng,
+          left: Math.round(tx * TILE_SIZE - topLeftPxX),
+          top: Math.round(ty * TILE_SIZE - topLeftPxY),
+        })),
+      );
     }
   }
+  const composites: OverlayOptions[] = await Promise.all(tileJobs);
 
   if (composites.length === 0) {
     throw new StaticMapRenderError("No map tiles covered the requested viewport");

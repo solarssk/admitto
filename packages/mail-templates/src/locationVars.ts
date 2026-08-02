@@ -51,7 +51,9 @@ export function buildEventLocationTemplateVars(
   return {
     event_location: location?.venue_name ?? "",
     event_map_url:
-      mapCoordinates && staticMapsEnabled ? buildEventStaticMapUrl(baseUrl, eventId) : "",
+      mapCoordinates && staticMapsEnabled
+        ? buildEventStaticMapUrl(baseUrl, eventId, mapCoordinates)
+        : "",
     event_address:
       formatDirectionsAddressFromComponents(
         parseStoredAddressComponents(location?.address_components),

@@ -40,7 +40,11 @@ class GeocodingCacheAdapter implements GeocodingCache {
   async get(key: string): Promise<GeocodingResult[] | null> {
     const raw = await this.store.get(key);
     if (raw === null) return null;
-    return JSON.parse(raw) as GeocodingResult[];
+    try {
+      return JSON.parse(raw) as GeocodingResult[];
+    } catch {
+      return null;
+    }
   }
 
   async set(key: string, results: GeocodingResult[]): Promise<void> {

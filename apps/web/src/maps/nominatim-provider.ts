@@ -159,7 +159,7 @@ function parseFeature(raw: unknown, provider: string): GeocodingResult | null {
     parts.name ?? (streetLine && streetLine !== formatted_address ? streetLine : undefined);
 
   const componentsFromParts = addressComponentsFromParts(parts);
-  // Always merge label-derived fields for nulls — amenity GeocodeJSON often has city/country
+  // Always merge label-derived fields for nulls: amenity GeocodeJSON often has city/country
   // (so the grid is not "sparse") while still omitting street/housenumber that the label carries.
   const components = label
     ? preferNumberedStreet(

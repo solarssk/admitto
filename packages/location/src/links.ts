@@ -39,14 +39,28 @@ export function buildOsmUrl(latitude: number, longitude: number, zoom: number): 
   return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=${zoom}/${lat}/${lng}`;
 }
 
-/** Same-origin path for the public static map PNG (`GET /m/:eventId.png`).
- * `v` is a cache-busting query only — the route ignores it; bump when the compositor
- * output changes so ticket/mail clients don't keep a stale PNG for `max-age=86400`. */
-export function buildEventStaticMapPath(eventId: string): string {
-  return `/m/${encodeURIComponent(eventId)}.png?v=2`;
+/**
+ * Same-origin path for the public static map PNG (`GET /m/:eventId.png`).
+ * `v` is a cache-busting query only (the route ignores it). Include pin coordinates so a
+ * venue move invalidates browser caches; bump the compositor prefix when PNG output shape changes.
+ */
+export function buildEventStaticMapPath(
+  eventId: string,
+  coords?: { latitude: number; longitude: number } | null,
+): string {
+  const compositor = "2";
+  const pin =
+    coords && Number.isFinite(coords.latitude) && Number.isFinite(coords.longitude)
+      ? `_${formatCoordinate(coords.latitude)}_${formatCoordinate(coords.longitude)}`
+      : "";
+  return `/m/${encodeURIComponent(eventId)}.png?v=${compositor}${pin}`;
 }
 
 /** Absolute URL for `{{event_map_url}}` / ticket `<img src>` when an absolute base is required. */
-export function buildEventStaticMapUrl(baseUrl: string, eventId: string): string {
-  return `${baseUrl.replace(/\/$/, "")}${buildEventStaticMapPath(eventId)}`;
+export function buildEventStaticMapUrl(
+  baseUrl: string,
+  eventId: string,
+  coords?: { latitude: number; longitude: number } | null,
+): string {
+  return `${baseUrl.replace(/\/$/, "")}${buildEventStaticMapPath(eventId, coords)}`;
 }

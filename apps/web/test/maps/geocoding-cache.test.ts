@@ -53,6 +53,14 @@ describe("InMemoryGeocodingCache", () => {
     vi.advanceTimersByTime(2 * 60 * 60 * 1000);
     expect(await cache.get("nowhere")).toBeNull();
   });
+
+  it("returns null when a stored value is not valid JSON", async () => {
+    const cache = new InMemoryGeocodingCache();
+    const store = (cache as unknown as { store: { set: (k: string, v: string, ttl: number) => Promise<void> } })
+      .store;
+    await store.set("corrupt", "{not-json", 60_000);
+    expect(await cache.get("corrupt")).toBeNull();
+  });
 });
 
 describe("RedisGeocodingCache fail-open", () => {

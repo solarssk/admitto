@@ -22,6 +22,8 @@ describe("isMapReady", () => {
 describe("isLocationMapsEnabled", () => {
   it("disables only on an explicit false", () => {
     expect(isLocationMapsEnabled({ LOCATION_MAPS_ENABLED: "false" })).toBe(false);
+    expect(isLocationMapsEnabled({ LOCATION_MAPS_ENABLED: " FALSE " })).toBe(false);
+    expect(isLocationMapsEnabled({ LOCATION_MAPS_ENABLED: "FALSE" })).toBe(false);
     expect(isLocationMapsEnabled({ LOCATION_MAPS_ENABLED: "true" })).toBe(true);
     expect(isLocationMapsEnabled({ LOCATION_MAPS_ENABLED: "" })).toBe(true);
     expect(isLocationMapsEnabled({})).toBe(true);

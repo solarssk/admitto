@@ -30,6 +30,7 @@ export class EventStaticMapService {
   private readonly renderOptions: Partial<Pick<RenderStaticMapOptions, "fetchFn" | "timeoutMs">>;
   private readonly buildUserAgent: (db: PrismaClient) => Promise<string>;
   private readonly renderPng: typeof renderStaticMapPng;
+  private readonly inFlight = new Map<string, Promise<ResolveEventStaticMapResult>>();
 
   constructor(options: EventStaticMapServiceOptions = {}) {
     this.cache = options.cache ?? createStaticMapCache();
@@ -82,20 +83,29 @@ export class EventStaticMapService {
       return { ok: true, png: cached, cacheHit: true };
     }
 
-    try {
-      const userAgent = await this.buildUserAgent(db);
-      const png = await this.renderPng(req, {
-        tileConfig,
-        userAgent,
-        ...this.renderOptions,
-      });
-      await this.cache.set(cacheKey, png);
-      return { ok: true, png, cacheHit: false };
-    } catch (err) {
-      if (!(err instanceof StaticMapRenderError)) {
-        console.error("static_map_unexpected_error:", err);
+    const pending = this.inFlight.get(cacheKey);
+    if (pending) return pending;
+
+    const renderTask = (async (): Promise<ResolveEventStaticMapResult> => {
+      try {
+        const userAgent = await this.buildUserAgent(db);
+        const png = await this.renderPng(req, {
+          tileConfig,
+          userAgent,
+          ...this.renderOptions,
+        });
+        await this.cache.set(cacheKey, png);
+        return { ok: true, png, cacheHit: false };
+      } catch (err) {
+        if (!(err instanceof StaticMapRenderError)) {
+          console.error("static_map_unexpected_error:", err);
+        }
+        return { ok: false, reason: "render_failed" };
+      } finally {
+        this.inFlight.delete(cacheKey);
       }
-      return { ok: false, reason: "render_failed" };
-    }
+    })();
+    this.inFlight.set(cacheKey, renderTask);
+    return renderTask;
   }
 }

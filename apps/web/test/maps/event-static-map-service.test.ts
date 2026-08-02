@@ -126,20 +126,29 @@ describe("EventStaticMapService.getForEvent", () => {
     ).resolves.toEqual({ ok: false, reason: "render_failed" });
   });
 
-  it("logs unexpected errors and still returns render_failed", async () => {
-    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  it("coalesces concurrent cold-cache renders for the same key", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const renderPng = vi.fn(async () => {
+      await gate;
+      return SAMPLE_PNG;
+    });
     const service = new EventStaticMapService({
       cache: fakeCache(),
-      renderPng: vi.fn(async () => {
-        throw new Error("unexpected");
-      }),
+      renderPng,
       buildUserAgent: async () => "Admitto/test",
     });
+    const db = fakeDb({ latitude: 1, longitude: 2, map_zoom: 10 });
 
-    await expect(
-      service.getForEvent(fakeDb({ latitude: 1, longitude: 2, map_zoom: 10 }), "evt"),
-    ).resolves.toEqual({ ok: false, reason: "render_failed" });
-    expect(errSpy).toHaveBeenCalled();
-    errSpy.mockRestore();
+    const first = service.getForEvent(db, "evt");
+    const second = service.getForEvent(db, "evt");
+    release();
+    const [a, b] = await Promise.all([first, second]);
+
+    expect(a).toEqual({ ok: true, png: SAMPLE_PNG, cacheHit: false });
+    expect(b).toEqual({ ok: true, png: SAMPLE_PNG, cacheHit: false });
+    expect(renderPng).toHaveBeenCalledTimes(1);
   });
 });

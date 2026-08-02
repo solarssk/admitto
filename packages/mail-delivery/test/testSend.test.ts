@@ -1,6 +1,7 @@
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { setMailTemplate } from "@admitto/mail-templates";
 import { setMailSettings } from "@admitto/mailer-config";
 import type { ExportPayload } from "@admitto/mailer";
 import { resetDb } from "./resetDb.js";
@@ -71,5 +72,41 @@ describe("sendTestEmail", () => {
     );
     expect(result.status).toBe("accepted");
     expect(exported).toHaveLength(1);
+  });
+
+  it("omits event_map_url when LOCATION_MAPS_ENABLED=false despite a saved pin", async () => {
+    await prisma.eventLocation.create({
+      data: {
+        event_id: EVENT_ID,
+        venue_name: "Test venue",
+        latitude: 52.2297,
+        longitude: 21.0122,
+      },
+    });
+    await setMailTemplate(
+      { scopeType: "event", scopeId: EVENT_ID },
+      {
+        subject: "Test",
+        body: '<img src="{{event_map_url}}" alt="Map" />',
+        format: "html",
+      },
+      prisma,
+    );
+
+    exported.length = 0;
+    const result = await sendTestEmail(
+      { eventId: EVENT_ID, toAddress: "operator@example.com" },
+      prisma,
+      {
+        NODE_ENV: "test",
+        BASE_URL: "https://tickets.example.com",
+        LOCATION_MAPS_ENABLED: "false",
+      },
+      { exportSink: (p) => exported.push(p) },
+    );
+
+    expect(result.status).toBe("accepted");
+    expect(exported[0]?.message.html).toContain('src=""');
+    expect(exported[0]?.message.html).not.toContain("/m/evt-test-send.png");
   });
 });

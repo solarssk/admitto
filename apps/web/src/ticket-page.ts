@@ -19,11 +19,11 @@ function formatDate(d: Date): string {
 
 const CALENDAR_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4m8-4v4M3 10h18M5 4h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/></svg>`;
 const PIN_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`;
-/** Signpost — clearer than a house glyph for “Directions”. */
+/** Signpost: clearer than a house glyph for "Directions". */
 const DIRECTIONS_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v18"/><path d="M10 6h7l2 2-2 2h-7"/><path d="M10 14H5l-2 2 2 2h5"/></svg>`;
-/** Wheelchair — more recognizable than a stick figure for Accessibility. */
+/** Wheelchair: more recognizable than a stick figure for Accessibility. */
 const ACCESSIBILITY_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="4" r="2"/><path d="m18 9-4.5-1.5L11 13"/><path d="M6 10h7"/><circle cx="10" cy="18" r="3.5"/><path d="M13.5 17.5H18l2 3"/></svg>`;
-/** Neutral map glyph — not Google/Apple brand marks (trademark-restricted). */
+/** Neutral map glyph: not Google/Apple brand marks (trademark-restricted). */
 const MAP_LINK_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 7 6-3 6 3 6-3v13l-6 3-6-3-6 3V7Z"/><path d="M9 4v13"/><path d="M15 7v13"/></svg>`;
 
 
@@ -171,7 +171,7 @@ export function renderTicket(
   let staticMapHtml = "";
   if (showStaticMap) {
     staticMapHtml = `<div class="ticket__map-frame">
-      <img class="ticket__map" src="${esc(buildEventStaticMapPath(event.id))}" alt="Map of event location" width="600" height="300">
+      <img class="ticket__map" src="${esc(buildEventStaticMapPath(event.id, { latitude: event.latitude!, longitude: event.longitude! }))}" alt="Map of event location" width="600" height="300">
     </div>
       <p class="ticket__map-attribution">${renderMapAttribution(options.mapAttribution)}</p>`;
   }

@@ -173,18 +173,18 @@ describe("renderStaticMapPng", () => {
 
   it("rejects streamed bodies that cross the cap without Content-Length", async () => {
     const chunk = new Uint8Array(200 * 1024);
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(new Uint8Array(0)); // skipped empty chunk
-        controller.enqueue(chunk);
-        controller.enqueue(chunk);
-        controller.enqueue(chunk); // 600 KiB total > 512 KiB cap
-        controller.close();
-      },
+    const fetchFn = vi.fn().mockImplementation(async () => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array(0)); // skipped empty chunk
+          controller.enqueue(chunk);
+          controller.enqueue(chunk);
+          controller.enqueue(chunk); // 600 KiB total > 512 KiB cap
+          controller.close();
+        },
+      });
+      return new Response(stream, { status: 200, headers: { "content-type": "image/png" } });
     });
-    const fetchFn = vi.fn().mockResolvedValue(
-      new Response(stream, { status: 200, headers: { "content-type": "image/png" } }),
-    );
     await expect(
       renderStaticMapPng(
         { latitude: 52.23, longitude: 21.01, zoom: 14 },

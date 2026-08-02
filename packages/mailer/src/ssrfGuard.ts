@@ -8,13 +8,20 @@ import {
 
 /**
  * SSRF guard for mail transport destinations (Power Automate webhook URL, SMTP host).
- * Both are settable via event-scoped admin config — see @admitto/mailer-config — and the
+ * Both are settable via event-scoped admin config - see @admitto/mailer-config - and the
  * server itself makes the outbound connection, so an unvalidated destination lets whoever
  * can write that config make Admitto's server reach internal/loopback/metadata addresses.
  */
 
-/** Opt-in lab escape hatch - never enable in production. */
+/**
+ * Opt-in lab escape hatch. Honored only when `ALLOW_PRIVATE_MAIL_DESTINATIONS=true` and
+ * `NODE_ENV` is not `production`. Never enable in production: it bypasses loopback, RFC1918 /
+ * IPv6-private, link-local, metadata, and unspecified-address checks at save and connect time.
+ */
 function allowPrivateMailDestinations(): boolean {
+  if (process.env["NODE_ENV"]?.trim().toLowerCase() === "production") {
+    return false;
+  }
   return process.env["ALLOW_PRIVATE_MAIL_DESTINATIONS"]?.trim().toLowerCase() === "true";
 }
 
@@ -41,8 +48,8 @@ export function isBlockedMailHost(hostname: string): boolean {
  * connection to them - resolving here and then letting fetch/nodemailer do their own,
  * separate DNS lookup for the actual connect would reopen the same DNS-rebinding gap.
  *
- * Opt-in escape hatch: `ALLOW_PRIVATE_MAIL_DESTINATIONS=true` skips the private/link-local
- * check (local lab SMTP on RFC1918 only - never enable in production).
+ * Opt-in escape hatch: `ALLOW_PRIVATE_MAIL_DESTINATIONS=true` (non-production only) skips
+ * the private/link-local check for local lab SMTP on RFC1918.
  */
 export async function resolveSafeMailDestination(hostname: string): Promise<LookupAddress[]> {
   const host = unbracketHostname(hostname);

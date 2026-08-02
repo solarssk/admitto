@@ -205,6 +205,23 @@ describe("preferNumberedStreet / streetLineLooksNumbered", () => {
       ).street,
     ).toBe("Main 1");
   });
+
+  it("prefers a fallback that appends a house number to a numeric street name", () => {
+    expect(
+      preferNumberedStreet(
+        {
+          ...EMPTY_ADDRESS_COMPONENTS,
+          street: "Route 66",
+          city: "Springfield",
+        },
+        {
+          ...EMPTY_ADDRESS_COMPONENTS,
+          street: "Route 66 100",
+          city: "Springfield",
+        },
+      ).street,
+    ).toBe("Route 66 100");
+  });
 });
 
 describe("isAddressComponentsSparse / mergeAddressComponents", () => {

@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Context } from "hono";
 
-/** Exact public ticket assets — keep the allowlist tight so these routes never shadow SPA `/assets/*`. */
+/** Exact public ticket assets: keep the allowlist tight so these routes never shadow SPA `/assets/*`. */
 const ASSET_NAMES = new Set([
   "admitto-mark.svg",
   "apple-wallet-badge.svg",

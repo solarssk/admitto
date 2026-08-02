@@ -116,7 +116,7 @@ export class RedisTtlStringCache implements TtlStringCache {
 
   async disconnect(): Promise<void> {
     if (this.client.isOpen) {
-      await this.client.quit();
+      await this.client.close();
     }
     this.connectPromise = null;
   }

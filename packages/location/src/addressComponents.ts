@@ -94,16 +94,24 @@ function parseStreetFromLeadingSegments(parts: string[]): string | null {
 
 /**
  * Prefer a street line that already includes a house number when merging geocode + reverse
- * (or label) results — GeocodeJSON often returns street-only for large POIs.
+ * (or label) results. GeocodeJSON often returns street-only for large POIs.
  */
 export function preferNumberedStreet(
   primary: AddressComponents,
   fallback: AddressComponents,
 ): AddressComponents {
   const merged = mergeAddressComponents(primary, fallback);
+  const primaryStreet = primary.street?.trim() ?? "";
+  const fallbackStreet = fallback.street?.trim() ?? "";
+  // e.g. primary "Route 66" + fallback "Route 66 100" (numeric street name + house number).
+  const fallbackExtendsPrimary =
+    Boolean(primaryStreet && fallbackStreet) &&
+    fallbackStreet.startsWith(`${primaryStreet} `) &&
+    HOUSE_NUMBER_RE.test(fallbackStreet.slice(primaryStreet.length + 1));
+
   if (
     streetLineLooksNumbered(fallback.street) &&
-    !streetLineLooksNumbered(primary.street)
+    (!streetLineLooksNumbered(primary.street) || fallbackExtendsPrimary)
   ) {
     return { ...merged, street: fallback.street };
   }

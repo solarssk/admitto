@@ -63,15 +63,27 @@ describe("buildEventStaticMapPath / Url", () => {
     expect(buildEventStaticMapPath("evt_abc")).toBe("/m/evt_abc.png?v=2");
   });
 
-  it("absolutizes against a base URL without a trailing slash", () => {
-    expect(buildEventStaticMapUrl("https://tickets.example.com", "evt_abc")).toBe(
-      "https://tickets.example.com/m/evt_abc.png?v=2",
+  it("includes pin coordinates in the cache-busting query", () => {
+    expect(buildEventStaticMapPath("evt_abc", { latitude: 50.06, longitude: 19.94 })).toBe(
+      "/m/evt_abc.png?v=2_50.060000_19.940000",
     );
   });
 
+  it("absolutizes against a base URL without a trailing slash", () => {
+    expect(
+      buildEventStaticMapUrl("https://tickets.example.com", "evt_abc", {
+        latitude: 50.06,
+        longitude: 19.94,
+      }),
+    ).toBe("https://tickets.example.com/m/evt_abc.png?v=2_50.060000_19.940000");
+  });
+
   it("strips a trailing slash on the base URL", () => {
-    expect(buildEventStaticMapUrl("https://tickets.example.com/", "evt_abc")).toBe(
-      "https://tickets.example.com/m/evt_abc.png?v=2",
-    );
+    expect(
+      buildEventStaticMapUrl("https://tickets.example.com/", "evt_abc", {
+        latitude: 50.06,
+        longitude: 19.94,
+      }),
+    ).toBe("https://tickets.example.com/m/evt_abc.png?v=2_50.060000_19.940000");
   });
 });
