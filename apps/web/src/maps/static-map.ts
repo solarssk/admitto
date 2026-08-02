@@ -186,6 +186,25 @@ function buildAttributionOverlay(width: number, attribution: string): Buffer | n
   );
 }
 
+/** Memoized gray PNG for tile CDN outages — same size as a real static map so mail layout stays stable. */
+let unavailableMapPng: Buffer | null = null;
+
+/**
+ * Placeholder image when tile fetch/composite fails after retries.
+ * Served as HTTP 200 with a short Cache-Control so mail clients do not show a broken
+ * image icon, without caching the failure for a full day like a real map.
+ */
+export async function buildUnavailableStaticMapPng(): Promise<Buffer> {
+  if (unavailableMapPng) return unavailableMapPng;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${STATIC_MAP_WIDTH}" height="${STATIC_MAP_HEIGHT}">
+  <rect width="100%" height="100%" fill="#f1f5f9"/>
+  <text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle"
+    font-size="16" font-family="DejaVu Sans, Arial, Helvetica, sans-serif" fill="#64748b">Map unavailable</text>
+</svg>`;
+  unavailableMapPng = await sharp(Buffer.from(svg)).png().toBuffer();
+  return unavailableMapPng;
+}
+
 /**
  * Read the response body incrementally and abort once `maxBytes` is exceeded.
  * Do not rely on `Content-Length` alone - chunked responses omit it, and a lying

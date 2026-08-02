@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Public ticket page polish (mockup alignment):** Admitto mark SVG instead of a plain blue square, top accent strip, QR frame border, no “Registered” status badge, official Apple Wallet badge (`US_UK` RGB SVG) and Google Wallet badge (`enUS` add-wallet-badge SVG), subdued “How do I add this to my phone?” disclosure, street-first Getting There address on two lines (non-breaking postcodes), wheelchair/signpost icons, neutral map-link icons (not Google/Apple brand marks), Nominatim `accept-language=en` for English address labels on new geocodes, static map one zoom level closer with © OSM © CARTO burned into the PNG corner.
 
 ### Fixed
+- **Static map tile outages no longer break ticket/mail map images:** `GET /m/{eventId}.png` retries tile composite once, then serves a short-cached “Map unavailable” placeholder PNG (HTTP 200) instead of an empty 502, so mail clients do not show a broken image while a dead tile CDN recovers.
 - **Getting there / `{{event_address}}` no longer repeats a name-only venue** when structured address components only have `object_name` and a richer `formatted_address` is already stored.
 - **Public `/m/{eventId}.png` cache-buster includes map zoom** so a zoom-only Location save does not leave mail clients and browsers showing a day-old zoomed image.
 - **Static map PNG attribution strip keeps provider names** by stripping HTML tags (not just `<`/`>`) from `MAP_TILE_ATTRIBUTION` before burn-in.

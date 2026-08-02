@@ -4,6 +4,7 @@ import {
   assertSafeTileFetchUrl,
   bufferLooksLikePng,
   buildStaticMapCacheKey,
+  buildUnavailableStaticMapPng,
   isAllowedDeclaredTileSize,
   latLngToTileFraction,
   plainMapAttribution,
@@ -628,5 +629,17 @@ describe("plainMapAttribution", () => {
     ).toBe("© OpenStreetMap contributors © CARTO");
     expect(plainMapAttribution('x <script>y</script>')).toBe("x y");
     expect(plainMapAttribution("  ")).toBe("");
+  });
+});
+
+describe("buildUnavailableStaticMapPng", () => {
+  it("returns a PNG at the static map dimensions", async () => {
+    const png = await buildUnavailableStaticMapPng();
+    expect(bufferLooksLikePng(png)).toBe(true);
+    const meta = await sharp(png).metadata();
+    expect(meta.width).toBe(STATIC_MAP_WIDTH);
+    expect(meta.height).toBe(STATIC_MAP_HEIGHT);
+    const again = await buildUnavailableStaticMapPng();
+    expect(again).toBe(png);
   });
 });

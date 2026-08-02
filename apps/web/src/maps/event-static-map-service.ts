@@ -6,6 +6,7 @@ import { isMapReady } from "@admitto/location";
 import { resolveMapTileConfig } from "./config.js";
 import {
   buildStaticMapCacheKey,
+  buildUnavailableStaticMapPng,
   renderStaticMapPng,
   StaticMapRenderError,
   type RenderStaticMapOptions,
@@ -13,9 +14,18 @@ import {
 import { createStaticMapCache, type StaticMapCache } from "./static-map-cache.js";
 import { buildGeocodingUserAgent } from "./user-agent.js";
 
+const RENDER_ATTEMPTS = 2;
+const RENDER_RETRY_DELAY_MS = 250;
+/** In-memory only — avoid hammering a dead tile CDN; short so recovery is quick. */
+export const STATIC_MAP_NEGATIVE_CACHE_TTL_MS = 2 * 60 * 1000;
+/** Browser/mail-proxy cache for placeholder PNGs (matches negative TTL). */
+export const STATIC_MAP_PLACEHOLDER_MAX_AGE_SEC = 120;
+/** Browser/mail-proxy cache for successfully rendered maps. */
+export const STATIC_MAP_SUCCESS_MAX_AGE_SEC = 86_400;
+
 export type ResolveEventStaticMapResult =
-  | { ok: true; png: Buffer; cacheHit: boolean }
-  | { ok: false; reason: "disabled" | "not_found" | "no_coordinates" | "render_failed" };
+  | { ok: true; png: Buffer; cacheHit: boolean; placeholder?: boolean }
+  | { ok: false; reason: "disabled" | "not_found" | "no_coordinates" };
 
 export interface EventStaticMapServiceOptions {
   cache?: StaticMapCache;
@@ -23,6 +33,14 @@ export interface EventStaticMapServiceOptions {
   buildUserAgent?: (db: PrismaClient) => Promise<string>;
   /** Test seam - defaults to `renderStaticMapPng`. */
   renderPng?: typeof renderStaticMapPng;
+  /** Test seam - defaults to `buildUnavailableStaticMapPng`. */
+  buildPlaceholderPng?: () => Promise<Buffer>;
+  sleepMs?: (ms: number) => Promise<void>;
+  nowMs?: () => number;
+}
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export class EventStaticMapService {
@@ -30,13 +48,67 @@ export class EventStaticMapService {
   private readonly renderOptions: Partial<Pick<RenderStaticMapOptions, "fetchFn" | "timeoutMs">>;
   private readonly buildUserAgent: (db: PrismaClient) => Promise<string>;
   private readonly renderPng: typeof renderStaticMapPng;
+  private readonly buildPlaceholderPng: () => Promise<Buffer>;
+  private readonly sleepMs: (ms: number) => Promise<void>;
+  private readonly nowMs: () => number;
   private readonly inFlight = new Map<string, Promise<ResolveEventStaticMapResult>>();
+  /** cacheKey → expiry epoch ms (do not store failures in Redis positive cache). */
+  private readonly negativeUntil = new Map<string, number>();
 
   constructor(options: EventStaticMapServiceOptions = {}) {
     this.cache = options.cache ?? createStaticMapCache();
     this.renderOptions = options.renderOptions ?? {};
     this.buildUserAgent = options.buildUserAgent ?? buildGeocodingUserAgent;
     this.renderPng = options.renderPng ?? renderStaticMapPng;
+    this.buildPlaceholderPng = options.buildPlaceholderPng ?? buildUnavailableStaticMapPng;
+    this.sleepMs = options.sleepMs ?? defaultSleep;
+    this.nowMs = options.nowMs ?? Date.now;
+  }
+
+  private async placeholderResult(cacheHit: boolean): Promise<ResolveEventStaticMapResult> {
+    return {
+      ok: true,
+      png: await this.buildPlaceholderPng(),
+      cacheHit,
+      placeholder: true,
+    };
+  }
+
+  private isNegativeCached(cacheKey: string): boolean {
+    const until = this.negativeUntil.get(cacheKey);
+    if (until == null) return false;
+    if (this.nowMs() >= until) {
+      this.negativeUntil.delete(cacheKey);
+      return false;
+    }
+    return true;
+  }
+
+  private markNegative(cacheKey: string): void {
+    this.negativeUntil.set(cacheKey, this.nowMs() + STATIC_MAP_NEGATIVE_CACHE_TTL_MS);
+  }
+
+  private async renderWithRetry(
+    req: { latitude: number; longitude: number; zoom: number },
+    userAgent: string,
+    tileConfig: ReturnType<typeof resolveMapTileConfig>,
+  ): Promise<Buffer> {
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= RENDER_ATTEMPTS; attempt++) {
+      try {
+        return await this.renderPng(req, {
+          tileConfig,
+          userAgent,
+          ...this.renderOptions,
+        });
+      } catch (err) {
+        lastErr = err;
+        if (attempt < RENDER_ATTEMPTS) {
+          await this.sleepMs(RENDER_RETRY_DELAY_MS);
+        }
+      }
+    }
+    throw lastErr;
   }
 
   async getForEvent(db: PrismaClient, eventId: string): Promise<ResolveEventStaticMapResult> {
@@ -83,24 +155,26 @@ export class EventStaticMapService {
       return { ok: true, png: cached, cacheHit: true };
     }
 
+    if (this.isNegativeCached(cacheKey)) {
+      return this.placeholderResult(false);
+    }
+
     const pending = this.inFlight.get(cacheKey);
     if (pending) return pending;
 
     const renderTask = (async (): Promise<ResolveEventStaticMapResult> => {
       try {
         const userAgent = await this.buildUserAgent(db);
-        const png = await this.renderPng(req, {
-          tileConfig,
-          userAgent,
-          ...this.renderOptions,
-        });
+        const png = await this.renderWithRetry(req, userAgent, tileConfig);
+        this.negativeUntil.delete(cacheKey);
         await this.cache.set(cacheKey, png);
         return { ok: true, png, cacheHit: false };
       } catch (err) {
         if (!(err instanceof StaticMapRenderError)) {
           console.error("static_map_unexpected_error:", err);
         }
-        return { ok: false, reason: "render_failed" };
+        this.markNegative(cacheKey);
+        return this.placeholderResult(false);
       } finally {
         this.inFlight.delete(cacheKey);
       }
