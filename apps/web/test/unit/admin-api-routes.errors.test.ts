@@ -10,7 +10,7 @@ vi.mock("@admitto/location", async (importOriginal) => {
   };
 });
 
-import { assertCoordinatePairing } from "@admitto/location";
+import { assertCoordinatePairing, LocationValidationError } from "@admitto/location";
 import { handleCreateEvent } from "../../src/admin/admin-api-routes.js";
 
 function fakeContext(body: unknown): Context {
@@ -27,7 +27,29 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("handleCreateEvent — unexpected location validation failure", () => {
+describe("handleCreateEvent — location coordinate pairing", () => {
+  it("returns 400 when coordinate pairing raises LocationValidationError", async () => {
+    vi.mocked(assertCoordinatePairing).mockImplementationOnce(() => {
+      throw new LocationValidationError("latitude and longitude must both be set, or both be null");
+    });
+
+    const res = await handleCreateEvent(
+      fakeContext({
+        title: "Half pin",
+        slug: "half-pin",
+        date: "2026-08-02",
+        timezone: "Europe/Warsaw",
+        latitude: 52.23,
+      }),
+      {} as PrismaClient,
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: "latitude and longitude must both be set, or both be null",
+    });
+  });
+
   it("rethrows a non-LocationValidationError from coordinate pairing", async () => {
     const unexpected = new Error("coordinate validator unavailable");
     vi.mocked(assertCoordinatePairing).mockImplementationOnce(() => {

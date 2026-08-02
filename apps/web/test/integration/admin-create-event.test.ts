@@ -230,6 +230,45 @@ describe("POST /api/admin/events", () => {
     expect(location?.geocoded_at).toBeInstanceOf(Date);
   });
 
+  it("stores coordinates without a geocoding_provider when none was selected", async () => {
+    const res = await postCreateEvent(superCookie, {
+      title: "Pin Only Event",
+      slug: "pin-only-event",
+      date: "2026-09-29",
+      timezone: "UTC",
+      latitude: 52.2297,
+      longitude: 21.0122,
+    });
+    expect(res.status).toBe(201);
+    const { event } = (await res.json()) as { event: { id: string } };
+
+    const location = await prisma.eventLocation.findUnique({ where: { event_id: event.id } });
+    expect(location).toMatchObject({
+      latitude: 52.2297,
+      longitude: 21.0122,
+      geocoding_provider: null,
+    });
+    expect(location?.geocoded_at).toBeInstanceOf(Date);
+  });
+
+  it("treats a blank geocoding_provider as null when coordinates are set", async () => {
+    const res = await postCreateEvent(superCookie, {
+      title: "Blank Provider Event",
+      slug: "blank-provider-event",
+      date: "2026-09-29",
+      timezone: "UTC",
+      latitude: 52.2297,
+      longitude: 21.0122,
+      geocoding_provider: "   ",
+    });
+    expect(res.status).toBe(201);
+    const { event } = (await res.json()) as { event: { id: string } };
+
+    const location = await prisma.eventLocation.findUnique({ where: { event_id: event.id } });
+    expect(location?.geocoding_provider).toBeNull();
+    expect(location?.geocoded_at).toBeInstanceOf(Date);
+  });
+
   it("rejects create when only one coordinate is provided", async () => {
     const res = await postCreateEvent(superCookie, {
       title: "Half Pin Event",
