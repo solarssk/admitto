@@ -174,6 +174,30 @@ describe("EventStaticMapService.getForEvent", () => {
     warnSpy.mockRestore();
   });
 
+  it("redacts credential-bearing tile URLs from the unavailable system-log reason", async () => {
+    resetSystemLogBufferForTest();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const renderPng = vi.fn(async () => {
+      throw new StaticMapRenderError(
+        "Tile HTTP 502: https://tiles.example/16/1/2.png?api_key=super-secret",
+      );
+    });
+    const service = new EventStaticMapService(serviceOpts({ renderPng }));
+
+    await service.getForEvent(fakeDb({ latitude: 1, longitude: 2, map_zoom: 10 }), "evt-redact");
+
+    const entry = querySystemLogs({
+      source: "cache",
+      level: "warn",
+      search: "static_map_unavailable",
+    })[0];
+    expect(entry?.fields).toMatchObject({
+      reason: "Tile HTTP 502: https://tiles.example/16/1/2.png",
+    });
+    expect(JSON.stringify(entry?.fields)).not.toContain("super-secret");
+    warnSpy.mockRestore();
+  });
+
   it("does not re-log when serving from negative cache", async () => {
     resetSystemLogBufferForTest();
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});

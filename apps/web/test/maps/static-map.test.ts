@@ -47,6 +47,12 @@ describe("assertSafeTileFetchUrl", () => {
     expect(() => assertSafeTileFetchUrl("https://192.168.1.10/tile.png")).toThrow(/blocked/);
   });
 
+  it("rejects unparseable tile URLs without leaking query secrets", () => {
+    expect(() => assertSafeTileFetchUrl("not a url?api_key=super-secret")).toThrow(
+      /Invalid tile URL: not a url/,
+    );
+  });
+
   it("allows http://localhost only in development", () => {
     expect(() =>
       assertSafeTileFetchUrl("http://localhost:8080/tile.png", { NODE_ENV: "development" }),
@@ -596,6 +602,62 @@ describe("renderStaticMapPng", () => {
         },
       ),
     ).rejects.toMatchObject({ message: expect.stringContaining("blocked") });
+    expect(cancel).toHaveBeenCalled();
+  });
+
+  it("rejects a redirect response that omits Location", async () => {
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    const fetchFn = vi.fn().mockResolvedValue({
+      status: 302,
+      ok: false,
+      headers: { get: () => null },
+      body: { cancel },
+    });
+    await expect(
+      renderStaticMapPng(
+        { latitude: 52.23, longitude: 21.01, zoom: 14 },
+        {
+          tileConfig: {
+            enabled: true,
+            tileUrl: "https://tiles.example/{z}/{x}/{y}.png?api_key=secret",
+            attribution: "",
+            maxZoom: 19,
+          },
+          userAgent: "Admitto/test",
+          fetchFn: fetchFn as unknown as typeof fetch,
+        },
+      ),
+    ).rejects.toMatchObject({
+      message: expect.stringMatching(/Tile redirect without Location: https:\/\/tiles\.example\//),
+    });
+    expect(cancel).toHaveBeenCalled();
+  });
+
+  it("rejects a redirect Location that cannot be parsed as a URL", async () => {
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    const fetchFn = vi.fn().mockResolvedValue({
+      status: 302,
+      ok: false,
+      headers: {
+        get: (name: string) => (name.toLowerCase() === "location" ? "http://[" : null),
+      },
+      body: { cancel },
+    });
+    await expect(
+      renderStaticMapPng(
+        { latitude: 52.23, longitude: 21.01, zoom: 14 },
+        {
+          tileConfig: {
+            enabled: true,
+            tileUrl: "https://tiles.example/{z}/{x}/{y}.png",
+            attribution: "",
+            maxZoom: 19,
+          },
+          userAgent: "Admitto/test",
+          fetchFn: fetchFn as unknown as typeof fetch,
+        },
+      ),
+    ).rejects.toMatchObject({ message: expect.stringContaining("Tile redirect to invalid URL") });
     expect(cancel).toHaveBeenCalled();
   });
 
