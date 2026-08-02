@@ -1,7 +1,8 @@
 /**
  * Server-side static map PNG compositor for the public ticket / mail `{{event_map_url}}`.
  * Fetches raster tiles from the configured `MAP_TILE_URL` (never from the request), stitches
- * them with sharp, and draws a center pin. No commercial static-map API keys.
+ * them with sharp, and draws a center pin plus a burned-in attribution strip (mail has no
+ * surrounding HTML credit).
  */
 import { createHash } from "node:crypto";
 import sharp, { type OverlayOptions } from "sharp";
@@ -12,6 +13,7 @@ export const STATIC_MAP_HEIGHT = 300;
 const TILE_SIZE = 256;
 const DEFAULT_TILE_TIMEOUT_MS = 8_000;
 const MAX_TILE_BYTES = 512 * 1024;
+const ATTRIBUTION_BAR_HEIGHT = 18;
 
 export interface StaticMapRequest {
   latitude: number;
@@ -38,11 +40,22 @@ export class StaticMapRenderError extends Error {
   }
 }
 
-/** Cache key includes tile template + size so a deploy config change misses stale images. */
+/** Plain-text credit for the PNG strip (mail has no HTML attribution under the image). */
+export function plainMapAttribution(attribution: string): string {
+  return attribution
+    .replaceAll("&copy;", "©")
+    .replaceAll("<", "")
+    .replaceAll(">", "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Cache key includes tile template + size + attribution so a deploy config change misses stale images. */
 export function buildStaticMapCacheKey(
   eventId: string,
   req: StaticMapRequest,
   tileUrl: string,
+  attribution = "",
 ): string {
   const width = req.width ?? STATIC_MAP_WIDTH;
   const height = req.height ?? STATIC_MAP_HEIGHT;
@@ -54,6 +67,7 @@ export function buildStaticMapCacheKey(
     String(width),
     String(height),
     tileUrl,
+    plainMapAttribution(attribution),
   ].join("|");
   return createHash("sha256").update(payload).digest("hex");
 }
@@ -90,6 +104,70 @@ const PIN_SVG = Buffer.from(
   </svg>`,
 );
 
+function escXmlText(s: string): string {
+  return s
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}
+
+function buildAttributionOverlay(width: number, attribution: string): Buffer | null {
+  const text = plainMapAttribution(attribution);
+  if (!text) return null;
+  const safe = escXmlText(text);
+  return Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${ATTRIBUTION_BAR_HEIGHT}">
+      <rect width="100%" height="100%" fill="rgba(255,255,255,0.82)"/>
+      <text x="6" y="12" font-size="9" font-family="DejaVu Sans, Arial, Helvetica, sans-serif" fill="#334155">${safe}</text>
+    </svg>`,
+  );
+}
+
+/**
+ * Read the response body incrementally and abort once `maxBytes` is exceeded.
+ * Do not rely on `Content-Length` alone - chunked responses omit it, and a lying
+ * header must not let an oversized body buffer into process memory.
+ */
+async function readTileBodyCapped(res: Response, maxBytes: number, url: string): Promise<Buffer> {
+  if (!res.body) {
+    throw new StaticMapRenderError(`Tile empty body: ${url}`);
+  }
+
+  const contentLength = res.headers.get("content-length");
+  if (contentLength != null) {
+    const declared = Number(contentLength);
+    if (!Number.isFinite(declared) || declared < 0 || declared > maxBytes) {
+      await res.body.cancel().catch(() => undefined);
+      throw new StaticMapRenderError(`Tile too large (declared ${declared} bytes): ${url}`);
+    }
+  }
+
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value || value.byteLength === 0) continue;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new StaticMapRenderError(`Tile too large (${total} bytes): ${url}`);
+      }
+      chunks.push(value);
+    }
+  } catch (err) {
+    if (err instanceof StaticMapRenderError) throw err;
+    throw new StaticMapRenderError(`Tile read failed: ${url}`, err);
+  }
+
+  return Buffer.concat(chunks.map((c) => Buffer.from(c)));
+}
+
 async function fetchTilePng(
   url: string,
   userAgent: string,
@@ -109,19 +187,16 @@ async function fetchTilePng(
     throw new StaticMapRenderError(`Tile fetch failed: ${url}`, err);
   }
   if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
     throw new StaticMapRenderError(`Tile HTTP ${response.status}: ${url}`);
   }
-  const buf = Buffer.from(await response.arrayBuffer());
-  if (buf.byteLength > MAX_TILE_BYTES) {
-    throw new StaticMapRenderError(`Tile too large (${buf.byteLength} bytes): ${url}`);
-  }
-  return buf;
+  return readTileBodyCapped(response, MAX_TILE_BYTES, url);
 }
 
 /**
  * Render a static map PNG centered on lat/lng at the given zoom.
- * Attribution stays in surrounding HTML (ticket / mail) — burned-in text at 600×300 is
- * too small to read and duplicates the clickable credit under the image.
+ * Burns configured map attribution into a bottom strip so mail `{{event_map_url}}`
+ * (PNG-only) still carries the OSM/CARTO credit; the ticket page keeps its HTML credit too.
  */
 export async function renderStaticMapPng(
   req: StaticMapRequest,
@@ -170,6 +245,11 @@ export async function renderStaticMapPng(
   const pinLeft = Math.round(width / 2 - 14);
   const pinTop = Math.round(height / 2 - 14);
   composites.push({ input: PIN_SVG, left: pinLeft, top: pinTop });
+
+  const attrOverlay = buildAttributionOverlay(width, options.tileConfig.attribution);
+  if (attrOverlay) {
+    composites.push({ input: attrOverlay, left: 0, top: height - ATTRIBUTION_BAR_HEIGHT });
+  }
 
   try {
     return await sharp({

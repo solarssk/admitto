@@ -42,8 +42,10 @@ function renderMapAttribution(attribution?: string | null): string {
   ) {
     return `© <a href="https://www.openstreetmap.org/copyright" rel="noreferrer">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions" rel="noreferrer">CARTO</a>`;
   }
-  // Strip simple HTML tags without nested `>` (avoids regex backtracking on crafted input).
-  const plain = normalized?.replace(/<[^<>]*>/g, "") || "Map data attribution unavailable";
+  // Remove every `<` / `>` so incomplete multi-character tag stripping cannot leave `<script`.
+  const plain =
+    normalized?.replaceAll("<", "").replaceAll(">", "").trim() ||
+    "Map data attribution unavailable";
   return esc(plain);
 }
 

@@ -71,7 +71,12 @@ export class EventStaticMapService {
       longitude: loc.longitude!,
       zoom: Math.min(loc.map_zoom + 1, tileConfig.maxZoom),
     };
-    const cacheKey = buildStaticMapCacheKey(event.id, req, tileConfig.tileUrl);
+    const cacheKey = buildStaticMapCacheKey(
+      event.id,
+      req,
+      tileConfig.tileUrl,
+      tileConfig.attribution,
+    );
     const cached = await this.cache.get(cacheKey);
     if (cached) {
       return { ok: true, png: cached, cacheHit: true };

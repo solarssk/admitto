@@ -328,8 +328,8 @@ export interface CreateAppOptions {
   mailDeliveryDeps?: MailDeliveryDeps;
   /** Test-only injection point — bypasses the real Nominatim HTTP adapter. */
   geocodingProvider?: GeocodingProvider;
-  /** Test-only injection point — static map PNG resolver for `/m/:eventId.png`. */
-  eventStaticMapService?: EventStaticMapService;
+  /** Test-only injection point - static map PNG resolver for `/m/:eventId.png`. */
+  eventStaticMapService?: Pick<EventStaticMapService, "getForEvent">;
   opsHealthToken?: string | null;
   /** JSON access log per request (defaults to `LOG_HTTP_REQUESTS` env). */
   logHttpRequests?: boolean;

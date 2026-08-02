@@ -1,7 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { parseMailerConfig, safeParseMailerConfig } from "../src/config.js";
 
 describe("config", () => {
+  afterEach(() => {
+    delete process.env["ALLOW_PRIVATE_MAIL_DESTINATIONS"];
+  });
   it("validates powerautomate config and requires a URL + fromAddress", () => {
     const ok = parseMailerConfig({
       provider: "powerautomate",
@@ -132,5 +135,25 @@ describe("config", () => {
       fromAddress: "a@example.com",
     });
     expect(okHost.success).toBe(true);
+  });
+
+  it("accepts RFC1918 SMTP/Power Automate hosts when ALLOW_PRIVATE_MAIL_DESTINATIONS=true", () => {
+    process.env["ALLOW_PRIVATE_MAIL_DESTINATIONS"] = "true";
+
+    const okHost = safeParseMailerConfig({
+      provider: "smtp",
+      host: "192.168.1.10",
+      user: "u",
+      password: "p",
+      fromAddress: "a@example.com",
+    });
+    expect(okHost.success).toBe(true);
+
+    const okUrl = safeParseMailerConfig({
+      provider: "powerautomate",
+      url: "https://10.0.0.5/flow",
+      fromAddress: "a@example.com",
+    });
+    expect(okUrl.success).toBe(true);
   });
 });

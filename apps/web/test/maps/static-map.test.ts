@@ -26,21 +26,24 @@ describe("latLngToTileFraction", () => {
 });
 
 describe("buildStaticMapCacheKey", () => {
-  it("changes when coordinates or tile URL change", () => {
+  it("changes when coordinates, tile URL, or attribution change", () => {
     const base = {
       latitude: 52.23,
       longitude: 21.01,
       zoom: 15,
     };
-    const a = buildStaticMapCacheKey("evt1", base, "https://tiles.example/{z}/{x}/{y}.png");
+    const a = buildStaticMapCacheKey("evt1", base, "https://tiles.example/{z}/{x}/{y}.png", "© A");
     const b = buildStaticMapCacheKey(
       "evt1",
       { ...base, latitude: 52.24 },
       "https://tiles.example/{z}/{x}/{y}.png",
+      "© A",
     );
-    const c = buildStaticMapCacheKey("evt1", base, "https://other.example/{z}/{x}/{y}.png");
+    const c = buildStaticMapCacheKey("evt1", base, "https://other.example/{z}/{x}/{y}.png", "© A");
+    const d = buildStaticMapCacheKey("evt1", base, "https://tiles.example/{z}/{x}/{y}.png", "© B");
     expect(a).not.toBe(b);
     expect(a).not.toBe(c);
+    expect(a).not.toBe(d);
     expect(a).toHaveLength(64);
   });
 });
@@ -100,6 +103,31 @@ describe("renderStaticMapPng", () => {
             enabled: true,
             tileUrl: "https://tiles.example/{z}/{x}/{y}.png",
             attribution: "",
+            maxZoom: 19,
+          },
+          userAgent: "Admitto/test",
+          fetchFn,
+        },
+      ),
+    ).rejects.toBeInstanceOf(StaticMapRenderError);
+  });
+
+  it("rejects oversized tiles without buffering the full body", async () => {
+    const oversize = new Uint8Array(600 * 1024);
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(oversize, {
+        status: 200,
+        headers: { "content-type": "image/png", "content-length": String(oversize.byteLength) },
+      }),
+    );
+    await expect(
+      renderStaticMapPng(
+        { latitude: 52.23, longitude: 21.01, zoom: 14 },
+        {
+          tileConfig: {
+            enabled: true,
+            tileUrl: "https://tiles.example/{z}/{x}/{y}.png",
+            attribution: "© Test",
             maxZoom: 19,
           },
           userAgent: "Admitto/test",

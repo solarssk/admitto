@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
-import type { EventStaticMapService } from "../src/maps/event-static-map-service.js";
 
 describe("wallet / ticket mark assets", () => {
   it("serves Admitto mark and official wallet badge SVGs", async () => {
@@ -40,7 +39,7 @@ describe("GET /m/:filename", () => {
     const app = createApp({
       eventStaticMapService: {
         getForEvent: async () => ({ ok: false, reason: "not_found" }),
-      } as EventStaticMapService,
+      },
     });
     expect((await app.request("/m/evt.jpg")).status).toBe(404);
     expect((await app.request("/m/.png")).status).toBe(404);
@@ -51,7 +50,7 @@ describe("GET /m/:filename", () => {
     const appOk = createApp({
       eventStaticMapService: {
         getForEvent: async () => ({ ok: true, png, cacheHit: false }),
-      } as EventStaticMapService,
+      },
     });
     const ok = await appOk.request("/m/evt_1.png");
     expect(ok.status).toBe(200);
@@ -67,7 +66,7 @@ describe("GET /m/:filename", () => {
       const app = createApp({
         eventStaticMapService: {
           getForEvent: async () => ({ ok: false, reason }),
-        } as EventStaticMapService,
+        },
       });
       expect((await app.request("/m/evt_1.png")).status).toBe(status);
     }
