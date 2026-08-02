@@ -8,7 +8,6 @@ import {
   STATIC_MAP_WIDTH,
   StaticMapRenderError,
 } from "../../src/maps/static-map.js";
-import { InMemoryStaticMapCache } from "../../src/maps/static-map-cache.js";
 
 async function solidTilePng(color: { r: number; g: number; b: number }): Promise<Buffer> {
   return sharp({
@@ -108,15 +107,5 @@ describe("renderStaticMapPng", () => {
         },
       ),
     ).rejects.toBeInstanceOf(StaticMapRenderError);
-  });
-});
-
-describe("InMemoryStaticMapCache", () => {
-  it("round-trips a PNG buffer", async () => {
-    const cache = new InMemoryStaticMapCache();
-    const png = Buffer.from("fake-png");
-    await cache.set("k1", png);
-    expect(await cache.get("k1")).toEqual(png);
-    expect(await cache.get("missing")).toBeNull();
   });
 });

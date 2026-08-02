@@ -25,6 +25,10 @@ import {
 } from "./ticket-page.js";
 import { EventStaticMapService } from "./maps/event-static-map-service.js";
 import { resolveGeocodingConfig, resolveMapTileConfig } from "./maps/config.js";
+import {
+  parseEventIdFromStaticMapFilename,
+  staticMapFailureStatus,
+} from "./maps/static-map-route.js";
 import { handleGetAdmittoMark, handleGetAppleWalletBadge, handleGetGoogleWalletBadge } from "./wallet-badges.js";
 import {
   resolveBaseUrl,
@@ -1313,31 +1317,16 @@ export function createApp(options: CreateAppOptions = {}) {
   app.use("/q/*", publicRateLimit);
   app.use("/m/*", publicRateLimit);
 
-  // Public static map PNG for tickets / mail {{event_map_url}} — event-scoped, no token
+  // Public static map PNG for tickets / mail {{event_map_url}} - event-scoped, no token
   // (venue coordinates are intended for attendees). Filename is "{eventId}.png".
   app.get("/m/:filename", async (c) => {
-    const filename = c.req.param("filename");
-    if (!filename.endsWith(".png")) {
-      return c.body(null, 404);
-    }
-    let eventId: string;
-    try {
-      eventId = decodeURIComponent(filename.slice(0, -4));
-    } catch {
-      return c.body(null, 404);
-    }
+    const eventId = parseEventIdFromStaticMapFilename(c.req.param("filename"));
     if (!eventId) {
       return c.body(null, 404);
     }
     const result = await eventStaticMapService.getForEvent(db, eventId);
     if (!result.ok) {
-      const status =
-        result.reason === "not_found" ||
-        result.reason === "no_coordinates" ||
-        result.reason === "disabled"
-          ? 404
-          : 502;
-      return c.body(null, status);
+      return c.body(null, staticMapFailureStatus(result.reason));
     }
     c.header("Content-Type", "image/png");
     c.header("Cache-Control", "public, max-age=86400");

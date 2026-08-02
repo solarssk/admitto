@@ -19,7 +19,7 @@ type TicketLogoSource = {
 
 /** Best-effort read of Location-tab `address_components` JSON without pulling `@admitto/location`
  * into this package (tickets is also bundled into the admin SPA). */
-function parseTicketAddressComponents(
+export function parseTicketAddressComponents(
   value: unknown,
 ): ResolvedTicket["event"]["addressComponents"] {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;

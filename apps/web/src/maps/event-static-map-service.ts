@@ -21,17 +21,21 @@ export interface EventStaticMapServiceOptions {
   cache?: StaticMapCache;
   renderOptions?: Partial<Pick<RenderStaticMapOptions, "fetchFn" | "timeoutMs">>;
   buildUserAgent?: (db: PrismaClient) => Promise<string>;
+  /** Test seam - defaults to `renderStaticMapPng`. */
+  renderPng?: typeof renderStaticMapPng;
 }
 
 export class EventStaticMapService {
   private readonly cache: StaticMapCache;
   private readonly renderOptions: Partial<Pick<RenderStaticMapOptions, "fetchFn" | "timeoutMs">>;
   private readonly buildUserAgent: (db: PrismaClient) => Promise<string>;
+  private readonly renderPng: typeof renderStaticMapPng;
 
   constructor(options: EventStaticMapServiceOptions = {}) {
     this.cache = options.cache ?? createStaticMapCache();
     this.renderOptions = options.renderOptions ?? {};
     this.buildUserAgent = options.buildUserAgent ?? buildGeocodingUserAgent;
+    this.renderPng = options.renderPng ?? renderStaticMapPng;
   }
 
   async getForEvent(db: PrismaClient, eventId: string): Promise<ResolveEventStaticMapResult> {
@@ -75,7 +79,7 @@ export class EventStaticMapService {
 
     try {
       const userAgent = await this.buildUserAgent(db);
-      const png = await renderStaticMapPng(req, {
+      const png = await this.renderPng(req, {
         tileConfig,
         userAgent,
         ...this.renderOptions,

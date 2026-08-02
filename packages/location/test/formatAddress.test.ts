@@ -94,6 +94,29 @@ describe("formatDirectionsAddress", () => {
       }),
     ).toBe("Poland, Warsaw - Convention Center");
   });
+
+  it("covers shorter street-only locality combinations and label fallback", () => {
+    expect(
+      formatDirectionsAddress({
+        street: "Main St",
+        housenumber: "1",
+        postcode: "00-001",
+        city: "Warsaw",
+      }),
+    ).toBe("Main St 1, 00-001 Warsaw");
+    expect(
+      formatDirectionsAddress({
+        street: "Main St",
+        housenumber: "1",
+        country: "Poland",
+      }),
+    ).toBe("Main St 1, Poland");
+    expect(formatDirectionsAddress({ street: "Main St", housenumber: "1" })).toBe("Main St 1");
+    expect(formatDirectionsAddress({ label: "Only a long hierarchy label, district, country" })).toBe(
+      "Only a long hierarchy label, district",
+    );
+    expect(formatDirectionsAddress({})).toBe("");
+  });
 });
 
 describe("formatVenueName", () => {

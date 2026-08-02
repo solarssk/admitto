@@ -161,8 +161,11 @@ describe("addressComponentsFromNominatimLabel", () => {
 describe("preferNumberedStreet / streetLineLooksNumbered", () => {
   it("detects a trailing house number on a street line", () => {
     expect(streetLineLooksNumbered("Wybrzeże Szczecińskie 1")).toBe(true);
+    expect(streetLineLooksNumbered("12 Main Street")).toBe(true);
+    expect(streetLineLooksNumbered("12A")).toBe(true);
     expect(streetLineLooksNumbered("Dr. Rajkumar Road")).toBe(false);
     expect(streetLineLooksNumbered(null)).toBe(false);
+    expect(streetLineLooksNumbered("   ")).toBe(false);
   });
 
   it("overwrites a street-only primary with a numbered fallback", () => {
