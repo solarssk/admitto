@@ -202,6 +202,66 @@ describe("EventStaticMapService.getForEvent", () => {
     expect(renderPng).not.toHaveBeenCalled();
   });
 
+  it("retries the tile CDN after the negative cache TTL expires", async () => {
+    let now = 1_000;
+    const renderPng = vi
+      .fn()
+      .mockRejectedValueOnce(new StaticMapRenderError("boom"))
+      .mockRejectedValueOnce(new StaticMapRenderError("boom"))
+      .mockResolvedValueOnce(SAMPLE_PNG);
+    const service = new EventStaticMapService(
+      serviceOpts({
+        renderPng,
+        nowMs: () => now,
+      }),
+    );
+    const db = fakeDb({ latitude: 1, longitude: 2, map_zoom: 10 });
+
+    await expect(service.getForEvent(db, "evt-ttl")).resolves.toMatchObject({
+      placeholder: true,
+    });
+    expect(renderPng).toHaveBeenCalledTimes(2);
+
+    now += 2 * 60 * 1000;
+    renderPng.mockClear();
+    await expect(service.getForEvent(db, "evt-ttl")).resolves.toEqual({
+      ok: true,
+      png: SAMPLE_PNG,
+      cacheHit: false,
+    });
+    expect(renderPng).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the default sleep between render retries", async () => {
+    vi.useFakeTimers();
+    try {
+      const renderPng = vi
+        .fn()
+        .mockRejectedValueOnce(new StaticMapRenderError("boom"))
+        .mockResolvedValueOnce(SAMPLE_PNG);
+      const service = new EventStaticMapService({
+        cache: fakeCache(),
+        buildUserAgent: async () => "Admitto/test",
+        buildPlaceholderPng: async () => PLACEHOLDER_PNG,
+        renderPng,
+      });
+
+      const pending = service.getForEvent(
+        fakeDb({ latitude: 1, longitude: 2, map_zoom: 10 }),
+        "evt-sleep",
+      );
+      await vi.advanceTimersByTimeAsync(250);
+      await expect(pending).resolves.toEqual({
+        ok: true,
+        png: SAMPLE_PNG,
+        cacheHit: false,
+      });
+      expect(renderPng).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("uses default cache and render seams when constructed without options", async () => {
     const prev = process.env["LOCATION_MAPS_ENABLED"];
     process.env["LOCATION_MAPS_ENABLED"] = "false";

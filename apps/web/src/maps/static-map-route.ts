@@ -19,8 +19,12 @@ export function parseEventIdFromStaticMapFilename(filename: string): string | nu
 export function staticMapFailureStatus(
   reason: Extract<ResolveEventStaticMapResult, { ok: false }>["reason"],
 ): 404 {
-  void reason;
-  return 404;
+  switch (reason) {
+    case "disabled":
+    case "not_found":
+    case "no_coordinates":
+      return 404;
+  }
 }
 
 /** Cache-Control for `/m/` — placeholders must not stick in proxies for a day. */
