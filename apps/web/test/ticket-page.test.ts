@@ -102,6 +102,7 @@ describe("renderTicket", () => {
     expect(html).toContain("--primary");
     expect(html).toContain("ticket-page");
     expect(html).toContain('src="/assets/apple-wallet-badge.svg"');
+    expect(html).toContain("wallet-badge--apple");
     expect(html).toContain("How do I add this to my phone?");
     expect(html).toContain('aria-disabled="true"');
     expect(html).not.toContain("badge-\"><style>boom</style>");

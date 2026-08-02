@@ -24,8 +24,11 @@ body.ticket-page { margin: 0; background: var(--surface-page, #f1f5f9); min-heig
 .ticket__token { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; color: var(--text-muted, #64748b); font-size: 0.75rem; margin: 10px 0 0; word-break: break-all; }
 .ticket__perf { height: 0; border-top: 2px dashed var(--border, #e6e7e9); margin: 6px 0; }
 .ticket__wallets { padding: 16px 16px 8px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; align-items: center; }
-/* Google Wallet brand min height is 48dp; keep aspect ratio. Gap/padding cover ~8px clear space. */
+/* Google Wallet brand min height is 48dp; keep aspect ratio. Gap covers ≥8dp Google clear space
+ * and ≥0.1×height Apple clear space. Official Apple SVG has ~1–2px empty ink at the bottom of
+ * the viewBox — nudge only the layout box so the two badges sit flush (do not edit the artwork). */
 .wallet-badge { display: block; height: 48px; width: auto; cursor: not-allowed; }
+.wallet-badge--apple { transform: translateY(1px); }
 .ticket__wallet-help { margin: 0 20px 14px; color: var(--text-muted, #64748b); font-size: 0.75rem; line-height: 1.45; text-align: center; }
 .ticket__wallet-help summary { cursor: pointer; list-style: none; padding: 0; font-weight: 500; color: var(--text-muted, #64748b); text-decoration: none; }
 .ticket__wallet-help summary::-webkit-details-marker { display: none; }

@@ -6,6 +6,7 @@ describe("buildTicketPageStyles", () => {
     const css = buildTicketPageStyles();
     expect(css).toContain("@media print");
     expect(css).toContain(".ticket__wallets");
+    expect(css).toContain(".wallet-badge--apple");
     expect(css).toContain("display: none");
     expect(css).toContain("overflow: visible");
     expect(css).toMatch(/\.ticket[\s\S]*background: #fff/);
