@@ -20,8 +20,8 @@ const DEFAULT_TILE_TIMEOUT_MS = 8_000;
 const MAX_TILE_BYTES = 512 * 1024;
 const MAX_TILE_REDIRECTS = 3;
 const ATTRIBUTION_OVERLAY_HEIGHT = 18;
-/** Bump when burn-in layout changes so Redis/memory caches miss the old white-bar PNGs. */
-const ATTRIBUTION_OVERLAY_VERSION = "br-halo-1";
+/** Bump when burn-in layout changes so Redis/memory caches miss stale PNGs. */
+const ATTRIBUTION_OVERLAY_VERSION = "br-plain-3";
 /** PNG signature (ISO 15948) — reject non-image bodies before sharp composite. */
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -178,9 +178,9 @@ function escXmlText(s: string): string {
 }
 
 /**
- * Bottom-right credit without an opaque bar (Leaflet-style halo text).
- * OSM requires legible attribution in a map corner — no fixed pt size; ~9px + stroke halo
- * matches common interactive map credits and stays readable on light/dark tiles.
+ * Bottom-right credit — plain dark text only (no fill bar, no white stroke halo).
+ * OSM asks for a legible corner credit, not a fixed pt size; on light CARTO tiles
+ * dark 9px text is enough without a background strip.
  */
 function buildAttributionOverlay(width: number, attribution: string): Buffer | null {
   const text = plainMapAttribution(attribution);
@@ -191,8 +191,7 @@ function buildAttributionOverlay(width: number, attribution: string): Buffer | n
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${ATTRIBUTION_OVERLAY_HEIGHT}">
       <text x="${x}" y="13" text-anchor="end" font-size="9"
         font-family="DejaVu Sans, Arial, Helvetica, sans-serif"
-        fill="#0f172a" stroke="rgba(255,255,255,0.92)" stroke-width="3"
-        paint-order="stroke fill">${safe}</text>
+        fill="#334155">${safe}</text>
     </svg>`,
   );
 }
