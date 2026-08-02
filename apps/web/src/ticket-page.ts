@@ -227,8 +227,8 @@ export function renderTicket(
     </div>
     <div class="ticket__perf" role="presentation"></div>
     <div class="ticket__wallets">
-      <img class="wallet-badge wallet-badge--apple" src="/assets/apple-wallet-badge.svg" alt="Add to Apple Wallet (coming soon)" aria-disabled="true" role="img">
-      <img class="wallet-badge" src="/assets/google-wallet-badge.svg" alt="Add to Google Wallet (coming soon)" aria-disabled="true" role="img">
+      <span class="wallet-badge-frame"><img class="wallet-badge wallet-badge--apple" src="/assets/apple-wallet-badge.svg" alt="Add to Apple Wallet (coming soon)" aria-disabled="true" role="img"></span>
+      <span class="wallet-badge-frame"><img class="wallet-badge" src="/assets/google-wallet-badge.svg" alt="Add to Google Wallet (coming soon)" aria-disabled="true" role="img"></span>
     </div>
     <details class="ticket__wallet-help">
       <summary>How do I add this to my phone?</summary>
