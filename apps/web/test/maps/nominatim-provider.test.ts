@@ -208,6 +208,38 @@ describe("NominatimProvider.search", () => {
     });
   });
 
+  it("keeps GeocodeJSON components when the feature has no label", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            properties: {
+              geocoding: {
+                name: "Hall",
+                street: "Main",
+                housenumber: "1",
+                city: "Warsaw",
+                country: "Poland",
+              },
+            },
+            geometry: { type: "Point", coordinates: [21.01, 52.23] },
+          },
+        ],
+      }),
+    );
+    const results = await makeProvider(fetchFn).search("hall");
+    expect(results[0]?.components).toEqual({
+      object_name: "Hall",
+      street: "Main 1",
+      postcode: null,
+      city: "Warsaw",
+      region: null,
+      country: "Poland",
+    });
+  });
+
   it("uses locality as city when city is absent", async () => {
     const fetchFn = vi.fn().mockResolvedValue(
       jsonResponse({

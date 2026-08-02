@@ -474,6 +474,39 @@ describe("LocationSettingsPanel — venue search", () => {
     expect(mockSaveLocation.mock.calls[0]?.[1]).not.toHaveProperty("longitude");
   });
 
+  it("clears object_name when the venue field is whitespace-only", async () => {
+    mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
+    mockSaveLocation.mockResolvedValue({
+      ...SAVED_LOCATION,
+      venue_name: "   ",
+      geocoding_provider: null,
+      geocoded_at: null,
+      address_components: {
+        ...SAVED_LOCATION.address_components!,
+        object_name: null,
+      },
+    });
+    renderPanel();
+
+    await screen.findByDisplayValue("Springfield Hall");
+    fireEvent.change(screen.getByLabelText("Venue name or address"), {
+      target: { value: "   " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(mockSaveLocation).toHaveBeenCalledWith(
+        "evt-1",
+        expect.objectContaining({
+          address_components: expect.objectContaining({
+            object_name: null,
+            street: "1 Main St",
+          }),
+        }),
+      ),
+    );
+  });
+
   it("applies a selected result immediately so Save during reverse enrichment keeps the pin", async () => {
     const slowReverse = createDeferred<Awaited<ReturnType<typeof reverseGeocoding>>>();
     mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);

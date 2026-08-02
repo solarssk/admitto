@@ -7,6 +7,7 @@ import {
   renderRevoked,
   renderServerError,
   renderTicket,
+  resolveDisplayToken,
 } from "../src/ticket-page.js";
 
 const EMPTY_EVENT_LOCATION = {
@@ -232,6 +233,45 @@ describe("renderTicket", () => {
     expect(html).not.toContain("<script>");
   });
 
+  it("falls back when map attribution is empty after sanitizing", () => {
+    const html = renderTicket(
+      {
+        ...ticketFor(null),
+        event: {
+          ...ticketFor(null).event,
+          latitude: 50.06,
+          longitude: 19.93,
+          mapZoom: 15,
+        },
+      },
+      "data:image/png;base64,abc",
+      undefined,
+      { mapAttribution: "<>" },
+    );
+    expect(html).toContain("Map data attribution unavailable");
+  });
+
+  it("renders Getting there from coordinates alone without an address block", () => {
+    const html = renderTicket(
+      {
+        ...ticketFor(null),
+        event: {
+          ...ticketFor(null).event,
+          location: null,
+          formattedAddress: null,
+          addressComponents: null,
+          latitude: 50.06,
+          longitude: 19.93,
+          mapZoom: 15,
+        },
+      },
+      "data:image/png;base64,abc",
+    );
+    expect(html).toContain("Getting there");
+    expect(html).toContain("Google Maps");
+    expect(html).not.toContain('<p class="ticket__address">');
+  });
+
   it("renders the not-found page", () => {
     expect(renderNotFound()).toContain("Ticket not found");
   });
@@ -379,6 +419,17 @@ describe("buildTicketFontSrc", () => {
     ).toBe("'self'");
   });
 
+  it("ignores blank font URLs", () => {
+    expect(
+      buildTicketFontSrc({
+        font_family_name: "Brand Sans",
+        custom_font_families: [
+          { name: "Brand Sans", variants: [{ weight: 400, style: "normal", url: "   " }] },
+        ],
+      }),
+    ).toBe("'self'");
+  });
+
   it("ignores unparseable font URLs", () => {
     expect(
       buildTicketFontSrc({
@@ -438,5 +489,20 @@ describe("buildTicketImgSrc", () => {
 
   it("ignores an unparseable logo URL", () => {
     expect(buildTicketImgSrc("not a url")).toBe("'self' data:");
+  });
+});
+
+describe("resolveDisplayToken", () => {
+  it("masks an internal token", () => {
+    expect(resolveDisplayToken("abcdefghijklmnop", null)).toBe("abcdefgh…mnop");
+  });
+
+  it("falls back to a Mode B public ref", () => {
+    expect(resolveDisplayToken(undefined, "agency-ref-1")).toBe("agency-ref-1");
+  });
+
+  it("returns null when neither token nor public ref is set", () => {
+    expect(resolveDisplayToken(undefined, undefined)).toBeNull();
+    expect(resolveDisplayToken(null, null)).toBeNull();
   });
 });

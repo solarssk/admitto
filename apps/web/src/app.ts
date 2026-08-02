@@ -22,6 +22,7 @@ import {
   renderNotFound,
   renderRevoked,
   renderServerError,
+  resolveDisplayToken,
 } from "./ticket-page.js";
 import { EventStaticMapService } from "./maps/event-static-map-service.js";
 import { resolveGeocodingConfig, resolveMapTileConfig } from "./maps/config.js";
@@ -582,9 +583,7 @@ export function createApp(options: CreateAppOptions = {}) {
     }
 
     const resolvedForDisplay = await resolveTicketPageDisplay(resolved);
-    const displayToken = internalToken
-      ? `${internalToken.slice(0, 8)}…${internalToken.slice(-4)}`
-      : agencyPublicRef ?? null;
+    const displayToken = resolveDisplayToken(internalToken, agencyPublicRef);
 
     const mapTiles = resolveMapTileConfig();
     return htmlWithSecurityHeaders(

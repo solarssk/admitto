@@ -34,6 +34,17 @@ export type TicketPageOptions = {
   staticMapEnabled?: boolean;
 };
 
+/** Mask an internal ticket token for display, or fall back to a Mode B public ref. */
+export function resolveDisplayToken(
+  internalToken?: string | null,
+  agencyPublicRef?: string | null,
+): string | null {
+  if (internalToken) {
+    return `${internalToken.slice(0, 8)}…${internalToken.slice(-4)}`;
+  }
+  return agencyPublicRef ?? null;
+}
+
 function renderMapAttribution(attribution?: string | null): string {
   const normalized = attribution?.replace(/\s+/g, " ").trim();
   if (
@@ -167,7 +178,7 @@ export function renderTicket(
         </div>`
       : "";
 
-  const addressHtml = directionsAddress ? renderDirectionsAddressHtml(event) : "";
+  const addressHtml = renderDirectionsAddressHtml(event);
   let staticMapHtml = "";
   if (showStaticMap) {
     staticMapHtml = `<div class="ticket__map-frame">

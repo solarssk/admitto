@@ -88,8 +88,8 @@ export function latLngToTileFraction(lat: number, lng: number, zoom: number): { 
 }
 
 function expandTileUrl(template: string, z: number, x: number, y: number): string {
-  const subdomains = ["a", "b", "c"];
-  const s = subdomains[(x + y) % subdomains.length] ?? "a";
+  const subdomains = ["a", "b", "c"] as const;
+  const s = subdomains[(x + y) % subdomains.length]!;
   return template
     .replaceAll("{s}", s)
     .replaceAll("{z}", String(z))
@@ -138,7 +138,8 @@ async function readTileBodyCapped(res: Response, maxBytes: number, url: string):
   const contentLength = res.headers.get("content-length");
   if (contentLength != null) {
     const declared = Number(contentLength);
-    if (!Number.isFinite(declared) || declared < 0 || declared > maxBytes) {
+    // NaN and negatives fail `declared >= 0`; oversize fails the upper bound.
+    if (!(declared >= 0 && declared <= maxBytes)) {
       await res.body.cancel().catch(() => undefined);
       throw new StaticMapRenderError(`Tile too large (declared ${declared} bytes): ${url}`);
     }

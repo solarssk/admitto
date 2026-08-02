@@ -38,6 +38,11 @@ function readTicketAsset(name: string): Buffer | null {
   return null;
 }
 
+/** @internal unit-test helper for the allowlist / missing-file paths. */
+export function readTicketAssetForTest(name: string): Buffer | null {
+  return readTicketAsset(name);
+}
+
 function serveTicketAsset(c: Context, name: string): Response | Promise<Response> {
   const body = readTicketAsset(name);
   if (!body) return c.notFound();

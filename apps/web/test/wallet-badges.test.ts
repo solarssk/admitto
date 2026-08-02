@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
+import { readTicketAssetForTest } from "../src/wallet-badges.js";
 
 describe("wallet / ticket mark assets", () => {
+  it("rejects names outside the allowlist", () => {
+    expect(readTicketAssetForTest("not-a-wallet-badge.svg")).toBeNull();
+    expect(readTicketAssetForTest("../etc/passwd")).toBeNull();
+  });
+
   it("serves Admitto mark and official wallet badge SVGs", async () => {
     const app = createApp();
     const cases = [

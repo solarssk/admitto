@@ -338,6 +338,119 @@ describe("renderStaticMapPng", () => {
     ).rejects.toMatchObject({ message: expect.stringContaining("No map tiles") });
     expect(fetchFn).not.toHaveBeenCalled();
   });
+
+  it("rejects non-finite Content-Length before reading the body", async () => {
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: {
+        get: (name: string) => (name.toLowerCase() === "content-length" ? "not-a-number" : null),
+      },
+      body: {
+        cancel,
+        getReader: () => {
+          throw new Error("should not read body after invalid Content-Length");
+        },
+      },
+    });
+    await expect(
+      renderStaticMapPng(
+        { latitude: 52.23, longitude: 21.01, zoom: 14 },
+        {
+          tileConfig: {
+            enabled: true,
+            tileUrl: "https://tiles.example/{z}/{x}/{y}.png",
+            attribution: "© Test",
+            maxZoom: 19,
+          },
+          userAgent: "Admitto/test",
+          fetchFn: fetchFn as unknown as typeof fetch,
+        },
+      ),
+    ).rejects.toMatchObject({ message: expect.stringContaining("declared") });
+    expect(cancel).toHaveBeenCalled();
+  });
+
+  it("rejects negative Content-Length before reading the body", async () => {
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: {
+        get: (name: string) => (name.toLowerCase() === "content-length" ? "-1" : null),
+      },
+      body: {
+        cancel,
+        getReader: () => {
+          throw new Error("should not read body after negative Content-Length");
+        },
+      },
+    });
+    await expect(
+      renderStaticMapPng(
+        { latitude: 52.23, longitude: 21.01, zoom: 14 },
+        {
+          tileConfig: {
+            enabled: true,
+            tileUrl: "https://tiles.example/{z}/{x}/{y}.png",
+            attribution: "© Test",
+            maxZoom: 19,
+          },
+          userAgent: "Admitto/test",
+          fetchFn: fetchFn as unknown as typeof fetch,
+        },
+      ),
+    ).rejects.toMatchObject({ message: expect.stringContaining("declared") });
+    expect(cancel).toHaveBeenCalled();
+  });
+
+  it("wraps sharp composite failures", async () => {
+    const fetchFn = vi.fn().mockImplementation(async () =>
+      new Response(Buffer.from("not-a-valid-png"), {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      }),
+    );
+    await expect(
+      renderStaticMapPng(
+        { latitude: 52.23, longitude: 21.01, zoom: 14 },
+        {
+          tileConfig: {
+            enabled: true,
+            tileUrl: "https://tiles.example/{z}/{x}/{y}.png",
+            attribution: "",
+            maxZoom: 19,
+          },
+          userAgent: "Admitto/test",
+          fetchFn,
+        },
+      ),
+    ).rejects.toMatchObject({ message: expect.stringContaining("Failed to composite") });
+  });
+
+  it("uses global fetch when fetchFn is omitted", async () => {
+    const tile = await solidTilePng({ r: 10, g: 20, b: 30 });
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      new Response(tile, { status: 200, headers: { "content-type": "image/png" } }),
+    );
+    try {
+      const png = await renderStaticMapPng(
+        { latitude: 52.23, longitude: 21.01, zoom: 14, width: 256, height: 256 },
+        {
+          tileConfig: {
+            enabled: true,
+            tileUrl: "https://tiles.example/{z}/{x}/{y}.png",
+            attribution: "",
+            maxZoom: 19,
+          },
+          userAgent: "Admitto/test",
+        },
+      );
+      expect(png.subarray(0, 4)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+      expect(fetchSpy).toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
 });
 
 describe("plainMapAttribution", () => {
