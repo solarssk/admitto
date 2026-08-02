@@ -4,9 +4,11 @@ import {
   assertSafeTileFetchUrl,
   bufferLooksLikePng,
   buildStaticMapCacheKey,
+  buildUnavailableStaticMapPng,
   isAllowedDeclaredTileSize,
   latLngToTileFraction,
   plainMapAttribution,
+  redactTileUrlForLogs,
   renderStaticMapPng,
   STATIC_MAP_HEIGHT,
   STATIC_MAP_WIDTH,
@@ -21,6 +23,26 @@ async function solidTilePng(color: { r: number; g: number; b: number }): Promise
     .toBuffer();
 }
 
+describe("redactTileUrlForLogs", () => {
+  it("strips query strings and fragments that may hold API keys", () => {
+    expect(
+      redactTileUrlForLogs("https://tiles.example/16/1/2.png?api_key=super-secret&x=1"),
+    ).toBe("https://tiles.example/16/1/2.png");
+    expect(redactTileUrlForLogs("https://tiles.example/a.png#token=abc")).toBe(
+      "https://tiles.example/a.png",
+    );
+  });
+
+  it("falls back safely for unparseable input", () => {
+    expect(redactTileUrlForLogs("not a url?api_key=leak")).toBe("not a url");
+  });
+
+  it("strips userinfo from unparseable credential-bearing URLs", () => {
+    expect(redactTileUrlForLogs("https://user:secret@")).toBe("https://");
+    expect(redactTileUrlForLogs("https://token@host.invalid/%")).not.toContain("token");
+  });
+});
+
 describe("assertSafeTileFetchUrl", () => {
   it("allows https public hosts and blocks private or metadata targets", () => {
     expect(() => assertSafeTileFetchUrl("https://tiles.example/0/0/0.png")).not.toThrow();
@@ -28,6 +50,12 @@ describe("assertSafeTileFetchUrl", () => {
     expect(() => assertSafeTileFetchUrl("https://169.254.169.254/latest")).toThrow(/blocked/);
     expect(() => assertSafeTileFetchUrl("https://127.0.0.1/tile.png")).toThrow(/blocked/);
     expect(() => assertSafeTileFetchUrl("https://192.168.1.10/tile.png")).toThrow(/blocked/);
+  });
+
+  it("rejects unparseable tile URLs without leaking query secrets", () => {
+    expect(() => assertSafeTileFetchUrl("not a url?api_key=super-secret")).toThrow(
+      /Invalid tile URL: not a url/,
+    );
   });
 
   it("allows http://localhost only in development", () => {
@@ -169,6 +197,53 @@ describe("renderStaticMapPng", () => {
     ).rejects.toBeInstanceOf(StaticMapRenderError);
   });
 
+  it("aborts outstanding sibling tile fetches when one tile fails", async () => {
+    let siblingAborted = false;
+    let calls = 0;
+    const fetchFn = vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response("fail", { status: 502 });
+      }
+      await new Promise<never>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (!signal) {
+          reject(new Error("expected AbortSignal on sibling fetch"));
+          return;
+        }
+        const fail = () => {
+          siblingAborted = true;
+          reject(new DOMException("The operation was aborted", "AbortError"));
+        };
+        if (signal.aborted) {
+          fail();
+          return;
+        }
+        signal.addEventListener("abort", fail, { once: true });
+      });
+    });
+
+    await expect(
+      renderStaticMapPng(
+        { latitude: 52.2297, longitude: 21.0122, zoom: 15, width: 400, height: 400 },
+        {
+          tileConfig: {
+            enabled: true,
+            tileUrl: "https://tiles.example/{z}/{x}/{y}.png",
+            attribution: "",
+            maxZoom: 19,
+          },
+          userAgent: "Admitto/test",
+          fetchFn,
+          timeoutMs: 5_000,
+        },
+      ),
+    ).rejects.toBeInstanceOf(StaticMapRenderError);
+
+    expect(calls).toBeGreaterThan(1);
+    expect(siblingAborted).toBe(true);
+  });
+
   it("surfaces tile HTTP failures", async () => {
     const fetchFn = vi.fn().mockResolvedValue(new Response("nope", { status: 503 }));
     await expect(
@@ -307,28 +382,32 @@ describe("renderStaticMapPng", () => {
     ).rejects.toMatchObject({ message: expect.stringContaining("Tile read failed") });
   });
 
-  it("cancels the response body on non-OK tile HTTP status", async () => {
+  it("cancels the response body on non-OK tile HTTP status without leaking query credentials", async () => {
     const cancel = vi.fn().mockResolvedValue(undefined);
     const fetchFn = vi.fn().mockResolvedValue({
       ok: false,
       status: 502,
       body: { cancel },
     });
-    await expect(
-      renderStaticMapPng(
-        { latitude: 52.23, longitude: 21.01, zoom: 14 },
-        {
-          tileConfig: {
-            enabled: true,
-            tileUrl: "https://tiles.example/{z}/{x}/{y}.png",
-            attribution: "",
-            maxZoom: 19,
-          },
-          userAgent: "Admitto/test",
-          fetchFn: fetchFn as unknown as typeof fetch,
+    const rejected = renderStaticMapPng(
+      { latitude: 52.23, longitude: 21.01, zoom: 14 },
+      {
+        tileConfig: {
+          enabled: true,
+          tileUrl: "https://tiles.example/{z}/{x}/{y}.png?api_key=secret-token",
+          attribution: "",
+          maxZoom: 19,
         },
-      ),
-    ).rejects.toMatchObject({ message: expect.stringContaining("Tile HTTP 502") });
+        userAgent: "Admitto/test",
+        fetchFn: fetchFn as unknown as typeof fetch,
+      },
+    );
+    await expect(rejected).rejects.toMatchObject({
+      message: expect.stringMatching(/^Tile HTTP 502: https:\/\/tiles\.example\/\d+\/\d+\/\d+\.png$/),
+    });
+    await expect(rejected).rejects.not.toMatchObject({
+      message: expect.stringContaining("secret-token"),
+    });
     expect(cancel).toHaveBeenCalled();
   });
 
@@ -531,6 +610,62 @@ describe("renderStaticMapPng", () => {
     expect(cancel).toHaveBeenCalled();
   });
 
+  it("rejects a redirect response that omits Location", async () => {
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    const fetchFn = vi.fn().mockResolvedValue({
+      status: 302,
+      ok: false,
+      headers: { get: () => null },
+      body: { cancel },
+    });
+    await expect(
+      renderStaticMapPng(
+        { latitude: 52.23, longitude: 21.01, zoom: 14 },
+        {
+          tileConfig: {
+            enabled: true,
+            tileUrl: "https://tiles.example/{z}/{x}/{y}.png?api_key=secret",
+            attribution: "",
+            maxZoom: 19,
+          },
+          userAgent: "Admitto/test",
+          fetchFn: fetchFn as unknown as typeof fetch,
+        },
+      ),
+    ).rejects.toMatchObject({
+      message: expect.stringMatching(/Tile redirect without Location: https:\/\/tiles\.example\//),
+    });
+    expect(cancel).toHaveBeenCalled();
+  });
+
+  it("rejects a redirect Location that cannot be parsed as a URL", async () => {
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    const fetchFn = vi.fn().mockResolvedValue({
+      status: 302,
+      ok: false,
+      headers: {
+        get: (name: string) => (name.toLowerCase() === "location" ? "http://[" : null),
+      },
+      body: { cancel },
+    });
+    await expect(
+      renderStaticMapPng(
+        { latitude: 52.23, longitude: 21.01, zoom: 14 },
+        {
+          tileConfig: {
+            enabled: true,
+            tileUrl: "https://tiles.example/{z}/{x}/{y}.png",
+            attribution: "",
+            maxZoom: 19,
+          },
+          userAgent: "Admitto/test",
+          fetchFn: fetchFn as unknown as typeof fetch,
+        },
+      ),
+    ).rejects.toMatchObject({ message: expect.stringContaining("Tile redirect to invalid URL") });
+    expect(cancel).toHaveBeenCalled();
+  });
+
   it("follows a safe https redirect and composites the final PNG", async () => {
     const tile = await solidTilePng({ r: 70, g: 80, b: 90 });
     const fetchFn = vi.fn().mockImplementation(async (input: string | URL | Request) => {
@@ -628,5 +763,17 @@ describe("plainMapAttribution", () => {
     ).toBe("© OpenStreetMap contributors © CARTO");
     expect(plainMapAttribution('x <script>y</script>')).toBe("x y");
     expect(plainMapAttribution("  ")).toBe("");
+  });
+});
+
+describe("buildUnavailableStaticMapPng", () => {
+  it("returns a PNG at the static map dimensions", async () => {
+    const png = await buildUnavailableStaticMapPng();
+    expect(bufferLooksLikePng(png)).toBe(true);
+    const meta = await sharp(png).metadata();
+    expect(meta.width).toBe(STATIC_MAP_WIDTH);
+    expect(meta.height).toBe(STATIC_MAP_HEIGHT);
+    const again = await buildUnavailableStaticMapPng();
+    expect(again).toBe(png);
   });
 });

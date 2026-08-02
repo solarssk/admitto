@@ -54,14 +54,17 @@ export function isLocationDirty(draft: LocationDraft, saved: LocationDraft): boo
 }
 
 /**
- * Builds the partial PATCH body from the diff between `draft` and `saved`. `pendingGeocodingProvider`
- * is only turned into a `geocoding_provider` field when coordinates actually changed in this diff -
- * it must come from the caller (set only right after picking a search result, and cleared on any
- * manual pin move) so a manual drag/click omits it and lets the server clear stale provenance
- * instead of relabeling the new point as freshly geocoded.
+ * Builds the partial PATCH body from the diff between `draft` and `saved`.
  *
- * A venue-name-only edit (free-text rename while keeping the pin) sends `geocoding_provider: null`
- * so the Verified badge does not return after save from a stale server provider.
+ * `pendingGeocodingProvider` comes from the caller only right after a search pick or a successful
+ * reverse geocode (cleared on free-text venue rename, clear-map, and before a manual pin move).
+ * When set, it is always stamped onto the body for this save — including re-selecting the same
+ * coordinates — so "From OpenStreetMap" persists after reload. A bare coordinate change
+ * with no pending provider omits the field and lets the server clear stale provenance.
+ *
+ * A venue-name-only edit (free-text rename while keeping the pin, no pending provider) sends
+ * `geocoding_provider: null` so the Verified badge does not return after save from a stale
+ * server provider.
  */
 export function buildEventLocationPatchBody(
   draft: LocationDraft,
@@ -99,7 +102,7 @@ export function buildEventLocationPatchBody(
   }
 
   const coordinatesChanged = body.latitude !== undefined || body.longitude !== undefined;
-  if (coordinatesChanged && pendingGeocodingProvider) {
+  if (pendingGeocodingProvider) {
     body.geocoding_provider = pendingGeocodingProvider;
   } else if (body.venue_name !== undefined && !coordinatesChanged) {
     body.geocoding_provider = null;

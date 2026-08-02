@@ -8,7 +8,7 @@ alwaysApply: true
 ## Language
 
 - **With Filip / product owner:** Polish — clear, direct, no unnecessary jargon.
-- **Published on GitHub:** English — PR titles and descriptions, review comments intended for the repo, commit messages, ADRs, prompts, and any docs others must read without Polish context.
+- **Published on GitHub:** English — PR titles and descriptions, review comments intended for the repo, commit messages, prompts, and any docs others must read without Polish context. Do **not** publish ADRs on GitHub / in the repo.
 - **Clarity:** Whatever the language, write so a reviewer who was not in the chat can follow decisions and test steps.
 
 ## Sprint / stage reports (Cursor)

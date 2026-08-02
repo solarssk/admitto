@@ -60,19 +60,19 @@ describe("buildOsmUrl", () => {
 
 describe("buildEventStaticMapPath / Url", () => {
   it("builds a same-origin PNG path", () => {
-    expect(buildEventStaticMapPath("evt_abc")).toBe("/m/evt_abc.png?v=2");
+    expect(buildEventStaticMapPath("evt_abc")).toBe("/m/evt_abc.png?v=5");
   });
 
   it("includes pin coordinates in the cache-busting query", () => {
     expect(buildEventStaticMapPath("evt_abc", { latitude: 50.06, longitude: 19.94 })).toBe(
-      "/m/evt_abc.png?v=2_50.060000_19.940000",
+      "/m/evt_abc.png?v=5_50.060000_19.940000",
     );
   });
 
   it("includes zoom in the cache-busting query when provided", () => {
     expect(
       buildEventStaticMapPath("evt_abc", { latitude: 50.06, longitude: 19.94, zoom: 16 }),
-    ).toBe("/m/evt_abc.png?v=2_50.060000_19.940000_z16");
+    ).toBe("/m/evt_abc.png?v=5_50.060000_19.940000_z16");
   });
 
   it("absolutizes against a base URL without a trailing slash", () => {
@@ -82,7 +82,7 @@ describe("buildEventStaticMapPath / Url", () => {
         longitude: 19.94,
         zoom: 15,
       }),
-    ).toBe("https://tickets.example.com/m/evt_abc.png?v=2_50.060000_19.940000_z15");
+    ).toBe("https://tickets.example.com/m/evt_abc.png?v=5_50.060000_19.940000_z15");
   });
 
   it("strips a trailing slash on the base URL", () => {
@@ -91,6 +91,6 @@ describe("buildEventStaticMapPath / Url", () => {
         latitude: 50.06,
         longitude: 19.94,
       }),
-    ).toBe("https://tickets.example.com/m/evt_abc.png?v=2_50.060000_19.940000");
+    ).toBe("https://tickets.example.com/m/evt_abc.png?v=5_50.060000_19.940000");
   });
 });
