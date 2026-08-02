@@ -170,6 +170,53 @@ describe("renderStaticMapPng", () => {
     ).rejects.toBeInstanceOf(StaticMapRenderError);
   });
 
+  it("aborts outstanding sibling tile fetches when one tile fails", async () => {
+    let siblingAborted = false;
+    let calls = 0;
+    const fetchFn = vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response("fail", { status: 502 });
+      }
+      await new Promise<never>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (!signal) {
+          reject(new Error("expected AbortSignal on sibling fetch"));
+          return;
+        }
+        const fail = () => {
+          siblingAborted = true;
+          reject(new DOMException("The operation was aborted", "AbortError"));
+        };
+        if (signal.aborted) {
+          fail();
+          return;
+        }
+        signal.addEventListener("abort", fail, { once: true });
+      });
+    });
+
+    await expect(
+      renderStaticMapPng(
+        { latitude: 52.2297, longitude: 21.0122, zoom: 15, width: 400, height: 400 },
+        {
+          tileConfig: {
+            enabled: true,
+            tileUrl: "https://tiles.example/{z}/{x}/{y}.png",
+            attribution: "",
+            maxZoom: 19,
+          },
+          userAgent: "Admitto/test",
+          fetchFn,
+          timeoutMs: 5_000,
+        },
+      ),
+    ).rejects.toBeInstanceOf(StaticMapRenderError);
+
+    expect(calls).toBeGreaterThan(1);
+    expect(siblingAborted).toBe(true);
+  });
+
   it("surfaces tile HTTP failures", async () => {
     const fetchFn = vi.fn().mockResolvedValue(new Response("nope", { status: 503 }));
     await expect(

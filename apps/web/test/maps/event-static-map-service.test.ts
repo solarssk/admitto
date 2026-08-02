@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@admitto/db";
+import {
+  querySystemLogs,
+  resetSystemLogBufferForTest,
+} from "@admitto/shared/system-log";
 import { EventStaticMapService } from "../../src/maps/event-static-map-service.js";
 import type { StaticMapCache } from "../../src/maps/static-map-cache.js";
 import { StaticMapRenderError } from "../../src/maps/static-map.js";
@@ -148,6 +152,8 @@ describe("EventStaticMapService.getForEvent", () => {
   });
 
   it("returns a placeholder PNG after retries are exhausted", async () => {
+    resetSystemLogBufferForTest();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const renderPng = vi.fn(async () => {
       throw new StaticMapRenderError("boom");
     });
@@ -162,9 +168,30 @@ describe("EventStaticMapService.getForEvent", () => {
       placeholder: true,
     });
     expect(renderPng).toHaveBeenCalledTimes(2);
+    expect(querySystemLogs({ source: "cache", level: "warn", search: "static_map_unavailable" })).toHaveLength(
+      1,
+    );
+    warnSpy.mockRestore();
   });
 
+  it("does not re-log when serving from negative cache", async () => {
+    resetSystemLogBufferForTest();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const renderPng = vi.fn(async () => {
+      throw new StaticMapRenderError("boom");
+    });
+    const service = new EventStaticMapService(serviceOpts({ renderPng }));
+    const db = fakeDb({ latitude: 1, longitude: 2, map_zoom: 10 });
+
+    await service.getForEvent(db, "evt-log");
+    await service.getForEvent(db, "evt-log");
+    expect(querySystemLogs({ source: "cache", level: "warn", search: "static_map_unavailable" })).toHaveLength(
+      1,
+    );
+    warnSpy.mockRestore();
+  });
   it("logs unexpected errors and still returns a placeholder", async () => {
+    resetSystemLogBufferForTest();
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const service = new EventStaticMapService(
       serviceOpts({
@@ -178,9 +205,11 @@ describe("EventStaticMapService.getForEvent", () => {
       service.getForEvent(fakeDb({ latitude: 1, longitude: 2, map_zoom: 10 }), "evt"),
     ).resolves.toMatchObject({ ok: true, placeholder: true });
     expect(errSpy).toHaveBeenCalled();
+    expect(
+      querySystemLogs({ source: "cache", level: "error", search: "static_map_unexpected_error" }),
+    ).toHaveLength(1);
     errSpy.mockRestore();
   });
-
   it("serves the placeholder from negative cache without re-rendering", async () => {
     const renderPng = vi.fn(async () => {
       throw new StaticMapRenderError("boom");

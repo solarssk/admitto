@@ -3,6 +3,7 @@
  */
 import type { PrismaClient } from "@admitto/db";
 import { isMapReady } from "@admitto/location";
+import { emitSystemLog } from "@admitto/shared/system-log";
 import { resolveMapTileConfig } from "./config.js";
 import {
   buildStaticMapCacheKey,
@@ -170,8 +171,18 @@ export class EventStaticMapService {
         await this.cache.set(cacheKey, png);
         return { ok: true, png, cacheHit: false };
       } catch (err) {
-        if (!(err instanceof StaticMapRenderError)) {
+        if (err instanceof StaticMapRenderError) {
+          // Once per negative-cache window (not on every subsequent placeholder hit).
+          emitSystemLog("cache", "warn", "static_map_unavailable", {
+            eventId,
+            reason: err.message.slice(0, 200),
+          });
+        } else {
           console.error("static_map_unexpected_error:", err);
+          emitSystemLog("cache", "error", "static_map_unexpected_error", {
+            eventId,
+            reason: err instanceof Error ? err.message.slice(0, 200) : "unknown",
+          });
         }
         this.markNegative(cacheKey);
         return this.placeholderResult(false);

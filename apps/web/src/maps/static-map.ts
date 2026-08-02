@@ -267,10 +267,16 @@ async function fetchTilePng(
   userAgent: string,
   fetchFn: typeof fetch,
   timeoutMs: number,
+  /** Aborts the whole render attempt so sibling tiles stop when Promise.all fails. */
+  attemptSignal?: AbortSignal,
 ): Promise<Buffer> {
   let current = url;
   for (let hop = 0; hop <= MAX_TILE_REDIRECTS; hop++) {
     assertSafeTileFetchUrl(current);
+
+    const signal = attemptSignal
+      ? AbortSignal.any([AbortSignal.timeout(timeoutMs), attemptSignal])
+      : AbortSignal.timeout(timeoutMs);
 
     let response: Response;
     try {
@@ -280,7 +286,7 @@ async function fetchTilePng(
           Accept: "image/png,image/*;q=0.8,*/*;q=0.5",
         },
         redirect: "manual",
-        signal: AbortSignal.timeout(timeoutMs),
+        signal,
       });
     } catch (err) {
       throw new StaticMapRenderError(`Tile fetch failed: ${current}`, err);
@@ -336,6 +342,8 @@ export async function renderStaticMapPng(
   const tileY1 = Math.floor((topLeftPxY + height - 1) / TILE_SIZE);
   const n = 2 ** zoom;
 
+  // One controller for the attempt: if any tile fails, abort siblings before the caller retries.
+  const attempt = new AbortController();
   const tileJobs: Array<Promise<OverlayOptions>> = [];
   for (let ty = tileY0; ty <= tileY1; ty++) {
     if (ty < 0 || ty >= n) continue;
@@ -343,7 +351,7 @@ export async function renderStaticMapPng(
       const wrappedX = ((tx % n) + n) % n;
       const url = expandTileUrl(options.tileConfig.tileUrl, zoom, wrappedX, ty);
       tileJobs.push(
-        fetchTilePng(url, options.userAgent, fetchFn, timeoutMs).then((tilePng) => ({
+        fetchTilePng(url, options.userAgent, fetchFn, timeoutMs, attempt.signal).then((tilePng) => ({
           input: tilePng,
           left: Math.round(tx * TILE_SIZE - topLeftPxX),
           top: Math.round(ty * TILE_SIZE - topLeftPxY),
@@ -351,7 +359,16 @@ export async function renderStaticMapPng(
       );
     }
   }
-  const composites: OverlayOptions[] = await Promise.all(tileJobs);
+
+  let composites: OverlayOptions[];
+  try {
+    composites = await Promise.all(tileJobs);
+  } catch (err) {
+    attempt.abort();
+    throw err instanceof StaticMapRenderError
+      ? err
+      : new StaticMapRenderError("Tile fetch failed", err);
+  }
 
   if (composites.length === 0) {
     throw new StaticMapRenderError("No map tiles covered the requested viewport");
