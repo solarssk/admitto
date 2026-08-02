@@ -1,8 +1,10 @@
 /**
  * Deployment-level config for the Location tab's map tiles and geocoding provider.
  * All values are operator-configured env vars (self-hosting deploy config), never
- * per-organization or request-supplied — same trust model as BASE_URL/DATABASE_URL.
+ * per-organization or request-supplied - same trust model as BASE_URL/DATABASE_URL.
  */
+
+import { isLocationMapsEnabled } from "@admitto/location";
 
 type EnvLike = Record<string, string | undefined>;
 
@@ -80,7 +82,7 @@ export function resolveMapTileConfig(env: EnvLike = process.env): MapTileConfig 
   const tileUrl =
     rawUrl && isStaffSpaCompatibleTileUrl(rawUrl, env) ? rawUrl : DEFAULT_MAP_TILE_URL;
   return {
-    enabled: env["LOCATION_MAPS_ENABLED"]?.trim().toLowerCase() !== "false",
+    enabled: isLocationMapsEnabled(env),
     tileUrl,
     attribution: env["MAP_TILE_ATTRIBUTION"]?.trim() || DEFAULT_MAP_TILE_ATTRIBUTION,
     maxZoom: parsePositiveInt(env["MAP_TILE_MAX_ZOOM"], DEFAULT_MAP_TILE_MAX_ZOOM),

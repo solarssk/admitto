@@ -8,6 +8,16 @@ import {
   renderTicket,
 } from "../src/ticket-page.js";
 
+const EMPTY_EVENT_LOCATION = {
+  formattedAddress: null,
+  addressComponents: null,
+  latitude: null,
+  longitude: null,
+  mapZoom: null,
+  directionsText: null,
+  accessibilityText: null,
+} as const;
+
 /** Shared by the logo-rendering tests below - only `event.logoUrl`/`event.title` ever vary. */
 function ticketFor(logoUrl: string | null) {
   return {
@@ -29,6 +39,7 @@ function ticketFor(logoUrl: string | null) {
       date: new Date("2026-09-01T09:00:00Z"),
       location: null,
       logoUrl,
+      ...EMPTY_EVENT_LOCATION,
     },
   };
 }
@@ -57,7 +68,7 @@ describe("renderServerError", () => {
 });
 
 describe("renderTicket", () => {
-  it("maps unexpected status values to a safe fallback CSS class", () => {
+  it("escapes unexpected status values and does not show a registration status badge", () => {
     const html = renderTicket(
       {
         mode: "internal",
@@ -70,7 +81,7 @@ describe("renderTicket", () => {
           token_hash: null,
           qr_payload: null,
           external_uuid: null,
-          ticket_type: null,
+          ticket_type: "Standard",
         },
         event: {
           id: "event-1",
@@ -78,28 +89,131 @@ describe("renderTicket", () => {
           date: new Date("2026-09-01T09:00:00Z"),
           location: null,
           logoUrl: null,
+          ...EMPTY_EVENT_LOCATION,
         },
       },
       "data:image/png;base64,abc",
     );
 
-    expect(html).toContain('class="at-badge at-badge--neutral"');
+    expect(html).toContain("Standard");
+    expect(html).not.toContain("at-badge");
+    expect(html).not.toContain("Registered");
     expect(html).toContain("--primary");
     expect(html).toContain("ticket-page");
-    expect(html).toContain("Apple Wallet");
+    expect(html).toContain('src="/assets/apple-wallet-badge.svg"');
+    expect(html).toContain("How do I add this to my phone?");
+    expect(html).toContain('aria-disabled="true"');
     expect(html).not.toContain("badge-\"><style>boom</style>");
+    expect(html).not.toContain("<style>boom</style>");
+  });
+
+  it("renders Getting there with a static map, navigation links, and safe default attribution", () => {
+    const html = renderTicket(
+      {
+        ...ticketFor(null),
+        event: {
+          ...ticketFor(null).event,
+          location: "Convention Centre",
+          formattedAddress: "1 Example Street, Exampletown",
+          addressComponents: {
+            object_name: "Convention Centre",
+            street: "1 Example Street",
+            postcode: null,
+            city: "Exampletown",
+            region: null,
+            country: "Poland",
+          },
+          latitude: 50.061947,
+          longitude: 19.936856,
+          mapZoom: 16,
+          directionsText: "Enter through the east gate.",
+          accessibilityText: "Step-free entrance on the south side.",
+        },
+      },
+      "data:image/png;base64,abc",
+      undefined,
+      {
+        displayToken: "abcdefgh…wxyz",
+        mapAttribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      },
+    );
+
+    expect(html).toContain("Getting there");
+    expect(html).toContain("1 Example Street");
+    expect(html).toContain("Exampletown, Poland");
+    expect(html).toContain('src="/m/e1.png?v=2"');
+    expect(html).toContain('alt="Map of event location"');
+    expect(html).toContain("Google Maps");
+    expect(html).toContain("Apple Maps");
+    expect(html).toContain("Enter through the east gate.");
+    expect(html).toContain("Step-free entrance on the south side.");
+    expect(html).toContain("abcdefgh…wxyz");
+    expect(html).toContain('href="https://www.openstreetmap.org/copyright"');
+  });
+
+  it("keeps Google/Apple links but omits the static map image when maps are disabled", () => {
+    const html = renderTicket(
+      {
+        ...ticketFor(null),
+        event: {
+          ...ticketFor(null).event,
+          location: "Convention Centre",
+          formattedAddress: "1 Example Street, Exampletown",
+          latitude: 50.061947,
+          longitude: 19.936856,
+          mapZoom: 16,
+        },
+      },
+      "data:image/png;base64,abc",
+      undefined,
+      { staticMapEnabled: false },
+    );
+
+    expect(html).toContain("Getting there");
+    expect(html).toContain("Google Maps");
+    expect(html).toContain("Apple Maps");
+    expect(html).not.toContain('src="/m/e1.png');
+    expect(html).not.toContain('class="ticket__map-attribution"');
+  });
+
+  it("renders location notes without a map when coordinates are unavailable", () => {
+    const html = renderTicket(
+      {
+        ...ticketFor(null),
+        event: {
+          ...ticketFor(null).event,
+          formattedAddress: "1 Example Street, Exampletown",
+          directionsText: "Use the main entrance.",
+        },
+      },
+      "data:image/png;base64,abc",
+    );
+
+    expect(html).toContain("Getting there");
+    expect(html).toContain("1 Example Street, Exampletown");
+    expect(html).toContain("Use the main entrance.");
+    expect(html).not.toContain('src="/m/e1.png"');
+    expect(html).not.toContain("Google Maps");
+  });
+
+  it("omits Getting there when no attendee-facing location details exist", () => {
+    const html = renderTicket(ticketFor(null), "data:image/png;base64,abc");
+
+    expect(html).not.toContain("Getting there");
+    expect(html).not.toContain('src="/m/e1.png"');
   });
 
   it("shows the configured logo instead of the Admitto wordmark (#419)", () => {
     const html = renderTicket(ticketFor("https://cdn.example.com/logo.png"), "data:image/png;base64,abc");
     expect(html).toContain('<img class="ticket__brand-logo" src="https://cdn.example.com/logo.png"');
-    expect(html).not.toContain('<span class="ticket__brand-mark"');
+    expect(html).not.toContain('src="/assets/admitto-mark.svg"');
     expect(html).not.toContain(">Admitto<");
   });
 
-  it("keeps the unchanged Admitto wordmark when no logo is configured (#419)", () => {
+  it("keeps the Admitto mark graphic when no logo is configured (#419)", () => {
     const html = renderTicket(ticketFor(null), "data:image/png;base64,abc");
-    expect(html).toContain('<span class="ticket__brand-mark"');
+    expect(html).toContain('src="/assets/admitto-mark.svg"');
     expect(html).toContain(">Admitto<");
     expect(html).not.toContain('<img class="ticket__brand-logo"');
   });
@@ -154,6 +268,7 @@ describe("getTicketPageSecurityHeaders", () => {
           date: new Date("2026-09-01T09:00:00Z"),
           location: null,
           logoUrl: null,
+          ...EMPTY_EVENT_LOCATION,
         },
       },
       "data:image/png;base64,abc",
@@ -199,6 +314,7 @@ describe("getTicketPageSecurityHeaders", () => {
           date: new Date("2026-09-01T09:00:00Z"),
           location: null,
           logoUrl: null,
+          ...EMPTY_EVENT_LOCATION,
         },
       },
       "data:image/png;base64,abc",

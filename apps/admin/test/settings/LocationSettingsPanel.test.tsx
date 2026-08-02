@@ -260,7 +260,13 @@ describe("LocationSettingsPanel — loading", () => {
 describe("LocationSettingsPanel — dirty state and save", () => {
   it("reports dirty after a venue name edit and clears it after a successful save", async () => {
     mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
-    mockSaveLocation.mockResolvedValue({ ...SAVED_LOCATION, venue_name: "New Hall" });
+    mockSaveLocation.mockResolvedValue({
+      ...SAVED_LOCATION,
+      venue_name: "New Hall",
+      geocoding_provider: null,
+      geocoded_at: null,
+      address_components: { ...SAVED_LOCATION.address_components!, object_name: "New Hall" },
+    });
     const onDirtyChange = vi.fn();
     renderPanel({ onDirtyChange });
 
@@ -276,13 +282,13 @@ describe("LocationSettingsPanel — dirty state and save", () => {
         "evt-1",
         expect.objectContaining({
           venue_name: "New Hall",
-          latitude: null,
-          longitude: null,
-          formatted_address: null,
-          address_components: null,
+          geocoding_provider: null,
+          address_components: expect.objectContaining({ object_name: "New Hall" }),
         }),
       ),
     );
+    expect(mockSaveLocation.mock.calls[0]?.[1]).not.toHaveProperty("latitude");
+    expect(mockSaveLocation.mock.calls[0]?.[1]).not.toHaveProperty("longitude");
     await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
     expect(await screen.findByText("Location saved.")).toBeTruthy();
   });
@@ -414,7 +420,7 @@ describe("LocationSettingsPanel — venue search", () => {
     expect(await screen.findByDisplayValue("Address-only result")).toBeTruthy();
   });
 
-  it("clears pin, address grid, and verified state when the venue text is edited after a pick", async () => {
+  it("keeps pin and address when the venue text is edited after a pick, but clears verified", async () => {
     mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
     renderPanel();
 
@@ -428,9 +434,43 @@ describe("LocationSettingsPanel — venue search", () => {
 
     expect(screen.getByDisplayValue("Springfield Hall Annex")).toBeTruthy();
     expect(screen.queryByText("Verified on OpenStreetMap")).toBeFalsy();
-    await waitFor(() => {
-      expect(document.querySelector(".location-map-footer__coords")?.textContent?.trim()).toBe("-");
+    expect(screen.getByText("51.50740, -0.12780")).toBeTruthy();
+  });
+
+  it("syncs object_name and clears geocoding_provider on a venue-name-only save", async () => {
+    mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
+    mockSaveLocation.mockResolvedValue({
+      ...SAVED_LOCATION,
+      venue_name: "Springfield Hall Annex",
+      geocoding_provider: null,
+      geocoded_at: null,
+      address_components: {
+        ...SAVED_LOCATION.address_components!,
+        object_name: "Springfield Hall Annex",
+      },
     });
+    renderPanel();
+
+    await screen.findByDisplayValue("Springfield Hall");
+    fireEvent.change(screen.getByLabelText("Venue name or address"), {
+      target: { value: "Springfield Hall Annex" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(mockSaveLocation).toHaveBeenCalledWith(
+        "evt-1",
+        expect.objectContaining({
+          venue_name: "Springfield Hall Annex",
+          geocoding_provider: null,
+          address_components: expect.objectContaining({
+            object_name: "Springfield Hall Annex",
+            street: "1 Main St",
+          }),
+        }),
+      ),
+    );
+    expect(mockSaveLocation.mock.calls[0]?.[1]).not.toHaveProperty("latitude");
   });
 
   it("applies a selected result immediately so Save during reverse enrichment keeps the pin", async () => {

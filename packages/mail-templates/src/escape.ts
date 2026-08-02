@@ -8,6 +8,9 @@ const BRANDING_FIELD_LABELS: Record<string, string> = {
 const TEMPLATE_FIELD_LABELS: Record<string, string> = {
   ticket_url: "Ticket link",
   qr_image_url: "QR image URL",
+  event_map_url: "Event map image URL",
+  google_maps_url: "Google Maps link",
+  apple_maps_url: "Apple Maps link",
   logo_url: "Logo URL",
   header_image_url: "Header image URL",
   apple_wallet_url: "Apple Wallet link",

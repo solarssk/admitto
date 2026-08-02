@@ -38,3 +38,15 @@ export function buildOsmUrl(latitude: number, longitude: number, zoom: number): 
   const lng = formatCoordinate(longitude);
   return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=${zoom}/${lat}/${lng}`;
 }
+
+/** Same-origin path for the public static map PNG (`GET /m/:eventId.png`).
+ * `v` is a cache-busting query only — the route ignores it; bump when the compositor
+ * output changes so ticket/mail clients don't keep a stale PNG for `max-age=86400`. */
+export function buildEventStaticMapPath(eventId: string): string {
+  return `/m/${encodeURIComponent(eventId)}.png?v=2`;
+}
+
+/** Absolute URL for `{{event_map_url}}` / ticket `<img src>` when an absolute base is required. */
+export function buildEventStaticMapUrl(baseUrl: string, eventId: string): string {
+  return `${baseUrl.replace(/\/$/, "")}${buildEventStaticMapPath(eventId)}`;
+}

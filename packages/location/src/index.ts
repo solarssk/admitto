@@ -11,18 +11,27 @@ export {
   assertCoordinatePairing,
 } from "./validation.js";
 export type { NormalizedEventLocationInput } from "./validation.js";
-export { isMapReady } from "./readiness.js";
-export { buildGoogleMapsUrl, buildAppleMapsUrl, buildOsmUrl } from "./links.js";
-export { formatCompactAddress, formatStreetLine, formatVenueName } from "./formatAddress.js";
+export { isMapReady, isLocationMapsEnabled } from "./readiness.js";
+export {
+  buildGoogleMapsUrl,
+  buildAppleMapsUrl,
+  buildOsmUrl,
+  buildEventStaticMapPath,
+  buildEventStaticMapUrl,
+} from "./links.js";
+export { formatCompactAddress, formatStreetLine, formatVenueName, formatDirectionsAddress } from "./formatAddress.js";
 export type { CompactAddressParts } from "./formatAddress.js";
 export {
   EMPTY_ADDRESS_COMPONENTS,
   addressComponentsFromNominatimLabel,
   addressComponentsFromParts,
+  formatDirectionsAddressFromComponents,
   isAddressComponentsEmpty,
   isAddressComponentsSparse,
   mergeAddressComponents,
   normalizeAddressComponents,
   parseStoredAddressComponents,
+  preferNumberedStreet,
+  streetLineLooksNumbered,
 } from "./addressComponents.js";
 export type { AddressComponents } from "./addressComponents.js";

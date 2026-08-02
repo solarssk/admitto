@@ -65,6 +65,8 @@ export {
   buildBaseTemplateVars,
 } from "./preview.js";
 export type { PreviewTemplateOptions } from "./preview.js";
+export { buildEventLocationTemplateVars } from "./locationVars.js";
+export type { EventLocationForTemplateVars } from "./locationVars.js";
 export { formatEventDate, resolvePreviewEventTimeZone } from "./formatEventDate.js";
 export type {
   TemplateFormat,

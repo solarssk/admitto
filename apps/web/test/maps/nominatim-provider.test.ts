@@ -134,6 +134,7 @@ describe("NominatimProvider.search", () => {
     expect(url.searchParams.get("format")).toBe("geocodejson");
     expect(url.searchParams.get("addressdetails")).toBe("1");
     expect(url.searchParams.get("limit")).toBe("5");
+    expect(url.searchParams.get("accept-language")).toBe("en");
     expect((requestInit.headers as Record<string, string>)["User-Agent"]).toBe(USER_AGENT);
   });
 
@@ -423,6 +424,7 @@ describe("NominatimProvider.reverse", () => {
     expect(url.searchParams.get("lon")).toBe("21.0028");
     expect(url.searchParams.get("zoom")).toBe("18");
     expect(url.searchParams.get("addressdetails")).toBe("1");
+    expect(url.searchParams.get("accept-language")).toBe("en");
   });
 
   it("returns null when Nominatim has no coverage", async () => {

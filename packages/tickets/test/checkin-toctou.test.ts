@@ -98,6 +98,13 @@ describe("checkInScan TOCTOU — CAS re-read branch (count=0 due to status chang
         date: new Date("2026-09-01T09:00:00Z"),
         location: null,
         logoUrl: null,
+        formattedAddress: null,
+        addressComponents: null,
+        latitude: null,
+        longitude: null,
+        mapZoom: null,
+        directionsText: null,
+        accessibilityText: null,
       },
     });
 

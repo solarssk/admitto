@@ -8,6 +8,8 @@ import {
   mergeAddressComponents,
   normalizeAddressComponents,
   parseStoredAddressComponents,
+  preferNumberedStreet,
+  streetLineLooksNumbered,
 } from "../src/addressComponents.js";
 
 describe("addressComponentsFromParts", () => {
@@ -89,6 +91,22 @@ describe("addressComponentsFromNominatimLabel", () => {
     });
   });
 
+  it("parses housenumber glued onto the street segment", () => {
+    expect(
+      addressComponentsFromNominatimLabel(
+        "PGE Narodowy, Wybrzeże Szczecińskie 1, Warszawa, województwo mazowieckie, Polska",
+        "PGE Narodowy",
+      ),
+    ).toEqual({
+      object_name: "PGE Narodowy",
+      street: "Wybrzeże Szczecińskie 1",
+      postcode: null,
+      city: "Warszawa",
+      region: "województwo mazowieckie",
+      country: "Polska",
+    });
+  });
+
   it("parses housenumber not in the first leftover segment", () => {
     expect(
       addressComponentsFromNominatimLabel("Venue, Złota, 12, Warszawa, Polska", "Venue"),
@@ -137,6 +155,34 @@ describe("addressComponentsFromNominatimLabel", () => {
       region: null,
       country: "Polska",
     });
+  });
+});
+
+describe("preferNumberedStreet / streetLineLooksNumbered", () => {
+  it("detects a trailing house number on a street line", () => {
+    expect(streetLineLooksNumbered("Wybrzeże Szczecińskie 1")).toBe(true);
+    expect(streetLineLooksNumbered("Dr. Rajkumar Road")).toBe(false);
+    expect(streetLineLooksNumbered(null)).toBe(false);
+  });
+
+  it("overwrites a street-only primary with a numbered fallback", () => {
+    expect(
+      preferNumberedStreet(
+        {
+          ...EMPTY_ADDRESS_COMPONENTS,
+          object_name: "Stadium",
+          street: "Wybrzeże Szczecińskie",
+          city: "Warszawa",
+          country: "Polska",
+        },
+        {
+          ...EMPTY_ADDRESS_COMPONENTS,
+          street: "Wybrzeże Szczecińskie 1",
+          city: "Warszawa",
+          country: "Polska",
+        },
+      ).street,
+    ).toBe("Wybrzeże Szczecińskie 1");
   });
 });
 

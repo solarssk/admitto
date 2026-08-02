@@ -85,6 +85,8 @@ function imagePlaceholderAltText(name: string): string {
       return "Header image";
     case "qr_image_url":
       return "Ticket QR code";
+    case "event_map_url":
+      return "Event location map";
     default:
       return name;
   }

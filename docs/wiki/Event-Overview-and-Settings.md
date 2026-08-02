@@ -42,7 +42,7 @@ The overview reflects the current event lifecycle, and saved settings are used b
 
 ## What changes after this action
 
-Changes to the event title, date, time zone, capacity, or images become the current event configuration. A capacity change can affect future attendee additions and imports; it does not remove existing attendees. The **Location** tab's **venue name** is attendee-facing — it appears on tickets and in ticket emails. The formatted address, map pin, directions, and accessibility notes are saved with the event for staff use today and are not yet shown on attendee-facing pages.
+Changes to the event title, date, time zone, capacity, or images become the current event configuration. A capacity change can affect future attendee additions and imports; it does not remove existing attendees. The **Location** tab's venue name and formatted address are attendee-facing on browser tickets. When the event has a map pin, the ticket also shows a map and links to Google Maps and Apple Maps; directions and accessibility notes appear there when provided.
 
 ## Common problems
 

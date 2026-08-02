@@ -422,8 +422,18 @@ describe("GET /api/admin/events/:eventId/template", () => {
     expect(body.source).toBe("builtin");
     expect(body.body_template).toContain("mjml");
     expect(body.allowed_placeholders).toContain("ticket_url");
+    expect(body.allowed_placeholders).toEqual(
+      expect.arrayContaining([
+        "event_address",
+        "directions_text",
+        "accessibility_text",
+        "event_map_url",
+        "google_maps_url",
+        "apple_maps_url",
+      ]),
+    );
     expect(body.image_placeholders).toEqual(
-      expect.arrayContaining(["logo_url", "header_image_url", "qr_image_url"]),
+      expect.arrayContaining(["logo_url", "header_image_url", "qr_image_url", "event_map_url"]),
     );
     expect(body.image_placeholders).not.toContain("ticket_url");
   });
@@ -547,6 +557,38 @@ describe("POST /api/admin/events/:eventId/template/preview", () => {
     const body = (await res.json()) as { subject: string; html: string };
     expect(body.subject).toContain("Event A");
     expect(body.html.length).toBeGreaterThan(0);
+  });
+
+  it("renders event location and map vars for a saved pin", async () => {
+    await prisma.eventLocation.create({
+      data: {
+        event_id: EVENT_A,
+        venue_name: "Event venue",
+        formatted_address: "Example Street 1, Warsaw",
+        latitude: 52.2297,
+        longitude: 21.0122,
+        directions_text: "Enter through gate A.",
+        accessibility_text: "Step-free access is available.",
+      },
+    });
+    const res = await app.request(`/api/admin/events/${EVENT_A}/template/preview`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        subject_template: "{{event_location}}",
+        body_template:
+          '<img src="{{event_map_url}}" alt="Map" /><p>{{event_address}}</p><p>{{directions_text}}</p><p>{{accessibility_text}}</p><a href="{{google_maps_url}}">Google</a><a href="{{apple_maps_url}}">Apple</a><a href="{{ticket_url}}">Ticket</a><img src="{{qr_image_url}}" alt="QR" />',
+        template_format: "html",
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { subject: string; html: string };
+    expect(body.subject).toBe("Event venue");
+    expect(body.html).toContain(`/m/${EVENT_A}.png`);
+    expect(body.html).toContain("Example Street 1, Warsaw");
+    expect(body.html).toContain("https://www.google.com/maps/search/");
+    expect(body.html).toContain("https://maps.apple.com/");
   });
 
   it("rejects invalid MJML", async () => {

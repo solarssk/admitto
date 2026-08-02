@@ -1,6 +1,12 @@
 import type { ResolvedTicket } from "@admitto/tickets";
-import { statusBadgeClass, statusLabel } from "@admitto/ui";
 import type { BrandingTheme } from "@admitto/auth";
+import {
+  buildAppleMapsUrl,
+  buildEventStaticMapPath,
+  buildGoogleMapsUrl,
+  formatDirectionsAddressFromComponents,
+  isMapReady,
+} from "@admitto/location";
 import { buildTicketPageStyles } from "./ticket-inline-styles.js";
 
 function esc(s: string): string {
@@ -9,6 +15,34 @@ function esc(s: string): string {
 
 function formatDate(d: Date): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+}
+
+const CALENDAR_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4m8-4v4M3 10h18M5 4h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/></svg>`;
+const PIN_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`;
+/** Signpost — clearer than a house glyph for “Directions”. */
+const DIRECTIONS_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v18"/><path d="M10 6h7l2 2-2 2h-7"/><path d="M10 14H5l-2 2 2 2h5"/></svg>`;
+/** Wheelchair — more recognizable than a stick figure for Accessibility. */
+const ACCESSIBILITY_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="4" r="2"/><path d="m18 9-4.5-1.5L11 13"/><path d="M6 10h7"/><circle cx="10" cy="18" r="3.5"/><path d="M13.5 17.5H18l2 3"/></svg>`;
+/** Neutral map glyph — not Google/Apple brand marks (trademark-restricted). */
+const MAP_LINK_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 7 6-3 6 3 6-3v13l-6 3-6-3-6 3V7Z"/><path d="M9 4v13"/><path d="M15 7v13"/></svg>`;
+
+
+export type TicketPageOptions = {
+  displayToken?: string | null;
+  mapAttribution?: string | null;
+  /** When false, omit the static map `<img>` (`LOCATION_MAPS_ENABLED=false`). Google/Apple links still render when coordinates exist. Defaults to true. */
+  staticMapEnabled?: boolean;
+};
+
+function renderMapAttribution(attribution?: string | null): string {
+  const normalized = attribution?.replace(/\s+/g, " ").trim();
+  if (
+    normalized ===
+    '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+  ) {
+    return `© <a href="https://www.openstreetmap.org/copyright" rel="noreferrer">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions" rel="noreferrer">CARTO</a>`;
+  }
+  return esc(normalized?.replace(/<[^>]*>/g, "") || "Map data attribution unavailable");
 }
 
 /** Origin of `url` when it's a safe (https, no embedded credentials) absolute URL - null for
@@ -74,15 +108,60 @@ export function getTicketPageSecurityHeaders(
   };
 }
 
+function ticketDirectionsAddress(event: ResolvedTicket["event"]): string {
+  const fromComponents = formatDirectionsAddressFromComponents(
+    event.addressComponents,
+    event.formattedAddress,
+  );
+  if (fromComponents) return fromComponents;
+  return event.formattedAddress?.trim() || "";
+}
+
+/** Keep postcodes like `03-724` on one line (ASCII hyphen is a wrap opportunity). */
+function withNonBreakingHyphens(value: string): string {
+  return value.replaceAll("-", "\u2011");
+}
+
+function renderDirectionsAddressHtml(event: ResolvedTicket["event"]): string {
+  const components = event.addressComponents;
+  if (components?.street) {
+    const locality = [components.postcode, components.city].filter(Boolean).join(" ");
+    const tail = [locality, components.country].filter(Boolean).join(", ");
+    const street = withNonBreakingHyphens(components.street);
+    if (tail) {
+      return `<p class="ticket__address"><span class="ticket__address-line">${esc(street)}</span><span class="ticket__address-line ticket__address-locality">${esc(withNonBreakingHyphens(tail))}</span></p>`;
+    }
+    return `<p class="ticket__address">${esc(street)}</p>`;
+  }
+  const fallback = ticketDirectionsAddress(event);
+  return fallback
+    ? `<p class="ticket__address">${esc(withNonBreakingHyphens(fallback))}</p>`
+    : "";
+}
+
 export function renderTicket(
   resolved: ResolvedTicket,
   qrDataUrl: string,
   theme?: BrandingTheme | null,
+  options: TicketPageOptions = {},
 ): string {
   const { attendee, event } = resolved;
-  const badgeClass = statusBadgeClass(attendee.status);
-  const badgeText = statusLabel(attendee.status);
   const styles = buildTicketPageStyles(theme);
+  const mapReady = isMapReady(event);
+  const showStaticMap = mapReady && options.staticMapEnabled !== false;
+  const venueLabel = event.location || event.formattedAddress;
+  const directionsText = event.directionsText?.trim();
+  const accessibilityText = event.accessibilityText?.trim();
+  const directionsAddress = ticketDirectionsAddress(event);
+  const hasGettingThere =
+    mapReady || Boolean(directionsAddress || directionsText || accessibilityText);
+  const mapsLinks =
+    mapReady
+      ? `<div class="ticket__map-links">
+          <a class="ticket__map-link" href="${esc(buildGoogleMapsUrl(event.latitude!, event.longitude!, venueLabel))}" rel="noreferrer">${MAP_LINK_ICON}<span>Google Maps</span></a>
+          <a class="ticket__map-link" href="${esc(buildAppleMapsUrl(event.latitude!, event.longitude!, venueLabel))}" rel="noreferrer">${MAP_LINK_ICON}<span>Apple Maps</span></a>
+        </div>`
+      : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -99,26 +178,53 @@ export function renderTicket(
         ${
           event.logoUrl
             ? `<img class="ticket__brand-logo" src="${esc(event.logoUrl)}" alt="${esc(event.title)}">`
-            : `<span class="ticket__brand-mark" aria-hidden="true"></span><span>Admitto</span>`
+            : `<img class="ticket__brand-mark" src="/assets/admitto-mark.svg" width="30" height="30" alt=""><span>Admitto</span>`
         }
       </div>
       <small>Event ticket</small>
     </header>
     <div class="ticket__body">
       <h1 class="ticket__event-name">${esc(event.title)}</h1>
-      <p class="ticket__meta">${esc(formatDate(event.date))}${event.location ? ` · ${esc(event.location)}` : ""}</p>
+      <div class="ticket__meta">
+        <span>${CALENDAR_ICON}<span class="ticket__meta-text">${esc(formatDate(event.date))}</span></span>
+        ${event.location ? `<span>${PIN_ICON}<span class="ticket__meta-text">${esc(event.location)}</span></span>` : ""}
+      </div>
       <div class="ticket__attendee">
         <p class="ticket__attendee-name">${esc(attendee.name)}</p>
-        ${attendee.ticket_type ? `<p class="ticket__meta">${esc(attendee.ticket_type)}</p>` : ""}
-        <span class="${badgeClass}">${esc(badgeText)}</span>
+        ${attendee.ticket_type ? `<span class="ticket__type">${esc(attendee.ticket_type)}</span>` : ""}
       </div>
       <div class="ticket__qr"><img src="${qrDataUrl}" alt="QR code for ticket entry"></div>
+      ${options.displayToken ? `<p class="ticket__token">${esc(options.displayToken)}</p>` : ""}
     </div>
     <div class="ticket__perf" role="presentation"></div>
     <div class="ticket__wallets">
-      <span class="wallet-cta" aria-disabled="true">Apple Wallet (coming soon)</span>
-      <span class="wallet-cta" aria-disabled="true">Google Wallet (coming soon)</span>
+      <img class="wallet-badge" src="/assets/apple-wallet-badge.svg" alt="Add to Apple Wallet (coming soon)" aria-disabled="true" role="img">
+      <img class="wallet-badge" src="/assets/google-wallet-badge.svg" alt="Add to Google Wallet (coming soon)" aria-disabled="true" role="img">
     </div>
+    <details class="ticket__wallet-help">
+      <summary>How do I add this to my phone?</summary>
+      <p><strong>iPhone:</strong> tap Add to Apple Wallet, then Add on the next screen. Find it later under Wallet.</p>
+      <p><strong>Android:</strong> tap Add to Google Wallet and sign in if asked. Find it later under Google Wallet.</p>
+    </details>
+    ${
+      hasGettingThere
+        ? `<section class="ticket__getting-there" aria-labelledby="getting-there-heading">
+      <h2 id="getting-there-heading">Getting there</h2>
+      ${directionsAddress ? renderDirectionsAddressHtml(event) : ""}
+      ${
+        showStaticMap
+          ? `<div class="ticket__map-frame">
+      <img class="ticket__map" src="${esc(buildEventStaticMapPath(event.id))}" alt="Map of event location" width="600" height="300">
+    </div>
+      <p class="ticket__map-attribution">${renderMapAttribution(options.mapAttribution)}</p>`
+          : ""
+      }
+      ${mapsLinks}
+      ${directionsText ? `<div class="ticket__travel-note"><h3>${DIRECTIONS_ICON}<span>Directions</span></h3><p>${esc(directionsText)}</p></div>` : ""}
+      ${accessibilityText ? `<div class="ticket__travel-note"><h3>${ACCESSIBILITY_ICON}<span>Accessibility</span></h3><p>${esc(accessibilityText)}</p></div>` : ""}
+    </section>`
+        : ""
+    }
     <footer class="ticket__foot">Present this QR code at the entrance.</footer>
   </article>
 </body>

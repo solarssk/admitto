@@ -6,7 +6,7 @@
   "type": "module",
   "main": "./dist/src/index.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && cp -R src/assets dist/src/assets",
     "pretest": "npm run build -w @admitto/shared && npm run build -w @admitto/ui && npm run build -w @admitto/admin",
     "precoverage": "npm run pretest",
     "test": "vitest run",
@@ -42,6 +42,7 @@
     "ip-location-api": "5.0.2",
     "pdfkit": "^0.19.1",
     "redis": "^6.1.0",
+    "sharp": "^0.35.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {

@@ -31,6 +31,12 @@ export interface TemplateVars {
   event_name?: string;
   event_date?: string;
   event_location?: string;
+  event_map_url?: string;
+  event_address?: string;
+  directions_text?: string;
+  accessibility_text?: string;
+  google_maps_url?: string;
+  apple_maps_url?: string;
   ticket_url?: string;
   qr_image_url?: string;
   logo_url?: string;

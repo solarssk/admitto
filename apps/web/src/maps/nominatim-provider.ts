@@ -11,8 +11,7 @@ import {
   addressComponentsFromParts,
   formatCompactAddress,
   formatVenueName,
-  isAddressComponentsSparse,
-  mergeAddressComponents,
+  preferNumberedStreet,
   type GeocodingProvider,
   type GeocodingResult,
 } from "@admitto/location";
@@ -160,13 +159,14 @@ function parseFeature(raw: unknown, provider: string): GeocodingResult | null {
     parts.name ?? (streetLine && streetLine !== formatted_address ? streetLine : undefined);
 
   const componentsFromParts = addressComponentsFromParts(parts);
-  const components =
-    isAddressComponentsSparse(componentsFromParts) && label
-      ? mergeAddressComponents(
-          componentsFromParts,
-          addressComponentsFromNominatimLabel(label, parts.name),
-        )
-      : componentsFromParts;
+  // Always merge label-derived fields for nulls — amenity GeocodeJSON often has city/country
+  // (so the grid is not "sparse") while still omitting street/housenumber that the label carries.
+  const components = label
+    ? preferNumberedStreet(
+        componentsFromParts,
+        addressComponentsFromNominatimLabel(label, parts.name),
+      )
+    : componentsFromParts;
 
   return {
     ...(finalName ? { name: finalName } : {}),
@@ -347,6 +347,8 @@ export class NominatimProvider implements GeocodingProvider {
         url.searchParams.set("format", "geocodejson");
         url.searchParams.set("addressdetails", "1");
         url.searchParams.set("limit", String(MAX_RESULTS));
+        // Prefer English labels for operator + attendee-facing copy (ticket/mail are EN).
+        url.searchParams.set("accept-language", "en");
 
         const data = await fetchJson(fetchImpl, url, userAgent, signal);
         const results: GeocodingResult[] = [];
@@ -375,6 +377,7 @@ export class NominatimProvider implements GeocodingProvider {
         url.searchParams.set("format", "geocodejson");
         url.searchParams.set("addressdetails", "1");
         url.searchParams.set("zoom", String(REVERSE_ZOOM));
+        url.searchParams.set("accept-language", "en");
 
         const data = await fetchJson(fetchImpl, url, userAgent, signal);
         for (const raw of featuresFromBody(data)) {

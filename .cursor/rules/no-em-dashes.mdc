@@ -1,0 +1,22 @@
+---
+description: Never use em dashes (—) or en dashes (–) in UI copy, docs, or chat
+alwaysApply: true
+---
+
+# No em / en dashes
+
+Do **not** use Unicode em dash (`—`) or en dash (`–`) in:
+
+- Operator-facing UI strings (labels, hints, notices, toasts, empty states)
+- CHANGELOG / Wiki / PR text meant for humans
+- Replies to Filip (Polish or English)
+
+Use a comma, period, colon, parentheses, or a plain hyphen-minus (`-`) instead.
+
+```text
+Bad:  Search by name — pick a match
+Good: Search by name. Pick a match.
+Good: Search by name - pick a match
+```
+
+Code comments may keep existing dashes; do not introduce new em/en dashes in new comments either.

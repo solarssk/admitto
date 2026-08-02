@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { formatCompactAddress, formatStreetLine, formatVenueName } from "../src/formatAddress.js";
+import {
+  formatCompactAddress,
+  formatDirectionsAddress,
+  formatStreetLine,
+  formatVenueName,
+} from "../src/formatAddress.js";
 
 describe("formatStreetLine", () => {
   it("joins street and housenumber in European order", () => {
@@ -63,6 +68,31 @@ describe("formatCompactAddress", () => {
 
   it("returns an empty string when nothing useful is present", () => {
     expect(formatCompactAddress({})).toBe("");
+  });
+});
+
+describe("formatDirectionsAddress", () => {
+  it("prefers street + locality over the POI name", () => {
+    expect(
+      formatDirectionsAddress({
+        name: "Sheraton Grand Bangalore Hotel at Brigade Gateway",
+        street: "Dr. Rajkumar Road",
+        housenumber: "26/1",
+        postcode: "560055",
+        city: "Bengaluru",
+        country: "India",
+      }),
+    ).toBe("Dr. Rajkumar Road 26/1, 560055 Bengaluru, India");
+  });
+
+  it("falls back to compact address when there is no street line", () => {
+    expect(
+      formatDirectionsAddress({
+        name: "Convention Center",
+        city: "Warsaw",
+        country: "Poland",
+      }),
+    ).toBe("Poland, Warsaw - Convention Center");
   });
 });
 

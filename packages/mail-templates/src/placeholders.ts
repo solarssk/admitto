@@ -9,6 +9,12 @@ export const ALLOWED_PLACEHOLDERS = new Set([
   "event_name",
   "event_date",
   "event_location",
+  "event_map_url",
+  "event_address",
+  "directions_text",
+  "accessibility_text",
+  "google_maps_url",
+  "apple_maps_url",
   "ticket_url",
   "qr_image_url",
   "logo_url",
@@ -22,6 +28,9 @@ export const ALLOWED_PLACEHOLDERS = new Set([
 export const URL_PLACEHOLDERS = new Set([
   "ticket_url",
   "qr_image_url",
+  "event_map_url",
+  "google_maps_url",
+  "apple_maps_url",
   "logo_url",
   "header_image_url",
   "apple_wallet_url",
@@ -46,7 +55,12 @@ export const WALLET_PLACEHOLDERS = new Set([
  * without this, clicking e.g. `{{logo_url}}` just drops inert text into the body, which for an
  * image placeholder never displays anything on its own.
  */
-export const IMAGE_PLACEHOLDERS = new Set(["logo_url", "header_image_url", "qr_image_url"]);
+export const IMAGE_PLACEHOLDERS = new Set([
+  "logo_url",
+  "header_image_url",
+  "qr_image_url",
+  "event_map_url",
+]);
 
 /** Valid placeholder name: lowercase snake_case. */
 const VALID_PLACEHOLDER_NAME_RE = /^[a-z][a-z0-9_]*$/;

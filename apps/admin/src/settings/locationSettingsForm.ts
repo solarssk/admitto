@@ -59,6 +59,9 @@ export function isLocationDirty(draft: LocationDraft, saved: LocationDraft): boo
  * it must come from the caller (set only right after picking a search result, and cleared on any
  * manual pin move) so a manual drag/click omits it and lets the server clear stale provenance
  * instead of relabeling the new point as freshly geocoded.
+ *
+ * A venue-name-only edit (free-text rename while keeping the pin) sends `geocoding_provider: null`
+ * so the Verified badge does not return after save from a stale server provider.
  */
 export function buildEventLocationPatchBody(
   draft: LocationDraft,
@@ -98,6 +101,8 @@ export function buildEventLocationPatchBody(
   const coordinatesChanged = body.latitude !== undefined || body.longitude !== undefined;
   if (coordinatesChanged && pendingGeocodingProvider) {
     body.geocoding_provider = pendingGeocodingProvider;
+  } else if (body.venue_name !== undefined && !coordinatesChanged) {
+    body.geocoding_provider = null;
   }
 
   return body;

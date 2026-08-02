@@ -27,9 +27,16 @@ export function isBlockedMailHost(hostname: string): boolean {
  * layer that closes that gap. Returns the resolved records so the caller can pin the real
  * connection to them — resolving here and then letting fetch/nodemailer do their own,
  * separate DNS lookup for the actual connect would reopen the same DNS-rebinding gap.
+ *
+ * Opt-in escape hatch: `ALLOW_PRIVATE_MAIL_DESTINATIONS=true` skips the private/link-local
+ * check (local lab SMTP on RFC1918 only — never enable in production).
  */
 export async function resolveSafeMailDestination(hostname: string): Promise<LookupAddress[]> {
   const host = unbracketHostname(hostname);
+  if (process.env["ALLOW_PRIVATE_MAIL_DESTINATIONS"]?.trim().toLowerCase() === "true") {
+    const { lookup } = await import("node:dns/promises");
+    return lookup(host, { all: true, verbatim: true });
+  }
   if (isLoopbackHost(host) || isBlockedPrivateOrMetadataHost(host)) {
     throw new Error("destination is a private, loopback, or link-local address");
   }

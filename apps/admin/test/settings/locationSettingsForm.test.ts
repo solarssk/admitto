@@ -147,15 +147,17 @@ describe("buildEventLocationPatchBody", () => {
     });
   });
 
-  it("includes the venue name when changed and clears it to null when emptied", () => {
+  it("includes the venue name when changed, clears Verified provenance, and nulls an emptied name", () => {
     const draft: LocationDraft = { ...saved, venue_name: "New Hall" };
     expect(buildEventLocationPatchBody(draft, saved, null)).toEqual({
       venue_name: "New Hall",
+      geocoding_provider: null,
     });
 
     const cleared: LocationDraft = { ...saved, venue_name: "   " };
     expect(buildEventLocationPatchBody(cleared, saved, null)).toEqual({
       venue_name: null,
+      geocoding_provider: null,
     });
   });
 

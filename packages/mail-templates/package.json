@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@admitto/db": "*",
+    "@admitto/location": "*",
     "mjml": "^5.4.0"
   },
   "devDependencies": {

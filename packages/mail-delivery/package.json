@@ -25,6 +25,7 @@
   "dependencies": {
     "@admitto/crypto": "*",
     "@admitto/db": "*",
+    "@admitto/location": "*",
     "@admitto/mail-templates": "*",
     "@admitto/mailer": "*",
     "@admitto/mailer-config": "*",

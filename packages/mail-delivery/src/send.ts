@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@admitto/db";
 import { decryptFromString } from "@admitto/crypto";
 import {
+  buildEventLocationTemplateVars,
   formatEventDate,
   materializeStoredDeliveryMessage,
   renderTemplateTrustedForStorage,
@@ -120,7 +121,15 @@ interface EventForSend extends EventLinkInput {
   id: string;
   title: string;
   date: Date;
-  location_details?: { venue_name: string | null } | null;
+  location_details?: {
+    venue_name: string | null;
+    formatted_address: string | null;
+    address_components?: unknown;
+    latitude: number | null;
+    longitude: number | null;
+    directions_text: string | null;
+    accessibility_text: string | null;
+  } | null;
   organization_id: string;
 }
 
@@ -189,6 +198,11 @@ async function processAttendeeForSend({
   }
 
   const { first_name, last_name } = splitDisplayName(attendee.name);
+  const locationVars = buildEventLocationTemplateVars(
+    event.id,
+    event.location_details,
+    baseUrl,
+  );
 
   const rendered = renderTemplateTrustedForStorage(
     {
@@ -202,7 +216,7 @@ async function processAttendeeForSend({
       email: attendee.email,
       event_name: event.title,
       event_date: formatEventDate(event.date, "UTC"),
-      event_location: event.location_details?.venue_name ?? "",
+      ...locationVars,
       logo_url: branding.logo_url,
       header_image_url: branding.header_image_url,
       apple_wallet_url: "",

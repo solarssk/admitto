@@ -1,4 +1,10 @@
-/* Event Settings — Location tab. LocationSettingsPanel.tsx + MapPicker.tsx. */
+/* Event Settings - Location tab. LocationSettingsPanel.tsx + MapPicker.tsx. */
+
+/* Extra air under the Address card title / header rule - a warning banner reads cramped
+   against the header when it is the first body child with only --pad-card. */
+.location-contact-notice {
+  margin-top: var(--space-4);
+}
 
 /* Leaflet needs an explicit pixel height on its container - it measures the container at mount
    and renders nothing (a grey box) if it is 0px, which it would be with only `width: 100%` and

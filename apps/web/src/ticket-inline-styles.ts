@@ -4,30 +4,51 @@ import { builtInFontFaceCss } from "./vendor-assets.js";
 
 const TICKET_LAYOUT_CSS = `
 body.ticket-page { margin: 0; background: var(--surface-page, #f1f5f9); min-height: 100vh; display: grid; place-items: center; padding: 32px 16px; font-family: var(--font-sans, Inter, system-ui, sans-serif); color: var(--text-primary, #1d273b); }
-.ticket { width: 380px; max-width: 100%; background: var(--surface-card, #ffffff); border: 1px solid var(--border, #e6e7e9); border-radius: var(--radius-lg, 12px); box-shadow: var(--shadow-md, 0 4px 12px rgba(15,23,42,.08)); overflow: hidden; }
+.ticket { width: 400px; max-width: 100%; background: var(--surface-card, #ffffff); border: 1px solid var(--border, #e6e7e9); border-radius: var(--radius-lg, 12px); box-shadow: var(--shadow-md, 0 4px 12px rgba(15,23,42,.08)); overflow: hidden; border-top: 3px solid var(--primary, #066fd1); }
 .ticket__top { padding: 16px 22px; border-bottom: 1px solid var(--border, #e6e7e9); display: flex; align-items: center; gap: 10px; min-height: 60px; }
 .ticket__top small { margin-left: auto; color: var(--text-muted, #64748b); font-size: 12px; white-space: nowrap; }
-.ticket__brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 16px; }
-.ticket__brand-mark { width: 26px; height: 26px; border-radius: 8px; background: var(--primary); display: inline-block; }
+.ticket__brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 17px; letter-spacing: -0.02em; }
+.ticket__brand-mark { width: 30px; height: 30px; display: block; flex: 0 0 auto; }
 .ticket__brand-logo { max-height: 32px; max-width: 160px; object-fit: contain; display: block; }
 .ticket__body { padding: 22px 24px 18px; text-align: center; }
 .ticket__event-name { font-size: 1.25rem; font-weight: 700; margin: 0; }
-.ticket__meta { color: var(--text-secondary, #475569); font-size: 0.875rem; margin-top: 6px; }
-.ticket__attendee { margin: 16px 0 18px; }
+.ticket__meta { color: var(--text-secondary, #475569); font-size: 0.875rem; margin-top: 6px; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.ticket__meta > span { display: inline-flex; align-items: flex-start; justify-content: center; gap: 6px; max-width: 100%; }
+.ticket__meta svg { width: 15px; height: 15px; flex: 0 0 auto; margin-top: 2px; }
+.ticket__meta-text { text-align: center; text-wrap: balance; line-height: 1.35; }
+.ticket__attendee { margin: 16px 0 18px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .ticket__attendee-name { font-size: 1.125rem; font-weight: 600; margin: 0 0 8px; }
-.ticket__qr { display: inline-flex; padding: 14px; background: #fff; border: 1px solid var(--border, #e6e7e9); border-radius: 8px; }
+.ticket__type { display: inline-flex; align-items: center; padding: 0.2em 0.55em; border-radius: 6px; background: var(--surface-sunken, #f1f5f9); color: var(--text-secondary, #475569); font-size: 0.75rem; font-weight: 600; }
+.ticket__qr { display: inline-flex; padding: 12px; background: #fff; border: 1px solid color-mix(in srgb, var(--primary, #066fd1) 35%, #e6e7e9); border-radius: 8px; }
 .ticket__qr img { width: 220px; height: 220px; display: block; }
+.ticket__token { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; color: var(--text-muted, #64748b); font-size: 0.75rem; margin: 10px 0 0; word-break: break-all; }
 .ticket__perf { height: 0; border-top: 2px dashed var(--border, #e6e7e9); margin: 6px 0; }
-.ticket__wallets { padding: 16px 16px 20px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
-.wallet-cta { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 16px; border-radius: 8px; border: 1px solid var(--border, #e6e7e9); background: var(--surface-sunken, #f8fafc); color: var(--text-muted, #64748b); font-size: 0.8125rem; font-weight: 600; cursor: not-allowed; opacity: 0.7; }
+.ticket__wallets { padding: 16px 16px 8px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; align-items: center; }
+/* Google Wallet brand min height is 48dp; keep aspect ratio. Gap/padding cover ~8px clear space. */
+.wallet-badge { display: block; height: 48px; width: auto; cursor: not-allowed; }
+.ticket__wallet-help { margin: 0 20px 14px; color: var(--text-muted, #64748b); font-size: 0.75rem; line-height: 1.45; text-align: center; }
+.ticket__wallet-help summary { cursor: pointer; list-style: none; padding: 0; font-weight: 500; color: var(--text-muted, #64748b); text-decoration: none; }
+.ticket__wallet-help summary::-webkit-details-marker { display: none; }
+.ticket__wallet-help[open] summary { margin-bottom: 6px; }
+.ticket__wallet-help p { margin: 0 0 4px; color: var(--text-secondary, #475569); text-align: left; }
+.ticket__wallet-help p:last-child { margin-bottom: 0; }
+.ticket__getting-there { padding: 2px 24px 22px; border-top: 1px solid var(--border, #e6e7e9); }
+.ticket__getting-there h2 { color: var(--text-muted, #64748b); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; margin: 20px 0 10px; text-transform: uppercase; }
+.ticket__address { color: var(--text-secondary, #475569); font-size: 0.875rem; line-height: 1.4; margin: 0 0 12px; display: flex; flex-direction: column; gap: 2px; }
+.ticket__address-line { display: block; }
+.ticket__address-locality { white-space: nowrap; }
+.ticket__map-frame { position: relative; border: 1px solid var(--border, #e6e7e9); border-radius: 8px; overflow: hidden; background: var(--surface-sunken, #f8fafc); }
+.ticket__map { display: block; height: auto; max-width: 100%; width: 100%; }
+.ticket__map-attribution { color: var(--text-muted, #64748b); font-size: 0.6875rem; line-height: 1.35; margin: 5px 0 0; text-align: right; }
+.ticket__map-attribution a { color: inherit; }
+.ticket__map-links { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 14px; }
+.ticket__map-link { align-items: center; border: 1px solid var(--border, #e6e7e9); border-radius: 8px; color: var(--text-primary, #1d273b); display: inline-flex; gap: 6px; font-size: 0.8125rem; font-weight: 600; justify-content: center; min-height: 40px; text-decoration: none; }
+.ticket__map-link svg { width: 16px; height: 16px; flex: 0 0 auto; }
+.ticket__travel-note { border-top: 1px solid var(--border, #e6e7e9); margin-top: 16px; padding-top: 14px; }
+.ticket__travel-note h3 { color: var(--text-primary, #1d273b); font-size: 0.8125rem; margin: 0 0 4px; display: inline-flex; align-items: center; gap: 6px; }
+.ticket__travel-note h3 svg { width: 15px; height: 15px; flex: 0 0 auto; color: var(--text-secondary, #475569); }
+.ticket__travel-note p { color: var(--text-secondary, #475569); font-size: 0.8125rem; line-height: 1.45; margin: 0; white-space: pre-line; }
 .ticket__foot { padding: 12px 22px; background: var(--surface-sunken, #f8fafc); border-top: 1px solid var(--border, #e6e7e9); font-size: 12px; color: var(--text-muted, #64748b); text-align: center; }
-.at-badge { display: inline-flex; align-items: center; gap: 0.35em; padding: 0.2em 0.55em; border-radius: 6px; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.02em; }
-.at-badge--dot::before { content: ""; width: 0.45em; height: 0.45em; border-radius: 50%; background: currentColor; }
-.at-badge--neutral { background: #f1f5f9; color: #475569; }
-.at-badge--ok { background: #e9f7ec; color: #1f7a2e; }
-.at-badge--warn { background: #fdf3e1; color: #9a6400; }
-.at-badge--error { background: #fbeaea; color: #b32525; }
-.at-badge--confirmed { background: #e6f6f1; color: #097a59; }
 
 @media print {
   body.ticket-page {
@@ -42,6 +63,7 @@ body.ticket-page { margin: 0; background: var(--surface-page, #f1f5f9); min-heig
     background: #fff;
     box-shadow: none;
     border: 1px solid #ccc;
+    border-top: 3px solid #066fd1;
     border-radius: 0;
     overflow: visible;
     page-break-inside: avoid;
@@ -50,20 +72,24 @@ body.ticket-page { margin: 0; background: var(--surface-page, #f1f5f9); min-heig
   .ticket__top {
     border-bottom: 1px solid #ccc;
   }
-  .ticket__brand-mark {
-    background: #066fd1;
-  }
   .ticket__foot {
     background: #f5f5f5;
     border-top: 1px solid #ccc;
     color: #555;
   }
   .ticket__qr {
-    border: 1px solid #ccc;
+    border: 1px solid #99b8d9;
     border-radius: 0;
   }
-  .ticket__wallets {
+  .ticket__wallets,
+  .ticket__wallet-help {
     display: none;
+  }
+  .ticket__getting-there {
+    border-top: 1px solid #ccc;
+  }
+  .ticket__map-frame {
+    border-color: #ccc;
   }
   .ticket__perf {
     border-top: 2px dashed #aaa;

@@ -237,6 +237,29 @@ describe("renderTemplate", () => {
     expect(result.html).toContain('src="https://cdn.example.com/header.png"');
   });
 
+  it("renders event location URLs and strips an empty map image src", () => {
+    const withMap = renderTemplate(
+      {
+        subject: "Getting there",
+        compiledHtml:
+          '<img src="{{event_map_url}}" alt="Map" /><a href="{{google_maps_url}}">Google</a><a href="{{apple_maps_url}}">Apple</a>',
+      },
+      {
+        event_map_url: "https://tickets.example.com/m/event-1.png",
+        google_maps_url: "https://www.google.com/maps/search/?api=1%26query=50%2C19",
+        apple_maps_url: "https://maps.apple.com/?ll=50%2C19",
+      },
+    );
+    expect(withMap.html).toContain('src="https://tickets.example.com/m/event-1.png"');
+    expect(withMap.html).toContain("https://www.google.com/maps/search/");
+
+    const withoutMap = renderTemplate(
+      { subject: "Getting there", compiledHtml: '<img src="{{event_map_url}}" alt="Map" />' },
+      { event_map_url: "" },
+    );
+    expect(withoutMap.html).not.toContain("src=");
+  });
+
   it("absolutizes uploaded logo paths when baseUrl is provided", () => {
     const result = renderTemplate(
       {

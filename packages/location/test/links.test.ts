@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildAppleMapsUrl, buildGoogleMapsUrl, buildOsmUrl } from "../src/links.js";
+import {
+  buildAppleMapsUrl,
+  buildEventStaticMapPath,
+  buildEventStaticMapUrl,
+  buildGoogleMapsUrl,
+  buildOsmUrl,
+} from "../src/links.js";
 
 const LAT = 50.061947;
 const LNG = 19.936856;
@@ -48,6 +54,24 @@ describe("buildOsmUrl", () => {
   it("builds a centered, zoomed deep link", () => {
     expect(buildOsmUrl(LAT, LNG, 17)).toBe(
       "https://www.openstreetmap.org/?mlat=50.061947&mlon=19.936856#map=17/50.061947/19.936856",
+    );
+  });
+});
+
+describe("buildEventStaticMapPath / Url", () => {
+  it("builds a same-origin PNG path", () => {
+    expect(buildEventStaticMapPath("evt_abc")).toBe("/m/evt_abc.png?v=2");
+  });
+
+  it("absolutizes against a base URL without a trailing slash", () => {
+    expect(buildEventStaticMapUrl("https://tickets.example.com", "evt_abc")).toBe(
+      "https://tickets.example.com/m/evt_abc.png?v=2",
+    );
+  });
+
+  it("strips a trailing slash on the base URL", () => {
+    expect(buildEventStaticMapUrl("https://tickets.example.com/", "evt_abc")).toBe(
+      "https://tickets.example.com/m/evt_abc.png?v=2",
     );
   });
 });

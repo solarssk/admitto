@@ -12,7 +12,9 @@ describe("buildTicketPageStyles", () => {
     expect(css).toContain(".ticket__top");
     expect(css).toContain("border-bottom: 1px solid #ccc");
     expect(css).toContain(".ticket__brand-mark");
-    expect(css).toContain("background: #066fd1");
+    expect(css).toContain("border-top: 3px solid");
+    expect(css).toContain(".ticket__wallet-help");
+    expect(css).not.toContain("opacity: 0.58");
   });
 
   it("gives every custom property a literal fallback, since the ticket page loads no external stylesheet", () => {
@@ -21,7 +23,7 @@ describe("buildTicketPageStyles", () => {
     // standalone page never loads. Any var(--x) without a fallback resolves to nothing.
     const css = buildTicketPageStyles();
     const bareVarRefs = [...css.matchAll(/var\((--[a-z-]+)\)/g)].map((m) => m[1]);
-    expect(bareVarRefs).toEqual(["--primary"]);
+    expect(bareVarRefs).toEqual([]);
   });
 
   it("self-hosts Inter's @font-face for the default (unset) font pick", () => {

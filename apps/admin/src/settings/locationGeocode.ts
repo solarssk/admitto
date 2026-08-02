@@ -3,7 +3,8 @@ import {
   EMPTY_ADDRESS_COMPONENTS,
   isAddressComponentsEmpty,
   isAddressComponentsSparse,
-  mergeAddressComponents,
+  preferNumberedStreet,
+  streetLineLooksNumbered,
 } from "@admitto/location";
 import { reverseGeocoding } from "../api/client.js";
 
@@ -23,13 +24,18 @@ export function componentsFromResult(result: GeocodingResultDto): AddressCompone
  * Nominatim POI hits often return only `name` + `label` (no street/city in GeocodeJSON).
  * Reverse at the pin fills the address grid from nearby OSM address tags without replacing
  * the venue name the admin just picked.
+ *
+ * Also re-runs when Street & number is present but has no house number — large amenities
+ * (stadiums, hotels) frequently carry street-only tags while reverse finds addr:housenumber.
  */
 export async function enrichComponentsFromReverse(
   result: GeocodingResultDto,
   base: AddressComponentsDto,
   onContactConfigured?: (configured: boolean) => void,
 ): Promise<{ components: AddressComponentsDto; formatted_address: string }> {
-  if (!isAddressComponentsSparse(base)) {
+  const needsEnrichment =
+    isAddressComponentsSparse(base) || !streetLineLooksNumbered(base.street);
+  if (!needsEnrichment) {
     return { components: base, formatted_address: result.formatted_address };
   }
   try {
@@ -39,7 +45,7 @@ export async function enrichComponentsFromReverse(
       return { components: base, formatted_address: result.formatted_address };
     }
     const fromReverse = componentsFromResult(res.result);
-    const merged = mergeAddressComponents(base, fromReverse);
+    const merged = preferNumberedStreet(base, fromReverse);
     const formatted_address =
       !isAddressComponentsSparse(merged) && res.result.formatted_address
         ? res.result.formatted_address

@@ -8,12 +8,11 @@ import {
   IMAGE_PLACEHOLDERS,
   DEFAULT_BODY_MJML,
   DEFAULT_SUBJECT_TEMPLATE,
-  DEFAULT_SAMPLE_VARS,
   assertValidTemplate,
   assertRenderableCompiledHtml,
   compileTemplate,
   findMissingRequiredPlaceholders,
-  formatEventDate,
+  buildBaseTemplateVars,
   renderTemplate,
   resolveBrandingFromEvent,
   resolveEventImageAssetVars,
@@ -244,12 +243,7 @@ async function renderDraftPreview(
   const customAssets = await resolveEventImageAssetVars(eventId, db);
 
   const vars = {
-    ...DEFAULT_SAMPLE_VARS,
-    event_name: event.title,
-    event_date: formatEventDate(event.date, "UTC"),
-    event_location: event.location_details?.venue_name ?? "",
-    logo_url: branding.logo_url,
-    header_image_url: branding.header_image_url,
+    ...buildBaseTemplateVars(event, undefined, branding, baseUrl),
     ...customAssets.vars,
   };
 
