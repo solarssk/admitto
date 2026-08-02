@@ -356,9 +356,13 @@
 }
 /* The action button is taller than a text line, so centering the row (instead of the
    default top-alignment tuned for icon-to-first-line-of-text) keeps icon, text, and button
-   visually balanced against the button's own height rather than hugging the row's top. */
+   visually balanced against the button's own height rather than hugging the row's top.
+   Drop the first-line optical nudge — with center alignment it would push the icon low. */
 .at-notice--has-action {
   align-items: center;
+}
+.at-notice--has-action .at-notice__icon {
+  margin-top: 0;
 }
 /* A permanent fact about the surrounding view, not an alert - a neutral "well" reads as
    documentation rather than a warning. */

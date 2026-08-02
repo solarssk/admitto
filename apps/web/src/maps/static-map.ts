@@ -336,10 +336,35 @@ async function fetchTilePng(
     if (!bufferLooksLikePng(body)) {
       throw new StaticMapRenderError(`Tile is not a PNG: ${redactTileUrlForLogs(current)}`);
     }
-    return body;
+    return normalizeTilePngToCompositorSize(body, current);
   }
 
   throw new StaticMapRenderError(`Too many tile redirects: ${redactTileUrlForLogs(url)}`);
+}
+
+/**
+ * MapTiler / some commercial XYZ styles serve 512×512 (or other) rasters for the same z/x/y
+ * as OSM's 256 grid. Resize to the compositor tile size so sharp can place them on the canvas.
+ */
+async function normalizeTilePngToCompositorSize(tilePng: Buffer, sourceUrl: string): Promise<Buffer> {
+  let width: number | undefined;
+  let height: number | undefined;
+  try {
+    const meta = await sharp(tilePng).metadata();
+    width = meta.width;
+    height = meta.height;
+  } catch (err) {
+    throw new StaticMapRenderError(`Tile PNG metadata unreadable: ${redactTileUrlForLogs(sourceUrl)}`, err);
+  }
+  if (width === TILE_SIZE && height === TILE_SIZE) return tilePng;
+  if (!width || !height) {
+    throw new StaticMapRenderError(`Tile PNG has no dimensions: ${redactTileUrlForLogs(sourceUrl)}`);
+  }
+  try {
+    return await sharp(tilePng).resize(TILE_SIZE, TILE_SIZE).png().toBuffer();
+  } catch (err) {
+    throw new StaticMapRenderError(`Tile PNG resize failed: ${redactTileUrlForLogs(sourceUrl)}`, err);
+  }
 }
 
 /**

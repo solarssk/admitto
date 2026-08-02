@@ -18,6 +18,8 @@ const EMPTY_EVENT_LOCATION = {
   mapZoom: null,
   directionsText: null,
   accessibilityText: null,
+  googleMapsUrlOverride: null,
+  appleMapsUrlOverride: null,
 } as const;
 
 /** Shared by the logo-rendering tests below - only `event.logoUrl`/`event.title` ever vary. */
@@ -134,6 +136,8 @@ describe("renderTicket", () => {
           mapZoom: 16,
           directionsText: "Enter through the east gate.",
           accessibilityText: "Step-free entrance on the south side.",
+          googleMapsUrlOverride: null,
+          appleMapsUrlOverride: null,
         },
       },
       "data:image/png;base64,abc",
@@ -156,6 +160,26 @@ describe("renderTicket", () => {
     expect(html).toContain("abcdefgh…wxyz");
     expect(html).not.toContain('class="ticket__map-attribution"');
     expect(html).not.toContain("openstreetmap.org/copyright");
+  });
+
+  it("uses manual Maps URL overrides on the ticket when set", () => {
+    const html = renderTicket(
+      {
+        ...ticketFor(null),
+        event: {
+          ...ticketFor(null).event,
+          location: "Hall",
+          latitude: 50.06,
+          longitude: 19.94,
+          mapZoom: 15,
+          googleMapsUrlOverride: "https://www.google.com/maps/place/Custom",
+          appleMapsUrlOverride: "https://maps.apple.com/?address=Custom",
+        },
+      },
+      "data:image/png;base64,abc",
+    );
+    expect(html).toContain('href="https://www.google.com/maps/place/Custom"');
+    expect(html).toContain('href="https://maps.apple.com/?address=Custom"');
   });
 
   it("strips HTML from the venue name so tags are not shown as text", () => {

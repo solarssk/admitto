@@ -24,7 +24,7 @@ function pluralSuffix(count: number): string {
 }
 
 const UPLOAD_IMAGES_HINT =
-  "Upload extra images, like sponsor logos, and give each one a short name to use as {{name}} in an email template.";
+  "Each asset is stored for this event only. Remove it from the mail template before deleting.";
 
 /**
  * Named branding image library for an event: upload extra images (e.g. sponsor logos) and give
@@ -234,43 +234,85 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
   return (
     <>
       <Card title={<HintLabel hint={UPLOAD_IMAGES_HINT}>Upload images</HintLabel>} className="event-settings-card">
-        <button
-          type="button"
-          className={[
-            "image-asset-library__dropzone",
-            dragging && "image-asset-library__dropzone--dragging",
-            uploading && "image-asset-library__dropzone--busy",
-            disabled && "image-asset-library__dropzone--disabled",
-          ]
-            .filter(Boolean)
-            .join(" ")}
-          disabled={disabled}
-          onClick={openFilePicker}
-          onDrop={(e) => {
-            e.preventDefault();
-            setDragging(false);
-            if (disabled || uploading) return;
-            const dropped = e.dataTransfer.files[0];
-            if (dropped) handleFilePick(dropped);
-          }}
-          onDragOver={(e) => {
-            e.preventDefault();
-            if (!disabled && !uploading) setDragging(true);
-          }}
-          onDragLeave={() => setDragging(false)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
+        <div className="settings-card-stack">
+          <p className="field-hint image-asset-library__intro settings-card-intro">
+            Upload extra images such as sponsor logos. Give each one a short name to use as{" "}
+            {"{{name}}"} in email templates.
+          </p>
+          <button
+            type="button"
+            className={[
+              "image-asset-library__dropzone",
+              dragging && "image-asset-library__dropzone--dragging",
+              uploading && "image-asset-library__dropzone--busy",
+              disabled && "image-asset-library__dropzone--disabled",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            disabled={disabled}
+            onClick={openFilePicker}
+            onDrop={(e) => {
               e.preventDefault();
-              openFilePicker();
-            }
-          }}
-        >
-          <i className="ti ti-photo-up" aria-hidden="true" />
-          <span className="image-asset-library__dropzone-title">
-            {file ? file.name : "Drop image here or click to browse"}
-          </span>
-          <span className="image-asset-library__dropzone-hint">PNG, JPG, WebP · max 2 MB</span>
-        </button>
+              setDragging(false);
+              if (disabled || uploading) return;
+              const dropped = e.dataTransfer.files[0];
+              if (dropped) handleFilePick(dropped);
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              if (!disabled && !uploading) setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                openFilePicker();
+              }
+            }}
+          >
+            <i className="ti ti-photo-up" aria-hidden="true" />
+            <span className="image-asset-library__dropzone-title">
+              {file ? file.name : "Drop image here or click to browse"}
+            </span>
+            <span className="image-asset-library__dropzone-hint">PNG, JPG, WebP · max 2 MB</span>
+          </button>
+          <div className="image-asset-library__add-fields">
+            <div className="image-asset-library__token-field">
+              <Input
+                label="Name"
+                value={token}
+                disabled={disabled || uploading}
+                onChange={(e) => setToken(e.target.value)}
+                onBlur={() => setTokenTouched(true)}
+                placeholder="sponsor_logo"
+                error={tokenErrorText}
+                hint={
+                  tokenErrorText
+                    ? undefined
+                    : "Lowercase letters, numbers, and underscores only. Used as {{name}} in email templates."
+                }
+              />
+            </div>
+            <div className="image-asset-library__add-btn-wrap">
+              <span className="at-label image-asset-library__add-btn-spacer" aria-hidden="true">
+                &nbsp;
+              </span>
+              <Button type="button" variant="secondary" disabled={!canSubmit} onClick={() => void handleSubmit()}>
+                {uploading ? "Adding…" : "Add asset"}
+              </Button>
+            </div>
+          </div>
+          {formError ? (
+            <p className="at-hint at-hint--error" role="alert">
+              {formError}
+            </p>
+          ) : null}
+          {disabled && (
+            <p className="field-hint event-settings-archived-note">
+              This event is archived - the asset library cannot be changed.
+            </p>
+          )}
+        </div>
         <input
           ref={fileRef}
           type="file"
@@ -282,42 +324,6 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
           aria-hidden="true"
           tabIndex={-1}
         />
-        <div className="image-asset-library__add-fields">
-          <div className="image-asset-library__token-field">
-            <Input
-              label="Name"
-              value={token}
-              disabled={disabled || uploading}
-              onChange={(e) => setToken(e.target.value)}
-              onBlur={() => setTokenTouched(true)}
-              placeholder="sponsor_logo"
-              error={tokenErrorText}
-              hint={
-                tokenErrorText
-                  ? undefined
-                  : "Lowercase letters, numbers, and underscores only. Used as {{name}} in email templates."
-              }
-            />
-          </div>
-          <div className="image-asset-library__add-btn-wrap">
-            <span className="at-label image-asset-library__add-btn-spacer" aria-hidden="true">
-              &nbsp;
-            </span>
-            <Button type="button" variant="secondary" disabled={!canSubmit} onClick={() => void handleSubmit()}>
-              {uploading ? "Adding…" : "Add asset"}
-            </Button>
-          </div>
-        </div>
-        {formError ? (
-          <p className="at-hint at-hint--error" role="alert">
-            {formError}
-          </p>
-        ) : null}
-        {disabled && (
-          <p className="field-hint event-settings-archived-note">
-            This event is archived - the asset library cannot be changed.
-          </p>
-        )}
       </Card>
 
       <Card title="Your images" className="event-settings-card">

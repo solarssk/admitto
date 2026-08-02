@@ -65,9 +65,12 @@ type SettingsPatch = Partial<{
 const EVENT_SETTINGS_SUBTITLE = "Manage this event's details, images, and access controls.";
 
 const BASIC_INFORMATION_HINT =
-  "Core event details. Title and date are shown to attendees and printed on tickets. Set the venue in the Location tab.";
+  "Title and date appear on tickets and emails. Set the venue in the Location tab.";
+const BASIC_INFORMATION_INTRO =
+  "Title, date, capacity, and timezone for this event.";
 const STATUS_HINT = "Read-only overview of this event's current state. Archive or delete it from the Danger zone tab.";
-const EVENT_LOGO_HINT = "Use a different logo just for this event, or leave it blank to use the organization's logo.";
+const EVENT_LOGO_HINT =
+  "Replaces the organisation logo on tickets and emails for this event.";
 const DANGER_ZONE_HINT = "Irreversible actions affecting this event's data or availability. Most require superadmin.";
 
 // Extra "don't act on reflex" pause before the confirm button on the bulk revoke dialogs
@@ -856,15 +859,16 @@ export function EventSettingsPage() {
           }
         >
           <div className="settings-field-stack">
+            <p className="settings-card-intro">{BASIC_INFORMATION_INTRO}</p>
             <div className="settings-field-group">
               <Input
                 label="Event title"
                 required
                 value={form.title}
                 disabled={isArchived || saving}
+                hint="Shown everywhere - to attendees, on tickets, and in emails."
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
               />
-              <p className="field-hint">Shown everywhere - to attendees, on tickets, and in emails.</p>
             </div>
 
             <div className="settings-field-row">
@@ -886,14 +890,14 @@ export function EventSettingsPage() {
                   value={form.capacity}
                   disabled={isArchived || saving}
                   placeholder="500"
+                  hint="Leave blank for unlimited."
                   onChange={(e) => setForm({ ...form, capacity: e.target.value })}
                 />
-                <p className="field-hint">Leave blank for unlimited.</p>
               </div>
             </div>
 
             <div className="settings-field-group event-settings-timezone">
-              <label className="input-label" htmlFor="event-timezone">
+              <label className="at-label" htmlFor="event-timezone">
                 Event timezone
               </label>
               <TimezoneSelect
@@ -903,7 +907,7 @@ export function EventSettingsPage() {
                 onChange={(tz) => setForm({ ...form, timezone: tz })}
                 disabled={isArchived || saving}
               />
-              <p className="field-hint">All check-in times and reports use this timezone.</p>
+              <span className="at-hint">All check-in times and reports use this timezone.</span>
             </div>
 
             <div className="settings-field-group slug-field">
@@ -913,11 +917,8 @@ export function EventSettingsPage() {
                 readOnly
                 disabled
                 icon={<i className="ti ti-link" aria-hidden="true" />}
+                hint="This can't be changed after the event is created - it's already part of every QR code sent to attendees."
               />
-              <p className="field-hint">
-                This can&apos;t be changed after the event is created - it&apos;s already part
-                of every QR code sent to attendees.
-              </p>
             </div>
           </div>
         </Card>

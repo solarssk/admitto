@@ -57,9 +57,27 @@
 }
 
 .event-settings-page .field-hint {
-  font-size: var(--fs-sm);
+  /* Match Input's .at-hint under fields (--fs-xs), not .at-label (--fs-sm). */
+  font-size: var(--fs-xs);
   color: var(--text-muted);
   margin: var(--space-1) 0 0;
+}
+
+/* Card-body intros stay one step larger than per-field hints. */
+.event-settings-page .settings-card-intro,
+.event-settings-page .logo-upload__intro,
+.event-settings-page .image-asset-library__intro,
+.event-settings-page .ticket-types-card__intro,
+.event-settings-page .mail-test-send__hint {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+/* Hints inside a field group already get gap from .settings-field-group — don't also apply
+   .field-hint's margin-top (specificity was beating `.settings-field-group > p`). */
+.event-settings-page .settings-field-group > .field-hint {
+  margin: 0;
 }
 
 .slug-field input:disabled {
@@ -137,9 +155,16 @@
   gap: var(--space-4);
 }
 
+/* Card intro → first field: same step as Mail/Images (.settings-card-stack), not the wider
+   field-to-field gap — keeps Basic and Address intros aligned with each other. */
+.settings-field-stack > .settings-card-intro {
+  margin: 0 0 calc(var(--space-3) - var(--space-4));
+}
+
 .settings-field-group {
   display: flex;
   flex-direction: column;
+  /* Same as .at-field (label → control → hint) so standalone timezone matches Input hints. */
   gap: var(--space-1);
 }
 

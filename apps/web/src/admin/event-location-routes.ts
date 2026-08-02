@@ -47,6 +47,8 @@ const putLocationBodySchema = z
     directions_text: z.string().nullish(),
     accessibility_text: z.string().nullish(),
     address_components: addressComponentsSchema.optional(),
+    google_maps_url_override: z.string().nullish(),
+    apple_maps_url_override: z.string().nullish(),
     // API-layer only — not part of `@admitto/location`'s EventLocationInput, since it isn't a
     // user-editable field with its own validation rules. It only ever rides along with a
     // latitude/longitude change (see the geocoding provenance logic below).
@@ -65,6 +67,8 @@ type EventLocationRow = {
   geocoding_provider: string | null;
   geocoded_at: Date | null;
   address_components: Prisma.JsonValue | null;
+  google_maps_url_override: string | null;
+  apple_maps_url_override: string | null;
 };
 
 /** Stable empty shape returned by GET when no `EventLocation` row exists yet — the tab
@@ -80,6 +84,8 @@ const EMPTY_LOCATION_DTO: EventLocationDto = {
   geocoding_provider: null,
   geocoded_at: null,
   address_components: null,
+  google_maps_url_override: null,
+  apple_maps_url_override: null,
 };
 
 function serializeLocation(row: EventLocationRow | null): EventLocationDto {
@@ -95,6 +101,8 @@ function serializeLocation(row: EventLocationRow | null): EventLocationDto {
     geocoding_provider: row.geocoding_provider,
     geocoded_at: row.geocoded_at ? row.geocoded_at.toISOString() : null,
     address_components: parseStoredAddressComponents(row.address_components),
+    google_maps_url_override: row.google_maps_url_override,
+    apple_maps_url_override: row.apple_maps_url_override,
   };
 }
 
@@ -269,6 +277,8 @@ export async function handlePutEventLocation(c: Context, db: PrismaClient): Prom
           directions_text: patch.directions_text ?? null,
           accessibility_text: patch.accessibility_text ?? null,
           ...(componentsJson !== undefined && { address_components: componentsJson }),
+          google_maps_url_override: patch.google_maps_url_override ?? null,
+          apple_maps_url_override: patch.apple_maps_url_override ?? null,
           ...geocodingPatch,
         },
         update: {
@@ -280,6 +290,12 @@ export async function handlePutEventLocation(c: Context, db: PrismaClient): Prom
           ...(patch.directions_text !== undefined && { directions_text: patch.directions_text }),
           ...(patch.accessibility_text !== undefined && { accessibility_text: patch.accessibility_text }),
           ...(componentsJson !== undefined && { address_components: componentsJson }),
+          ...(patch.google_maps_url_override !== undefined && {
+            google_maps_url_override: patch.google_maps_url_override,
+          }),
+          ...(patch.apple_maps_url_override !== undefined && {
+            apple_maps_url_override: patch.apple_maps_url_override,
+          }),
           ...geocodingPatch,
         },
       });

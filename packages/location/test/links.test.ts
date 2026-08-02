@@ -5,6 +5,8 @@ import {
   buildEventStaticMapUrl,
   buildGoogleMapsUrl,
   buildOsmUrl,
+  resolveAppleMapsUrl,
+  resolveGoogleMapsUrl,
 } from "../src/links.js";
 
 const LAT = 50.061947;
@@ -47,6 +49,21 @@ describe("buildAppleMapsUrl", () => {
     expect(buildAppleMapsUrl(LAT, LNG, "   ")).toBe(
       "https://maps.apple.com/?ll=50.061947%2C19.936856",
     );
+  });
+});
+
+describe("resolveGoogleMapsUrl / resolveAppleMapsUrl", () => {
+  const OVERRIDE_G = "https://www.google.com/maps/place/Custom";
+  const OVERRIDE_A = "https://maps.apple.com/?address=Custom";
+
+  it("returns the override when set", () => {
+    expect(resolveGoogleMapsUrl(LAT, LNG, "Hall", OVERRIDE_G)).toBe(OVERRIDE_G);
+    expect(resolveAppleMapsUrl(LAT, LNG, "Hall", OVERRIDE_A)).toBe(OVERRIDE_A);
+  });
+
+  it("falls back to build helpers when override is empty", () => {
+    expect(resolveGoogleMapsUrl(LAT, LNG, "Hall", "  ")).toBe(buildGoogleMapsUrl(LAT, LNG, "Hall"));
+    expect(resolveAppleMapsUrl(LAT, LNG, null, null)).toBe(buildAppleMapsUrl(LAT, LNG, null));
   });
 });
 

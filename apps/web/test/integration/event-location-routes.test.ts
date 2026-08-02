@@ -187,6 +187,8 @@ describe("GET /api/admin/events/:eventId/location", () => {
       geocoding_provider: null,
       geocoded_at: null,
       address_components: null,
+      google_maps_url_override: null,
+      apple_maps_url_override: null,
     });
   });
 
@@ -635,5 +637,51 @@ describe("PUT /api/admin/events/:eventId/location", () => {
         fields: expect.arrayContaining(["latitude", "longitude", "geocoding_provider"]),
       });
     });
+  });
+
+  it("persists and clears Google/Apple Maps URL overrides", async () => {
+    await prisma.eventLocation.create({
+      data: {
+        event_id: EVENT_LOC,
+        latitude: 50.06,
+        longitude: 19.94,
+      },
+    });
+
+    const setRes = await putLocation(EVENT_LOC, adminCookie, {
+      google_maps_url_override: "https://www.google.com/maps/place/Example+Hall",
+      apple_maps_url_override: "https://maps.apple.com/?ll=50.061947,19.936856&q=Hall",
+    });
+    expect(setRes.status).toBe(200);
+    const setBody = (await setRes.json()) as EventLocationDto;
+    expect(setBody.google_maps_url_override).toBe("https://www.google.com/maps/place/Example+Hall");
+    expect(setBody.apple_maps_url_override).toBe(
+      "https://maps.apple.com/?ll=50.061947,19.936856&q=Hall",
+    );
+
+    const getRes = await app.request(`/api/admin/events/${EVENT_LOC}/location`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(getRes.status).toBe(200);
+    const getBody = (await getRes.json()) as EventLocationDto;
+    expect(getBody.google_maps_url_override).toBe("https://www.google.com/maps/place/Example+Hall");
+
+    const clearRes = await putLocation(EVENT_LOC, adminCookie, {
+      google_maps_url_override: "",
+      apple_maps_url_override: null,
+    });
+    expect(clearRes.status).toBe(200);
+    const clearBody = (await clearRes.json()) as EventLocationDto;
+    expect(clearBody.google_maps_url_override).toBeNull();
+    expect(clearBody.apple_maps_url_override).toBeNull();
+  });
+
+  it("rejects Maps URL overrides with disallowed hosts", async () => {
+    const res = await putLocation(EVENT_LOC, adminCookie, {
+      google_maps_url_override: "https://evil.example/maps",
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/google_maps_url_override/);
   });
 });

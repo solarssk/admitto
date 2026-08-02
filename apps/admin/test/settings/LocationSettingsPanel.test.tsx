@@ -89,6 +89,8 @@ const EMPTY_LOCATION: EventLocationDto = {
   geocoding_provider: null,
   geocoded_at: null,
   address_components: null,
+  google_maps_url_override: null,
+  apple_maps_url_override: null,
 };
 
 const SAVED_LOCATION: EventLocationDto = {
@@ -109,6 +111,8 @@ const SAVED_LOCATION: EventLocationDto = {
     region: null,
     country: null,
   },
+  google_maps_url_override: null,
+  apple_maps_url_override: null,
 };
 
 const TILE_CONFIG: MapTileConfigDto = {
@@ -945,6 +949,64 @@ describe("LocationSettingsPanel — map links and timezone", () => {
     fireEvent.click(screen.getByRole("button", { name: "Copy Apple Maps link" }));
     await waitFor(() => expect(writeText).toHaveBeenLastCalledWith(expect.stringContaining("maps.apple.com")));
     expect(await screen.findByText("Apple Maps link copied.")).toBeTruthy();
+  });
+
+  it("opens Fix link modal and copies a manual Google override", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    const override = "https://www.google.com/maps/place/Custom+Hall";
+    mockFetchLocation.mockResolvedValue({
+      ...SAVED_LOCATION,
+      google_maps_url_override: override,
+      apple_maps_url_override: null,
+    });
+    renderPanel();
+
+    await screen.findByDisplayValue("Springfield Hall");
+    expect(screen.getByText(/Using a manually entered link instead of the pin-built/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Copy Google Maps link" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(override));
+
+    fireEvent.click(screen.getByRole("button", { name: "Pin wrong? Fix link" }));
+    expect(await screen.findByRole("heading", { name: "Fix a wrong map link" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Remove overrides" }));
+    await waitFor(() =>
+      expect(screen.queryByText(/Using a manually entered link instead of the pin-built/)).toBeFalsy(),
+    );
+  });
+
+  it("applies Fix link modal Save to the draft without calling the API yet", async () => {
+    mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
+    renderPanel();
+
+    await screen.findByDisplayValue("Springfield Hall");
+    fireEvent.click(screen.getByRole("button", { name: "Pin wrong? Fix link" }));
+    const googleInput = await screen.findByLabelText("Google Maps link");
+    fireEvent.change(googleInput, {
+      target: { value: "https://maps.app.goo.gl/example" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save links" }));
+    await waitFor(() =>
+      expect(screen.getByText(/Using a manually entered link instead of the pin-built/)).toBeTruthy(),
+    );
+    expect(mockSaveLocation).not.toHaveBeenCalled();
+  });
+
+  it("removes both Maps overrides from one notice action", async () => {
+    mockFetchLocation.mockResolvedValue({
+      ...SAVED_LOCATION,
+      google_maps_url_override: "https://www.google.com/maps/place/Custom",
+      apple_maps_url_override: "https://maps.apple.com/?ll=1,2",
+    });
+    renderPanel();
+
+    await screen.findByDisplayValue("Springfield Hall");
+    expect(screen.getByText(/Using a manually entered link instead of the pin-built/)).toBeTruthy();
+    expect(screen.getAllByText(/Using a manually entered link/).length).toBe(1);
+    fireEvent.click(screen.getByRole("button", { name: "Remove override" }));
+    await waitFor(() =>
+      expect(screen.queryByText(/Using a manually entered link instead of the pin-built/)).toBeFalsy(),
+    );
   });
 
   it("uses the formatted address, then coordinates alone, as the Google Maps link label", async () => {

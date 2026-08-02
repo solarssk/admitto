@@ -104,7 +104,8 @@ export function EnvBadge({ locked }: Readonly<{ locked: boolean }>) {
 const SENDER_HINT = "From, reply-to, and bounce addresses used on every email this sends.";
 // Shared by MailTransportPanel (organization-wide) and EventMailSettingsCard (per-event) - both
 // render their own "Send test email" card against the same underlying test-send flow.
-export const SEND_TEST_EMAIL_HINT = "Verifies transport credentials with a trivial message, not an event template.";
+export const SEND_TEST_EMAIL_HINT =
+  "Sends a trivial message to confirm delivery — not an event ticket or reminder template.";
 
 export const PROVIDER_GUIDE: Record<MailProvider | "", string> = {
   "": "No mail will be sent yet.",
@@ -804,36 +805,38 @@ export function SendTestEmailCard({
   const reasonId = `${idPrefix}-reason`;
   return (
     <Card title={<HintLabel hint={SEND_TEST_EMAIL_HINT}>Send test email</HintLabel>}>
-      <p className="mail-test-send__hint">{testSendHint}</p>
-      <div className="mail-test-send__row">
-        <Input
-          label="Recipient"
-          type="text"
-          inputMode="email"
-          value={testEmail}
-          onChange={(e) => onTestEmailChange(e.target.value)}
-          placeholder="you@example.com"
-          disabled={!!testSendReason}
-          {...NO_AUTOFILL_PROPS}
-        />
-        <Tooltip content={testSendReason}>
-          {testSendReason && (
-            <span id={reasonId} className="sr-only">
-              {testSendReason}
-            </span>
-          )}
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={testSending || !!testSendReason}
-            aria-describedby={testSendReason ? reasonId : undefined}
-            onClick={onTestSend}
-          >
-            {testSending ? "Sending…" : "Send test"}
-          </Button>
-        </Tooltip>
+      <div className="settings-card-stack">
+        <p className="mail-test-send__hint settings-card-intro">{testSendHint}</p>
+        <div className="mail-test-send__row">
+          <Input
+            label="Recipient"
+            type="text"
+            inputMode="email"
+            value={testEmail}
+            onChange={(e) => onTestEmailChange(e.target.value)}
+            placeholder="you@example.com"
+            disabled={!!testSendReason}
+            {...NO_AUTOFILL_PROPS}
+          />
+          <Tooltip content={testSendReason}>
+            {testSendReason && (
+              <span id={reasonId} className="sr-only">
+                {testSendReason}
+              </span>
+            )}
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={testSending || !!testSendReason}
+              aria-describedby={testSendReason ? reasonId : undefined}
+              onClick={onTestSend}
+            >
+              {testSending ? "Sending…" : "Send test"}
+            </Button>
+          </Tooltip>
+        </div>
+        {testResult && <TestResultPreview testResult={testResult} />}
       </div>
-      {testResult && <TestResultPreview testResult={testResult} />}
     </Card>
   );
 }

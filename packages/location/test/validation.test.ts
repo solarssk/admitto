@@ -103,6 +103,42 @@ describe("normalizeEventLocationInput", () => {
   it("leaves map_zoom omitted when not provided", () => {
     expect(normalizeEventLocationInput({ formatted_address: "x" }).map_zoom).toBeUndefined();
   });
+
+  it("accepts allowlisted Google and Apple Maps URL overrides", () => {
+    const result = normalizeEventLocationInput({
+      google_maps_url_override: "  https://maps.app.goo.gl/abc123  ",
+      apple_maps_url_override: "https://maps.apple.com/?ll=50,19",
+    });
+    expect(result.google_maps_url_override).toBe("https://maps.app.goo.gl/abc123");
+    expect(result.apple_maps_url_override).toBe("https://maps.apple.com/?ll=50,19");
+  });
+
+  it("clears Maps URL overrides with empty string or null", () => {
+    expect(normalizeEventLocationInput({ google_maps_url_override: "  " }).google_maps_url_override).toBeNull();
+    expect(normalizeEventLocationInput({ apple_maps_url_override: null }).apple_maps_url_override).toBeNull();
+  });
+
+  it.each([
+    ["http://www.google.com/maps", "https"],
+    ["https://evil.example/maps", "Google Maps link"],
+    ["not-a-url", "valid URL"],
+    ["https://maps.google.com/" + "a".repeat(LOCATION_LIMITS.MAPS_URL_OVERRIDE_MAX_LENGTH), "at most"],
+  ])("rejects invalid google_maps_url_override (%s)", (value, msgPart) => {
+    expect(() => normalizeEventLocationInput({ google_maps_url_override: value })).toThrow(
+      LocationValidationError,
+    );
+    try {
+      normalizeEventLocationInput({ google_maps_url_override: value });
+    } catch (err) {
+      expect((err as Error).message).toContain(msgPart);
+    }
+  });
+
+  it("rejects Apple override on a non-Apple host", () => {
+    expect(() =>
+      normalizeEventLocationInput({ apple_maps_url_override: "https://www.google.com/maps" }),
+    ).toThrow(/Apple Maps link/);
+  });
 });
 
 describe("assertCoordinatePairing", () => {

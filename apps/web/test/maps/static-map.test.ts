@@ -180,6 +180,35 @@ describe("renderStaticMapPng", () => {
     expect(meta.format).toBe("png");
   });
 
+  it("resizes non-256 commercial tiles (e.g. MapTiler 512) before composite", async () => {
+    const tile512 = await sharp({
+      create: { width: 512, height: 512, channels: 3, background: { r: 100, g: 140, b: 180 } },
+    })
+      .png()
+      .toBuffer();
+    const fetchFn = vi.fn().mockImplementation(async () =>
+      new Response(new Uint8Array(tile512), { status: 200, headers: { "content-type": "image/png" } }),
+    );
+
+    const png = await renderStaticMapPng(
+      { latitude: 52.2297, longitude: 21.0122, zoom: 15 },
+      {
+        tileConfig: {
+          enabled: true,
+          tileUrl: "https://api.maptiler.example/maps/streets/{z}/{x}/{y}.png?key=test",
+          attribution: "© MapTiler © OpenStreetMap",
+          maxZoom: 19,
+        },
+        userAgent: "Admitto/test",
+        fetchFn,
+      },
+    );
+
+    const meta = await sharp(png).metadata();
+    expect(meta.width).toBe(STATIC_MAP_WIDTH);
+    expect(meta.height).toBe(STATIC_MAP_HEIGHT);
+  });
+
   it("rejects when maps are disabled", async () => {
     await expect(
       renderStaticMapPng(

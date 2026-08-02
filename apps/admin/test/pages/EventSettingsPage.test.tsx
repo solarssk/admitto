@@ -137,6 +137,8 @@ const emptyLocation: EventLocationDto = {
   geocoding_provider: null,
   geocoded_at: null,
   address_components: null,
+  google_maps_url_override: null,
+  apple_maps_url_override: null,
 };
 
 const mapTileConfig: MapTileConfigDto = {
