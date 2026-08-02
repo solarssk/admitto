@@ -1,5 +1,9 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { LOCATION_LIMITS } from "@admitto/location";
+import {
+  LOCATION_LIMITS,
+  LocationValidationError,
+  normalizeMapsUrlOverride,
+} from "@admitto/location";
 import { Button, Input, ModalBackdrop } from "@admitto/ui";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import "../attendees/add-attendee-modal.css";
@@ -17,6 +21,21 @@ export interface FixMapsLinkModalProps {
   readonly onApply: (values: FixMapsLinkModalValues) => void;
 }
 
+function validateOverrideField(
+  value: string,
+  kind: "google" | "apple",
+  fieldLabel: string,
+): { ok: true; value: string } | { ok: false; error: string } {
+  try {
+    const normalized = normalizeMapsUrlOverride(value, kind, fieldLabel);
+    return { ok: true, value: normalized ?? "" };
+  } catch (err) {
+    const message =
+      err instanceof LocationValidationError ? err.message : `${fieldLabel} is invalid`;
+    return { ok: false, error: message };
+  }
+}
+
 /**
  * Paste corrected Google / Apple Maps deep links when the pin-built URL opens the wrong place.
  * Does not move the OSM pin. Save applies to the draft; the Location tab footer still persists.
@@ -31,11 +50,15 @@ export function FixMapsLinkModal({
   const panelRef = useRef<HTMLDivElement>(null);
   const [googleUrl, setGoogleUrl] = useState(initial.google_maps_url_override);
   const [appleUrl, setAppleUrl] = useState(initial.apple_maps_url_override);
+  const [googleError, setGoogleError] = useState<string | null>(null);
+  const [appleError, setAppleError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setGoogleUrl(initial.google_maps_url_override);
     setAppleUrl(initial.apple_maps_url_override);
+    setGoogleError(null);
+    setAppleError(null);
   }, [open, initial.google_maps_url_override, initial.apple_maps_url_override]);
 
   const handleClose = () => {
@@ -47,9 +70,15 @@ export function FixMapsLinkModal({
   if (!open) return null;
 
   const handleSave = () => {
+    const google = validateOverrideField(googleUrl, "google", "Google Maps link");
+    const apple = validateOverrideField(appleUrl, "apple", "Apple Maps link");
+    setGoogleError(google.ok ? null : google.error);
+    setAppleError(apple.ok ? null : apple.error);
+    if (!google.ok || !apple.ok) return;
+
     onApply({
-      google_maps_url_override: googleUrl,
-      apple_maps_url_override: appleUrl,
+      google_maps_url_override: google.value,
+      apple_maps_url_override: apple.value,
     });
     onClose();
   };
@@ -82,18 +111,26 @@ export function FixMapsLinkModal({
           <Input
             label="Google Maps link"
             value={googleUrl}
-            onChange={(e) => setGoogleUrl(e.target.value)}
+            onChange={(e) => {
+              setGoogleUrl(e.target.value);
+              setGoogleError(null);
+            }}
             maxLength={LOCATION_LIMITS.MAPS_URL_OVERRIDE_MAX_LENGTH}
             placeholder="https://www.google.com/maps/..."
             autoComplete="off"
+            error={googleError ?? undefined}
           />
           <Input
             label="Apple Maps link"
             value={appleUrl}
-            onChange={(e) => setAppleUrl(e.target.value)}
+            onChange={(e) => {
+              setAppleUrl(e.target.value);
+              setAppleError(null);
+            }}
             maxLength={LOCATION_LIMITS.MAPS_URL_OVERRIDE_MAX_LENGTH}
             placeholder="https://maps.apple.com/..."
             autoComplete="off"
+            error={appleError ?? undefined}
           />
         </div>
         <div className="add-attendee-modal__actions" style={{ justifyContent: "space-between" }}>

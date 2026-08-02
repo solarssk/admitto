@@ -753,7 +753,7 @@ describe("renderStaticMapPng", () => {
           fetchFn,
         },
       ),
-    ).rejects.toMatchObject({ message: expect.stringContaining("Failed to composite") });
+    ).rejects.toMatchObject({ message: expect.stringContaining("Tile PNG metadata unreadable") });
   });
 
   it("uses global fetch when fetchFn is omitted", async () => {

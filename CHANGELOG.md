@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Location tab: Pin wrong? Fix link.** When the OpenStreetMap pin is right but the generated Google/Apple Maps deep link opens the wrong place, admins can paste corrected Maps URLs. Overrides are used for Copy links, the public browser ticket, and mail `{{google_maps_url}}` / `{{apple_maps_url}}`; the pin, address grid, and static map image are unchanged.
+- **Location tab: Pin wrong? Fix link.** When the OpenStreetMap pin is right but the generated Google/Apple Maps deep link opens the wrong place, admins can paste corrected Maps URLs. Overrides are used for Copy links, the public browser ticket, and mail `{{google_maps_url}}` / `{{apple_maps_url}}`; the pin, address grid, and static map image are unchanged. Moving the pin or selecting a new venue search result clears the overrides.
 
 ### Security
 - **Static map tile fetches harden outbound SSRF edges:** tile downloads use `redirect: "manual"` and reject private / loopback / link-local / cloud-metadata redirect targets (and non-https URLs outside local development), and tile bodies must start with PNG magic bytes before sharp composites them for `GET /m/{eventId}.png`.

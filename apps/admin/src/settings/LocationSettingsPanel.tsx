@@ -229,6 +229,9 @@ export function LocationSettingsPanel({
       longitude: result.longitude,
       map_zoom: LOCATION_LIMITS.DEFAULT_ZOOM,
       address_components: baseComponents,
+      // New pin/venue invalidates pasted Maps links for the previous place.
+      google_maps_url_override: "",
+      apple_maps_url_override: "",
     }));
     const { components, formatted_address } = await enrichComponentsFromReverse(
       result,
@@ -252,7 +255,15 @@ export function LocationSettingsPanel({
     const seq = ++reverseSeqRef.current;
     // Manual pin move invalidates prior geocode provenance until reverse succeeds.
     pendingGeocodingProviderRef.current = null;
-    setDraft((prev) => ({ ...prev, latitude, longitude }));
+    // Clear Maps overrides immediately so Copy / Notice cannot keep the previous place's links
+    // while reverse geocode is still in flight.
+    setDraft((prev) => ({
+      ...prev,
+      latitude,
+      longitude,
+      google_maps_url_override: "",
+      apple_maps_url_override: "",
+    }));
 
     try {
       const res = await reverseGeocoding(latitude, longitude);
@@ -267,6 +278,8 @@ export function LocationSettingsPanel({
           longitude,
           formatted_address: "",
           address_components: { ...EMPTY_ADDRESS_COMPONENTS },
+          google_maps_url_override: "",
+          apple_maps_url_override: "",
         }));
         return;
       }
@@ -283,6 +296,8 @@ export function LocationSettingsPanel({
           : (result.name ?? result.formatted_address),
         map_zoom: prev.map_zoom || LOCATION_LIMITS.DEFAULT_ZOOM,
         address_components: componentsFromResult(result),
+        google_maps_url_override: "",
+        apple_maps_url_override: "",
       }));
     } catch {
       // Coords already applied — a failed reverse must not undo the pin the admin placed.
@@ -295,6 +310,8 @@ export function LocationSettingsPanel({
         longitude,
         formatted_address: "",
         address_components: { ...EMPTY_ADDRESS_COMPONENTS },
+        google_maps_url_override: "",
+        apple_maps_url_override: "",
       }));
     }
   }

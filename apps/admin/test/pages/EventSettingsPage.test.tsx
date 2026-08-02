@@ -364,7 +364,7 @@ describe("EventSettingsPage tabs", () => {
     const basicInformationHint = screen.getByText("Basic information").closest(".at-tooltip-trigger");
     fireEvent.mouseEnter(basicInformationHint!);
     expect(screen.getByRole("tooltip").textContent).toBe(
-      "Core event details. Title and date are shown to attendees and printed on tickets. Set the venue in the Location tab.",
+      "Title and date appear on tickets and emails. Set the venue in the Location tab.",
     );
   });
 

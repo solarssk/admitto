@@ -986,9 +986,7 @@ describe("LocationSettingsPanel — map links and timezone", () => {
       target: { value: "https://maps.app.goo.gl/example" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save links" }));
-    await waitFor(() =>
-      expect(screen.getByText(/Using a manually entered link instead of the pin-built/)).toBeTruthy(),
-    );
+    expect(await screen.findByText(/Using a manually entered link instead of the pin-built/)).toBeTruthy();
     expect(mockSaveLocation).not.toHaveBeenCalled();
   });
 
@@ -1002,11 +1000,63 @@ describe("LocationSettingsPanel — map links and timezone", () => {
 
     await screen.findByDisplayValue("Springfield Hall");
     expect(screen.getByText(/Using a manually entered link instead of the pin-built/)).toBeTruthy();
-    expect(screen.getAllByText(/Using a manually entered link/).length).toBe(1);
+    expect(screen.getAllByText(/Using a manually entered link/)).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "Remove override" }));
     await waitFor(() =>
       expect(screen.queryByText(/Using a manually entered link instead of the pin-built/)).toBeFalsy(),
     );
+  });
+
+  it("clears Maps overrides when the map pin moves", async () => {
+    mockFetchLocation.mockResolvedValue({
+      ...SAVED_LOCATION,
+      google_maps_url_override: "https://www.google.com/maps/place/Custom",
+      apple_maps_url_override: null,
+    });
+    mockReverse.mockResolvedValue({
+      result: {
+        name: "New York Hall",
+        formatted_address: "New York, USA",
+        latitude: 40.7128,
+        longitude: -74.006,
+        provider: "nominatim",
+        components: {
+          object_name: "New York Hall",
+          house_number: null,
+          road: null,
+          postcode: null,
+          city: "New York",
+          state: null,
+          country: "United States",
+          country_code: "us",
+        },
+      },
+      contact_configured: true,
+    });
+    renderPanel();
+
+    await screen.findByDisplayValue("Springfield Hall");
+    expect(screen.getByText(/Using a manually entered link instead of the pin-built/)).toBeTruthy();
+    fireEvent.click(screen.getByTestId("map-picker"));
+    await waitFor(() =>
+      expect(screen.queryByText(/Using a manually entered link instead of the pin-built/)).toBeFalsy(),
+    );
+  });
+
+  it("rejects invalid Maps URLs in the Fix link modal without updating the draft", async () => {
+    mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
+    renderPanel();
+
+    await screen.findByDisplayValue("Springfield Hall");
+    fireEvent.click(screen.getByRole("button", { name: "Pin wrong? Fix link" }));
+    const googleInput = await screen.findByLabelText("Google Maps link");
+    fireEvent.change(googleInput, {
+      target: { value: "https://evil.example/maps" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save links" }));
+    expect(await screen.findByText(/must be a Google Maps link/i)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Fix a wrong map link" })).toBeTruthy();
+    expect(screen.queryByText(/Using a manually entered link instead of the pin-built/)).toBeNull();
   });
 
   it("uses the formatted address, then coordinates alone, as the Google Maps link label", async () => {
