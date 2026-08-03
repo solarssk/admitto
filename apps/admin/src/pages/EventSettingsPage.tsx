@@ -26,6 +26,7 @@ import type { EventSettingsDto, TicketTypeDto } from "../api/types.js";
 import { TicketTypesCard } from "../settings/TicketTypesCard.js";
 import { EventMailSettingsCard } from "../settings/EventMailSettingsCard.js";
 import { LocationSettingsPanel } from "../settings/LocationSettingsPanel.js";
+import { SettingsFooter } from "../settings/mailTransportFormParts.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
@@ -129,12 +130,6 @@ type AddToast = (message: string, variant?: ToastVariant, duration?: number) => 
 
 function eventOverviewPath(eventId: string | undefined): string {
   return eventId ? `/admin/events/${eventId}/overview` : "/admin";
-}
-
-function computeSaveButtonLabel(saving: boolean, logoUploading: boolean): string {
-  if (saving) return "Saving…";
-  if (logoUploading) return "Uploading…";
-  return "Save";
 }
 
 /** Tooltip shared by the Danger Zone's superadmin-gated actions: superadmin restriction wins
@@ -571,6 +566,7 @@ export function EventSettingsPage() {
   const [locationSaving, setLocationSaving] = useState(false);
   // Same reasoning as mailCardResetKey above, applied to LocationSettingsPanel's own draft state.
   const [locationCardResetKey, setLocationCardResetKey] = useState(0);
+  const basicValidationErrorsRef = useRef<HTMLUListElement>(null);
 
   const initialTab = inPageTabFromSearch(searchParams, isSa);
   const [tab, setTab] = useState<EventSettingsTab>(initialTab);
@@ -606,7 +602,6 @@ export function EventSettingsPage() {
   // Same combination for "a save request is in flight" - a Danger Zone action firing while the
   // Mail or Location tab's own save is still in flight would race against it on the same event record.
   const pageBusy = saving || mailSaving || locationSaving;
-  const saveButtonLabel = computeSaveButtonLabel(saving, logoUploading);
   // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
   // these "Loading…" placeholders on and off faster than they can register as loading —
   // show them only once the fetch has genuinely taken a moment.
@@ -672,6 +667,10 @@ export function EventSettingsPage() {
   }, [pageDirty, pageBusy]);
 
   const goBack = () => navigate(eventOverviewPath(eventId));
+
+  function handleBasicReset() {
+    if (original) setForm({ ...original });
+  }
 
   async function handleSave() {
     if (!eventId || !form || !original || !dirty) return;
@@ -845,18 +844,6 @@ export function EventSettingsPage() {
         <Card
           title={<HintLabel hint={BASIC_INFORMATION_HINT}>Basic information</HintLabel>}
           className="event-settings-card"
-          actions={
-            !isArchived && (
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={!dirty || saving || logoUploading}
-                onClick={() => void handleSave()}
-              >
-                {saveButtonLabel}
-              </Button>
-            )
-          }
         >
           <div className="settings-field-stack">
             <p className="settings-card-intro">{BASIC_INFORMATION_INTRO}</p>
@@ -922,6 +909,18 @@ export function EventSettingsPage() {
             </div>
           </div>
         </Card>
+
+        {!isArchived && (
+          <SettingsFooter
+            validationErrors={[]}
+            validationErrorsRef={basicValidationErrorsRef}
+            hasUnsavedChanges={dirty}
+            saving={saving || logoUploading}
+            busyLabel={logoUploading && !saving ? "Uploading…" : "Saving…"}
+            onReset={handleBasicReset}
+            onSave={() => void handleSave()}
+          />
+        )}
 
         <Card title={<HintLabel hint={STATUS_HINT}>Status</HintLabel>} className="event-settings-card">
           <div className="settings-status-grid">
@@ -995,18 +994,6 @@ export function EventSettingsPage() {
         <Card
           title={<HintLabel hint={EVENT_LOGO_HINT}>Event logo</HintLabel>}
           className="event-settings-card"
-          actions={
-            !isArchived && (
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={!dirty || saving || logoUploading}
-                onClick={() => void handleSave()}
-              >
-                {saveButtonLabel}
-              </Button>
-            )
-          }
         >
           <LogoUploadZone
             label="Event logo"
@@ -1024,6 +1011,18 @@ export function EventSettingsPage() {
             </p>
           )}
         </Card>
+
+        {!isArchived && (
+          <SettingsFooter
+            validationErrors={[]}
+            validationErrorsRef={basicValidationErrorsRef}
+            hasUnsavedChanges={dirty}
+            saving={saving || logoUploading}
+            busyLabel={logoUploading && !saving ? "Uploading…" : "Saving…"}
+            onReset={handleBasicReset}
+            onSave={() => void handleSave()}
+          />
+        )}
 
         {isSa ? (
           <EventImageAssetLibrary eventId={eventId} disabled={isArchived} />

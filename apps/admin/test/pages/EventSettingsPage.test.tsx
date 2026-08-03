@@ -268,6 +268,7 @@ describe("EventSettingsPage save label", () => {
     renderSettings();
 
     expect(await screen.findByRole("button", { name: "Save" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reset" })).toBeTruthy();
   });
 });
 
@@ -837,14 +838,16 @@ describe("EventSettingsPage Mail tab — Save/Reset pair lives in the card's own
     ).toBe("true");
   });
 
-  it("keeps the General tab's own Save button unaffected", async () => {
+  it("keeps the General tab's own Save/Reset footer unaffected by the Mail draft", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
     await screen.findByLabelText("Event title");
 
-    expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Save" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reset" })).toBeTruthy();
+    expect(screen.queryByText(/Unsaved changes/)).toBeNull();
     fireEvent.change(screen.getByLabelText("Event title"), { target: { value: "Summit 2" } });
-    expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(false);
+    expect(screen.getByText(/Unsaved changes/)).toBeTruthy();
   });
 });
 

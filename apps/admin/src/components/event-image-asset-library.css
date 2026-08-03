@@ -190,7 +190,7 @@
 }
 
 .image-asset-library__card-name {
-  font-size: var(--fs-body);
+  font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
   color: var(--text-primary);
   overflow: hidden;

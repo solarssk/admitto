@@ -911,6 +911,7 @@ export function SettingsFooter({
   validationErrorsRef,
   hasUnsavedChanges,
   saving,
+  busyLabel = "Saving…",
   onReset,
   onSave,
 }: Readonly<{
@@ -918,10 +919,12 @@ export function SettingsFooter({
   validationErrorsRef: RefObject<HTMLUListElement | null>;
   hasUnsavedChanges: boolean;
   saving: boolean;
+  /** Label while `saving` is true (e.g. "Uploading…" for a logo transfer). */
+  busyLabel?: string;
   onReset: () => void;
   onSave: () => void;
 }>) {
-  const saveLabel = saving ? "Saving…" : "Save";
+  const saveLabel = saving ? busyLabel : "Save";
 
   return (
     <div className="settings-footer">

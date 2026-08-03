@@ -130,7 +130,9 @@
 }
 
 .event-settings-card + .event-settings-card {
-  margin-top: var(--space-4);
+  /* Spacing comes from .event-settings-tabpanel gap when cards are direct siblings;
+     keep this zero so a footer between cards doesn't double up with an extra margin. */
+  margin-top: 0;
 }
 
 /* Tab bar + panels ------------------------------------------------------ */
@@ -141,6 +143,14 @@
 .event-settings-tabpanel {
   display: flex;
   flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* .screen's 18px flex gap also sits between the tab strip and the first panel —
+   Organisation settings and the Events list use block layout there (no extra gap).
+   Cancel that sibling gap so cards sit closer to the tabs. */
+.event-settings-page.screen > .scroll-fade-tabs {
+  margin-bottom: -18px;
 }
 
 /* Field spacing ----------------------------------------------------------

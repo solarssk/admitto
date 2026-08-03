@@ -171,14 +171,14 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
     }
     if (assets.length === 0) {
       return (
-        <p className="field-hint">
+        <p className="settings-card-intro image-asset-library__intro">
           No image assets yet. Upload one above to use it as a placeholder in email templates.
         </p>
       );
     }
     return (
       <>
-        <p className="field-hint">
+        <p className="settings-card-intro image-asset-library__intro">
           {assets.length} image{pluralSuffix(assets.length)}. Each one has a short name you can use
           in any email.
         </p>

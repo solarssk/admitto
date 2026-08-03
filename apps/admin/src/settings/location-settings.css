@@ -120,7 +120,8 @@
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: var(--fs-sm);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
   /* Tall enough that ti-map-pin's pointed tip is not clipped (looks like a hollow
    * circle / "target" when the tip is cut off). */
   line-height: 1.5;
