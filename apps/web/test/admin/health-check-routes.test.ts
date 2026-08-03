@@ -804,7 +804,8 @@ describe("collectAdminHealth", () => {
       email_deliveries_queued: 0,
       email_deliveries_failed_retryable: 0,
     });
-    checkDatabase.mockResolvedValue({ status: "ok" });
+    // NaN is not finite → resolveDatabaseLatencyMs ignores probe latency.
+    checkDatabase.mockResolvedValue({ status: "ok", latency_ms: Number.NaN });
     checkMailer.mockReturnValue({ configured: true, provider: "graph" });
     resolveInstanceOrganizationId.mockResolvedValue("org-1");
     describeMailConfigForOrg.mockResolvedValue({
@@ -868,7 +869,7 @@ describe("collectAdminHealth", () => {
     describeMailConfigForOrg.mockResolvedValue({
       provider: { value: null, source: "default", locked: false },
     });
-    checkDatabase.mockResolvedValue({ status: "ok" });
+    checkDatabase.mockResolvedValue({ status: "ok", latency_ms: Number.NaN });
     const latencyFromSetup = await collectAdminHealth({
       db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
       rateLimitStore: {} as never,
