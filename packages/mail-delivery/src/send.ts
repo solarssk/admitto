@@ -130,6 +130,8 @@ interface EventForSend extends EventLinkInput {
     map_zoom?: number | null;
     directions_text: string | null;
     accessibility_text: string | null;
+    google_maps_url_override?: string | null;
+    apple_maps_url_override?: string | null;
   } | null;
   organization_id: string;
 }

@@ -44,6 +44,18 @@ export interface EventDto {
   date: string;
   timezone: string;
   location: string | null;
+  /** True when EventLocation has both latitude and longitude. */
+  has_coordinates?: boolean;
+  /**
+   * Same-origin list preview path (`/m/{id}.png?v=…&context=list`) when maps are enabled
+   * and a pin exists; null otherwise (show the card placeholder — do not request `/m/`).
+   */
+  map_preview_path?: string | null;
+  /**
+   * Plain-text map credit for the card strip when `map_preview_path` is set (from
+   * `MAP_TILE_ATTRIBUTION` / default OSM). List PNGs omit burn-in so the pin stays centered.
+   */
+  map_attribution?: string | null;
   organization_id: string;
   attendee_count?: number;
   archived_at: string | null;
@@ -826,6 +838,10 @@ export interface EventLocationDto {
   geocoding_provider: string | null;
   geocoded_at: string | null;
   address_components: AddressComponentsDto | null;
+  /** Manual Google Maps deep link when the pin-built URL is wrong; null = build from coords. */
+  google_maps_url_override: string | null;
+  /** Manual Apple Maps deep link when the pin-built URL is wrong; null = build from coords. */
+  apple_maps_url_override: string | null;
 }
 
 export interface SaveEventLocationBody {
@@ -838,6 +854,8 @@ export interface SaveEventLocationBody {
   directions_text?: string | null;
   accessibility_text?: string | null;
   address_components?: AddressComponentsDto | null;
+  google_maps_url_override?: string | null;
+  apple_maps_url_override?: string | null;
   /** Only meaningful alongside a latitude/longitude change for stamping a provider; send `null`
    * without a coordinate change to clear stale Verified provenance (e.g. free-text venue rename).
    * Omit for a manual pin move so the server clears provenance via the coordinate-change path. */

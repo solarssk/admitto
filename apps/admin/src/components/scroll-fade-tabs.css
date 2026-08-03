@@ -3,7 +3,8 @@
 
 .scroll-fade-tabs {
   position: relative;
-  margin-bottom: var(--space-4);
+  /* One breath under the tab strip. Do not stack this with .screen's flex gap — see shell.css. */
+  margin-bottom: var(--space-3);
 }
 
 .scroll-fade-tabs__scroll {

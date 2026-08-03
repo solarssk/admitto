@@ -1,11 +1,11 @@
 import type { ResolvedTicket } from "@admitto/tickets";
 import type { BrandingTheme } from "@admitto/auth";
 import {
-  buildAppleMapsUrl,
   buildEventStaticMapPath,
-  buildGoogleMapsUrl,
   formatDirectionsAddressFromComponents,
   isMapReady,
+  resolveAppleMapsUrl,
+  resolveGoogleMapsUrl,
 } from "@admitto/location";
 import { buildTicketPageStyles } from "./ticket-inline-styles.js";
 
@@ -29,7 +29,6 @@ const MAP_LINK_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" s
 
 export type TicketPageOptions = {
   displayToken?: string | null;
-  mapAttribution?: string | null;
   /** When false, omit the static map (`LOCATION_MAPS_ENABLED=false`). Google/Apple links still render when coordinates exist. Defaults to true. */
   staticMapEnabled?: boolean;
 };
@@ -43,21 +42,6 @@ export function resolveDisplayToken(
     return `${internalToken.slice(0, 8)}…${internalToken.slice(-4)}`;
   }
   return agencyPublicRef ?? null;
-}
-
-function renderMapAttribution(attribution?: string | null): string {
-  const normalized = attribution?.replace(/\s+/g, " ").trim();
-  if (
-    normalized ===
-    '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-  ) {
-    return `© <a href="https://www.openstreetmap.org/copyright" rel="noreferrer">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions" rel="noreferrer">CARTO</a>`;
-  }
-  // Remove every `<` / `>` so incomplete multi-character tag stripping cannot leave `<script`.
-  const plain =
-    normalized?.replaceAll("<", "").replaceAll(">", "").trim() ||
-    "Map data attribution unavailable";
-  return esc(plain);
 }
 
 /** Origin of `url` when it's a safe (https, no embedded credentials) absolute URL - null for
@@ -181,8 +165,8 @@ export function renderTicket(
   const mapsLinks =
     mapReady
       ? `<div class="ticket__map-links">
-          <a class="ticket__map-link" href="${esc(buildGoogleMapsUrl(event.latitude!, event.longitude!, venueLabel))}" rel="noreferrer">${MAP_LINK_ICON}<span>Google Maps</span></a>
-          <a class="ticket__map-link" href="${esc(buildAppleMapsUrl(event.latitude!, event.longitude!, venueLabel))}" rel="noreferrer">${MAP_LINK_ICON}<span>Apple Maps</span></a>
+          <a class="ticket__map-link" href="${esc(resolveGoogleMapsUrl(event.latitude!, event.longitude!, venueLabel, event.googleMapsUrlOverride))}" rel="noreferrer">${MAP_LINK_ICON}<span>Google Maps</span></a>
+          <a class="ticket__map-link" href="${esc(resolveAppleMapsUrl(event.latitude!, event.longitude!, venueLabel, event.appleMapsUrlOverride))}" rel="noreferrer">${MAP_LINK_ICON}<span>Apple Maps</span></a>
         </div>`
       : "";
 
@@ -200,8 +184,7 @@ export function renderTicket(
       <object class="ticket__map" data="${esc(mapPath)}" type="image/png" aria-label="Map of event location">
         <p class="ticket__map-fallback">Map unavailable</p>
       </object>
-    </div>
-      <p class="ticket__map-attribution">${renderMapAttribution(options.mapAttribution)}</p>`;
+    </div>`;
   }
   const directionsHtml = directionsText
     ? `<div class="ticket__travel-note"><h3>${DIRECTIONS_ICON}<span>Directions</span></h3><p>${esc(directionsText)}</p></div>`

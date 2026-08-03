@@ -60,14 +60,14 @@ describe("MapPicker", () => {
     expect(container.querySelector(".leaflet-marker-icon")).toBeTruthy();
   });
 
-  it("calls onPick with a lat/lng pair when the map is clicked", () => {
+  it("calls onPick with a lat/lng pair when the map is double-clicked", () => {
     const onPick = vi.fn();
     const { container } = render(
       <MapPicker latitude={null} longitude={null} zoom={15} tileConfig={TILE_CONFIG} onPick={onPick} />,
     );
     giveContainerSize(container);
     const mapDiv = container.querySelector(".location-map-picker") as HTMLElement;
-    mapDiv.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 200, clientY: 150 }));
+    mapDiv.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: 200, clientY: 150 }));
 
     expect(onPick).toHaveBeenCalledTimes(1);
     const [lat, lng] = onPick.mock.calls[0] as [number, number];
@@ -75,14 +75,26 @@ describe("MapPicker", () => {
     expect(Number.isFinite(lng)).toBe(true);
   });
 
-  it("does not call onPick when clicked while disabled", () => {
+  it("does not call onPick on a single click so pan/explore keeps the pin", () => {
+    const onPick = vi.fn();
+    const { container } = render(
+      <MapPicker latitude={40.7128} longitude={-74.006} zoom={15} tileConfig={TILE_CONFIG} onPick={onPick} />,
+    );
+    giveContainerSize(container);
+    const mapDiv = container.querySelector(".location-map-picker") as HTMLElement;
+    mapDiv.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 200, clientY: 150 }));
+
+    expect(onPick).not.toHaveBeenCalled();
+  });
+
+  it("does not call onPick when double-clicked while disabled", () => {
     const onPick = vi.fn();
     const { container } = render(
       <MapPicker latitude={null} longitude={null} zoom={15} tileConfig={TILE_CONFIG} disabled onPick={onPick} />,
     );
     giveContainerSize(container);
     const mapDiv = container.querySelector(".location-map-picker") as HTMLElement;
-    mapDiv.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 200, clientY: 150 }));
+    mapDiv.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: 200, clientY: 150 }));
 
     expect(onPick).not.toHaveBeenCalled();
   });
@@ -131,6 +143,44 @@ describe("MapPicker", () => {
     expect(panTo).toHaveBeenCalledWith([51.5074, -0.1278]);
     setLatLng.mockRestore();
     panTo.mockRestore();
+  });
+
+  it("setViews when coordinates and zoom both change on an existing pin", () => {
+    const setView = vi.spyOn(L.Map.prototype, "setView");
+    const panTo = vi.spyOn(L.Map.prototype, "panTo");
+    const { rerender } = render(
+      <MapPicker latitude={40.7128} longitude={-74.006} zoom={15} tileConfig={TILE_CONFIG} onPick={() => {}} />,
+    );
+    setView.mockClear();
+    panTo.mockClear();
+
+    rerender(
+      <MapPicker latitude={51.5074} longitude={-0.1278} zoom={12} tileConfig={TILE_CONFIG} onPick={() => {}} />,
+    );
+
+    expect(setView).toHaveBeenCalledWith([51.5074, -0.1278], 12);
+    expect(panTo).not.toHaveBeenCalled();
+    setView.mockRestore();
+    panTo.mockRestore();
+  });
+
+  it("does not pan back to the pin when only zoom changes", () => {
+    const panTo = vi.spyOn(L.Map.prototype, "panTo");
+    const setView = vi.spyOn(L.Map.prototype, "setView");
+    const { rerender } = render(
+      <MapPicker latitude={40.7128} longitude={-74.006} zoom={15} tileConfig={TILE_CONFIG} onPick={() => {}} />,
+    );
+    panTo.mockClear();
+    setView.mockClear();
+
+    rerender(
+      <MapPicker latitude={40.7128} longitude={-74.006} zoom={12} tileConfig={TILE_CONFIG} onPick={() => {}} />,
+    );
+
+    expect(panTo).not.toHaveBeenCalled();
+    expect(setView).not.toHaveBeenCalled();
+    panTo.mockRestore();
+    setView.mockRestore();
   });
 
   it("reports the marker position when dragging ends", () => {

@@ -120,7 +120,7 @@ describe("SecurityPanel — Authenticator app required by role", () => {
     const superadmin = await screen.findByLabelText<HTMLInputElement>("Superadmin");
     expect(superadmin.disabled).toBe(true);
     expect(superadmin.checked).toBe(true);
-    expect(screen.getByText("Managed by environment")).toBeTruthy();
+    expect(screen.getByText("From environment")).toBeTruthy();
   });
 
   it("warns when no roles are selected", async () => {

@@ -57,7 +57,7 @@ describe("EventImageAssetLibrary", () => {
     });
     expect(screen.getByText("Loading assets…")).toBeTruthy();
     vi.useRealTimers();
-    expect(await screen.findByText(/No image assets yet/)).toBeTruthy();
+    expect(await screen.findByText("No images yet")).toBeTruthy();
     expect(mockFetch).toHaveBeenCalledWith("evt-1", expect.any(AbortSignal));
   });
 
@@ -108,7 +108,7 @@ describe("EventImageAssetLibrary", () => {
   it("shows an inline error when the token doesn't match the required format", async () => {
     mockFetch.mockResolvedValueOnce([]);
     renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
-    await screen.findByText(/No image assets yet/);
+    await screen.findByText("No images yet");
 
     const tokenInput = screen.getByLabelText("Name");
     fireEvent.change(tokenInput, { target: { value: "1bad" } });
@@ -121,7 +121,7 @@ describe("EventImageAssetLibrary", () => {
   it("keeps Add asset disabled until both a file and a valid token are present", async () => {
     mockFetch.mockResolvedValueOnce([]);
     renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
-    await screen.findByText(/No image assets yet/);
+    await screen.findByText("No images yet");
 
     const addButton = screen.getByRole("button", { name: "Add asset" });
     expect(addButton.hasAttribute("disabled")).toBe(true);
@@ -138,7 +138,7 @@ describe("EventImageAssetLibrary", () => {
   it("accepts a file dropped onto the dropzone", async () => {
     mockFetch.mockResolvedValueOnce([]);
     renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
-    await screen.findByText(/No image assets yet/);
+    await screen.findByText("No images yet");
 
     const dropzone = screen.getByRole("button", { name: /Drop image here or click to browse/ });
     const file = new File(["x"], "dropped.png", { type: "image/png" });
@@ -150,7 +150,7 @@ describe("EventImageAssetLibrary", () => {
   it("rejects a file over 2 MB client-side without calling the API", async () => {
     mockFetch.mockResolvedValueOnce([]);
     renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
-    await screen.findByText(/No image assets yet/);
+    await screen.findByText("No images yet");
 
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     const big = new File([new Uint8Array(2 * 1024 * 1024 + 1)], "big.png", { type: "image/png" });
@@ -164,7 +164,7 @@ describe("EventImageAssetLibrary", () => {
     mockFetch.mockResolvedValueOnce([]);
     mockCreate.mockResolvedValueOnce(asset);
     renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
-    await screen.findByText(/No image assets yet/);
+    await screen.findByText("No images yet");
 
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "sponsor_logo" } });
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
@@ -184,7 +184,7 @@ describe("EventImageAssetLibrary", () => {
     mockFetch.mockResolvedValueOnce([]);
     mockCreate.mockRejectedValueOnce(new ApiError(409, "reserved_token", "reserved_token"));
     renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
-    await screen.findByText(/No image assets yet/);
+    await screen.findByText("No images yet");
 
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "event_title" } });
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
@@ -265,5 +265,78 @@ describe("EventImageAssetLibrary", () => {
     expect(
       screen.getByRole("button", { name: "Delete sponsor.png" }).hasAttribute("disabled"),
     ).toBe(true);
+    expect(screen.getByText(/This event is archived/)).toBeTruthy();
+  });
+
+  it("cancels the delete confirm dialog without calling the API", async () => {
+    mockFetch.mockResolvedValueOnce([asset]);
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    await screen.findByText("sponsor.png");
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete sponsor.png" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(mockDelete).not.toHaveBeenCalled();
+    expect(screen.getByText("sponsor.png")).toBeTruthy();
+  });
+
+  it("toggles the dropzone dragging class on drag over and leave", async () => {
+    mockFetch.mockResolvedValueOnce([]);
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    await screen.findByText("No images yet");
+
+    const dropzone = screen.getByRole("button", { name: /Drop image here or click to browse/ });
+    fireEvent.dragOver(dropzone);
+    expect(dropzone.className).toContain("image-asset-library__dropzone--dragging");
+    fireEvent.dragLeave(dropzone);
+    expect(dropzone.className).not.toContain("image-asset-library__dropzone--dragging");
+  });
+
+  it("opens the file picker from the dropzone via Enter and Space", async () => {
+    mockFetch.mockResolvedValueOnce([]);
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    await screen.findByText("No images yet");
+
+    const dropzone = screen.getByRole("button", { name: /Drop image here or click to browse/ });
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const clickSpy = vi.spyOn(fileInput, "click").mockImplementation(() => undefined);
+
+    fireEvent.keyDown(dropzone, { key: "Enter" });
+    fireEvent.keyDown(dropzone, { key: " " });
+    expect(clickSpy).toHaveBeenCalledTimes(2);
+    clickSpy.mockRestore();
+  });
+
+  it("ignores drops while disabled", async () => {
+    mockFetch.mockResolvedValueOnce([asset]);
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" disabled />);
+    await screen.findByText("sponsor.png");
+
+    const dropzone = screen.getByRole("button", { name: /Drop image here or click to browse/ });
+    fireEvent.drop(dropzone, {
+      dataTransfer: { files: [new File(["x"], "nope.png", { type: "image/png" })] },
+    });
+    expect(screen.queryByText("nope.png")).toBeNull();
+  });
+
+  it("pluralizes the asset count intro for more than one image", async () => {
+    mockFetch.mockResolvedValueOnce([
+      asset,
+      { ...asset, id: "asset-2", token: "banner", filename: "banner.png" },
+    ]);
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    expect(await screen.findByText(/2 images\./)).toBeTruthy();
+  });
+
+  it("falls back to a photo icon when the asset URL is not a safe img src", async () => {
+    mockFetch.mockResolvedValueOnce([{ ...asset, url: "javascript:alert(1)" }]);
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    await screen.findByText("sponsor.png");
+    expect(document.querySelector(".image-asset-library__card-thumb img")).toBeNull();
+    expect(document.querySelector(".image-asset-library__card-thumb .ti-photo")).toBeTruthy();
   });
 });

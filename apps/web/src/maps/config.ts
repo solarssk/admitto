@@ -8,12 +8,10 @@ import { isLocationMapsEnabled } from "@admitto/location";
 
 type EnvLike = Record<string, string | undefined>;
 
-/** CARTO Voyager basemap (public CDN, no API key). Override with MAP_TILE_URL for OSM or a
- * self-hosted tile server. Leaflet expands `{s}` to a/b/c subdomains. */
-const DEFAULT_MAP_TILE_URL =
-  "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png";
+/** Default OSM raster tiles. Override with MAP_TILE_URL for CARTO / a self-hosted tile server. */
+const DEFAULT_MAP_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const DEFAULT_MAP_TILE_ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 const DEFAULT_MAP_TILE_MAX_ZOOM = 19;
 
 const DEFAULT_GEOCODING_PROVIDER = "nominatim";

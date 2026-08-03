@@ -136,6 +136,7 @@ export {
   listCheckInEvents,
   listAdminEvents,
   checkCapability,
+  locationPinFields,
   type AuthCapability,
   type EventSummary,
 } from "./authorization.js";
