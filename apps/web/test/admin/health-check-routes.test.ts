@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@admitto/db";
 
 const {
@@ -102,6 +102,14 @@ function fakeHealthContext(): Context {
   } as unknown as Context;
 }
 
+afterEach(() => {
+  vi.clearAllMocks();
+  checkDatabase.mockResolvedValue({ status: "ok", latency_ms: 2 });
+  resolveProductVersion.mockReturnValue("0.4.13");
+  isLocationMapsEnabled.mockReturnValue(true);
+  vi.mocked(canManageInstance).mockResolvedValue(true);
+});
+
 describe("worstHealthStatus", () => {
   it("ignores planned and not_configured", () => {
     expect(worstHealthStatus(["ok", "planned", "not_configured"])).toBe("ok");
@@ -170,7 +178,7 @@ describe("collectAdminHealth", () => {
 
     const core = report.groups[0]!.checks;
     expect(core.find((c) => c.id === "database")?.label).toBe("Database");
-    expect(core.find((c) => c.id === "session_storage")?.label).toBe("Session storage");
+    expect(core.find((c) => c.id === "rate_limit_storage")?.label).toBe("Rate-limit storage");
     expect(core.find((c) => c.id === "mail_delivery_queue")?.label).toBe("Mail delivery queue");
     expect(core.find((c) => c.id === "file_storage")?.label).toBe("File storage");
 
@@ -190,7 +198,12 @@ describe("collectAdminHealth", () => {
     expect(external.find((c) => c.id === "identity_providers")?.status).toBe("not_configured");
     expect(external.find((c) => c.id === "cloudflare_access")?.label).toBe("Cloudflare Access");
     expect(external.find((c) => c.id === "cloudflare_access")?.status).toBe("not_configured");
-    expect(external.find((c) => c.id === "email_sending")?.summary).toBe("Connected");
+    expect(external.find((c) => c.id === "email_sending")?.summary).toBe("Configured");
+    expect(
+      core
+        .find((c) => c.id === "database")
+        ?.details.some((d) => d.key === "last_checked" && d.value === report.generated_at),
+    ).toBe(true);
   });
 
   it("emits one Identity provider row per configured IDP", async () => {
@@ -301,20 +314,7 @@ describe("collectAdminHealth", () => {
       email_deliveries_queued: MAIL_QUEUE_DEGRADED_THRESHOLD,
       email_deliveries_failed_retryable: 0,
     });
-    checkMailer.mockReturnValue({ configured: false, provider: null });
-    resolveInstanceOrganizationId.mockResolvedValue("org-1");
-    describeMailConfigForOrg.mockResolvedValue({
-      provider: { value: null, source: "default", locked: false },
-    });
-    listOidcProviders.mockResolvedValue([]);
-    findEnabledOidcProviders.mockResolvedValue([]);
-    getCfAccessConfig.mockResolvedValue({
-      enabled: false,
-      teamDomain: "",
-      audience: [],
-      protectedPrefixes: [],
-      jwksUri: "",
-    });
+    stubHappyPathMailAndIdp();
 
     const report = await collectAdminHealth({
       db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
@@ -324,6 +324,81 @@ describe("collectAdminHealth", () => {
     const queue = report.groups[0]!.checks.find((c) => c.id === "mail_delivery_queue");
     expect(queue?.status).toBe("degraded");
     expect(report.overall).toBe("degraded");
+  });
+
+  it("marks mail queue degraded when retryable failures exist alongside queued mail", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 12,
+      email_deliveries_failed_retryable: 2,
+    });
+    stubHappyPathMailAndIdp();
+
+    const report = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+    });
+
+    const queue = report.groups[0]!.checks.find((c) => c.id === "mail_delivery_queue");
+    expect(queue?.status).toBe("degraded");
+    expect(queue?.summary).toMatch(/Needs attention · 12 queued · 2 retryable/);
+    expect(report.overall).toBe("degraded");
+  });
+
+  it("reports optional encryption in development as not_configured", async () => {
+    collectSetupChecks.mockResolvedValue({
+      ...okSetup,
+      encryption: {
+        ok: true,
+        detail: "Optional in development (set ENCRYPTION_KEY for production parity)",
+      },
+    });
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    const report = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+    });
+
+    const encryption = report.groups[0]!.checks.find((c) => c.id === "data_encryption");
+    expect(encryption?.status).toBe("not_configured");
+    expect(encryption?.summary).toBe("Optional in development");
+    expect(report.overall).toBe("ok");
+  });
+
+  it("keeps returning a report when individual collectors reject", async () => {
+    collectSetupChecks.mockRejectedValueOnce(new Error("setup boom"));
+    collectGauges.mockRejectedValueOnce(new Error("gauges boom"));
+    listOidcProviders.mockRejectedValueOnce(new Error("idp boom"));
+    getCfAccessConfig.mockRejectedValueOnce(new Error("cf boom"));
+    checkMailer.mockReturnValue({ configured: false, provider: null });
+    resolveInstanceOrganizationId.mockRejectedValueOnce(new Error("org boom"));
+    describeMailConfigForOrg.mockRejectedValueOnce(new Error("mail boom"));
+    isLocationMapsEnabled.mockImplementationOnce(() => {
+      throw new Error("maps boom");
+    });
+
+    const report = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+    });
+
+    expect(report.groups).toHaveLength(2);
+    expect(report.groups[0]!.checks.find((c) => c.id === "database")?.status).toBe("down");
+    expect(report.groups[1]!.checks.find((c) => c.id === "email_sending")?.status).toBe("degraded");
+    expect(report.groups[1]!.checks.find((c) => c.id === "identity_providers")?.status).toBe(
+      "degraded",
+    );
+    expect(report.groups[1]!.checks.find((c) => c.id === "cloudflare_access")?.status).toBe(
+      "degraded",
+    );
+    expect(report.groups[1]!.checks.find((c) => c.id === "address_lookup")?.status).toBe(
+      "degraded",
+    );
   });
 
   it("runs Nominatim live probe when live=true", async () => {
@@ -454,7 +529,7 @@ describe("collectAdminHealth", () => {
     const core = report.groups[0]!.checks;
     expect(core.find((c) => c.id === "database")?.status).toBe("down");
     expect(core.find((c) => c.id === "database")?.summary).toBe("Not reachable");
-    expect(core.find((c) => c.id === "session_storage")?.status).toBe("down");
+    expect(core.find((c) => c.id === "rate_limit_storage")?.status).toBe("down");
     expect(core.find((c) => c.id === "data_encryption")?.status).toBe("down");
     expect(core.find((c) => c.id === "instance_url")?.status).toBe("down");
     expect(core.find((c) => c.id === "mail_delivery_queue")?.summary).toBe(
@@ -492,8 +567,8 @@ describe("collectAdminHealth", () => {
     expect(core.find((c) => c.id === "database")?.details.some((d) => d.key === "engine")).toBe(
       true,
     );
-    expect(core.find((c) => c.id === "session_storage")?.status).toBe("degraded");
-    expect(core.find((c) => c.id === "session_storage")?.summary).toMatch(/900 ms/);
+    expect(core.find((c) => c.id === "rate_limit_storage")?.status).toBe("degraded");
+    expect(core.find((c) => c.id === "rate_limit_storage")?.summary).toMatch(/900 ms/);
     expect(core.find((c) => c.id === "instance_url")?.status).toBe("degraded");
     expect(core.find((c) => c.id === "mail_delivery_queue")?.status).toBe("degraded");
     expect(core.find((c) => c.id === "mail_delivery_queue")?.summary).toMatch(
@@ -543,7 +618,7 @@ describe("collectAdminHealth", () => {
       rateLimitStore: {} as never,
     });
     expect(envFallback.groups[1]!.checks.find((c) => c.id === "email_sending")?.summary).toBe(
-      "Connected",
+      "Configured",
     );
     expect(
       envFallback.groups[1]!.checks

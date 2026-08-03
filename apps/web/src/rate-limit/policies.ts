@@ -209,7 +209,17 @@ export const RATE_POLICIES = {
     "admin_mail_transport_test",
   ),
   /** On-demand live health probes (Nominatim / OIDC) from Settings → Health check. */
-  "admin:health-live": authUserScopedPolicy("admin:health-live", "admin_health_live"),
+  "admin:health-live": {
+    checks: [
+      {
+        keyOf: (c) => `admin:health-live:user:${c.get("auth").userId}`,
+        windowMs: 60_000,
+        max: 5,
+        onExceeded: (c) => c.json({ error: "health_live_rate_limited" }, 429),
+        logOnExceeded: { scope: "admin_health_live" },
+      },
+    ],
+  },
   "admin:event-mail-transport-test": authUserScopedPolicy(
     "admin:event-mail-transport-test",
     "admin_event_mail_transport_test",

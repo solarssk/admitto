@@ -3,7 +3,7 @@ import { Button, Card, EmptyState, Tooltip, useToast } from "@admitto/ui";
 import { MoreActionsMenuItem } from "../attendees/AttendeesTable.js";
 import "../attendees/attendees.css";
 import { fetchAdminHealth, runAdminHealthLive } from "../api/client.js";
-import { operatorApiErrorMessage } from "../api/operator-api-error.js";
+import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type {
   HealthCheckRowDto,
   HealthGroupDto,
@@ -19,6 +19,7 @@ import "./health-check.css";
 const CHECK_ICONS: Record<string, string> = {
   database: "database",
   session_storage: "server-2",
+  rate_limit_storage: "server-2",
   data_encryption: "lock",
   mail_delivery_queue: "mail-forward",
   instance_url: "link",
@@ -60,8 +61,17 @@ function downloadTextFile(filename: string, content: string): void {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
+  // Defer revoke so Safari/other browsers can start the download from the blob URL.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
+
+const ROW_STATUS_TEXT: Record<HealthRowStatus, string> = {
+  ok: "Healthy",
+  degraded: "Degraded",
+  down: "Down",
+  not_configured: "Not configured",
+  planned: "Planned",
+};
 
 function HealthCheckRowView({
   check,
@@ -91,7 +101,8 @@ function HealthCheckRowView({
       >
         <span
           className={`health-check__dot ${rowDotClass(check.status)}`}
-          aria-label={`Status: ${check.status}`}
+          role="img"
+          aria-label={`Status: ${ROW_STATUS_TEXT[check.status]}`}
         />
         <span className="health-check__row-icon" aria-hidden="true">
           <i className={`ti ti-${icon}`} />
@@ -169,7 +180,7 @@ function HealthCheckMoreActions({
   onExport: () => void;
   onCopy: () => void;
 }>) {
-  const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+  const { open, setOpen, close, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
 
   return (
     <div className="more-actions-menu" ref={rootRef}>
@@ -193,7 +204,7 @@ function HealthCheckMoreActions({
             label="Export"
             hint="Download this snapshot as Markdown"
             onClick={() => {
-              setOpen(false);
+              close();
               onExport();
             }}
           />
@@ -202,7 +213,7 @@ function HealthCheckMoreActions({
             label="Copy for GitHub Issue"
             hint="Copy a sanitized Markdown dump to the clipboard"
             onClick={() => {
-              setOpen(false);
+              close();
               onCopy();
             }}
           />
@@ -266,7 +277,11 @@ export function HealthCheckPanel() {
         addToast("Live checks finished", "success");
       }
     } catch (err) {
-      addToast(operatorApiErrorMessage(err, "Live checks failed."), "error");
+      if (hasApiErrorCode(err, "health_live_rate_limited")) {
+        addToast("Too many live checks right now. Wait a moment and try again.", "error");
+      } else {
+        addToast(operatorApiErrorMessage(err, "Live checks failed."), "error");
+      }
     } finally {
       setLiveLoading(false);
     }

@@ -25,6 +25,7 @@ const MARKDOWN_SAFE_DETAIL_KEYS = new Set([
   "display_name",
   "audiences",
   "last_checked",
+  "reason",
 ]);
 
 const DETAIL_LABELS: Record<string, string> = {
@@ -80,7 +81,22 @@ function rowStatusLabel(status: HealthRowStatus): string {
 }
 
 function escapeCell(value: string): string {
-  return value.replaceAll("|", String.raw`\|`).replaceAll("\n", " ");
+  return escapeMarkdownText(value);
+}
+
+/** Normalize line breaks and escape Markdown/HTML control characters for issue dumps. */
+function escapeMarkdownText(value: string): string {
+  return value
+    .replaceAll("\\", "\\\\")
+    .replaceAll("|", String.raw`\|`)
+    .replaceAll("\r\n", " ")
+    .replaceAll("\n", " ")
+    .replaceAll("\r", " ")
+    .replaceAll("`", String.raw`\``)
+    .replaceAll("*", String.raw`\*`)
+    .replaceAll("_", String.raw`\_`)
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }
 
 function appendGroupTable(
@@ -88,8 +104,8 @@ function appendGroupTable(
   group: HealthReportDto["groups"][number],
 ): void {
   lines.push(
-    `#### ${group.label}`,
-    `_${group.subtitle}_`,
+    `#### ${escapeMarkdownText(group.label)}`,
+    `_${escapeMarkdownText(group.subtitle)}_`,
     "",
     "| Check | Status | Summary |",
     "| --- | --- | --- |",
@@ -111,16 +127,16 @@ function appendGroupDetails(
   );
   if (expanded.length === 0) return;
 
-  lines.push("<details>", `<summary>${group.label} details</summary>`, "");
+  lines.push("<details>", `<summary>${escapeMarkdownText(group.label)} details</summary>`, "");
   for (const check of expanded) {
     const safe = check.details.filter(
       (d) => MARKDOWN_SAFE_DETAIL_KEYS.has(d.key) && d.key !== "url",
     );
     if (safe.length === 0) continue;
-    lines.push(`**${check.label}**`);
+    lines.push(`**${escapeMarkdownText(check.label)}**`);
     for (const d of safe) {
       lines.push(
-        `- ${formatHealthDetailLabel(d.key)}: ${formatHealthDetailValue(d.key, d.value)}`,
+        `- ${formatHealthDetailLabel(d.key)}: ${escapeMarkdownText(formatHealthDetailValue(d.key, d.value))}`,
       );
     }
     lines.push("");

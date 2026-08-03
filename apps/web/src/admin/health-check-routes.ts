@@ -25,7 +25,7 @@ import type { RateLimitStore } from "../rate-limit/types.js";
 
 /** Row-level status for Settings Health (ADR 0037). */
 export type HealthRowStatus = "ok" | "degraded" | "down" | "not_configured" | "planned";
-/** Group / overall status — ignores planned and not_configured rows. */
+/** Group / overall status: ignores planned and not_configured rows. */
 export type HealthOverallStatus = "ok" | "degraded" | "down";
 
 export type HealthDetail = { key: string; value: string };
@@ -59,6 +59,9 @@ export type HealthReport = {
 /** Queue depth that flips mail_delivery_queue to degraded (ADR 0037). */
 export const MAIL_QUEUE_DEGRADED_THRESHOLD = 50;
 
+/** Latency that flips address_lookup to degraded on a live Nominatim probe (ADR 0037). */
+export const ADDRESS_LOOKUP_DEGRADED_MS = 1500;
+
 const SENDING_PROVIDERS = new Set(["smtp", "graph", "powerautomate"]);
 
 export type CollectAdminHealthDeps = {
@@ -72,7 +75,7 @@ export type CollectAdminHealthDeps = {
   now?: () => Date;
 };
 
-/** Short commit for dumps — Docker sets GIT_COMMIT; local/dev may be unknown. */
+/** Short commit for dumps. Docker sets GIT_COMMIT; local/dev may be unknown. */
 export function resolveHealthCommit(env: NodeJS.ProcessEnv = process.env): string {
   const raw = env.GIT_COMMIT?.trim();
   return raw ? raw.slice(0, 7) : "unknown";
@@ -262,11 +265,13 @@ function setupToDatabaseRow(
 }
 
 function setupToRedisRow(check: SetupCheckResult, checkedAt: string): HealthCheckRow {
-  const inMemory = check.detail.toLowerCase().includes("in-memory");
-  const label = "Session storage";
+  const inMemory =
+    check.detail.toLowerCase().includes("in-memory") ||
+    check.detail.toLowerCase().includes("no redis");
+  const label = "Rate-limit storage";
   if (!check.ok) {
     return {
-      id: "session_storage",
+      id: "rate_limit_storage",
       label,
       status: "down",
       summary: "Not reachable",
@@ -280,7 +285,7 @@ function setupToRedisRow(check: SetupCheckResult, checkedAt: string): HealthChec
   if (check.warn) {
     const latencyMs = parseLatencyMsFromDetail(check.detail);
     return {
-      id: "session_storage",
+      id: "rate_limit_storage",
       label,
       status: "degraded",
       summary: latencyMs
@@ -296,7 +301,7 @@ function setupToRedisRow(check: SetupCheckResult, checkedAt: string): HealthChec
   }
   const latencyMs = parseLatencyMsFromDetail(check.detail);
   return {
-    id: "session_storage",
+    id: "rate_limit_storage",
     label,
     status: "ok",
     summary: inMemory ? "Connected (in-memory)" : "Connected",
@@ -320,6 +325,21 @@ function setupToEncryptionRow(check: SetupCheckResult, checkedAt: string): Healt
       details: detailsFromEntries([
         ["status", "down"],
         ["algorithm", "AES-256-GCM"],
+        ["last_checked", checkedAt],
+      ]),
+    };
+  }
+  // Setup check returns ok:true without a key in development/test ("Optional in development").
+  if (/optional in development/i.test(check.detail)) {
+    return {
+      id: "data_encryption",
+      label,
+      status: "not_configured",
+      summary: "Optional in development",
+      details: detailsFromEntries([
+        ["status", "not_configured"],
+        ["algorithm", "AES-256-GCM"],
+        ["configured", "no"],
         ["last_checked", checkedAt],
       ]),
     };
@@ -373,7 +393,7 @@ function setupToInstanceUrlRow(check: SetupCheckResult, checkedAt: string): Heal
     details: detailsFromEntries([
       ["status", "ok"],
       ["configured", "yes"],
-      // Superadmin UI expand only — Markdown formatter omits raw URLs.
+      // Superadmin UI expand only. Markdown formatter omits raw URLs.
       ["url", check.detail.startsWith("http") ? check.detail : undefined],
       ["last_checked", checkedAt],
     ]),
@@ -399,6 +419,27 @@ function mailQueueRow(
       ]),
     };
   }
+  // Any retryable failure needs attention, even while other mail is still queued.
+  if (failedRetryable > 0) {
+    const failures = `${failedRetryable.toLocaleString("en")} retryable failures`;
+    const summary =
+      queued > 0
+        ? `Needs attention · ${queued.toLocaleString("en")} queued · ${failures}`
+        : `Queue empty · ${failures}`;
+    return {
+      id: "mail_delivery_queue",
+      label,
+      status: "degraded",
+      summary,
+      details: detailsFromEntries([
+        ["status", "degraded"],
+        ["queued", String(queued)],
+        ["failed_retryable", String(failedRetryable)],
+        ["degraded_threshold", String(MAIL_QUEUE_DEGRADED_THRESHOLD)],
+        ["last_checked", checkedAt],
+      ]),
+    };
+  }
   if (queued >= MAIL_QUEUE_DEGRADED_THRESHOLD) {
     return {
       id: "mail_delivery_queue",
@@ -414,22 +455,15 @@ function mailQueueRow(
       ]),
     };
   }
-  let summary: string;
-  if (queued === 0) {
-    summary =
-      failedRetryable > 0
-        ? `Queue empty · ${failedRetryable.toLocaleString("en")} retryable failures`
-        : "Queue empty";
-  } else {
-    summary = `Running · ${queued.toLocaleString("en")} queued`;
-  }
+  const summary =
+    queued === 0 ? "Queue empty" : `Running · ${queued.toLocaleString("en")} queued`;
   return {
     id: "mail_delivery_queue",
     label,
-    status: failedRetryable > 0 && queued === 0 ? "degraded" : "ok",
+    status: "ok",
     summary,
     details: detailsFromEntries([
-      ["status", failedRetryable > 0 && queued === 0 ? "degraded" : "ok"],
+      ["status", "ok"],
       ["queued", String(queued)],
       ["failed_retryable", String(failedRetryable)],
       ["degraded_threshold", String(MAIL_QUEUE_DEGRADED_THRESHOLD)],
@@ -494,7 +528,7 @@ async function emailSendingRow(
       id: "email_sending",
       label,
       status: "ok",
-      summary: "Connected",
+      summary: "Configured",
       details: detailsFromEntries([
         ["status", "ok"],
         ["provider", provider === "powerautomate" ? "power_automate" : provider],
@@ -508,7 +542,7 @@ async function emailSendingRow(
         id: "email_sending",
         label: mailProviderLabel(envMailer.provider),
         status: "ok",
-        summary: "Connected",
+        summary: "Configured",
         details: detailsFromEntries([
           ["status", "ok"],
           ["provider", envMailer.provider],
@@ -520,11 +554,12 @@ async function emailSendingRow(
     return {
       id: "email_sending",
       label: "Email sending",
-      status: "not_configured",
-      summary: "Not configured",
+      status: "degraded",
+      summary: "Could not read mail settings",
       details: detailsFromEntries([
-        ["status", "not_configured"],
+        ["status", "degraded"],
         ["configured", "no"],
+        ["reason", "lookup_failed"],
         ["last_checked", checkedAt],
       ]),
     };
@@ -756,7 +791,7 @@ async function addressLookupRow(
   try {
     await geocodingProvider.search("Warsaw");
     const latencyMs = Date.now() - started;
-    const degraded = latencyMs >= 1500;
+    const degraded = latencyMs >= ADDRESS_LOOKUP_DEGRADED_MS;
     return {
       id: "address_lookup",
       label,
@@ -856,17 +891,65 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
   const env = deps.env ?? process.env;
   const now = deps.now ?? (() => new Date());
   const generatedAt = now().toISOString();
-  const checkedAt = "just now";
+  const checkedAt = generatedAt;
   const live = Boolean(deps.live);
 
+  const setupFallback: Awaited<ReturnType<typeof collectSetupChecks>> = {
+    database: { ok: false, reason: "unreachable", detail: "Database check unavailable" },
+    redis: { ok: false, detail: "Rate-limit storage check unavailable" },
+    encryption: { ok: false, detail: "Encryption check unavailable" },
+    base_url: { ok: false, detail: "Instance URL check unavailable" },
+  };
+  const gaugesFallback = {
+    email_deliveries_queued: -1,
+    email_deliveries_failed_retryable: -1,
+  };
+  const idpFallback: HealthCheckRow[] = [
+    {
+      id: "identity_providers",
+      label: "Identity provider",
+      status: "degraded",
+      summary: "Could not load identity providers",
+      details: detailsFromEntries([
+        ["status", "degraded"],
+        ["reason", "lookup_failed"],
+        ["last_checked", checkedAt],
+      ]),
+    },
+  ];
+  const cfFallback: HealthCheckRow = {
+    id: "cloudflare_access",
+    label: "Cloudflare Access",
+    status: "degraded",
+    summary: "Could not load Cloudflare Access settings",
+    details: detailsFromEntries([
+      ["status", "degraded"],
+      ["reason", "lookup_failed"],
+      ["last_checked", checkedAt],
+    ]),
+  };
+  const addressFallback: HealthCheckRow = {
+    id: "address_lookup",
+    label: "Address lookup, Nominatim",
+    status: "degraded",
+    summary: "Could not evaluate address lookup",
+    details: detailsFromEntries([
+      ["status", "degraded"],
+      ["reason", "lookup_failed"],
+      ["last_checked", checkedAt],
+    ]),
+  };
+
   const [setup, gauges, email, idpRows, cfAccess, address, dbProbe, engine] = await Promise.all([
-    collectSetupChecks(deps.db, deps.rateLimitStore, deps.injectedBaseUrl),
-    collectGauges(deps.db),
+    collectSetupChecks(deps.db, deps.rateLimitStore, deps.injectedBaseUrl).catch(
+      () => setupFallback,
+    ),
+    collectGauges(deps.db).catch(() => gaugesFallback),
     emailSendingRow(deps.db, env, checkedAt),
-    identityProviderRows(deps.db, live, checkedAt),
-    cloudflareAccessRow(deps.db, live, checkedAt),
-    addressLookupRow(deps.geocodingProvider, live, env, checkedAt),
-    checkDatabase(deps.db),
+    identityProviderRows(deps.db, live, checkedAt).catch(() => idpFallback),
+    cloudflareAccessRow(deps.db, live, checkedAt).catch(() => cfFallback),
+    addressLookupRow(deps.geocodingProvider, live, env, checkedAt).catch(() => addressFallback),
+    checkDatabase(deps.db).catch(() => ({ status: "down" as const, latency_ms: 0 })),
     readPostgresEngine(deps.db),
   ]);
 
@@ -919,7 +1002,7 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
   };
 }
 
-/** GET /api/admin/health — passive report for Settings → Health check. */
+/** GET /api/admin/health: passive report for Settings → Health check. */
 export async function handleGetAdminHealth(
   c: Context,
   db: PrismaClient,
@@ -941,7 +1024,7 @@ export async function handleGetAdminHealth(
   return c.json(report, 200);
 }
 
-/** POST /api/admin/health/live — same report with on-demand live probes (ADR 0037). */
+/** POST /api/admin/health/live: same report with on-demand live probes (ADR 0037). */
 export async function handlePostAdminHealthLive(
   c: Context,
   db: PrismaClient,

@@ -44,8 +44,8 @@ function sampleReport(overrides?: Partial<HealthReportDto>): HealthReportDto {
             ],
           },
           {
-            id: "session_storage",
-            label: "Session storage",
+            id: "rate_limit_storage",
+            label: "Rate-limit storage",
             status: "degraded",
             summary: "Responding slowly · 200 ms",
             details: [
@@ -202,6 +202,20 @@ describe("HealthCheckPanel", () => {
       );
     });
     expect(screen.getByTestId("at-toast").getAttribute("data-variant")).toBe("error");
+  });
+
+  it("toasts a wait message when live checks are rate limited", async () => {
+    renderWithToast(<HealthCheckPanel />);
+    await screen.findByRole("button", { name: /Run live checks/ });
+
+    mockLive.mockRejectedValueOnce(new ApiError(429, "health_live_rate_limited"));
+    fireEvent.click(screen.getByRole("button", { name: /Run live checks/ }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(
+        /Too many live checks right now/,
+      );
+    });
   });
 
   it("toasts operator-safe error when live checks reject", async () => {

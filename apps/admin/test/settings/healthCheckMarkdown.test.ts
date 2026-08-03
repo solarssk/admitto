@@ -86,32 +86,36 @@ describe("formatHealthCheckMarkdown", () => {
     expect(md).toContain("queued: 218 messages");
   });
 
-  it("labels overall Healthy / Outage and escapes pipe characters in cells", () => {
+  it("escapes Markdown and HTML control characters in values", () => {
     const md = formatHealthCheckMarkdown({
       ...sample,
       overall: "ok",
       groups: [
         {
           id: "core",
-          label: "Core infrastructure",
-          subtitle: "Owned and run by this instance",
+          label: "Core *infra*",
+          subtitle: "Owned <by> this instance",
           status: "ok",
           checks: [
             {
               id: "database",
               label: "Database | primary",
-              status: "down",
+              status: "ok",
               summary: "Line1\nLine2",
-              details: [{ key: "last_checked", value: "just now" }],
+              details: [
+                { key: "provider", value: "smtp_*x*` <script>" },
+                { key: "status", value: "ok" },
+              ],
             },
           ],
         },
       ],
     });
-    expect(md).toContain("Overall: Healthy");
-    expect(md).toContain("| Database \\| primary | down | Line1 Line2 |");
-    // Only last_checked details → no <details> block for the group.
-    expect(md).not.toContain("<details>");
+    expect(md).toContain("#### Core \\*infra\\*");
+    expect(md).toContain("Owned &lt;by&gt; this instance");
+    expect(md).toContain("| Database \\| primary | ok | Line1 Line2 |");
+    expect(md).toContain("smtp\\_\\*x\\*\\` &lt;script&gt;");
+    expect(md).not.toContain("<script>");
   });
 
   it("emits Outage overall and skips details blocks with only unsafe keys", () => {

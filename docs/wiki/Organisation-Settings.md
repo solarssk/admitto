@@ -3,7 +3,7 @@
 > **Audience:** Superadmins
 > **Required role:** Superadmin
 > **Feature status:** Available
-> **Last verified:** Admitto 0.4.12
+> **Last verified:** Admitto Unreleased
 
 ## What this page helps you do
 

@@ -32,6 +32,7 @@ const CODE_MESSAGES: Record<string, string> = {
   forbidden: "You do not have access.",
   geocoding_rate_limited: "Too many address lookups right now. Wait a moment and try again.",
   geocoding_unavailable: "Address lookup is temporarily unavailable. Try again shortly.",
+  health_live_rate_limited: "Too many live checks right now. Wait a moment and try again.",
   idle_timeout_exceeds_absolute_lifetime:
     "Inactivity timeout cannot be longer than the maximum session lifetime.",
   incomplete_transport: "Fill in all required fields for this mail transport before saving.",
