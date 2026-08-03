@@ -129,11 +129,13 @@ function buildTzEntry(iana: string, now: Date): TzEntry {
     timeZone: iana,
     timeZoneName: "shortOffset",
   }).formatToParts(now);
-  const offsetLabel =
+  const offsetRaw =
     offsetParts.find((p) => p.type === "timeZoneName")?.value ?? "GMT+0";
+  // Product convention: always show numeric offsets as UTC±N (not GMT), same as event-dates.
+  const offsetLabel = offsetRaw.replace(/^GMT/i, "UTC");
 
   // eslint-disable-next-line security/detect-unsafe-regex -- bounded input; validated pattern
-  const m = /GMT([+-])(\d+)(?::(\d+))?/.exec(offsetLabel);
+  const m = /(?:GMT|UTC)([+-])(\d+)(?::(\d+))?/i.exec(offsetRaw);
   const offsetSign = m?.[1] === "+" ? 1 : -1;
   const offsetHours = m
     ? offsetSign *
@@ -150,7 +152,9 @@ function buildTzEntry(iana: string, now: Date): TzEntry {
     segments[0] ?? "",
     abbr,
     offsetLabel,
-    offsetLabel.replace("GMT", ""),
+    offsetRaw,
+    offsetLabel.replace(/^UTC/i, ""),
+    offsetRaw.replace(/^GMT/i, ""),
     ...aliases,
   ]
     .join(" ")
@@ -278,7 +282,7 @@ function buildListItems(entries: TzEntry[], grouped: boolean): TimezoneListItem[
       items.push({
         kind: "group",
         id: `group-${entry.offsetHours}`,
-        label: entry.offsetLabel || "GMT+0",
+        label: entry.offsetLabel || "UTC+0",
       });
     }
     items.push({ kind: "option", id: entry.iana, entry, optionIndex });
@@ -412,23 +416,18 @@ export function TimezoneSelect({
   };
 
   const selectedTriggerContent = selectedEntry ? (
-    <>
+    <span className="timezone-select__trigger-line">
       <span className="timezone-select__trigger-city">{selectedEntry.city}</span>
       <span className="timezone-select__trigger-meta">
         {selectedEntry.iana}
         {selectedEntry.offsetLabel ? ` · ${selectedEntry.offsetLabel}` : ""}
       </span>
-    </>
+    </span>
   ) : (
     <span className="timezone-select__trigger-placeholder">Select timezone…</span>
   );
 
-  const compactTriggerLabel = compact ? (
-    <span className="timezone-select__trigger-compact">{selectedTriggerContent}</span>
-  ) : (
-    selectedTriggerContent
-  );
-  const triggerLabel = selectedEntry ? compactTriggerLabel : selectedTriggerContent;
+  const triggerLabel = selectedTriggerContent;
 
   return (
     <div

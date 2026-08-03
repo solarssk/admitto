@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, ModalBackdrop, Notice } from "@admitto/ui";
+import { Button, Input, ModalBackdrop } from "@admitto/ui";
 import { LOCATION_LIMITS } from "@admitto/location";
 import { ApiError, createEvent } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -9,7 +9,8 @@ import { DatePicker } from "../components/DatePicker.js";
 import { VenueAutocomplete } from "../components/VenueAutocomplete.js";
 import { slugFromTitle } from "./slug.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
-import "./create-event-modal.css";
+import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
+import "../attendees/add-attendee-modal.css";
 
 type CreateEventModalProps = {
   open: boolean;
@@ -85,7 +86,7 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
       onClose();
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        setError("Slug is already in use. Choose another.");
+        setError("This link name is already in use. Choose another.");
       } else {
         setError(operatorApiErrorMessage(err, "Failed to create event. Try again."));
       }
@@ -97,69 +98,59 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
   if (!open) return null;
 
   return (
-    <dialog className="create-event-modal" open aria-modal="true" aria-labelledby={titleId}>
+    <dialog className="add-attendee-modal" open aria-modal="true" aria-labelledby={titleId}>
       <ModalBackdrop onClose={handleClose} />
-      <div ref={panelRef} className="create-event-modal__panel">
-        <h2 className="create-event-modal__title" id={titleId}>
-          New event
+      <div ref={panelRef} className="add-attendee-modal__panel">
+        <h2 className="add-attendee-modal__title" id={titleId}>
+          <i className="ti ti-calendar-plus" aria-hidden="true" /> New event
         </h2>
+        <p className="add-attendee-modal__subtitle">
+          Add a title and date. Location is optional.
+        </p>
         {error && (
-          <Notice variant="error" role="alert">{error}</Notice>
+          <p className="add-attendee-modal__error" role="alert">
+            {error}
+          </p>
         )}
-        <div className="create-event-modal__form">
-          <div className="create-event-modal__field">
-            <label htmlFor="ce-title">
-              Event title <span aria-hidden="true">*</span>
-            </label>
-            <input
-              id="ce-title"
-              className="create-event-modal__input"
-              type="text"
-              value={title}
-              maxLength={200}
-              required
-              disabled={submitting}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-          </div>
-          <div className="create-event-modal__field">
-            <label htmlFor="ce-slug">
-              URL slug <span aria-hidden="true">*</span>
-              <span className="form-hint">
-                Auto-generated · used in ticket URLs · cannot be changed later.
-              </span>
-            </label>
-            <div className="create-event-modal__slug-wrap">
-              <i className="ti ti-link" aria-hidden="true" />
-              <input
-                id="ce-slug"
-                className="create-event-modal__input"
-                type="text"
-                value={slug}
-                maxLength={80}
-                pattern="[a-z0-9_\-]+"
-                required
-                disabled={submitting}
-                onChange={(e) => {
-                  setSlug(e.target.value);
-                  setSlugTouched(true);
-                }}
-              />
-            </div>
-          </div>
-          <div className="create-event-modal__field">
-            <DatePicker
-              id="ce-date"
-              label="Event date"
-              value={date}
-              required
-              disabled={submitting}
-              onChange={setDate}
-            />
-          </div>
-          <div className="create-event-modal__field">
-            <label htmlFor={timezoneId}>
-              Event timezone <span aria-hidden="true">*</span>
+        <div className="add-attendee-modal__fields">
+          <Input
+            id="ce-title"
+            label="Event title *"
+            icon={<i className="ti ti-ticket" aria-hidden="true" />}
+            value={title}
+            maxLength={200}
+            required
+            disabled={submitting}
+            onChange={(e) => setTitle(e.target.value)}
+            {...NO_AUTOFILL_PROPS}
+          />
+          <Input
+            id="ce-slug"
+            label="Link name *"
+            hint="Appears in ticket web links (for example /t/summer-summit/…). Filled from the title — you can edit it now, but not after the event is created."
+            icon={<i className="ti ti-link" aria-hidden="true" />}
+            value={slug}
+            maxLength={80}
+            pattern="[a-z0-9_\-]+"
+            required
+            disabled={submitting}
+            onChange={(e) => {
+              setSlug(e.target.value);
+              setSlugTouched(true);
+            }}
+            {...NO_AUTOFILL_PROPS}
+          />
+          <DatePicker
+            id="ce-date"
+            label="Event date"
+            value={date}
+            required
+            disabled={submitting}
+            onChange={setDate}
+          />
+          <div className="at-field">
+            <label className="at-label" htmlFor={timezoneId}>
+              Event timezone *
             </label>
             <TimezoneSelect
               id={timezoneId}
@@ -169,37 +160,38 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
               required
             />
           </div>
-          <div className="create-event-modal__field">
-            <VenueAutocomplete
-              id="ce-location"
-              label="Location (optional)"
-              value={venueName}
-              maxLength={LOCATION_LIMITS.VENUE_NAME_MAX_LENGTH}
-              disabled={submitting}
-              placeholder="e.g. Convention Center, Warsaw"
-              onChange={(text) => {
-                setVenueName(text);
-                setVenueGeocode(null);
-              }}
-              onSelectResult={(result) => {
-                setVenueName(result.name ?? result.formatted_address);
-                setVenueGeocode(result);
-              }}
-            />
-          </div>
+          <VenueAutocomplete
+            id="ce-location"
+            label="Location"
+            value={venueName}
+            maxLength={LOCATION_LIMITS.VENUE_NAME_MAX_LENGTH}
+            disabled={submitting}
+            placeholder="e.g. Convention Center, Warsaw"
+            onChange={(text) => {
+              setVenueName(text);
+              setVenueGeocode(null);
+            }}
+            onSelectResult={(result) => {
+              setVenueName(result.name ?? result.formatted_address);
+              setVenueGeocode(result);
+            }}
+          />
         </div>
-        <div className="create-event-modal__actions">
-          <Button type="button" variant="secondary" disabled={submitting} onClick={handleClose}>
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            variant="primary"
-            disabled={submitting || !canSubmit}
-            onClick={() => void handleSubmit()}
-          >
-            {submitting ? "Creating…" : "Create event"}
-          </Button>
+        <div className="add-attendee-modal__actions">
+          <p className="add-attendee-modal__required-hint">* Required</p>
+          <div className="add-attendee-modal__actions-buttons">
+            <Button type="button" variant="secondary" disabled={submitting} onClick={handleClose}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              disabled={submitting || !canSubmit}
+              onClick={() => void handleSubmit()}
+            >
+              {submitting ? "Creating…" : "Create event"}
+            </Button>
+          </div>
         </div>
       </div>
     </dialog>

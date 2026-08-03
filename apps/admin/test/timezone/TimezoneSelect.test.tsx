@@ -15,6 +15,15 @@ describe("TimezoneSelect", () => {
     expect(screen.getByRole("button").textContent).toContain("UTC");
   });
 
+  it("shows city, IANA, and UTC offset on one trigger line", () => {
+    render(<TimezoneSelect value="Europe/Warsaw" onChange={() => {}} />);
+    const text = screen.getByRole("button").textContent ?? "";
+    expect(text).toContain("Warsaw");
+    expect(text).toContain("Europe/Warsaw");
+    expect(text).toMatch(/UTC[+-]\d/);
+    expect(text).not.toMatch(/GMT[+-]/);
+  });
+
   it("renders the placeholder when no timezone is selected", () => {
     render(<TimezoneSelect value="" onChange={() => {}} />);
     expect(screen.getByText("Select timezone…")).toBeTruthy();

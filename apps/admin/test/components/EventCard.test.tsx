@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
-import { EventCard, eventGridClassName } from "../../src/components/EventCard.js";
+import { EventCard, EventMapDataCredit, eventGridClassName } from "../../src/components/EventCard.js";
 import type { EventCardProps } from "../../src/components/EventCard.js";
 import type { EventDto } from "../../src/api/types.js";
 import { eventCardDateParts, eventCardStatus } from "../../src/utils/event-card-status.js";
@@ -233,6 +233,18 @@ describe("EventCard", () => {
     renderCard({ showStatusBadge: true, showAttendeeCount: true });
     expect(screen.queryByRole("button", { name: /Archive/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /Unarchive/i })).toBeNull();
+  });
+});
+
+describe("EventMapDataCredit", () => {
+  it("links OpenStreetMap copyright and CARTO attributions", () => {
+    render(<EventMapDataCredit />);
+    expect(screen.getByRole("link", { name: /OpenStreetMap/i }).getAttribute("href")).toBe(
+      "https://www.openstreetmap.org/copyright",
+    );
+    expect(screen.getByRole("link", { name: /CARTO/i }).getAttribute("href")).toBe(
+      "https://carto.com/attributions",
+    );
   });
 });
 

@@ -11,18 +11,18 @@ Create the event workspace before adding attendees, messages, requirements, or o
 
 ## Before you start
 
-Prepare the event title, calendar date, timezone, and optional location. Choose a short URL slug that will remain suitable for the lifetime of the event.
+Prepare the event title, calendar date, timezone, and optional location. Choose a short **link name** that will remain suitable for the lifetime of the event.
 
 > [!IMPORTANT]
-> The URL slug is used in ticket URLs and cannot be changed after the event is created.
+> The **link name** appears in ticket web links and cannot be changed after the event is created.
 
 ## Steps
 
 1. Open **Events**. Cards list events by date (past active events first, then upcoming).
 2. Select **New event**. On an empty list, the button can read **Create event**.
 3. Enter the **Event title**.
-4. Review the auto-generated **URL slug**. Use only lowercase letters, numbers, `_`, or `-`.
-5. Select the **Event date** and **Event timezone**.
+4. Review the auto-filled **Link name**. It is the short text used in ticket web links (for example `/t/summer-summit/…`). Use only lowercase letters, numbers, `_`, or `-`.
+5. Select the **Event date** and **Event timezone** (shown with a **UTC±N** offset).
 6. Add **Location** when it should appear on tickets and calendar information — start typing a venue name or address and pick a match from the suggestions, or type it in by hand.
 7. Select **Create event**.
 
@@ -42,7 +42,7 @@ The event becomes visible to Superadmins and Organisation Admins for its organis
 
 ## Common problems
 
-- **Slug is already in use:** choose another stable slug and submit again.
+- **This link name is already in use:** choose another short name and submit again.
 - **The wrong date or timezone was saved:** open **Event settings**, then **General**, and correct it before sending tickets.
 - **Capacity is missing:** set it later in **Event settings**. Leave it blank there for unlimited capacity.
 
