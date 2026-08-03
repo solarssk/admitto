@@ -2650,6 +2650,9 @@ describe("POST /api/admin/events/:eventId/attendees/:id/resend", () => {
   });
 
   it("returns 422 mail_not_configured instead of a raw 500 when no mail transport is set up", async () => {
+    // Prior successful resends in this describe share ATT_A1's per-attendee bucket
+    // (5/min). Reset so these mapper assertions are not flaky 429s.
+    rateLimitStore.reset();
     const spy = vi
       .spyOn(mailDelivery, "resendTicketEmail")
       .mockRejectedValueOnce(new Error("Cannot resolve mail provider: not set in env"));
