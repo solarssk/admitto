@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, Card, EmptyState, HintLabel, Input, useToast } from "@admitto/ui";
-import { createEventImageAsset, deleteEventImageAsset, fetchEventImageAssets } from "../api/client.js";
+import { createEventImageAsset, deleteEventImageAsset, fetchEventImageAssets, uploadEventBrandingFile } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventImageAssetDto } from "../api/types.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
@@ -36,6 +36,7 @@ const UPLOAD_IMAGES_HINT =
   "Each asset is stored for this event only. Remove it from the mail template before deleting.";
 
 type PendingCrop = {
+  /** Same-origin `/uploads/…` preview (uploaded before crop — no File→blob:→img.src). */
   imageSrc: string;
   sourceMime: string;
   originalName: string;
@@ -110,13 +111,10 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
   };
 
   const closePendingCrop = () => {
-    setPendingCrop((prev) => {
-      if (prev) URL.revokeObjectURL(prev.imageSrc);
-      return null;
-    });
+    setPendingCrop(null);
   };
 
-  const handleFilePick = (picked: File | null) => {
+  const handleFilePick = async (picked: File | null) => {
     setFormError(null);
     if (!picked) {
       setFile(null);
@@ -135,11 +133,23 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
       if (fileRef.current) fileRef.current.value = "";
       return;
     }
-    setPendingCrop({
-      imageSrc: URL.createObjectURL(picked),
-      sourceMime: declared,
-      originalName: picked.name || `asset${extensionForMime(declared)}`,
-    });
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", picked);
+      const { url } = await uploadEventBrandingFile(eventId, fd);
+      setPendingCrop({
+        imageSrc: url,
+        sourceMime: declared,
+        originalName: picked.name || `asset${extensionForMime(declared)}`,
+      });
+    } catch (err) {
+      setFormError(operatorApiErrorMessage(err, "Could not prepare image for cropping."));
+      setFile(null);
+      if (fileRef.current) fileRef.current.value = "";
+    } finally {
+      setUploading(false);
+    }
   };
 
   const openFilePicker = () => {
@@ -296,7 +306,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
               setDragging(false);
               if (disabled || uploading) return;
               const dropped = e.dataTransfer.files[0];
-              if (dropped) handleFilePick(dropped);
+              if (dropped) void handleFilePick(dropped);
             }}
             onDragOver={(e) => {
               e.preventDefault();
@@ -359,7 +369,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
           accept="image/png,image/jpeg,image/webp"
           className="image-asset-library__file-input"
           disabled={disabled || uploading}
-          onChange={(e) => handleFilePick(e.target.files?.[0] ?? null)}
+          onChange={(e) => void handleFilePick(e.target.files?.[0] ?? null)}
           aria-label="Image file"
           aria-hidden="true"
           tabIndex={-1}

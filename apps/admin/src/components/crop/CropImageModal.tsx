@@ -18,6 +18,7 @@ import ReactCrop, {
 } from "react-image-crop";
 import { Button, ModalBackdrop, Spinner } from "@admitto/ui";
 import { useModalFocusTrap } from "../useModalFocusTrap.js";
+import { brandingLogoImgSrc } from "../../utils/safeBrandingLogoHref.js";
 import { getCroppedImageBlob } from "./getCroppedImageBlob.js";
 import "react-image-crop/dist/ReactCrop.css";
 import "./crop-image-modal.css";
@@ -113,12 +114,17 @@ export function isRestorablePercentCrop(crop: Crop | null | undefined): crop is 
 }
 
 /**
- * Allow only preview schemes we intentionally produce (blob: from createObjectURL,
- * data:image fixtures in tests). Rejects javascript: and other URL sinks before img.src bind.
+ * Preview URL for the crop `<img>`.
+ * - `data:image/…` — unit-test fixtures only (never from `input.files`).
+ * - `/uploads/…` — via {@link brandingLogoImgSrc} (same CodeQL-safe pathname barrier as logo previews).
+ * Deliberately rejects `blob:` so callers cannot feed `URL.createObjectURL(File)` into `img.src`
+ * (that path is CodeQL `js/xss-through-dom` FilesSource → URL sink).
  */
 export function trustedCropPreviewSrc(src: string): string | null {
-  if (src.startsWith("blob:")) return src;
   if (src.startsWith("data:image/")) return src;
+  const safe = brandingLogoImgSrc(src);
+  // Crop preview is same-origin uploads only (not external HTTPS).
+  if (safe?.startsWith("/uploads/")) return safe;
   return null;
 }
 
@@ -127,10 +133,8 @@ export function trustedCropPreviewSrc(src: string): string | null {
  * Stage viewport stays at fit size; zoom magnifies the bitmap inside it.
  * When zoomed, drag (not on handles) pans - wheel zooms.
  *
- * Preview `imageSrc` is only blob: (local File via createObjectURL) or data:image
- * (tests). That is a URL attribute bind, not HTML markup from DOM text; CodeQL
- * js/xss-through-dom flags file→img.src here as a known false positive for local
- * image preview (see dismissed alerts on PR #693).
+ * Callers must pass a same-origin `/uploads/…` URL (upload the file first) or a `data:image/`
+ * test fixture — never a `blob:` from `createObjectURL(File)`.
  */
 export function CropImageModal({
   open,

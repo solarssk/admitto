@@ -55,13 +55,14 @@ interface LogoPreviewProps {
 }
 
 type CropSession = {
+  /** Same-origin `/uploads/…` URL (never `blob:` from File — CodeQL FilesSource barrier). */
   imageSrc: string;
   sourceMime: string;
-  /** Object URLs created for a freshly picked file must be revoked when the session ends. */
-  revokeOnClose: boolean;
   filename: string;
-  /** File for Apply upload — discarded on Cancel without touching `sourceOriginal`. */
-  pendingFile: File;
+  /** Local file still needed when Apply must upload the original; null when already on server. */
+  pendingFile: File | null;
+  /** Set when the original was already uploaded (pick or prior Apply). */
+  uploadedOriginalUrl: string;
   /** Restore framing from the last Apply. */
   initialCrop?: PercentCrop;
   initialZoom?: number;
@@ -228,10 +229,7 @@ export function LogoUploadZone({
   }, [value]);
 
   const closeCropSession = () => {
-    setCropSession((prev) => {
-      if (prev?.revokeOnClose) URL.revokeObjectURL(prev.imageSrc);
-      return null;
-    });
+    setCropSession(null);
   };
 
   const clearLogo = () => {
@@ -250,20 +248,21 @@ export function LogoUploadZone({
     cropped: Blob,
     filenameBase: string,
     applyMeta: CropApplyMeta,
-    originalFile: File,
+    originalFile: File | null,
+    existingOriginalUrl: string,
   ) => {
     const seq = ++uploadSeqRef.current;
     setZoneError(null);
     setUploading(true);
     try {
-      const outMime = resolveCropOutputMime(originalFile.type || "image/png");
+      const sourceMime =
+        originalFile?.type.split(";")[0]?.trim().toLowerCase() ||
+        mimeFromUploadPath(existingOriginalUrl);
+      const outMime = resolveCropOutputMime(sourceMime || "image/png");
       const croppedName = `${filenameBase}${extensionForMime(outMime)}`;
-      const originalName = `${filenameBase}-original${extensionForMime(
-        originalFile.type.split(";")[0]?.trim().toLowerCase() || "image/png",
-      )}`;
 
-      const originalUploadedUrl = await postUpload(uploadFn, originalFile, originalName);
-      if (seq !== uploadSeqRef.current) return;
+      // Original was uploaded before the crop modal opened (CodeQL: no File→blob:→img.src).
+      const originalUploadedUrl = existingOriginalUrl;
 
       const croppedUrl = await postUpload(
         uploadFn,
@@ -274,12 +273,20 @@ export function LogoUploadZone({
 
       const crop = toLogoCropMeta(applyMeta);
       lastUploadedUrlRef.current = croppedUrl;
-      setSourceOriginal({
-        file: originalFile,
-        mime: originalFile.type.split(";")[0]?.trim().toLowerCase() || "image/png",
-        lastCrop: applyMeta.crop,
-        lastZoom: applyMeta.zoom,
-      });
+      if (originalFile) {
+        setSourceOriginal({
+          file: originalFile,
+          mime: sourceMime || "image/png",
+          lastCrop: applyMeta.crop,
+          lastZoom: applyMeta.zoom,
+        });
+      } else {
+        setSourceOriginal((prev) =>
+          prev
+            ? { ...prev, lastCrop: applyMeta.crop, lastZoom: applyMeta.zoom }
+            : prev,
+        );
+      }
       onChange(croppedUrl);
       onSourceChange?.({ originalUrl: originalUploadedUrl, crop });
       onDirty?.();
@@ -293,7 +300,8 @@ export function LogoUploadZone({
     }
   };
 
-  const openCropForFile = (file: File) => {
+  /** Upload the original first, then open crop on the `/uploads/…` URL (no File→blob:→img.src). */
+  const openCropForFile = async (file: File) => {
     if (file.size > MAX_UPLOAD_BYTES) {
       setZoneError("File must be 2 MB or smaller.");
       return;
@@ -303,76 +311,45 @@ export function LogoUploadZone({
       setZoneError("Use a PNG, JPG, or WebP image.");
       return;
     }
-    setZoneError(null);
-    // Pending only on the crop session — Cancel / failed Apply must not replace
-    // the last successfully Applied original used by Edit.
-    const objectUrl = URL.createObjectURL(file);
-    setCropSession({
-      imageSrc: objectUrl,
-      sourceMime: declared,
-      revokeOnClose: true,
-      filename: file.name || `logo${extensionForMime(declared)}`,
-      pendingFile: file,
-    });
-  };
-
-  const openCropFromOriginalUrl = async (url: string) => {
     const seq = ++uploadSeqRef.current;
+    setZoneError(null);
     setUploading(true);
     try {
-      const res = await fetch(url, { credentials: "same-origin" });
-      if (!res.ok) throw new Error("Could not load original image.");
-      const blob = await res.blob();
+      const filename = file.name || `logo${extensionForMime(declared)}`;
+      const base = filename.replace(/\.[^.]+$/, "") || "logo";
+      const originalName = `${base}-original${extensionForMime(declared)}`;
+      const url = await postUpload(uploadFn, file, originalName);
       if (seq !== uploadSeqRef.current) return;
-      const mime =
-        blob.type.split(";")[0]?.trim().toLowerCase() || mimeFromUploadPath(url);
-      if (!ALLOWED_IMAGE_TYPES.has(mime)) {
-        throw new Error("Original image type is not supported.");
-      }
-      const file = new File([blob], `logo${extensionForMime(mime)}`, { type: mime });
-      const objectUrl = URL.createObjectURL(blob);
       setCropSession({
-        imageSrc: objectUrl,
-        sourceMime: mime,
-        revokeOnClose: true,
-        filename: file.name,
+        imageSrc: url,
+        sourceMime: declared,
+        filename,
         pendingFile: file,
-        initialCrop: cropMetaToPercent(cropMeta),
-        initialZoom: cropMeta?.zoom,
+        uploadedOriginalUrl: url,
       });
-    } catch {
+    } catch (err) {
       if (seq !== uploadSeqRef.current) return;
-      addToast(
-        "Could not load the original image. Choose the full file again to re-crop.",
-        "info",
-        4500,
-      );
-      fileRef.current?.click();
+      setZoneError(operatorApiErrorMessage(err, "Upload failed."));
     } finally {
       if (seq === uploadSeqRef.current) setUploading(false);
     }
   };
 
-  const openCropForEdit = async () => {
+  const openCropForEdit = () => {
     if (!isUploadedFile || !previewSrc || disabled || uploading) return;
     setZoneError(null);
 
-    if (sourceOriginal) {
-      const objectUrl = URL.createObjectURL(sourceOriginal.file);
-      setCropSession({
-        imageSrc: objectUrl,
-        sourceMime: sourceOriginal.mime,
-        revokeOnClose: true,
-        filename: sourceOriginal.file.name || `logo${extensionForMime(sourceOriginal.mime)}`,
-        pendingFile: sourceOriginal.file,
-        initialCrop: sourceOriginal.lastCrop ?? cropMetaToPercent(cropMeta),
-        initialZoom: sourceOriginal.lastZoom ?? cropMeta?.zoom,
-      });
-      return;
-    }
-
     if (originalUrl?.startsWith("/uploads/")) {
-      await openCropFromOriginalUrl(originalUrl);
+      const mime = sourceOriginal?.mime ?? mimeFromUploadPath(originalUrl);
+      setCropSession({
+        imageSrc: originalUrl,
+        sourceMime: mime,
+        filename: sourceOriginal?.file.name || `logo${extensionForMime(mime)}`,
+        pendingFile: sourceOriginal?.file ?? null,
+        uploadedOriginalUrl: originalUrl,
+        initialCrop: sourceOriginal?.lastCrop ?? cropMetaToPercent(cropMeta),
+        initialZoom: sourceOriginal?.lastZoom ?? cropMeta?.zoom,
+      });
       return;
     }
 
@@ -389,7 +366,7 @@ export function LogoUploadZone({
     setDragging(false);
     if (disabled) return;
     const file = e.dataTransfer.files[0];
-    if (file) openCropForFile(file);
+    if (file) void openCropForFile(file);
   };
 
   const openFilePicker = () => {
@@ -555,7 +532,13 @@ export function LogoUploadZone({
               cropSession.filename.replace(/\.[^.]+$/, "") ||
               label.toLowerCase().replaceAll(/\s+/g, "-") ||
               "logo";
-            await applyCroppedAndOriginal(blob, base, meta, cropSession.pendingFile);
+            await applyCroppedAndOriginal(
+              blob,
+              base,
+              meta,
+              cropSession.pendingFile,
+              cropSession.uploadedOriginalUrl,
+            );
           }}
         />
       ) : null}

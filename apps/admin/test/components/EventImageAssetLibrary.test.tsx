@@ -13,6 +13,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchEventImageAssets: vi.fn(),
     createEventImageAsset: vi.fn(),
     deleteEventImageAsset: vi.fn(),
+    uploadEventBrandingFile: vi.fn(),
   };
 });
 
@@ -53,13 +54,18 @@ import {
   createEventImageAsset,
   deleteEventImageAsset,
   fetchEventImageAssets,
+  uploadEventBrandingFile,
 } from "../../src/api/client.js";
 
 const mockFetch = vi.mocked(fetchEventImageAssets);
 const mockCreate = vi.mocked(createEventImageAsset);
 const mockDelete = vi.mocked(deleteEventImageAsset);
+const mockUploadPreview = vi.mocked(uploadEventBrandingFile);
 
 async function pickImageAndApply(file: File) {
+  mockUploadPreview.mockResolvedValueOnce({
+    url: "/uploads/default/events/evt-1/preview.png",
+  });
   const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
   fireEvent.change(fileInput, { target: { files: [file] } });
   fireEvent.click(await screen.findByRole("button", { name: "Apply changes" }));
@@ -159,6 +165,9 @@ describe("EventImageAssetLibrary", () => {
 
   it("keeps Add asset disabled until both a file and a valid token are present", async () => {
     mockFetch.mockResolvedValueOnce([]);
+    mockUploadPreview.mockResolvedValueOnce({
+      url: "/uploads/default/events/evt-1/preview.png",
+    });
     renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
     await screen.findByText("No images yet");
 
@@ -180,6 +189,9 @@ describe("EventImageAssetLibrary", () => {
 
   it("accepts a file dropped onto the dropzone", async () => {
     mockFetch.mockResolvedValueOnce([]);
+    mockUploadPreview.mockResolvedValueOnce({
+      url: "/uploads/default/events/evt-1/dropped.png",
+    });
     renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
     await screen.findByText("No images yet");
 
@@ -193,6 +205,9 @@ describe("EventImageAssetLibrary", () => {
 
   it("cancelling the crop modal leaves no pending file selected", async () => {
     mockFetch.mockResolvedValueOnce([]);
+    mockUploadPreview.mockResolvedValueOnce({
+      url: "/uploads/default/events/evt-1/preview.png",
+    });
     renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
     await screen.findByText("No images yet");
 

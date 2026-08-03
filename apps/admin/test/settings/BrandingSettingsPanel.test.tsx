@@ -311,7 +311,6 @@ describe("BrandingSettingsPanel — organisation fields", () => {
     fireEvent.change(logoInput!, {
       target: { files: [new File(["x"], "logo.png", { type: "image/png" })] },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
 
     await waitFor(() => {
       expect(isDisabled(screen.getByRole("button", { name: "Save" }))).toBe(true);
@@ -319,6 +318,7 @@ describe("BrandingSettingsPanel — organisation fields", () => {
     expect(isDisabled(screen.getByRole("button", { name: "Reset to saved" }))).toBe(true);
 
     resolveOriginal({ url: "/uploads/default/logo-original.png" });
+    fireEvent.click(await screen.findByRole("button", { name: "Apply changes" }));
     await waitFor(() => {
       expect(isDisabled(screen.getByRole("button", { name: "Save" }))).toBe(false);
     });
@@ -344,7 +344,7 @@ describe("BrandingSettingsPanel — organisation fields", () => {
     fireEvent.change(logoInput!, {
       target: { files: [new File(["x"], "logo.png", { type: "image/png" })] },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Apply changes" }));
     await screen.findByAltText("Organisation logo preview");
 
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));

@@ -48,12 +48,12 @@ describe("isRestorablePercentCrop", () => {
 });
 
 describe("trustedCropPreviewSrc", () => {
-  it("allows blob and data:image previews only", () => {
-    expect(trustedCropPreviewSrc("blob:https://localhost/abc")).toBe("blob:https://localhost/abc");
+  it("allows data:image fixtures and /uploads paths; rejects blob and javascript", () => {
     expect(trustedCropPreviewSrc("data:image/png;base64,xx")).toBe("data:image/png;base64,xx");
+    expect(trustedCropPreviewSrc("/uploads/default/logo.png")).toBe("/uploads/default/logo.png");
+    expect(trustedCropPreviewSrc("blob:https://localhost/abc")).toBeNull();
     expect(trustedCropPreviewSrc("javascript:alert(1)")).toBeNull();
-    expect(trustedCropPreviewSrc("https://evil.example/x.png")).toBeNull();
-    expect(trustedCropPreviewSrc("/uploads/default/logo.png")).toBeNull();
+    expect(trustedCropPreviewSrc("https://cdn.example.com/x.png")).toBeNull();
   });
 });
 

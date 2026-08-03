@@ -546,7 +546,7 @@ describe("EventSettingsPage tabs", () => {
     expect(fileInputs).toHaveLength(1);
     const file = new File(["x"], "logo.png", { type: "image/png" });
     fireEvent.change(fileInputs[0]!, { target: { files: [file] } });
-    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Apply changes" }));
 
     await waitFor(() => {
       expect(uploadEventBrandingFile).toHaveBeenCalledTimes(2);
@@ -576,8 +576,8 @@ describe("EventSettingsPage tabs", () => {
     fireEvent.change(logoInput!, {
       target: { files: [new File(["x"], "logo.png", { type: "image/png" })] },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
 
+    // Pre-crop original upload is in flight before the modal opens.
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Uploading…" }).hasAttribute("disabled")).toBe(
         true,
@@ -585,6 +585,7 @@ describe("EventSettingsPage tabs", () => {
     });
 
     resolveOriginal({ url: "/uploads/default/logo-original.png" });
+    fireEvent.click(await screen.findByRole("button", { name: "Apply changes" }));
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(
         false,
@@ -614,7 +615,7 @@ describe("EventSettingsPage tabs", () => {
     fireEvent.change(logoInput!, {
       target: { files: [new File(["x"], "logo.png", { type: "image/png" })] },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Apply changes" }));
     await screen.findByAltText("Event logo preview");
 
     // The alt-text preview and the Save button's label flip in separate React commits
