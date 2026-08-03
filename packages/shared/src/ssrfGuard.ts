@@ -122,10 +122,27 @@ export function isBlockedPrivateOrMetadataHost(hostname: string): boolean {
   return isBlockedPrivateIpv4Dotted(host);
 }
 
+/** Stable codes for DNS-time hostname SSRF failures (auth discovery, mail, etc.). */
+export type SafeHostnameErrorCode = "hostname_blocked" | "hostname_unresolved";
+
+/** Typed failure from {@link resolveSafeHostname} — callers map to domain-specific API codes. */
+export class SafeHostnameError extends Error {
+  readonly code: SafeHostnameErrorCode;
+
+  constructor(code: SafeHostnameErrorCode, message: string) {
+    super(message);
+    this.name = "SafeHostnameError";
+    this.code = code;
+  }
+}
+
 function assertResolvedIpSafe(address: string): void {
   const host = unbracketHostname(address).toLowerCase();
   if (isLoopbackHost(host) || isBlockedPrivateOrMetadataHost(host)) {
-    throw new Error("hostname must not resolve to a private or link-local address");
+    throw new SafeHostnameError(
+      "hostname_blocked",
+      "hostname must not resolve to a private or link-local address",
+    );
   }
 }
 
@@ -145,11 +162,11 @@ export async function resolveSafeHostname(hostname: string): Promise<LookupAddre
   try {
     records = await lookup(host, { all: true, verbatim: true });
   } catch {
-    throw new Error("hostname could not be resolved");
+    throw new SafeHostnameError("hostname_unresolved", "hostname could not be resolved");
   }
 
   if (records.length === 0) {
-    throw new Error("hostname could not be resolved");
+    throw new SafeHostnameError("hostname_unresolved", "hostname could not be resolved");
   }
 
   for (const record of records) {

@@ -172,16 +172,18 @@ describe("SmtpAdapter", () => {
     );
   });
 
-  it("rejects a private/loopback host without ever calling sendMail (SSRF guard)", async () => {
+  it("throws MailDestinationError for a private/loopback host without calling sendMail (SSRF guard)", async () => {
     const sendMail = vi.fn(async () => ({ messageId: "<id@test>" }));
     const adapter = new SmtpAdapter(
       { ...config, host: "127.0.0.1" },
       { sendMail } as unknown as nodemailer.Transporter,
     );
-    const res = await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
-    expect(res.status).toBe("rejected");
-    expect(res.retryable).toBe(false);
-    expect(res.error).toMatch(/private, loopback, or link-local/);
+    await expect(
+      adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" }),
+    ).rejects.toMatchObject({
+      name: "MailDestinationError",
+      code: "mail_destination_blocked",
+    });
     expect(sendMail).not.toHaveBeenCalled();
 
     // The logged reason is a fixed category, not the raw guard message - a DNS-lookup
@@ -211,14 +213,31 @@ describe("SmtpAdapter", () => {
     spy.mockRestore();
   });
 
-  it("rejects a host that resolves to a private address at send-time (DNS rebinding)", async () => {
+  it("soft-rejects with the Error message when the destination guard throws a non-MailDestinationError", async () => {
+    const spy = vi
+      .spyOn(ssrfGuard, "assertSafeMailDestination")
+      .mockRejectedValueOnce(new Error("unexpected guard failure"));
+    const sendMail = vi.fn(async () => ({ messageId: "<id@test>" }));
+    const adapter = new SmtpAdapter(config, { sendMail } as unknown as nodemailer.Transporter);
+    const res = await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
+    expect(res.status).toBe("rejected");
+    expect(res.error).toBe("unexpected guard failure");
+    expect(sendMail).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("throws MailDestinationError when the host resolves to a private address at send-time (DNS rebinding)", async () => {
     mockedLookup.mockResolvedValue([{ address: "10.0.0.5", family: 4 }] as Awaited<
       ReturnType<typeof lookup>
     >);
     const sendMail = vi.fn(async () => ({ messageId: "<id@test>" }));
     const adapter = new SmtpAdapter(config, { sendMail } as unknown as nodemailer.Transporter);
-    const res = await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
-    expect(res.status).toBe("rejected");
+    await expect(
+      adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" }),
+    ).rejects.toMatchObject({
+      name: "MailDestinationError",
+      code: "mail_destination_blocked",
+    });
     expect(sendMail).not.toHaveBeenCalled();
   });
 
