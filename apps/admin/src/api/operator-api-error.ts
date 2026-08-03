@@ -35,7 +35,9 @@ const CODE_MESSAGES: Record<string, string> = {
   idle_timeout_exceeds_absolute_lifetime:
     "Inactivity timeout cannot be longer than the maximum session lifetime.",
   incomplete_transport: "Fill in all required fields for this mail transport before saving.",
+  internal_error: "Something went wrong. Try again. If it keeps happening, check System logs.",
   invalid_form_data: "Could not read the upload. Try again.",
+  invalid_image: "That file is not a valid image. Try another PNG, JPG, or WebP.",
   invalid_code: "Invalid authenticator code.",
   invalid_totp: "Invalid authenticator or backup code.",
   invalid_issuer:
@@ -52,6 +54,10 @@ const CODE_MESSAGES: Record<string, string> = {
   manual_lookup_disabled: "Manual lookup is disabled for this event. Use QR scan only.",
   mail_not_configured:
     "Mail transport isn't configured for this event or organization. Set it up in Instance Settings → Mail (or this event's Mailing settings) before sending.",
+  mail_destination_blocked:
+    "The mail server hostname resolves to a private address. For a local lab set ALLOW_PRIVATE_MAIL_DESTINATIONS=true, otherwise use a public SMTP host.",
+  mail_destination_unresolved:
+    "Could not resolve the mail server hostname. Check Mail settings.",
   mappings_required: "Role mappings are required before enabling this provider.",
   no_local_password: "Password is managed by your identity provider.",
   not_admitted: "This attendee isn't currently checked in.",

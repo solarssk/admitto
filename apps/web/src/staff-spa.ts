@@ -27,7 +27,9 @@ export const STAFF_SPA_FONT_SRC = ["'self'", "https:"] as const;
 /**
  * Image origins for bundled staff UI assets and optional org branding logo URLs.
  * `https:` allows arbitrary HTTPS logo hosts validated in branding forms (opt-in superadmin).
- * Intentionally aligned with `STAFF_SPA_FONT_SRC`; upload-based assets (ADR 0008) will tighten this.
+ * Crop previews use same-origin `/uploads/…` (or `data:image/` fixtures in tests), not `blob:` -
+ * `CropImageModal` rejects object URLs so File bytes never reach `img.src` (CodeQL FilesSource).
+ * Intentionally aligned with `STAFF_SPA_FONT_SRC` for https; upload-based assets (ADR 0008) will tighten this.
  */
 export const STAFF_SPA_IMG_SRC = ["'self'", "data:", "https:"] as const;
 

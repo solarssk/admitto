@@ -7,14 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Resend / bulk send mail destination failures return a clear operator message** instead of a bare “Internal Server Error” when the SMTP or webhook host cannot be resolved or resolves to a private address (SSRF guard). Power Automate destinations are checked at `createMailer` (same as SMTP), and send-time destination failures rethrow `MailDestinationError` so API mappers see them. Local lab SMTP on RFC1918 still needs `ALLOW_PRIVATE_MAIL_DESTINATIONS=true` in the web process environment.
+- **Logo Edit after Save/reload.** Organisation and event logos now keep the full pre-crop upload and last crop/zoom framing, so **Edit image** restores the adjust popup after refresh instead of forcing a new file pick. Tickets and mail still use the cropped `logo_url` only. Legacy logos uploaded before this change still ask for the full file once when you re-crop.
+- **Event Settings → Images typography.** Event logo and Upload images now share the same intro / dropzone title / format-hint sizes (and the upload dropzone no longer inherits browser button font quirks).
+
 ### Added
 - **Location tab: Pin wrong? Fix link.** When the OpenStreetMap pin is right but the generated Google/Apple Maps deep link opens the wrong place, admins can paste corrected Maps URLs. Overrides are used for Copy links, the public browser ticket, and mail `{{google_maps_url}}` / `{{apple_maps_url}}`; the pin, address grid, and static map image are unchanged. Moving the pin or selecting a new venue search result clears the overrides.
+- **Logo and event image crop before upload.** After dropping or browsing a PNG/JPG/WebP, a popup lets you trim margins by dragging the selection edges/corners (free-form, any aspect). Transparent PNG/WebP stay transparent (no white fill). Server re-encodes branding uploads through `sharp` to strip metadata and reject undecodable files.
 
 ### Security
 - **Static map tile fetches harden outbound SSRF edges:** tile downloads use `redirect: "manual"` and reject private / loopback / link-local / cloud-metadata redirect targets (and non-https URLs outside local development), and tile bodies must start with PNG magic bytes before sharp composites them for `GET /m/{eventId}.png`.
 - **Static map tile failure logs redact credential-bearing URLs:** `StaticMapRenderError` messages and system-log reasons strip query/hash from tile URLs so a commercial `MAP_TILE_URL` with `?api_key=` does not land in stdout or the admin System logs buffer.
+- **Branding image uploads re-encode on the server** (PNG/JPEG/WebP via `sharp`): EXIF/IPTC/XMP are dropped, magic-only stubs are rejected, and only decoded pixels are written under `/uploads/`.
 
 ### Changed
+- **Unhandled API errors return JSON `{ "error": "internal_error" }`** (mapped in the admin SPA) instead of plain-text “Internal Server Error”. System logs for those failures now include `error_name` and, when present, a stable `error_code` (still no stack or exception text in the live tail).
+- **`npm run dev` for `@admitto/web` loads `apps/web/.env`** via Node `--env-file=.env`, so lab flags such as `ALLOW_PRIVATE_MAIL_DESTINATIONS` apply without a manual export. Production `npm start` is unchanged (container env only).
 - **New event dialog matches the Add attendee pattern:** icon title, short subtitle, shared field styling (`Input` / same modal chrome), and a `* Required` footer. **Link name** explains that it is a permanent event ID used in agency ticket links (`/t/{name}/a/…`), while ordinary tickets stay token-only (`/t/…`); it is filled from the title and cannot change after create. Location hint covers searching a venue and setting the pin later under Event settings if search fails. Timezone trigger is one line and uses **UTC±N** (not GMT), with a short hint that values like `Europe/Warsaw` are standard timezone IDs (search Delhi, get `Asia/Kolkata`).
 - **Events list map attribution:** list cards show a bottom-right HTML credit from the configured `MAP_TILE_ATTRIBUTION` (via `map_attribution` on the event DTO; pin stays centered under `object-fit: cover`). List-preview PNGs skip the burned-in credit to avoid cropping; ticket/mail maps still burn attribution into the PNG. List previews use a wider 840×256 canvas (height at least one map tile so sharp can composite). The separate HTML line under the grid was removed.
 - **Default map tiles are OpenStreetMap again** (`tile.openstreetmap.org`), not CARTO Voyager. Override with `MAP_TILE_URL` / `MAP_TILE_ATTRIBUTION` when you want CARTO or a self-hosted server.

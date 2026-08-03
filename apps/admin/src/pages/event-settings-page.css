@@ -63,10 +63,8 @@
   margin: var(--space-1) 0 0;
 }
 
-/* Card-body intros stay one step larger than per-field hints. */
+/* Card-body intros (Event logo, Upload images, Ticket types, …) share .settings-card-intro. */
 .event-settings-page .settings-card-intro,
-.event-settings-page .logo-upload__intro,
-.event-settings-page .image-asset-library__intro,
 .event-settings-page .ticket-types-card__intro,
 .event-settings-page .mail-test-send__hint {
   margin: 0;

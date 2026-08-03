@@ -54,6 +54,25 @@ describe("createMailer", () => {
     expect(exp.provider).toBe("export_only");
   });
 
+  it("rejects Power Automate create when the webhook host resolves to a private address", async () => {
+    mockedLookup.mockResolvedValue([{ address: "10.0.0.5", family: 4 }] as Awaited<
+      ReturnType<typeof lookup>
+    >);
+    await expect(
+      createMailer(
+        {
+          provider: "powerautomate",
+          url: "https://hooks.example.com/flow",
+          fromAddress: "a@example.com",
+        },
+        { fetchFn: vi.fn() as unknown as typeof fetch },
+      ),
+    ).rejects.toMatchObject({
+      name: "MailDestinationError",
+      code: "mail_destination_blocked",
+    });
+  });
+
   it("throws when export_only is created without exportSink", async () => {
     await expect(
       createMailer({ provider: "export_only", fromAddress: "a@example.com" }),
