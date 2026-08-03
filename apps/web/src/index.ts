@@ -36,9 +36,12 @@ function readHttpsCerts(certDir: string): HttpsServerOptions | undefined {
  * reachable from other devices on the network (PO review: safety). Production keeps
  * the default (`undefined`, i.e. no override) since it needs to accept traffic from
  * the container network / reverse proxy, not just loopback.
+ *
+ * Use `127.0.0.1` (not `localhost`): on dual-stack macOS, `localhost` often binds only
+ * `::1`, so browsers/tools that hit `127.0.0.1` get connection refused.
  */
 export function resolveDevServeHostname(isDevelopment: boolean, useHttps: boolean): string | undefined {
-  return isDevelopment && !useHttps ? "localhost" : undefined;
+  return isDevelopment && !useHttps ? "127.0.0.1" : undefined;
 }
 
 /** Boot the Admitto web server; wires a dev-only export_only sink when NODE_ENV is development. */
