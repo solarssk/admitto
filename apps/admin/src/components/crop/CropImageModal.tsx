@@ -104,12 +104,33 @@ function isCropHandleTarget(target: EventTarget | null): boolean {
 
 /** True when a percent crop can be shown again on Edit (within the image bounds). */
 export function isRestorablePercentCrop(crop: Crop | null | undefined): crop is PercentCrop {
-  if (!crop || crop.unit !== "%") return false;
+  if (crop?.unit !== "%") return false;
   const { x, y, width, height } = crop;
   if (![x, y, width, height].every((n) => Number.isFinite(n))) return false;
   if (width < 1 || height < 1) return false;
   if (x < 0 || y < 0) return false;
   return x + width <= 100.5 && y + height <= 100.5;
+}
+
+/**
+ * Allow only preview schemes we intentionally produce (blob: from createObjectURL,
+ * data:image fixtures in tests). Rejects javascript: and other URL sinks before img.src bind.
+ */
+export function trustedCropPreviewSrc(src: string): string | null {
+  if (src.startsWith("blob:")) return src;
+  if (src.startsWith("data:image/")) return src;
+  return null;
+}
+
+/** Bind a scheme-checked preview URL onto an img (attribute, not HTML markup). */
+function bindTrustedCropPreview(img: HTMLImageElement, src: string): void {
+  const safe = trustedCropPreviewSrc(src);
+  if (!safe) {
+    img.removeAttribute("src");
+    return;
+  }
+  // codeql[js/xss-through-dom]: allowlisted blob:/data:image only; File preview via createObjectURL, not DOM HTML text.
+  img.src = safe;
 }
 
 /**
@@ -152,9 +173,16 @@ export function CropImageModal({
     prevZoomRef.current = CROP_ZOOM_MIN;
     setError(null);
     setApplying(false);
-    imgRef.current = null;
     panRef.current = null;
   }, [open, imageSrc]);
+
+  const setCropImgRef = useCallback(
+    (el: HTMLImageElement | null) => {
+      imgRef.current = el;
+      if (el) bindTrustedCropPreview(el, imageSrc);
+    },
+    [imageSrc],
+  );
 
   // % crop stays correct across zoom; refresh pixel crop for Apply from current display size.
   useLayoutEffect(() => {
@@ -279,7 +307,7 @@ export function CropImageModal({
     try {
       const blob = await getCroppedImageBlob(img, completedCrop, sourceMime);
       const percent =
-        crop && crop.unit === "%"
+        crop?.unit === "%"
           ? (crop as PercentCrop)
           : convertToPercentCrop(completedCrop, img.width, img.height);
       await onApply(blob, { crop: percent, zoom });
@@ -294,13 +322,21 @@ export function CropImageModal({
 
   const display = fitSize ? displaySizeAtZoom(fitSize, zoom) : null;
   const zoomed = zoom > 1.001;
+  const previewSrc = trustedCropPreviewSrc(imageSrc);
+  const viewportWidthCap = typeof window !== "undefined" ? window.innerWidth - 32 : 920;
   const panelWidthPx = fitSize
     ? Math.min(
         920,
-        typeof window !== "undefined" ? window.innerWidth - 32 : 920,
+        viewportWidthCap,
         Math.max(320, fitSize.width + HANDLE_INSET_PX * 2 + PANEL_PAD_X_PX),
       )
     : undefined;
+  let stageClassName = "crop-image-modal__stage crop-image-modal__stage--loading";
+  if (zoomed) {
+    stageClassName = "crop-image-modal__stage crop-image-modal__stage--zoomed";
+  } else if (fitSize) {
+    stageClassName = "crop-image-modal__stage";
+  }
 
   return (
     <dialog open className="crop-image-modal" aria-modal="true" aria-labelledby={titleId}>
@@ -319,13 +355,7 @@ export function CropImageModal({
         </p>
         <div
           ref={stageRef}
-          className={
-            zoomed
-              ? "crop-image-modal__stage crop-image-modal__stage--zoomed"
-              : fitSize
-                ? "crop-image-modal__stage"
-                : "crop-image-modal__stage crop-image-modal__stage--loading"
-          }
+          className={stageClassName}
           style={
             fitSize
               ? {
@@ -341,36 +371,37 @@ export function CropImageModal({
           onPointerCancel={endPan}
         >
           {!fitSize ? <Spinner size="sm" label="Loading image" /> : null}
-          <ReactCrop
-            crop={crop}
-            onChange={(_pixel, percent) => setCrop(percent)}
-            onComplete={(pixel, percent) => {
-              setCrop(percent);
-              setCompletedCrop(pixel);
-            }}
-            minWidth={8}
-            minHeight={8}
-            keepSelection
-          >
-            <img
-              ref={imgRef}
-              src={imageSrc}
-              alt=""
-              className="crop-image-modal__img"
-              width={display?.width}
-              height={display?.height}
-              style={{
-                width: display ? `${display.width}px` : undefined,
-                height: display ? `${display.height}px` : undefined,
-                // Hide until fitted so the full-res file never flashes then shrinks.
-                visibility: fitSize ? "visible" : "hidden",
-                position: fitSize ? "static" : "absolute",
+          {previewSrc ? (
+            <ReactCrop
+              crop={crop}
+              onChange={(_pixel, percent) => setCrop(percent)}
+              onComplete={(pixel, percent) => {
+                setCrop(percent);
+                setCompletedCrop(pixel);
               }}
-              onLoad={onImageLoad}
-              crossOrigin="anonymous"
-              draggable={false}
-            />
-          </ReactCrop>
+              minWidth={8}
+              minHeight={8}
+              keepSelection
+            >
+              <img
+                ref={setCropImgRef}
+                alt=""
+                className="crop-image-modal__img"
+                width={display?.width}
+                height={display?.height}
+                style={{
+                  width: display ? `${display.width}px` : undefined,
+                  height: display ? `${display.height}px` : undefined,
+                  // Hide until fitted so the full-res file never flashes then shrinks.
+                  visibility: fitSize ? "visible" : "hidden",
+                  position: fitSize ? "static" : "absolute",
+                }}
+                onLoad={onImageLoad}
+                crossOrigin="anonymous"
+                draggable={false}
+              />
+            </ReactCrop>
+          ) : null}
         </div>
         <div className="crop-image-modal__zoom">
           <label className="crop-image-modal__zoom-label" htmlFor={zoomId}>

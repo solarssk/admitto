@@ -20,7 +20,7 @@ function isFiniteNumber(n: unknown): n is number {
 export function parseLogoCrop(value: unknown): LogoCropMeta | null {
   if (value === null || value === undefined) return null;
   if (typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("logo_crop must be an object or null");
+    throw new TypeError("logo_crop must be an object or null");
   }
   const rec = value as Record<string, unknown>;
   if (rec.unit !== "%") throw new Error("logo_crop.unit must be \"%\"");

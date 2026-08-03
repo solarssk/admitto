@@ -11,6 +11,8 @@ import { z } from "zod";
 import {
   adminAuditFromContext,
   assertEventManageAccess,
+  isValidCalendarDate,
+  parseEventDateInput,
   requireEventId,
   resolveActorEmailForLog,
 } from "./admin-helpers.js";
@@ -103,22 +105,6 @@ type EventSettingsRow = {
   organization: { name: string; logo_url: string | null; header_image_url: string | null };
   event_items: Array<{ id: string; label: string; enabled: boolean }>;
 };
-
-function isValidCalendarDate(value: string): boolean {
-  const [year, month, day] = value.split("-").map(Number);
-  if (!year || !month || !day) return false;
-  const parsed = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-  return (
-    parsed.getUTCFullYear() === year &&
-    parsed.getUTCMonth() === month - 1 &&
-    parsed.getUTCDate() === day
-  );
-}
-
-/** Parse date-only values at UTC noon to avoid locale off-by-one in date pickers. */
-function parseEventDateInput(date: string): Date {
-  return new Date(date.includes("T") ? date : `${date}T12:00:00.000Z`);
-}
 
 function serializeEventSettings(
   event: EventSettingsRow,

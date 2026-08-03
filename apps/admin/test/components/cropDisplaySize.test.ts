@@ -5,6 +5,7 @@ import {
   displaySizeAtZoom,
   fitNaturalSize,
   isRestorablePercentCrop,
+  trustedCropPreviewSrc,
   CROP_ZOOM_MAX,
   CROP_ZOOM_MIN,
 } from "../../src/components/crop/CropImageModal.js";
@@ -43,6 +44,16 @@ describe("isRestorablePercentCrop", () => {
   it("rejects pixel crops and empty selections", () => {
     expect(isRestorablePercentCrop({ unit: "px", x: 0, y: 0, width: 10, height: 10 })).toBe(false);
     expect(isRestorablePercentCrop({ unit: "%", x: 0, y: 0, width: 0, height: 50 })).toBe(false);
+  });
+});
+
+describe("trustedCropPreviewSrc", () => {
+  it("allows blob and data:image previews only", () => {
+    expect(trustedCropPreviewSrc("blob:https://localhost/abc")).toBe("blob:https://localhost/abc");
+    expect(trustedCropPreviewSrc("data:image/png;base64,xx")).toBe("data:image/png;base64,xx");
+    expect(trustedCropPreviewSrc("javascript:alert(1)")).toBeNull();
+    expect(trustedCropPreviewSrc("https://evil.example/x.png")).toBeNull();
+    expect(trustedCropPreviewSrc("/uploads/default/logo.png")).toBeNull();
   });
 });
 

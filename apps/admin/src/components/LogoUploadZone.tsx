@@ -152,7 +152,7 @@ function mimeFromUploadPath(path: string): string {
 }
 
 function cropMetaToPercent(meta: LogoCropMeta | null | undefined): PercentCrop | undefined {
-  if (!meta || meta.unit !== "%") return undefined;
+  if (meta?.unit !== "%") return undefined;
   return { unit: "%", x: meta.x, y: meta.y, width: meta.width, height: meta.height };
 }
 
@@ -316,6 +316,43 @@ export function LogoUploadZone({
     });
   };
 
+  const openCropFromOriginalUrl = async (url: string) => {
+    const seq = ++uploadSeqRef.current;
+    setUploading(true);
+    try {
+      const res = await fetch(url, { credentials: "same-origin" });
+      if (!res.ok) throw new Error("Could not load original image.");
+      const blob = await res.blob();
+      if (seq !== uploadSeqRef.current) return;
+      const mime =
+        blob.type.split(";")[0]?.trim().toLowerCase() || mimeFromUploadPath(url);
+      if (!ALLOWED_IMAGE_TYPES.has(mime)) {
+        throw new Error("Original image type is not supported.");
+      }
+      const file = new File([blob], `logo${extensionForMime(mime)}`, { type: mime });
+      const objectUrl = URL.createObjectURL(blob);
+      setCropSession({
+        imageSrc: objectUrl,
+        sourceMime: mime,
+        revokeOnClose: true,
+        filename: file.name,
+        pendingFile: file,
+        initialCrop: cropMetaToPercent(cropMeta),
+        initialZoom: cropMeta?.zoom,
+      });
+    } catch {
+      if (seq !== uploadSeqRef.current) return;
+      addToast(
+        "Could not load the original image. Choose the full file again to re-crop.",
+        "info",
+        4500,
+      );
+      fileRef.current?.click();
+    } finally {
+      if (seq === uploadSeqRef.current) setUploading(false);
+    }
+  };
+
   const openCropForEdit = async () => {
     if (!isUploadedFile || !previewSrc || disabled || uploading) return;
     setZoneError(null);
@@ -335,40 +372,7 @@ export function LogoUploadZone({
     }
 
     if (originalUrl?.startsWith("/uploads/")) {
-      const seq = ++uploadSeqRef.current;
-      setUploading(true);
-      try {
-        const res = await fetch(originalUrl, { credentials: "same-origin" });
-        if (!res.ok) throw new Error("Could not load original image.");
-        const blob = await res.blob();
-        if (seq !== uploadSeqRef.current) return;
-        const mime =
-          blob.type.split(";")[0]?.trim().toLowerCase() || mimeFromUploadPath(originalUrl);
-        if (!ALLOWED_IMAGE_TYPES.has(mime)) {
-          throw new Error("Original image type is not supported.");
-        }
-        const file = new File([blob], `logo${extensionForMime(mime)}`, { type: mime });
-        const objectUrl = URL.createObjectURL(blob);
-        setCropSession({
-          imageSrc: objectUrl,
-          sourceMime: mime,
-          revokeOnClose: true,
-          filename: file.name,
-          pendingFile: file,
-          initialCrop: cropMetaToPercent(cropMeta),
-          initialZoom: cropMeta?.zoom,
-        });
-      } catch {
-        if (seq !== uploadSeqRef.current) return;
-        addToast(
-          "Could not load the original image. Choose the full file again to re-crop.",
-          "info",
-          4500,
-        );
-        fileRef.current?.click();
-      } finally {
-        if (seq === uploadSeqRef.current) setUploading(false);
-      }
+      await openCropFromOriginalUrl(originalUrl);
       return;
     }
 

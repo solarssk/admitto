@@ -259,7 +259,8 @@ describe("POST /api/admin/events/:eventId/image-assets", () => {
     expect(body.token).toBe("sponsor_logo");
     expect(body.filename).toBe("asset.png");
     expect(body.mime_type).toBe("image/png");
-    expect(body.size_bytes).toBe(PNG_BYTES.length);
+    // saveEventUpload re-encodes via sharp (EXIF strip); size differs from the raw client buffer.
+    expect(body.size_bytes).toBeGreaterThan(0);
     expect(body.url).toMatch(new RegExp(`^/uploads/default/events/${EVENT_IA}/[0-9a-f-]+\\.png$`));
 
     const listRes = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {

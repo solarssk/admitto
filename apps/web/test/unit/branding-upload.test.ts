@@ -82,7 +82,7 @@ describe("saveBrandingUpload", () => {
     // Re-encode may change bytes; must remain a PNG and not be the raw client buffer when EXIF-like
     // garbage would have survived (here: still a valid PNG signature).
     expect(onDisk.subarray(0, 8).equals(PNG_BYTES.subarray(0, 8))).toBe(true);
-    expect(onDisk.length).toBe(result.sizeBytes);
+    expect(onDisk).toHaveLength(result.sizeBytes);
   });
 
   it("accepts decodable JPEG and WEBP and rejects magic-only stubs", async () => {

@@ -1,7 +1,7 @@
 import { Prisma, type PrismaClient } from "@admitto/db";
 import type { BrandingUrls } from "./types.js";
 import { validateBrandingUrl } from "./escape.js";
-import { parseLogoCrop, type LogoCropMeta } from "./logo-crop.js";
+import type { LogoCropMeta } from "./logo-crop.js";
 
 function pickUrl(eventValue: string | null | undefined, orgValue: string | null | undefined): string {
   const event = eventValue?.trim() ?? "";
@@ -63,6 +63,18 @@ type BrandingUpdateData = {
   header_image_url?: string | null;
 };
 
+/** External or cleared display logo cannot keep an upload original / crop. */
+function clearOriginalWhenDisplayIsNotUpload(
+  data: BrandingUpdateData,
+  input: SetBrandingInput,
+): void {
+  if (input.logoUrl === undefined) return;
+  const display = data.logo_url;
+  if (typeof display === "string" && display.startsWith("/uploads/")) return;
+  if (input.logoOriginalUrl === undefined) data.logo_original_url = null;
+  if (input.logoCrop === undefined) data.logo_crop = Prisma.JsonNull;
+}
+
 function buildBrandingUpdateData(input: SetBrandingInput): BrandingUpdateData {
   const data: BrandingUpdateData = {};
   if (input.logoUrl !== undefined) {
@@ -78,16 +90,7 @@ function buildBrandingUpdateData(input: SetBrandingInput): BrandingUpdateData {
     data.header_image_url = normalizeOptionalUrl("header_image_url", input.headerImageUrl);
   }
 
-  // External or cleared display logo cannot keep an upload original / crop.
-  if (input.logoUrl !== undefined) {
-    const display = data.logo_url;
-    const isUpload = typeof display === "string" && display.startsWith("/uploads/");
-    if (!isUpload) {
-      if (input.logoOriginalUrl === undefined) data.logo_original_url = null;
-      if (input.logoCrop === undefined) data.logo_crop = Prisma.JsonNull;
-    }
-  }
-
+  clearOriginalWhenDisplayIsNotUpload(data, input);
   return data;
 }
 
