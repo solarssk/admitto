@@ -6,7 +6,7 @@ import { mapHttpStatus, mapNetworkError, sanitizeProviderErrorForLog } from "../
 import { logMailSent, rejectedSendResult } from "../adapterUtils.js";
 import { resolveReplyTo } from "../senderUtils.js";
 import { validateMailMessage } from "../validation.js";
-import { resolveSafeMailDestination } from "../ssrfGuard.js";
+import { MailDestinationError, resolveSafeMailDestination } from "../ssrfGuard.js";
 import { isSendSuccess, type FetchFn, type MailMessage, type MailerAdapter, type SendResult } from "../types.js";
 import { emitSystemLog } from "@admitto/shared/system-log";
 import { redactEmail } from "@admitto/shared";
@@ -85,13 +85,15 @@ export class PowerAutomateAdapter implements MailerAdapter {
     try {
       records = await resolveSafeMailDestination(hostname);
     } catch (e) {
-      const error = e instanceof Error ? e.message : "mail transport destination is not permitted";
-      // Fixed category, not `error` - see the same note in smtp.ts. The real message
-      // still reaches the caller via the return value below.
+      // Fixed category, not `error` - see the same note in smtp.ts.
       emitSystemLog("security", "warn", "mail_destination_blocked", {
         provider: this.provider,
         error: "destination blocked or unresolvable",
       });
+      // Propagate typed destination failures so ticket send/resend can map them to 422
+      // instead of a soft-failed delivery with opaque copy.
+      if (e instanceof MailDestinationError) throw e;
+      const error = e instanceof Error ? e.message : "mail transport destination is not permitted";
       return rejectedSendResult(this.provider, error, message.idempotencyKey);
     }
 

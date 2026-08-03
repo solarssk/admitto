@@ -59,7 +59,7 @@
     "@admitto/shared": "*",
     "@admitto/tickets": "*",
     "argon2": "^0.45.1",
-    "jose": "^6.0.11",
+    "jose": "^6.2.5",
     "otplib": "^13.4.1",
     "undici": "^8.7.0"
   },

@@ -137,30 +137,36 @@ describe("PowerAutomateAdapter", () => {
     expect(res.error).toContain("ECONNREFUSED");
   });
 
-  it("rejects a private/loopback destination without ever calling fetchFn (SSRF guard)", async () => {
+  it("throws MailDestinationError for a private/loopback destination without calling fetchFn (SSRF guard)", async () => {
     const fetchFn = vi.fn();
     const adapter = new PowerAutomateAdapter(
       { ...config, url: "https://127.0.0.1:9999/internal-webhook" },
       fetchFn as unknown as typeof fetch,
     );
-    const res = await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
-    expect(res.status).toBe("rejected");
-    expect(res.retryable).toBe(false);
-    expect(res.error).toMatch(/private, loopback, or link-local/);
+    await expect(
+      adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" }),
+    ).rejects.toMatchObject({
+      name: "MailDestinationError",
+      code: "mail_destination_blocked",
+    });
     expect(fetchFn).not.toHaveBeenCalled();
 
     const logs = querySystemLogs({ source: "security" });
     expect(logs.some((entry) => entry.message === "mail_destination_blocked" && entry.level === "warn")).toBe(true);
   });
 
-  it("rejects a hostname that resolves to a private address at send-time (DNS rebinding)", async () => {
+  it("throws MailDestinationError when hostname resolves to a private address at send-time (DNS rebinding)", async () => {
     mockedLookup.mockResolvedValue([{ address: "169.254.169.254", family: 4 }] as Awaited<
       ReturnType<typeof lookup>
     >);
     const fetchFn = vi.fn();
     const adapter = new PowerAutomateAdapter(config, fetchFn as unknown as typeof fetch);
-    const res = await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
-    expect(res.status).toBe("rejected");
+    await expect(
+      adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" }),
+    ).rejects.toMatchObject({
+      name: "MailDestinationError",
+      code: "mail_destination_blocked",
+    });
     expect(fetchFn).not.toHaveBeenCalled();
   });
 
@@ -173,6 +179,19 @@ describe("PowerAutomateAdapter", () => {
     const res = await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
     expect(res.status).toBe("rejected");
     expect(res.error).toBe("mail transport destination is not permitted");
+    expect(fetchFn).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("soft-rejects with the Error message when the destination guard throws a non-MailDestinationError", async () => {
+    const spy = vi
+      .spyOn(ssrfGuard, "resolveSafeMailDestination")
+      .mockRejectedValueOnce(new Error("unexpected guard failure"));
+    const fetchFn = vi.fn();
+    const adapter = new PowerAutomateAdapter(config, fetchFn as unknown as typeof fetch);
+    const res = await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
+    expect(res.status).toBe("rejected");
+    expect(res.error).toBe("unexpected guard failure");
     expect(fetchFn).not.toHaveBeenCalled();
     spy.mockRestore();
   });
@@ -213,14 +232,18 @@ describe("PowerAutomateAdapter", () => {
       );
     });
 
-    it("rejects without ever calling undici fetch when DNS resolves to a private address (DNS rebinding)", async () => {
+    it("throws MailDestinationError without calling undici fetch when DNS resolves to a private address (DNS rebinding)", async () => {
       mockedLookup.mockResolvedValue([{ address: "169.254.169.254", family: 4 }] as Awaited<
         ReturnType<typeof lookup>
       >);
       const adapter = new PowerAutomateAdapter(config);
-      const res = await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
+      await expect(
+        adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" }),
+      ).rejects.toMatchObject({
+        name: "MailDestinationError",
+        code: "mail_destination_blocked",
+      });
 
-      expect(res.status).toBe("rejected");
       expect(mockedUndiciFetch).not.toHaveBeenCalled();
     });
 

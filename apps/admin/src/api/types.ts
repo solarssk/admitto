@@ -1,9 +1,11 @@
 import type { DeliveryDto } from "@admitto/shared";
+import type { LogoPersistenceDto } from "@admitto/mail-templates";
 
 // DeliveryDto is also used locally below (AttendeeDetailDto.deliveries, the deliveries-list
 // response's items) so this file still needs its own bound import above - DeliveryDetailDto
 // isn't used locally, only re-exported, so it's not repeated in that import (Sonar S1128).
 export type { DeliveryDetailDto, DeliveryDto } from "@admitto/shared";
+export type { EventSettingsDto, LogoCropMeta, LogoPersistenceDto } from "@admitto/mail-templates";
 
 export type MailerProvider = "smtp" | "graph" | "powerautomate" | "export_only";
 
@@ -80,34 +82,6 @@ export interface CreateEventBody {
   latitude?: number;
   longitude?: number;
   geocoding_provider?: string;
-}
-
-export interface EventSettingsDto {
-  id: string;
-  title: string;
-  slug: string;
-  date: string;
-  timezone: string;
-  capacity: number | null;
-  status: "active" | "archived";
-  /** Null unless status is "archived". */
-  archived_at: string | null;
-  /** When the event was first created. */
-  created_at: string;
-  /** True when the event has zero real activity and can be permanently deleted. */
-  is_deletable: boolean;
-  /** Attendees currently checked in — drives the "Revoke all check-ins" Danger Zone row. */
-  admitted_count: number;
-  /** Individual issued/returned item hand-outs across all attendees — drives "Revoke all items issued". */
-  issued_items_count: number;
-  organization_name: string;
-  active_items: Array<{ id: string; name: string; enabled: boolean }>;
-  /** Event's own branding overrides — null means "inherited from organization". */
-  logo_url: string | null;
-  header_image_url: string | null;
-  /** Effective branding actually used today (event value, else organization's). */
-  resolved_logo_url: string | null;
-  resolved_header_image_url: string | null;
 }
 
 /** One uploaded font file for a specific weight+style within a custom font family - a real
@@ -1053,15 +1027,13 @@ export interface SetupChecksResponse {
   checks: Record<SetupCheckKey, SetupCheckResult>;
 }
 
-export interface SetupOrgBrandingDto {
+export type SetupOrgBrandingDto = {
   org_name: string | null;
-  logo_url: string | null;
-}
+} & LogoPersistenceDto;
 
-export interface PatchSetupOrgBrandingBody {
+export type PatchSetupOrgBrandingBody = {
   org_name?: string;
-  logo_url?: string | null;
-}
+} & Partial<LogoPersistenceDto>;
 
 export interface SetupSupportContactDto {
   support_contact_name: string | null;
