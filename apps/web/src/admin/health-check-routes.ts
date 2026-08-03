@@ -612,7 +612,14 @@ async function emailSendingRow(
       ]),
     };
   } catch {
-    if (envMailer.configured && envMailer.provider && envMailer.provider !== "export_only") {
+    // Passive: env mail still counts as configured when org lookup fails.
+    // Live: do not greenwash — effective config could not be resolved/probed.
+    if (
+      !live &&
+      envMailer.configured &&
+      envMailer.provider &&
+      envMailer.provider !== "export_only"
+    ) {
       return {
         id: "email_sending",
         label: mailProviderLabel(envMailer.provider),

@@ -62,6 +62,8 @@ export class GraphAdapter implements MailerAdapter {
           client_secret: this.config.clientSecret,
           scope: "https://graph.microsoft.com/.default",
         }),
+        // Match OIDC connection tests so hung token endpoints cannot stall live health.
+        signal: AbortSignal.timeout(15_000),
       });
     } catch (e) {
       const mapped = mapNetworkError();

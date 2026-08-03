@@ -34,6 +34,8 @@ describe("probeMailTransport", () => {
 
     expect(result).toEqual({ ok: true });
     expect(fetchFn).toHaveBeenCalled();
+    const init = (fetchFn as unknown as ReturnType<typeof vi.fn>).mock.calls[0]![1] as RequestInit;
+    expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 
   it("returns ok:false when Graph token fetch fails", async () => {
@@ -72,5 +74,23 @@ describe("probeMailTransport", () => {
   it("returns ok:false when createMailer rejects (invalid config)", async () => {
     const result = await probeMailTransport({ provider: "smtp" });
     expect(result.ok).toBe(false);
+  });
+
+  it("returns ok:false when the Graph token fetch never settles before probe timeout", async () => {
+    const fetchFn = vi.fn(() => new Promise<Response>(() => {})) as unknown as FetchFn;
+    const result = await probeMailTransport(
+      {
+        provider: "graph",
+        mailbox: "mail@example.com",
+        tenantId: "tenant",
+        clientId: "client",
+        clientSecret: "secret",
+      },
+      { fetchFn, probeTimeoutMs: 40 },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/timed out/i);
+    }
   });
 });

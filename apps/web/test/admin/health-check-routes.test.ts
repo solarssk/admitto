@@ -631,6 +631,37 @@ describe("collectAdminHealth", () => {
         ?.details.some((d) => d.key === "source" && d.value === "env"),
     ).toBe(true);
 
+    // Live: org/config resolution failure must stay degraded (no env greenwash).
+    describeMailConfigForOrg.mockRejectedValueOnce(new Error("org missing"));
+    checkMailer.mockReturnValue({ configured: true, provider: "smtp" });
+    const liveLookupFail = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+      live: true,
+    });
+    expect(liveLookupFail.groups[1]!.checks.find((c) => c.id === "email_sending")?.status).toBe(
+      "degraded",
+    );
+    expect(liveLookupFail.groups[1]!.checks.find((c) => c.id === "email_sending")?.summary).toBe(
+      "Could not read mail settings",
+    );
+
+    describeMailConfigForOrg.mockResolvedValue({
+      provider: { value: "smtp", source: "organization", locked: false },
+    });
+    resolveMailConfigForOrg.mockRejectedValueOnce(new Error("allowed_from_domain conflict"));
+    const probeMail = vi.fn();
+    const liveResolveFail = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+      live: true,
+      probeMail,
+    });
+    expect(probeMail).not.toHaveBeenCalled();
+    expect(liveResolveFail.groups[1]!.checks.find((c) => c.id === "email_sending")?.status).toBe(
+      "degraded",
+    );
+
     describeMailConfigForOrg.mockResolvedValueOnce({
       provider: { value: "powerautomate", source: "organization", locked: false },
     });
