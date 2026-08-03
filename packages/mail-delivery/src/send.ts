@@ -17,6 +17,7 @@ import {
 import {
   createMailer,
   sendBatch,
+  MailDestinationError,
   type ExportSink,
   type MailerAdapter,
   type MailMessage,
@@ -330,6 +331,9 @@ async function deliverPendingBatch(
         }),
       ),
     );
+    // Destination SSRF/DNS failures must surface to API mappers (422), not look like a
+    // soft batch failure with only failed EmailDelivery rows.
+    if (err instanceof MailDestinationError) throw err;
     return 0;
   }
 }

@@ -5,7 +5,7 @@ import { extractSmtpCode, mapSmtpError } from "../errorMapping.js";
 import { logMailSent, rejectedSendResult } from "../adapterUtils.js";
 import { formatFromHeader, parseAddressList, resolveReplyTo } from "../senderUtils.js";
 import { validateMailMessage } from "../validation.js";
-import { assertSafeMailDestination, resolveSafeMailDestination } from "../ssrfGuard.js";
+import { assertSafeMailDestination, MailDestinationError, resolveSafeMailDestination } from "../ssrfGuard.js";
 import type { MailMessage, MailerAdapter, SendResult } from "../types.js";
 import { emitSystemLog } from "@admitto/shared/system-log";
 import { redactEmail } from "@admitto/shared";
@@ -75,7 +75,9 @@ export class SmtpAdapter implements MailerAdapter {
     this.transporter.close();
   }
 
-  /** Validate and send one HTML message via SMTP; never throws (returns rejected result on failure). */
+  /** Validate and send one HTML message via SMTP.
+   * Returns a rejected result on soft failures; rethrows {@link MailDestinationError}
+   * so ticket send/resend can map destination SSRF/DNS failures to 422. */
   async send(message: MailMessage): Promise<SendResult> {
     const validationError = validateMailMessage(message);
     if (validationError) {
@@ -85,15 +87,17 @@ export class SmtpAdapter implements MailerAdapter {
     try {
       await assertSafeMailDestination(this.config.host);
     } catch (e) {
-      const error = e instanceof Error ? e.message : "mail transport destination is not permitted";
       // Fixed category, not `error` - a DNS-lookup failure (as opposed to the SSRF guard's
       // own fixed "private/loopback" message) can surface the configured hostname in
-      // Node's own error text; the real message still reaches the caller via the return
-      // value below, just not the System-logs buffer/stdout.
+      // Node's own error text; do not put that text in System logs.
       emitSystemLog("security", "warn", "mail_destination_blocked", {
         provider: this.provider,
         error: "destination blocked or unresolvable",
       });
+      // Propagate typed destination failures so ticket send/resend can map them to 422
+      // instead of recording a soft-failed EmailDelivery with opaque copy.
+      if (e instanceof MailDestinationError) throw e;
+      const error = e instanceof Error ? e.message : "mail transport destination is not permitted";
       return rejectedSendResult(
         this.provider,
         error,

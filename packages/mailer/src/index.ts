@@ -5,6 +5,7 @@ import { PowerAutomateAdapter } from "./adapters/powerAutomate.js";
 import { ExportOnlyAdapter, type ExportSink } from "./adapters/exportOnly.js";
 import type { FetchFn, MailMessage, MailerAdapter, SendResult } from "./types.js";
 import { isSendSuccess } from "./types.js";
+import { resolveSafeMailDestination } from "./ssrfGuard.js";
 
 export * from "./types.js";
 export * from "./config.js";
@@ -47,6 +48,10 @@ export async function createMailer(
     case "smtp":
       return SmtpAdapter.create(cfg);
     case "powerautomate":
+      // Same connect-time SSRF gate as SmtpAdapter.create — otherwise destination is only
+      // checked inside send(), which swallows failures into rejected SendResult and never
+      // reaches API mappers that expect MailDestinationError from createMailer.
+      await resolveSafeMailDestination(new URL(cfg.url).hostname);
       return new PowerAutomateAdapter(cfg, deps.fetchFn);
     case "export_only":
       if (!deps.exportSink) {
