@@ -123,6 +123,8 @@ type LocationDetailsForTicket = {
   map_zoom: number;
   directions_text: string | null;
   accessibility_text: string | null;
+  google_maps_url_override?: string | null;
+  apple_maps_url_override?: string | null;
 } | null;
 
 export function toResolved(
@@ -166,6 +168,8 @@ export function toResolved(
       mapZoom: loc ? loc.map_zoom : null,
       directionsText: loc?.directions_text ?? null,
       accessibilityText: loc?.accessibility_text ?? null,
+      googleMapsUrlOverride: loc?.google_maps_url_override ?? null,
+      appleMapsUrlOverride: loc?.apple_maps_url_override ?? null,
     },
   };
 }

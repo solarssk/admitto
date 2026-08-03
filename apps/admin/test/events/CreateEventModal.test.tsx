@@ -52,7 +52,7 @@ describe("CreateEventModal", () => {
       target: { value: "Autumn Summit 2026" },
     });
 
-    expect((screen.getByLabelText(/URL slug/) as HTMLInputElement).value).toBe("autumn-summit-2026");
+    expect((screen.getByLabelText(/Link name/) as HTMLInputElement).value).toBe("autumn-summit-2026");
   });
 
   it("keeps submit disabled until date is set", () => {
@@ -92,16 +92,16 @@ describe("CreateEventModal", () => {
     pickEventDate("2026-09-29");
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));
 
-    expect(await screen.findByText("Slug is already in use. Choose another.")).toBeTruthy();
+    expect(await screen.findByText("This link name is already in use. Choose another.")).toBeTruthy();
   });
 
   it("keeps a manually edited slug when the title changes", () => {
     render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
     fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
-    fireEvent.change(screen.getByLabelText(/URL slug/), { target: { value: "custom-event" } });
+    fireEvent.change(screen.getByLabelText(/Link name/), { target: { value: "custom-event" } });
     fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Renamed Event" } });
 
-    expect((screen.getByLabelText(/URL slug/) as HTMLInputElement).value).toBe("custom-event");
+    expect((screen.getByLabelText(/Link name/) as HTMLInputElement).value).toBe("custom-event");
   });
 
   it("ignores close while submission is pending", async () => {
@@ -181,7 +181,7 @@ describe("CreateEventModal", () => {
 
     fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
     pickEventDate("2026-09-29");
-    fireEvent.change(screen.getByLabelText("Location (optional)"), {
+    fireEvent.change(screen.getByLabelText("Location"), {
       target: { value: "Example Square" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Find on map" }));
@@ -223,7 +223,7 @@ describe("CreateEventModal", () => {
 
     fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
     pickEventDate("2026-09-29");
-    const venue = screen.getByLabelText("Location (optional)");
+    const venue = screen.getByLabelText("Location");
     fireEvent.change(venue, { target: { value: "Convention Center" } });
     fireEvent.click(screen.getByRole("button", { name: "Find on map" }));
     fireEvent.click(await screen.findByRole("button", { name: /Convention Center/ }));

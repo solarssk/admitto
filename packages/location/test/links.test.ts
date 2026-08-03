@@ -5,6 +5,8 @@ import {
   buildEventStaticMapUrl,
   buildGoogleMapsUrl,
   buildOsmUrl,
+  resolveAppleMapsUrl,
+  resolveGoogleMapsUrl,
 } from "../src/links.js";
 
 const LAT = 50.061947;
@@ -50,6 +52,21 @@ describe("buildAppleMapsUrl", () => {
   });
 });
 
+describe("resolveGoogleMapsUrl / resolveAppleMapsUrl", () => {
+  const OVERRIDE_G = "https://www.google.com/maps/place/Custom";
+  const OVERRIDE_A = "https://maps.apple.com/?address=Custom";
+
+  it("returns the override when set", () => {
+    expect(resolveGoogleMapsUrl(LAT, LNG, "Hall", OVERRIDE_G)).toBe(OVERRIDE_G);
+    expect(resolveAppleMapsUrl(LAT, LNG, "Hall", OVERRIDE_A)).toBe(OVERRIDE_A);
+  });
+
+  it("falls back to build helpers when override is empty", () => {
+    expect(resolveGoogleMapsUrl(LAT, LNG, "Hall", "  ")).toBe(buildGoogleMapsUrl(LAT, LNG, "Hall"));
+    expect(resolveAppleMapsUrl(LAT, LNG, null, null)).toBe(buildAppleMapsUrl(LAT, LNG, null));
+  });
+});
+
 describe("buildOsmUrl", () => {
   it("builds a centered, zoomed deep link", () => {
     expect(buildOsmUrl(LAT, LNG, 17)).toBe(
@@ -60,19 +77,19 @@ describe("buildOsmUrl", () => {
 
 describe("buildEventStaticMapPath / Url", () => {
   it("builds a same-origin PNG path", () => {
-    expect(buildEventStaticMapPath("evt_abc")).toBe("/m/evt_abc.png?v=2");
+    expect(buildEventStaticMapPath("evt_abc")).toBe("/m/evt_abc.png?v=9");
   });
 
   it("includes pin coordinates in the cache-busting query", () => {
     expect(buildEventStaticMapPath("evt_abc", { latitude: 50.06, longitude: 19.94 })).toBe(
-      "/m/evt_abc.png?v=2_50.060000_19.940000",
+      "/m/evt_abc.png?v=9_50.060000_19.940000",
     );
   });
 
   it("includes zoom in the cache-busting query when provided", () => {
     expect(
       buildEventStaticMapPath("evt_abc", { latitude: 50.06, longitude: 19.94, zoom: 16 }),
-    ).toBe("/m/evt_abc.png?v=2_50.060000_19.940000_z16");
+    ).toBe("/m/evt_abc.png?v=9_50.060000_19.940000_z16");
   });
 
   it("absolutizes against a base URL without a trailing slash", () => {
@@ -82,7 +99,7 @@ describe("buildEventStaticMapPath / Url", () => {
         longitude: 19.94,
         zoom: 15,
       }),
-    ).toBe("https://tickets.example.com/m/evt_abc.png?v=2_50.060000_19.940000_z15");
+    ).toBe("https://tickets.example.com/m/evt_abc.png?v=9_50.060000_19.940000_z15");
   });
 
   it("strips a trailing slash on the base URL", () => {
@@ -91,6 +108,6 @@ describe("buildEventStaticMapPath / Url", () => {
         latitude: 50.06,
         longitude: 19.94,
       }),
-    ).toBe("https://tickets.example.com/m/evt_abc.png?v=2_50.060000_19.940000");
+    ).toBe("https://tickets.example.com/m/evt_abc.png?v=9_50.060000_19.940000");
   });
 });

@@ -183,7 +183,7 @@ describe("GeneralSettingsPanel", () => {
     });
   });
 
-  it("hides Clear and keeps Save when Instance URL is managed by environment", async () => {
+  it("hides Clear, shows From environment badge, and keeps Save when Instance URL is managed by environment", async () => {
     mockFetch.mockResolvedValueOnce({
       ...emptySettings,
       instance_url: { value: "https://env.example.com", source: "env" },
@@ -195,6 +195,7 @@ describe("GeneralSettingsPanel", () => {
     // Clear acts on the locked field directly, so it's hidden - but Save is page-level and
     // still needed for Support contact, so it must stay.
     expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
+    expect(screen.getByText("From environment")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Save" })).toBeTruthy();
   });
 

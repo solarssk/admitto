@@ -8,12 +8,26 @@ import {
   useDeferredValue,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent,
 } from "react";
 import { useClickOutside, type OutsideInteraction } from "./useClickOutside.js";
+import { attachFixedOverlayLifecycle } from "../utils/fixed-overlay-lifecycle.js";
+
+/** Worst-case open panel height (search + hint + 16rem list + chrome) for pre-open estimate. */
+const TIMEZONE_PANEL_MAX_ESTIMATE_PX = 352;
+const PANEL_GAP_PX = 6;
+const VIEWPORT_PAD_PX = 8;
+
+const HIDDEN_FIXED_PANEL: CSSProperties = {
+  position: "fixed",
+  visibility: "hidden",
+  zIndex: 1100,
+};
 
 interface TzEntry {
   iana: string;
@@ -129,11 +143,13 @@ function buildTzEntry(iana: string, now: Date): TzEntry {
     timeZone: iana,
     timeZoneName: "shortOffset",
   }).formatToParts(now);
-  const offsetLabel =
+  const offsetRaw =
     offsetParts.find((p) => p.type === "timeZoneName")?.value ?? "GMT+0";
+  // Product convention: always show numeric offsets as UTC±N (not GMT), same as event-dates.
+  const offsetLabel = offsetRaw.replace(/^GMT/i, "UTC");
 
   // eslint-disable-next-line security/detect-unsafe-regex -- bounded input; validated pattern
-  const m = /GMT([+-])(\d+)(?::(\d+))?/.exec(offsetLabel);
+  const m = /(?:GMT|UTC)([+-])(\d+)(?::(\d+))?/i.exec(offsetRaw);
   const offsetSign = m?.[1] === "+" ? 1 : -1;
   const offsetHours = m
     ? offsetSign *
@@ -150,7 +166,9 @@ function buildTzEntry(iana: string, now: Date): TzEntry {
     segments[0] ?? "",
     abbr,
     offsetLabel,
-    offsetLabel.replace("GMT", ""),
+    offsetRaw,
+    offsetLabel.replace(/^UTC/i, ""),
+    offsetRaw.replace(/^GMT/i, ""),
     ...aliases,
   ]
     .join(" ")
@@ -251,7 +269,7 @@ function ensureSelectedInOptions(
       iana: value,
       city: value.replaceAll("_", " "),
       abbr: value,
-      offsetLabel: "",
+      offsetLabel: "UTC+0",
       offsetHours: 0,
       searchText: value.toLowerCase(),
     },
@@ -278,7 +296,7 @@ function buildListItems(entries: TzEntry[], grouped: boolean): TimezoneListItem[
       items.push({
         kind: "group",
         id: `group-${entry.offsetHours}`,
-        label: entry.offsetLabel || "GMT+0",
+        label: entry.offsetLabel,
       });
     }
     items.push({ kind: "option", id: entry.iana, entry, optionIndex });
@@ -295,6 +313,8 @@ interface TimezoneSelectProps {
   required?: boolean;
   /** Single-line trigger label (wizard / tight forms). */
   compact?: boolean;
+  /** Optional help text under the control (plain language for IANA zone IDs). */
+  hint?: string;
 }
 
 export function TimezoneSelect({
@@ -304,13 +324,16 @@ export function TimezoneSelect({
   id,
   required,
   compact = false,
+  hint,
 }: Readonly<TimezoneSelectProps>) {
   const autoId = useId();
   const controlId = id ?? `tz-${autoId}`;
   const listboxId = `${controlId}-listbox`;
+  const hintId = hint ? `${controlId}-hint` : undefined;
 
   const [open, setOpen] = useState(false);
   const [panelAbove, setPanelAbove] = useState(false);
+  const [panelStyle, setPanelStyle] = useState<CSSProperties>(HIDDEN_FIXED_PANEL);
   const [query, setQuery] = useState("");
   const [highlightIndex, setHighlightIndex] = useState(0);
   const deferred = useDeferredValue(query);
@@ -339,13 +362,15 @@ export function TimezoneSelect({
 
   const selectedEntry = value ? findTzEntry(index, value) : undefined;
 
-  // `reason === "focus"` means the user already tabbed focus elsewhere on purpose — pulling
-  // it back to this trigger would trap keyboard navigation, so only restore focus for every
-  // other close path (Escape, picking a timezone, an outside pointerdown).
+  // `reason === "focus"` / `"scroll"`: do not steal focus back (Tab already moved on, or an
+  // ancestor scroll closed the fixed panel — refocusing would undo that scroll).
   const closePanel = (reason?: OutsideInteraction) => {
     setOpen(false);
     setQuery("");
-    if (reason !== "focus") window.setTimeout(() => triggerRef.current?.focus(), 0);
+    setPanelStyle(HIDDEN_FIXED_PANEL);
+    if (reason !== "focus" && reason !== "scroll") {
+      window.setTimeout(() => triggerRef.current?.focus(), 0);
+    }
   };
 
   useEffect(() => {
@@ -366,24 +391,63 @@ export function TimezoneSelect({
     item?.scrollIntoView?.({ block: "nearest" });
   }, [highlightIndex, open]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open || !containerRef.current || !panelRef.current) return;
     const updatePlacement = () => {
-      const rect = containerRef.current!.getBoundingClientRect();
-      const panelHeight = panelRef.current!.offsetHeight;
+      // Panel only mounts while open, and open is driven from the trigger button.
+      const trigger = triggerRef.current!;
+      const rect = trigger.getBoundingClientRect();
+      const panel = panelRef.current!;
+      // scrollHeight (natural content), not offsetHeight — a prior maxHeight clamp would make
+      // offsetHeight look like the panel already fits and drop the clamp on the next query.
+      const panelHeight = panel.scrollHeight;
       const spaceBelow = window.innerHeight - rect.bottom;
       const spaceAbove = rect.top;
-      setPanelAbove(spaceBelow < panelHeight + 8 && spaceAbove > spaceBelow);
+      const above =
+        spaceBelow < panelHeight + PANEL_GAP_PX && spaceAbove > spaceBelow;
+      const available = (above ? spaceAbove : spaceBelow) - PANEL_GAP_PX - VIEWPORT_PAD_PX;
+      const maxHeight = panelHeight > available ? Math.max(200, available) : undefined;
+      const usedHeight = Math.min(panelHeight, maxHeight ?? panelHeight);
+      const top = above
+        ? rect.top - usedHeight - PANEL_GAP_PX
+        : rect.bottom + PANEL_GAP_PX;
+      const width = Math.max(rect.width, containerRef.current!.getBoundingClientRect().width);
+      let left = rect.left;
+      left = Math.min(left, window.innerWidth - VIEWPORT_PAD_PX - width);
+      left = Math.max(left, VIEWPORT_PAD_PX);
+
+      setPanelAbove(above);
+      setPanelStyle({
+        position: "fixed",
+        top,
+        left,
+        width,
+        maxHeight,
+        overflowY: maxHeight ? "auto" : undefined,
+        visibility: "visible",
+        zIndex: 1100,
+      });
     };
     updatePlacement();
-    window.addEventListener("resize", updatePlacement);
-    window.addEventListener("scroll", updatePlacement, true);
-    return () => {
-      window.removeEventListener("resize", updatePlacement);
-      window.removeEventListener("scroll", updatePlacement, true);
-    };
+    return attachFixedOverlayLifecycle(panelRef.current, updatePlacement, () =>
+      closePanel("scroll"),
+    );
   }, [open, optionCount, query]);
 
+  const openPanel = () => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (rect) {
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      setPanelAbove(
+        spaceBelow < TIMEZONE_PANEL_MAX_ESTIMATE_PX + PANEL_GAP_PX && spaceAbove > spaceBelow,
+      );
+    } else {
+      setPanelAbove(false);
+    }
+    setPanelStyle(HIDDEN_FIXED_PANEL);
+    setOpen(true);
+  };
   const selectOption = (entry: TzEntry) => {
     onChange(entry.iana);
     closePanel();
@@ -412,23 +476,18 @@ export function TimezoneSelect({
   };
 
   const selectedTriggerContent = selectedEntry ? (
-    <>
+    <span className="timezone-select__trigger-line">
       <span className="timezone-select__trigger-city">{selectedEntry.city}</span>
       <span className="timezone-select__trigger-meta">
         {selectedEntry.iana}
         {selectedEntry.offsetLabel ? ` · ${selectedEntry.offsetLabel}` : ""}
       </span>
-    </>
+    </span>
   ) : (
     <span className="timezone-select__trigger-placeholder">Select timezone…</span>
   );
 
-  const compactTriggerLabel = compact ? (
-    <span className="timezone-select__trigger-compact">{selectedTriggerContent}</span>
-  ) : (
-    selectedTriggerContent
-  );
-  const triggerLabel = selectedEntry ? compactTriggerLabel : selectedTriggerContent;
+  const triggerLabel = selectedTriggerContent;
 
   return (
     <div
@@ -444,14 +503,25 @@ export function TimezoneSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listboxId}
+        aria-describedby={hintId}
         onClick={() => {
-          if (disabled) return;
-          setOpen((prev) => !prev);
+          // `disabled` is enforced by the button attribute — no click handler when disabled.
+          if (open) {
+            setOpen(false);
+            return;
+          }
+          openPanel();
         }}
       >
         <span className="timezone-select__trigger-text">{triggerLabel}</span>
         <i className="ti ti-chevron-down timezone-select__chevron" aria-hidden="true" />
       </button>
+
+      {hint ? (
+        <span id={hintId} className="at-hint">
+          {hint}
+        </span>
+      ) : null}
 
       {open && (
         <div
@@ -462,6 +532,7 @@ export function TimezoneSelect({
           ]
             .filter(Boolean)
             .join(" ")}
+          style={panelStyle}
         >
           <input
             ref={searchRef}
@@ -482,55 +553,59 @@ export function TimezoneSelect({
           />
           {!searching && (
             <p className="timezone-select__hint">
-              Sorted west → east by UTC offset · type to filter
+              Sorted west to east by UTC offset · type to filter
             </p>
           )}
-          <ul
-            id={listboxId}
-            ref={listRef}
-            role="listbox"
-            className="timezone-select__list"
-            aria-label="Select timezone"
-          >
-            {optionCount === 0 ? (
-              <li className="timezone-select__empty" role="presentation">
-                No matching timezones
-              </li>
-            ) : (
-              listItems.map((item) =>
-                item.kind === "group" ? (
-                  <li key={item.id} className="timezone-select__group" role="presentation">
-                    {item.label}
-                  </li>
-                ) : (
-                  <li // NOSONAR — mouse-only click convenience; keyboard selection already works via the search input's onKeyDown (Enter selects the highlighted option, see onSearchKeyDown above)
-                    key={item.id}
-                    id={`${listboxId}-option-${item.optionIndex}`}
-                    role="option"
-                    data-option-index={item.optionIndex}
-                    aria-selected={item.entry.iana === value}
-                    className={[
-                      "timezone-select__option",
-                      item.entry.iana === value && "timezone-select__option--selected",
-                      item.optionIndex === highlightIndex && "timezone-select__option--highlighted",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                    onMouseEnter={() => setHighlightIndex(item.optionIndex)}
-                    onClick={() => selectOption(item.entry)}
-                  >
-                    <span className="timezone-select__option-row">
-                      <span className="timezone-select__option-city">{item.entry.city}</span>
-                      <span className="timezone-select__option-iana">{item.entry.iana}</span>
-                      {searching && item.entry.offsetLabel ? (
-                        <span className="timezone-select__option-offset">{item.entry.offsetLabel}</span>
-                      ) : null}
-                    </span>
-                  </li>
-                ),
-              )
-            )}
-          </ul>
+          {/* Shell clips the native scrollbar to the rounded corner (same pattern as
+              .identity-modal__panel -> .identity-modal__scroll). */}
+          <div className="timezone-select__list-shell">
+            <ul
+              id={listboxId}
+              ref={listRef}
+              role="listbox"
+              className="timezone-select__list"
+              aria-label="Select timezone"
+            >
+              {optionCount === 0 ? (
+                <li className="timezone-select__empty" role="presentation">
+                  No matching timezones
+                </li>
+              ) : (
+                listItems.map((item) =>
+                  item.kind === "group" ? (
+                    <li key={item.id} className="timezone-select__group" role="presentation">
+                      {item.label}
+                    </li>
+                  ) : (
+                    <li // NOSONAR — mouse-only click convenience; keyboard selection already works via the search input's onKeyDown (Enter selects the highlighted option, see onSearchKeyDown above)
+                      key={item.id}
+                      id={`${listboxId}-option-${item.optionIndex}`}
+                      role="option"
+                      data-option-index={item.optionIndex}
+                      aria-selected={item.entry.iana === value}
+                      className={[
+                        "timezone-select__option",
+                        item.entry.iana === value && "timezone-select__option--selected",
+                        item.optionIndex === highlightIndex && "timezone-select__option--highlighted",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      onMouseEnter={() => setHighlightIndex(item.optionIndex)}
+                      onClick={() => selectOption(item.entry)}
+                    >
+                      <span className="timezone-select__option-row">
+                        <span className="timezone-select__option-city">{item.entry.city}</span>
+                        <span className="timezone-select__option-iana">{item.entry.iana}</span>
+                        {searching && item.entry.offsetLabel ? (
+                          <span className="timezone-select__option-offset">{item.entry.offsetLabel}</span>
+                        ) : null}
+                      </span>
+                    </li>
+                  ),
+                )
+              )}
+            </ul>
+          </div>
         </div>
       )}
     </div>

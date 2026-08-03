@@ -1574,16 +1574,17 @@ describe("ReportsPage — ticket type catalog cross-event staleness", () => {
 });
 
 describe("EventsPickerPage archived event navigation", () => {
-  it("renders an active event card with the Active badge and no archived styling", async () => {
+  it("renders an active event card with a status badge and no archived styling", async () => {
     const activeEvent = {
       id: "evt-active",
       title: "Spring Gala",
       slug: "spring-gala",
-      date: "2026-06-01",
+      date: "2099-06-01T12:00:00.000Z",
       timezone: "Europe/Warsaw",
       location: "Hall A",
       capacity: 100,
       archived_at: null as string | null,
+      organization_id: "org-1",
     };
     vi.mocked(fetchAdminEvents).mockResolvedValue([activeEvent]);
     renderWithToast(
@@ -1598,7 +1599,7 @@ describe("EventsPickerPage archived event navigation", () => {
     });
 
     const link = screen.getByRole("link", { name: /Spring Gala/ });
-    expect(screen.getByText("Active")).toBeTruthy();
+    expect(screen.getByText(/^In \d+ days$/)).toBeTruthy();
     expect(link.querySelector(".event-card")?.classList.contains("event-card--archived")).toBe(
       false,
     );
@@ -1685,7 +1686,9 @@ describe("EventsPickerPage archived event navigation", () => {
       expect(screen.getByText("No active events")).toBeTruthy();
     });
     expect(
-      screen.getByText("All events are archived. Open the Archived events tab to unarchive one."),
+      screen.getByText(
+        "All events are archived. Open the Archived events tab, then restore an event from Organisation settings → Event archiving (or Event settings).",
+      ),
     ).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "View archived events" }));

@@ -1,12 +1,30 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+} from "react";
 import { Button, Input, Notice } from "@admitto/ui";
 import { searchGeocoding } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { GeocodingResultDto } from "../api/types.js";
+import { attachFixedOverlayLifecycle } from "../utils/fixed-overlay-lifecycle.js";
 import "./venue-autocomplete.css";
 
 const SEARCH_DEBOUNCE_MS = 300;
 const MIN_QUERY_LENGTH = 2;
+const SUGGEST_MAX_HEIGHT_PX = 320;
+const SUGGEST_MARGIN_PX = 4;
+const VIEWPORT_PAD_PX = 8;
+
+const HIDDEN_FIXED: CSSProperties = {
+  position: "fixed",
+  visibility: "hidden",
+  // Above add-attendee-modal (z-index 1000) when this list escapes overflow:auto.
+  zIndex: 1100,
+};
 
 export interface VenueAutocompleteProps {
   id: string;
@@ -29,10 +47,13 @@ export interface VenueAutocompleteProps {
 }
 
 /**
- * Single-field venue name/address search: type either one, matching places appear in an inline
+ * Single-field venue name/address search: type either one, matching places appear in a fixed
  * dropdown as you type (styled after check-in's attendee typeahead, `.ck-suggest`) - pick one to
  * fill in coordinates too, or keep typing free text if nothing matches. An optional "Find on map"
  * button forces the same search immediately and shows a no-match notice when OSM returns nothing.
+ *
+ * Suggestions use `position: fixed` (same idea as DeliveryRowMenu) so an ancestor with
+ * `overflow: auto` (e.g. New event modal) neither clips the list nor grows scroll height.
  */
 export function VenueAutocomplete({
   id,
@@ -49,11 +70,14 @@ export function VenueAutocomplete({
 }: Readonly<VenueAutocompleteProps>) {
   const [results, setResults] = useState<GeocodingResultDto[]>([]);
   const [visible, setVisible] = useState(false);
+  const [suggestStyle, setSuggestStyle] = useState<CSSProperties>(HIDDEN_FIXED);
   const [searching, setSearching] = useState(false);
   const [noMatch, setNoMatch] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const searchTimerRef = useRef<number | null>(null);
   const blurTimerRef = useRef<number | null>(null);
+  const fieldRef = useRef<HTMLDivElement>(null);
+  const suggestRef = useRef<HTMLUListElement>(null);
   // Guards against a slow, stale search response overwriting the results of a newer one that
   // resolved first - same seq-counter pattern as CheckInPage's fetchSuggestions.
   const seqRef = useRef(0);
@@ -65,6 +89,43 @@ export function VenueAutocomplete({
     };
   }, []);
 
+  useLayoutEffect(() => {
+    if (!visible || !fieldRef.current || !suggestRef.current) return;
+
+    const updatePlacement = () => {
+      const field = fieldRef.current!;
+      const list = suggestRef.current!;
+      const fieldBox = field.getBoundingClientRect();
+      const anchor =
+        field.querySelector<HTMLElement>("input") ?? field;
+      const rect = anchor.getBoundingClientRect();
+      const listHeight = Math.min(list.scrollHeight, SUGGEST_MAX_HEIGHT_PX);
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      const above =
+        spaceBelow < listHeight + SUGGEST_MARGIN_PX && spaceAbove > spaceBelow;
+      const available = (above ? spaceAbove : spaceBelow) - SUGGEST_MARGIN_PX - VIEWPORT_PAD_PX;
+      const maxHeight = Math.max(120, Math.min(SUGGEST_MAX_HEIGHT_PX, available));
+      const height = Math.min(list.scrollHeight, maxHeight);
+      const top = above
+        ? rect.top - height - SUGGEST_MARGIN_PX
+        : rect.bottom + SUGGEST_MARGIN_PX;
+
+      setSuggestStyle({
+        position: "fixed",
+        top,
+        left: fieldBox.left,
+        width: fieldBox.width,
+        maxHeight,
+        visibility: "visible",
+        zIndex: 1100,
+      });
+    };
+
+    updatePlacement();
+    return attachFixedOverlayLifecycle(suggestRef.current, updatePlacement, () => setVisible(false));
+  }, [visible, results.length]);
+
   const runSearch = async (query: string, opts?: { fromFindButton?: boolean }) => {
     const seq = ++seqRef.current;
     if (opts?.fromFindButton) setSearching(true);
@@ -72,6 +133,7 @@ export function VenueAutocomplete({
       const res = await searchGeocoding(query);
       if (seq !== seqRef.current) return;
       setResults(res.results);
+      setSuggestStyle(HIDDEN_FIXED);
       setVisible(res.results.length > 0);
       setNoMatch(opts?.fromFindButton === true && res.results.length === 0);
       setSearchError(null);
@@ -89,6 +151,11 @@ export function VenueAutocomplete({
     }
   };
 
+  const hideSuggestions = () => {
+    setVisible(false);
+    setSuggestStyle(HIDDEN_FIXED);
+  };
+
   const handleChange = (text: string) => {
     onChange(text);
     setNoMatch(false);
@@ -98,7 +165,7 @@ export function VenueAutocomplete({
     if (trimmed.length < MIN_QUERY_LENGTH) {
       seqRef.current += 1;
       setResults([]);
-      setVisible(false);
+      hideSuggestions();
       return;
     }
     searchTimerRef.current = window.setTimeout(() => {
@@ -113,7 +180,7 @@ export function VenueAutocomplete({
       setNoMatch(false);
       setSearchError(null);
       setResults([]);
-      setVisible(false);
+      hideSuggestions();
       return;
     }
     void runSearch(trimmed, { fromFindButton: true });
@@ -122,7 +189,7 @@ export function VenueAutocomplete({
   const handleSelect = (result: GeocodingResultDto) => {
     seqRef.current += 1;
     setResults([]);
-    setVisible(false);
+    hideSuggestions();
     setNoMatch(false);
     setSearchError(null);
     onSelectResult(result);
@@ -131,7 +198,7 @@ export function VenueAutocomplete({
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Escape" && visible) {
       e.preventDefault();
-      setVisible(false);
+      hideSuggestions();
     }
     if (e.key === "Enter" && showFindButton) {
       e.preventDefault();
@@ -143,7 +210,7 @@ export function VenueAutocomplete({
     // A suggestion button's own onMouseDown already prevents default so a mouse click never
     // blurs the input in the first place; this short delay is a second line of defense for
     // pointer types (touch, some assistive tech) where that doesn't hold, so a tap still lands.
-    blurTimerRef.current = window.setTimeout(() => setVisible(false), 150);
+    blurTimerRef.current = window.setTimeout(() => hideSuggestions(), 150);
   };
 
   const handleFocus = () => {
@@ -151,13 +218,16 @@ export function VenueAutocomplete({
       window.clearTimeout(blurTimerRef.current);
       blurTimerRef.current = null;
     }
-    if (results.length > 0) setVisible(true);
+    if (results.length > 0) {
+      setSuggestStyle(HIDDEN_FIXED);
+      setVisible(true);
+    }
   };
 
   return (
     <div className="venue-autocomplete">
       <div className={showFindButton ? "venue-autocomplete__row" : undefined}>
-        <div className="venue-autocomplete__field">
+        <div className="venue-autocomplete__field" ref={fieldRef}>
           <Input
             id={id}
             label={label}
@@ -177,7 +247,12 @@ export function VenueAutocomplete({
             onFocus={handleFocus}
           />
           {visible && results.length > 0 && (
-            <ul className="venue-suggest" aria-label="Venue suggestions">
+            <ul
+              ref={suggestRef}
+              className="venue-suggest"
+              style={suggestStyle}
+              aria-label="Venue suggestions"
+            >
               {results.map((result, index) => (
                 <li key={`${result.latitude},${result.longitude},${index}`}>
                   <button
@@ -217,7 +292,8 @@ export function VenueAutocomplete({
       {noMatch && (
         <Notice variant="error" role="status" className="venue-autocomplete__notice">
           No match found on OpenStreetMap. Try a street address with city or country. On the
-          Location tab you can also drop a pin and type the venue display name manually.
+          Location tab you can also double-click the map to drop a pin and type the venue display
+          name manually.
         </Notice>
       )}
       {searchError && (

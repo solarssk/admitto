@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   parseEventIdFromStaticMapFilename,
+  staticMapCacheControl,
   staticMapFailureStatus,
 } from "../../src/maps/static-map-route.js";
 
@@ -24,10 +25,17 @@ describe("parseEventIdFromStaticMapFilename", () => {
 });
 
 describe("staticMapFailureStatus", () => {
-  it("maps known miss reasons to 404 and render failure to 502", () => {
+  it("maps miss reasons to 404", () => {
     expect(staticMapFailureStatus("disabled")).toBe(404);
     expect(staticMapFailureStatus("not_found")).toBe(404);
     expect(staticMapFailureStatus("no_coordinates")).toBe(404);
-    expect(staticMapFailureStatus("render_failed")).toBe(502);
+  });
+});
+
+describe("staticMapCacheControl", () => {
+  it("uses a short max-age for placeholders and a day for real maps", () => {
+    expect(staticMapCacheControl(true)).toBe("public, max-age=120");
+    expect(staticMapCacheControl(false)).toBe("public, max-age=86400");
+    expect(staticMapCacheControl(undefined)).toBe("public, max-age=86400");
   });
 });
