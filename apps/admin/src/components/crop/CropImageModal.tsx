@@ -122,21 +122,15 @@ export function trustedCropPreviewSrc(src: string): string | null {
   return null;
 }
 
-/** Bind a scheme-checked preview URL onto an img (attribute, not HTML markup). */
-function bindTrustedCropPreview(img: HTMLImageElement, src: string): void {
-  const safe = trustedCropPreviewSrc(src);
-  if (!safe) {
-    img.removeAttribute("src");
-    return;
-  }
-  // codeql[js/xss-through-dom]: allowlisted blob:/data:image only; File preview via createObjectURL, not DOM HTML text.
-  img.src = safe;
-}
-
 /**
  * Free-form crop modal: edge/corner handles.
  * Stage viewport stays at fit size; zoom magnifies the bitmap inside it.
- * When zoomed, drag (not on handles) pans — wheel zooms.
+ * When zoomed, drag (not on handles) pans - wheel zooms.
+ *
+ * Preview `imageSrc` is only blob: (local File via createObjectURL) or data:image
+ * (tests). That is a URL attribute bind, not HTML markup from DOM text; CodeQL
+ * js/xss-through-dom flags file→img.src here as a known false positive for local
+ * image preview (see dismissed alerts on PR #693).
  */
 export function CropImageModal({
   open,
@@ -173,16 +167,9 @@ export function CropImageModal({
     prevZoomRef.current = CROP_ZOOM_MIN;
     setError(null);
     setApplying(false);
+    imgRef.current = null;
     panRef.current = null;
   }, [open, imageSrc]);
-
-  const setCropImgRef = useCallback(
-    (el: HTMLImageElement | null) => {
-      imgRef.current = el;
-      if (el) bindTrustedCropPreview(el, imageSrc);
-    },
-    [imageSrc],
-  );
 
   // % crop stays correct across zoom; refresh pixel crop for Apply from current display size.
   useLayoutEffect(() => {
@@ -384,7 +371,8 @@ export function CropImageModal({
               keepSelection
             >
               <img
-                ref={setCropImgRef}
+                ref={imgRef}
+                src={previewSrc}
                 alt=""
                 className="crop-image-modal__img"
                 width={display?.width}
