@@ -11,6 +11,7 @@ import { fetchOrgBranding, patchOrgBranding } from "../../api/client.js";
 import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import { useDelayedLoading } from "../../hooks/useDelayedLoading.js";
 import { safeBrandingLogoHref } from "../../utils/safeBrandingLogoHref.js";
+import type { LogoCropMeta } from "../../api/types.js";
 import { useWizard } from "./WizardContext.js";
 
 export type WizardStep3BrandingHandle = {
@@ -27,6 +28,8 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
     const { setBrandingSkipped, setSummary } = useWizard();
     const [orgName, setOrgName] = useState("");
     const [logoUrl, setLogoUrl] = useState("");
+    const [logoOriginalUrl, setLogoOriginalUrl] = useState("");
+    const [logoCrop, setLogoCrop] = useState<LogoCropMeta | null>(null);
     const [loading, setLoading] = useState(true);
     const loadAbortRef = useRef<AbortController | null>(null);
 
@@ -41,6 +44,8 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
           if (ac.signal.aborted) return;
           setOrgName(data.org_name ?? "");
           setLogoUrl(data.logo_url ?? "");
+          setLogoOriginalUrl(data.logo_original_url ?? "");
+          setLogoCrop(data.logo_crop ?? null);
         } catch (err) {
           if (ac.signal.aborted) return;
           addToast(
@@ -71,9 +76,13 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
         const data = await patchOrgBranding({
           org_name: name,
           logo_url: logo || null,
+          logo_original_url: logoOriginalUrl.trim() || null,
+          logo_crop: logoCrop,
         });
         setOrgName(data.org_name ?? name);
         setLogoUrl(data.logo_url ?? "");
+        setLogoOriginalUrl(data.logo_original_url ?? "");
+        setLogoCrop(data.logo_crop ?? null);
         onDirtyChange?.(false);
         setBrandingSkipped(false);
         setSummary({ brandingLabel: name });
@@ -121,8 +130,15 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
             <div className="setup-wizard__field">
               <LogoUploadZone
                 value={logoUrl}
+                originalUrl={logoOriginalUrl || null}
+                cropMeta={logoCrop}
                 onChange={(url) => {
                   setLogoUrl(url);
+                  onDirtyChange?.(true);
+                }}
+                onSourceChange={(source) => {
+                  setLogoOriginalUrl(source.originalUrl ?? "");
+                  setLogoCrop(source.crop);
                   onDirtyChange?.(true);
                 }}
                 onDirty={() => onDirtyChange?.(true)}

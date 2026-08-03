@@ -2,15 +2,27 @@
  * Event settings: read/update basic fields and superadmin PII export (prompt 54).
  */
 import type { Context } from "hono";
-import type { PrismaClient } from "@admitto/db";
+import { Prisma, type PrismaClient } from "@admitto/db";
 import { canManageInstance } from "@admitto/auth";
 import { ADMITTABLE_STATUS_LIST, REVOCABLE_ITEM_STATES, writeAdminAuditLog } from "@admitto/tickets";
-import { InvalidHttpUrlError, resolveBrandingFromEvent, validateBrandingUrl } from "@admitto/mail-templates";
+import {
+  InvalidHttpUrlError,
+  logoCropFromDb,
+  parseLogoCrop,
+  resolveBrandingFromEvent,
+  validateBrandingUrl,
+  enforceLogoPersistenceForDisplayChange,
+  type BrandingUpdateData,
+  type EventSettingsDto,
+  type LogoCropMeta,
+} from "@admitto/mail-templates";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { z } from "zod";
 import {
   adminAuditFromContext,
   assertEventManageAccess,
+  isValidCalendarDate,
+  parseEventDateInput,
   requireEventId,
   resolveActorEmailForLog,
 } from "./admin-helpers.js";
@@ -26,6 +38,18 @@ const dateOnlyField = z
 
 const PG_INT_MAX = 2_147_483_647;
 
+/** Shape-only gate; bounds/zoom rules live in `parseLogoCrop` (called after this parses). */
+const logoCropSchema = z
+  .object({
+    unit: z.literal("%"),
+    x: z.number().finite(),
+    y: z.number().finite(),
+    width: z.number().finite(),
+    height: z.number().finite(),
+    zoom: z.number().finite(),
+  })
+  .nullish();
+
 /**
  * Strict schema: unknown keys (including `slug`) return 400 — slug is immutable and
  * clients must omit it; we do not silently strip extra fields.
@@ -37,37 +61,13 @@ const patchEventSchema = z
     capacity: z.number().int().positive().max(PG_INT_MAX).nullish(),
     timezone: timezoneField.optional(),
     logo_url: z.string().trim().max(2000).nullish(),
+    logo_original_url: z.string().trim().max(2000).nullish(),
+    logo_crop: logoCropSchema,
     header_image_url: z.string().trim().max(2000).nullish(),
   })
   .strict();
 
-export type EventSettingsDto = {
-  id: string;
-  title: string;
-  slug: string;
-  date: string;
-  timezone: string;
-  capacity: number | null;
-  status: "active" | "archived";
-  /** Null unless status is "archived". */
-  archived_at: string | null;
-  /** When the event was first created — shown in the Status card. */
-  created_at: string;
-  /** True when the event has zero real activity and can be permanently deleted. */
-  is_deletable: boolean;
-  /** Attendees currently checked in — drives the "Revoke all check-ins" Danger Zone row. */
-  admitted_count: number;
-  /** Individual issued/returned item hand-outs across all attendees — drives "Revoke all items issued". */
-  issued_items_count: number;
-  organization_name: string;
-  active_items: Array<{ id: string; name: string; enabled: boolean }>;
-  /** Event's own branding overrides — null means "inherited from organization". */
-  logo_url: string | null;
-  header_image_url: string | null;
-  /** Effective branding actually used today (event value, else organization's). */
-  resolved_logo_url: string | null;
-  resolved_header_image_url: string | null;
-};
+export type { EventSettingsDto };
 
 type EventSettingsRow = {
   id: string;
@@ -79,27 +79,13 @@ type EventSettingsRow = {
   archived_at: Date | null;
   created_at: Date;
   logo_url: string | null;
+  logo_original_url: string | null;
+  logo_crop: unknown;
   header_image_url: string | null;
   pinned_note: string | null;
   organization: { name: string; logo_url: string | null; header_image_url: string | null };
   event_items: Array<{ id: string; label: string; enabled: boolean }>;
 };
-
-function isValidCalendarDate(value: string): boolean {
-  const [year, month, day] = value.split("-").map(Number);
-  if (!year || !month || !day) return false;
-  const parsed = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-  return (
-    parsed.getUTCFullYear() === year &&
-    parsed.getUTCMonth() === month - 1 &&
-    parsed.getUTCDate() === day
-  );
-}
-
-/** Parse date-only values at UTC noon to avoid locale off-by-one in date pickers. */
-function parseEventDateInput(date: string): Date {
-  return new Date(date.includes("T") ? date : `${date}T12:00:00.000Z`);
-}
 
 function serializeEventSettings(
   event: EventSettingsRow,
@@ -127,6 +113,8 @@ function serializeEventSettings(
       enabled: item.enabled,
     })),
     logo_url: event.logo_url,
+    logo_original_url: event.logo_original_url,
+    logo_crop: logoCropFromDb(event.logo_crop),
     header_image_url: event.header_image_url,
     resolved_logo_url: resolved.logo_url || null,
     resolved_header_image_url: resolved.header_image_url || null,
@@ -145,6 +133,8 @@ const EVENT_SETTINGS_SELECT = {
   pinned_note: true,
   organization_id: true,
   logo_url: true,
+  logo_original_url: true,
+  logo_crop: true,
   header_image_url: true,
   organization: { select: { name: true, logo_url: true, header_image_url: true } },
   event_items: {
@@ -239,26 +229,64 @@ function buildBasicFieldsPatch(patch: PatchEventBody): {
   return data;
 }
 
-/** Validates and writes patch.logo_url/header_image_url into `data`; returns an error Response, or null on success. */
+type BrandingPatchData = BrandingUpdateData;
+
+function patchOptionalBrandingUrl(
+  field: "logo_url" | "logo_original_url" | "header_image_url",
+  raw: string | null | undefined,
+  data: BrandingPatchData,
+): void {
+  const trimmed = raw?.trim() ?? "";
+  data[field] = trimmed ? validateBrandingUrl(field, trimmed) : null;
+}
+
+/** External or cleared display logo cannot keep an upload original / crop. */
+function clearOriginalWhenDisplayIsNotUpload(
+  data: BrandingPatchData,
+  patch: PatchEventBody,
+): void {
+  enforceLogoPersistenceForDisplayChange(data, {
+    logoUrl: patch.logo_url,
+    logoOriginalUrl: patch.logo_original_url,
+    logoCrop: patch.logo_crop,
+  });
+}
+
+function brandingPatchErrorResponse(c: Context, err: unknown): Response | null {
+  if (err instanceof InvalidHttpUrlError) {
+    return c.json({ error: err.message }, 400);
+  }
+  if (err instanceof Error && err.message.startsWith("logo_crop")) {
+    return c.json({ error: err.message }, 400);
+  }
+  return null;
+}
+
+/** Validates and writes branding URL / crop fields into `data`; returns an error Response, or null. */
 function applyBrandingPatch(
   c: Context,
-  data: { logo_url?: string | null; header_image_url?: string | null },
+  data: BrandingPatchData,
   patch: PatchEventBody,
 ): Response | null {
   try {
     if (patch.logo_url !== undefined) {
-      const trimmed = patch.logo_url?.trim() ?? "";
-      data.logo_url = trimmed ? validateBrandingUrl("logo_url", trimmed) : null;
+      patchOptionalBrandingUrl("logo_url", patch.logo_url, data);
+    }
+    if (patch.logo_original_url !== undefined) {
+      patchOptionalBrandingUrl("logo_original_url", patch.logo_original_url, data);
+    }
+    if (patch.logo_crop !== undefined) {
+      const crop = parseLogoCrop(patch.logo_crop ?? null);
+      data.logo_crop = crop === null ? Prisma.JsonNull : crop;
     }
     if (patch.header_image_url !== undefined) {
-      const trimmed = patch.header_image_url?.trim() ?? "";
-      data.header_image_url = trimmed ? validateBrandingUrl("header_image_url", trimmed) : null;
+      patchOptionalBrandingUrl("header_image_url", patch.header_image_url, data);
     }
+    clearOriginalWhenDisplayIsNotUpload(data, patch);
     return null;
   } catch (err) {
-    if (err instanceof InvalidHttpUrlError) {
-      return c.json({ error: err.message }, 400);
-    }
+    const response = brandingPatchErrorResponse(c, err);
+    if (response) return response;
     throw err;
   }
 }
@@ -302,6 +330,8 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     timezone?: string;
     capacity?: number | null;
     logo_url?: string | null;
+    logo_original_url?: string | null;
+    logo_crop?: LogoCropMeta | typeof Prisma.JsonNull;
     header_image_url?: string | null;
   } = buildBasicFieldsPatch(patch);
 

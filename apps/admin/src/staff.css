@@ -676,42 +676,7 @@
   color: var(--primary);
 }
 
-/* Dev-only toast demo bar */
-.demo-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  background: var(--surface-card);
-  border-top: 1px solid var(--border);
-  font-size: 0.75rem;
-  z-index: var(--z-demo-bar, 200);
-}
-
-.demo-bar button {
-  font-size: 0.75rem;
-  padding: 2px 8px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: none;
-  cursor: pointer;
-  color: var(--text-secondary);
-}
-
-.demo-bar button:hover:not(:disabled) {
-  background: var(--surface-subtle);
-}
-
-.demo-bar button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
+/* ─── Page header ─────────────────────────────────────────────────────────── */
 .placeholder-note {
   color: var(--text-secondary);
   margin: 0;

@@ -18,6 +18,10 @@ model Organization {
   slug                  String          @unique
   // Branding URLs (ADR 0008) — external hosted images, not uploads.
   logo_url              String?
+  // Full pre-crop file for re-Edit; display still uses logo_url (cropped).
+  logo_original_url     String?
+  // Percent crop + zoom last applied: { unit:"%", x, y, width, height, zoom }.
+  logo_crop             Json?
   header_image_url      String?
   // Reserved for future use, e.g. identifying this instance in outbound API requests.
   support_contact_name  String?
@@ -37,6 +41,10 @@ model Event {
   timezone             String              @default("UTC")
   capacity             Int?
   logo_url             String?
+  // Full pre-crop file for re-Edit; display still uses logo_url (cropped).
+  logo_original_url    String?
+  // Percent crop + zoom last applied: { unit:"%", x, y, width, height, zoom }.
+  logo_crop            Json?
   header_image_url     String?
   created_at           DateTime            @default(now())
   // No FK (matches AdminAuditLog.actor_user_id) - a deactivated/deleted user must not block
