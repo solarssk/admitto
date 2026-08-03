@@ -191,7 +191,11 @@ describe("config", () => {
     const previousNodeEnv = process.env["NODE_ENV"];
     process.env["NODE_ENV"] = "test";
     try {
-      await expect(resolveSafeMailDestination("192.168.1.10")).rejects.toThrow(/private|loopback/);
+      await expect(resolveSafeMailDestination("192.168.1.10")).rejects.toMatchObject({
+        name: "MailDestinationError",
+        code: "mail_destination_blocked",
+        message: expect.stringMatching(/private|loopback/),
+      });
 
       process.env["ALLOW_PRIVATE_MAIL_DESTINATIONS"] = "true";
       const records = await resolveSafeMailDestination("127.0.0.1");
