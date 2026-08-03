@@ -80,7 +80,52 @@ function rowStatusLabel(status: HealthRowStatus): string {
 }
 
 function escapeCell(value: string): string {
-  return value.replaceAll("|", "\\|").replaceAll("\n", " ");
+  return value.replaceAll("|", String.raw`\|`).replaceAll("\n", " ");
+}
+
+function appendGroupTable(
+  lines: string[],
+  group: HealthReportDto["groups"][number],
+): void {
+  lines.push(
+    `#### ${group.label}`,
+    `_${group.subtitle}_`,
+    "",
+    "| Check | Status | Summary |",
+    "| --- | --- | --- |",
+  );
+  for (const check of group.checks) {
+    lines.push(
+      `| ${escapeCell(check.label)} | ${rowStatusLabel(check.status)} | ${escapeCell(check.summary)} |`,
+    );
+  }
+  lines.push("");
+}
+
+function appendGroupDetails(
+  lines: string[],
+  group: HealthReportDto["groups"][number],
+): void {
+  const expanded = group.checks.filter((c) =>
+    c.details.some((d) => MARKDOWN_SAFE_DETAIL_KEYS.has(d.key) && d.key !== "last_checked"),
+  );
+  if (expanded.length === 0) return;
+
+  lines.push("<details>", `<summary>${group.label} details</summary>`, "");
+  for (const check of expanded) {
+    const safe = check.details.filter(
+      (d) => MARKDOWN_SAFE_DETAIL_KEYS.has(d.key) && d.key !== "url",
+    );
+    if (safe.length === 0) continue;
+    lines.push(`**${check.label}**`);
+    for (const d of safe) {
+      lines.push(
+        `- ${formatHealthDetailLabel(d.key)}: ${formatHealthDetailValue(d.key, d.value)}`,
+      );
+    }
+    lines.push("");
+  }
+  lines.push("</details>", "");
 }
 
 /**
@@ -97,41 +142,8 @@ export function formatHealthCheckMarkdown(report: HealthReportDto): string {
   ];
 
   for (const group of report.groups) {
-    lines.push(`#### ${group.label}`);
-    lines.push(`_${group.subtitle}_`);
-    lines.push("");
-    lines.push("| Check | Status | Summary |");
-    lines.push("| --- | --- | --- |");
-    for (const check of group.checks) {
-      lines.push(
-        `| ${escapeCell(check.label)} | ${rowStatusLabel(check.status)} | ${escapeCell(check.summary)} |`,
-      );
-    }
-    lines.push("");
-
-    const expanded = group.checks.filter(
-      (c) => c.details.some((d) => MARKDOWN_SAFE_DETAIL_KEYS.has(d.key) && d.key !== "last_checked"),
-    );
-    if (expanded.length > 0) {
-      lines.push("<details>");
-      lines.push(`<summary>${group.label} details</summary>`);
-      lines.push("");
-      for (const check of expanded) {
-        const safe = check.details.filter(
-          (d) => MARKDOWN_SAFE_DETAIL_KEYS.has(d.key) && d.key !== "url",
-        );
-        if (safe.length === 0) continue;
-        lines.push(`**${check.label}**`);
-        for (const d of safe) {
-          lines.push(
-            `- ${formatHealthDetailLabel(d.key)}: ${formatHealthDetailValue(d.key, d.value)}`,
-          );
-        }
-        lines.push("");
-      }
-      lines.push("</details>");
-      lines.push("");
-    }
+    appendGroupTable(lines, group);
+    appendGroupDetails(lines, group);
   }
 
   return lines.join("\n").trimEnd() + "\n";

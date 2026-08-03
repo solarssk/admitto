@@ -118,6 +118,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .health-check__row {
@@ -202,36 +205,36 @@
   flex-shrink: 0;
 }
 
-/* Explicit hex fallbacks — Tabler CSS vars are not always present on every surface. */
+/* Explicit hex fallbacks — Tabler CSS vars are not always present on every surface.
+ * Colour lives only on background/box-shadow (empty status dots have no text). */
 .health-check__dot {
   width: 0.65rem;
   height: 0.65rem;
   border-radius: 50%;
   flex-shrink: 0;
-  background: #94a3b8;
-  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 12%, transparent);
+  background: #64748b;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #64748b 12%, transparent);
 }
 
 .health-check__dot--ok {
   background: #2fb344;
-  color: #2fb344;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #2fb344 12%, transparent);
 }
 
 .health-check__dot--warn {
   background: #f59f00;
-  color: #f59f00;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #f59f00 12%, transparent);
 }
 
 .health-check__dot--err {
   background: #d63939;
-  color: #d63939;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #d63939 12%, transparent);
 }
 
 .health-check__dot--muted,
 .health-check__dot--planned {
-  background: #94a3b8;
-  color: #94a3b8;
-  opacity: 0.7;
+  background: #64748b;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #64748b 12%, transparent);
 }
 
 .health-check__details {
@@ -259,7 +262,7 @@
 .health-check__detail dd {
   margin: 0;
   font-family: var(--tblr-font-monospace, ui-monospace, monospace);
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 720px) {

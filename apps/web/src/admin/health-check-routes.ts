@@ -169,11 +169,17 @@ async function readPostgresEngine(db: PrismaClient): Promise<string | undefined>
   }
 }
 
+const LATENCY_MS_IN_DETAIL = /\((\d+)\s*ms\)/;
+
+function parseLatencyMsFromDetail(detail: string): string | undefined {
+  return LATENCY_MS_IN_DETAIL.exec(detail)?.[1];
+}
+
 function resolveDatabaseLatencyMs(
   check: SetupCheckResult,
   extras?: { latencyMs?: number },
 ): string | undefined {
-  const fromSetup = check.detail.match(/\((\d+)\s*ms\)/)?.[1];
+  const fromSetup = parseLatencyMsFromDetail(check.detail);
   const setupMs = fromSetup != null ? Number(fromSetup) : undefined;
   const probeMs = extras?.latencyMs;
   // When setup flagged the DB as slow, keep (or take the max of) that latency so a faster
@@ -272,23 +278,23 @@ function setupToRedisRow(check: SetupCheckResult, checkedAt: string): HealthChec
     };
   }
   if (check.warn) {
-    const latencyMatch = check.detail.match(/\((\d+)\s*ms\)/);
+    const latencyMs = parseLatencyMsFromDetail(check.detail);
     return {
       id: "session_storage",
       label,
       status: "degraded",
-      summary: latencyMatch
-        ? `Responding slowly · ${latencyMatch[1]} ms`
+      summary: latencyMs
+        ? `Responding slowly · ${latencyMs} ms`
         : "Responding slowly",
       details: detailsFromEntries([
         ["status", "degraded"],
         ["mode", inMemory ? "in-memory" : "redis"],
-        ["latency_ms", latencyMatch?.[1]],
+        ["latency_ms", latencyMs],
         ["last_checked", checkedAt],
       ]),
     };
   }
-  const latencyMatch = check.detail.match(/\((\d+)\s*ms\)/);
+  const latencyMs = parseLatencyMsFromDetail(check.detail);
   return {
     id: "session_storage",
     label,
@@ -297,7 +303,7 @@ function setupToRedisRow(check: SetupCheckResult, checkedAt: string): HealthChec
     details: detailsFromEntries([
       ["status", "ok"],
       ["mode", inMemory ? "in-memory" : "redis"],
-      ["latency_ms", latencyMatch?.[1]],
+      ["latency_ms", latencyMs],
       ["last_checked", checkedAt],
     ]),
   };
@@ -408,12 +414,15 @@ function mailQueueRow(
       ]),
     };
   }
-  const summary =
-    queued === 0
-      ? failedRetryable > 0
+  let summary: string;
+  if (queued === 0) {
+    summary =
+      failedRetryable > 0
         ? `Queue empty · ${failedRetryable.toLocaleString("en")} retryable failures`
-        : "Queue empty"
-      : `Running · ${queued.toLocaleString("en")} queued`;
+        : "Queue empty";
+  } else {
+    summary = `Running · ${queued.toLocaleString("en")} queued`;
+  }
   return {
     id: "mail_delivery_queue",
     label,

@@ -161,17 +161,17 @@ function HealthGroupSection({
           <p className="health-check__section-subtitle">{group.subtitle}</p>
         </div>
       </header>
-      <div className="health-check__list" role="list">
+      <ul className="health-check__list">
         {group.checks.map((check) => (
-          <div key={check.id} role="listitem">
+          <li key={check.id}>
             <HealthCheckRowView
               check={check}
               expanded={expandedIds.has(check.id)}
               onToggle={() => onToggle(check.id)}
             />
-          </div>
+          </li>
         ))}
-      </div>
+      </ul>
     </section>
   );
 }

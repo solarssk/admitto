@@ -38,6 +38,25 @@ export interface InlineRateLimit {
   max: number;
 }
 
+/** Shared shape for authenticated admin routes limited per user (5 / min by default). */
+function authUserScopedPolicy(
+  keyPrefix: string,
+  scope: RateLimitScope,
+  max = 5,
+  windowMs = 60_000,
+): RatePolicy {
+  return {
+    checks: [
+      {
+        keyOf: (c) => `${keyPrefix}:user:${c.get("auth").userId}`,
+        windowMs,
+        max,
+        logOnExceeded: { scope },
+      },
+    ],
+  };
+}
+
 /**
  * Limits consumed only by inline rate-limit helpers, not {@link rateLimit} middleware.
  * Kept separate so these names are excluded from {@link RatePolicyName} at compile time.
@@ -185,37 +204,16 @@ export const RATE_POLICIES = {
       },
     ],
   },
-  "admin:mail-transport-test": {
-    checks: [
-      {
-        keyOf: (c) => `admin:mail-transport-test:user:${c.get("auth").userId}`,
-        windowMs: 60_000,
-        max: 5,
-        logOnExceeded: { scope: "admin_mail_transport_test" },
-      },
-    ],
-  },
+  "admin:mail-transport-test": authUserScopedPolicy(
+    "admin:mail-transport-test",
+    "admin_mail_transport_test",
+  ),
   /** On-demand live health probes (Nominatim / OIDC) from Settings → Health check. */
-  "admin:health-live": {
-    checks: [
-      {
-        keyOf: (c) => `admin:health-live:user:${c.get("auth").userId}`,
-        windowMs: 60_000,
-        max: 5,
-        logOnExceeded: { scope: "admin_health_live" },
-      },
-    ],
-  },
-  "admin:event-mail-transport-test": {
-    checks: [
-      {
-        keyOf: (c) => `admin:event-mail-transport-test:user:${c.get("auth").userId}`,
-        windowMs: 60_000,
-        max: 5,
-        logOnExceeded: { scope: "admin_event_mail_transport_test" },
-      },
-    ],
-  },
+  "admin:health-live": authUserScopedPolicy("admin:health-live", "admin_health_live"),
+  "admin:event-mail-transport-test": authUserScopedPolicy(
+    "admin:event-mail-transport-test",
+    "admin_event_mail_transport_test",
+  ),
   "admin:export": {
     checks: [
       {
