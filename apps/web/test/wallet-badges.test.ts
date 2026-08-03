@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
+import type { ResolveEventStaticMapResult } from "../src/maps/event-static-map-service.js";
 import { readTicketAssetForTest } from "../src/wallet-badges.js";
 
 describe("wallet / ticket mark assets", () => {
@@ -85,5 +86,20 @@ describe("GET /m/:filename", () => {
       });
       expect((await app.request("/m/evt_1.png")).status).toBe(404);
     }
+  });
+
+  it("passes listPreview when context=list and empty options otherwise", async () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    const getForEvent = vi.fn(
+      async (): Promise<ResolveEventStaticMapResult> => ({ ok: true, png, cacheHit: false }),
+    );
+    const app = createApp({ eventStaticMapService: { getForEvent } });
+
+    expect((await app.request("/m/evt_list.png?context=list&v=2")).status).toBe(200);
+    expect(getForEvent).toHaveBeenCalledWith(expect.anything(), "evt_list", { listPreview: true });
+
+    getForEvent.mockClear();
+    expect((await app.request("/m/evt_ticket.png")).status).toBe(200);
+    expect(getForEvent).toHaveBeenCalledWith(expect.anything(), "evt_ticket", {});
   });
 });

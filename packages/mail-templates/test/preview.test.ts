@@ -26,7 +26,7 @@ describe("buildBaseTemplateVars", () => {
 
     expect(vars).toMatchObject({
       event_location: "Sample venue",
-      event_map_url: "https://tickets.example.com/m/evt-location.png?v=5_52.229700_21.012200",
+      event_map_url: "https://tickets.example.com/m/evt-location.png?v=9_52.229700_21.012200",
       event_address: "Example Street 1, Warsaw",
       directions_text: "Enter through gate A.",
       accessibility_text: "Step-free access is available.",

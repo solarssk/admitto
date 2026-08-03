@@ -131,6 +131,25 @@ describe("renderStaticMapPng content-length accept path", () => {
 });
 
 describe("buildStaticMapCacheKey", () => {
+  it("changes when burn-in attribution is toggled off for list previews", () => {
+    const base = { latitude: 52.23, longitude: 21.01, zoom: 15 };
+    const withBurn = buildStaticMapCacheKey(
+      "evt1",
+      base,
+      "https://tiles.example/{z}/{x}/{y}.png",
+      "© A",
+      true,
+    );
+    const withoutBurn = buildStaticMapCacheKey(
+      "evt1",
+      base,
+      "https://tiles.example/{z}/{x}/{y}.png",
+      "© A",
+      false,
+    );
+    expect(withBurn).not.toBe(withoutBurn);
+  });
+
   it("changes when coordinates, tile URL, or attribution change", () => {
     const base = {
       latitude: 52.23,
@@ -179,6 +198,33 @@ describe("renderStaticMapPng", () => {
     expect(meta.width).toBe(STATIC_MAP_WIDTH);
     expect(meta.height).toBe(STATIC_MAP_HEIGHT);
     expect(meta.format).toBe("png");
+  });
+
+  it("skips the PNG attribution burn-in when burnInAttribution is false", async () => {
+    const tile = await solidTilePng({ r: 180, g: 190, b: 200 });
+    const fetchFn = vi.fn().mockImplementation(async () =>
+      new Response(new Uint8Array(tile), { status: 200, headers: { "content-type": "image/png" } }),
+    );
+
+    const png = await renderStaticMapPng(
+      { latitude: 52.2297, longitude: 21.0122, zoom: 15 },
+      {
+        tileConfig: {
+          enabled: true,
+          tileUrl: "https://tiles.example/{z}/{x}/{y}.png",
+          attribution: "© Test Attribution That Would Burn In",
+          maxZoom: 19,
+        },
+        userAgent: "Admitto/test",
+        fetchFn,
+        burnInAttribution: false,
+      },
+    );
+
+    expect(fetchFn).toHaveBeenCalled();
+    const meta = await sharp(png).metadata();
+    expect(meta.format).toBe("png");
+    expect(meta.width).toBe(STATIC_MAP_WIDTH);
   });
 
   it("resizes non-256 commercial tiles (e.g. MapTiler 512) before composite", async () => {

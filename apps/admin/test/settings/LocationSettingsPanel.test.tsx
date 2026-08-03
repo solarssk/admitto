@@ -752,6 +752,9 @@ describe("LocationSettingsPanel — clearing and map availability", () => {
     });
     expect(screen.queryByText("From OpenStreetMap")).toBeFalsy();
     expect(screen.queryByText("Set manually")).toBeFalsy();
+    expect(
+      document.querySelector(".location-map-footer__verified .at-badge")?.textContent?.trim(),
+    ).toBe("Not filled");
     expect(await screen.findByText("Unsaved changes")).toBeTruthy();
   });
 

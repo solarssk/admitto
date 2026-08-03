@@ -33,7 +33,7 @@ The overview reflects the current event lifecycle, and saved settings are used b
 
 ## Important decisions
 
-- The event slug is created once and cannot be edited later.
+- The event slug (link name) is created once and cannot be edited later. It appears in agency ticket URLs (`/t/{link-name}/a/…`); ordinary tickets use `/t/{token}` without the link name.
 - Capacity is managed here, not in the **New event** dialog. A blank capacity means unlimited.
 - Use the event's real time zone. Report and activity times depend on it.
 - **The Location tab is the only place to set an event's venue name and address** — General no longer has a separate location field. It also holds the map coordinates and directions/accessibility notes, and is optional — leave it blank if a map isn't needed for this event.
