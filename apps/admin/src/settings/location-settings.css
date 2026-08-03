@@ -1,9 +1,9 @@
 /* Event Settings - Location tab. LocationSettingsPanel.tsx + MapPicker.tsx. */
 
-/* Extra air under the Address card title / header rule - a warning banner reads cramped
-   against the header when it is the first body child with only --pad-card. */
+/* Warning banner spacing comes from .settings-field-stack / .settings-card-stack now that
+   Address has a card intro above the fields. */
 .location-contact-notice {
-  margin-top: var(--space-4);
+  margin-top: 0;
 }
 
 /* Leaflet needs an explicit pixel height on its container - it measures the container at mount
@@ -120,7 +120,8 @@
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: var(--fs-sm);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
   /* Tall enough that ti-map-pin's pointed tip is not clipped (looks like a hollow
    * circle / "target" when the tip is cut off). */
   line-height: 1.5;
@@ -143,29 +144,45 @@
 .location-map-footer__links {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-3);
+  align-items: center;
+  /* Match Address card / settings action gaps (--space-4), not tight link stacking. */
+  gap: var(--space-2) var(--space-4);
 }
 
 .location-map-footer__link {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: var(--space-1);
   padding: 0;
   border: 0;
   background: none;
   font: inherit;
   font-size: var(--fs-sm);
-  color: var(--text-link, var(--color-primary, #206bc4));
+  text-decoration: none;
   cursor: pointer;
+}
+
+/* Utility: copy actions stay muted so they do not compete with the fix action. */
+.location-map-footer__link--copy {
+  color: var(--text-muted, var(--text-secondary));
+}
+
+.location-map-footer__link--copy:not(:disabled):hover {
+  color: var(--text-secondary);
+}
+
+/* Distinct primary action: wrong deep link, not another copy utility. */
+.location-map-footer__link--fix {
+  color: var(--text-link, var(--color-primary, #206bc4));
+}
+
+.location-map-footer__link--fix:not(:disabled):hover {
+  color: var(--text-primary);
 }
 
 .location-map-footer__link:disabled {
   color: var(--text-disabled);
   cursor: not-allowed;
-}
-
-.location-map-footer__link:not(:disabled):hover {
-  text-decoration: underline;
 }
 
 .location-textarea {

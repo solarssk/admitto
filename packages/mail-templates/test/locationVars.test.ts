@@ -55,4 +55,18 @@ describe("buildEventLocationTemplateVars", () => {
     expect(vars.apple_maps_url).toBe("");
     expect(vars.event_location).toBe("Hall");
   });
+
+  it("prefers saved Maps URL overrides over coordinate-built links", () => {
+    const vars = buildEventLocationTemplateVars(
+      "evt-1",
+      {
+        ...LOCATION,
+        google_maps_url_override: "https://www.google.com/maps/place/Custom",
+        apple_maps_url_override: "https://maps.apple.com/?address=Custom",
+      },
+      "https://tickets.example.com",
+    );
+    expect(vars.google_maps_url).toBe("https://www.google.com/maps/place/Custom");
+    expect(vars.apple_maps_url).toBe("https://maps.apple.com/?address=Custom");
+  });
 });

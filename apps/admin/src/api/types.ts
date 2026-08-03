@@ -826,6 +826,10 @@ export interface EventLocationDto {
   geocoding_provider: string | null;
   geocoded_at: string | null;
   address_components: AddressComponentsDto | null;
+  /** Manual Google Maps deep link when the pin-built URL is wrong; null = build from coords. */
+  google_maps_url_override: string | null;
+  /** Manual Apple Maps deep link when the pin-built URL is wrong; null = build from coords. */
+  apple_maps_url_override: string | null;
 }
 
 export interface SaveEventLocationBody {
@@ -838,6 +842,8 @@ export interface SaveEventLocationBody {
   directions_text?: string | null;
   accessibility_text?: string | null;
   address_components?: AddressComponentsDto | null;
+  google_maps_url_override?: string | null;
+  apple_maps_url_override?: string | null;
   /** Only meaningful alongside a latitude/longitude change for stamping a provider; send `null`
    * without a coordinate change to clear stale Verified provenance (e.g. free-text venue rename).
    * Omit for a manual pin move so the server clears provenance via the coordinate-change path. */

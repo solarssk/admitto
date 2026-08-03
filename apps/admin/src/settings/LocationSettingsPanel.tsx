@@ -3,8 +3,8 @@ import { useNavigate } from "react-router";
 import {
   EMPTY_ADDRESS_COMPONENTS,
   LOCATION_LIMITS,
-  buildAppleMapsUrl,
-  buildGoogleMapsUrl,
+  resolveAppleMapsUrl,
+  resolveGoogleMapsUrl,
 } from "@admitto/location";
 import { Badge, Button, Card, HintLabel, Notice, useToast } from "@admitto/ui";
 import {
@@ -21,6 +21,7 @@ import { isSuperadmin } from "../auth/capabilities.js";
 import { VenueAutocomplete } from "../components/VenueAutocomplete.js";
 import { whenShown, useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { AddressComponentsGrid } from "./AddressComponentsGrid.js";
+import { FixMapsLinkModal } from "./FixMapsLinkModal.js";
 import { componentsFromResult, enrichComponentsFromReverse } from "./locationGeocode.js";
 import { MapPicker } from "./MapPicker.js";
 import { SettingsFooter } from "./mailTransportFormParts.js";
@@ -42,10 +43,14 @@ const EMPTY_DRAFT: LocationDraft = {
   directions_text: "",
   accessibility_text: "",
   address_components: { ...EMPTY_ADDRESS_COMPONENTS },
+  google_maps_url_override: "",
+  apple_maps_url_override: "",
 };
 
 const ADDRESS_CARD_HINT =
-  "Used to show a map, give directions, and check the venue against the event timezone.";
+  "Also used for directions and to check the venue against the event timezone.";
+const ADDRESS_CARD_INTRO =
+  "Venue name, map pin, and structured address shown to attendees.";
 const DIRECTIONS_HINT =
   "How attendees find the entrance, parking, or public transit. Shown with the event location.";
 const ACCESSIBILITY_HINT =
@@ -91,6 +96,7 @@ export function LocationSettingsPanel({
   /** Draft-side geocoding provenance (search/reverse) until the next save clears or confirms it. */
   const [draftVerified, setDraftVerified] = useState(false);
   const [suggestedTimezone, setSuggestedTimezone] = useState<string | null>(null);
+  const [fixLinksOpen, setFixLinksOpen] = useState(false);
 
   const loadAbortRef = useRef<AbortController | null>(null);
   const reverseSeqRef = useRef(0);
@@ -198,6 +204,8 @@ export function LocationSettingsPanel({
       longitude: null,
       formatted_address: "",
       address_components: { ...EMPTY_ADDRESS_COMPONENTS },
+      google_maps_url_override: "",
+      apple_maps_url_override: "",
     }));
   };
 
@@ -221,6 +229,9 @@ export function LocationSettingsPanel({
       longitude: result.longitude,
       map_zoom: LOCATION_LIMITS.DEFAULT_ZOOM,
       address_components: baseComponents,
+      // New pin/venue invalidates pasted Maps links for the previous place.
+      google_maps_url_override: "",
+      apple_maps_url_override: "",
     }));
     const { components, formatted_address } = await enrichComponentsFromReverse(
       result,
@@ -244,7 +255,15 @@ export function LocationSettingsPanel({
     const seq = ++reverseSeqRef.current;
     // Manual pin move invalidates prior geocode provenance until reverse succeeds.
     pendingGeocodingProviderRef.current = null;
-    setDraft((prev) => ({ ...prev, latitude, longitude }));
+    // Clear Maps overrides immediately so Copy / Notice cannot keep the previous place's links
+    // while reverse geocode is still in flight.
+    setDraft((prev) => ({
+      ...prev,
+      latitude,
+      longitude,
+      google_maps_url_override: "",
+      apple_maps_url_override: "",
+    }));
 
     try {
       const res = await reverseGeocoding(latitude, longitude);
@@ -259,6 +278,8 @@ export function LocationSettingsPanel({
           longitude,
           formatted_address: "",
           address_components: { ...EMPTY_ADDRESS_COMPONENTS },
+          google_maps_url_override: "",
+          apple_maps_url_override: "",
         }));
         return;
       }
@@ -275,6 +296,8 @@ export function LocationSettingsPanel({
           : (result.name ?? result.formatted_address),
         map_zoom: prev.map_zoom || LOCATION_LIMITS.DEFAULT_ZOOM,
         address_components: componentsFromResult(result),
+        google_maps_url_override: "",
+        apple_maps_url_override: "",
       }));
     } catch {
       // Coords already applied — a failed reverse must not undo the pin the admin placed.
@@ -287,6 +310,8 @@ export function LocationSettingsPanel({
         longitude,
         formatted_address: "",
         address_components: { ...EMPTY_ADDRESS_COMPONENTS },
+        google_maps_url_override: "",
+        apple_maps_url_override: "",
       }));
     }
   }
@@ -298,8 +323,8 @@ export function LocationSettingsPanel({
     const label = draft.venue_name.trim() || draft.formatted_address.trim() || null;
     const url =
       kind === "google"
-        ? buildGoogleMapsUrl(lat, lng, label)
-        : buildAppleMapsUrl(lat, lng, label);
+        ? resolveGoogleMapsUrl(lat, lng, label, draft.google_maps_url_override)
+        : resolveAppleMapsUrl(lat, lng, label, draft.apple_maps_url_override);
     try {
       await navigator.clipboard.writeText(url);
       addToast(`${kind === "google" ? "Google Maps" : "Apple Maps"} link copied.`, "success");
@@ -352,6 +377,9 @@ export function LocationSettingsPanel({
   const { latitude, longitude } = draft;
   const disabled = isArchived || saving;
   const hasCoordinates = latitude !== null && longitude !== null;
+  const hasMapsOverride =
+    draft.google_maps_url_override.trim().length > 0 ||
+    draft.apple_maps_url_override.trim().length > 0;
   const timezoneMismatch =
     Boolean(suggestedTimezone) && suggestedTimezone !== eventTimezone;
   const showVerified = draftVerified;
@@ -379,6 +407,7 @@ export function LocationSettingsPanel({
         }
       >
         <div className="settings-field-stack">
+          <p className="settings-card-intro">{ADDRESS_CARD_INTRO}</p>
           {contactConfigured === false && (
             <Notice
               variant="warning"
@@ -485,7 +514,7 @@ export function LocationSettingsPanel({
             <div className="location-map-footer__links">
               <button
                 type="button"
-                className="location-map-footer__link"
+                className="location-map-footer__link location-map-footer__link--copy"
                 disabled={!hasCoordinates || isArchived}
                 onClick={() => void copyMapLink("google")}
               >
@@ -494,15 +523,51 @@ export function LocationSettingsPanel({
               </button>
               <button
                 type="button"
-                className="location-map-footer__link"
+                className="location-map-footer__link location-map-footer__link--copy"
                 disabled={!hasCoordinates || isArchived}
                 onClick={() => void copyMapLink("apple")}
               >
                 <i className="ti ti-copy" aria-hidden="true" />
                 <span>Copy Apple Maps link</span>
               </button>
+              <button
+                type="button"
+                className="location-map-footer__link location-map-footer__link--fix"
+                disabled={!hasCoordinates || isArchived || saving}
+                onClick={() => setFixLinksOpen(true)}
+              >
+                <i className="ti ti-link-off" aria-hidden="true" />
+                <span>Pin wrong? Fix link</span>
+              </button>
             </div>
           </div>
+          {hasMapsOverride && (
+            <Notice
+              variant="highlight"
+              icon="link"
+              role="status"
+              action={
+                !isArchived && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={saving}
+                    onClick={() => {
+                      setDraft((prev) => ({
+                        ...prev,
+                        google_maps_url_override: "",
+                        apple_maps_url_override: "",
+                      }));
+                    }}
+                  >
+                    Remove override
+                  </Button>
+                )
+              }
+            >
+              Using a manually entered link instead of the pin-built Google/Apple Maps URL.
+            </Notice>
+          )}
 
           {timezoneMismatch && suggestedTimezone && (
             <Notice
@@ -579,6 +644,22 @@ export function LocationSettingsPanel({
           onSave={() => void handleSave()}
         />
       )}
+
+      <FixMapsLinkModal
+        open={fixLinksOpen}
+        initial={{
+          google_maps_url_override: draft.google_maps_url_override,
+          apple_maps_url_override: draft.apple_maps_url_override,
+        }}
+        onClose={() => setFixLinksOpen(false)}
+        onApply={(values) => {
+          setDraft((prev) => ({
+            ...prev,
+            google_maps_url_override: values.google_maps_url_override,
+            apple_maps_url_override: values.apple_maps_url_override,
+          }));
+        }}
+      />
     </div>
   );
 }

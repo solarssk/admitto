@@ -26,6 +26,7 @@ import type { EventSettingsDto, TicketTypeDto } from "../api/types.js";
 import { TicketTypesCard } from "../settings/TicketTypesCard.js";
 import { EventMailSettingsCard } from "../settings/EventMailSettingsCard.js";
 import { LocationSettingsPanel } from "../settings/LocationSettingsPanel.js";
+import { SettingsFooter, NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
@@ -65,9 +66,12 @@ type SettingsPatch = Partial<{
 const EVENT_SETTINGS_SUBTITLE = "Manage this event's details, images, and access controls.";
 
 const BASIC_INFORMATION_HINT =
-  "Core event details. Title and date are shown to attendees and printed on tickets. Set the venue in the Location tab.";
+  "Title and date appear on tickets and emails. Set the venue in the Location tab.";
+const BASIC_INFORMATION_INTRO =
+  "Title, date, capacity, and timezone for this event.";
 const STATUS_HINT = "Read-only overview of this event's current state. Archive or delete it from the Danger zone tab.";
-const EVENT_LOGO_HINT = "Use a different logo just for this event, or leave it blank to use the organization's logo.";
+const EVENT_LOGO_HINT =
+  "Replaces the organisation logo on tickets and emails for this event.";
 const DANGER_ZONE_HINT = "Irreversible actions affecting this event's data or availability. Most require superadmin.";
 
 // Extra "don't act on reflex" pause before the confirm button on the bulk revoke dialogs
@@ -126,12 +130,6 @@ type AddToast = (message: string, variant?: ToastVariant, duration?: number) => 
 
 function eventOverviewPath(eventId: string | undefined): string {
   return eventId ? `/admin/events/${eventId}/overview` : "/admin";
-}
-
-function computeSaveButtonLabel(saving: boolean, logoUploading: boolean): string {
-  if (saving) return "Saving…";
-  if (logoUploading) return "Uploading…";
-  return "Save";
 }
 
 /** Tooltip shared by the Danger Zone's superadmin-gated actions: superadmin restriction wins
@@ -568,6 +566,7 @@ export function EventSettingsPage() {
   const [locationSaving, setLocationSaving] = useState(false);
   // Same reasoning as mailCardResetKey above, applied to LocationSettingsPanel's own draft state.
   const [locationCardResetKey, setLocationCardResetKey] = useState(0);
+  const basicValidationErrorsRef = useRef<HTMLUListElement>(null);
 
   const initialTab = inPageTabFromSearch(searchParams, isSa);
   const [tab, setTab] = useState<EventSettingsTab>(initialTab);
@@ -603,7 +602,6 @@ export function EventSettingsPage() {
   // Same combination for "a save request is in flight" - a Danger Zone action firing while the
   // Mail or Location tab's own save is still in flight would race against it on the same event record.
   const pageBusy = saving || mailSaving || locationSaving;
-  const saveButtonLabel = computeSaveButtonLabel(saving, logoUploading);
   // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
   // these "Loading…" placeholders on and off faster than they can register as loading —
   // show them only once the fetch has genuinely taken a moment.
@@ -669,6 +667,10 @@ export function EventSettingsPage() {
   }, [pageDirty, pageBusy]);
 
   const goBack = () => navigate(eventOverviewPath(eventId));
+
+  function handleBasicReset() {
+    if (original) setForm({ ...original });
+  }
 
   async function handleSave() {
     if (!eventId || !form || !original || !dirty) return;
@@ -839,89 +841,6 @@ export function EventSettingsPage() {
       />
 
       <EventSettingsTabPanel tab="general" activeTab={tab} visited={visitedTabs} label="General">
-        <Card
-          title={<HintLabel hint={BASIC_INFORMATION_HINT}>Basic information</HintLabel>}
-          className="event-settings-card"
-          actions={
-            !isArchived && (
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={!dirty || saving || logoUploading}
-                onClick={() => void handleSave()}
-              >
-                {saveButtonLabel}
-              </Button>
-            )
-          }
-        >
-          <div className="settings-field-stack">
-            <div className="settings-field-group">
-              <Input
-                label="Event title"
-                required
-                value={form.title}
-                disabled={isArchived || saving}
-                onChange={(e) => setForm({ ...form, title: e.target.value })}
-              />
-              <p className="field-hint">Shown everywhere - to attendees, on tickets, and in emails.</p>
-            </div>
-
-            <div className="settings-field-row">
-              <div className="settings-field-group">
-                <DatePicker
-                  label="Date"
-                  required
-                  value={form.date}
-                  disabled={isArchived || saving}
-                  onChange={(next) => setForm({ ...form, date: next })}
-                />
-              </div>
-
-              <div className="settings-field-group">
-                <Input
-                  label="Capacity"
-                  type="number"
-                  min={1}
-                  value={form.capacity}
-                  disabled={isArchived || saving}
-                  placeholder="500"
-                  onChange={(e) => setForm({ ...form, capacity: e.target.value })}
-                />
-                <p className="field-hint">Leave blank for unlimited.</p>
-              </div>
-            </div>
-
-            <div className="settings-field-group event-settings-timezone">
-              <label className="input-label" htmlFor="event-timezone">
-                Event timezone
-              </label>
-              <TimezoneSelect
-                id="event-timezone"
-                compact
-                value={form.timezone}
-                onChange={(tz) => setForm({ ...form, timezone: tz })}
-                disabled={isArchived || saving}
-              />
-              <p className="field-hint">All check-in times and reports use this timezone.</p>
-            </div>
-
-            <div className="settings-field-group slug-field">
-              <Input
-                label="Event link ID"
-                value={event.slug}
-                readOnly
-                disabled
-                icon={<i className="ti ti-link" aria-hidden="true" />}
-              />
-              <p className="field-hint">
-                This can&apos;t be changed after the event is created - it&apos;s already part
-                of every QR code sent to attendees.
-              </p>
-            </div>
-          </div>
-        </Card>
-
         <Card title={<HintLabel hint={STATUS_HINT}>Status</HintLabel>} className="event-settings-card">
           <div className="settings-status-grid">
             <div className="settings-field-group">
@@ -951,6 +870,89 @@ export function EventSettingsPage() {
             </div>
           </div>
         </Card>
+
+        <Card
+          title={<HintLabel hint={BASIC_INFORMATION_HINT}>Basic information</HintLabel>}
+          className="event-settings-card"
+        >
+          <div className="settings-field-stack">
+            <p className="settings-card-intro">{BASIC_INFORMATION_INTRO}</p>
+            <div className="settings-field-group">
+              <Input
+                label="Event title"
+                required
+                value={form.title}
+                disabled={isArchived || saving}
+                hint="Shown everywhere - to attendees, on tickets, and in emails."
+                {...NO_AUTOFILL_PROPS}
+                onChange={(e) => setForm({ ...form, title: e.target.value })}
+              />
+            </div>
+
+            <div className="settings-field-row">
+              <div className="settings-field-group">
+                <DatePicker
+                  label="Date"
+                  required
+                  value={form.date}
+                  disabled={isArchived || saving}
+                  onChange={(next) => setForm({ ...form, date: next })}
+                />
+                <span className="at-hint">When the event takes place. Times and reports use the timezone below.</span>
+              </div>
+
+              <div className="settings-field-group">
+                <Input
+                  label="Capacity"
+                  type="number"
+                  min={1}
+                  value={form.capacity}
+                  disabled={isArchived || saving}
+                  placeholder="500"
+                  hint="Leave blank for unlimited."
+                  onChange={(e) => setForm({ ...form, capacity: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="settings-field-group event-settings-timezone">
+              <label className="at-label" htmlFor="event-timezone">
+                Event timezone
+              </label>
+              <TimezoneSelect
+                id="event-timezone"
+                compact
+                value={form.timezone}
+                onChange={(tz) => setForm({ ...form, timezone: tz })}
+                disabled={isArchived || saving}
+              />
+              <span className="at-hint">All check-in times and reports use this timezone.</span>
+            </div>
+
+            <div className="settings-field-group slug-field">
+              <Input
+                label="Event link ID"
+                value={event.slug}
+                readOnly
+                disabled
+                icon={<i className="ti ti-link" aria-hidden="true" />}
+                hint="This can't be changed after the event is created - it's already part of every QR code sent to attendees."
+              />
+            </div>
+          </div>
+        </Card>
+
+        {!isArchived && (
+          <SettingsFooter
+            validationErrors={[]}
+            validationErrorsRef={basicValidationErrorsRef}
+            hasUnsavedChanges={dirty}
+            saving={saving || logoUploading}
+            busyLabel={logoUploading && !saving ? "Uploading…" : "Saving…"}
+            onReset={handleBasicReset}
+            onSave={() => void handleSave()}
+          />
+        )}
       </EventSettingsTabPanel>
 
       <EventSettingsTabPanel tab="location" activeTab={tab} visited={visitedTabs} label="Location">
@@ -994,18 +996,6 @@ export function EventSettingsPage() {
         <Card
           title={<HintLabel hint={EVENT_LOGO_HINT}>Event logo</HintLabel>}
           className="event-settings-card"
-          actions={
-            !isArchived && (
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={!dirty || saving || logoUploading}
-                onClick={() => void handleSave()}
-              >
-                {saveButtonLabel}
-              </Button>
-            )
-          }
         >
           <LogoUploadZone
             label="Event logo"
@@ -1034,6 +1024,18 @@ export function EventSettingsPage() {
               description="Uploading and managing named branding images for this event's email templates is restricted to superadmins."
             />
           </Card>
+        )}
+
+        {!isArchived && (
+          <SettingsFooter
+            validationErrors={[]}
+            validationErrorsRef={basicValidationErrorsRef}
+            hasUnsavedChanges={dirty}
+            saving={saving || logoUploading}
+            busyLabel={logoUploading && !saving ? "Uploading…" : "Saving…"}
+            onReset={handleBasicReset}
+            onSave={() => void handleSave()}
+          />
         )}
       </EventSettingsTabPanel>
 

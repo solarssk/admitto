@@ -34,6 +34,8 @@ const MFA_ROLES = [
  * so every row's input lines up on the same right edge inside the parent grid. */
 const SECURITY_NUMERIC_INPUT_STYLE = { width: "8rem", flexShrink: 0 } as const;
 const SECURITY_CARD_HINT =
+  "Already signed-in staff keep their current session until it expires or they sign out.";
+const SECURITY_CARD_INTRO =
   "How long staff stay signed in, how long a device can skip the authenticator app, and which roles must use one.";
 
 function fieldLocked(source: SettingSource): boolean {
@@ -236,7 +238,9 @@ export function SecurityPanel() {
   return (
     <>
       <Card title={<HintLabel hint={SECURITY_CARD_HINT}>Security</HintLabel>}>
-        <div className="mail-transport-section security-settings-rows">
+        <div className="settings-card-stack">
+          <p className="settings-card-intro">{SECURITY_CARD_INTRO}</p>
+          <div className="mail-transport-section security-settings-rows">
           <SecurityNumericRow
             label="Admin session maximum lifetime (hours)"
             description="Hard cap for admin and superadmin sessions, even if the user stays active. Allowed range: 1–720 hours."
@@ -336,6 +340,7 @@ export function SecurityPanel() {
               <EnvBadge source={settings.mfa_required_roles.source} />
             </div>
           </div>
+        </div>
         </div>
       </Card>
 

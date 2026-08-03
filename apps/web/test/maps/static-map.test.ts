@@ -7,6 +7,7 @@ import {
   buildUnavailableStaticMapPng,
   isAllowedDeclaredTileSize,
   latLngToTileFraction,
+  normalizeTilePngToCompositorSize,
   plainMapAttribution,
   redactTileUrlForLogs,
   renderStaticMapPng,
@@ -178,6 +179,35 @@ describe("renderStaticMapPng", () => {
     expect(meta.width).toBe(STATIC_MAP_WIDTH);
     expect(meta.height).toBe(STATIC_MAP_HEIGHT);
     expect(meta.format).toBe("png");
+  });
+
+  it("resizes non-256 commercial tiles (e.g. MapTiler 512) before composite", async () => {
+    const tile512 = await sharp({
+      create: { width: 512, height: 512, channels: 3, background: { r: 100, g: 140, b: 180 } },
+    })
+      .png()
+      .toBuffer();
+    const fetchFn = vi.fn().mockImplementation(async () =>
+      new Response(new Uint8Array(tile512), { status: 200, headers: { "content-type": "image/png" } }),
+    );
+
+    const png = await renderStaticMapPng(
+      { latitude: 52.2297, longitude: 21.0122, zoom: 15 },
+      {
+        tileConfig: {
+          enabled: true,
+          tileUrl: "https://api.maptiler.example/maps/streets/{z}/{x}/{y}.png?key=test",
+          attribution: "© MapTiler © OpenStreetMap",
+          maxZoom: 19,
+        },
+        userAgent: "Admitto/test",
+        fetchFn,
+      },
+    );
+
+    const meta = await sharp(png).metadata();
+    expect(meta.width).toBe(STATIC_MAP_WIDTH);
+    expect(meta.height).toBe(STATIC_MAP_HEIGHT);
   });
 
   it("rejects when maps are disabled", async () => {
@@ -724,7 +754,113 @@ describe("renderStaticMapPng", () => {
           fetchFn,
         },
       ),
-    ).rejects.toMatchObject({ message: expect.stringContaining("Failed to composite") });
+    ).rejects.toMatchObject({ message: expect.stringContaining("Tile PNG metadata unreadable") });
+  });
+
+  it("rejects tiles whose decoded dimensions exceed the compositor safety cap", async () => {
+    const oversized = await sharp({
+      create: { width: 2049, height: 256, channels: 3, background: { r: 1, g: 2, b: 3 } },
+    })
+      .png()
+      .toBuffer();
+    const fetchFn = vi.fn().mockImplementation(async () =>
+      new Response(oversized, {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      }),
+    );
+    await expect(
+      renderStaticMapPng(
+        { latitude: 52.23, longitude: 21.01, zoom: 14, width: 256, height: 256 },
+        {
+          tileConfig: {
+            enabled: true,
+            tileUrl: "https://tiles.example/{z}/{x}/{y}.png",
+            attribution: "",
+            maxZoom: 19,
+          },
+          userAgent: "Admitto/test",
+          fetchFn,
+        },
+      ),
+    ).rejects.toMatchObject({ message: expect.stringContaining("Tile PNG dimensions too large") });
+  });
+
+  it("rejects tile PNGs whose metadata omits width/height", async () => {
+    const fakeImage = (() => ({
+      metadata: async () => ({ format: "png" }),
+    })) as unknown as typeof sharp;
+
+    await expect(
+      normalizeTilePngToCompositorSize(
+        Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+        "https://tiles.example/0/0/0.png",
+        fakeImage,
+      ),
+    ).rejects.toMatchObject({ message: expect.stringContaining("Tile PNG has no dimensions") });
+  });
+
+  it("wraps tile resize failures after non-256 metadata succeeds", async () => {
+    const fakeImage = (() => ({
+      metadata: async () => ({ format: "png", width: 512, height: 512 }),
+      resize: () => ({
+        png: () => ({
+          toBuffer: async () => {
+            throw new Error("resize boom");
+          },
+        }),
+      }),
+    })) as unknown as typeof sharp;
+
+    await expect(
+      normalizeTilePngToCompositorSize(
+        Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+        "https://tiles.example/0/0/0.png?api_key=secret",
+        fakeImage,
+      ),
+    ).rejects.toMatchObject({
+      message: expect.stringMatching(/Tile PNG resize failed: https:\/\/tiles\.example\/0\/0\/0\.png$/),
+    });
+  });
+
+  it("wraps final canvas composite failures after tiles load", async () => {
+    const tile = await solidTilePng({ r: 10, g: 20, b: 30 });
+    const fetchFn = vi.fn().mockImplementation(async () =>
+      new Response(new Uint8Array(tile), { status: 200, headers: { "content-type": "image/png" } }),
+    );
+    const fakeImage = ((input: unknown, opts?: unknown) => {
+      if (input && typeof input === "object" && "create" in (input as object)) {
+        return {
+          composite() {
+            throw new Error("composite boom");
+          },
+          png() {
+            return this;
+          },
+          async toBuffer() {
+            throw new Error("composite boom");
+          },
+        };
+      }
+      return sharp(input as Parameters<typeof sharp>[0], opts as Parameters<typeof sharp>[1]);
+    }) as unknown as typeof sharp;
+
+    await expect(
+      renderStaticMapPng(
+        { latitude: 52.23, longitude: 21.01, zoom: 14, width: 256, height: 256 },
+        {
+          tileConfig: {
+            enabled: true,
+            tileUrl: "https://tiles.example/{z}/{x}/{y}.png",
+            attribution: "",
+            maxZoom: 19,
+          },
+          userAgent: "Admitto/test",
+          fetchFn,
+          imagePipeline: fakeImage,
+        },
+      ),
+    ).rejects.toMatchObject({ message: expect.stringContaining("Failed to composite static map") });
   });
 
   it("uses global fetch when fetchFn is omitted", async () => {

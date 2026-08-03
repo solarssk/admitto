@@ -19,6 +19,8 @@ const EMPTY_LOCATION: EventLocationDto = {
   geocoding_provider: null,
   geocoded_at: null,
   address_components: null,
+  google_maps_url_override: null,
+  apple_maps_url_override: null,
 };
 
 const FULL_LOCATION: EventLocationDto = {
@@ -39,6 +41,8 @@ const FULL_LOCATION: EventLocationDto = {
     region: null,
     country: null,
   },
+  google_maps_url_override: null,
+  apple_maps_url_override: null,
 };
 
 describe("draftFromLocation", () => {
@@ -59,6 +63,8 @@ describe("draftFromLocation", () => {
         region: null,
         country: null,
       },
+      google_maps_url_override: "",
+      apple_maps_url_override: "",
     });
   });
 
@@ -230,6 +236,35 @@ describe("buildEventLocationPatchBody", () => {
     };
     expect(buildEventLocationPatchBody(draft, saved, null)).toEqual({
       address_components: null,
+    });
+  });
+
+  it("includes maps URL overrides when they change", () => {
+    const draft: LocationDraft = {
+      ...saved,
+      google_maps_url_override: "https://www.google.com/maps/place/Example",
+      apple_maps_url_override: "https://maps.apple.com/?ll=50,19",
+    };
+    expect(buildEventLocationPatchBody(draft, saved, null)).toEqual({
+      google_maps_url_override: "https://www.google.com/maps/place/Example",
+      apple_maps_url_override: "https://maps.apple.com/?ll=50,19",
+    });
+  });
+
+  it("clears maps URL overrides with null when blanked", () => {
+    const withOverrides = draftFromLocation({
+      ...FULL_LOCATION,
+      google_maps_url_override: "https://www.google.com/maps/place/Example",
+      apple_maps_url_override: "https://maps.apple.com/?ll=50,19",
+    });
+    const draft: LocationDraft = {
+      ...withOverrides,
+      google_maps_url_override: "",
+      apple_maps_url_override: "  ",
+    };
+    expect(buildEventLocationPatchBody(draft, withOverrides, null)).toEqual({
+      google_maps_url_override: null,
+      apple_maps_url_override: null,
     });
   });
 

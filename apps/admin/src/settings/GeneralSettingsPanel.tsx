@@ -22,9 +22,13 @@ const EMPTY_SUPPORT_CONTACT: SetupSupportContactDto = {
 };
 
 const INSTANCE_URL_HINT =
-  "Public HTTPS URL of this Admitto instance. Used for ticket links and to turn uploaded logo paths into absolute URLs in outbound email when the BASE_URL environment variable is not set.";
+  "Must be HTTPS with no trailing slash. Overridden when BASE_URL is set in the environment.";
+const INSTANCE_URL_INTRO =
+  "Public base URL used for ticket links and absolute logo URLs in outbound email.";
 const SUPPORT_CONTACT_HINT =
-  "Used to identify this instance to external services such as the geocoding provider used by the Location tab on event settings.";
+  "Also identifies this instance to the geocoding provider used on the Location tab.";
+const SUPPORT_CONTACT_INTRO =
+  "Name and email for the organisation that runs this Admitto instance.";
 
 function fieldLocked(source: SettingSource): boolean {
   return source === "env";
@@ -239,53 +243,59 @@ export function GeneralSettingsPanel() {
           ) : undefined
         }
       >
-        <div className="mail-transport-section">
-          <div className="mail-field-row">
-            <Input
-              label="URL"
-              type="url"
-              value={instanceUrlDraft}
-              disabled={urlLocked || saving}
-              placeholder="https://tickets.example.com"
-              onChange={(e) => setInstanceUrlDraft(e.target.value)}
-            />
-          </div>
+        <div className="settings-card-stack">
+          <p className="settings-card-intro">{INSTANCE_URL_INTRO}</p>
+          <div className="mail-transport-section">
+            <div className="mail-field-row">
+              <Input
+                label="URL"
+                type="url"
+                value={instanceUrlDraft}
+                disabled={urlLocked || saving}
+                placeholder="https://tickets.example.com"
+                onChange={(e) => setInstanceUrlDraft(e.target.value)}
+              />
+            </div>
 
-          {showUrlWarning && (
-            <Notice variant="warning" role="alert">
-              No instance URL configured. Email previews and sends may use localhost in development,
-              or fail in production until you set this value or BASE_URL in the environment.
-            </Notice>
-          )}
+            {showUrlWarning && (
+              <Notice variant="warning" role="alert">
+                No instance URL configured. Email previews and sends may use localhost in development,
+                or fail in production until you set this value or BASE_URL in the environment.
+              </Notice>
+            )}
+          </div>
         </div>
       </Card>
 
       <Card title={<HintLabel hint={SUPPORT_CONTACT_HINT}>Support contact</HintLabel>}>
-        <div className="mail-transport-section">
-          <Input
-            label="Contact name"
-            value={supportContactDraft.support_contact_name ?? ""}
-            disabled={saving}
-            placeholder="e.g. Acme Events"
-            hint="Company name, or a person's first and last name."
-            onChange={(e) =>
-              setSupportContactDraft((prev) => ({ ...prev, support_contact_name: e.target.value }))
-            }
-          />
-          <Input
-            label="Contact email"
-            type="text"
-            inputMode="email"
-            value={supportContactDraft.support_contact_email ?? ""}
-            disabled={saving}
-            placeholder="support@example.com"
-            error={emailError ?? undefined}
-            hint="An email address for questions about this instance."
-            {...NO_AUTOFILL_PROPS}
-            onChange={(e) =>
-              setSupportContactDraft((prev) => ({ ...prev, support_contact_email: e.target.value }))
-            }
-          />
+        <div className="settings-card-stack">
+          <p className="settings-card-intro">{SUPPORT_CONTACT_INTRO}</p>
+          <div className="mail-transport-section">
+            <Input
+              label="Contact name"
+              value={supportContactDraft.support_contact_name ?? ""}
+              disabled={saving}
+              placeholder="e.g. Acme Events"
+              hint="Company name, or a person's first and last name."
+              onChange={(e) =>
+                setSupportContactDraft((prev) => ({ ...prev, support_contact_name: e.target.value }))
+              }
+            />
+            <Input
+              label="Contact email"
+              type="text"
+              inputMode="email"
+              value={supportContactDraft.support_contact_email ?? ""}
+              disabled={saving}
+              placeholder="support@example.com"
+              error={emailError ?? undefined}
+              hint="An email address for questions about this instance."
+              {...NO_AUTOFILL_PROPS}
+              onChange={(e) =>
+                setSupportContactDraft((prev) => ({ ...prev, support_contact_email: e.target.value }))
+              }
+            />
+          </div>
         </div>
       </Card>
 

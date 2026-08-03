@@ -1,11 +1,11 @@
 import {
-  buildAppleMapsUrl,
   buildEventStaticMapUrl,
-  buildGoogleMapsUrl,
   formatDirectionsAddressFromComponents,
   isLocationMapsEnabled,
   isMapReady,
   parseStoredAddressComponents,
+  resolveAppleMapsUrl,
+  resolveGoogleMapsUrl,
 } from "@admitto/location";
 import type { TemplateVars } from "./types.js";
 
@@ -18,6 +18,8 @@ export type EventLocationForTemplateVars = {
   map_zoom?: number | null;
   directions_text: string | null;
   accessibility_text: string | null;
+  google_maps_url_override?: string | null;
+  apple_maps_url_override?: string | null;
 } | null;
 
 /**
@@ -25,7 +27,7 @@ export type EventLocationForTemplateVars = {
  * so `event_map_url` / Maps links cannot drift between call sites.
  *
  * Static map image URL is omitted when `LOCATION_MAPS_ENABLED=false` (PNG route 404s);
- * Google/Apple deep links still use coordinates when present.
+ * Google/Apple deep links still use coordinates when present (or a saved override).
  */
 export function buildEventLocationTemplateVars(
   eventId: string,
@@ -69,10 +71,20 @@ export function buildEventLocationTemplateVars(
     directions_text: location?.directions_text ?? "",
     accessibility_text: location?.accessibility_text ?? "",
     google_maps_url: mapCoordinates
-      ? buildGoogleMapsUrl(mapCoordinates.latitude, mapCoordinates.longitude, mapLabel)
+      ? resolveGoogleMapsUrl(
+          mapCoordinates.latitude,
+          mapCoordinates.longitude,
+          mapLabel,
+          location?.google_maps_url_override,
+        )
       : "",
     apple_maps_url: mapCoordinates
-      ? buildAppleMapsUrl(mapCoordinates.latitude, mapCoordinates.longitude, mapLabel)
+      ? resolveAppleMapsUrl(
+          mapCoordinates.latitude,
+          mapCoordinates.longitude,
+          mapLabel,
+          location?.apple_maps_url_override,
+        )
       : "",
   };
 }

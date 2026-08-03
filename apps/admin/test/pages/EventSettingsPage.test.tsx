@@ -137,6 +137,8 @@ const emptyLocation: EventLocationDto = {
   geocoding_provider: null,
   geocoded_at: null,
   address_components: null,
+  google_maps_url_override: null,
+  apple_maps_url_override: null,
 };
 
 const mapTileConfig: MapTileConfigDto = {
@@ -266,6 +268,7 @@ describe("EventSettingsPage save label", () => {
     renderSettings();
 
     expect(await screen.findByRole("button", { name: "Save" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reset" })).toBeTruthy();
   });
 });
 
@@ -345,6 +348,13 @@ describe("EventSettingsPage tabs", () => {
     );
     expect(screen.getByText("Basic information")).toBeTruthy();
     expect(screen.getByText("Status")).toBeTruthy();
+    expect(
+      screen.getByText("When the event takes place. Times and reports use the timezone below."),
+    ).toBeTruthy();
+    const titleInput = screen.getByLabelText("Event title") as HTMLInputElement;
+    expect(titleInput.getAttribute("data-bwignore")).toBe("true");
+    expect(titleInput.getAttribute("data-1p-ignore")).toBe("true");
+    expect(titleInput.getAttribute("autocomplete")).toBe("off");
   });
 
   it("deep links to Location and keeps venue guidance out of Basic information", async () => {
@@ -362,7 +372,7 @@ describe("EventSettingsPage tabs", () => {
     const basicInformationHint = screen.getByText("Basic information").closest(".at-tooltip-trigger");
     fireEvent.mouseEnter(basicInformationHint!);
     expect(screen.getByRole("tooltip").textContent).toBe(
-      "Core event details. Title and date are shown to attendees and printed on tickets. Set the venue in the Location tab.",
+      "Title and date appear on tickets and emails. Set the venue in the Location tab.",
     );
   });
 
@@ -420,7 +430,7 @@ describe("EventSettingsPage tabs", () => {
     expect(screen.getByText("Drop logo here or click to browse")).toBeTruthy();
     expect(screen.getByText("Upload images")).toBeTruthy();
     expect(screen.getByText("Your images")).toBeTruthy();
-    expect(await screen.findByText(/No image assets yet/)).toBeTruthy();
+    expect(await screen.findByText("No images yet")).toBeTruthy();
     expect(
       screen.getByText(/leave blank to use the organization's logo/),
     ).toBeTruthy();
@@ -589,7 +599,7 @@ describe("EventSettingsPage tabs", () => {
     }
     expect(screen.getByText("This event is archived - images cannot be changed.")).toBeTruthy();
 
-    await screen.findByText(/No image assets yet/);
+    await screen.findByText("No images yet");
     const assetFileInput = document.querySelector(
       ".image-asset-library__file-input",
     ) as HTMLInputElement;
@@ -835,14 +845,16 @@ describe("EventSettingsPage Mail tab — Save/Reset pair lives in the card's own
     ).toBe("true");
   });
 
-  it("keeps the General tab's own Save button unaffected", async () => {
+  it("keeps the General tab's own Save/Reset footer unaffected by the Mail draft", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
     await screen.findByLabelText("Event title");
 
-    expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Save" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reset" })).toBeTruthy();
+    expect(screen.queryByText(/Unsaved changes/)).toBeNull();
     fireEvent.change(screen.getByLabelText("Event title"), { target: { value: "Summit 2" } });
-    expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(false);
+    expect(screen.getByText(/Unsaved changes/)).toBeTruthy();
   });
 });
 

@@ -1,11 +1,11 @@
 import type { ResolvedTicket } from "@admitto/tickets";
 import type { BrandingTheme } from "@admitto/auth";
 import {
-  buildAppleMapsUrl,
   buildEventStaticMapPath,
-  buildGoogleMapsUrl,
   formatDirectionsAddressFromComponents,
   isMapReady,
+  resolveAppleMapsUrl,
+  resolveGoogleMapsUrl,
 } from "@admitto/location";
 import { buildTicketPageStyles } from "./ticket-inline-styles.js";
 
@@ -165,8 +165,8 @@ export function renderTicket(
   const mapsLinks =
     mapReady
       ? `<div class="ticket__map-links">
-          <a class="ticket__map-link" href="${esc(buildGoogleMapsUrl(event.latitude!, event.longitude!, venueLabel))}" rel="noreferrer">${MAP_LINK_ICON}<span>Google Maps</span></a>
-          <a class="ticket__map-link" href="${esc(buildAppleMapsUrl(event.latitude!, event.longitude!, venueLabel))}" rel="noreferrer">${MAP_LINK_ICON}<span>Apple Maps</span></a>
+          <a class="ticket__map-link" href="${esc(resolveGoogleMapsUrl(event.latitude!, event.longitude!, venueLabel, event.googleMapsUrlOverride))}" rel="noreferrer">${MAP_LINK_ICON}<span>Google Maps</span></a>
+          <a class="ticket__map-link" href="${esc(resolveAppleMapsUrl(event.latitude!, event.longitude!, venueLabel, event.appleMapsUrlOverride))}" rel="noreferrer">${MAP_LINK_ICON}<span>Apple Maps</span></a>
         </div>`
       : "";
 
