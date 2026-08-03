@@ -329,7 +329,7 @@ export function DatePicker({
           aria-expanded={open}
           aria-controls={`${controlId}-panel`}
           onClick={() => {
-            if (disabled) return;
+            // `disabled` is enforced by the button attribute — no click handler when disabled.
             if (open) {
               closePanel();
               return;

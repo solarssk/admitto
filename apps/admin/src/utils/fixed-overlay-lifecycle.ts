@@ -10,7 +10,8 @@ export function attachFixedOverlayLifecycle(
 ): () => void {
   window.addEventListener("resize", onResize);
   const onScroll = (event: Event) => {
-    if (panel?.contains(event.target as Node)) return;
+    const target = event.target;
+    if (panel && target instanceof Node && panel.contains(target)) return;
     onOutsideScroll();
   };
   window.addEventListener("scroll", onScroll, true);

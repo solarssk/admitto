@@ -269,7 +269,7 @@ function ensureSelectedInOptions(
       iana: value,
       city: value.replaceAll("_", " "),
       abbr: value,
-      offsetLabel: "",
+      offsetLabel: "UTC+0",
       offsetHours: 0,
       searchText: value.toLowerCase(),
     },
@@ -296,7 +296,7 @@ function buildListItems(entries: TzEntry[], grouped: boolean): TimezoneListItem[
       items.push({
         kind: "group",
         id: `group-${entry.offsetHours}`,
-        label: entry.offsetLabel || "UTC+0",
+        label: entry.offsetLabel,
       });
     }
     items.push({ kind: "option", id: entry.iana, entry, optionIndex });
@@ -394,7 +394,8 @@ export function TimezoneSelect({
   useLayoutEffect(() => {
     if (!open || !containerRef.current || !panelRef.current) return;
     const updatePlacement = () => {
-      const trigger = triggerRef.current ?? containerRef.current!;
+      // Panel only mounts while open, and open is driven from the trigger button.
+      const trigger = triggerRef.current!;
       const rect = trigger.getBoundingClientRect();
       const panel = panelRef.current!;
       // scrollHeight (natural content), not offsetHeight — a prior maxHeight clamp would make
@@ -434,8 +435,7 @@ export function TimezoneSelect({
   }, [open, optionCount, query]);
 
   const openPanel = () => {
-    const trigger = triggerRef.current ?? containerRef.current;
-    const rect = trigger?.getBoundingClientRect();
+    const rect = triggerRef.current?.getBoundingClientRect();
     if (rect) {
       const spaceBelow = window.innerHeight - rect.bottom;
       const spaceAbove = rect.top;
@@ -505,7 +505,7 @@ export function TimezoneSelect({
         aria-controls={listboxId}
         aria-describedby={hintId}
         onClick={() => {
-          if (disabled) return;
+          // `disabled` is enforced by the button attribute — no click handler when disabled.
           if (open) {
             setOpen(false);
             return;

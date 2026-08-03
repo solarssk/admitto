@@ -51,6 +51,16 @@ export function resolveDevServeHostname(isDevelopment: boolean, useHttps: boolea
   return resolveDevServeHostnames(isDevelopment, useHttps)?.[0];
 }
 
+/** True when an optional `::1` listen failed because IPv6 loopback is unavailable. */
+export function isOptionalIpv6LoopbackBindError(
+  optional: boolean,
+  err: NodeJS.ErrnoException,
+): boolean {
+  return (
+    optional && (err.code === "EAFNOSUPPORT" || err.code === "EADDRNOTAVAIL")
+  );
+}
+
 /** Boot the Admitto web server; wires a dev-only export_only sink when NODE_ENV is development. */
 async function main(): Promise<void> {
   await validateCfAccessBootConfig(prisma);
@@ -112,10 +122,7 @@ async function main(): Promise<void> {
         console.log(`Admitto web running at http://${label}:${port}`);
       });
       server.on("error", (err: NodeJS.ErrnoException) => {
-        if (
-          optional &&
-          (err.code === "EAFNOSUPPORT" || err.code === "EADDRNOTAVAIL")
-        ) {
+        if (isOptionalIpv6LoopbackBindError(optional, err)) {
           console.warn(
             `IPv6 loopback (::1) unavailable (${err.code}); continuing with 127.0.0.1 only`,
           );

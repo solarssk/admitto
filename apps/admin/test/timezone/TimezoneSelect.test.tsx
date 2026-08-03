@@ -237,4 +237,140 @@ describe("TimezoneSelect", () => {
       ).toBe(false);
     });
   });
+
+  it("closes when the trigger is clicked while open", () => {
+    render(<TimezoneSelect value="UTC" onChange={() => {}} />);
+    openPicker();
+    expect(screen.getByRole("listbox")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /UTC/ }));
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("highlights an option on mouse enter", async () => {
+    render(<TimezoneSelect value="UTC" onChange={() => {}} />);
+    openPicker();
+    const options = await screen.findAllByRole("option");
+    expect(options.length).toBeGreaterThan(1);
+    fireEvent.mouseEnter(options[1]!);
+    expect(options[1]!.className).toContain("timezone-select__option--highlighted");
+  });
+
+  it("clamps panel height using scrollHeight when the viewport is short", async () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      top: 40,
+      bottom: 80,
+      left: 20,
+      right: 300,
+      width: 280,
+      height: 40,
+      x: 20,
+      y: 40,
+      toJSON: () => ({}),
+    } as DOMRect);
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(500);
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(1024);
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(200);
+
+    render(<TimezoneSelect value="UTC" onChange={() => {}} />);
+    openPicker();
+    const panel = await screen.findByRole("listbox");
+    const shell = panel.closest(".timezone-select__panel") as HTMLElement | null;
+    expect(shell?.style.maxHeight).toBeTruthy();
+    expect(Number.parseFloat(shell!.style.maxHeight)).toBeGreaterThanOrEqual(200);
+  });
+
+  it("closes on ancestor scroll without refocusing the trigger", async () => {
+    render(<TimezoneSelect value="UTC" onChange={() => {}} />);
+    const trigger = screen.getByRole("button", { name: /UTC/ }) as HTMLButtonElement;
+    openPicker();
+    expect(screen.getByRole("listbox")).toBeTruthy();
+
+    const focusSpy = vi.spyOn(trigger, "focus");
+    const scrollEvent = new Event("scroll", { bubbles: true });
+    Object.defineProperty(scrollEvent, "target", { value: document.body });
+    act(() => {
+      window.dispatchEvent(scrollEvent);
+    });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(focusSpy).not.toHaveBeenCalled();
+  });
+
+  it("ignores trigger clicks while disabled", () => {
+    render(<TimezoneSelect value="UTC" onChange={() => {}} disabled />);
+    fireEvent.click(screen.getByRole("button", { name: /UTC/ }));
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("moves highlight with ArrowUp/ArrowDown and selects with Enter", async () => {
+    const onChange = vi.fn();
+    render(<TimezoneSelect value="UTC" onChange={onChange} />);
+    openPicker();
+    const search = screen.getByLabelText("Search timezones");
+    fireEvent.keyDown(search, { key: "ArrowDown" });
+    fireEvent.keyDown(search, { key: "ArrowUp" });
+    fireEvent.keyDown(search, { key: "Enter" });
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalled();
+    });
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("estimates panel-above placement before open when space below is tight", () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      top: 500,
+      bottom: 540,
+      left: 20,
+      right: 300,
+      width: 280,
+      height: 40,
+      x: 20,
+      y: 500,
+      toJSON: () => ({}),
+    } as DOMRect);
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(580);
+    render(<TimezoneSelect value="UTC" onChange={() => {}} />);
+    openPicker();
+    const panel = screen.getByRole("listbox").closest(".timezone-select__panel");
+    expect(panel?.className).toContain("timezone-select__panel--above");
+  });
+
+  it("defaults panel-above to false when getBoundingClientRect is unavailable at open", () => {
+    let calls = 0;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(() => {
+      calls += 1;
+      // First call is openPanel's estimate; later calls are the layout effect.
+      if (calls === 1) return undefined as unknown as DOMRect;
+      return {
+        top: 100,
+        bottom: 140,
+        left: 20,
+        right: 300,
+        width: 280,
+        height: 40,
+        x: 20,
+        y: 100,
+        toJSON: () => ({}),
+      } as DOMRect;
+    });
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(300);
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(768);
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(1024);
+    render(<TimezoneSelect value="UTC" onChange={() => {}} />);
+    openPicker();
+    expect(screen.getByRole("listbox")).toBeTruthy();
+  });
+
+  it("shows a fallback UTC+0 group label for unknown IANA values", async () => {
+    render(<TimezoneSelect value="Etc/Unknown_Zone" onChange={() => {}} />);
+    openPicker();
+    await waitFor(() => {
+      expect(screen.getByText("UTC+0")).toBeTruthy();
+      expect(
+        screen.getAllByRole("option").some((o) => o.textContent?.includes("Etc/Unknown_Zone")),
+      ).toBe(true);
+    });
+  });
 });
