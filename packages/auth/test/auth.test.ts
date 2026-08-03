@@ -432,6 +432,43 @@ describe("authorization", () => {
       });
     }
   });
+
+  it("listAdminEvents — has_coordinates reflects EventLocation pin completeness", async () => {
+    await prisma.eventLocation.deleteMany({ where: { event_id: EVENT_A } });
+    const withoutPin = (await listAdminEvents(prisma, USER_SUPER)).find((e) => e.id === EVENT_A);
+    expect(withoutPin?.has_coordinates).toBe(false);
+    expect(withoutPin?.location).toBeNull();
+    expect(withoutPin?.map_latitude).toBeNull();
+    expect(withoutPin?.map_longitude).toBeNull();
+    expect(withoutPin?.map_zoom).toBeNull();
+
+    await prisma.eventLocation.create({
+      data: {
+        event_id: EVENT_A,
+        venue_name: "Hall A",
+        latitude: 52.23,
+        longitude: null,
+      },
+    });
+    const halfPin = (await listAdminEvents(prisma, USER_SUPER)).find((e) => e.id === EVENT_A);
+    expect(halfPin?.has_coordinates).toBe(false);
+    expect(halfPin?.location).toBe("Hall A");
+    expect(halfPin?.map_latitude).toBeNull();
+    expect(halfPin?.map_longitude).toBeNull();
+
+    await prisma.eventLocation.update({
+      where: { event_id: EVENT_A },
+      data: { longitude: 21.01, map_zoom: 14 },
+    });
+    const fullPin = (await listAdminEvents(prisma, USER_SUPER)).find((e) => e.id === EVENT_A);
+    expect(fullPin?.has_coordinates).toBe(true);
+    expect(fullPin?.location).toBe("Hall A");
+    expect(fullPin?.map_latitude).toBe(52.23);
+    expect(fullPin?.map_longitude).toBe(21.01);
+    expect(fullPin?.map_zoom).toBe(14);
+
+    await prisma.eventLocation.deleteMany({ where: { event_id: EVENT_A } });
+  });
 });
 
 describe("bootstrap", () => {

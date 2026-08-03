@@ -935,6 +935,7 @@ export function EventSettingsPage() {
                 value={event.slug}
                 readOnly
                 disabled
+                className="mono"
                 icon={<i className="ti ti-link" aria-hidden="true" />}
                 hint="This can't be changed after the event is created - it's already part of every QR code sent to attendees."
               />

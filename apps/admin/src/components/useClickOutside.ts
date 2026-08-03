@@ -1,12 +1,12 @@
 import { useEffect, useRef, type RefObject } from "react";
 
 /** Why `onOutside` fired — callers that restore focus to their own trigger on close (most
- * of them do) must skip that specifically for `"focus"`: the user already moved focus
- * somewhere else on purpose (e.g. Tab to the next control), and forcing it back would trap
- * keyboard navigation. `"pointer"` (or calling the callback directly, e.g. after selecting
- * a value, or Escape) is unaffected — focus wasn't already going anywhere in particular, so
- * returning it to the trigger is the right default there. */
-export type OutsideInteraction = "pointer" | "focus";
+ * of them do) must skip that specifically for `"focus"` and `"scroll"`: `"focus"` means the
+ * user already moved focus somewhere else on purpose (e.g. Tab to the next control), and
+ * `"scroll"` means an ancestor scroll closed a fixed overlay — restoring focus would scroll
+ * the page/modal back to the trigger and undo that scroll. `"pointer"` (or calling the
+ * callback directly, e.g. after selecting a value, or Escape) is unaffected. */
+export type OutsideInteraction = "pointer" | "focus" | "scroll";
 
 /**
  * Calls onOutside on any pointerdown outside the given container while open, or when

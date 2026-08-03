@@ -386,7 +386,9 @@ export function LocationSettingsPanel({
   let provenanceBadge: ReactNode;
   if (!hasCoordinates) {
     provenanceBadge = (
-      <span className="location-map-footer__verified-placeholder" aria-hidden="true" />
+      <Badge variant="neutral" outline>
+        Not filled
+      </Badge>
     );
   } else if (showVerified) {
     provenanceBadge = <Badge variant="ok">From OpenStreetMap</Badge>;
