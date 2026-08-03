@@ -205,13 +205,14 @@ describe("EventCard", () => {
     );
   });
 
-  it("renders a map placeholder when map_preview_path is null", () => {
+  it("renders Maps unavailable when a pin exists but map previews are disabled", () => {
     renderCard({}, { ...baseEvent, has_coordinates: true, map_preview_path: null });
     expect(document.querySelector(".event-card__map-img")).toBeNull();
-    expect(screen.getByText("No location")).toBeTruthy();
+    expect(screen.getByText("Maps unavailable")).toBeTruthy();
+    expect(screen.queryByText("No location")).toBeNull();
   });
 
-  it("renders a map placeholder when map_preview_path is missing", () => {
+  it("renders a map placeholder when there is no pin", () => {
     renderCard({}, { ...baseEvent, has_coordinates: false, map_preview_path: undefined });
     expect(document.querySelector(".event-card__map-img")).toBeNull();
     expect(screen.getByText("No location")).toBeTruthy();

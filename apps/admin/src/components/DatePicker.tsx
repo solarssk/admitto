@@ -19,6 +19,7 @@ import {
 } from "../utils/event-dates.js";
 import { useModalFocusTrap } from "./useModalFocusTrap.js";
 import { useClickOutside, type OutsideInteraction } from "./useClickOutside.js";
+import { attachFixedOverlayLifecycle } from "../utils/fixed-overlay-lifecycle.js";
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PANEL_GAP_PX = 6;
@@ -204,18 +205,7 @@ export function DatePicker({
       });
     };
     updatePlacement();
-    window.addEventListener("resize", updatePlacement);
-    // Fixed panel would drift when a scroll ancestor (modal body) moves under it.
-    // Ignore scrolls that originate inside the calendar itself (maxHeight clamp).
-    const onScroll = (event: Event) => {
-      if (panelRef.current?.contains(event.target as Node)) return;
-      closePanel();
-    };
-    window.addEventListener("scroll", onScroll, true);
-    return () => {
-      window.removeEventListener("resize", updatePlacement);
-      window.removeEventListener("scroll", onScroll, true);
-    };
+    return attachFixedOverlayLifecycle(panelRef.current, updatePlacement, closePanel);
   }, [open, viewMonth, viewYear]);
 
   const commitText = (raw: string) => {

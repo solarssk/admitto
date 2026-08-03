@@ -10,6 +10,7 @@ import { Button, Input, Notice } from "@admitto/ui";
 import { searchGeocoding } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { GeocodingResultDto } from "../api/types.js";
+import { attachFixedOverlayLifecycle } from "../utils/fixed-overlay-lifecycle.js";
 import "./venue-autocomplete.css";
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -122,18 +123,7 @@ export function VenueAutocomplete({
     };
 
     updatePlacement();
-    window.addEventListener("resize", updatePlacement);
-    // Capture scroll: a fixed list would drift when the modal body scrolls under it.
-    // Ignore scrolls that originate inside the list itself.
-    const onScroll = (event: Event) => {
-      if (suggestRef.current?.contains(event.target as Node)) return;
-      setVisible(false);
-    };
-    window.addEventListener("scroll", onScroll, true);
-    return () => {
-      window.removeEventListener("resize", updatePlacement);
-      window.removeEventListener("scroll", onScroll, true);
-    };
+    return attachFixedOverlayLifecycle(suggestRef.current, updatePlacement, () => setVisible(false));
   }, [visible, results.length]);
 
   const runSearch = async (query: string, opts?: { fromFindButton?: boolean }) => {

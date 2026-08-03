@@ -183,6 +183,7 @@ export class EventStaticMapService {
       ? Math.min(
           Math.max(1, loc.map_zoom + (options.zoomBias ?? -3)),
           STATIC_MAP_LIST_PREVIEW_MAX_ZOOM,
+          tileConfig.maxZoom,
         )
       : Math.min(Math.max(1, loc.map_zoom + zoomBias), tileConfig.maxZoom);
     const req = {

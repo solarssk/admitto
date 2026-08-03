@@ -39,8 +39,10 @@ export function EventCard({
   const { month, day } = eventCardDateParts(event.date);
   const status = showStatusBadge ? eventCardStatus(event) : null;
   const mapSrc = event.map_preview_path?.trim() || null;
+  const hasPin = event.has_coordinates === true;
   const locationText = event.location?.trim() || null;
   const attendeeCount = event.attendee_count;
+  const mapPlaceholderLabel = hasPin && !mapSrc ? "Maps unavailable" : "No location";
 
   return (
     <Link to={href} state={{ event }} className="event-card-link">
@@ -62,7 +64,7 @@ export function EventCard({
           ) : (
             <div className="event-card__map-placeholder" aria-hidden="true">
               <i className="ti ti-map-off" />
-              <span>No location</span>
+              <span>{mapPlaceholderLabel}</span>
             </div>
           )}
           <div className="event-card__weather" aria-label="Weather forecast coming soon">

@@ -16,6 +16,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { useClickOutside, type OutsideInteraction } from "./useClickOutside.js";
+import { attachFixedOverlayLifecycle } from "../utils/fixed-overlay-lifecycle.js";
 
 /** Worst-case open panel height (search + hint + 16rem list + chrome) for pre-open estimate. */
 const TIMEZONE_PANEL_MAX_ESTIMATE_PX = 352;
@@ -424,16 +425,7 @@ export function TimezoneSelect({
       });
     };
     updatePlacement();
-    window.addEventListener("resize", updatePlacement);
-    const onScroll = (event: Event) => {
-      if (panelRef.current?.contains(event.target as Node)) return;
-      closePanel();
-    };
-    window.addEventListener("scroll", onScroll, true);
-    return () => {
-      window.removeEventListener("resize", updatePlacement);
-      window.removeEventListener("scroll", onScroll, true);
-    };
+    return attachFixedOverlayLifecycle(panelRef.current, updatePlacement, closePanel);
   }, [open, optionCount, query]);
 
   const openPanel = () => {
