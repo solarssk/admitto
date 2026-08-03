@@ -4,6 +4,7 @@ import {
   isBlockedPrivateOrMetadataHost,
   isLoopbackHost,
   resolveSafeHostname,
+  SafeHostnameError,
   unbracketHostname,
 } from "../src/ssrfGuard.js";
 
@@ -110,24 +111,34 @@ describe("resolveSafeHostname", () => {
     mockedLookup.mockResolvedValue([{ address: "10.0.0.5", family: 4 }] as Awaited<
       ReturnType<typeof lookup>
     >);
-    await expect(resolveSafeHostname("evil.example.com")).rejects.toThrow(/private or link-local/);
+    await expect(resolveSafeHostname("evil.example.com")).rejects.toMatchObject({
+      name: "SafeHostnameError",
+      code: "hostname_blocked",
+      message: expect.stringMatching(/private or link-local/),
+    });
   });
 
   it("rejects a hostname that resolves to an unspecified address", async () => {
     mockedLookup.mockResolvedValue([{ address: "0.0.0.0", family: 4 }] as Awaited<
       ReturnType<typeof lookup>
     >);
-    await expect(resolveSafeHostname("evil.example.com")).rejects.toThrow(/private or link-local/);
+    await expect(resolveSafeHostname("evil.example.com")).rejects.toBeInstanceOf(SafeHostnameError);
   });
 
   it("rejects a literal private IP without a DNS lookup", async () => {
     mockedLookup.mockClear();
-    await expect(resolveSafeHostname("127.0.0.1")).rejects.toThrow(/private or link-local/);
+    await expect(resolveSafeHostname("127.0.0.1")).rejects.toMatchObject({
+      code: "hostname_blocked",
+    });
     expect(mockedLookup).not.toHaveBeenCalled();
   });
 
   it("rejects when DNS resolution fails", async () => {
     mockedLookup.mockRejectedValue(new Error("ENOTFOUND"));
-    await expect(resolveSafeHostname("nowhere.invalid")).rejects.toThrow(/could not be resolved/);
+    await expect(resolveSafeHostname("nowhere.invalid")).rejects.toMatchObject({
+      name: "SafeHostnameError",
+      code: "hostname_unresolved",
+      message: expect.stringMatching(/could not be resolved/),
+    });
   });
 });
