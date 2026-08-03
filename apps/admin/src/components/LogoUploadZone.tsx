@@ -1,15 +1,37 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Button } from "@admitto/ui";
+import type { PercentCrop } from "react-image-crop";
+import { Button, useToast } from "@admitto/ui";
+import type { LogoCropMeta } from "../api/types.js";
 import { uploadFile } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { brandingLogoImgSrc } from "../utils/safeBrandingLogoHref.js";
+import { CropImageModal, type CropApplyMeta } from "./crop/CropImageModal.js";
+import { resolveCropOutputMime } from "./crop/getCroppedImageBlob.js";
+import {
+  ALLOWED_BRANDING_IMAGE_TYPES,
+  extensionForBrandingImageMime,
+  MAX_BRANDING_IMAGE_UPLOAD_BYTES,
+} from "./brandingImageConstraints.js";
 import "./logo-upload.css";
 
-const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = MAX_BRANDING_IMAGE_UPLOAD_BYTES;
+const ALLOWED_IMAGE_TYPES = ALLOWED_BRANDING_IMAGE_TYPES;
+
+export type LogoSourceChange = {
+  originalUrl: string | null;
+  crop: LogoCropMeta | null;
+};
 
 export interface LogoUploadZoneProps {
+  /** Display logo URL (cropped upload or external https). */
   readonly value: string;
+  /** Full pre-crop upload URL for re-Edit after reload (`/uploads/…`). */
+  readonly originalUrl?: string | null;
+  /** Last crop framing stored with the logo. */
+  readonly cropMeta?: LogoCropMeta | null;
   readonly onChange: (url: string) => void;
+  /** Fired whenever original/crop change (Apply, clear, external link). */
+  readonly onSourceChange?: (source: LogoSourceChange) => void;
   readonly onDirty?: () => void;
   /** Field label above the drop zone. Defaults to "Organisation logo" for the existing usage. */
   readonly label?: string;
@@ -36,6 +58,28 @@ interface LogoPreviewProps {
   readonly onUploadedFileCorrupt: () => void;
   readonly onRemove: () => void;
 }
+
+type CropSession = {
+  /** Same-origin `/uploads/…` URL (never `blob:` from File — CodeQL FilesSource barrier). */
+  imageSrc: string;
+  sourceMime: string;
+  filename: string;
+  /** Local file still needed when Apply must upload the original; null when already on server. */
+  pendingFile: File | null;
+  /** Set when the original was already uploaded (pick or prior Apply). */
+  uploadedOriginalUrl: string;
+  /** Restore framing from the last Apply. */
+  initialCrop?: PercentCrop;
+  initialZoom?: number;
+};
+
+/** Full pre-crop file kept so Edit can re-open the original without re-fetching mid-session. */
+type SourceOriginal = {
+  file: File;
+  mime: string;
+  lastCrop?: PercentCrop;
+  lastZoom?: number;
+};
 
 /** Preview image with its two distinct failure modes, plus the remove button. */
 function LogoPreview({
@@ -81,9 +125,6 @@ interface LogoZoneClassNameFlags {
   readonly disabled: boolean;
 }
 
-// Extracted out of LogoUploadZone (SonarCloud S3776: each modifier below is its own
-// short-circuit expression, which otherwise adds to the component's own cognitive-complexity
-// count alongside the JSX conditionals it renders).
 function buildLogoZoneClassName({
   uploading,
   dragging,
@@ -103,10 +144,60 @@ function buildLogoZoneClassName({
     .join(" ");
 }
 
+function extensionForMime(mime: string): string {
+  return extensionForBrandingImageMime(mime);
+}
+
+function mimeFromUploadPath(path: string): string {
+  const lower = path.toLowerCase();
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".webp")) return "image/webp";
+  return "image/png";
+}
+
+function cropMetaToPercent(meta: LogoCropMeta | null | undefined): PercentCrop | undefined {
+  if (meta?.unit !== "%") return undefined;
+  return { unit: "%", x: meta.x, y: meta.y, width: meta.width, height: meta.height };
+}
+
+function toLogoCropMeta(meta: CropApplyMeta): LogoCropMeta {
+  return {
+    unit: "%",
+    x: meta.crop.x,
+    y: meta.crop.y,
+    width: meta.crop.width,
+    height: meta.crop.height,
+    zoom: meta.zoom,
+  };
+}
+
+/** @internal Unit-test surface for MIME/path helpers (keeps branch coverage explicit). */
+export const logoUploadZoneTestUtils = {
+  extensionForMime,
+  mimeFromUploadPath,
+  cropMetaToPercent,
+  toLogoCropMeta,
+  buildLogoZoneClassName,
+};
+
+async function postUpload(
+  uploadFn: (formData: FormData) => Promise<{ url: string }>,
+  blob: Blob,
+  filename: string,
+): Promise<string> {
+  const fd = new FormData();
+  fd.append("file", new File([blob], filename, { type: blob.type || "image/png" }));
+  const result = await uploadFn(fd);
+  return result.url;
+}
+
 /** Upload to server or link an external HTTPS image — both are supported. */
 export function LogoUploadZone({
   value,
+  originalUrl = null,
+  cropMeta = null,
   onChange,
+  onSourceChange,
   onDirty,
   label = "Organisation logo",
   hideLabel = false,
@@ -115,13 +206,18 @@ export function LogoUploadZone({
   disabled = false,
   onUploadingChange,
 }: LogoUploadZoneProps) {
+  const { addToast } = useToast();
   const urlInputId = useId();
   const fileRef = useRef<HTMLInputElement>(null);
   const uploadSeqRef = useRef(0);
+  /** Display URL we last wrote via Apply — keeps session original across parent re-renders. */
+  const lastUploadedUrlRef = useRef<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [zoneError, setZoneError] = useState<string | null>(null);
+  const [cropSession, setCropSession] = useState<CropSession | null>(null);
+  const [sourceOriginal, setSourceOriginal] = useState<SourceOriginal | null>(null);
 
   const isUploadedFile = value.startsWith("/uploads/");
   const previewSrc = useMemo(() => brandingLogoImgSrc(value), [value]);
@@ -137,29 +233,112 @@ export function LogoUploadZone({
     if (previewSrc) setZoneError(null);
   }, [previewSrc]);
 
+  // Display URL changed from outside this zone's last Apply — drop the in-memory File.
+  useEffect(() => {
+    if (value !== lastUploadedUrlRef.current) {
+      setSourceOriginal(null);
+    }
+  }, [value]);
+
+  const closeCropSession = () => {
+    setCropSession(null);
+  };
+
   const clearLogo = () => {
     uploadSeqRef.current += 1;
+    lastUploadedUrlRef.current = null;
+    setSourceOriginal(null);
     setZoneError(null);
     setPreviewFailed(false);
+    closeCropSession();
     onChange("");
+    onSourceChange?.({ originalUrl: null, crop: null });
     onDirty?.();
   };
 
-  const handleFile = async (file: File) => {
+  const applyCroppedAndOriginal = async (
+    cropped: Blob,
+    filenameBase: string,
+    applyMeta: CropApplyMeta,
+    originalFile: File | null,
+    existingOriginalUrl: string,
+  ) => {
+    const seq = ++uploadSeqRef.current;
+    setZoneError(null);
+    setUploading(true);
+    try {
+      const sourceMime =
+        originalFile?.type.split(";")[0]?.trim().toLowerCase() ||
+        mimeFromUploadPath(existingOriginalUrl);
+      const outMime = resolveCropOutputMime(sourceMime || "image/png");
+      const croppedName = `${filenameBase}${extensionForMime(outMime)}`;
+
+      // Original was uploaded before the crop modal opened (CodeQL: no File→blob:→img.src).
+      const originalUploadedUrl = existingOriginalUrl;
+
+      const croppedUrl = await postUpload(
+        uploadFn,
+        new File([cropped], croppedName, { type: cropped.type || outMime }),
+        croppedName,
+      );
+      if (seq !== uploadSeqRef.current) return;
+
+      const crop = toLogoCropMeta(applyMeta);
+      lastUploadedUrlRef.current = croppedUrl;
+      if (originalFile) {
+        setSourceOriginal({
+          file: originalFile,
+          mime: sourceMime || "image/png",
+          lastCrop: applyMeta.crop,
+          lastZoom: applyMeta.zoom,
+        });
+      } else {
+        setSourceOriginal((prev) =>
+          prev
+            ? { ...prev, lastCrop: applyMeta.crop, lastZoom: applyMeta.zoom }
+            : prev,
+        );
+      }
+      onChange(croppedUrl);
+      onSourceChange?.({ originalUrl: originalUploadedUrl, crop });
+      onDirty?.();
+      closeCropSession();
+    } catch (err) {
+      if (seq !== uploadSeqRef.current) return;
+      setZoneError(operatorApiErrorMessage(err, "Upload failed."));
+      closeCropSession();
+    } finally {
+      if (seq === uploadSeqRef.current) setUploading(false);
+    }
+  };
+
+  /** Upload the original first, then open crop on the `/uploads/…` URL (no File→blob:→img.src). */
+  const openCropForFile = async (file: File) => {
     if (file.size > MAX_UPLOAD_BYTES) {
       setZoneError("File must be 2 MB or smaller.");
+      return;
+    }
+    const declared = file.type.split(";")[0]?.trim().toLowerCase() ?? "";
+    if (!ALLOWED_IMAGE_TYPES.has(declared)) {
+      setZoneError("Use a PNG, JPG, or WebP image.");
       return;
     }
     const seq = ++uploadSeqRef.current;
     setZoneError(null);
     setUploading(true);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const result = await uploadFn(fd);
+      const filename = file.name || `logo${extensionForMime(declared)}`;
+      const base = filename.replace(/\.[^.]+$/, "") || "logo";
+      const originalName = `${base}-original${extensionForMime(declared)}`;
+      const url = await postUpload(uploadFn, file, originalName);
       if (seq !== uploadSeqRef.current) return;
-      onChange(result.url);
-      onDirty?.();
+      setCropSession({
+        imageSrc: url,
+        sourceMime: declared,
+        filename,
+        pendingFile: file,
+        uploadedOriginalUrl: url,
+      });
     } catch (err) {
       if (seq !== uploadSeqRef.current) return;
       setZoneError(operatorApiErrorMessage(err, "Upload failed."));
@@ -168,12 +347,38 @@ export function LogoUploadZone({
     }
   };
 
+  const openCropForEdit = () => {
+    if (!isUploadedFile || !previewSrc || disabled || uploading) return;
+    setZoneError(null);
+
+    if (originalUrl?.startsWith("/uploads/")) {
+      const mime = sourceOriginal?.mime ?? mimeFromUploadPath(originalUrl);
+      setCropSession({
+        imageSrc: originalUrl,
+        sourceMime: mime,
+        filename: sourceOriginal?.file.name || `logo${extensionForMime(mime)}`,
+        pendingFile: sourceOriginal?.file ?? null,
+        uploadedOriginalUrl: originalUrl,
+        initialCrop: sourceOriginal?.lastCrop ?? cropMetaToPercent(cropMeta),
+        initialZoom: sourceOriginal?.lastZoom ?? cropMeta?.zoom,
+      });
+      return;
+    }
+
+    addToast(
+      "The original image is not available for this logo. Choose the full file again to re-crop.",
+      "info",
+      4500,
+    );
+    fileRef.current?.click();
+  };
+
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragging(false);
     if (disabled) return;
     const file = e.dataTransfer.files[0];
-    if (file) void handleFile(file);
+    if (file) void openCropForFile(file);
   };
 
   const openFilePicker = () => {
@@ -183,8 +388,9 @@ export function LogoUploadZone({
   return (
     <div className="logo-upload">
       {!hideLabel && <span className="at-label">{label}</span>}
-      <p className="field-hint logo-upload__intro">
-        Upload an image file below, or use a link to an image that&apos;s already online.
+      <p className={hideLabel ? "settings-card-intro" : "at-hint"}>
+        Upload an image file below, or use a link to an image that&apos;s already online. You can
+        trim margins before saving.
       </p>
       <div
         className={buildLogoZoneClassName({
@@ -229,7 +435,10 @@ export function LogoUploadZone({
               setZoneError("Uploaded file appears corrupt or unsupported. Please try another image.");
               uploadSeqRef.current += 1;
               setPreviewFailed(false);
+              lastUploadedUrlRef.current = null;
+              setSourceOriginal(null);
               onChange("");
+              onSourceChange?.({ originalUrl: null, crop: null });
               onDirty?.();
             }}
             onRemove={clearLogo}
@@ -237,7 +446,9 @@ export function LogoUploadZone({
         ) : (
           <>
             <i className="ti ti-photo-up" aria-hidden="true" />
-            <span>{uploading ? "Uploading…" : "Drop logo here or click to browse"}</span>
+            <span className="logo-upload__zone-title">
+              {uploading ? "Uploading…" : "Drop logo here or click to browse"}
+            </span>
             <span className="logo-upload__hint">{hint}</span>
           </>
         )}
@@ -248,7 +459,7 @@ export function LogoUploadZone({
           className="logo-upload__file-input"
           onChange={(e) => {
             const f = e.target.files?.[0];
-            if (f) void handleFile(f);
+            if (f) openCropForFile(f);
             e.target.value = "";
           }}
           disabled={uploading || disabled}
@@ -274,6 +485,18 @@ export function LogoUploadZone({
             Replace image
           </Button>
         ) : null}
+        {showPreview && isUploadedFile ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={uploading || disabled}
+            icon={<i className="ti ti-crop" aria-hidden="true" />}
+            onClick={openCropForEdit}
+          >
+            Edit image
+          </Button>
+        ) : null}
         <Button
           type="button"
           variant="ghost"
@@ -297,13 +520,40 @@ export function LogoUploadZone({
             value={isUploadedFile ? "" : value}
             disabled={disabled}
             onChange={(e) => {
+              lastUploadedUrlRef.current = null;
+              setSourceOriginal(null);
               onChange(e.target.value);
+              onSourceChange?.({ originalUrl: null, crop: null });
               onDirty?.();
             }}
             placeholder="https://cdn.example.com/logo.png"
           />
         </div>
       )}
+      {cropSession ? (
+        <CropImageModal
+          open
+          title={`Adjust ${label.toLowerCase()}`}
+          imageSrc={cropSession.imageSrc}
+          sourceMime={cropSession.sourceMime}
+          initialCrop={cropSession.initialCrop}
+          initialZoom={cropSession.initialZoom}
+          onCancel={closeCropSession}
+          onApply={async (blob, meta) => {
+            const base =
+              cropSession.filename.replace(/\.[^.]+$/, "") ||
+              label.toLowerCase().replaceAll(/\s+/g, "-") ||
+              "logo";
+            await applyCroppedAndOriginal(
+              blob,
+              base,
+              meta,
+              cropSession.pendingFile,
+              cropSession.uploadedOriginalUrl,
+            );
+          }}
+        />
+      ) : null}
     </div>
   );
 }

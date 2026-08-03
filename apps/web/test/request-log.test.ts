@@ -175,7 +175,7 @@ describe("createApp global error handler", () => {
     const res = await app.request("/__test/events/event-secret/attendees/attendee-secret");
 
     expect(res.status).toBe(500);
-    expect(await res.text()).toBe("Internal Server Error");
+    expect(await res.json()).toEqual({ error: "internal_error" });
     expect(querySystemLogs({ source: "api" })).toContainEqual(
       expect.objectContaining({
         level: "error",
@@ -183,6 +183,7 @@ describe("createApp global error handler", () => {
         fields: {
           method: "GET",
           path: "/__test/events/:eventId/attendees/:attendeeId",
+          error_name: "Error",
         },
       }),
     );
@@ -191,6 +192,68 @@ describe("createApp global error handler", () => {
     expect(JSON.stringify(querySystemLogs())).not.toContain("attendee@example.com");
     expect(JSON.stringify(querySystemLogs())).not.toContain("event-secret");
     expect(JSON.stringify(querySystemLogs())).not.toContain("attendee-secret");
+  });
+
+  it("includes a stable error_code in System logs when the thrown error exposes one", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const error = Object.assign(new Error("smtp host blocked"), {
+      name: "MailDestinationError",
+      code: "mail_destination_blocked",
+    });
+    const app = createApp({
+      prisma: { $queryRaw: vi.fn(async () => [{ "?column?": 1 }]) } as unknown as PrismaClient,
+      baseUrl: "https://tickets.example.com",
+      skipCheckinBootValidation: true,
+      rateLimitStore: createRateLimitStore(),
+      logHttpRequests: false,
+    });
+    app.get("/__test/mail-dest", () => {
+      throw error;
+    });
+
+    const res = await app.request("/__test/mail-dest");
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: "internal_error" });
+    expect(querySystemLogs({ source: "api" })).toContainEqual(
+      expect.objectContaining({
+        message: "unhandled_exception",
+        fields: {
+          method: "GET",
+          path: "/__test/mail-dest",
+          error_name: "MailDestinationError",
+          error_code: "mail_destination_blocked",
+        },
+      }),
+    );
+  });
+
+  it("omits error_code from System logs when the thrown error exposes a non-string code", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const error = Object.assign(new Error("provider failed"), { code: 535 });
+    const app = createApp({
+      prisma: { $queryRaw: vi.fn(async () => [{ "?column?": 1 }]) } as unknown as PrismaClient,
+      baseUrl: "https://tickets.example.com",
+      skipCheckinBootValidation: true,
+      rateLimitStore: createRateLimitStore(),
+      logHttpRequests: false,
+    });
+    app.get("/__test/numeric-code", () => {
+      throw error;
+    });
+
+    const res = await app.request("/__test/numeric-code");
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: "internal_error" });
+    expect(querySystemLogs({ source: "api" })).toContainEqual(
+      expect.objectContaining({
+        message: "unhandled_exception",
+        fields: {
+          method: "GET",
+          path: "/__test/numeric-code",
+          error_name: "Error",
+        },
+      }),
+    );
   });
 
   it("uses a constant route label if Hono has no matched route", async () => {
@@ -213,7 +276,7 @@ describe("createApp global error handler", () => {
     expect(querySystemLogs({ source: "api" })).toContainEqual(
       expect.objectContaining({
         message: "unhandled_exception",
-        fields: { method: "GET", path: "/[unmatched]" },
+        fields: { method: "GET", path: "/[unmatched]", error_name: "Error" },
       }),
     );
     expect(JSON.stringify(querySystemLogs())).not.toContain("attendee-secret");

@@ -221,8 +221,8 @@ export async function handleCreateEventImageAsset(c: Context, db: PrismaClient):
           token,
           filename: fileField.name || "upload",
           url: uploaded.url,
-          size_bytes: fileField.size,
-          mime_type: fileField.type.split(";")[0]?.trim() || "application/octet-stream",
+          size_bytes: uploaded.sizeBytes,
+          mime_type: uploaded.mimeType,
         },
         select: {
           id: true,

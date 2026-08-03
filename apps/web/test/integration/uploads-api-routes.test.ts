@@ -155,15 +155,21 @@ function uploadForm(file: Blob, filename: string): FormData {
   return fd;
 }
 
+/** Minimal valid 1×1 PNG (must be decodable by sharp after branding re-encode). */
+const VALID_PNG = new Uint8Array([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+  0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+  0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0xfc, 0xcf, 0xc0, 0x50,
+  0x0f, 0x00, 0x04, 0x85, 0x01, 0x80, 0x84, 0xa9, 0x8c, 0x21, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
+  0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+]);
+
 describe("POST /api/admin/uploads", () => {
   it("accepts PNG and returns public URL", async () => {
-    const png = new Uint8Array([
-      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
-    ]);
     const res = await app.request("/api/admin/uploads", {
       method: "POST",
       headers: { Cookie: superCookie, ...sameOrigin },
-      body: uploadForm(new Blob([png], { type: "image/png" }), "logo.png"),
+      body: uploadForm(new Blob([VALID_PNG], { type: "image/png" }), "logo.png"),
     });
     expect(res.status).toBe(201);
     const body = (await res.json()) as { url: string };
@@ -186,11 +192,10 @@ describe("POST /api/admin/uploads", () => {
     const saved = process.env.INSTANCE_ORG_ID;
     process.env.INSTANCE_ORG_ID = "org-that-does-not-exist";
     try {
-      const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
       const res = await app.request("/api/admin/uploads", {
         method: "POST",
         headers: { Cookie: superCookie, ...sameOrigin },
-        body: uploadForm(new Blob([png], { type: "image/png" }), "logo.png"),
+        body: uploadForm(new Blob([VALID_PNG], { type: "image/png" }), "logo.png"),
       });
       expect(res.status).toBe(500);
       const body = (await res.json()) as { error: string };
@@ -313,8 +318,6 @@ describe("POST /api/admin/theme-font-upload", () => {
 });
 
 describe("POST /api/admin/events/:eventId/branding-upload", () => {
-  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
-
   it("returns 400 file_required when the multipart body has no file field", async () => {
     const fd = new FormData();
     fd.append("not_a_file", "hello");
@@ -332,7 +335,7 @@ describe("POST /api/admin/events/:eventId/branding-upload", () => {
     const res = await app.request(`/api/admin/events/${EVENT_OWN}/branding-upload`, {
       method: "POST",
       headers: { Cookie: superCookie, ...sameOrigin },
-      body: uploadForm(new Blob([png], { type: "image/png" }), "logo.png"),
+      body: uploadForm(new Blob([VALID_PNG], { type: "image/png" }), "logo.png"),
     });
     expect(res.status).toBe(201);
     const body = (await res.json()) as { url: string };
@@ -356,7 +359,7 @@ describe("POST /api/admin/events/:eventId/branding-upload", () => {
     const res = await app.request(`/api/admin/events/${EVENT_OWN}/branding-upload`, {
       method: "POST",
       headers: { Cookie: adminCookie, ...sameOrigin },
-      body: uploadForm(new Blob([png], { type: "image/png" }), "logo.png"),
+      body: uploadForm(new Blob([VALID_PNG], { type: "image/png" }), "logo.png"),
     });
     expect(res.status).toBe(201);
   });
@@ -365,7 +368,7 @@ describe("POST /api/admin/events/:eventId/branding-upload", () => {
     const res = await app.request(`/api/admin/events/${EVENT_OWN}/branding-upload`, {
       method: "POST",
       headers: { Cookie: adminOtherCookie, ...sameOrigin },
-      body: uploadForm(new Blob([png], { type: "image/png" }), "logo.png"),
+      body: uploadForm(new Blob([VALID_PNG], { type: "image/png" }), "logo.png"),
     });
     expect(res.status).toBe(403);
   });
@@ -374,7 +377,7 @@ describe("POST /api/admin/events/:eventId/branding-upload", () => {
     const res = await app.request(`/api/admin/events/${EVENT_ARCHIVED}/branding-upload`, {
       method: "POST",
       headers: { Cookie: adminCookie, ...sameOrigin },
-      body: uploadForm(new Blob([png], { type: "image/png" }), "logo.png"),
+      body: uploadForm(new Blob([VALID_PNG], { type: "image/png" }), "logo.png"),
     });
     expect(res.status).toBe(403);
     const body = (await res.json()) as { code: string };
@@ -394,7 +397,7 @@ describe("POST /api/admin/events/:eventId/branding-upload", () => {
     const res = await app.request("/api/admin/events/evt-uploads-missing/branding-upload", {
       method: "POST",
       headers: { Cookie: superCookie, ...sameOrigin },
-      body: uploadForm(new Blob([png], { type: "image/png" }), "logo.png"),
+      body: uploadForm(new Blob([VALID_PNG], { type: "image/png" }), "logo.png"),
     });
     expect(res.status).toBe(404);
   });
