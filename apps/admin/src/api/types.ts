@@ -1027,6 +1027,38 @@ export interface SetupChecksResponse {
   checks: Record<SetupCheckKey, SetupCheckResult>;
 }
 
+/** Row status for Settings → Health check (ADR 0037). */
+export type HealthRowStatus = "ok" | "degraded" | "down" | "not_configured" | "planned";
+/** Group / overall status — planned and not_configured are ignored in the rollup. */
+export type HealthOverallStatus = "ok" | "degraded" | "down";
+
+export type HealthDetailDto = { key: string; value: string };
+
+export type HealthCheckRowDto = {
+  id: string;
+  label: string;
+  status: HealthRowStatus;
+  summary: string;
+  details: HealthDetailDto[];
+};
+
+export type HealthGroupDto = {
+  id: "core" | "external";
+  label: string;
+  subtitle: string;
+  status: HealthOverallStatus;
+  checks: HealthCheckRowDto[];
+};
+
+/** GET /api/admin/health and POST /api/admin/health/live payload. */
+export type HealthReportDto = {
+  generated_at: string;
+  version: string;
+  commit: string;
+  overall: HealthOverallStatus;
+  groups: HealthGroupDto[];
+};
+
 export type SetupOrgBrandingDto = {
   org_name: string | null;
 } & LogoPersistenceDto;

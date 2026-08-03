@@ -195,6 +195,17 @@ export const RATE_POLICIES = {
       },
     ],
   },
+  /** On-demand live health probes (Nominatim / OIDC) from Settings → Health check. */
+  "admin:health-live": {
+    checks: [
+      {
+        keyOf: (c) => `admin:health-live:user:${c.get("auth").userId}`,
+        windowMs: 60_000,
+        max: 5,
+        logOnExceeded: { scope: "admin_health_live" },
+      },
+    ],
+  },
   "admin:event-mail-transport-test": {
     checks: [
       {

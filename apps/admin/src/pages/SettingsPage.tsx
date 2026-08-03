@@ -6,6 +6,7 @@ import { GeneralSettingsPanel } from "../settings/GeneralSettingsPanel.js";
 import { EventArchivingPanel } from "../settings/EventArchivingPanel.js";
 import { SecurityPanel } from "../settings/SecurityPanel.js";
 import { AuditLogPanel } from "../settings/AuditLogPanel.js";
+import { HealthCheckPanel } from "../settings/HealthCheckPanel.js";
 import { inPageTabFromSearch, type SettingsTab } from "../settings/settingsTabs.js";
 
 interface SettingsTabPanelProps {
@@ -104,6 +105,15 @@ export function SettingsTabContent() {
         className="settings-sections"
       >
         <AuditLogPanel />
+      </SettingsTabPanel>
+      <SettingsTabPanel
+        tab="health"
+        activeTab={tab}
+        visited={visitedTabs}
+        label="Health check"
+        className="settings-sections"
+      >
+        <HealthCheckPanel />
       </SettingsTabPanel>
     </>
   );

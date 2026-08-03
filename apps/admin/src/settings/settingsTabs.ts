@@ -6,7 +6,8 @@ export type SettingsTab =
   | "security"
   | "archiving"
   | "identity"
-  | "logs";
+  | "logs"
+  | "health";
 
 export const SETTINGS_TABS = [
   { id: "general", label: "General" },
@@ -16,6 +17,7 @@ export const SETTINGS_TABS = [
   { id: "archiving", label: "Archiving" },
   { id: "identity", label: "Identity" },
   { id: "logs", label: "Logs" },
+  { id: "health", label: "Health check" },
 ] as const;
 
 export const SETTINGS_INDEX_PATH = "/admin/settings";

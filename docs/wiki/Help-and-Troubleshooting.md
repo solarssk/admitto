@@ -17,12 +17,14 @@ Start with the page for the failed workflow:
 | No manual lookup result or wrong admission | [Manual Lookup and Corrections](Manual-Lookup-and-Corrections) |
 | Offline or reconnecting check-in | [Check-in Connection Problems](Check-in-Connection-Problems) |
 | Instance configuration or logs | [Instance Settings](Instance-Settings) and [Logs and Audit](Logs-and-Audit) |
+| System health or support dump for a bug report | [Instance Settings](Instance-Settings) → Health check |
 
 ## Report a product problem
 
-1. Record the Admitto version shown in the interface.
-2. Record the page, approximate time, expected result, and safe error text.
-3. Remove attendee data, addresses, ticket links, QR values, secrets, and provider responses.
-4. Use the repository's [bug report form](https://github.com/solarssk/admitto/issues/new?template=bug.yml).
+1. Record the Admitto version shown in the interface (sidebar footer).
+2. Optional: open **Organisation settings → Health check**, use **Copy for GitHub Issue**, and paste the snapshot into the bug form. Remove any remaining secrets or personal data before posting.
+3. Record the page, approximate time, expected result, and safe error text.
+4. Remove attendee data, addresses, ticket links, QR values, secrets, and provider responses.
+5. Use the repository's [bug report form](https://github.com/solarssk/admitto/issues/new?template=bug.yml).
 
 For a suspected security problem, use the [security reporting policy](https://github.com/solarssk/admitto/blob/main/SECURITY.md) instead of a public issue.

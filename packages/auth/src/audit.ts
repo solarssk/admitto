@@ -129,6 +129,7 @@ export type RateLimitScope =
   | "admin_oidc_provider_ops"
   | "admin_attendees_search"
   | "admin_mail_transport_test"
+  | "admin_health_live"
   | "admin_event_mail_transport_test"
   | "admin_export_pii"
   | "checkin_scan"
