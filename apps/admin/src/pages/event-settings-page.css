@@ -146,13 +146,6 @@
   gap: var(--space-4);
 }
 
-/* .screen's 18px flex gap also sits between the tab strip and the first panel —
-   Organisation settings and the Events list use block layout there (no extra gap).
-   Cancel that sibling gap so cards sit closer to the tabs. */
-.event-settings-page.screen > .scroll-fade-tabs {
-  margin-bottom: -18px;
-}
-
 /* Field spacing ----------------------------------------------------------
    Group a field (label + control) with its own hint, then use one
    consistent gap between groups — avoids the old accumulated-margin

@@ -434,6 +434,14 @@ html:has(.shell), body:has(.shell) {
   margin-bottom: calc(var(--space-5) - 18px); /* 6px, so every page totals the same 24px */
 }
 
+/* Tab strip → first panel: cancel .screen's sibling gap so content sits flush under the
+   tabs (Events list / Organisation settings). Without this, Users & roles and Event settings
+   stacked gap + (formerly) scroll-fade-tabs margin and looked much looser than Attendees. */
+.screen > .scroll-fade-tabs,
+.screen > .at-tabs {
+  margin-bottom: -18px;
+}
+
 .empty-state {
   text-align: center;
   padding: 48px 24px;
