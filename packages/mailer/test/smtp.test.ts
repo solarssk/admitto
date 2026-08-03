@@ -213,6 +213,19 @@ describe("SmtpAdapter", () => {
     spy.mockRestore();
   });
 
+  it("soft-rejects with the Error message when the destination guard throws a non-MailDestinationError", async () => {
+    const spy = vi
+      .spyOn(ssrfGuard, "assertSafeMailDestination")
+      .mockRejectedValueOnce(new Error("unexpected guard failure"));
+    const sendMail = vi.fn(async () => ({ messageId: "<id@test>" }));
+    const adapter = new SmtpAdapter(config, { sendMail } as unknown as nodemailer.Transporter);
+    const res = await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
+    expect(res.status).toBe("rejected");
+    expect(res.error).toBe("unexpected guard failure");
+    expect(sendMail).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
   it("throws MailDestinationError when the host resolves to a private address at send-time (DNS rebinding)", async () => {
     mockedLookup.mockResolvedValue([{ address: "10.0.0.5", family: 4 }] as Awaited<
       ReturnType<typeof lookup>

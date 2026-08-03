@@ -227,6 +227,35 @@ describe("createApp global error handler", () => {
     );
   });
 
+  it("omits error_code from System logs when the thrown error exposes a non-string code", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const error = Object.assign(new Error("provider failed"), { code: 535 });
+    const app = createApp({
+      prisma: { $queryRaw: vi.fn(async () => [{ "?column?": 1 }]) } as unknown as PrismaClient,
+      baseUrl: "https://tickets.example.com",
+      skipCheckinBootValidation: true,
+      rateLimitStore: createRateLimitStore(),
+      logHttpRequests: false,
+    });
+    app.get("/__test/numeric-code", () => {
+      throw error;
+    });
+
+    const res = await app.request("/__test/numeric-code");
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: "internal_error" });
+    expect(querySystemLogs({ source: "api" })).toContainEqual(
+      expect.objectContaining({
+        message: "unhandled_exception",
+        fields: {
+          method: "GET",
+          path: "/__test/numeric-code",
+          error_name: "Error",
+        },
+      }),
+    );
+  });
+
   it("uses a constant route label if Hono has no matched route", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const app = createApp({

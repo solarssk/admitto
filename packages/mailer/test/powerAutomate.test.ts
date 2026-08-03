@@ -183,6 +183,19 @@ describe("PowerAutomateAdapter", () => {
     spy.mockRestore();
   });
 
+  it("soft-rejects with the Error message when the destination guard throws a non-MailDestinationError", async () => {
+    const spy = vi
+      .spyOn(ssrfGuard, "resolveSafeMailDestination")
+      .mockRejectedValueOnce(new Error("unexpected guard failure"));
+    const fetchFn = vi.fn();
+    const adapter = new PowerAutomateAdapter(config, fetchFn as unknown as typeof fetch);
+    const res = await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
+    expect(res.status).toBe("rejected");
+    expect(res.error).toBe("unexpected guard failure");
+    expect(fetchFn).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
   it("sends with redirect: 'error' so the fetch itself refuses to follow a redirect", async () => {
     let captured: any;
     const fetchFn = vi.fn(async (_url: string, init: any) => {

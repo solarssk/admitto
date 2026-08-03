@@ -289,8 +289,9 @@ async function processAttendeeForSend({
 /**
  * Send the batched messages via the mailer and persist per-attendee delivery outcomes.
  * Returns the number of messages accepted by the provider (0 when the whole batch send throws).
+ * Exported for unit tests of destination-error rethrow behaviour.
  */
-async function deliverPendingBatch(
+export async function deliverPendingBatch(
   mailer: MailerAdapter,
   pending: PendingSend[],
   prisma: PrismaClient,
@@ -333,7 +334,17 @@ async function deliverPendingBatch(
     );
     // Destination SSRF/DNS failures must surface to API mappers (422), not look like a
     // soft batch failure with only failed EmailDelivery rows.
-    if (err instanceof MailDestinationError) throw err;
+    // Name/code check: Vitest (and some dual package graphs) can load two copies of the
+    // class, so `instanceof` alone is not enough for the rethrow contract.
+    if (
+      err instanceof MailDestinationError ||
+      (err instanceof Error &&
+        err.name === "MailDestinationError" &&
+        "code" in err &&
+        (err.code === "mail_destination_blocked" || err.code === "mail_destination_unresolved"))
+    ) {
+      throw err;
+    }
     return 0;
   }
 }

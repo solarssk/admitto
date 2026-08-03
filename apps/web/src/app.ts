@@ -410,11 +410,10 @@ export function createApp(options: CreateAppOptions = {}) {
     if (err instanceof HTTPException) return err.getResponse();
 
     console.error("unhandled_exception:", err);
-    const errorName = err instanceof Error ? err.name : typeof err;
+    // Hono only invokes onError for Error instances (non-Error throws bypass it).
+    const errorName = err.name;
     const errorCode =
-      err && typeof err === "object" && "code" in err && typeof err.code === "string"
-        ? err.code
-        : undefined;
+      "code" in err && typeof err.code === "string" ? err.code : undefined;
     emitSystemLog("api", "error", "unhandled_exception", {
       method: c.req.method,
       path: c.req.routePath || "/[unmatched]",
