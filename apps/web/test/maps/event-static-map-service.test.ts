@@ -129,6 +129,72 @@ describe("EventStaticMapService.getForEvent", () => {
     expect(cache.set).toHaveBeenCalledWith(expect.any(String), SAMPLE_PNG);
   });
 
+  it("applies zoomBias relative to stored map_zoom (list cards zoom out)", async () => {
+    const renderPng = vi.fn(async () => SAMPLE_PNG);
+    const service = new EventStaticMapService(serviceOpts({ renderPng }));
+
+    await service.getForEvent(
+      fakeDb({ latitude: 52.2297, longitude: 21.0122, map_zoom: 15 }),
+      "evt-list",
+      { listPreview: true },
+    );
+    expect(renderPng).toHaveBeenCalledWith(
+      expect.objectContaining({ zoom: 12, width: 840, height: 256 }),
+      expect.objectContaining({ burnInAttribution: false }),
+    );
+
+    renderPng.mockClear();
+    await service.getForEvent(
+      fakeDb({ latitude: 52.2297, longitude: 21.0122, map_zoom: 15 }),
+      "evt-ticket",
+    );
+    expect(renderPng).toHaveBeenCalledWith(
+      expect.objectContaining({ zoom: 16 }),
+      expect.objectContaining({ burnInAttribution: true }),
+    );
+  });
+
+  it("caps listPreview zoom even when stored map_zoom is high", async () => {
+    const renderPng = vi.fn(async () => SAMPLE_PNG);
+    const service = new EventStaticMapService(serviceOpts({ renderPng }));
+
+    await service.getForEvent(
+      fakeDb({ latitude: 52.2297, longitude: 21.0122, map_zoom: 18 }),
+      "evt-close",
+      { listPreview: true },
+    );
+    expect(renderPng).toHaveBeenCalledWith(
+      expect.objectContaining({ zoom: 12 }),
+      expect.any(Object),
+    );
+  });
+
+  it("caps listPreview zoom at MAP_TILE_MAX_ZOOM when below the list hard-cap", async () => {
+    const prevEnabled = process.env["LOCATION_MAPS_ENABLED"];
+    const prevMax = process.env["MAP_TILE_MAX_ZOOM"];
+    process.env["LOCATION_MAPS_ENABLED"] = "true";
+    process.env["MAP_TILE_MAX_ZOOM"] = "10";
+    try {
+      const renderPng = vi.fn(async () => SAMPLE_PNG);
+      const service = new EventStaticMapService(serviceOpts({ renderPng }));
+
+      await service.getForEvent(
+        fakeDb({ latitude: 52.2297, longitude: 21.0122, map_zoom: 15 }),
+        "evt-provider-cap",
+        { listPreview: true },
+      );
+      expect(renderPng).toHaveBeenCalledWith(
+        expect.objectContaining({ zoom: 10 }),
+        expect.any(Object),
+      );
+    } finally {
+      if (prevEnabled === undefined) delete process.env["LOCATION_MAPS_ENABLED"];
+      else process.env["LOCATION_MAPS_ENABLED"] = prevEnabled;
+      if (prevMax === undefined) delete process.env["MAP_TILE_MAX_ZOOM"];
+      else process.env["MAP_TILE_MAX_ZOOM"] = prevMax;
+    }
+  });
+
   it("retries once then returns a real PNG on the second attempt", async () => {
     const renderPng = vi
       .fn()

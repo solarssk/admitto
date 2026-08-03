@@ -11,6 +11,8 @@ import {
   redactTileUrlForLogs,
   renderStaticMapPng,
   StaticMapRenderError,
+  STATIC_MAP_LIST_HEIGHT,
+  STATIC_MAP_LIST_WIDTH,
   type RenderStaticMapOptions,
 } from "./static-map.js";
 import { createStaticMapCache, type StaticMapCache } from "./static-map-cache.js";
@@ -51,6 +53,20 @@ function sanitizeStaticMapLogReason(message: string): string {
     .replace(/https?:\/\/\S+/gi, (url) => redactTileUrlForLogs(url))
     .slice(0, 200);
 }
+
+export type GetForEventOptions = {
+  /**
+   * Relative to stored `EventLocation.map_zoom`.
+   * Ticket/mail default is +1 (slightly closer). Pass a negative bias to zoom out,
+   * or use `listPreview` for Events-card maps (hard-capped wider view).
+   */
+  zoomBias?: number;
+  /** Events list / operator picker — wider neighbourhood context, capped for consistency. */
+  listPreview?: boolean;
+};
+
+/** Max zoom for Events list card thumbnails (street-level admin zoom is too tight). */
+export const STATIC_MAP_LIST_PREVIEW_MAX_ZOOM = 12;
 
 export class EventStaticMapService {
   private readonly cache: StaticMapCache;
@@ -98,9 +114,16 @@ export class EventStaticMapService {
   }
 
   private async renderWithRetry(
-    req: { latitude: number; longitude: number; zoom: number },
+    req: {
+      latitude: number;
+      longitude: number;
+      zoom: number;
+      width?: number;
+      height?: number;
+    },
     userAgent: string,
     tileConfig: ReturnType<typeof resolveMapTileConfig>,
+    burnInAttribution = true,
   ): Promise<Buffer> {
     let lastErr: unknown;
     for (let attempt = 1; attempt <= RENDER_ATTEMPTS; attempt++) {
@@ -109,6 +132,7 @@ export class EventStaticMapService {
           tileConfig,
           userAgent,
           ...this.renderOptions,
+          burnInAttribution,
         });
       } catch (err) {
         lastErr = err;
@@ -120,7 +144,11 @@ export class EventStaticMapService {
     throw lastErr;
   }
 
-  async getForEvent(db: PrismaClient, eventId: string): Promise<ResolveEventStaticMapResult> {
+  async getForEvent(
+    db: PrismaClient,
+    eventId: string,
+    options: GetForEventOptions = {},
+  ): Promise<ResolveEventStaticMapResult> {
     const tileConfig = resolveMapTileConfig();
     if (!tileConfig.enabled) {
       return { ok: false, reason: "disabled" };
@@ -147,17 +175,34 @@ export class EventStaticMapService {
       return { ok: false, reason: "no_coordinates" };
     }
 
-    // Ticket / mail maps read slightly closer than the admin preview (+1), capped by provider max.
+    // Ticket / mail maps read slightly closer than the stored admin zoom (+1).
+    // List-card previews use a hard-capped wider view so stadium/venue pins
+    // still show neighbourhood context (admin map_zoom is often 15–17).
+    const zoomBias = options.zoomBias ?? 1;
+    const zoom = options.listPreview
+      ? Math.min(
+          Math.max(1, loc.map_zoom + (options.zoomBias ?? -3)),
+          STATIC_MAP_LIST_PREVIEW_MAX_ZOOM,
+          tileConfig.maxZoom,
+        )
+      : Math.min(Math.max(1, loc.map_zoom + zoomBias), tileConfig.maxZoom);
     const req = {
       latitude: loc.latitude!,
       longitude: loc.longitude!,
-      zoom: Math.min(loc.map_zoom + 1, tileConfig.maxZoom),
+      zoom,
+      ...(options.listPreview
+        ? {
+            width: STATIC_MAP_LIST_WIDTH,
+            height: STATIC_MAP_LIST_HEIGHT,
+          }
+        : {}),
     };
     const cacheKey = buildStaticMapCacheKey(
       event.id,
       req,
       tileConfig.tileUrl,
       tileConfig.attribution,
+      !options.listPreview,
     );
     const cached = await this.cache.get(cacheKey);
     if (cached) {
@@ -174,7 +219,12 @@ export class EventStaticMapService {
     const renderTask = (async (): Promise<ResolveEventStaticMapResult> => {
       try {
         const userAgent = await this.buildUserAgent(db);
-        const png = await this.renderWithRetry(req, userAgent, tileConfig);
+        const png = await this.renderWithRetry(
+          req,
+          userAgent,
+          tileConfig,
+          !options.listPreview,
+        );
         this.negativeUntil.delete(cacheKey);
         await this.cache.set(cacheKey, png);
         return { ok: true, png, cacheHit: false };

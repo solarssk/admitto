@@ -45,11 +45,13 @@ function Harness({
   onSelectResult = () => {},
   onContactConfigured,
   showFindButton = true,
+  hint,
 }: {
   disabled?: boolean;
   onSelectResult?: (result: GeocodingResultDto) => void;
   onContactConfigured?: (configured: boolean) => void;
   showFindButton?: boolean;
+  hint?: string;
 }) {
   const [value, setValue] = useState("");
   return (
@@ -62,6 +64,7 @@ function Harness({
       onSelectResult={onSelectResult}
       onContactConfigured={onContactConfigured}
       showFindButton={showFindButton}
+      hint={hint}
     />
   );
 }
@@ -353,5 +356,79 @@ describe("VenueAutocomplete", () => {
   it("can omit the Find on map button", () => {
     renderWithToast(<Harness showFindButton={false} />);
     expect(screen.queryByRole("button", { name: "Find on map" })).toBeNull();
+  });
+
+  it("shows the field hint below the row when Find on map is present", () => {
+    renderWithToast(<Harness hint="Search a venue or street." />);
+    expect(screen.getByText("Search a venue or street.")).toBeTruthy();
+    expect(screen.getByLabelText("Venue name or address").getAttribute("aria-describedby")).toBe(
+      "venue-hint",
+    );
+  });
+
+  it("places suggestions above the field when there is more room above", async () => {
+    mockSearch.mockResolvedValue({ results: [makeResult()], contact_configured: true });
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      top: 480,
+      bottom: 520,
+      left: 40,
+      right: 400,
+      width: 360,
+      height: 40,
+      x: 40,
+      y: 480,
+      toJSON: () => ({}),
+    } as DOMRect);
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(280);
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(1024);
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(560);
+
+    renderWithToast(<Harness />);
+    fireEvent.change(screen.getByLabelText("Venue name or address"), {
+      target: { value: "Downing St" },
+    });
+    const list = await screen.findByRole("list", { name: "Venue suggestions" });
+    expect(Number.parseFloat(list.style.top)).toBeLessThan(480);
+  });
+
+  it("falls back to the field box when no input is found inside the field wrapper", async () => {
+    mockSearch.mockResolvedValue({ results: [makeResult()], contact_configured: true });
+    const rect = {
+      top: 100,
+      bottom: 140,
+      left: 40,
+      right: 400,
+      width: 360,
+      height: 40,
+      x: 40,
+      y: 100,
+      toJSON: () => ({}),
+    } as DOMRect;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(rect);
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(200);
+    vi.spyOn(HTMLElement.prototype, "querySelector").mockReturnValue(null);
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(768);
+
+    renderWithToast(<Harness />);
+    fireEvent.change(screen.getByLabelText("Venue name or address"), {
+      target: { value: "Downing St" },
+    });
+    expect(await screen.findByRole("list", { name: "Venue suggestions" })).toBeTruthy();
+  });
+
+  it("closes suggestions when an ancestor scrolls", async () => {
+    mockSearch.mockResolvedValue({ results: [makeResult()], contact_configured: true });
+    renderWithToast(<Harness />);
+    fireEvent.change(screen.getByLabelText("Venue name or address"), {
+      target: { value: "Downing St" },
+    });
+    expect(await screen.findByText("10 Downing Street")).toBeTruthy();
+
+    const scrollEvent = new Event("scroll", { bubbles: true });
+    Object.defineProperty(scrollEvent, "target", { value: document.body });
+    act(() => {
+      window.dispatchEvent(scrollEvent);
+    });
+    expect(screen.queryByRole("list", { name: "Venue suggestions" })).toBeNull();
   });
 });
