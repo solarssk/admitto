@@ -1325,8 +1325,11 @@ export function createApp(options: CreateAppOptions = {}) {
     }
     // Events list cards request a wider preview; tickets/mail omit the query (default +1).
     const context = c.req.query("context");
-    const zoomBias = context === "list" ? -2 : undefined;
-    const result = await eventStaticMapService.getForEvent(db, eventId, { zoomBias });
+    const result = await eventStaticMapService.getForEvent(
+      db,
+      eventId,
+      context === "list" ? { listPreview: true } : {},
+    );
     if (!result.ok) {
       return c.body(null, staticMapFailureStatus(result.reason));
     }

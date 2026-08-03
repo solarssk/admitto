@@ -55,11 +55,16 @@ function sanitizeStaticMapLogReason(message: string): string {
 export type GetForEventOptions = {
   /**
    * Relative to stored `EventLocation.map_zoom`.
-   * Ticket/mail default is +1 (slightly closer). Events list cards use a negative
-   * bias so the pin sits in more neighbourhood context.
+   * Ticket/mail default is +1 (slightly closer). Pass a negative bias to zoom out,
+   * or use `listPreview` for Events-card maps (hard-capped wider view).
    */
   zoomBias?: number;
+  /** Events list / operator picker — wider neighbourhood context, capped for consistency. */
+  listPreview?: boolean;
 };
+
+/** Max zoom for Events list card thumbnails (street-level admin zoom is too tight). */
+export const STATIC_MAP_LIST_PREVIEW_MAX_ZOOM = 12;
 
 export class EventStaticMapService {
   private readonly cache: StaticMapCache;
@@ -161,12 +166,19 @@ export class EventStaticMapService {
     }
 
     // Ticket / mail maps read slightly closer than the stored admin zoom (+1).
-    // List-card previews pass a negative bias for wider context.
+    // List-card previews use a hard-capped wider view so stadium/venue pins
+    // still show neighbourhood context (admin map_zoom is often 15–17).
     const zoomBias = options.zoomBias ?? 1;
+    const zoom = options.listPreview
+      ? Math.min(
+          Math.max(1, loc.map_zoom + (options.zoomBias ?? -3)),
+          STATIC_MAP_LIST_PREVIEW_MAX_ZOOM,
+        )
+      : Math.min(Math.max(1, loc.map_zoom + zoomBias), tileConfig.maxZoom);
     const req = {
       latitude: loc.latitude!,
       longitude: loc.longitude!,
-      zoom: Math.min(Math.max(1, loc.map_zoom + zoomBias), tileConfig.maxZoom),
+      zoom,
     };
     const cacheKey = buildStaticMapCacheKey(
       event.id,

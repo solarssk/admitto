@@ -49,7 +49,7 @@ export function EventCard({
           {hasMap ? (
             <img
               className="event-card__map-img"
-              src={`/m/${event.id}.png?context=list`}
+              src={`/m/${event.id}.png?context=list&v=2`}
               alt=""
               loading="lazy"
               decoding="async"

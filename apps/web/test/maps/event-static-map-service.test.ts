@@ -136,10 +136,10 @@ describe("EventStaticMapService.getForEvent", () => {
     await service.getForEvent(
       fakeDb({ latitude: 52.2297, longitude: 21.0122, map_zoom: 15 }),
       "evt-list",
-      { zoomBias: -2 },
+      { listPreview: true },
     );
     expect(renderPng).toHaveBeenCalledWith(
-      expect.objectContaining({ zoom: 13 }),
+      expect.objectContaining({ zoom: 12 }),
       expect.any(Object),
     );
 
@@ -150,6 +150,21 @@ describe("EventStaticMapService.getForEvent", () => {
     );
     expect(renderPng).toHaveBeenCalledWith(
       expect.objectContaining({ zoom: 16 }),
+      expect.any(Object),
+    );
+  });
+
+  it("caps listPreview zoom even when stored map_zoom is high", async () => {
+    const renderPng = vi.fn(async () => SAMPLE_PNG);
+    const service = new EventStaticMapService(serviceOpts({ renderPng }));
+
+    await service.getForEvent(
+      fakeDb({ latitude: 52.2297, longitude: 21.0122, map_zoom: 18 }),
+      "evt-close",
+      { listPreview: true },
+    );
+    expect(renderPng).toHaveBeenCalledWith(
+      expect.objectContaining({ zoom: 12 }),
       expect.any(Object),
     );
   });

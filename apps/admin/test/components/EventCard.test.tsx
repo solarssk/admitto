@@ -155,7 +155,7 @@ describe("EventCard", () => {
   it("renders a map image when has_coordinates is true", () => {
     renderCard();
     const img = document.querySelector(".event-card__map-img") as HTMLImageElement | null;
-    expect(img?.getAttribute("src")).toBe("/m/evt-1.png?context=list");
+    expect(img?.getAttribute("src")).toBe("/m/evt-1.png?context=list&v=2");
   });
 
   it("renders a map placeholder when has_coordinates is false", () => {
