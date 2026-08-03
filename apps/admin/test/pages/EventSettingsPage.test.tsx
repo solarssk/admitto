@@ -430,7 +430,7 @@ describe("EventSettingsPage tabs", () => {
     expect(screen.getByText("Drop logo here or click to browse")).toBeTruthy();
     expect(screen.getByText("Upload images")).toBeTruthy();
     expect(screen.getByText("Your images")).toBeTruthy();
-    expect(await screen.findByText(/No image assets yet/)).toBeTruthy();
+    expect(await screen.findByText("No images yet")).toBeTruthy();
     expect(
       screen.getByText(/leave blank to use the organization's logo/),
     ).toBeTruthy();
@@ -599,7 +599,7 @@ describe("EventSettingsPage tabs", () => {
     }
     expect(screen.getByText("This event is archived - images cannot be changed.")).toBeTruthy();
 
-    await screen.findByText(/No image assets yet/);
+    await screen.findByText("No images yet");
     const assetFileInput = document.querySelector(
       ".image-asset-library__file-input",
     ) as HTMLInputElement;

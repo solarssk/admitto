@@ -171,9 +171,11 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
     }
     if (assets.length === 0) {
       return (
-        <p className="settings-card-intro image-asset-library__intro">
-          No image assets yet. Upload one above to use it as a placeholder in email templates.
-        </p>
+        <EmptyState
+          icon={<i className="ti ti-photo" aria-hidden="true" />}
+          title="No images yet"
+          description="Upload one above to use as a {{name}} placeholder in email templates."
+        />
       );
     }
     return (
