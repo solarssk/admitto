@@ -12,9 +12,8 @@ export interface EventCardProps {
 }
 
 /** Responsive column count for an `.event-grid` of event cards, shared by the
- * admin and operator pickers so both pages grow from 1 to 3 columns the same way. */
+ * admin and operator pickers. Max two columns — cards need room for the map strip. */
 export function eventGridClassName(count: number): string {
-  if (count >= 4) return "event-grid event-grid--cols-3";
   if (count > 0) return "event-grid event-grid--cols-2";
   return "event-grid";
 }
@@ -50,7 +49,7 @@ export function EventCard({
           {hasMap ? (
             <img
               className="event-card__map-img"
-              src={`/m/${event.id}.png`}
+              src={`/m/${event.id}.png?context=list`}
               alt=""
               loading="lazy"
               decoding="async"
@@ -75,7 +74,7 @@ export function EventCard({
 
           <div className="event-card__main">
             {status && (
-              <Badge variant={status.variant} className="event-card__status">
+              <Badge variant={status.variant} outline={status.variant === "neutral"} className="event-card__status">
                 {status.label}
               </Badge>
             )}

@@ -52,6 +52,15 @@ function sanitizeStaticMapLogReason(message: string): string {
     .slice(0, 200);
 }
 
+export type GetForEventOptions = {
+  /**
+   * Relative to stored `EventLocation.map_zoom`.
+   * Ticket/mail default is +1 (slightly closer). Events list cards use a negative
+   * bias so the pin sits in more neighbourhood context.
+   */
+  zoomBias?: number;
+};
+
 export class EventStaticMapService {
   private readonly cache: StaticMapCache;
   private readonly renderOptions: Partial<Pick<RenderStaticMapOptions, "fetchFn" | "timeoutMs">>;
@@ -120,7 +129,11 @@ export class EventStaticMapService {
     throw lastErr;
   }
 
-  async getForEvent(db: PrismaClient, eventId: string): Promise<ResolveEventStaticMapResult> {
+  async getForEvent(
+    db: PrismaClient,
+    eventId: string,
+    options: GetForEventOptions = {},
+  ): Promise<ResolveEventStaticMapResult> {
     const tileConfig = resolveMapTileConfig();
     if (!tileConfig.enabled) {
       return { ok: false, reason: "disabled" };
@@ -147,11 +160,13 @@ export class EventStaticMapService {
       return { ok: false, reason: "no_coordinates" };
     }
 
-    // Ticket / mail maps read slightly closer than the admin preview (+1), capped by provider max.
+    // Ticket / mail maps read slightly closer than the stored admin zoom (+1).
+    // List-card previews pass a negative bias for wider context.
+    const zoomBias = options.zoomBias ?? 1;
     const req = {
       latitude: loc.latitude!,
       longitude: loc.longitude!,
-      zoom: Math.min(loc.map_zoom + 1, tileConfig.maxZoom),
+      zoom: Math.min(Math.max(1, loc.map_zoom + zoomBias), tileConfig.maxZoom),
     };
     const cacheKey = buildStaticMapCacheKey(
       event.id,

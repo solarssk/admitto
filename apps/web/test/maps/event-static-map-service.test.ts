@@ -129,6 +129,31 @@ describe("EventStaticMapService.getForEvent", () => {
     expect(cache.set).toHaveBeenCalledWith(expect.any(String), SAMPLE_PNG);
   });
 
+  it("applies zoomBias relative to stored map_zoom (list cards zoom out)", async () => {
+    const renderPng = vi.fn(async () => SAMPLE_PNG);
+    const service = new EventStaticMapService(serviceOpts({ renderPng }));
+
+    await service.getForEvent(
+      fakeDb({ latitude: 52.2297, longitude: 21.0122, map_zoom: 15 }),
+      "evt-list",
+      { zoomBias: -2 },
+    );
+    expect(renderPng).toHaveBeenCalledWith(
+      expect.objectContaining({ zoom: 13 }),
+      expect.any(Object),
+    );
+
+    renderPng.mockClear();
+    await service.getForEvent(
+      fakeDb({ latitude: 52.2297, longitude: 21.0122, map_zoom: 15 }),
+      "evt-ticket",
+    );
+    expect(renderPng).toHaveBeenCalledWith(
+      expect.objectContaining({ zoom: 16 }),
+      expect.any(Object),
+    );
+  });
+
   it("retries once then returns a real PNG on the second attempt", async () => {
     const renderPng = vi
       .fn()

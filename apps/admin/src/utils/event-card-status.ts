@@ -36,7 +36,7 @@ export function eventCardStatus(event: {
 
   const daysUntil = daysUntilEvent(event.date, event.timezone);
   if (daysUntil == null) {
-    return { label: "Active", variant: "info" };
+    return { label: "Active", variant: "neutral" };
   }
   if (daysUntil < 0) {
     return { label: "Needs archiving", variant: "warn" };
@@ -46,11 +46,11 @@ export function eventCardStatus(event: {
     const h = Math.max(0, Math.floor((msLeft % 86_400_000) / 3_600_000));
     return {
       label: h === 0 ? "Starting soon" : `Today in ${h}h`,
-      variant: "info",
+      variant: "neutral",
     };
   }
   if (daysUntil === 1) {
-    return { label: "Tomorrow", variant: "info" };
+    return { label: "Tomorrow", variant: "neutral" };
   }
-  return { label: `In ${daysUntil} days`, variant: "info" };
+  return { label: `In ${daysUntil} days`, variant: "neutral" };
 }

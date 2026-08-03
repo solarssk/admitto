@@ -84,7 +84,7 @@ describe("eventCardStatus", () => {
         timezone: "Europe/Warsaw",
         archived_at: null,
       }),
-    ).toEqual({ label: "In 57 days", variant: "info" });
+    ).toEqual({ label: "In 57 days", variant: "neutral" });
   });
 });
 
@@ -155,7 +155,7 @@ describe("EventCard", () => {
   it("renders a map image when has_coordinates is true", () => {
     renderCard();
     const img = document.querySelector(".event-card__map-img") as HTMLImageElement | null;
-    expect(img?.getAttribute("src")).toBe("/m/evt-1.png");
+    expect(img?.getAttribute("src")).toBe("/m/evt-1.png?context=list");
   });
 
   it("renders a map placeholder when has_coordinates is false", () => {
@@ -188,13 +188,10 @@ describe("eventGridClassName", () => {
     expect(eventGridClassName(0)).toBe("event-grid");
   });
 
-  it("uses two columns for 1-3 events", () => {
+  it("uses two columns whenever there is at least one event", () => {
     expect(eventGridClassName(1)).toBe("event-grid event-grid--cols-2");
     expect(eventGridClassName(3)).toBe("event-grid event-grid--cols-2");
-  });
-
-  it("uses three columns for 4 or more events", () => {
-    expect(eventGridClassName(4)).toBe("event-grid event-grid--cols-3");
-    expect(eventGridClassName(10)).toBe("event-grid event-grid--cols-3");
+    expect(eventGridClassName(4)).toBe("event-grid event-grid--cols-2");
+    expect(eventGridClassName(10)).toBe("event-grid event-grid--cols-2");
   });
 });
