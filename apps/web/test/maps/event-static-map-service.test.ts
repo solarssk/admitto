@@ -139,7 +139,7 @@ describe("EventStaticMapService.getForEvent", () => {
       { listPreview: true },
     );
     expect(renderPng).toHaveBeenCalledWith(
-      expect.objectContaining({ zoom: 12 }),
+      expect.objectContaining({ zoom: 12, width: 840, height: 256 }),
       expect.any(Object),
     );
 

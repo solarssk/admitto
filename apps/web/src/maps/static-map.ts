@@ -15,6 +15,11 @@ import type { MapTileConfig } from "./config.js";
 
 export const STATIC_MAP_WIDTH = 600;
 export const STATIC_MAP_HEIGHT = 300;
+/** Events list / operator picker thumbnails — wider than ticket maps (≈3.3:1) so
+ * `object-fit: cover` on the card strip keeps the mid pin and bottom attribution in frame.
+ * Height must be ≥ tile size (256): sharp rejects composite overlays larger than the canvas. */
+export const STATIC_MAP_LIST_WIDTH = 840;
+export const STATIC_MAP_LIST_HEIGHT = 256;
 const TILE_SIZE = 256;
 const DEFAULT_TILE_TIMEOUT_MS = 8_000;
 /** Encoded response body cap (before sharp decode). */

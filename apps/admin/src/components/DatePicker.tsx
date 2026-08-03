@@ -1,9 +1,11 @@
 import {
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type ChangeEvent,
+  type CSSProperties,
   type KeyboardEvent,
 } from "react";
 import {
@@ -19,7 +21,14 @@ import { useModalFocusTrap } from "./useModalFocusTrap.js";
 import { useClickOutside, type OutsideInteraction } from "./useClickOutside.js";
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const PANEL_GAP_PX = 6;
+const VIEWPORT_PAD_PX = 8;
 
+const HIDDEN_FIXED_PANEL: CSSProperties = {
+  position: "fixed",
+  visibility: "hidden",
+  zIndex: 1100,
+};
 function parseIsoDate(iso: string): { y: number; m: number; d: number } | null {
   if (!ISO_DATE_RE.test(iso)) return null;
   const [y, m, d] = iso.split("-").map((part) => Number.parseInt(part, 10));
@@ -99,10 +108,9 @@ export function DatePicker({
   // viewport's right edge (e.g. the last of several filters in a row), that would push it past
   // the edge. The page body clips overflow-x, so that's not just untidy, it's invisible.
   const [panelRightAligned, setPanelRightAligned] = useState(false);
-  // Set only when neither side of the field has room for the panel at its natural height (a
-  // field mid-page in a short viewport) - caps it to whichever side was chosen instead of
-  // letting it run off-screen, with its own scrollbar so the calendar stays reachable.
-  const [panelMaxHeight, setPanelMaxHeight] = useState<number | undefined>(undefined);
+  // Fixed coords so an overflow:auto ancestor (New event modal) neither clips the calendar nor
+  // grows scroll height around an absolutely positioned dialog (DeliveryRowMenu pattern).
+  const [panelStyle, setPanelStyle] = useState<CSSProperties>(HIDDEN_FIXED_PANEL);
   const [text, setText] = useState(() => (value ? formatIsoCalendarDate(value) : ""));
   const [typing, setTyping] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
@@ -124,6 +132,7 @@ export function DatePicker({
   // other close path (Escape, picking a date, an outside pointerdown, typing a valid date).
   const closePanel = (reason?: OutsideInteraction) => {
     setOpen(false);
+    setPanelStyle(HIDDEN_FIXED_PANEL);
     if (reason !== "focus") window.setTimeout(() => inputRef.current?.focus(), 0);
   };
 
@@ -156,7 +165,7 @@ export function DatePicker({
 
   useClickOutside(containerRef, open, closePanel);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open || !containerRef.current || !panelRef.current) return;
     const updatePlacement = () => {
       const rect = containerRef.current!.getBoundingClientRect();
@@ -165,22 +174,47 @@ export function DatePicker({
       // instead of the true content height would make the clamp look unnecessary, remove
       // itself, regrow the panel, then re-clamp on the next scroll/resize tick - a visible
       // height oscillation every time the panel is open during a scroll or resize.
-      const panelHeight = panelRef.current!.scrollHeight;
-      const panelWidth = panelRef.current!.offsetWidth;
+      const panel = panelRef.current!;
+      const panelHeight = panel.scrollHeight;
+      const panelWidth = panel.offsetWidth;
       const spaceBelow = window.innerHeight - rect.bottom;
       const spaceAbove = rect.top;
-      const above = spaceBelow < panelHeight + 8 && spaceAbove > spaceBelow;
+      const above = spaceBelow < panelHeight + PANEL_GAP_PX && spaceAbove > spaceBelow;
+      const available = (above ? spaceAbove : spaceBelow) - PANEL_GAP_PX - VIEWPORT_PAD_PX;
+      const maxHeight = panelHeight > available ? Math.max(160, available) : undefined;
+      const usedHeight = Math.min(panelHeight, maxHeight ?? panelHeight);
+      const rightAligned = window.innerWidth - rect.left < panelWidth;
+      const top = above
+        ? rect.top - usedHeight - PANEL_GAP_PX
+        : rect.bottom + PANEL_GAP_PX;
+      let left = rightAligned ? rect.right - panelWidth : rect.left;
+      left = Math.min(left, window.innerWidth - VIEWPORT_PAD_PX - panelWidth);
+      left = Math.max(left, VIEWPORT_PAD_PX);
+
       setPanelAbove(above);
-      const available = (above ? spaceAbove : spaceBelow) - 8;
-      setPanelMaxHeight(panelHeight > available ? Math.max(160, available) : undefined);
-      setPanelRightAligned(window.innerWidth - rect.left < panelWidth);
+      setPanelRightAligned(rightAligned);
+      setPanelStyle({
+        position: "fixed",
+        top,
+        left,
+        maxHeight: maxHeight ? `${maxHeight}px` : undefined,
+        overflowY: maxHeight ? "auto" : undefined,
+        visibility: "visible",
+        zIndex: 1100,
+      });
     };
     updatePlacement();
     window.addEventListener("resize", updatePlacement);
-    window.addEventListener("scroll", updatePlacement, true);
+    // Fixed panel would drift when a scroll ancestor (modal body) moves under it.
+    // Ignore scrolls that originate inside the calendar itself (maxHeight clamp).
+    const onScroll = (event: Event) => {
+      if (panelRef.current?.contains(event.target as Node)) return;
+      closePanel();
+    };
+    window.addEventListener("scroll", onScroll, true);
     return () => {
       window.removeEventListener("resize", updatePlacement);
-      window.removeEventListener("scroll", updatePlacement, true);
+      window.removeEventListener("scroll", onScroll, true);
     };
   }, [open, viewMonth, viewYear]);
 
@@ -302,7 +336,13 @@ export function DatePicker({
           aria-expanded={open}
           aria-controls={`${controlId}-panel`}
           onClick={() => {
-            if (!disabled) setOpen((prev) => !prev);
+            if (disabled) return;
+            if (open) {
+              closePanel();
+              return;
+            }
+            setPanelStyle(HIDDEN_FIXED_PANEL);
+            setOpen(true);
           }}
         >
           <i className="ti ti-calendar" aria-hidden="true" />
@@ -334,6 +374,7 @@ export function DatePicker({
             }
             if (event.key === "ArrowDown" && !open) {
               event.preventDefault();
+              setPanelStyle(HIDDEN_FIXED_PANEL);
               setOpen(true);
             }
           }}
@@ -351,11 +392,7 @@ export function DatePicker({
           ]
             .filter(Boolean)
             .join(" ")}
-          style={
-            panelMaxHeight
-              ? { maxHeight: `${panelMaxHeight}px`, overflowY: "auto" }
-              : undefined
-          }
+          style={panelStyle}
           open
           aria-label="Choose date"
           aria-modal="true"

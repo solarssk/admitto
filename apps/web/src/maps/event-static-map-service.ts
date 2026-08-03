@@ -11,6 +11,8 @@ import {
   redactTileUrlForLogs,
   renderStaticMapPng,
   StaticMapRenderError,
+  STATIC_MAP_LIST_HEIGHT,
+  STATIC_MAP_LIST_WIDTH,
   type RenderStaticMapOptions,
 } from "./static-map.js";
 import { createStaticMapCache, type StaticMapCache } from "./static-map-cache.js";
@@ -112,7 +114,13 @@ export class EventStaticMapService {
   }
 
   private async renderWithRetry(
-    req: { latitude: number; longitude: number; zoom: number },
+    req: {
+      latitude: number;
+      longitude: number;
+      zoom: number;
+      width?: number;
+      height?: number;
+    },
     userAgent: string,
     tileConfig: ReturnType<typeof resolveMapTileConfig>,
   ): Promise<Buffer> {
@@ -179,6 +187,12 @@ export class EventStaticMapService {
       latitude: loc.latitude!,
       longitude: loc.longitude!,
       zoom,
+      ...(options.listPreview
+        ? {
+            width: STATIC_MAP_LIST_WIDTH,
+            height: STATIC_MAP_LIST_HEIGHT,
+          }
+        : {}),
     };
     const cacheKey = buildStaticMapCacheKey(
       event.id,

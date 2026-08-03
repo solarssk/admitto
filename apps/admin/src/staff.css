@@ -54,23 +54,6 @@
   grid-template-columns: 1fr;
 }
 
-.event-map-data-credit {
-  margin: 10px 0 0;
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
-  line-height: 1.35;
-}
-
-.event-map-data-credit a {
-  color: inherit;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.event-map-data-credit a:hover {
-  color: var(--text-secondary);
-}
-
 .event-card {
   position: relative;
   display: flex;
@@ -104,8 +87,8 @@
   display: block;
   width: 100%;
   height: 100%;
-  /* Center the pin (drawn mid-image). OSM/CARTO credit lives under the grid, so we
-     do not crop to the PNG attribution strip. */
+  /* List PNGs are wide (near card-strip aspect) so cover keeps the mid pin and the
+     bottom OSM/CARTO burn-in visible without a separate HTML credit under the grid. */
   object-fit: cover;
   object-position: center center;
   pointer-events: none;
@@ -249,12 +232,16 @@
   font-size: var(--fs-sm);
   line-height: 1.35;
   display: flex;
-  align-items: center;
+  /* Keep the text at the top of the two-line reserve; do not vertically center
+     the whole row. The icon is centered to the first text line via its own height. */
+  align-items: flex-start;
   gap: 6px;
 }
 
 .event-card__location i {
   margin: 0;
+  /* Match one text line so the pin sits on the optical center of the label. */
+  height: calc(var(--fs-sm) * 1.35);
   font-size: 14px;
   line-height: 1;
   color: var(--text-muted);
@@ -6973,11 +6960,9 @@ select.system-log-panel__field {
 }
 
 .timezone-select__panel {
-  position: absolute;
-  z-index: 30;
-  top: calc(100% + 0.35rem);
-  left: 0;
-  right: 0;
+  /* top/left/width come from inline fixed positioning (escapes overflow:auto modals). */
+  position: fixed;
+  z-index: 1100;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -6986,11 +6971,7 @@ select.system-log-panel__field {
   border-radius: var(--radius-md, 0.5rem);
   background: var(--surface-card, #fff);
   box-shadow: var(--shadow-md, 0 8px 24px rgba(15, 23, 42, 0.12));
-}
-
-.timezone-select__panel--above {
-  top: auto;
-  bottom: calc(100% + 0.35rem);
+  box-sizing: border-box;
 }
 
 .timezone-select--compact .timezone-select__trigger-text {
@@ -7032,6 +7013,16 @@ select.system-log-panel__field {
   line-height: 1.3;
 }
 
+.timezone-select__list-shell {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 0.375rem);
+  background: var(--surface-page, #f8fafc);
+  /* Scrolling lives on .timezone-select__list. overflow:auto on this rounded box
+     would draw the native scrollbar as a hard rectangle across the corner (same
+     fix as .identity-modal__panel -> .identity-modal__scroll). */
+  overflow: hidden;
+}
+
 .timezone-select__list {
   margin: 0;
   padding: 0.25rem;
@@ -7039,9 +7030,29 @@ select.system-log-panel__field {
   overflow-x: hidden;
   overflow-y: auto;
   list-style: none;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm, 0.375rem);
-  background: var(--surface-page, #f8fafc);
+  overscroll-behavior: contain;
+  /* Keep row width stable when filter results cross the max-height threshold
+     (scrollbar appearing/disappearing mid-type). Same idea as .overview-timeline. */
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.timezone-select__list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.timezone-select__list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.timezone-select__list::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+}
+
+.timezone-select__list::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
 }
 
 .timezone-select__group {
@@ -7078,8 +7089,8 @@ select.system-log-panel__field {
 
 .timezone-select__option-row {
   display: grid;
-  grid-template-columns: minmax(4.25rem, auto) minmax(0, 1fr) auto;
-  align-items: center;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
+  align-items: baseline;
   gap: 0.5rem;
   min-width: 0;
 }
@@ -7088,6 +7099,9 @@ select.system-log-panel__field {
   font-weight: 500;
   color: var(--text-primary);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .timezone-select__option-offset {
@@ -7204,13 +7218,15 @@ select.system-log-panel__field {
   color: var(--text-disabled);
 }
 
-/* This is a native <dialog> (see DatePicker.tsx), not a plain <div> — the rules below
+/* This is a native <dialog> (see DatePicker.tsx), not a plain <div> - the rules below
    reset the UA default dialog styling (inset on all sides, auto margin, fit-content
-   sizing, Canvas colors) back to what the plain <div> it replaced would have had. */
+   sizing, Canvas colors) back to what the plain <div> it replaced would have had.
+   Position is `fixed` with top/left from JS so overflow:auto ancestors (modals, tables)
+   neither clip the calendar nor grow their scroll height around it. */
 .date-picker__panel {
-  position: absolute;
-  z-index: 30;
-  top: calc(100% + 0.35rem);
+  position: fixed;
+  z-index: 1100;
+  top: 0;
   left: 0;
   right: auto;
   bottom: auto;
@@ -7240,16 +7256,6 @@ select.system-log-panel__field {
   .date-picker__panel {
     width: 14rem;
   }
-}
-
-.date-picker__panel--above {
-  top: auto;
-  bottom: calc(100% + 0.35rem);
-}
-
-.date-picker__panel--right {
-  left: auto;
-  right: 0;
 }
 
 .date-picker__header {

@@ -12,33 +12,14 @@ export interface EventCardProps {
 }
 
 /** Responsive column count for an `.event-grid` of event cards, shared by the
- * admin and operator pickers. Max two columns — cards need room for the map strip. */
+ * admin and operator pickers. Max two columns; cards need room for the map strip. */
 export function eventGridClassName(count: number): string {
   if (count > 0) return "event-grid event-grid--cols-2";
   return "event-grid";
 }
 
-/**
- * One OSM/CARTO credit for a page of list-map thumbnails (ODbL: one instance is enough
- * when several static maps share a document). Linked so the licence is one click away.
- */
-export function EventMapDataCredit() {
-  return (
-    <p className="event-map-data-credit">
-      Map data{" "}
-      <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">
-        © OpenStreetMap
-      </a>
-      {" · "}
-      <a href="https://carto.com/attributions" target="_blank" rel="noopener noreferrer">
-        © CARTO
-      </a>
-    </p>
-  );
-}
-
 /** Event card shared by the admin (`/admin`) and operator (`/operator`) pickers.
- * `state={{ event }}` is a fast path only `EventLayout` (admin) reads on landing —
+ * `state={{ event }}` is a fast path only `EventLayout` (admin) reads on landing;
  * harmless for operator, which never reads router state. */
 export function EventCard({
   event,

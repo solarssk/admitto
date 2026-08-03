@@ -3,7 +3,7 @@ import { useNavigate } from "react-router";
 import { Card, PageHeader } from "@admitto/ui";
 import { ApiError, fetchCheckInEvents } from "../api/client.js";
 import type { EventDto } from "../api/types.js";
-import { EventCard, EventMapDataCredit, eventGridClassName } from "../components/EventCard.js";
+import { EventCard, eventGridClassName } from "../components/EventCard.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 
@@ -77,7 +77,6 @@ export function CheckInEntryPage() {
           />
         ))}
       </div>
-      {events.some((e) => e.map_preview_path) ? <EventMapDataCredit /> : null}
     </>
   );
 }

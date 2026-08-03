@@ -6,7 +6,7 @@ import { isSuperadmin } from "../auth/capabilities.js";
 import { ApiError, fetchAdminEvents } from "../api/client.js";
 import type { EventDto } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
-import { EventCard, EventMapDataCredit, eventGridClassName } from "../components/EventCard.js";
+import { EventCard, eventGridClassName } from "../components/EventCard.js";
 import { CreateEventModal } from "../events/CreateEventModal.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 
@@ -165,9 +165,6 @@ export function EventsPickerPage() {
           />
         ))}
       </div>
-      {!loading && !error && displayedEvents.some((e) => e.map_preview_path) ? (
-        <EventMapDataCredit />
-      ) : null}
 
       <CreateEventModal
         open={createOpen}

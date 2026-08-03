@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
-import { EventCard, EventMapDataCredit, eventGridClassName } from "../../src/components/EventCard.js";
+import { EventCard, eventGridClassName } from "../../src/components/EventCard.js";
 import type { EventCardProps } from "../../src/components/EventCard.js";
 import type { EventDto } from "../../src/api/types.js";
 import { eventCardDateParts, eventCardStatus } from "../../src/utils/event-card-status.js";
@@ -20,7 +20,7 @@ const baseEvent: EventDto = {
   timezone: "Europe/Warsaw",
   location: "Warsaw",
   has_coordinates: true,
-  map_preview_path: "/m/evt-1.png?v=5_52.230000_21.010000_z15&context=list",
+  map_preview_path: "/m/evt-1.png?v=8_52.230000_21.010000_z15&context=list",
   organization_id: "org-1",
   archived_at: null,
   attendee_count: 42,
@@ -201,7 +201,7 @@ describe("EventCard", () => {
     renderCard();
     const img = document.querySelector(".event-card__map-img") as HTMLImageElement | null;
     expect(img?.getAttribute("src")).toBe(
-      "/m/evt-1.png?v=5_52.230000_21.010000_z15&context=list",
+      "/m/evt-1.png?v=8_52.230000_21.010000_z15&context=list",
     );
   });
 
@@ -233,18 +233,6 @@ describe("EventCard", () => {
     renderCard({ showStatusBadge: true, showAttendeeCount: true });
     expect(screen.queryByRole("button", { name: /Archive/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /Unarchive/i })).toBeNull();
-  });
-});
-
-describe("EventMapDataCredit", () => {
-  it("links OpenStreetMap copyright and CARTO attributions", () => {
-    render(<EventMapDataCredit />);
-    expect(screen.getByRole("link", { name: /OpenStreetMap/i }).getAttribute("href")).toBe(
-      "https://www.openstreetmap.org/copyright",
-    );
-    expect(screen.getByRole("link", { name: /CARTO/i }).getAttribute("href")).toBe(
-      "https://carto.com/attributions",
-    );
   });
 });
 

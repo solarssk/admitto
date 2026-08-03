@@ -127,8 +127,9 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
           <Input
             id="ce-slug"
             label="Link name *"
-            hint="Appears in ticket web links (for example /t/summer-summit/…). Filled from the title — you can edit it now, but not after the event is created."
+            hint="Short permanent ID for this event (lowercase letters, numbers, - or _). Used in agency ticket links such as /t/summer-summit/a/…. Ordinary tickets use a private token only (/t/…). Filled from the title; editable now, not after create."
             icon={<i className="ti ti-link" aria-hidden="true" />}
+            className="mono"
             value={slug}
             maxLength={80}
             pattern="[a-z0-9_\-]+"
@@ -158,7 +159,7 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
               onChange={setTimezone}
               disabled={submitting}
               required
-              hint="Search by city (for example Delhi or Warsaw). The saved value is a standard timezone ID such as Asia/Kolkata or Europe/Warsaw — often a region name, not the city you typed."
+              hint="Search by city (for example Delhi or Warsaw). The saved value is a standard timezone ID such as Asia/Kolkata or Europe/Warsaw; often a region name, not the city you typed."
             />
           </div>
           <VenueAutocomplete
@@ -168,6 +169,7 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
             maxLength={LOCATION_LIMITS.VENUE_NAME_MAX_LENGTH}
             disabled={submitting}
             placeholder="e.g. Convention Center, Warsaw"
+            hint="Optional. Search a venue or address. If nothing matches, create the event anyway and set the map pin and coordinates later under Event settings, Location tab."
             onChange={(text) => {
               setVenueName(text);
               setVenueGeocode(null);

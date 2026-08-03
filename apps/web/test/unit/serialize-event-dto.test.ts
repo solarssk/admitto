@@ -44,7 +44,7 @@ describe("serializeEventDto — has_coordinates / map_preview_path", () => {
       map_zoom: 15,
     });
     expect(dto.map_preview_path).toBe(
-      "/m/evt-1.png?v=5_52.230000_21.010000_z15&context=list",
+      "/m/evt-1.png?v=8_52.230000_21.010000_z15&context=list",
     );
   });
 
@@ -75,6 +75,6 @@ describe("eventListMapPreviewPath", () => {
         map_longitude: 19.94,
         map_zoom: 14,
       }),
-    ).toBe("/m/evt-1.png?v=5_50.060000_19.940000_z14&context=list");
+    ).toBe("/m/evt-1.png?v=8_50.060000_19.940000_z14&context=list");
   });
 });

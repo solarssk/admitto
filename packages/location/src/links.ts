@@ -83,7 +83,7 @@ export function buildEventStaticMapPath(
   eventId: string,
   coords?: StaticMapCacheBustCoords | null,
 ): string {
-  const compositor = "5";
+  const compositor = "8";
   let pin = "";
   if (coords && Number.isFinite(coords.latitude) && Number.isFinite(coords.longitude)) {
     pin = `_${formatCoordinate(coords.latitude)}_${formatCoordinate(coords.longitude)}`;
