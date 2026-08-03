@@ -77,6 +77,21 @@ describe("serializeEventDto — has_coordinates / map_preview_path", () => {
     });
     expect(dto.map_attribution).toBe("© CARTO © OpenStreetMap");
   });
+
+  it("returns null map_attribution when plain attribution text is empty", () => {
+    process.env["LOCATION_MAPS_ENABLED"] = "true";
+    // resolveMapTileConfig keeps a non-empty raw string; plainMapAttribution strips tags to "".
+    process.env["MAP_TILE_ATTRIBUTION"] = "<span></span>";
+    const dto = serializeEventDto({
+      ...baseRow,
+      has_coordinates: true,
+      map_latitude: 52.23,
+      map_longitude: 21.01,
+      map_zoom: 15,
+    });
+    expect(dto.map_preview_path).toBeTruthy();
+    expect(dto.map_attribution).toBeNull();
+  });
 });
 
 describe("eventListMapPreviewPath", () => {

@@ -200,6 +200,33 @@ describe("renderStaticMapPng", () => {
     expect(meta.format).toBe("png");
   });
 
+  it("skips the PNG attribution burn-in when burnInAttribution is false", async () => {
+    const tile = await solidTilePng({ r: 180, g: 190, b: 200 });
+    const fetchFn = vi.fn().mockImplementation(async () =>
+      new Response(new Uint8Array(tile), { status: 200, headers: { "content-type": "image/png" } }),
+    );
+
+    const png = await renderStaticMapPng(
+      { latitude: 52.2297, longitude: 21.0122, zoom: 15 },
+      {
+        tileConfig: {
+          enabled: true,
+          tileUrl: "https://tiles.example/{z}/{x}/{y}.png",
+          attribution: "© Test Attribution That Would Burn In",
+          maxZoom: 19,
+        },
+        userAgent: "Admitto/test",
+        fetchFn,
+        burnInAttribution: false,
+      },
+    );
+
+    expect(fetchFn).toHaveBeenCalled();
+    const meta = await sharp(png).metadata();
+    expect(meta.format).toBe("png");
+    expect(meta.width).toBe(STATIC_MAP_WIDTH);
+  });
+
   it("resizes non-256 commercial tiles (e.g. MapTiler 512) before composite", async () => {
     const tile512 = await sharp({
       create: { width: 512, height: 512, channels: 3, background: { r: 100, g: 140, b: 180 } },
