@@ -2650,6 +2650,9 @@ describe("POST /api/admin/events/:eventId/attendees/:id/resend", () => {
   });
 
   it("returns 422 mail_not_configured instead of a raw 500 when no mail transport is set up", async () => {
+    // Prior successful resends in this describe share ATT_A1's per-attendee bucket
+    // (5/min). Reset so these mapper assertions are not flaky 429s.
+    rateLimitStore.reset();
     const spy = vi
       .spyOn(mailDelivery, "resendTicketEmail")
       .mockRejectedValueOnce(new Error("Cannot resolve mail provider: not set in env"));
@@ -2667,7 +2670,48 @@ describe("POST /api/admin/events/:eventId/attendees/:id/resend", () => {
     }
   });
 
-  it("does not remap an unrelated send failure to mail_not_configured (rethrows instead)", async () => {
+  it("returns 422 mail_destination_blocked when SMTP host fails SSRF checks", async () => {
+    const { MailDestinationError } = await import("@admitto/mailer");
+    const spy = vi.spyOn(mailDelivery, "resendTicketEmail").mockRejectedValueOnce(
+      new MailDestinationError(
+        "mail_destination_blocked",
+        "hostname must not resolve to a private or link-local address",
+      ),
+    );
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A1}/resend`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("mail_destination_blocked");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("returns 422 mail_destination_unresolved when the mail host cannot be resolved", async () => {
+    const { MailDestinationError } = await import("@admitto/mailer");
+    const spy = vi.spyOn(mailDelivery, "resendTicketEmail").mockRejectedValueOnce(
+      new MailDestinationError("mail_destination_unresolved", "hostname could not be resolved"),
+    );
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A1}/resend`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("mail_destination_unresolved");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("does not remap an unrelated send failure to mail setup codes (JSON internal_error instead)", async () => {
     const spy = vi
       .spyOn(mailDelivery, "resendTicketEmail")
       .mockRejectedValueOnce(new Error("boom: provider timed out"));
@@ -2677,11 +2721,11 @@ describe("POST /api/admin/events/:eventId/attendees/:id/resend", () => {
         headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
-      // Not caught by mailNotConfiguredResponse — falls through to the framework's
-      // generic unhandled-error response (plain text, not our JSON error envelope).
+      // Not caught by mailTransportSetupErrorResponse — falls through to the framework's
+      // generic unhandled-error response (JSON { error: "internal_error" }).
       expect(res.status).toBe(500);
-      const text = await res.text();
-      expect(text).not.toContain("mail_not_configured");
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("internal_error");
     } finally {
       spy.mockRestore();
     }
@@ -3688,17 +3732,17 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
     }
   });
 
-  it("does not remap an unrelated send failure to mail_not_configured (rethrows instead)", async () => {
+  it("does not remap an unrelated send failure to mail setup codes (JSON internal_error instead)", async () => {
     const spy = vi
       .spyOn(mailDelivery, "sendTicketEmails")
       .mockRejectedValueOnce(new Error("boom: provider timed out"));
     try {
       const res = await postBulkResend("all");
-      // Not caught by mailNotConfiguredResponse — falls through to the framework's
-      // generic unhandled-error response (plain text, not our JSON error envelope).
+      // Not caught by mailTransportSetupErrorResponse — falls through to the framework's
+      // generic unhandled-error response (JSON { error: "internal_error" }).
       expect(res.status).toBe(500);
-      const text = await res.text();
-      expect(text).not.toContain("mail_not_configured");
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("internal_error");
     } finally {
       spy.mockRestore();
     }

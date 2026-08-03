@@ -809,11 +809,11 @@ describe("multi-template API", () => {
           filter: { type: "attendee_ids", ids: ["att-multi-mail-unrelated-error"] },
         }),
       });
-      // Not caught by mailNotConfiguredResponse — falls through to the framework's
-      // generic unhandled-error response (plain text, not our JSON error envelope).
+      // Not caught by mailTransportSetupErrorResponse — falls through to the framework's
+      // generic unhandled-error response (JSON { error: "internal_error" }).
       expect(res.status).toBe(500);
-      const text = await res.text();
-      expect(text).not.toContain("mail_not_configured");
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("internal_error");
     } finally {
       spy.mockRestore();
       // These two tests each spend one /send rate-limit slot on top of the rest of this
