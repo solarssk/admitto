@@ -3,10 +3,8 @@
 
 .scroll-fade-tabs {
   position: relative;
-  /* No margin-bottom: .screen's flex gap (and Organisation settings' block flow) own the
-     space under the strip. A fixed space-4 here stacked with that gap and pushed Users /
-     Event settings ~34px below the tabs while the Events list (plain Tabs, no margin) sat flush. */
-  margin-bottom: 0;
+  /* One breath under the tab strip. Do not stack this with .screen's flex gap — see shell.css. */
+  margin-bottom: var(--space-3);
 }
 
 .scroll-fade-tabs__scroll {
