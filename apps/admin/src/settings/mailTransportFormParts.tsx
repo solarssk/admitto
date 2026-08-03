@@ -92,12 +92,12 @@ export function draftFromFields(f: MailSettingsFieldsDto): MailDraft {
   };
 }
 
-/** Short card-header badge when one or more fields are env-locked — keeps rows from wrapping on mobile. */
+/** Card-header badge when one or more fields are env-locked — stays out of field rows so mobile controls don't wrap. */
 export function EnvBadge({ locked }: Readonly<{ locked: boolean }>) {
   if (!locked) return null;
   return (
-    <Badge variant="neutral" className="settings-env-badge" aria-label="Managed by environment">
-      ENV
+    <Badge variant="neutral" className="settings-env-badge">
+      From environment
     </Badge>
   );
 }
