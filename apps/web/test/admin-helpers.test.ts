@@ -4,6 +4,7 @@ import type { PrismaClient } from "@admitto/db";
 import {
   countAttendeesByEvent,
   isValidCalendarDate,
+  parseEventDateInput,
   positiveIntQuery,
   resolveActorEmailForLog,
   resolveClientTimezone,
@@ -48,6 +49,21 @@ describe("isValidCalendarDate", () => {
 
   it("accepts a real calendar date", () => {
     expect(isValidCalendarDate("2026-02-28")).toBe(true);
+  });
+});
+
+describe("parseEventDateInput", () => {
+  it("maps date-only values to UTC noon", () => {
+    const parsed = parseEventDateInput("2026-08-03");
+    expect(parsed.toISOString()).toBe("2026-08-03T12:00:00.000Z");
+    expect(parsed.getTime()).toBe(Date.UTC(2026, 7, 3, 12, 0, 0));
+  });
+
+  it("preserves the instant for offset timestamps", () => {
+    const input = "2026-08-03T15:30:00.000+02:00";
+    const parsed = parseEventDateInput(input);
+    expect(parsed.getTime()).toBe(new Date(input).getTime());
+    expect(parsed.toISOString()).toBe("2026-08-03T13:30:00.000Z");
   });
 });
 

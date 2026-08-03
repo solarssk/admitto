@@ -9,12 +9,17 @@ import { brandingLogoImgSrc } from "../utils/safeBrandingLogoHref.js";
 import { ConfirmDialog } from "./ConfirmDialog.js";
 import { CropImageModal } from "./crop/CropImageModal.js";
 import { resolveCropOutputMime } from "./crop/getCroppedImageBlob.js";
+import {
+  ALLOWED_BRANDING_IMAGE_TYPES,
+  extensionForBrandingImageMime,
+  MAX_BRANDING_IMAGE_UPLOAD_BYTES,
+} from "./brandingImageConstraints.js";
 import "./event-image-asset-library.css";
 
-const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = MAX_BRANDING_IMAGE_UPLOAD_BYTES;
 const TOKEN_MAX_LENGTH = 40;
 const TOKEN_PATTERN = /^[a-z][a-z0-9_]*$/;
-const ALLOWED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+const ALLOWED_IMAGE_TYPES = ALLOWED_BRANDING_IMAGE_TYPES;
 
 export interface EventImageAssetLibraryProps {
   readonly eventId: string;
@@ -27,9 +32,7 @@ function pluralSuffix(count: number): string {
 }
 
 function extensionForMime(mime: string): string {
-  if (mime === "image/jpeg") return ".jpg";
-  if (mime === "image/webp") return ".webp";
-  return ".png";
+  return extensionForBrandingImageMime(mime);
 }
 
 /** @internal Unit-test surface for small helpers. */

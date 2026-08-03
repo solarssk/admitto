@@ -5,7 +5,7 @@ import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@admitto/db";
 import { canManageInstance } from "@admitto/auth";
 import { ADMITTABLE_STATUS_LIST, REVOCABLE_ITEM_STATES, writeAdminAuditLog } from "@admitto/tickets";
-import { InvalidHttpUrlError, logoCropFromDb, parseLogoCrop, resolveBrandingFromEvent, validateBrandingUrl, type EventSettingsDto, type LogoCropMeta } from "@admitto/mail-templates";
+import { InvalidHttpUrlError, logoCropFromDb, parseLogoCrop, resolveBrandingFromEvent, validateBrandingUrl, enforceLogoPersistenceForDisplayChange, type BrandingUpdateData, type EventSettingsDto, type LogoCropMeta } from "@admitto/mail-templates";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { z } from "zod";
 import {
@@ -218,12 +218,7 @@ function buildBasicFieldsPatch(patch: PatchEventBody): {
   return data;
 }
 
-type BrandingPatchData = {
-  logo_url?: string | null;
-  logo_original_url?: string | null;
-  logo_crop?: LogoCropMeta | typeof Prisma.JsonNull;
-  header_image_url?: string | null;
-};
+type BrandingPatchData = BrandingUpdateData;
 
 function patchOptionalBrandingUrl(
   field: "logo_url" | "logo_original_url" | "header_image_url",
@@ -239,11 +234,11 @@ function clearOriginalWhenDisplayIsNotUpload(
   data: BrandingPatchData,
   patch: PatchEventBody,
 ): void {
-  if (patch.logo_url === undefined) return;
-  const display = data.logo_url;
-  if (typeof display === "string" && display.startsWith("/uploads/")) return;
-  if (patch.logo_original_url === undefined) data.logo_original_url = null;
-  if (patch.logo_crop === undefined) data.logo_crop = Prisma.JsonNull;
+  enforceLogoPersistenceForDisplayChange(data, {
+    logoUrl: patch.logo_url,
+    logoOriginalUrl: patch.logo_original_url,
+    logoCrop: patch.logo_crop,
+  });
 }
 
 function brandingPatchErrorResponse(c: Context, err: unknown): Response | null {

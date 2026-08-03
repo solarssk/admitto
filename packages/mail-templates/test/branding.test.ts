@@ -126,6 +126,45 @@ describe("setBranding", () => {
     expect(org.logo_crop).toBeNull();
   });
 
+  it("clears omitted original/crop when logo_url changes to a different upload path", async () => {
+    const crop = { unit: "%" as const, x: 5, y: 10, width: 80, height: 70, zoom: 1.5 };
+    await setBranding(
+      { scopeType: "organization", scopeId: "org-br" },
+      {
+        logoUrl: "/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png",
+        logoOriginalUrl: "/uploads/default/b2c3d4e5-f6a7-8901-bcde-f12345678901.png",
+        logoCrop: crop,
+      },
+      prisma,
+    );
+
+    await setBranding(
+      { scopeType: "organization", scopeId: "org-br" },
+      { logoUrl: "/uploads/default/c3d4e5f6-a7b8-9012-cdef-123456789012.png" },
+      prisma,
+    );
+    const org = await prisma.organization.findUniqueOrThrow({ where: { id: "org-br" } });
+    expect(org.logo_url).toBe("/uploads/default/c3d4e5f6-a7b8-9012-cdef-123456789012.png");
+    expect(org.logo_original_url).toBeNull();
+    expect(org.logo_crop).toBeNull();
+  });
+
+  it("clears original/crop for a non-upload display even when the client sends them explicitly", async () => {
+    await setBranding(
+      { scopeType: "organization", scopeId: "org-br" },
+      {
+        logoUrl: "https://cdn.example.com/forced-external.png",
+        logoOriginalUrl: "/uploads/default/b2c3d4e5-f6a7-8901-bcde-f12345678901.png",
+        logoCrop: { unit: "%", x: 1, y: 2, width: 90, height: 80, zoom: 1 },
+      },
+      prisma,
+    );
+    const org = await prisma.organization.findUniqueOrThrow({ where: { id: "org-br" } });
+    expect(org.logo_url).toBe("https://cdn.example.com/forced-external.png");
+    expect(org.logo_original_url).toBeNull();
+    expect(org.logo_crop).toBeNull();
+  });
+
   it("treats whitespace-only branding URLs as empty and normalizes blank clears", async () => {
     await prisma.event.update({
       where: { id: "evt-br" },

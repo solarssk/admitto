@@ -81,6 +81,18 @@ describe("getCroppedImageBlob", () => {
     ).rejects.toThrow(/crop area/i);
   });
 
+  it("rejects a zero-sized displayed image before scaling", async () => {
+    const image = {
+      width: 0,
+      height: 50,
+      naturalWidth: 200,
+      naturalHeight: 100,
+    } as HTMLImageElement;
+    await expect(
+      getCroppedImageBlob(image, { x: 0, y: 0, width: 10, height: 10 }, "image/png"),
+    ).rejects.toThrow(/Could not read this image/i);
+  });
+
   it("rejects when the canvas context is unavailable", async () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
     const image = {

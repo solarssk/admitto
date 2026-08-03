@@ -38,6 +38,19 @@ describe("CropImageModal helpers", () => {
     expect(limits.height).toBeGreaterThanOrEqual(80);
   });
 
+  it("cropViewportLimits leaves room for panel chrome and crop handles", () => {
+    const limits = cropViewportLimits({ innerWidth: 1280, innerHeight: 800 });
+    expect(limits.width).toBeLessThanOrEqual(920 - 40 - 24);
+    expect(limits.height).toBeLessThanOrEqual(560);
+    expect(limits.width).toBeGreaterThan(100);
+    expect(limits.height).toBeGreaterThan(80);
+  });
+
+  it("fitNaturalSize scales a large photo into the viewport without upscaling small logos", () => {
+    expect(fitNaturalSize(4000, 3000, 880, 560)).toEqual({ width: 746, height: 560 });
+    expect(fitNaturalSize(400, 80, 880, 560)).toEqual({ width: 400, height: 80 });
+  });
+
   it("isRestorablePercentCrop accepts in-bounds % crops and rejects junk", () => {
     expect(
       isRestorablePercentCrop({ unit: "%", x: 0, y: 0, width: 50, height: 50 }),

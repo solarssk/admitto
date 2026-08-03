@@ -6,6 +6,22 @@ import sharp from "sharp";
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
 /** Reject absurd decoded dimensions before re-encode (DoS / decoder abuse). */
 const MAX_DECODED_EDGE = 8192;
+/**
+ * Cap total decoded pixels (width × height) before Sharp allocates RGBA.
+ * 16 MP ≈ 64 MiB at 4 bytes/pixel - well under a typical container memory budget
+ * even with a few concurrent uploads, while still allowing sharp logos/headers.
+ */
+const MAX_DECODED_PIXELS = 16_777_216;
+
+/** Reject decoded width/height that exceed edge or total-pixel budgets. */
+export function assertDecodedImageWithinLimits(width: number, height: number): void {
+  if (width > MAX_DECODED_EDGE || height > MAX_DECODED_EDGE) {
+    throw new BrandingUploadError("invalid_image", 400);
+  }
+  if (width > 0 && height > 0 && width * height > MAX_DECODED_PIXELS) {
+    throw new BrandingUploadError("invalid_image", 400);
+  }
+}
 const ALLOWED_EXT = new Map([
   ["image/png", ".png"],
   ["image/jpeg", ".jpg"],
@@ -126,18 +142,15 @@ export async function reencodeBrandingImage(buf: Buffer, mime: string): Promise<
   try {
     const meta = await sharp(buf, {
       failOn: "error",
-      limitInputPixels: MAX_DECODED_EDGE * MAX_DECODED_EDGE,
+      limitInputPixels: MAX_DECODED_PIXELS,
     }).metadata();
-    if (
-      (meta.width != null && meta.width > MAX_DECODED_EDGE) ||
-      (meta.height != null && meta.height > MAX_DECODED_EDGE)
-    ) {
-      throw new BrandingUploadError("invalid_image", 400);
-    }
+    const width = meta.width ?? 0;
+    const height = meta.height ?? 0;
+    assertDecodedImageWithinLimits(width, height);
 
     const pipeline = sharp(buf, {
       failOn: "error",
-      limitInputPixels: MAX_DECODED_EDGE * MAX_DECODED_EDGE,
+      limitInputPixels: MAX_DECODED_PIXELS,
     }).rotate();
 
     if (mime === "image/png") {
@@ -195,9 +208,11 @@ async function writeValidatedUpload(
 
   const ext = opts.allowedExt.get(detectedMime)!;
   const filename = `${randomUUID()}${ext}`;
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
+  // Path is join(trusted upload root, validated org/event segments, UUID filename).
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
   await mkdir(dir, { recursive: true });
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
+  // Same trusted join as mkdir above.
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
   await writeFile(join(dir, filename), outBuf);
   return { filename, sizeBytes: outBuf.length, mime: detectedMime };
 }

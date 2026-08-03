@@ -19,7 +19,7 @@ Use a named Superadmin account, record the intended change, and prepare a synthe
 
 1. Open **Organisation settings**.
 2. Use **General** for instance behaviour and base configuration shown by the panel.
-3. Use **Branding** for organisation name, logo, colours, and supported fonts. Uploading a logo opens an adjust popup so you can trim margins before saving; transparent PNG/WebP keep their transparency. **Edit image** restores the last crop and zoom after Save and reload (Admitto keeps the full upload for re-edit). External web-link logos cannot be re-cropped in Admitto.
+3. Use **Branding** for organisation name, logo, colours, and supported fonts. Uploading a logo opens an adjust popup so you can trim margins before saving; transparent PNG/WebP keep their transparency. **Edit image** restores the last crop and zoom after Save and reload (Admitto keeps the full upload for re-edit). Organisation logos uploaded before crop persistence need one full-file upload the first time you re-crop; later crop and zoom edits restore from that saved original. External web-link logos cannot be re-cropped in Admitto.
 4. Use **Mail** for the organisation-wide transport.
 5. Use **Security** for MFA and session policy. Review or revoke active sessions from **Users & roles** instead.
 6. Use **Archiving** for retention and completed-event controls.

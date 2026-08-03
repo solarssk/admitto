@@ -58,7 +58,13 @@ export {
   TemplateNotFoundError,
 } from "./mailTemplate.js";
 export type { CreatedMailTemplateRow } from "./mailTemplate.js";
-export { resolveBranding, resolveBrandingFromEvent, setBranding, resolveEventImageAssetVars } from "./branding.js";
+export {
+  resolveBranding,
+  resolveBrandingFromEvent,
+  setBranding,
+  resolveEventImageAssetVars,
+  enforceLogoPersistenceForDisplayChange,
+} from "./branding.js";
 export { parseLogoCrop, logoCropFromDb } from "./logo-crop.js";
 export type { LogoCropMeta, LogoPersistenceDto } from "./logo-crop.js";
 export type { EventSettingsDto } from "./event-settings-dto.js";
@@ -82,6 +88,6 @@ export type {
   BrandingUrls,
   SetMailTemplateInput,
 } from "./types.js";
-export type { SetBrandingInput, EventImageAssetPlaceholders } from "./branding.js";
+export type { SetBrandingInput, BrandingUpdateData, EventImageAssetPlaceholders } from "./branding.js";
 export type { RenderTemplateInput, RenderOptions } from "./render.js";
 export type { TemplateSourceInput } from "./validate.js";

@@ -5,6 +5,7 @@ import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   BrandingUploadError,
+  assertDecodedImageWithinLimits,
   resolveUploadDir,
   saveBrandingUpload,
   saveEventUpload,
@@ -85,6 +86,35 @@ describe("saveBrandingUpload", () => {
     expect(onDisk).toHaveLength(result.sizeBytes);
   });
 
+  it("strips EXIF and normalizes orientation on JPEG re-encode", async () => {
+    const oriented = await sharp({
+      create: { width: 4, height: 2, channels: 3, background: { r: 200, g: 40, b: 40 } },
+    })
+      .withMetadata({
+        orientation: 6,
+        exif: {
+          IFD0: { Copyright: "synthetic-fixture@example.com" },
+        },
+      })
+      .jpeg()
+      .toBuffer();
+    const before = await sharp(oriented).metadata();
+    expect(before.orientation).toBe(6);
+    expect(before.exif).toBeDefined();
+
+    const result = await saveBrandingUpload(
+      new File([oriented], "oriented.jpg", { type: "image/jpeg" }),
+      "default",
+    );
+    const rel = result.url.slice("/uploads/".length);
+    const onDisk = readFileSync(join(resolveUploadDir(), rel));
+    const after = await sharp(onDisk).metadata();
+    expect(after.orientation === undefined || after.orientation === 1).toBe(true);
+    expect(after.exif).toBeUndefined();
+    expect(result.mimeType).toBe("image/jpeg");
+    expect(result.sizeBytes).toBe(onDisk.length);
+  });
+
   it("accepts decodable JPEG and WEBP and rejects magic-only stubs", async () => {
     const jpeg = await saveBrandingUpload(new File([jpegBytes], "logo.jpg", { type: "image/jpeg" }), "default");
     expect(jpeg.url).toMatch(/\.jpg$/);
@@ -145,6 +175,16 @@ describe("saveBrandingUpload", () => {
     await expect(
       saveBrandingUpload(new File([wide], "wide.png", { type: "image/png" }), "default"),
     ).rejects.toMatchObject({ code: "invalid_image", status: 400 });
+  });
+
+  it("rejects decoded images over the total pixel budget without allocating a huge raster", () => {
+    expect(() => assertDecodedImageWithinLimits(4096, 4096)).not.toThrow();
+    expect(() => assertDecodedImageWithinLimits(5000, 4000)).toThrow(BrandingUploadError);
+    try {
+      assertDecodedImageWithinLimits(5000, 4000);
+    } catch (err) {
+      expect(err).toMatchObject({ code: "invalid_image", status: 400 });
+    }
   });
 });
 

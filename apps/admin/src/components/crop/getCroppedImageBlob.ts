@@ -46,6 +46,14 @@ export async function getCroppedImageBlob(
   if (displayCrop.width < 1 || displayCrop.height < 1) {
     throw new Error("Draw a crop area first.");
   }
+  if (
+    image.width < 1 ||
+    image.height < 1 ||
+    image.naturalWidth < 1 ||
+    image.naturalHeight < 1
+  ) {
+    throw new Error("Could not read this image.");
+  }
 
   const scaleX = image.naturalWidth / image.width;
   const scaleY = image.naturalHeight / image.height;

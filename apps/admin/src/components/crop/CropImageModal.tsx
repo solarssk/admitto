@@ -429,7 +429,7 @@ export function CropImageModal({
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useModalFocusTrap(panelRef, open, onCancel);
+  useModalFocusTrap(panelRef, open, applying ? () => undefined : onCancel);
 
   useEffect(() => {
     if (!open) return;
