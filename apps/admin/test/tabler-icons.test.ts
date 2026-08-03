@@ -70,7 +70,7 @@ describe("@tabler/icons-webfont coverage for admin SPA", () => {
   it("includes every icon class used in admin UI", () => {
     const cssPath = require.resolve("@tabler/icons-webfont/dist/tabler-icons.min.css");
     const css = readFileSync(cssPath, "utf8");
-    expect(css).toContain("Tabler Icons 3.45");
+    expect(css).toContain("Tabler Icons 3.46");
 
     const missing = ADMIN_TABLER_ICON_CLASSES.filter(
       (name) => !css.includes(`.ti-${name}:before`),
