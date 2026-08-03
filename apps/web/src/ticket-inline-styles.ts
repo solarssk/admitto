@@ -13,9 +13,9 @@ body.ticket-page { margin: 0; background: var(--surface-page, #f1f5f9); min-heig
 .ticket__body { padding: 22px 24px 18px; text-align: center; }
 .ticket__event-name { font-size: 1.25rem; font-weight: 700; margin: 0; }
 .ticket__meta { color: var(--text-secondary, #475569); font-size: 0.875rem; margin-top: 6px; display: flex; flex-direction: column; align-items: center; gap: 3px; }
-.ticket__meta > span { display: inline-flex; align-items: flex-start; justify-content: center; gap: 6px; max-width: 100%; }
-.ticket__meta svg { width: 15px; height: 15px; flex: 0 0 auto; margin-top: 2px; }
-.ticket__meta-text { text-align: center; text-wrap: balance; line-height: 1.35; }
+/* Icon + label as one centered text run so multi-line venues stay balanced (no flex gap drift). */
+.ticket__meta > span { display: block; max-width: 100%; text-align: center; text-wrap: balance; line-height: 1.35; }
+.ticket__meta svg { display: inline-block; width: 15px; height: 15px; vertical-align: -0.15em; margin-right: 6px; }
 .ticket__attendee { margin: 16px 0 18px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .ticket__attendee-name { font-size: 1.125rem; font-weight: 600; margin: 0 0 8px; }
 .ticket__type { display: inline-flex; align-items: center; padding: 0.2em 0.55em; border-radius: 6px; background: var(--surface-sunken, #f1f5f9); color: var(--text-secondary, #475569); font-size: 0.75rem; font-weight: 600; }
@@ -45,8 +45,6 @@ body.ticket-page { margin: 0; background: var(--surface-page, #f1f5f9); min-heig
 .ticket__map-frame { position: relative; border: 1px solid var(--border, #e6e7e9); border-radius: 8px; overflow: hidden; background: var(--surface-sunken, #f8fafc); }
 .ticket__map { display: block; height: auto; max-width: 100%; width: 100%; min-height: 150px; border: 0; }
 .ticket__map-fallback { color: var(--text-muted, #64748b); font-size: 0.8125rem; margin: 0; padding: 28px 16px; text-align: center; }
-.ticket__map-attribution { color: var(--text-muted, #64748b); font-size: 0.6875rem; line-height: 1.35; margin: 5px 0 0; text-align: right; }
-.ticket__map-attribution a { color: inherit; }
 .ticket__map-links { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 14px; }
 .ticket__map-link { align-items: center; border: 1px solid var(--border, #e6e7e9); border-radius: 8px; color: var(--text-primary, #1d273b); display: inline-flex; gap: 6px; font-size: 0.8125rem; font-weight: 600; justify-content: center; min-height: 40px; text-decoration: none; }
 .ticket__map-link svg { width: 16px; height: 16px; flex: 0 0 auto; }

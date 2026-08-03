@@ -26,7 +26,7 @@ describe("buildEventLocationTemplateVars", () => {
     });
     expect(vars.event_location).toBe("Hall");
     expect(vars.event_map_url).toBe(
-      "https://tickets.example.com/m/evt-1.png?v=2_50.060000_19.940000_z16",
+      "https://tickets.example.com/m/evt-1.png?v=9_50.060000_19.940000_z16",
     );
     expect(vars.google_maps_url).toContain("50.06");
     expect(vars.apple_maps_url).toContain("50.06");
@@ -54,5 +54,19 @@ describe("buildEventLocationTemplateVars", () => {
     expect(vars.google_maps_url).toBe("");
     expect(vars.apple_maps_url).toBe("");
     expect(vars.event_location).toBe("Hall");
+  });
+
+  it("prefers saved Maps URL overrides over coordinate-built links", () => {
+    const vars = buildEventLocationTemplateVars(
+      "evt-1",
+      {
+        ...LOCATION,
+        google_maps_url_override: "https://www.google.com/maps/place/Custom",
+        apple_maps_url_override: "https://maps.apple.com/?address=Custom",
+      },
+      "https://tickets.example.com",
+    );
+    expect(vars.google_maps_url).toBe("https://www.google.com/maps/place/Custom");
+    expect(vars.apple_maps_url).toBe("https://maps.apple.com/?address=Custom");
   });
 });

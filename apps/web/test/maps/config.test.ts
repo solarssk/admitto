@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { resolveGeocodingConfig, resolveMapTileConfig } from "../../src/maps/config.js";
 
+const OSM_DEFAULT_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+
 describe("resolveMapTileConfig", () => {
-  it("defaults to CARTO Voyager tiles, enabled", () => {
+  it("defaults to OpenStreetMap tiles, enabled", () => {
     const config = resolveMapTileConfig({});
     expect(config.enabled).toBe(true);
-    expect(config.tileUrl).toBe(
-      "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
-    );
+    expect(config.tileUrl).toBe(OSM_DEFAULT_TILE_URL);
     expect(config.attribution).toContain("OpenStreetMap");
-    expect(config.attribution).toContain("CARTO");
+    expect(config.attribution).not.toContain("CARTO");
     expect(config.maxZoom).toBe(19);
   });
 
@@ -34,15 +34,11 @@ describe("resolveMapTileConfig", () => {
     const config = resolveMapTileConfig({
       MAP_TILE_URL: "http://tiles.internal.example/{z}/{x}/{y}.png",
     });
-    expect(config.tileUrl).toBe(
-      "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
-    );
+    expect(config.tileUrl).toBe(OSM_DEFAULT_TILE_URL);
   });
 
   it("falls back when the tile URL is not parseable", () => {
-    expect(resolveMapTileConfig({ MAP_TILE_URL: "not a URL" }).tileUrl).toBe(
-      "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
-    );
+    expect(resolveMapTileConfig({ MAP_TILE_URL: "not a URL" }).tileUrl).toBe(OSM_DEFAULT_TILE_URL);
   });
 
   it("allows http://localhost tile URLs only in development", () => {
@@ -65,7 +61,7 @@ describe("resolveMapTileConfig", () => {
         NODE_ENV: "production",
         MAP_TILE_URL: "http://localhost:8080/{z}/{x}/{y}.png",
       }).tileUrl,
-    ).toBe("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png");
+    ).toBe(OSM_DEFAULT_TILE_URL);
   });
 
   it("rejects an unparseable MAP_TILE_URL and keeps the HTTPS default", () => {
@@ -73,7 +69,7 @@ describe("resolveMapTileConfig", () => {
       resolveMapTileConfig({
         MAP_TILE_URL: "not a url at all {{{",
       }).tileUrl,
-    ).toBe("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png");
+    ).toBe(OSM_DEFAULT_TILE_URL);
   });
 
   it("falls back to the default max zoom on a non-numeric override", () => {

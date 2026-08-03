@@ -29,9 +29,14 @@ import { FontFamilyModal, styleLabel } from "./FontFamilyModal.js";
 const EMPTY_ORG_DRAFT: SetupOrgBrandingDto = { org_name: "", logo_url: "" };
 const EMPTY_THEME_DRAFT: BrandingThemeDto = {};
 
-const ORG_BRANDING_HINT = "Shown on the public ticket page and emails.";
+const ORG_BRANDING_HINT =
+  "A single event can override the logo under Event settings → Images.";
+const ORG_BRANDING_INTRO =
+  "Name and logo used as the default on tickets and email headers.";
 const THEME_HINT =
-  "Instance-wide accent colour, plus a font for each surface below. Ticket logos are set in Organisation branding above, not here.";
+  "Ticket logos are set in Organisation branding above, not here.";
+const THEME_INTRO =
+  "Accent colour and fonts for the staff app and public ticket page.";
 
 const THEME_COLORS = [
   { key: "blue", hex: "#066fd1", label: "Admitto blue" },
@@ -629,7 +634,8 @@ export function BrandingSettingsPanel() {
   return (
     <>
       <Card title={<HintLabel hint={ORG_BRANDING_HINT}>Organisation branding</HintLabel>}>
-        <div className="branding-form">
+        <div className="settings-card-stack branding-form">
+          <p className="settings-card-intro">{ORG_BRANDING_INTRO}</p>
           <Input
             label="Organisation name"
             value={orgDraft.org_name ?? ""}
@@ -656,69 +662,70 @@ export function BrandingSettingsPanel() {
           </Button>
         }
       >
-        <span className="at-label" id="branding-primary-label">
-          Primary colour
-        </span>
-        {/* Sits directly before its own control (like Organisation logo's own description) -
-            smaller gap than the bigger between-sections default. */}
-        <p className="at-hint branding-scope-hint" style={{ marginBottom: 8 }}>
-          {colorMode === "custom" ? (
-            <>
-              Custom colour: <code>{customHex}</code>
-            </>
-          ) : (
-            `${THEME_COLORS.find((c) => c.key === colorKey)?.label ?? "Admitto blue"}. Used on buttons, links, and badges across the staff app and ticket page.`
-          )}
-        </p>
-        <div aria-labelledby="branding-primary-label">
-          <ColorPaletteField
-            mode={colorMode}
-            colorKey={colorKey}
-            customHex={customHex}
-            disabled={formDisabled}
-            onPick={handlePickColor}
-            onCustomChange={handleCustomColorChange}
-          />
-        </div>
-        {themeFieldErrors.primary && (
-          <p className="text-error" role="alert">
-            {themeFieldErrors.primary}
-          </p>
-        )}
+        <div>
+          <p className="settings-card-intro">{THEME_INTRO}</p>
+          <div className="theme-section" aria-labelledby="branding-primary-label">
+            <span className="at-label" id="branding-primary-label">
+              Primary colour
+            </span>
+            <p className="at-hint branding-scope-hint">
+              {colorMode === "custom" ? (
+                <>
+                  Custom colour: <code>{customHex}</code>
+                </>
+              ) : (
+                `${THEME_COLORS.find((c) => c.key === colorKey)?.label ?? "Admitto blue"}. Used on buttons, links, and badges across the staff app and ticket page.`
+              )}
+            </p>
+            <ColorPaletteField
+              mode={colorMode}
+              colorKey={colorKey}
+              customHex={customHex}
+              disabled={formDisabled}
+              onPick={handlePickColor}
+              onCustomChange={handleCustomColorChange}
+            />
+            {themeFieldErrors.primary && (
+              <p className="text-error" role="alert">
+                {themeFieldErrors.primary}
+              </p>
+            )}
+          </div>
 
-        <span className="at-label" id="branding-font-label" style={{ marginTop: 20, display: "block" }}>
-          Font
-        </span>
-        <p className="at-hint branding-scope-hint" style={{ marginBottom: 8 }}>
-          Built-in fonts, plus any you upload. Assign one to each surface below.
-        </p>
-        <div aria-labelledby="branding-font-label">
-          <FontPickerField
-            customFamilies={customFamilies}
-            disabled={formDisabled}
-            onEditCustom={handleEditCustomFamily}
-            onDeleteCustom={setPendingDeleteFamilyName}
-            onOpenFamilyModal={handleOpenFamilyModal}
-          />
-        </div>
-        {themeFieldErrors.font_family_name && (
-          <p className="text-error" role="alert">
-            {themeFieldErrors.font_family_name}
-          </p>
-        )}
-        {themeFieldErrors.custom_font_families && (
-          <p className="text-error" role="alert">
-            {themeFieldErrors.custom_font_families}
-          </p>
-        )}
+          <div className="theme-section" aria-labelledby="branding-font-label">
+            <span className="at-label" id="branding-font-label">
+              Font
+            </span>
+            <p className="at-hint branding-scope-hint">
+              Built-in fonts, plus any you upload. Assign one to each surface below.
+            </p>
+            <FontPickerField
+              customFamilies={customFamilies}
+              disabled={formDisabled}
+              onEditCustom={handleEditCustomFamily}
+              onDeleteCustom={setPendingDeleteFamilyName}
+              onOpenFamilyModal={handleOpenFamilyModal}
+            />
+            {themeFieldErrors.font_family_name && (
+              <p className="text-error" role="alert">
+                {themeFieldErrors.font_family_name}
+              </p>
+            )}
+            {themeFieldErrors.custom_font_families && (
+              <p className="text-error" role="alert">
+                {themeFieldErrors.custom_font_families}
+              </p>
+            )}
+          </div>
 
-        <span className="at-label" id="branding-font-surface-label" style={{ marginTop: 20, display: "block" }}>
-          Font by surface
-        </span>
-        <p className="at-hint branding-scope-hint" style={{ marginBottom: 8 }}>
-          Use a different font for each surface, or the same one everywhere.
-        </p>
-        <div aria-labelledby="branding-font-surface-label" className="font-surface-rows">
+          <div className="theme-section" aria-labelledby="branding-font-surface-label">
+            <span className="at-label" id="branding-font-surface-label">
+              Font by surface
+            </span>
+            <p className="at-hint branding-scope-hint">
+              Use a different font for each surface, or the same one everywhere.
+            </p>
+            <div className="font-surface-rows">
           <div className="settings-row">
             <div className="settings-row__text">
               <strong>Admin panel</strong>
@@ -794,12 +801,13 @@ export function BrandingSettingsPanel() {
               ))}
             </Select>
           </div>
-        </div>
-        {themeFieldErrors.ticket_font_family_name && (
-          <p className="text-error" role="alert">
-            {themeFieldErrors.ticket_font_family_name}
-          </p>
-        )}
+            </div>
+            {themeFieldErrors.ticket_font_family_name && (
+              <p className="text-error" role="alert">
+                {themeFieldErrors.ticket_font_family_name}
+              </p>
+            )}
+          </div>
 
         <FontFamilyModal
           open={familyModalOpen}
@@ -880,6 +888,7 @@ export function BrandingSettingsPanel() {
               )}
             </span>
           </div>
+        </div>
         </div>
       </Card>
 
