@@ -14,6 +14,10 @@ export interface EventLocationDto {
   geocoded_at: string | null;
   /** Structured grid fields from the last geocode/reverse; null when never set or cleared. */
   address_components: AddressComponents | null;
+  /** Manual Google Maps deep link; null = build from coordinates. */
+  google_maps_url_override: string | null;
+  /** Manual Apple Maps deep link; null = build from coordinates. */
+  apple_maps_url_override: string | null;
 }
 
 /** Fields an admin can submit via `PUT .../location`. All optional/nullable — omit a key to
@@ -27,6 +31,8 @@ export interface EventLocationInput {
   directions_text?: string | null;
   accessibility_text?: string | null;
   address_components?: AddressComponents | null;
+  google_maps_url_override?: string | null;
+  apple_maps_url_override?: string | null;
 }
 
 /** One geocoding candidate returned by a provider search. `name` is the localized place/POI name

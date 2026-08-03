@@ -32,6 +32,33 @@ export function buildAppleMapsUrl(latitude: number, longitude: number, label?: s
   return `https://maps.apple.com/?${params.toString()}`;
 }
 
+/**
+ * Prefer a saved admin override when present; otherwise build from lat/lng.
+ * Callers that persist overrides must validate them first (`normalizeMapsUrlOverride`).
+ */
+export function resolveGoogleMapsUrl(
+  latitude: number,
+  longitude: number,
+  label?: string | null,
+  override?: string | null,
+): string {
+  const trimmed = override?.trim();
+  if (trimmed) return trimmed;
+  return buildGoogleMapsUrl(latitude, longitude, label);
+}
+
+/** Prefer a saved admin override when present; otherwise build from lat/lng. */
+export function resolveAppleMapsUrl(
+  latitude: number,
+  longitude: number,
+  label?: string | null,
+  override?: string | null,
+): string {
+  const trimmed = override?.trim();
+  if (trimmed) return trimmed;
+  return buildAppleMapsUrl(latitude, longitude, label);
+}
+
 /** openstreetmap.org deep link centered and zoomed on a pin. */
 export function buildOsmUrl(latitude: number, longitude: number, zoom: number): string {
   const lat = formatCoordinate(latitude);
@@ -56,7 +83,7 @@ export function buildEventStaticMapPath(
   eventId: string,
   coords?: StaticMapCacheBustCoords | null,
 ): string {
-  const compositor = "5";
+  const compositor = "9";
   let pin = "";
   if (coords && Number.isFinite(coords.latitude) && Number.isFinite(coords.longitude)) {
     pin = `_${formatCoordinate(coords.latitude)}_${formatCoordinate(coords.longitude)}`;

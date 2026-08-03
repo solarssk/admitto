@@ -21,9 +21,12 @@ env:
 
 jobs:
   wiki-docs:
-    # Dependabot pull requests are generated without the human/agent PR template. Dependency
-    # updates still receive the normal build and security checks; this gate applies to authored PRs.
-    if: github.actor != 'dependabot[bot]'
+    # Dependabot PRs omit the human/agent PR template body. Skip this gate by PR author, not
+    # github.actor: a human re-run sets actor to a person and would otherwise re-enable the
+    # documentation-impact check against Dependabot's body. Push to main still runs as usual.
+    if: >
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: read

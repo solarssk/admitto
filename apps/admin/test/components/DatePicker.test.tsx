@@ -384,4 +384,160 @@ describe("DatePicker", () => {
     const dialog = await screen.findByRole("dialog", { name: "Choose date" });
     expect(dialog.style.maxHeight).toBe("");
   });
+
+  it("places the panel above the field when there is more room above", async () => {
+    mockOpenCalendarBasics();
+    mockPlacementLayout({
+      rect: { top: 500, bottom: 540, left: 50 },
+      panelHeight: 300,
+      panelWidth: 296,
+      innerWidth: 1024,
+      innerHeight: 600,
+    });
+
+    render(<DatePicker value="" onChange={() => {}} label="Date" />);
+    fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Choose date" });
+    expect(dialog.className).toContain("date-picker__panel--above");
+  });
+
+  it("closes an open calendar when the toggle is clicked again", async () => {
+    mockOpenCalendarBasics();
+    mockPlacementLayout({
+      rect: { top: 100, bottom: 140, left: 50 },
+      panelHeight: 300,
+      panelWidth: 296,
+      innerWidth: 1024,
+      innerHeight: 768,
+    });
+
+    render(<DatePicker value="" onChange={() => {}} label="Date" />);
+    const toggle = screen.getByRole("button", { name: "Open calendar" });
+    fireEvent.click(toggle);
+    expect(await screen.findByRole("dialog", { name: "Choose date" })).toBeTruthy();
+    fireEvent.click(toggle);
+    expect(screen.queryByRole("dialog", { name: "Choose date" })).toBeNull();
+  });
+
+  it("clears the value from the calendar footer", async () => {
+    mockOpenCalendarBasics();
+    mockPlacementLayout({
+      rect: { top: 100, bottom: 140, left: 50 },
+      panelHeight: 300,
+      panelWidth: 296,
+      innerWidth: 1024,
+      innerHeight: 768,
+    });
+    const onChange = vi.fn();
+    render(<DatePicker value="2026-07-02" onChange={onChange} label="Date" />);
+    fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
+    await screen.findByRole("dialog", { name: "Choose date" });
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(onChange).toHaveBeenCalledWith("");
+    expect(screen.queryByRole("dialog", { name: "Choose date" })).toBeNull();
+  });
+
+  it("closes on ancestor scroll without refocusing the input", async () => {
+    mockOpenCalendarBasics();
+    mockPlacementLayout({
+      rect: { top: 100, bottom: 140, left: 50 },
+      panelHeight: 300,
+      panelWidth: 296,
+      innerWidth: 1024,
+      innerHeight: 768,
+    });
+    render(<DatePicker value="" onChange={() => {}} label="Date" />);
+    const input = screen.getByLabelText("Date") as HTMLInputElement;
+    fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
+    await screen.findByRole("dialog", { name: "Choose date" });
+
+    const focusSpy = vi.spyOn(input, "focus");
+    const scrollEvent = new Event("scroll", { bubbles: true });
+    Object.defineProperty(scrollEvent, "target", { value: document.body });
+    act(() => {
+      window.dispatchEvent(scrollEvent);
+    });
+    expect(screen.queryByRole("dialog", { name: "Choose date" })).toBeNull();
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(focusSpy).not.toHaveBeenCalled();
+  });
+
+  it("navigates to the previous month from the calendar header", async () => {
+    mockOpenCalendarBasics();
+    vi.spyOn(eventDates, "formatCalendarMonth").mockImplementation((y, m) => `${y}-${m}`);
+    mockPlacementLayout({
+      rect: { top: 100, bottom: 140, left: 50 },
+      panelHeight: 300,
+      panelWidth: 296,
+      innerWidth: 1024,
+      innerHeight: 768,
+    });
+    render(<DatePicker value="2026-07-15" onChange={() => {}} label="Date" />);
+    fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
+    expect(await screen.findByText("2026-7")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Previous month" }));
+    expect(screen.getByText("2026-6")).toBeTruthy();
+  });
+
+  it("does nothing when the calendar toggle is clicked while disabled", () => {
+    mockOpenCalendarBasics();
+    render(<DatePicker value="" onChange={() => {}} label="Date" disabled />);
+    fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
+    expect(screen.queryByRole("dialog", { name: "Choose date" })).toBeNull();
+  });
+
+  it("opens the calendar with ArrowDown from the text field", async () => {
+    mockOpenCalendarBasics();
+    mockPlacementLayout({
+      rect: { top: 100, bottom: 140, left: 50 },
+      panelHeight: 300,
+      panelWidth: 296,
+      innerWidth: 1024,
+      innerHeight: 768,
+    });
+    render(<DatePicker value="" onChange={() => {}} label="Date" />);
+    const input = screen.getByLabelText("Date");
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(await screen.findByRole("dialog", { name: "Choose date" })).toBeTruthy();
+  });
+
+  it("commits a typed date on Enter and closes the panel", async () => {
+    mockOpenCalendarBasics();
+    vi.spyOn(eventDates, "parseFlexibleCalendarDate").mockReturnValue("2026-07-09");
+    mockPlacementLayout({
+      rect: { top: 100, bottom: 140, left: 50 },
+      panelHeight: 300,
+      panelWidth: 296,
+      innerWidth: 1024,
+      innerHeight: 768,
+    });
+    const onChange = vi.fn();
+    render(<DatePicker value="" onChange={onChange} label="Date" />);
+    fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
+    await screen.findByRole("dialog", { name: "Choose date" });
+    const input = screen.getByLabelText("Date");
+    fireEvent.change(input, { target: { value: "09.07.2026" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onChange).toHaveBeenCalledWith("2026-07-09");
+    expect(screen.queryByRole("dialog", { name: "Choose date" })).toBeNull();
+  });
+
+  it("highlights a day on mouse enter", async () => {
+    mockOpenCalendarBasics();
+    mockPlacementLayout({
+      rect: { top: 100, bottom: 140, left: 50 },
+      panelHeight: 300,
+      panelWidth: 296,
+      innerWidth: 1024,
+      innerHeight: 768,
+    });
+    render(<DatePicker value="2026-07-02" onChange={() => {}} label="Date" />);
+    fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
+    const day = await screen.findByRole("gridcell", { name: "2026-07-10" });
+    fireEvent.mouseEnter(day);
+    expect(day.className).toContain("date-picker__day--highlighted");
+  });
 });

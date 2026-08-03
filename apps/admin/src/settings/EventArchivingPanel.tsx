@@ -14,7 +14,10 @@ import { formatEventDateTime, formatUtcDateTime } from "../utils/event-dates.js"
 type ConfirmAction = { type: "archive" | "unarchive"; event: EventDto };
 type View = "active" | "archived";
 
-const CARD_HINT = "Archive completed events to hide them from default lists and make them read-only. Data is preserved.";
+const CARD_HINT =
+  "Archiving does not delete attendees, tickets, or delivery history.";
+const CARD_INTRO =
+  "Archive completed events to hide them from default lists and make them read-only.";
 const EVENT_HINT = "The line below the title is the event's URL slug, used in links — not an internal ID.";
 const EVENT_DATE_HINT = "The event's own date and time, in its local timezone — not when it was created.";
 const VIEW_OPTIONS = [
@@ -292,6 +295,8 @@ export function EventArchivingPanel() {
           />
         }
       >
+        <div className="settings-card-stack">
+          <p className="settings-card-intro">{CARD_INTRO}</p>
         {loading && showLoading && <p className="archiving-status">Loading…</p>}
 
         {!loading && error && (
@@ -325,6 +330,7 @@ export function EventArchivingPanel() {
             )}
           </>
         )}
+        </div>
       </Card>
 
       <ConfirmDialog

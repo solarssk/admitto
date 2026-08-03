@@ -14,6 +14,8 @@ export interface LocationDraft {
   directions_text: string;
   accessibility_text: string;
   address_components: AddressComponents;
+  google_maps_url_override: string;
+  apple_maps_url_override: string;
 }
 
 function componentsEqual(a: AddressComponents, b: AddressComponents): boolean {
@@ -37,6 +39,8 @@ export function draftFromLocation(data: EventLocationDto): LocationDraft {
     directions_text: data.directions_text ?? "",
     accessibility_text: data.accessibility_text ?? "",
     address_components: data.address_components ?? { ...EMPTY_ADDRESS_COMPONENTS },
+    google_maps_url_override: data.google_maps_url_override ?? "",
+    apple_maps_url_override: data.apple_maps_url_override ?? "",
   };
 }
 
@@ -49,7 +53,9 @@ export function isLocationDirty(draft: LocationDraft, saved: LocationDraft): boo
     draft.map_zoom !== saved.map_zoom ||
     draft.directions_text.trim() !== saved.directions_text.trim() ||
     draft.accessibility_text.trim() !== saved.accessibility_text.trim() ||
-    !componentsEqual(draft.address_components, saved.address_components)
+    !componentsEqual(draft.address_components, saved.address_components) ||
+    draft.google_maps_url_override.trim() !== saved.google_maps_url_override.trim() ||
+    draft.apple_maps_url_override.trim() !== saved.apple_maps_url_override.trim()
   );
 }
 
@@ -99,6 +105,15 @@ export function buildEventLocationPatchBody(
     body.address_components = isAddressComponentsEmpty(draft.address_components)
       ? null
       : draft.address_components;
+  }
+
+  const googleOverride = draft.google_maps_url_override.trim();
+  if (googleOverride !== saved.google_maps_url_override.trim()) {
+    body.google_maps_url_override = googleOverride || null;
+  }
+  const appleOverride = draft.apple_maps_url_override.trim();
+  if (appleOverride !== saved.apple_maps_url_override.trim()) {
+    body.apple_maps_url_override = appleOverride || null;
   }
 
   const coordinatesChanged = body.latitude !== undefined || body.longitude !== undefined;

@@ -183,9 +183,9 @@ export function LogoUploadZone({
   return (
     <div className="logo-upload">
       {!hideLabel && <span className="at-label">{label}</span>}
-      <span className="at-hint">
+      <p className="field-hint logo-upload__intro">
         Upload an image file below, or use a link to an image that&apos;s already online.
-      </span>
+      </p>
       <div
         className={buildLogoZoneClassName({
           uploading,

@@ -26,6 +26,8 @@ describe("location / geocoding client helpers", () => {
       geocoding_provider: null,
       geocoded_at: null,
       address_components: null,
+      google_maps_url_override: null,
+      apple_maps_url_override: null,
     };
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => body });
     vi.stubGlobal("fetch", fetchMock);
@@ -49,6 +51,8 @@ describe("location / geocoding client helpers", () => {
       geocoding_provider: "nominatim",
       geocoded_at: "2026-01-01T00:00:00.000Z",
       address_components: null,
+      google_maps_url_override: null,
+      apple_maps_url_override: null,
     };
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => body });
     vi.stubGlobal("fetch", fetchMock);

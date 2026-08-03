@@ -15,9 +15,21 @@ import type { MapTileConfig } from "./config.js";
 
 export const STATIC_MAP_WIDTH = 600;
 export const STATIC_MAP_HEIGHT = 300;
+/** Events list / operator picker thumbnails — wider than ticket maps (≈3.3:1) so
+ * `object-fit: cover` on the card strip keeps the mid pin and bottom attribution in frame.
+ * Height must be ≥ tile size (256): sharp rejects composite overlays larger than the canvas. */
+export const STATIC_MAP_LIST_WIDTH = 840;
+export const STATIC_MAP_LIST_HEIGHT = 256;
 const TILE_SIZE = 256;
 const DEFAULT_TILE_TIMEOUT_MS = 8_000;
+/** Encoded response body cap (before sharp decode). */
 const MAX_TILE_BYTES = 512 * 1024;
+/**
+ * Decoded raster cap before resize. MapTiler/commercial XYZ tiles are typically 256 or 512;
+ * reject absurd IHDR dimensions that would expand far beyond the encoded-byte budget.
+ */
+const MAX_DECODED_TILE_EDGE = 2048;
+const MAX_DECODED_TILE_PIXELS = MAX_DECODED_TILE_EDGE * MAX_DECODED_TILE_EDGE;
 const MAX_TILE_REDIRECTS = 3;
 const ATTRIBUTION_OVERLAY_HEIGHT = 22;
 /** Bump when burn-in layout changes so Redis/memory caches miss stale PNGs. */
@@ -88,6 +100,14 @@ export interface RenderStaticMapOptions {
   userAgent: string;
   fetchFn?: typeof fetch;
   timeoutMs?: number;
+  /** Injectable sharp factory — production omits this; tests use it for error-path coverage. */
+  imagePipeline?: typeof sharp;
+  /**
+   * When false, skip the PNG burn-in credit (Events list cards show HTML attribution instead,
+   * so object-fit:cover can keep the pin centered without cropping a bottom credit away).
+   * Default true for ticket/mail maps.
+   */
+  burnInAttribution?: boolean;
 }
 
 export class StaticMapRenderError extends Error {
@@ -138,6 +158,7 @@ export function buildStaticMapCacheKey(
   req: StaticMapRequest,
   tileUrl: string,
   attribution = "",
+  burnInAttribution = true,
 ): string {
   const width = req.width ?? STATIC_MAP_WIDTH;
   const height = req.height ?? STATIC_MAP_HEIGHT;
@@ -150,7 +171,7 @@ export function buildStaticMapCacheKey(
     String(height),
     tileUrl,
     plainMapAttribution(attribution),
-    ATTRIBUTION_OVERLAY_VERSION,
+    burnInAttribution ? ATTRIBUTION_OVERLAY_VERSION : "no-burn-in",
   ].join("|");
   return createHash("sha256").update(payload).digest("hex");
 }
@@ -299,6 +320,7 @@ async function fetchTilePng(
   timeoutMs: number,
   /** Aborts the whole render attempt so sibling tiles stop when Promise.all fails. */
   attemptSignal?: AbortSignal,
+  image: typeof sharp = sharp,
 ): Promise<Buffer> {
   let current = url;
   for (let hop = 0; hop <= MAX_TILE_REDIRECTS; hop++) {
@@ -336,10 +358,48 @@ async function fetchTilePng(
     if (!bufferLooksLikePng(body)) {
       throw new StaticMapRenderError(`Tile is not a PNG: ${redactTileUrlForLogs(current)}`);
     }
-    return body;
+    return normalizeTilePngToCompositorSize(body, current, image);
   }
 
   throw new StaticMapRenderError(`Too many tile redirects: ${redactTileUrlForLogs(url)}`);
+}
+
+/**
+ * MapTiler / some commercial XYZ styles serve 512×512 (or other) rasters for the same z/x/y
+ * as OSM's 256 grid. Resize to the compositor tile size so sharp can place them on the canvas.
+ */
+export async function normalizeTilePngToCompositorSize(
+  tilePng: Buffer,
+  sourceUrl: string,
+  image: typeof sharp = sharp,
+): Promise<Buffer> {
+  let width: number | undefined;
+  let height: number | undefined;
+  try {
+    const meta = await image(tilePng).metadata();
+    width = meta.width;
+    height = meta.height;
+  } catch (err) {
+    throw new StaticMapRenderError(`Tile PNG metadata unreadable: ${redactTileUrlForLogs(sourceUrl)}`, err);
+  }
+  if (width === TILE_SIZE && height === TILE_SIZE) return tilePng;
+  if (!width || !height) {
+    throw new StaticMapRenderError(`Tile PNG has no dimensions: ${redactTileUrlForLogs(sourceUrl)}`);
+  }
+  if (
+    width > MAX_DECODED_TILE_EDGE ||
+    height > MAX_DECODED_TILE_EDGE ||
+    width * height > MAX_DECODED_TILE_PIXELS
+  ) {
+    throw new StaticMapRenderError(
+      `Tile PNG dimensions too large (${width}x${height}): ${redactTileUrlForLogs(sourceUrl)}`,
+    );
+  }
+  try {
+    return await image(tilePng).resize(TILE_SIZE, TILE_SIZE).png().toBuffer();
+  } catch (err) {
+    throw new StaticMapRenderError(`Tile PNG resize failed: ${redactTileUrlForLogs(sourceUrl)}`, err);
+  }
 }
 
 /**
@@ -359,6 +419,7 @@ export async function renderStaticMapPng(
   const zoom = clampZoom(req.zoom, options.tileConfig.maxZoom);
   const fetchFn = options.fetchFn ?? fetch;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TILE_TIMEOUT_MS;
+  const image = options.imagePipeline ?? sharp;
 
   const center = latLngToTileFraction(req.latitude, req.longitude, zoom);
   const centerPxX = center.x * TILE_SIZE;
@@ -381,7 +442,7 @@ export async function renderStaticMapPng(
       const wrappedX = ((tx % n) + n) % n;
       const url = expandTileUrl(options.tileConfig.tileUrl, zoom, wrappedX, ty);
       tileJobs.push(
-        fetchTilePng(url, options.userAgent, fetchFn, timeoutMs, attempt.signal).then((tilePng) => ({
+        fetchTilePng(url, options.userAgent, fetchFn, timeoutMs, attempt.signal, image).then((tilePng) => ({
           input: tilePng,
           left: Math.round(tx * TILE_SIZE - topLeftPxX),
           top: Math.round(ty * TILE_SIZE - topLeftPxY),
@@ -408,13 +469,15 @@ export async function renderStaticMapPng(
   const pinTop = Math.round(height / 2 - 14);
   composites.push({ input: PIN_SVG, left: pinLeft, top: pinTop });
 
-  const attrOverlay = buildAttributionOverlay(width, options.tileConfig.attribution);
-  if (attrOverlay) {
-    composites.push({ input: attrOverlay, left: 0, top: height - ATTRIBUTION_OVERLAY_HEIGHT });
+  if (options.burnInAttribution !== false) {
+    const attrOverlay = buildAttributionOverlay(width, options.tileConfig.attribution);
+    if (attrOverlay) {
+      composites.push({ input: attrOverlay, left: 0, top: height - ATTRIBUTION_OVERLAY_HEIGHT });
+    }
   }
 
   try {
-    return await sharp({
+    return await image({
       create: {
         width,
         height,
