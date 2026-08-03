@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { PercentCrop } from "react-image-crop";
 import { Button, useToast } from "@admitto/ui";
 import type { LogoCropMeta } from "../api/types.js";
-import { uploadFile } from "../api/client.js";
+import { uploadFile, deleteUploadedFile } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { brandingLogoImgSrc } from "../utils/safeBrandingLogoHref.js";
 import { CropImageModal, type CropApplyMeta } from "./crop/CropImageModal.js";
@@ -244,13 +244,25 @@ export function LogoUploadZone({
     setCropSession(null);
   };
 
+  /** Drop an open crop session and best-effort delete a pre-crop upload that was never Applied. */
+  const abandonCropSession = (session: CropSession | null = cropSession) => {
+    const abandoned = session?.uploadedOriginalUrl;
+    // Do not delete a saved original that Edit reopened (same URL as props.originalUrl).
+    const isPersistedOriginal =
+      Boolean(abandoned) && abandoned === originalUrl && abandoned?.startsWith("/uploads/");
+    setCropSession(null);
+    if (abandoned && !isPersistedOriginal && abandoned.startsWith("/uploads/")) {
+      void deleteUploadedFile(abandoned);
+    }
+  };
+
   const clearLogo = () => {
     uploadSeqRef.current += 1;
     lastUploadedUrlRef.current = null;
     setSourceOriginal(null);
     setZoneError(null);
     setPreviewFailed(false);
-    closeCropSession();
+    abandonCropSession();
     onChange("");
     onSourceChange?.({ originalUrl: null, crop: null });
     onDirty?.();
@@ -264,6 +276,7 @@ export function LogoUploadZone({
     existingOriginalUrl: string,
   ) => {
     const seq = ++uploadSeqRef.current;
+    const previousDisplay = value;
     setZoneError(null);
     setUploading(true);
     try {
@@ -281,7 +294,10 @@ export function LogoUploadZone({
         new File([cropped], croppedName, { type: cropped.type || outMime }),
         croppedName,
       );
-      if (seq !== uploadSeqRef.current) return;
+      if (seq !== uploadSeqRef.current) {
+        void deleteUploadedFile(croppedUrl);
+        return;
+      }
 
       const crop = toLogoCropMeta(applyMeta);
       lastUploadedUrlRef.current = croppedUrl;
@@ -303,9 +319,17 @@ export function LogoUploadZone({
       onSourceChange?.({ originalUrl: originalUploadedUrl, crop });
       onDirty?.();
       closeCropSession();
+      if (
+        previousDisplay.startsWith("/uploads/") &&
+        previousDisplay !== croppedUrl &&
+        previousDisplay !== originalUploadedUrl
+      ) {
+        void deleteUploadedFile(previousDisplay);
+      }
     } catch (err) {
       if (seq !== uploadSeqRef.current) return;
       setZoneError(operatorApiErrorMessage(err, "Upload failed."));
+      // Keep the pre-crop upload so the operator can retry Apply without re-picking.
       closeCropSession();
     } finally {
       if (seq === uploadSeqRef.current) setUploading(false);
@@ -323,6 +347,7 @@ export function LogoUploadZone({
       setZoneError("Use a PNG, JPG, or WebP image.");
       return;
     }
+    abandonCropSession();
     const seq = ++uploadSeqRef.current;
     setZoneError(null);
     setUploading(true);
@@ -331,7 +356,10 @@ export function LogoUploadZone({
       const base = filename.replace(/\.[^.]+$/, "") || "logo";
       const originalName = `${base}-original${extensionForMime(declared)}`;
       const url = await postUpload(uploadFn, file, originalName);
-      if (seq !== uploadSeqRef.current) return;
+      if (seq !== uploadSeqRef.current) {
+        void deleteUploadedFile(url);
+        return;
+      }
       setCropSession({
         imageSrc: url,
         sourceMime: declared,
@@ -538,7 +566,7 @@ export function LogoUploadZone({
           sourceMime={cropSession.sourceMime}
           initialCrop={cropSession.initialCrop}
           initialZoom={cropSession.initialZoom}
-          onCancel={closeCropSession}
+          onCancel={() => abandonCropSession()}
           onApply={async (blob, meta) => {
             const base =
               cropSession.filename.replace(/\.[^.]+$/, "") ||

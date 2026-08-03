@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -502,7 +502,9 @@ describe("DELETE /api/admin/events/:eventId/image-assets/:assetId", () => {
       headers: { Cookie: superCookie, ...sameOrigin },
       body: uploadForm("to_delete"),
     });
-    const created = (await createRes.json()) as { id: string };
+    const created = (await createRes.json()) as { id: string; url: string };
+    const diskPath = join(uploadDir, created.url.slice("/uploads/".length));
+    expect(existsSync(diskPath)).toBe(true);
 
     const delRes = await app.request(
       `/api/admin/events/${EVENT_IA}/image-assets/${created.id}`,
@@ -517,6 +519,7 @@ describe("DELETE /api/admin/events/:eventId/image-assets/:assetId", () => {
     });
     const listBody = (await listRes.json()) as { items: Array<{ id: string }> };
     expect(listBody.items.some((item) => item.id === created.id)).toBe(false);
+    expect(existsSync(diskPath)).toBe(false);
 
     const log = await prisma.attendeeActionLog.findFirst({
       where: { event_id: EVENT_IA, action_type: "event_image_asset_deleted" },

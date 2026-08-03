@@ -326,6 +326,28 @@ export async function uploadFile(formData: FormData): Promise<{ url: string }> {
   return parseJson<{ url: string }>(res);
 }
 
+/**
+ * Best-effort delete of a managed `/uploads/…` file. Failures are swallowed so cancel/replace
+ * UX is never blocked by disk cleanup.
+ */
+export async function deleteUploadedFile(url: string): Promise<void> {
+  if (!url.startsWith("/uploads/")) return;
+  try {
+    await fetch("/api/admin/uploads", {
+      method: "DELETE",
+      credentials: "same-origin",
+      headers: {
+        Origin: window.location.origin,
+        "Content-Type": "application/json",
+        "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone,
+      },
+      body: JSON.stringify({ url }),
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Upload a custom brand font (superadmin); returns public `/uploads/...` URL. */
 export async function uploadThemeFont(formData: FormData): Promise<{ url: string }> {
   const res = await fetch("/api/admin/theme-font-upload", multipartPostInit(formData));

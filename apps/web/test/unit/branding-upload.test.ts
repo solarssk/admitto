@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
@@ -6,6 +6,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   BrandingUploadError,
   assertDecodedImageWithinLimits,
+  bestEffortDeleteReplacedUploadUrls,
+  bestEffortDeleteUploadUrl,
+  deleteBrandingUploadByUrl,
+  parseUploadsUrl,
   resolveUploadDir,
   saveBrandingUpload,
   saveEventUpload,
@@ -256,5 +260,81 @@ describe("saveThemeFontUpload", () => {
       code: "unsupported_file_type",
       status: 415,
     });
+  });
+});
+
+const UUID_PNG = "a1b2c3d4-e5f6-7890-abcd-ef1234567890.png";
+const UUID_WOFF2 = "b2c3d4e5-f6a7-8901-bcde-f12345678901.woff2";
+const UUID_EVENT_PNG = "c3d4e5f6-a7b8-9012-cdef-123456789012.png";
+
+describe("parseUploadsUrl", () => {
+  it("parses org, theme, and event paths", () => {
+    expect(parseUploadsUrl(`/uploads/default/${UUID_PNG}`)).toEqual({
+      orgId: "default",
+      kind: "org",
+      filename: UUID_PNG,
+      relativePath: `default/${UUID_PNG}`,
+    });
+    expect(parseUploadsUrl(`/uploads/default/theme/${UUID_WOFF2}`)).toEqual({
+      orgId: "default",
+      kind: "theme",
+      filename: UUID_WOFF2,
+      relativePath: `default/theme/${UUID_WOFF2}`,
+    });
+    expect(parseUploadsUrl(`/uploads/default/events/evt-1/${UUID_EVENT_PNG}`)).toEqual({
+      orgId: "default",
+      kind: "event",
+      eventId: "evt-1",
+      filename: UUID_EVENT_PNG,
+      relativePath: `default/events/evt-1/${UUID_EVENT_PNG}`,
+    });
+  });
+
+  it("rejects traversal, wrong shape, and non-UUID filenames", () => {
+    expect(() => parseUploadsUrl("/uploads/default/../etc/passwd")).toThrow(BrandingUploadError);
+    expect(() => parseUploadsUrl("/uploads/default/not-a-uuid.png")).toThrow(BrandingUploadError);
+    expect(() => parseUploadsUrl("https://cdn.example.com/logo.png")).toThrow(BrandingUploadError);
+    expect(() => parseUploadsUrl(`/uploads/default/events/${UUID_EVENT_PNG}`)).toThrow(
+      BrandingUploadError,
+    );
+  });
+});
+
+describe("deleteBrandingUploadByUrl", () => {
+  it("unlinks a managed file and treats missing as success", async () => {
+    const result = await saveBrandingUpload(pngFile(), "default");
+    const abs = join(uploadDir, result.url.slice("/uploads/".length));
+    expect(existsSync(abs)).toBe(true);
+
+    await deleteBrandingUploadByUrl(result.url, { expectedOrgId: "default" });
+    expect(existsSync(abs)).toBe(false);
+
+    await deleteBrandingUploadByUrl(result.url, { expectedOrgId: "default" });
+  });
+
+  it("rejects org mismatch", async () => {
+    const result = await saveBrandingUpload(pngFile(), "default");
+    await expect(
+      deleteBrandingUploadByUrl(result.url, { expectedOrgId: "other" }),
+    ).rejects.toMatchObject({ code: "invalid_upload_url" });
+  });
+});
+
+describe("bestEffortDeleteUploadUrl / bestEffortDeleteReplacedUploadUrls", () => {
+  it("deletes only replaced managed URLs and ignores external URLs", async () => {
+    const kept = await saveBrandingUpload(pngFile(), "default");
+    const gone = await saveBrandingUpload(pngFile(), "default");
+    const goneAbs = join(uploadDir, gone.url.slice("/uploads/".length));
+    const keptAbs = join(uploadDir, kept.url.slice("/uploads/".length));
+
+    await bestEffortDeleteReplacedUploadUrls(
+      [gone.url, kept.url, "https://cdn.example.com/x.png"],
+      [kept.url],
+    );
+    expect(existsSync(goneAbs)).toBe(false);
+    expect(existsSync(keptAbs)).toBe(true);
+
+    await bestEffortDeleteUploadUrl("not-an-upload");
+    await bestEffortDeleteUploadUrl(`/uploads/default/${UUID_PNG}`);
   });
 });

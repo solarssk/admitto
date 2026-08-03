@@ -4,6 +4,8 @@ import { canManageInstance } from "@admitto/auth";
 import { writeAdminAuditLogBestEffort } from "@admitto/tickets";
 import {
   BrandingUploadError,
+  deleteBrandingUploadByUrl,
+  parseUploadsUrl,
   saveBrandingUpload,
   saveEventUpload,
   saveThemeFontUpload,
@@ -14,7 +16,7 @@ import { logger } from "../logger.js";
 
 /** The only HTTP statuses BrandingUploadError ever carries - narrows its `number` field for
  * Hono's c.json overload, which needs a literal status rather than a plain number. */
-type BrandingUploadStatus = 400 | 413 | 415;
+type BrandingUploadStatus = 400 | 413 | 415 | 403;
 
 /** Parses the multipart body and extracts the uploaded file, shared by all three upload routes
  * below. Returns the file, or an error Response to return directly - same `T | Response` pattern
@@ -153,4 +155,65 @@ export async function handlePostThemeFontUpload(c: Context, db: PrismaClient): P
     });
     return result;
   });
+}
+
+/**
+ * DELETE /api/admin/uploads — remove a managed `/uploads/…` file by URL.
+ * Org/theme paths: superadmin. Event paths: event manage access matching the URL's eventId.
+ * Single-tenant: org segment must be `default` (same as POST upload writers).
+ */
+export async function handleDeleteUpload(c: Context, db: PrismaClient): Promise<Response> {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid_json" }, 400);
+  }
+  if (!body || typeof body !== "object") {
+    return c.json({ error: "invalid_body" }, 400);
+  }
+  const url = (body as { url?: unknown }).url;
+  if (typeof url !== "string" || url.trim() === "") {
+    return c.json({ error: "url_required" }, 400);
+  }
+
+  let parsed;
+  try {
+    parsed = parseUploadsUrl(url.trim());
+  } catch (err) {
+    if (err instanceof BrandingUploadError) {
+      return c.json({ error: err.code, ...err.details }, err.status as BrandingUploadStatus);
+    }
+    throw err;
+  }
+
+  // TODO(multi-org): same hardcoded orgId as POST upload handlers.
+  if (parsed.orgId !== "default") {
+    return c.json({ error: "invalid_upload_url" }, 400);
+  }
+
+  if (parsed.kind === "event") {
+    const forbidden = await assertEventManageAccess(c, db, parsed.eventId!);
+    if (forbidden) return forbidden;
+  } else {
+    const auth = c.get("auth");
+    if (!(await canManageInstance(db, auth.userId))) {
+      return c.json({ error: "forbidden" }, 403);
+    }
+  }
+
+  try {
+    await deleteBrandingUploadByUrl(url.trim(), {
+      expectedOrgId: parsed.orgId,
+      expectedEventId: parsed.kind === "event" ? parsed.eventId : undefined,
+    });
+  } catch (err) {
+    if (err instanceof BrandingUploadError) {
+      return c.json({ error: err.code, ...err.details }, err.status as BrandingUploadStatus);
+    }
+    logger.error("handleDeleteUpload failed", { err });
+    return c.json({ error: "server error" }, 500);
+  }
+
+  return c.json({ ok: true });
 }

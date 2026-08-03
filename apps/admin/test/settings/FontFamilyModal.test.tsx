@@ -9,12 +9,14 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   return {
     ...actual,
     uploadThemeFont: vi.fn(),
+    deleteUploadedFile: vi.fn(),
   };
 });
 
-import { ApiError, uploadThemeFont } from "../../src/api/client.js";
+import { ApiError, deleteUploadedFile, uploadThemeFont } from "../../src/api/client.js";
 
 const mockUploadFont = vi.mocked(uploadThemeFont);
+const mockDeleteUploadedFile = vi.mocked(deleteUploadedFile);
 
 function isDisabled(el: HTMLElement): boolean {
   return (el as HTMLButtonElement).disabled;
@@ -606,6 +608,21 @@ describe("FontFamilyModal", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it("Cancel after upload best-effort deletes session font files", async () => {
+    mockUploadFont.mockResolvedValueOnce({ url: "/uploads/default/theme/regular.woff2" });
+    const onClose = vi.fn();
+    renderWithToast(<FontFamilyModal open onClose={onClose} onSaved={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText(/Drop font files here/), {
+      target: { files: [new File(["x"], "Acme-Sans-Regular.woff2")] },
+    });
+    await waitFor(() => expect(mockUploadFont).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/theme/regular.woff2");
   });
 
   it("disables Save while any row upload is still in flight, even with a name and no other blockers", () => {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, Card, EmptyState, HintLabel, Input, useToast } from "@admitto/ui";
-import { createEventImageAsset, deleteEventImageAsset, fetchEventImageAssets, uploadEventBrandingFile } from "../api/client.js";
+import { createEventImageAsset, deleteEventImageAsset, deleteUploadedFile, fetchEventImageAssets, uploadEventBrandingFile } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventImageAssetDto } from "../api/types.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
@@ -69,6 +69,8 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
   const [uploading, setUploading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [pendingCrop, setPendingCrop] = useState<PendingCrop | null>(null);
+  /** Pre-crop upload URL kept until Add asset succeeds or the operator cancels/replaces. */
+  const preCropUrlRef = useRef<string | null>(null);
 
   const [dragging, setDragging] = useState(false);
 
@@ -119,6 +121,12 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
     if (fileRef.current) fileRef.current.value = "";
   };
 
+  const discardPreCropUpload = () => {
+    const url = preCropUrlRef.current;
+    preCropUrlRef.current = null;
+    if (url) void deleteUploadedFile(url);
+  };
+
   const closePendingCrop = () => {
     setPendingCrop(null);
   };
@@ -142,11 +150,13 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
       if (fileRef.current) fileRef.current.value = "";
       return;
     }
+    discardPreCropUpload();
     setUploading(true);
     try {
       const fd = new FormData();
       fd.append("file", picked);
       const { url } = await uploadEventBrandingFile(eventId, fd);
+      preCropUrlRef.current = url;
       setPendingCrop({
         imageSrc: url,
         sourceMime: declared,
@@ -172,6 +182,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
     try {
       const created = await createEventImageAsset(eventId, file, tokenTrimmed);
       setAssets((prev) => [...prev, created]);
+      discardPreCropUpload();
       resetForm();
       addToast(`Added {{${created.token}}}`, "success", 2500);
     } catch (err) {
@@ -415,6 +426,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
           imageSrc={pendingCrop.imageSrc}
           sourceMime={pendingCrop.sourceMime}
           onCancel={() => {
+            discardPreCropUpload();
             closePendingCrop();
             if (fileRef.current) fileRef.current.value = "";
           }}

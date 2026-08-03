@@ -11,6 +11,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   return {
     ...actual,
     uploadFile: vi.fn(),
+    deleteUploadedFile: vi.fn(),
   };
 });
 
@@ -56,9 +57,10 @@ vi.mock("../../src/components/crop/CropImageModal.js", () => ({
     ) : null,
 }));
 
-import { uploadFile } from "../../src/api/client.js";
+import { uploadFile, deleteUploadedFile } from "../../src/api/client.js";
 
 const mockUploadFile = vi.mocked(uploadFile);
+const mockDeleteUploadedFile = vi.mocked(deleteUploadedFile);
 
 afterEach(() => {
   cleanup();
@@ -240,6 +242,7 @@ describe("LogoUploadZone", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog", { name: "Adjust image" })).toBeNull();
+    expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/replacement-original.png");
 
     fireEvent.click(screen.getByRole("button", { name: "Edit image" }));
     expect(screen.getByRole("dialog", { name: "Adjust image" }).getAttribute("data-image-src")).toBe(

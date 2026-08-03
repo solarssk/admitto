@@ -1,7 +1,25 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@admitto/db";
-import { canManageInstance, getBrandingTheme, setBrandingTheme, type BrandingCustomFontFamily } from "@admitto/auth";
+import {
+  canManageInstance,
+  getBrandingTheme,
+  setBrandingTheme,
+  type BrandingCustomFontFamily,
+  type BrandingTheme,
+} from "@admitto/auth";
 import { resolveThemeVars } from "@admitto/ui";
+import { bestEffortDeleteReplacedUploadUrls } from "./branding-upload.js";
+
+/** Collect managed font file URLs from a saved theme (custom_font_families variants). */
+function customFontUrls(theme: BrandingTheme | null): string[] {
+  const urls: string[] = [];
+  for (const fam of theme?.custom_font_families ?? []) {
+    for (const variant of fam.variants ?? []) {
+      if (typeof variant.url === "string") urls.push(variant.url);
+    }
+  }
+  return urls;
+}
 
 /** GET /api/staff/theme — any authenticated staff. */
 export async function handleGetStaffTheme(c: Context, db: PrismaClient): Promise<Response> {
@@ -28,6 +46,8 @@ export async function handlePutStaffTheme(c: Context, db: PrismaClient): Promise
     return c.json({ error: "invalid body" }, 400);
   }
 
+  const previous = await getBrandingTheme(db);
+
   const raw = body as Record<string, unknown>;
   await setBrandingTheme(db, {
     primary: typeof raw.primary === "string" ? raw.primary : undefined,
@@ -43,5 +63,7 @@ export async function handlePutStaffTheme(c: Context, db: PrismaClient): Promise
   });
 
   const theme = await getBrandingTheme(db);
+  // Interim orphan cleanup (ADR 0008): drop font files no longer referenced by the theme.
+  await bestEffortDeleteReplacedUploadUrls(customFontUrls(previous), customFontUrls(theme));
   return c.json({ theme, vars: resolveThemeVars(theme) });
 }

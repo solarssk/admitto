@@ -12,6 +12,7 @@ import {
 import { emitSystemLog } from "@admitto/shared/system-log";
 import { resolveActorEmailForLog } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
+import { bestEffortDeleteReplacedUploadUrls } from "./branding-upload.js";
 
 export type SetupOrgBrandingDto = {
   org_name: string | null;
@@ -114,6 +115,11 @@ export async function handlePatchSetupOrgBranding(c: Context, db: PrismaClient):
     return c.json({ error: "org_name required" }, 400);
   }
 
+  const previous = await db.organization.findUniqueOrThrow({
+    where: { id: orgId },
+    select: { logo_url: true, logo_original_url: true },
+  });
+
   try {
     await db.$transaction(async (tx) => {
       if (name !== undefined) {
@@ -145,6 +151,16 @@ export async function handlePatchSetupOrgBranding(c: Context, db: PrismaClient):
     }
     throw err;
   }
+
+  const next = await db.organization.findUniqueOrThrow({
+    where: { id: orgId },
+    select: { logo_url: true, logo_original_url: true },
+  });
+  // Interim orphan cleanup (ADR 0008): drop replaced/cleared managed upload files.
+  await bestEffortDeleteReplacedUploadUrls(
+    [previous.logo_url, previous.logo_original_url],
+    [next.logo_url, next.logo_original_url],
+  );
 
   emitSystemLog("admin", "info", "org_branding_updated", {
     orgId,

@@ -8,7 +8,7 @@ import {
   Select,
   useToast,
 } from "@admitto/ui";
-import { uploadThemeFont } from "../api/client.js";
+import { deleteUploadedFile, uploadThemeFont } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { BrandingCustomFontFamilyDto, BrandingFontVariantDto } from "../api/types.js";
 import { Segmented } from "../components/Segmented.js";
@@ -183,6 +183,8 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
   // discards its own result instead of overwriting whatever the newer load already produced.
   const rowGenerationRef = useRef(new Map<number, number>());
   const facesRef = useRef(new Map<number, FontFace>());
+  /** URLs uploaded during this modal session (not yet saved into the theme). */
+  const sessionUploadsRef = useRef(new Set<string>());
 
   const [familyName, setFamilyName] = useState("");
   const [rows, setRows] = useState<FontRow[]>([]);
@@ -190,6 +192,7 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
 
   useEffect(() => {
     if (!open) return;
+    sessionUploadsRef.current.clear();
     if (!initialFamily) {
       setFamilyName("");
       setRows([]);
@@ -241,7 +244,15 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
   };
   useEffect(() => cleanupPreviewFaces, []);
 
+  const discardSessionUploads = () => {
+    for (const url of sessionUploadsRef.current) {
+      void deleteUploadedFile(url);
+    }
+    sessionUploadsRef.current.clear();
+  };
+
   const handleClose = () => {
+    discardSessionUploads();
     cleanupPreviewFaces();
     onClose();
   };
@@ -260,7 +271,14 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
       document.fonts.delete(face);
       facesRef.current.delete(id);
     }
-    setRows((prev) => prev.filter((r) => r.id !== id));
+    setRows((prev) => {
+      const row = prev.find((r) => r.id === id);
+      if (row?.url && sessionUploadsRef.current.has(row.url)) {
+        sessionUploadsRef.current.delete(row.url);
+        void deleteUploadedFile(row.url);
+      }
+      return prev.filter((r) => r.id !== id);
+    });
   }
 
   function addEmptyRow() {
@@ -284,6 +302,7 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
     const generation = (rowGenerationRef.current.get(id) ?? 0) + 1;
     rowGenerationRef.current.set(id, generation);
     const isStale = () => rowGenerationRef.current.get(id) !== generation;
+    const previousUrl = existingId != null ? rows.find((r) => r.id === existingId)?.url ?? null : null;
 
     if (existingId) {
       updateRow(id, { weight: guess.weight, style: guess.style, fileName: file.name, url: null, loaded: false, loading: true });
@@ -312,7 +331,15 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
       const formData = new FormData();
       formData.append("file", file);
       const { url } = await uploadThemeFont(formData);
-      if (isStale()) return;
+      if (isStale()) {
+        void deleteUploadedFile(url);
+        return;
+      }
+      sessionUploadsRef.current.add(url);
+      if (previousUrl && previousUrl !== url && sessionUploadsRef.current.has(previousUrl)) {
+        sessionUploadsRef.current.delete(previousUrl);
+        void deleteUploadedFile(previousUrl);
+      }
       updateRow(id, { loaded: true, loading: false, url });
     } catch (err) {
       if (isStale()) return;
@@ -378,6 +405,11 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
 
   function save() {
     cleanupPreviewFaces();
+    // Persisted into the theme draft - do not delete these on close.
+    for (const r of loadedRows) {
+      if (r.url) sessionUploadsRef.current.delete(r.url);
+    }
+    discardSessionUploads();
     onSaved({
       familyName: familyName.trim(),
       variants: loadedRows.map((r) => ({ weight: r.weight, style: r.style, url: r.url! })),

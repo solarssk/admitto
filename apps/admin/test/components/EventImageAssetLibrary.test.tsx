@@ -15,6 +15,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     createEventImageAsset: vi.fn(),
     deleteEventImageAsset: vi.fn(),
     uploadEventBrandingFile: vi.fn(),
+    deleteUploadedFile: vi.fn(),
   };
 });
 
@@ -54,6 +55,7 @@ vi.mock("../../src/components/crop/CropImageModal.js", () => ({
 import {
   createEventImageAsset,
   deleteEventImageAsset,
+  deleteUploadedFile,
   fetchEventImageAssets,
   uploadEventBrandingFile,
 } from "../../src/api/client.js";
@@ -62,6 +64,7 @@ const mockFetch = vi.mocked(fetchEventImageAssets);
 const mockCreate = vi.mocked(createEventImageAsset);
 const mockDelete = vi.mocked(deleteEventImageAsset);
 const mockUploadPreview = vi.mocked(uploadEventBrandingFile);
+const mockDeleteUploadedFile = vi.mocked(deleteUploadedFile);
 
 async function pickImageAndApply(file: File) {
   mockUploadPreview.mockResolvedValueOnce({
@@ -220,6 +223,7 @@ describe("EventImageAssetLibrary", () => {
     expect(screen.queryByRole("dialog", { name: "Adjust image" })).toBeNull();
     expect(screen.queryByText("sponsor.png")).toBeNull();
     expect(screen.getByRole("button", { name: "Add asset" }).hasAttribute("disabled")).toBe(true);
+    expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/events/evt-1/preview.png");
   });
 
   it("rejects a file over 2 MB client-side without calling the API", async () => {

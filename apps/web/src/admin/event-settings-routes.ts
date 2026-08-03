@@ -30,6 +30,7 @@ import { quoteCsvCell, sanitizeCsvCell } from "./csv-sanitize.js";
 import { timezoneField } from "./timezone.js";
 import { countEventActivitySignals, isEventDeletable } from "./event-deletion.js";
 import { attachmentContentDisposition } from "./content-disposition.js";
+import { bestEffortDeleteReplacedUploadUrls } from "./branding-upload.js";
 
 const dateOnlyField = z
   .string()
@@ -367,6 +368,12 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
       actorUserId,
       actorEmail: await resolveActorEmailForLog(db, actorUserId),
     });
+
+    // Interim orphan cleanup (ADR 0008): drop replaced/cleared managed upload files.
+    await bestEffortDeleteReplacedUploadUrls(
+      [existing.logo_url, existing.logo_original_url, existing.header_image_url],
+      [updated.logo_url, updated.logo_original_url, updated.header_image_url],
+    );
 
     const deletability = await loadDeletability(db, eventId, updated);
     const revokeCounts = await loadRevokeCounts(db, eventId);
