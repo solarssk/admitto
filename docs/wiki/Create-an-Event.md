@@ -18,7 +18,7 @@ Prepare the event title, calendar date, timezone, and optional location. Choose 
 
 ## Steps
 
-1. Open **Events**.
+1. Open **Events**. Cards list events by date (past active events first, then upcoming).
 2. Select **New event**. On an empty list, the button can read **Create event**.
 3. Enter the **Event title**.
 4. Review the auto-generated **URL slug**. Use only lowercase letters, numbers, `_`, or `-`.

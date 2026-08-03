@@ -130,6 +130,8 @@ export interface EventSummary {
   date: Date;
   timezone: string;
   location: string | null;
+  /** True when EventLocation has both latitude and longitude (static map preview available). */
+  has_coordinates: boolean;
   organization_id: string;
   archived_at: Date | null;
   created_at: Date;
@@ -145,7 +147,7 @@ const eventSelect = {
   slug: true,
   date: true,
   timezone: true,
-  location_details: { select: { venue_name: true } },
+  location_details: { select: { venue_name: true, latitude: true, longitude: true } },
   organization_id: true,
   archived_at: true,
   created_at: true,
@@ -162,7 +164,13 @@ function toEventSummary(
   row: Prisma.EventGetPayload<{ select: typeof eventSelect }>,
 ): EventSummary {
   const { location_details, ...rest } = row;
-  return { ...rest, location: location_details?.venue_name ?? null };
+  const lat = location_details?.latitude;
+  const lng = location_details?.longitude;
+  return {
+    ...rest,
+    location: location_details?.venue_name ?? null,
+    has_coordinates: lat != null && lng != null,
+  };
 }
 
 /** Events where user has check-in capability (matches canPerformCheckIn). Excludes archived events — archiving an event ends check-in for it, same as admin mutating APIs. */

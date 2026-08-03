@@ -53,6 +53,7 @@ type EventJsonRow = {
   date: Date;
   timezone: string;
   location: string | null;
+  has_coordinates?: boolean;
   organization_id: string;
   archived_at: Date | null;
   created_at: Date;
@@ -95,6 +96,7 @@ export function serializeEventDto(
     date: event.date.toISOString(),
     timezone: event.timezone,
     location: event.location,
+    has_coordinates: event.has_coordinates === true,
     organization_id: event.organization_id,
     archived_at: event.archived_at?.toISOString() ?? null,
     created_at: event.created_at.toISOString(),
@@ -250,7 +252,11 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
         metadata: { eventId: created.id, title: created.title, slug: created.slug },
       });
 
-      return { ...created, location: trimmedVenueName };
+      return {
+        ...created,
+        location: trimmedVenueName,
+        has_coordinates: latitude != null && longitude != null,
+      };
     });
 
     emitSystemLog("admin", "info", "event_created", {

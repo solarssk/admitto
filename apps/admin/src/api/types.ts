@@ -44,6 +44,8 @@ export interface EventDto {
   date: string;
   timezone: string;
   location: string | null;
+  /** Static map preview (`/m/{id}.png`) is available when both coordinates are set. */
+  has_coordinates?: boolean;
   organization_id: string;
   attendee_count?: number;
   archived_at: string | null;

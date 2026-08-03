@@ -1,7 +1,7 @@
 import { Link } from "react-router";
 import { Badge, Card } from "@admitto/ui";
 import type { EventDto } from "../api/types.js";
-import { formatEventCalendarDate } from "../utils/event-dates.js";
+import { eventCardDateParts, eventCardStatus } from "../utils/event-card-status.js";
 
 export interface EventCardProps {
   event: EventDto;
@@ -37,36 +37,72 @@ export function EventCard({
     .filter(Boolean)
     .join(" ");
 
+  const { month, day } = eventCardDateParts(event.date);
+  const status = showStatusBadge ? eventCardStatus(event) : null;
+  const hasMap = event.has_coordinates === true;
+  const locationText = event.location?.trim() || null;
+  const attendeeCount = event.attendee_count;
+
   return (
     <Link to={href} state={{ event }} className="event-card-link">
-      <Card className={cardClassName}>
-        {showStatusBadge && (
-          <Badge
-            variant={event.archived_at ? "neutral" : "ok"}
-            className="event-card__status"
-          >
-            {event.archived_at ? "Archived" : "Active"}
-          </Badge>
-        )}
-        <h2 className="event-card__title">{event.title}</h2>
-        <p className="event-card__meta">
-          <i className="ti ti-calendar" aria-hidden="true" />
-          <span>{formatEventCalendarDate(event.date)}</span>
-          {event.location && (
-            <>
-              <span aria-hidden="true">·</span>
-              <i className="ti ti-map-pin" aria-hidden="true" />
-              <span>{event.location}</span>
-            </>
+      <Card className={cardClassName} padded={false}>
+        <div className="event-card__map">
+          {hasMap ? (
+            <img
+              className="event-card__map-img"
+              src={`/m/${event.id}.png`}
+              alt=""
+              loading="lazy"
+              decoding="async"
+            />
+          ) : (
+            <div className="event-card__map-placeholder" aria-hidden="true">
+              <i className="ti ti-map-off" />
+              <span>No location</span>
+            </div>
           )}
-        </p>
-        {showAttendeeCount && event.attendee_count != null && (
-          <div className="event-card__stats">
+          <div className="event-card__weather" aria-label="Weather forecast coming soon">
+            <i className="ti ti-cloud" aria-hidden="true" />
+            <span>—°</span>
+          </div>
+        </div>
+
+        <div className="event-card__body">
+          <div className="event-card__date" aria-hidden="true">
+            <span className="event-card__date-month">{month}</span>
+            <span className="event-card__date-day">{day}</span>
+          </div>
+
+          <div className="event-card__main">
+            {status && (
+              <Badge variant={status.variant} className="event-card__status">
+                {status.label}
+              </Badge>
+            )}
+            <h2 className="event-card__title">{event.title}</h2>
+            <p
+              className={
+                locationText
+                  ? "event-card__location"
+                  : "event-card__location event-card__location--empty"
+              }
+            >
+              <i className="ti ti-map-pin" aria-hidden="true" />
+              <span>{locationText ?? "No location set"}</span>
+            </p>
+          </div>
+        </div>
+
+        {showAttendeeCount && attendeeCount != null && (
+          <div className="event-card__footer">
             <div className="event-card__stat">
               <i className="ti ti-users" aria-hidden="true" />
-              <strong>{event.attendee_count}</strong>
+              <strong>{attendeeCount}</strong>
               <span>attendees</span>
             </div>
+            {attendeeCount === 0 && (
+              <span className="event-card__hint">Not imported yet</span>
+            )}
           </div>
         )}
       </Card>

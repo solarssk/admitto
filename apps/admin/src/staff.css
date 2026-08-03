@@ -60,7 +60,10 @@
 
 .event-card {
   position: relative;
+  display: flex;
+  flex-direction: column;
   height: 100%;
+  overflow: hidden;
   border: 1px solid var(--border);
   border-left: 3px solid var(--status-ok);
   box-shadow: var(--shadow-sm);
@@ -75,14 +78,110 @@
   border-left-color: var(--at-gray-400, #9ca3af);
 }
 
-.event-card__status {
+.event-card__map {
+  position: relative;
+  height: 140px;
+  flex-shrink: 0;
+  background: var(--surface-muted, var(--at-gray-100, #f1f3f5));
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.event-card__map-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.event-card__map-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.event-card__map-placeholder i {
+  font-size: 1.5rem;
+}
+
+.event-card__weather {
   position: absolute;
-  top: 12px;
-  right: 12px;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm, 6px);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.event-card__weather i {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.event-card__body {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 14px 14px 10px;
+  flex: 1 1 auto;
+}
+
+.event-card__date {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 3.25rem;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--surface-muted, var(--at-gray-50, #f8f9fa));
+  line-height: 1.1;
+}
+
+.event-card__date-month {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.event-card__date-day {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.event-card__main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.event-card__status {
+  align-self: flex-start;
 }
 
 .event-card-link {
   display: block;
+  height: 100%;
   color: inherit;
   text-decoration: none;
 }
@@ -103,34 +202,56 @@
 }
 
 .event-card__title {
-  margin: 0 0 6px;
-  padding-right: 4.5rem;
+  margin: 0;
   font-size: var(--fs-h3);
   font-weight: 600;
   line-height: 1.3;
   color: var(--text-primary);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 
-.event-card__meta {
-  margin: 0 0 10px;
+.event-card__location {
+  margin: 0;
+  /* Reserve two lines so cards in a row stay the same height when location wraps. */
+  min-height: calc(2 * var(--fs-sm) * 1.35);
   color: var(--text-secondary);
   font-size: var(--fs-sm);
+  line-height: 1.35;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
 }
 
-.event-card__meta i {
+.event-card__location i {
+  margin-top: 0.15em;
   font-size: 14px;
   color: var(--text-muted);
   flex-shrink: 0;
 }
 
-.event-card__stats {
+.event-card__location span {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.event-card__location--empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.event-card__footer {
   display: flex;
-  gap: 16px;
-  margin-top: 12px;
-  padding-top: 12px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: auto;
+  padding: 10px 14px 14px;
   border-top: 1px solid var(--border);
 }
 
@@ -152,8 +273,22 @@
   color: var(--text-primary);
 }
 
-.event-card--touch {
-  min-height: 88px;
+.event-card__hint {
+  font-size: var(--fs-xs);
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.event-card--touch .event-card__map {
+  height: 120px;
+}
+
+.event-card--touch .event-card__body {
+  padding: 16px 16px 12px;
+}
+
+.event-card--touch .event-card__title {
+  font-size: 1.15rem;
 }
 
 .topbar__title {
@@ -6709,11 +6844,6 @@ select.system-log-panel__field {
  * Scoped to this modal rather than changing that shared rule app-wide. */
 .overview-resource-modal__type {
   max-width: none;
-}
-
-.event-card__hint {
-  margin: var(--space-2) 0 0;
-  font-size: var(--fs-sm);
 }
 
 .timezone-select {
