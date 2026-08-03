@@ -68,7 +68,7 @@ describe("CheckInEntryPage", () => {
     expect(fetchCheckInEvents).toHaveBeenCalledWith({ includeAttendeeCount: true });
   });
 
-  it("uses the three-column grid when at least four events are available, same as the admin picker", async () => {
+  it("uses the two-column grid when at least four events are available, same as the admin picker", async () => {
     vi.mocked(fetchCheckInEvents).mockResolvedValue(
       Array.from({ length: 4 }, (_, index) => ({
         id: `evt-${index + 1}`,
@@ -85,7 +85,8 @@ describe("CheckInEntryPage", () => {
     renderAt("/operator");
 
     await screen.findByText("Event 4");
-    expect(document.querySelector(".event-grid")?.className).toContain("event-grid--cols-3");
+    expect(document.querySelector(".event-grid")?.className).toContain("event-grid--cols-2");
+    expect(document.querySelector(".event-grid")?.className).not.toContain("event-grid--cols-3");
   });
 
   it("auto-redirects straight to check-in when exactly one event is available", async () => {
