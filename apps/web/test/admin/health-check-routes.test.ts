@@ -59,8 +59,12 @@ vi.mock("@admitto/auth", async (importOriginal) => {
   };
 });
 
+import { canManageInstance } from "@admitto/auth";
+import type { Context } from "hono";
 import {
   collectAdminHealth,
+  handleGetAdminHealth,
+  handlePostAdminHealthLive,
   MAIL_QUEUE_DEGRADED_THRESHOLD,
   resolveHealthCommit,
   safeEndpointDisplay,
@@ -73,6 +77,30 @@ const okSetup = {
   encryption: { ok: true, detail: "ENCRYPTION_KEY configured (32 bytes)" },
   base_url: { ok: true, detail: "https://tickets.example.com" },
 };
+
+function stubHappyPathMailAndIdp() {
+  checkMailer.mockReturnValue({ configured: false, provider: null });
+  resolveInstanceOrganizationId.mockResolvedValue("org-1");
+  describeMailConfigForOrg.mockResolvedValue({
+    provider: { value: null, source: "default", locked: false },
+  });
+  listOidcProviders.mockResolvedValue([]);
+  findEnabledOidcProviders.mockResolvedValue([]);
+  getCfAccessConfig.mockResolvedValue({
+    enabled: false,
+    teamDomain: "",
+    audience: [],
+    protectedPrefixes: [],
+    jwksUri: "",
+  });
+}
+
+function fakeHealthContext(): Context {
+  return {
+    get: (key: string) => (key === "auth" ? { userId: "user-1" } : undefined),
+    json: (payload: unknown, status?: number) => Response.json(payload, { status: status ?? 200 }),
+  } as unknown as Context;
+}
 
 describe("worstHealthStatus", () => {
   it("ignores planned and not_configured", () => {
@@ -99,6 +127,10 @@ describe("safeEndpointDisplay", () => {
     expect(
       safeEndpointDisplay("https://user:secret@tile.example.com/{z}/{x}/{y}.png?key=abc"),
     ).toBe("https://tile.example.com");
+  });
+
+  it("returns undefined for an unparseable URL", () => {
+    expect(safeEndpointDisplay("not a url at all")).toBeUndefined();
   });
 });
 
@@ -328,5 +360,397 @@ describe("collectAdminHealth", () => {
     const address = report.groups[1]!.checks.find((c) => c.id === "address_lookup");
     expect(address?.summary).toBe("Reachable");
     expect(address?.details.some((d) => d.key === "live_check" && d.value === "ok")).toBe(true);
+  });
+
+  it("marks address lookup down when the live Nominatim probe fails", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+    });
+    stubHappyPathMailAndIdp();
+    isLocationMapsEnabled.mockReturnValue(true);
+
+    const search = vi.fn().mockRejectedValue(new Error("timeout"));
+    const report = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+      live: true,
+      geocodingProvider: { name: "nominatim", search, reverse: vi.fn() },
+    });
+
+    const address = report.groups[1]!.checks.find((c) => c.id === "address_lookup");
+    expect(address?.status).toBe("down");
+    expect(address?.summary).toBe("Unreachable");
+  });
+
+  it("marks address lookup degraded when the live probe is slow", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+    });
+    stubHappyPathMailAndIdp();
+    isLocationMapsEnabled.mockReturnValue(true);
+
+    let now = 1_000_000;
+    vi.spyOn(Date, "now").mockImplementation(() => {
+      const current = now;
+      now += 2_000;
+      return current;
+    });
+
+    const search = vi.fn().mockResolvedValue([{ label: "Warsaw" }]);
+    const report = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+      live: true,
+      geocodingProvider: { name: "nominatim", search, reverse: vi.fn() },
+    });
+
+    const address = report.groups[1]!.checks.find((c) => c.id === "address_lookup");
+    expect(address?.status).toBe("degraded");
+    expect(address?.summary).toMatch(/Slow to respond/);
+    vi.restoreAllMocks();
+  });
+
+  it("marks address lookup not_configured when maps are disabled", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+    });
+    stubHappyPathMailAndIdp();
+    isLocationMapsEnabled.mockReturnValue(false);
+
+    const report = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+    });
+
+    const address = report.groups[1]!.checks.find((c) => c.id === "address_lookup");
+    expect(address?.status).toBe("not_configured");
+    expect(address?.summary).toBe("Maps disabled");
+  });
+
+  it("covers core failure and warn branches for database, redis, encryption, and instance URL", async () => {
+    collectSetupChecks.mockResolvedValue({
+      database: { ok: false, reason: "unreachable", detail: "PostgreSQL unreachable" },
+      redis: { ok: false, detail: "Redis unreachable" },
+      encryption: { ok: false, detail: "ENCRYPTION_KEY missing" },
+      base_url: { ok: false, detail: "BASE_URL missing" },
+    });
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: -1,
+      email_deliveries_failed_retryable: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    const report = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+    });
+
+    const core = report.groups[0]!.checks;
+    expect(core.find((c) => c.id === "database")?.status).toBe("down");
+    expect(core.find((c) => c.id === "database")?.summary).toBe("Not reachable");
+    expect(core.find((c) => c.id === "session_storage")?.status).toBe("down");
+    expect(core.find((c) => c.id === "data_encryption")?.status).toBe("down");
+    expect(core.find((c) => c.id === "instance_url")?.status).toBe("down");
+    expect(core.find((c) => c.id === "mail_delivery_queue")?.summary).toBe(
+      "Could not read queue depth",
+    );
+    expect(report.overall).toBe("down");
+  });
+
+  it("covers migrations_pending, redis warn/in-memory, instance URL warn, and queue retryables", async () => {
+    collectSetupChecks.mockResolvedValue({
+      database: {
+        ok: false,
+        reason: "migrations_pending",
+        detail: "PostgreSQL connected · migrations pending",
+      },
+      redis: { ok: true, warn: true, detail: "Redis OK (in-memory) (900 ms)" },
+      encryption: { ok: true, detail: "ENCRYPTION_KEY configured (32 bytes)" },
+      base_url: { ok: true, warn: true, detail: "optional in development" },
+    });
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 3,
+    });
+    stubHappyPathMailAndIdp();
+
+    const report = await collectAdminHealth({
+      db: {
+        $queryRaw: vi.fn().mockResolvedValue([{ version: "PostgreSQL 16.2 on x86_64" }]),
+      } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+    });
+
+    const core = report.groups[0]!.checks;
+    expect(core.find((c) => c.id === "database")?.summary).toBe("Schema update pending");
+    expect(core.find((c) => c.id === "database")?.details.some((d) => d.key === "engine")).toBe(
+      true,
+    );
+    expect(core.find((c) => c.id === "session_storage")?.status).toBe("degraded");
+    expect(core.find((c) => c.id === "session_storage")?.summary).toMatch(/900 ms/);
+    expect(core.find((c) => c.id === "instance_url")?.status).toBe("degraded");
+    expect(core.find((c) => c.id === "mail_delivery_queue")?.status).toBe("degraded");
+    expect(core.find((c) => c.id === "mail_delivery_queue")?.summary).toMatch(
+      /Queue empty · 3 retryable/,
+    );
+  });
+
+  it("labels mail providers and export_only / env fallback paths", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 3,
+      email_deliveries_failed_retryable: 0,
+    });
+    checkMailer.mockReturnValue({ configured: true, provider: "graph" });
+    resolveInstanceOrganizationId.mockResolvedValue("org-1");
+    describeMailConfigForOrg.mockResolvedValue({
+      provider: { value: "export_only", source: "organization", locked: false },
+    });
+    listOidcProviders.mockResolvedValue([]);
+    findEnabledOidcProviders.mockResolvedValue([]);
+    getCfAccessConfig.mockResolvedValue({
+      enabled: false,
+      teamDomain: "",
+      audience: [],
+      protectedPrefixes: [],
+      jwksUri: "",
+    });
+
+    const exportReport = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+    });
+    expect(exportReport.groups[1]!.checks.find((c) => c.id === "email_sending")?.label).toBe(
+      "Email sending, Export only",
+    );
+    expect(exportReport.groups[1]!.checks.find((c) => c.id === "email_sending")?.summary).toBe(
+      "Export only · not sending",
+    );
+    expect(exportReport.groups[0]!.checks.find((c) => c.id === "mail_delivery_queue")?.summary).toBe(
+      "Running · 3 queued",
+    );
+
+    describeMailConfigForOrg.mockRejectedValueOnce(new Error("org missing"));
+    checkMailer.mockReturnValue({ configured: true, provider: "smtp" });
+    const envFallback = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+    });
+    expect(envFallback.groups[1]!.checks.find((c) => c.id === "email_sending")?.summary).toBe(
+      "Connected",
+    );
+    expect(
+      envFallback.groups[1]!.checks
+        .find((c) => c.id === "email_sending")
+        ?.details.some((d) => d.key === "source" && d.value === "env"),
+    ).toBe(true);
+
+    describeMailConfigForOrg.mockResolvedValueOnce({
+      provider: { value: "powerautomate", source: "organization", locked: false },
+    });
+    const pa = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+    });
+    expect(pa.groups[1]!.checks.find((c) => c.id === "email_sending")?.label).toBe(
+      "Email sending, Power Automate",
+    );
+  });
+
+  it("runs live IdP and Cloudflare Access probes", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+    });
+    checkMailer.mockReturnValue({ configured: false, provider: null });
+    resolveInstanceOrganizationId.mockResolvedValue("org-1");
+    describeMailConfigForOrg.mockResolvedValue({
+      provider: { value: null, source: "default", locked: false },
+    });
+    listOidcProviders.mockResolvedValue([
+      {
+        id: "idp-1",
+        provider_type: "oidc",
+        display_name: "Authentik",
+        issuer: "https://auth.example.com",
+        authorization_endpoint: "https://auth.example.com/auth",
+        token_endpoint: "https://auth.example.com/token",
+        jwks_uri: "https://auth.example.com/jwks",
+        enabled: true,
+      },
+    ]);
+    findEnabledOidcProviders.mockResolvedValue([
+      { id: "idp-1", provider_type: "oidc", display_name: "Authentik" },
+    ]);
+    testOidcConnection.mockResolvedValueOnce({ ok: false, error: "jwks" });
+    getCfAccessConfig.mockResolvedValue({
+      enabled: true,
+      teamDomain: "https://team.cloudflareaccess.com",
+      audience: ["aud-1"],
+      protectedPrefixes: ["/admin"],
+      jwksUri: "https://team.cloudflareaccess.com/cdn-cgi/access/certs",
+    });
+    testCfAccessConnection.mockResolvedValueOnce({ ok: false, error: "jwks" });
+
+    const downReport = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+      live: true,
+    });
+    expect(
+      downReport.groups[1]!.checks.find((c) => c.id === "identity_provider_idp-1")?.status,
+    ).toBe("down");
+    expect(downReport.groups[1]!.checks.find((c) => c.id === "cloudflare_access")?.status).toBe(
+      "down",
+    );
+
+    testOidcConnection.mockResolvedValueOnce({ ok: true });
+    testCfAccessConnection.mockResolvedValueOnce({ ok: true });
+    const okReport = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+      live: true,
+    });
+    expect(okReport.groups[1]!.checks.find((c) => c.id === "identity_provider_idp-1")?.summary).toBe(
+      "Reachable",
+    );
+    expect(okReport.groups[1]!.checks.find((c) => c.id === "cloudflare_access")?.summary).toBe(
+      "Reachable",
+    );
+  });
+
+  it("covers Cloudflare Access configured-disabled and passive enabled rows", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+    });
+    stubHappyPathMailAndIdp();
+    getCfAccessConfig.mockResolvedValue({
+      enabled: false,
+      teamDomain: "https://team.cloudflareaccess.com",
+      audience: [],
+      protectedPrefixes: [],
+      jwksUri: "",
+    });
+
+    const disabled = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+    });
+    expect(disabled.groups[1]!.checks.find((c) => c.id === "cloudflare_access")?.summary).toBe(
+      "Configured · disabled",
+    );
+
+    getCfAccessConfig.mockResolvedValue({
+      enabled: true,
+      teamDomain: "https://team.cloudflareaccess.com",
+      audience: ["a", "b"],
+      protectedPrefixes: ["/"],
+      jwksUri: "https://team.cloudflareaccess.com/cdn-cgi/access/certs",
+    });
+    const enabled = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+      live: false,
+    });
+    expect(enabled.groups[1]!.checks.find((c) => c.id === "cloudflare_access")?.summary).toBe(
+      "Configured · enabled",
+    );
+  });
+
+  it("labels map tiles for CARTO and custom hosts, and not_configured when maps disabled", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+    });
+    stubHappyPathMailAndIdp();
+    isLocationMapsEnabled.mockReturnValue(true);
+
+    const carto = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+      env: {
+        MAP_TILE_URL: "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+      },
+    });
+    expect(carto.groups[1]!.checks.find((c) => c.id === "map_tiles")?.label).toBe(
+      "Map tiles, CARTO",
+    );
+
+    const custom = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+      env: { MAP_TILE_URL: "https://tiles.example.com/{z}/{x}/{y}.png" },
+    });
+    expect(custom.groups[1]!.checks.find((c) => c.id === "map_tiles")?.label).toBe(
+      "Map tiles, tiles.example.com",
+    );
+
+    isLocationMapsEnabled.mockReturnValue(false);
+    const disabled = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+    });
+    expect(disabled.groups[1]!.checks.find((c) => c.id === "map_tiles")?.status).toBe(
+      "not_configured",
+    );
+  });
+});
+
+describe("handleGetAdminHealth / handlePostAdminHealthLive", () => {
+  it("returns 403 when the caller cannot manage the instance", async () => {
+    vi.mocked(canManageInstance).mockResolvedValueOnce(false);
+    const res = await handleGetAdminHealth(fakeHealthContext(), {} as PrismaClient, {} as never);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "forbidden" });
+  });
+
+  it("returns the passive report for GET and live report for POST", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+    });
+    stubHappyPathMailAndIdp();
+    vi.mocked(canManageInstance).mockResolvedValue(true);
+
+    const getRes = await handleGetAdminHealth(
+      fakeHealthContext(),
+      { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      {} as never,
+    );
+    expect(getRes.status).toBe(200);
+    const getBody = (await getRes.json()) as { overall: string; groups: unknown[] };
+    expect(getBody.groups).toHaveLength(2);
+
+    const search = vi.fn().mockResolvedValue([{ label: "Warsaw" }]);
+    isLocationMapsEnabled.mockReturnValue(true);
+    const postRes = await handlePostAdminHealthLive(
+      fakeHealthContext(),
+      { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      {} as never,
+      { geocodingProvider: { name: "nominatim", search, reverse: vi.fn() } },
+    );
+    expect(postRes.status).toBe(200);
+    expect(search).toHaveBeenCalled();
+  });
+
+  it("returns 403 on live when the caller cannot manage the instance", async () => {
+    vi.mocked(canManageInstance).mockResolvedValueOnce(false);
+    const res = await handlePostAdminHealthLive(
+      fakeHealthContext(),
+      {} as PrismaClient,
+      {} as never,
+    );
+    expect(res.status).toBe(403);
   });
 });

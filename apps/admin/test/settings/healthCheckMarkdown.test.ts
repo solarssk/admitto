@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { formatHealthCheckMarkdown } from "../../src/settings/healthCheckMarkdown.js";
+import {
+  formatHealthCheckMarkdown,
+  formatHealthDetailLabel,
+  formatHealthDetailValue,
+} from "../../src/settings/healthCheckMarkdown.js";
 import type { HealthReportDto } from "../../src/api/types.js";
 
 const sample: HealthReportDto = {
@@ -55,6 +59,20 @@ const sample: HealthReportDto = {
   ],
 };
 
+describe("formatHealthDetailLabel / formatHealthDetailValue", () => {
+  it("uses friendly labels and units for known keys", () => {
+    expect(formatHealthDetailLabel("latency_ms")).toBe("Latency");
+    expect(formatHealthDetailLabel("failed_retryable")).toBe("Failed retryable");
+    expect(formatHealthDetailLabel("custom_key")).toBe("custom key");
+    expect(formatHealthDetailValue("latency_ms", "12")).toBe("12 ms");
+    expect(formatHealthDetailValue("latency_ms", "slow")).toBe("slow");
+    expect(formatHealthDetailValue("queued", "3")).toBe("3 messages");
+    expect(formatHealthDetailValue("max_zoom", "19")).toBe("z19");
+    expect(formatHealthDetailValue("max_zoom", "n/a")).toBe("n/a");
+    expect(formatHealthDetailValue("provider", "smtp")).toBe("smtp");
+  });
+});
+
 describe("formatHealthCheckMarkdown", () => {
   it("emits grouped tables and omits instance URLs", () => {
     const md = formatHealthCheckMarkdown(sample);
@@ -66,5 +84,60 @@ describe("formatHealthCheckMarkdown", () => {
     expect(md).not.toContain("secret.example.com");
     expect(md).toContain("Latency: 4 ms");
     expect(md).toContain("queued: 218 messages");
+  });
+
+  it("labels overall Healthy / Outage and escapes pipe characters in cells", () => {
+    const md = formatHealthCheckMarkdown({
+      ...sample,
+      overall: "ok",
+      groups: [
+        {
+          id: "core",
+          label: "Core infrastructure",
+          subtitle: "Owned and run by this instance",
+          status: "ok",
+          checks: [
+            {
+              id: "database",
+              label: "Database | primary",
+              status: "down",
+              summary: "Line1\nLine2",
+              details: [{ key: "last_checked", value: "just now" }],
+            },
+          ],
+        },
+      ],
+    });
+    expect(md).toContain("Overall: Healthy");
+    expect(md).toContain("| Database \\| primary | down | Line1 Line2 |");
+    // Only last_checked details → no <details> block for the group.
+    expect(md).not.toContain("<details>");
+  });
+
+  it("emits Outage overall and skips details blocks with only unsafe keys", () => {
+    const md = formatHealthCheckMarkdown({
+      ...sample,
+      overall: "down",
+      groups: [
+        {
+          id: "core",
+          label: "Core infrastructure",
+          subtitle: "Owned and run by this instance",
+          status: "down",
+          checks: [
+            {
+              id: "instance_url",
+              label: "Instance URL",
+              status: "down",
+              summary: "Not configured",
+              details: [{ key: "url", value: "https://tickets.example.com" }],
+            },
+          ],
+        },
+      ],
+    });
+    expect(md).toContain("Overall: Outage");
+    expect(md).not.toContain("<details>");
+    expect(md).not.toContain("tickets.example.com");
   });
 });
