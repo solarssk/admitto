@@ -36,6 +36,7 @@ const CODE_MESSAGES: Record<string, string> = {
     "Inactivity timeout cannot be longer than the maximum session lifetime.",
   incomplete_transport: "Fill in all required fields for this mail transport before saving.",
   invalid_form_data: "Could not read the upload. Try again.",
+  invalid_image: "That file is not a valid image. Try another PNG, JPG, or WebP.",
   invalid_code: "Invalid authenticator code.",
   invalid_totp: "Invalid authenticator or backup code.",
   invalid_issuer:

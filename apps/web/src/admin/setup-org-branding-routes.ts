@@ -1,28 +1,67 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@admitto/db";
 import { canManageInstance } from "@admitto/auth";
-import { setBranding, InvalidHttpUrlError } from "@admitto/mail-templates";
+import {
+  setBranding,
+  InvalidHttpUrlError,
+  logoCropFromDb,
+  parseLogoCrop,
+  type LogoCropMeta,
+  type LogoPersistenceDto,
+} from "@admitto/mail-templates";
 import { emitSystemLog } from "@admitto/shared/system-log";
 import { resolveActorEmailForLog } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 
 export type SetupOrgBrandingDto = {
   org_name: string | null;
-  logo_url: string | null;
+} & LogoPersistenceDto;
+
+type OrgBrandingPatch = {
+  org_name?: string;
+  logo_url?: string | null;
+  logo_original_url?: string | null;
+  logo_crop?: LogoCropMeta | null;
 };
 
-function parsePatchBody(body: unknown): { org_name?: string; logo_url?: string | null } | null {
+/** Read an optional string|null field; returns null on type mismatch. */
+function readOptionalStringField(
+  record: Record<string, unknown>,
+  key: string,
+): { ok: true; value: string | null | undefined } | { ok: false } {
+  if (!(key in record)) return { ok: true, value: undefined };
+  const raw = record[key];
+  if (raw !== null && typeof raw !== "string") return { ok: false };
+  return { ok: true, value: raw };
+}
+
+function parsePatchBody(body: unknown): OrgBrandingPatch | null {
   if (!body || typeof body !== "object") return null;
   const record = body as Record<string, unknown>;
-  const out: { org_name?: string; logo_url?: string | null } = {};
-  if ("org_name" in record) {
-    if (record.org_name !== null && typeof record.org_name !== "string") return null;
-    out.org_name = record.org_name === null ? "" : record.org_name.trim();
+  const out: OrgBrandingPatch = {};
+
+  const orgName = readOptionalStringField(record, "org_name");
+  if (!orgName.ok) return null;
+  if (orgName.value !== undefined) {
+    out.org_name = orgName.value === null ? "" : orgName.value.trim();
   }
-  if ("logo_url" in record) {
-    if (record.logo_url !== null && typeof record.logo_url !== "string") return null;
-    out.logo_url = record.logo_url;
+
+  const logoUrl = readOptionalStringField(record, "logo_url");
+  if (!logoUrl.ok) return null;
+  if (logoUrl.value !== undefined) out.logo_url = logoUrl.value;
+
+  const logoOriginal = readOptionalStringField(record, "logo_original_url");
+  if (!logoOriginal.ok) return null;
+  if (logoOriginal.value !== undefined) out.logo_original_url = logoOriginal.value;
+
+  if ("logo_crop" in record) {
+    try {
+      out.logo_crop = parseLogoCrop(record.logo_crop);
+    } catch {
+      return null;
+    }
   }
+
   if (Object.keys(out).length === 0) return null;
   return out;
 }
@@ -37,12 +76,14 @@ export async function handleGetSetupOrgBranding(c: Context, db: PrismaClient): P
   const orgId = await resolveInstanceOrganizationId(db, process.env);
   const org = await db.organization.findUniqueOrThrow({
     where: { id: orgId },
-    select: { name: true, logo_url: true },
+    select: { name: true, logo_url: true, logo_original_url: true, logo_crop: true },
   });
 
   const payload: SetupOrgBrandingDto = {
     org_name: org.name,
     logo_url: org.logo_url,
+    logo_original_url: org.logo_original_url,
+    logo_crop: logoCropFromDb(org.logo_crop),
   };
   return c.json(payload, 200);
 }
@@ -82,10 +123,18 @@ export async function handlePatchSetupOrgBranding(c: Context, db: PrismaClient):
         });
       }
 
-      if (patch.logo_url !== undefined) {
+      if (
+        patch.logo_url !== undefined ||
+        patch.logo_original_url !== undefined ||
+        patch.logo_crop !== undefined
+      ) {
         await setBranding(
           { scopeType: "organization", scopeId: orgId },
-          { logoUrl: patch.logo_url },
+          {
+            logoUrl: patch.logo_url,
+            logoOriginalUrl: patch.logo_original_url,
+            logoCrop: patch.logo_crop,
+          },
           tx,
         );
       }

@@ -1,18 +1,7 @@
 /* Upload images card ------------------------------------------------- */
 
-.image-asset-library__intro {
-  margin: 0;
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-}
-
-/* Matches .logo-upload__zone's box model/typography (components.css's LogoUploadZone) so the
-   "Event logo" dropzone above and this "Upload images" dropzone read as the same control, not
-   two different styles (PO review). Kept its own filename-overflow handling on the title
-   (unlike LogoUploadZone, this one shows the picked file's name before upload) and its working
-   drag-over color feedback (--primary/--primary-tint - LogoUploadZone's own :dragging state
-   references an undefined --accent token so it never actually shows a color change; not
-   replicating that bug here). */
+/* Matches .logo-upload__zone box model + typography so Event logo and Upload images
+   read as the same control. Dropzone is a <button>, so reset UA button font. */
 .image-asset-library__dropzone {
   position: relative;
   display: flex;
@@ -28,7 +17,10 @@
   border-radius: var(--radius-md);
   background: var(--surface-sunken);
   color: var(--text-muted);
+  font-family: inherit;
   font-size: var(--fs-sm);
+  font-weight: 400;
+  line-height: var(--lh-normal, 1.5);
   cursor: pointer;
   text-align: center;
   box-sizing: border-box;
@@ -59,6 +51,7 @@
 
 .image-asset-library__dropzone-title {
   font-size: var(--fs-sm);
+  font-weight: 400;
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -68,6 +61,7 @@
 
 .image-asset-library__dropzone-hint {
   font-size: var(--fs-xs);
+  font-weight: 400;
   color: var(--text-muted);
 }
 
