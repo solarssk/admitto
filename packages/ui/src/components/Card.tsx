@@ -14,7 +14,7 @@ export function Card({ title, actions, footer, padded = true, children, classNam
       {(title || actions) && (
         <div className="at-card__header">
           {title && <div className="at-card__title">{title}</div>}
-          {actions && <div style={{ display: "flex", gap: "var(--space-2)" }}>{actions}</div>}
+          {actions && <div className="at-card__actions">{actions}</div>}
         </div>
       )}
       {padded ? <div className="at-card__body">{children}</div> : children}

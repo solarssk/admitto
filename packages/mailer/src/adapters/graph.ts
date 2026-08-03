@@ -99,6 +99,11 @@ export class GraphAdapter implements MailerAdapter {
     return;
   }
 
+  /** App-only token fetch - proves tenant/client credentials without sending mail. */
+  async verifyConnection(): Promise<void> {
+    await this.getAccessToken();
+  }
+
   async send(message: MailMessage): Promise<SendResult> {
     const validationError = validateMailMessage(message);
     if (validationError) {

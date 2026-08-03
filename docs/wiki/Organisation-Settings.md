@@ -25,7 +25,7 @@ Use a named Superadmin account, record the intended change, and prepare a synthe
 6. Use **Archiving** for retention and completed-event controls.
 7. Use **Identity** for OIDC providers and Cloudflare Access.
 8. Use **Logs** to review system, administration, and security activity.
-9. Use **Health check** to review Core infrastructure and External integrations status. External rows are labelled **role, provider** (for example `Address lookup, Nominatim` and `Map tiles, OpenStreetMap`). Each configured identity provider appears as its own row; Cloudflare Access is listed separately. Expand a row for diagnostics such as latency or endpoint host (no secrets). Use **Run live checks** only when you need an on-demand probe of address lookup, identity providers, or Cloudflare Access. **Copy for GitHub Issue** / **Export** produce a sanitized Markdown snapshot (no secrets or instance URL in the dump).
+9. Use **Health check** to review Core infrastructure and External integrations status. External rows are labelled **role, provider** (for example `Address lookup, Nominatim` and `Map tiles, OpenStreetMap`). Each configured identity provider appears as its own row; Cloudflare Access is listed separately. Expand a row for diagnostics such as latency or endpoint host (no secrets). Use **Run live checks** only when you need an on-demand probe of address lookup, mail transport (SMTP verify / Microsoft Graph token; Power Automate is listed as configured without a live probe), identity providers, or Cloudflare Access. **Copy for GitHub Issue** / **Export** produce a sanitized Markdown snapshot (no secrets or instance URL in the dump).
 10. Save one area at a time and verify the visible result.
 
 ## Expected result

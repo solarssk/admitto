@@ -14,8 +14,10 @@ import {
   testCfAccessConnection,
   testOidcConnection,
 } from "@admitto/auth";
-import { describeMailConfigForOrg } from "@admitto/mailer-config";
+import { describeMailConfigForOrg, resolveMailConfigForOrg } from "@admitto/mailer-config";
+import { probeMailTransport, type MailProbeResult } from "@admitto/mailer";
 import { isLocationMapsEnabled, type GeocodingProvider } from "@admitto/location";
+import type { HealthOverallStatus, HealthRowStatus } from "@admitto/shared";
 import { collectSetupChecks, type SetupCheckResult } from "./setup-checks-routes.js";
 import { collectGauges, checkMailer, checkDatabase } from "../ops/readyz.js";
 import { resolveProductVersion } from "../ops/product-version.js";
@@ -23,10 +25,7 @@ import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { resolveGeocodingConfig, resolveMapTileConfig } from "../maps/config.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 
-/** Row-level status for Settings Health (ADR 0037). */
-export type HealthRowStatus = "ok" | "degraded" | "down" | "not_configured" | "planned";
-/** Group / overall status: ignores planned and not_configured rows. */
-export type HealthOverallStatus = "ok" | "degraded" | "down";
+export type { HealthOverallStatus, HealthRowStatus };
 
 export type HealthDetail = { key: string; value: string };
 
@@ -70,9 +69,13 @@ export type CollectAdminHealthDeps = {
   geocodingProvider?: GeocodingProvider;
   injectedBaseUrl?: string;
   env?: NodeJS.ProcessEnv;
-  /** When true, run Nominatim + identity provider + Cloudflare Access live probes (POST /health/live only). */
+  /** When true, run Nominatim + identity provider + Cloudflare Access + mail live probes (POST /health/live only). */
   live?: boolean;
   now?: () => Date;
+  /** Injectable mail transport probe (tests); defaults to {@link probeMailTransport}. */
+  probeMail?: (config: unknown) => Promise<MailProbeResult>;
+  /** Injectable org mail config resolver (tests); defaults to {@link resolveMailConfigForOrg}. */
+  resolveOrgMailConfig?: typeof resolveMailConfigForOrg;
 };
 
 /** Short commit for dumps. Docker sets GIT_COMMIT; local/dev may be unknown. */
@@ -476,6 +479,9 @@ async function emailSendingRow(
   db: PrismaClient,
   env: NodeJS.ProcessEnv,
   checkedAt: string,
+  live: boolean,
+  probeMail: (config: unknown) => Promise<MailProbeResult>,
+  resolveOrgMailConfig: typeof resolveMailConfigForOrg,
 ): Promise<HealthCheckRow> {
   const envMailer = checkMailer(env);
   try {
@@ -524,15 +530,84 @@ async function emailSendingRow(
         ]),
       };
     }
+
+    const providerDetail = provider === "powerautomate" ? "power_automate" : provider;
+    const configuredDetails = detailsFromEntries([
+      ["status", "ok"],
+      ["provider", providerDetail],
+      ["source", desc.provider.source],
+      ["last_checked", checkedAt],
+    ]);
+
+    if (!live) {
+      return {
+        id: "email_sending",
+        label,
+        status: "ok",
+        summary: "Configured",
+        details: configuredDetails,
+      };
+    }
+
+    // Power Automate has no non-sending probe (supportsTestConnection: false).
+    if (provider === "powerautomate") {
+      return {
+        id: "email_sending",
+        label,
+        status: "ok",
+        summary: "Configured",
+        details: detailsFromEntries([
+          ["status", "ok"],
+          ["provider", providerDetail],
+          ["source", desc.provider.source],
+          ["live_check", "skipped"],
+          ["last_checked", checkedAt],
+        ]),
+      };
+    }
+
+    const mailConfig = await resolveOrgMailConfig(orgId, db, env);
+    const probe = await probeMail(mailConfig);
+    if (!probe.ok) {
+      return {
+        id: "email_sending",
+        label,
+        status: "down",
+        summary: "Unreachable",
+        details: detailsFromEntries([
+          ["status", "down"],
+          ["provider", providerDetail],
+          ["source", desc.provider.source],
+          ["live_check", "failed"],
+          ["last_checked", checkedAt],
+        ]),
+      };
+    }
+    if (probe.skipped) {
+      return {
+        id: "email_sending",
+        label,
+        status: "ok",
+        summary: "Configured",
+        details: detailsFromEntries([
+          ["status", "ok"],
+          ["provider", providerDetail],
+          ["source", desc.provider.source],
+          ["live_check", "skipped"],
+          ["last_checked", checkedAt],
+        ]),
+      };
+    }
     return {
       id: "email_sending",
       label,
       status: "ok",
-      summary: "Configured",
+      summary: "Reachable",
       details: detailsFromEntries([
         ["status", "ok"],
-        ["provider", provider === "powerautomate" ? "power_automate" : provider],
+        ["provider", providerDetail],
         ["source", desc.provider.source],
+        ["live_check", "ok"],
         ["last_checked", checkedAt],
       ]),
     };
@@ -893,6 +968,8 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
   const generatedAt = now().toISOString();
   const checkedAt = generatedAt;
   const live = Boolean(deps.live);
+  const probeMail = deps.probeMail ?? probeMailTransport;
+  const resolveOrgMailConfig = deps.resolveOrgMailConfig ?? resolveMailConfigForOrg;
 
   const setupFallback: Awaited<ReturnType<typeof collectSetupChecks>> = {
     database: { ok: false, reason: "unreachable", detail: "Database check unavailable" },
@@ -945,7 +1022,7 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
       () => setupFallback,
     ),
     collectGauges(deps.db).catch(() => gaugesFallback),
-    emailSendingRow(deps.db, env, checkedAt),
+    emailSendingRow(deps.db, env, checkedAt, live, probeMail, resolveOrgMailConfig),
     identityProviderRows(deps.db, live, checkedAt).catch(() => idpFallback),
     cloudflareAccessRow(deps.db, live, checkedAt).catch(() => cfFallback),
     addressLookupRow(deps.geocodingProvider, live, env, checkedAt).catch(() => addressFallback),

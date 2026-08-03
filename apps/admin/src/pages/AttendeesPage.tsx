@@ -41,7 +41,8 @@ import type {
   TicketTypeDto,
 } from "../api/types.js";
 import { AddAttendeeModal } from "../attendees/AddAttendeeModal.js";
-import { AttendeesTable, MoreActionsMenuItem } from "../attendees/AttendeesTable.js";
+import { AttendeesTable } from "../attendees/AttendeesTable.js";
+import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { RSVP_LABELS, RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { useMailConfigured } from "../attendees/useMailConfigured.js";

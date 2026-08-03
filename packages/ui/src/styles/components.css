@@ -194,6 +194,7 @@
 /* ---------------- Card ---------------- */
 .at-card { background: var(--surface-card); border: var(--border-width) solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-card); }
 .at-card__header { min-height: calc(var(--control-h-sm) + 2 * var(--space-4)); padding: var(--space-4) var(--pad-card); border-bottom: var(--border-width) solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); box-sizing: border-box; }
+.at-card__actions { display: flex; gap: var(--space-2); }
 .at-card__title {
   font-size: var(--text-card-title-size);
   font-weight: var(--text-card-title-weight);

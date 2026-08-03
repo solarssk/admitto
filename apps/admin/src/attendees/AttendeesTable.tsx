@@ -1,5 +1,5 @@
 import { useRef, type ReactNode } from "react";
-import { Button, Card, Checkbox, EmptyState, IconButton, Input, Select, Skeleton, Tooltip } from "@admitto/ui";
+import { Button, Card, Checkbox, EmptyState, IconButton, Input, Select, Skeleton } from "@admitto/ui";
 import type {
   AttendeeMailStatusFilter,
   AttendeeRowDto,
@@ -14,6 +14,7 @@ import {
   type ArchivedGuardEvent,
 } from "../components/ArchivedGuard.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
+import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
@@ -407,49 +408,6 @@ function bulkRevokePassTooltip(archived: boolean, canRevokePass: boolean): strin
   if (archived) return ARCHIVED_ACTION_TOOLTIP;
   if (!canRevokePass) return "The selected attendees' passes are already revoked or cancelled.";
   return undefined;
-}
-
-/** One row of BulkMoreActionsMenu's panel — icon, two-line label/hint, optional disabled-reason
- * tooltip, and an optional "warning"/"danger" text-color variant (attendees.css). Always wrapped
- * in a Tooltip, even when `tooltip` is undefined: Tooltip renders children unchanged with no
- * tooltip wiring in that case (see its own doc comment), and `.more-actions-menu__item-wrapper`
- * exists specifically so that wrapping doesn't affect this stacked list's layout. */
-export function MoreActionsMenuItem({
-  icon,
-  label,
-  hint,
-  disabled = false,
-  tooltip,
-  variant,
-  onClick,
-}: Readonly<{
-  icon: string;
-  label: ReactNode;
-  hint: ReactNode;
-  disabled?: boolean;
-  tooltip?: string | null;
-  variant?: "warning" | "danger";
-  onClick: () => void;
-}>) {
-  return (
-    <Tooltip content={tooltip} className="more-actions-menu__item-wrapper" axis="horizontal">
-      <button
-        type="button"
-        role="menuitem"
-        className={["more-actions-menu__item", variant && `more-actions-menu__item--${variant}`]
-          .filter(Boolean)
-          .join(" ")}
-        disabled={disabled}
-        onClick={onClick}
-      >
-        <i className={`ti ti-${icon}`} aria-hidden="true" />
-        <span className="more-actions-menu__item-text">
-          <span>{label}</span>
-          <span className="more-actions-menu__item-hint">{hint}</span>
-        </span>
-      </button>
-    </Tooltip>
-  );
 }
 
 /** Bulk "More actions" — Export selected, Change ticket type, and Delete, styled as a menu

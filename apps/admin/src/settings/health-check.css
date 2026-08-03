@@ -5,8 +5,8 @@
   row-gap: var(--space-2);
 }
 
-.health-check__card .at-card__header > div:last-child {
-  /* Card wraps actions in an anonymous flex div; let our toolbar own the layout. */
+.health-check__card .at-card__actions {
+  /* Let .health-check__actions own the toolbar layout. */
   display: contents;
 }
 

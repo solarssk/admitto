@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button, Card, EmptyState, Tooltip, useToast } from "@admitto/ui";
-import { MoreActionsMenuItem } from "../attendees/AttendeesTable.js";
-import "../attendees/attendees.css";
+import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { fetchAdminHealth, runAdminHealthLive } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type {
@@ -339,7 +338,7 @@ export function HealthCheckPanel() {
         title="Overview"
         actions={
           <div className="health-check__actions">
-            <Tooltip content="Re-check local status and probe address lookup, identity providers, and Cloudflare Access when configured">
+            <Tooltip content="Re-check local status and probe address lookup, mail transport (SMTP/Graph), identity providers, and Cloudflare Access when configured">
               <Button
                 type="button"
                 variant="secondary"

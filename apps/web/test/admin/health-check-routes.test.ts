@@ -7,6 +7,7 @@ const {
   checkMailer,
   checkDatabase,
   describeMailConfigForOrg,
+  resolveMailConfigForOrg,
   resolveInstanceOrganizationId,
   listOidcProviders,
   findEnabledOidcProviders,
@@ -21,6 +22,7 @@ const {
   checkMailer: vi.fn(),
   checkDatabase: vi.fn(async () => ({ status: "ok", latency_ms: 2 })),
   describeMailConfigForOrg: vi.fn(),
+  resolveMailConfigForOrg: vi.fn(),
   resolveInstanceOrganizationId: vi.fn(),
   listOidcProviders: vi.fn(),
   findEnabledOidcProviders: vi.fn(),
@@ -41,7 +43,10 @@ vi.mock("../../src/ops/readyz.js", async (importOriginal) => {
 });
 vi.mock("../../src/ops/product-version.js", () => ({ resolveProductVersion }));
 vi.mock("../../src/admin/instance-org.js", () => ({ resolveInstanceOrganizationId }));
-vi.mock("@admitto/mailer-config", () => ({ describeMailConfigForOrg }));
+vi.mock("@admitto/mailer-config", () => ({
+  describeMailConfigForOrg,
+  resolveMailConfigForOrg,
+}));
 vi.mock("@admitto/location", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@admitto/location")>();
   return { ...actual, isLocationMapsEnabled };
@@ -699,6 +704,74 @@ describe("collectAdminHealth", () => {
     expect(okReport.groups[1]!.checks.find((c) => c.id === "cloudflare_access")?.summary).toBe(
       "Reachable",
     );
+  });
+
+  it("runs live mail probe for SMTP/Graph and skips Power Automate", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+    });
+    listOidcProviders.mockResolvedValue([]);
+    findEnabledOidcProviders.mockResolvedValue([]);
+    getCfAccessConfig.mockResolvedValue({
+      enabled: false,
+      teamDomain: "",
+      audience: [],
+      protectedPrefixes: [],
+      jwksUri: "",
+    });
+    resolveInstanceOrganizationId.mockResolvedValue("org-1");
+    checkMailer.mockReturnValue({ configured: true, provider: "smtp" });
+    describeMailConfigForOrg.mockResolvedValue({
+      provider: { value: "smtp", source: "organization", locked: false },
+    });
+    resolveMailConfigForOrg.mockResolvedValue({
+      provider: "smtp",
+      host: "smtp.example.com",
+      port: 587,
+      fromAddress: "from@example.com",
+    });
+    const probeMail = vi.fn().mockResolvedValue({ ok: true });
+
+    const reachable = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+      live: true,
+      probeMail,
+    });
+    expect(probeMail).toHaveBeenCalled();
+    expect(reachable.groups[1]!.checks.find((c) => c.id === "email_sending")?.summary).toBe(
+      "Reachable",
+    );
+
+    probeMail.mockResolvedValueOnce({ ok: false, error: "auth failed" });
+    const down = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+      live: true,
+      probeMail,
+    });
+    expect(down.groups[1]!.checks.find((c) => c.id === "email_sending")?.status).toBe("down");
+    expect(down.groups[1]!.checks.find((c) => c.id === "email_sending")?.summary).toBe(
+      "Unreachable",
+    );
+
+    describeMailConfigForOrg.mockResolvedValue({
+      provider: { value: "powerautomate", source: "organization", locked: false },
+    });
+    const pa = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+      live: true,
+      probeMail,
+    });
+    expect(pa.groups[1]!.checks.find((c) => c.id === "email_sending")?.summary).toBe("Configured");
+    expect(
+      pa.groups[1]!.checks
+        .find((c) => c.id === "email_sending")
+        ?.details.some((d) => d.key === "live_check" && d.value === "skipped"),
+    ).toBe(true);
   });
 
   it("covers Cloudflare Access configured-disabled and passive enabled rows", async () => {
