@@ -7,7 +7,6 @@ import { AuthProvider, useAuth } from "./auth/AuthProvider.js";
 import { isSuperadmin } from "./auth/capabilities.js";
 import { ConnectionStateProvider } from "./connection/ConnectionStateProvider.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
-import { DemoBar } from "./components/DemoBar.js";
 import { AdminShell } from "./layouts/AdminShell.js";
 import { EventsListShell } from "./layouts/EventsListShell.js";
 import { InstanceSettingsShell } from "./layouts/InstanceSettingsShell.js";
@@ -254,7 +253,6 @@ export default function App() {
             </Suspense>
           </ConnectionStateProvider>
         </AuthProvider>
-        <DemoBar />
       </ToastProvider>
     </ErrorBoundary>
   );

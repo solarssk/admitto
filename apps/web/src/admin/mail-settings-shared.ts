@@ -7,7 +7,7 @@
 import { z } from "zod";
 import type { Context } from "hono";
 import type { ConfigDescriptor, FieldDescriptor, FieldSource, MailSettingsInput } from "@admitto/mailer-config";
-import { isSendSuccess, type MailerProvider, type SendResult } from "@admitto/mailer";
+import { isSendSuccess, MailDestinationError, type MailerProvider, type SendResult } from "@admitto/mailer";
 import { transportTestErrorForAdmin } from "@admitto/mail-delivery";
 import { emitSystemLog } from "@admitto/shared/system-log";
 
@@ -159,6 +159,20 @@ export function mailNotConfiguredResponse(c: Context, err: unknown): Response | 
   const message = err instanceof Error ? err.message : undefined;
   if (message?.includes(MAIL_PROVIDER_UNCONFIGURED)) {
     return c.json({ error: "mail_not_configured" }, 422);
+  }
+  return null;
+}
+
+/**
+ * Maps mail transport setup failures that happen before a delivery row is created
+ * (missing provider, blocked/unresolvable SMTP or webhook host) to 422 JSON.
+ * Returns null for unrelated errors so the caller can rethrow.
+ */
+export function mailTransportSetupErrorResponse(c: Context, err: unknown): Response | null {
+  const notConfigured = mailNotConfiguredResponse(c, err);
+  if (notConfigured) return notConfigured;
+  if (err instanceof MailDestinationError) {
+    return c.json({ error: err.code }, 422);
   }
   return null;
 }

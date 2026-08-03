@@ -1,17 +1,25 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, Card, EmptyState, HintLabel, Input, useToast } from "@admitto/ui";
-import { createEventImageAsset, deleteEventImageAsset, fetchEventImageAssets } from "../api/client.js";
+import { createEventImageAsset, deleteEventImageAsset, fetchEventImageAssets, uploadEventBrandingFile } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventImageAssetDto } from "../api/types.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { formatFileSize } from "../utils/formatFileSize.js";
 import { brandingLogoImgSrc } from "../utils/safeBrandingLogoHref.js";
 import { ConfirmDialog } from "./ConfirmDialog.js";
+import { CropImageModal } from "./crop/CropImageModal.js";
+import { resolveCropOutputMime } from "./crop/getCroppedImageBlob.js";
+import {
+  ALLOWED_BRANDING_IMAGE_TYPES,
+  extensionForBrandingImageMime,
+  MAX_BRANDING_IMAGE_UPLOAD_BYTES,
+} from "./brandingImageConstraints.js";
 import "./event-image-asset-library.css";
 
-const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = MAX_BRANDING_IMAGE_UPLOAD_BYTES;
 const TOKEN_MAX_LENGTH = 40;
 const TOKEN_PATTERN = /^[a-z][a-z0-9_]*$/;
+const ALLOWED_IMAGE_TYPES = ALLOWED_BRANDING_IMAGE_TYPES;
 
 export interface EventImageAssetLibraryProps {
   readonly eventId: string;
@@ -23,8 +31,25 @@ function pluralSuffix(count: number): string {
   return count === 1 ? "" : "s";
 }
 
+function extensionForMime(mime: string): string {
+  return extensionForBrandingImageMime(mime);
+}
+
+/** @internal Unit-test surface for small helpers. */
+export const eventImageAssetLibraryTestUtils = {
+  pluralSuffix,
+  extensionForMime,
+};
+
 const UPLOAD_IMAGES_HINT =
   "Each asset is stored for this event only. Remove it from the mail template before deleting.";
+
+type PendingCrop = {
+  /** Same-origin `/uploads/…` preview (uploaded before crop — no File→blob:→img.src). */
+  imageSrc: string;
+  sourceMime: string;
+  originalName: string;
+};
 
 /**
  * Named branding image library for an event: upload extra images (e.g. sponsor logos) and give
@@ -43,6 +68,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
   const [tokenTouched, setTokenTouched] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [pendingCrop, setPendingCrop] = useState<PendingCrop | null>(null);
 
   const [dragging, setDragging] = useState(false);
 
@@ -93,15 +119,46 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
     if (fileRef.current) fileRef.current.value = "";
   };
 
-  const handleFilePick = (picked: File | null) => {
+  const closePendingCrop = () => {
+    setPendingCrop(null);
+  };
+
+  const handleFilePick = async (picked: File | null) => {
     setFormError(null);
-    if (picked && picked.size > MAX_UPLOAD_BYTES) {
+    if (!picked) {
+      setFile(null);
+      return;
+    }
+    if (picked.size > MAX_UPLOAD_BYTES) {
       setFormError("File must be 2 MB or smaller.");
       setFile(null);
       if (fileRef.current) fileRef.current.value = "";
       return;
     }
-    setFile(picked);
+    const declared = picked.type.split(";")[0]?.trim().toLowerCase() ?? "";
+    if (!ALLOWED_IMAGE_TYPES.has(declared)) {
+      setFormError("Use a PNG, JPG, or WebP image.");
+      setFile(null);
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", picked);
+      const { url } = await uploadEventBrandingFile(eventId, fd);
+      setPendingCrop({
+        imageSrc: url,
+        sourceMime: declared,
+        originalName: picked.name || `asset${extensionForMime(declared)}`,
+      });
+    } catch (err) {
+      setFormError(operatorApiErrorMessage(err, "Could not prepare image for cropping."));
+      setFile(null);
+      if (fileRef.current) fileRef.current.value = "";
+    } finally {
+      setUploading(false);
+    }
   };
 
   const openFilePicker = () => {
@@ -180,7 +237,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
     }
     return (
       <>
-        <p className="settings-card-intro image-asset-library__intro">
+        <p className="settings-card-intro">
           {assets.length} image{pluralSuffix(assets.length)}. Each one has a short name you can use
           in any email.
         </p>
@@ -237,7 +294,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
     <>
       <Card title={<HintLabel hint={UPLOAD_IMAGES_HINT}>Upload images</HintLabel>} className="event-settings-card">
         <div className="settings-card-stack">
-          <p className="field-hint image-asset-library__intro settings-card-intro">
+          <p className="settings-card-intro">
             Upload extra images such as sponsor logos. Give each one a short name to use as{" "}
             {"{{name}}"} in email templates.
           </p>
@@ -258,7 +315,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
               setDragging(false);
               if (disabled || uploading) return;
               const dropped = e.dataTransfer.files[0];
-              if (dropped) handleFilePick(dropped);
+              if (dropped) void handleFilePick(dropped);
             }}
             onDragOver={(e) => {
               e.preventDefault();
@@ -321,7 +378,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
           accept="image/png,image/jpeg,image/webp"
           className="image-asset-library__file-input"
           disabled={disabled || uploading}
-          onChange={(e) => handleFilePick(e.target.files?.[0] ?? null)}
+          onChange={(e) => void handleFilePick(e.target.files?.[0] ?? null)}
           aria-label="Image file"
           aria-hidden="true"
           tabIndex={-1}
@@ -350,6 +407,26 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
           setDeleteError(null);
         }}
       />
+
+      {pendingCrop ? (
+        <CropImageModal
+          open
+          title="Adjust image"
+          imageSrc={pendingCrop.imageSrc}
+          sourceMime={pendingCrop.sourceMime}
+          onCancel={() => {
+            closePendingCrop();
+            if (fileRef.current) fileRef.current.value = "";
+          }}
+          onApply={(blob) => {
+            const outMime = resolveCropOutputMime(pendingCrop.sourceMime);
+            const base = pendingCrop.originalName.replace(/\.[^.]+$/, "") || "asset";
+            setFile(new File([blob], `${base}${extensionForMime(outMime)}`, { type: outMime }));
+            closePendingCrop();
+            if (fileRef.current) fileRef.current.value = "";
+          }}
+        />
+      ) : null}
     </>
   );
 }
