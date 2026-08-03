@@ -5,7 +5,9 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
+  type RefObject,
   type SyntheticEvent,
 } from "react";
 import ReactCrop, {
@@ -190,40 +192,209 @@ function cropPanelWidthPx(fit: FitSize | null, viewportWidthCap: number): number
   );
 }
 
+type SeedCropSetters = {
+  setFitSize: (fit: FitSize) => void;
+  setZoom: (z: number) => void;
+  setPrevZoom: (z: number) => void;
+  setCrop: (c: Crop) => void;
+  setCompletedCrop: (c: PixelCrop) => void;
+  setError: (msg: string | null) => void;
+};
+
 /** Seed fit/zoom/crop after the preview image reports natural size. */
 function seedCropFromLoadedImage(
   img: HTMLImageElement,
-  initialCrop: PercentCrop | undefined,
-  initialZoom: number | undefined,
-  stage: HTMLElement | null,
-  setFitSize: (fit: FitSize) => void,
-  setZoom: (z: number) => void,
-  setPrevZoom: (z: number) => void,
-  setCrop: (c: Crop) => void,
-  setCompletedCrop: (c: PixelCrop) => void,
-  setError: (msg: string | null) => void,
+  options: {
+    initialCrop: PercentCrop | undefined;
+    initialZoom: number | undefined;
+    stage: HTMLElement | null;
+  },
+  setters: SeedCropSetters,
 ): void {
   if (img.naturalWidth < 1 || img.naturalHeight < 1) {
-    setError("Could not read this image.");
+    setters.setError("Could not read this image.");
     return;
   }
   const limits = cropViewportLimits();
   const fit = fitNaturalSize(img.naturalWidth, img.naturalHeight, limits.width, limits.height);
-  const restoredZoom = clampCropZoom(initialZoom ?? CROP_ZOOM_MIN);
-  setFitSize(fit);
-  setZoom(restoredZoom);
-  setPrevZoom(restoredZoom);
+  const restoredZoom = clampCropZoom(options.initialZoom ?? CROP_ZOOM_MIN);
+  setters.setFitSize(fit);
+  setters.setZoom(restoredZoom);
+  setters.setPrevZoom(restoredZoom);
   requestAnimationFrame(() => {
     if (img.width < 1 || img.height < 1) return;
-    const initial = isRestorablePercentCrop(initialCrop)
-      ? initialCrop
+    const initial = isRestorablePercentCrop(options.initialCrop)
+      ? options.initialCrop
       : centerCrop({ unit: "%", width: 92, height: 92 }, img.width, img.height);
-    setCrop(initial);
-    setCompletedCrop(convertToPixelCrop(initial, img.width, img.height));
-    if (restoredZoom > 1 && stage) {
-      scrollStageToCropCenter(stage, convertToPixelCrop(initial, img.width, img.height));
+    setters.setCrop(initial);
+    setters.setCompletedCrop(convertToPixelCrop(initial, img.width, img.height));
+    if (restoredZoom > 1 && options.stage) {
+      scrollStageToCropCenter(options.stage, convertToPixelCrop(initial, img.width, img.height));
     }
   });
+}
+
+type CropImageModalViewProps = {
+  title: string;
+  titleId: string;
+  zoomId: string;
+  panelRef: RefObject<HTMLDivElement | null>;
+  stageRef: RefObject<HTMLDivElement | null>;
+  imgRef: RefObject<HTMLImageElement | null>;
+  crop: Crop | undefined;
+  completedCrop: PixelCrop | null;
+  fitSize: FitSize | null;
+  zoom: number;
+  applying: boolean;
+  error: string | null;
+  previewSrc: string | null;
+  display: FitSize | null;
+  panelWidthPx: number | undefined;
+  stageClassName: string;
+  onCancel: () => void;
+  onApplyClick: () => void;
+  onImageLoad: (e: SyntheticEvent<HTMLImageElement>) => void;
+  adjustZoom: (next: number) => void;
+  setCrop: (c: Crop) => void;
+  setCompletedCrop: (c: PixelCrop) => void;
+  onStagePointerDownCapture: (e: ReactPointerEvent<HTMLDivElement>) => void;
+  onStagePointerMove: (e: ReactPointerEvent<HTMLDivElement>) => void;
+  endPan: (e: ReactPointerEvent<HTMLDivElement>) => void;
+};
+
+function cropImgStyle(display: FitSize | null, fitSize: FitSize | null): CSSProperties {
+  return {
+    width: display ? `${display.width}px` : undefined,
+    height: display ? `${display.height}px` : undefined,
+    visibility: fitSize ? "visible" : "hidden",
+    position: fitSize ? "static" : "absolute",
+  };
+}
+
+function CropImageModalView({
+  title,
+  titleId,
+  zoomId,
+  panelRef,
+  stageRef,
+  imgRef,
+  crop,
+  completedCrop,
+  fitSize,
+  zoom,
+  applying,
+  error,
+  previewSrc,
+  display,
+  panelWidthPx,
+  stageClassName,
+  onCancel,
+  onApplyClick,
+  onImageLoad,
+  adjustZoom,
+  setCrop,
+  setCompletedCrop,
+  onStagePointerDownCapture,
+  onStagePointerMove,
+  endPan,
+}: Readonly<CropImageModalViewProps>) {
+  return (
+    <dialog open className="crop-image-modal" aria-modal="true" aria-labelledby={titleId}>
+      <ModalBackdrop onClose={applying ? undefined : onCancel} />
+      <div
+        ref={panelRef}
+        className="crop-image-modal__panel"
+        style={panelWidthPx ? { width: `${panelWidthPx}px` } : undefined}
+      >
+        <h2 id={titleId} className="crop-image-modal__title">
+          {title}
+        </h2>
+        <p className="crop-image-modal__hint">
+          Drag the blue handles to trim margins. Mouse wheel zooms. When zoomed, drag the image to
+          pan (handles still resize the crop). PNG/WebP stay transparent.
+        </p>
+        <div
+          ref={stageRef}
+          className={stageClassName}
+          style={
+            fitSize
+              ? {
+                  width: `${fitSize.width}px`,
+                  height: `${fitSize.height}px`,
+                }
+              : undefined
+          }
+          onPointerDownCapture={onStagePointerDownCapture}
+          onPointerMove={onStagePointerMove}
+          onPointerUp={endPan}
+          onPointerCancel={endPan}
+        >
+          {!fitSize ? <Spinner size="sm" label="Loading image" /> : null}
+          {previewSrc ? (
+            <ReactCrop
+              crop={crop}
+              onChange={(_pixel, percent) => setCrop(percent)}
+              onComplete={(pixel, percent) => {
+                setCrop(percent);
+                setCompletedCrop(pixel);
+              }}
+              minWidth={8}
+              minHeight={8}
+              keepSelection
+            >
+              <img
+                ref={imgRef}
+                src={previewSrc}
+                alt=""
+                className="crop-image-modal__img"
+                width={display?.width}
+                height={display?.height}
+                style={cropImgStyle(display, fitSize)}
+                onLoad={onImageLoad}
+                crossOrigin="anonymous"
+                draggable={false}
+              />
+            </ReactCrop>
+          ) : null}
+        </div>
+        <div className="crop-image-modal__zoom">
+          <label className="crop-image-modal__zoom-label" htmlFor={zoomId}>
+            Zoom
+          </label>
+          <input
+            id={zoomId}
+            className="crop-image-modal__zoom-input"
+            type="range"
+            min={CROP_ZOOM_MIN}
+            max={CROP_ZOOM_MAX}
+            step={CROP_ZOOM_STEP}
+            value={zoom}
+            disabled={applying || !fitSize}
+            onChange={(e) => adjustZoom(Number(e.target.value))}
+          />
+        </div>
+        {error ? (
+          <p className="crop-image-modal__error" role="alert">
+            {error}
+          </p>
+        ) : null}
+        <div className="crop-image-modal__actions">
+          <Button type="button" variant="secondary" disabled={applying} onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="primary"
+            disabled={!completedCrop || applying}
+            icon={applying ? <Spinner size="sm" label="Working" /> : undefined}
+            onClick={onApplyClick}
+          >
+            {applying ? "Working…" : "Apply changes"}
+          </Button>
+        </div>
+      </div>
+    </dialog>
+  );
 }
 
 /**
@@ -273,14 +444,12 @@ export function CropImageModal({
     panRef.current = null;
   }, [open, imageSrc]);
 
-  // % crop stays correct across zoom; refresh pixel crop for Apply from current display size.
   useLayoutEffect(() => {
     const img = imgRef.current;
     if (!img || !crop || img.width < 1 || img.height < 1) return;
     setCompletedCrop(convertToPixelCrop(crop, img.width, img.height));
   }, [zoom, fitSize, crop]);
 
-  // After zoom, keep the selection centered in the viewport.
   useLayoutEffect(() => {
     if (prevZoomRef.current === zoom) return;
     prevZoomRef.current = zoom;
@@ -295,17 +464,17 @@ export function CropImageModal({
     imgRef.current = img;
     seedCropFromLoadedImage(
       img,
-      initialCrop,
-      initialZoom,
-      stageRef.current,
-      setFitSize,
-      setZoom,
-      (z) => {
-        prevZoomRef.current = z;
+      { initialCrop, initialZoom, stage: stageRef.current },
+      {
+        setFitSize,
+        setZoom,
+        setPrevZoom: (z) => {
+          prevZoomRef.current = z;
+        },
+        setCrop,
+        setCompletedCrop,
+        setError,
       },
-      setCrop,
-      setCompletedCrop,
-      setError,
     );
   };
 
@@ -388,111 +557,34 @@ export function CropImageModal({
   const zoomed = zoom > 1.001;
   const previewSrc = trustedCropPreviewSrc(imageSrc);
   const viewportWidthCap = typeof window !== "undefined" ? window.innerWidth - 32 : 920;
-  const panelWidthPx = cropPanelWidthPx(fitSize, viewportWidthCap);
-  const stageClassName = cropStageClassName(zoomed, Boolean(fitSize));
 
   return (
-    <dialog open className="crop-image-modal" aria-modal="true" aria-labelledby={titleId}>
-      <ModalBackdrop onClose={applying ? undefined : onCancel} />
-      <div
-        ref={panelRef}
-        className="crop-image-modal__panel"
-        style={panelWidthPx ? { width: `${panelWidthPx}px` } : undefined}
-      >
-        <h2 id={titleId} className="crop-image-modal__title">
-          {title}
-        </h2>
-        <p className="crop-image-modal__hint">
-          Drag the blue handles to trim margins. Mouse wheel zooms. When zoomed, drag the image to
-          pan (handles still resize the crop). PNG/WebP stay transparent.
-        </p>
-        <div
-          ref={stageRef}
-          className={stageClassName}
-          style={
-            fitSize
-              ? {
-                  // content-box: width/height are the image viewport; padding is extra for handles.
-                  width: `${fitSize.width}px`,
-                  height: `${fitSize.height}px`,
-                }
-              : undefined
-          }
-          onPointerDownCapture={onStagePointerDownCapture}
-          onPointerMove={onStagePointerMove}
-          onPointerUp={endPan}
-          onPointerCancel={endPan}
-        >
-          {!fitSize ? <Spinner size="sm" label="Loading image" /> : null}
-          {previewSrc ? (
-            <ReactCrop
-              crop={crop}
-              onChange={(_pixel, percent) => setCrop(percent)}
-              onComplete={(pixel, percent) => {
-                setCrop(percent);
-                setCompletedCrop(pixel);
-              }}
-              minWidth={8}
-              minHeight={8}
-              keepSelection
-            >
-              <img
-                ref={imgRef}
-                src={previewSrc}
-                alt=""
-                className="crop-image-modal__img"
-                width={display?.width}
-                height={display?.height}
-                style={{
-                  width: display ? `${display.width}px` : undefined,
-                  height: display ? `${display.height}px` : undefined,
-                  // Hide until fitted so the full-res file never flashes then shrinks.
-                  visibility: fitSize ? "visible" : "hidden",
-                  position: fitSize ? "static" : "absolute",
-                }}
-                onLoad={onImageLoad}
-                crossOrigin="anonymous"
-                draggable={false}
-              />
-            </ReactCrop>
-          ) : null}
-        </div>
-        <div className="crop-image-modal__zoom">
-          <label className="crop-image-modal__zoom-label" htmlFor={zoomId}>
-            Zoom
-          </label>
-          <input
-            id={zoomId}
-            className="crop-image-modal__zoom-input"
-            type="range"
-            min={CROP_ZOOM_MIN}
-            max={CROP_ZOOM_MAX}
-            step={CROP_ZOOM_STEP}
-            value={zoom}
-            disabled={applying || !fitSize}
-            onChange={(e) => adjustZoom(Number(e.target.value))}
-          />
-        </div>
-        {error ? (
-          <p className="crop-image-modal__error" role="alert">
-            {error}
-          </p>
-        ) : null}
-        <div className="crop-image-modal__actions">
-          <Button type="button" variant="secondary" disabled={applying} onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            variant="primary"
-            disabled={!completedCrop || applying}
-            icon={applying ? <Spinner size="sm" label="Working" /> : undefined}
-            onClick={handleApply}
-          >
-            {applying ? "Working…" : "Apply changes"}
-          </Button>
-        </div>
-      </div>
-    </dialog>
+    <CropImageModalView
+      title={title}
+      titleId={titleId}
+      zoomId={zoomId}
+      panelRef={panelRef}
+      stageRef={stageRef}
+      imgRef={imgRef}
+      crop={crop}
+      completedCrop={completedCrop}
+      fitSize={fitSize}
+      zoom={zoom}
+      applying={applying}
+      error={error}
+      previewSrc={previewSrc}
+      display={display}
+      panelWidthPx={cropPanelWidthPx(fitSize, viewportWidthCap)}
+      stageClassName={cropStageClassName(zoomed, Boolean(fitSize))}
+      onCancel={onCancel}
+      onApplyClick={handleApply}
+      onImageLoad={onImageLoad}
+      adjustZoom={adjustZoom}
+      setCrop={setCrop}
+      setCompletedCrop={setCompletedCrop}
+      onStagePointerDownCapture={onStagePointerDownCapture}
+      onStagePointerMove={onStagePointerMove}
+      endPan={endPan}
+    />
   );
 }
