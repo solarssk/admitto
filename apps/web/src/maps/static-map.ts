@@ -95,6 +95,8 @@ export interface RenderStaticMapOptions {
   userAgent: string;
   fetchFn?: typeof fetch;
   timeoutMs?: number;
+  /** Injectable sharp factory — production omits this; tests use it for error-path coverage. */
+  imagePipeline?: typeof sharp;
 }
 
 export class StaticMapRenderError extends Error {
@@ -306,6 +308,7 @@ async function fetchTilePng(
   timeoutMs: number,
   /** Aborts the whole render attempt so sibling tiles stop when Promise.all fails. */
   attemptSignal?: AbortSignal,
+  image: typeof sharp = sharp,
 ): Promise<Buffer> {
   let current = url;
   for (let hop = 0; hop <= MAX_TILE_REDIRECTS; hop++) {
@@ -343,7 +346,7 @@ async function fetchTilePng(
     if (!bufferLooksLikePng(body)) {
       throw new StaticMapRenderError(`Tile is not a PNG: ${redactTileUrlForLogs(current)}`);
     }
-    return normalizeTilePngToCompositorSize(body, current);
+    return normalizeTilePngToCompositorSize(body, current, image);
   }
 
   throw new StaticMapRenderError(`Too many tile redirects: ${redactTileUrlForLogs(url)}`);
@@ -353,11 +356,15 @@ async function fetchTilePng(
  * MapTiler / some commercial XYZ styles serve 512×512 (or other) rasters for the same z/x/y
  * as OSM's 256 grid. Resize to the compositor tile size so sharp can place them on the canvas.
  */
-async function normalizeTilePngToCompositorSize(tilePng: Buffer, sourceUrl: string): Promise<Buffer> {
+export async function normalizeTilePngToCompositorSize(
+  tilePng: Buffer,
+  sourceUrl: string,
+  image: typeof sharp = sharp,
+): Promise<Buffer> {
   let width: number | undefined;
   let height: number | undefined;
   try {
-    const meta = await sharp(tilePng).metadata();
+    const meta = await image(tilePng).metadata();
     width = meta.width;
     height = meta.height;
   } catch (err) {
@@ -377,7 +384,7 @@ async function normalizeTilePngToCompositorSize(tilePng: Buffer, sourceUrl: stri
     );
   }
   try {
-    return await sharp(tilePng).resize(TILE_SIZE, TILE_SIZE).png().toBuffer();
+    return await image(tilePng).resize(TILE_SIZE, TILE_SIZE).png().toBuffer();
   } catch (err) {
     throw new StaticMapRenderError(`Tile PNG resize failed: ${redactTileUrlForLogs(sourceUrl)}`, err);
   }
@@ -400,6 +407,7 @@ export async function renderStaticMapPng(
   const zoom = clampZoom(req.zoom, options.tileConfig.maxZoom);
   const fetchFn = options.fetchFn ?? fetch;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TILE_TIMEOUT_MS;
+  const image = options.imagePipeline ?? sharp;
 
   const center = latLngToTileFraction(req.latitude, req.longitude, zoom);
   const centerPxX = center.x * TILE_SIZE;
@@ -422,7 +430,7 @@ export async function renderStaticMapPng(
       const wrappedX = ((tx % n) + n) % n;
       const url = expandTileUrl(options.tileConfig.tileUrl, zoom, wrappedX, ty);
       tileJobs.push(
-        fetchTilePng(url, options.userAgent, fetchFn, timeoutMs, attempt.signal).then((tilePng) => ({
+        fetchTilePng(url, options.userAgent, fetchFn, timeoutMs, attempt.signal, image).then((tilePng) => ({
           input: tilePng,
           left: Math.round(tx * TILE_SIZE - topLeftPxX),
           top: Math.round(ty * TILE_SIZE - topLeftPxY),
@@ -455,7 +463,7 @@ export async function renderStaticMapPng(
   }
 
   try {
-    return await sharp({
+    return await image({
       create: {
         width,
         height,

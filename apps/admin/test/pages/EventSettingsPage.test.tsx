@@ -348,6 +348,13 @@ describe("EventSettingsPage tabs", () => {
     );
     expect(screen.getByText("Basic information")).toBeTruthy();
     expect(screen.getByText("Status")).toBeTruthy();
+    expect(
+      screen.getByText("When the event takes place. Times and reports use the timezone below."),
+    ).toBeTruthy();
+    const titleInput = screen.getByLabelText("Event title") as HTMLInputElement;
+    expect(titleInput.getAttribute("data-bwignore")).toBe("true");
+    expect(titleInput.getAttribute("data-1p-ignore")).toBe("true");
+    expect(titleInput.getAttribute("autocomplete")).toBe("off");
   });
 
   it("deep links to Location and keeps venue guidance out of Basic information", async () => {
