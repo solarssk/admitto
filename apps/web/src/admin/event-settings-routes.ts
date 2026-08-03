@@ -5,7 +5,17 @@ import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@admitto/db";
 import { canManageInstance } from "@admitto/auth";
 import { ADMITTABLE_STATUS_LIST, REVOCABLE_ITEM_STATES, writeAdminAuditLog } from "@admitto/tickets";
-import { InvalidHttpUrlError, logoCropFromDb, parseLogoCrop, resolveBrandingFromEvent, validateBrandingUrl, enforceLogoPersistenceForDisplayChange, type BrandingUpdateData, type EventSettingsDto, type LogoCropMeta } from "@admitto/mail-templates";
+import {
+  InvalidHttpUrlError,
+  logoCropFromDb,
+  parseLogoCrop,
+  resolveBrandingFromEvent,
+  validateBrandingUrl,
+  enforceLogoPersistenceForDisplayChange,
+  type BrandingUpdateData,
+  type EventSettingsDto,
+  type LogoCropMeta,
+} from "@admitto/mail-templates";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { z } from "zod";
 import {
@@ -28,6 +38,7 @@ const dateOnlyField = z
 
 const PG_INT_MAX = 2_147_483_647;
 
+/** Shape-only gate; bounds/zoom rules live in `parseLogoCrop` (called after this parses). */
 const logoCropSchema = z
   .object({
     unit: z.literal("%"),

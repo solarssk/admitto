@@ -118,19 +118,20 @@ describe("getStaffSpaSecurityHeaders", () => {
     const prodTokens = imgSrcTokens(
       getStaffSpaSecurityHeaders({ NODE_ENV: "production" })["Content-Security-Policy"]!,
     );
-    expect(prodTokens).toEqual(["'self'", "data:", "blob:", "https:"]);
+    expect(prodTokens).toEqual(["'self'", "data:", "https:"]);
     expect(prodTokens).not.toContain("http://localhost:*");
+    expect(prodTokens).not.toContain("blob:");
 
     const devTokens = imgSrcTokens(
       getStaffSpaSecurityHeaders({ NODE_ENV: "development" })["Content-Security-Policy"]!,
     );
-    expect(devTokens).toEqual(["'self'", "data:", "blob:", "https:", "http://localhost:*"]);
+    expect(devTokens).toEqual(["'self'", "data:", "https:", "http://localhost:*"]);
 
     for (const nodeEnv of ["test", undefined]) {
       const tokens = imgSrcTokens(
         getStaffSpaSecurityHeaders({ NODE_ENV: nodeEnv })["Content-Security-Policy"]!,
       );
-      expect(tokens).toEqual(["'self'", "data:", "blob:", "https:"]);
+      expect(tokens).toEqual(["'self'", "data:", "https:"]);
     }
 
     const csp = getStaffSpaSecurityHeaders()["Content-Security-Policy"]!;
