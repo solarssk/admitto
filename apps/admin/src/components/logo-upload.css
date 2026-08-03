@@ -11,14 +11,7 @@
   margin-bottom: calc(var(--space-1) - var(--space-3));
 }
 
-/* Field-level hint under the logo label — same size as Input's .at-hint.
-   Event Settings bumps this to --fs-sm when LogoUploadZone is the card body intro
-   (hideLabel + .event-settings-page .logo-upload__intro). */
-.logo-upload__intro {
-  margin: 0;
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
-}
+/* Intro above the zone uses shared .settings-card-intro (card body) or .at-hint (under a label). */
 
 .logo-upload__zone {
   position: relative;
@@ -33,13 +26,17 @@
   border-radius: var(--radius-md);
   background: var(--surface-sunken);
   color: var(--text-muted);
+  font-family: inherit;
   font-size: var(--fs-sm);
+  font-weight: 400;
+  line-height: var(--lh-normal, 1.5);
   cursor: pointer;
   text-align: center;
+  box-sizing: border-box;
 }
 
 .logo-upload__zone:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--border-focus, var(--accent));
   outline-offset: 2px;
 }
 
@@ -49,8 +46,8 @@
 }
 
 .logo-upload__zone--dragging {
-  border-color: var(--accent);
-  background: var(--surface-hover);
+  border-color: var(--primary);
+  background: var(--primary-tint);
 }
 
 .logo-upload__zone--has-preview {
@@ -68,8 +65,16 @@
   color: var(--text-muted);
 }
 
+/* Same ladder as .image-asset-library__dropzone-title / __dropzone-hint. */
+.logo-upload__zone-title {
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
 .logo-upload__hint {
   font-size: var(--fs-xs);
+  font-weight: 400;
   color: var(--text-muted);
 }
 
@@ -115,7 +120,7 @@
 }
 
 .logo-upload__clear:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--border-focus, var(--accent));
   outline-offset: 2px;
 }
 

@@ -1,6 +1,7 @@
-import type { Prisma, PrismaClient } from "@admitto/db";
+import { Prisma, type PrismaClient } from "@admitto/db";
 import type { BrandingUrls } from "./types.js";
 import { validateBrandingUrl } from "./escape.js";
+import type { LogoCropMeta } from "./logo-crop.js";
 
 function pickUrl(eventValue: string | null | undefined, orgValue: string | null | undefined): string {
   const event = eventValue?.trim() ?? "";
@@ -41,6 +42,8 @@ export async function resolveBranding(
 
 export interface SetBrandingInput {
   logoUrl?: string | null;
+  logoOriginalUrl?: string | null;
+  logoCrop?: LogoCropMeta | null;
   headerImageUrl?: string | null;
 }
 
@@ -53,19 +56,49 @@ function normalizeOptionalUrl(field: string, value: string | null | undefined): 
 }
 
 /** Set branding URLs on organization or event scope. */
-type BrandingUpdateData = {
+export type BrandingUpdateData = {
   logo_url?: string | null;
+  logo_original_url?: string | null;
+  logo_crop?: Prisma.InputJsonValue | typeof Prisma.JsonNull;
   header_image_url?: string | null;
 };
+
+/** External or cleared display logo cannot keep an upload original / crop.
+ * Also drops omitted original/crop when `logoUrl` changes to a new `/uploads/…` path so
+ * framing from a previous file cannot stick around.
+ */
+export function enforceLogoPersistenceForDisplayChange(
+  data: BrandingUpdateData,
+  input: Pick<SetBrandingInput, "logoUrl" | "logoOriginalUrl" | "logoCrop">,
+): void {
+  if (input.logoUrl === undefined) return;
+  const display = data.logo_url;
+  const isUpload = typeof display === "string" && display.startsWith("/uploads/");
+  if (!isUpload) {
+    data.logo_original_url = null;
+    data.logo_crop = Prisma.JsonNull;
+    return;
+  }
+  if (input.logoOriginalUrl === undefined) data.logo_original_url = null;
+  if (input.logoCrop === undefined) data.logo_crop = Prisma.JsonNull;
+}
 
 function buildBrandingUpdateData(input: SetBrandingInput): BrandingUpdateData {
   const data: BrandingUpdateData = {};
   if (input.logoUrl !== undefined) {
     data.logo_url = normalizeOptionalUrl("logo_url", input.logoUrl);
   }
+  if (input.logoOriginalUrl !== undefined) {
+    data.logo_original_url = normalizeOptionalUrl("logo_original_url", input.logoOriginalUrl);
+  }
+  if (input.logoCrop !== undefined) {
+    data.logo_crop = input.logoCrop === null ? Prisma.JsonNull : { ...input.logoCrop };
+  }
   if (input.headerImageUrl !== undefined) {
     data.header_image_url = normalizeOptionalUrl("header_image_url", input.headerImageUrl);
   }
+
+  enforceLogoPersistenceForDisplayChange(data, input);
   return data;
 }
 
@@ -118,3 +151,5 @@ export async function resolveEventImageAssetVars(
 }
 
 export { InvalidHttpUrlError } from "./escape.js";
+export { parseLogoCrop, logoCropFromDb } from "./logo-crop.js";
+export type { LogoCropMeta } from "./logo-crop.js";
