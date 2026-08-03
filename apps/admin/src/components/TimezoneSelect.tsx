@@ -362,14 +362,15 @@ export function TimezoneSelect({
 
   const selectedEntry = value ? findTzEntry(index, value) : undefined;
 
-  // `reason === "focus"` means the user already tabbed focus elsewhere on purpose — pulling
-  // it back to this trigger would trap keyboard navigation, so only restore focus for every
-  // other close path (Escape, picking a timezone, an outside pointerdown).
+  // `reason === "focus"` / `"scroll"`: do not steal focus back (Tab already moved on, or an
+  // ancestor scroll closed the fixed panel — refocusing would undo that scroll).
   const closePanel = (reason?: OutsideInteraction) => {
     setOpen(false);
     setQuery("");
     setPanelStyle(HIDDEN_FIXED_PANEL);
-    if (reason !== "focus") window.setTimeout(() => triggerRef.current?.focus(), 0);
+    if (reason !== "focus" && reason !== "scroll") {
+      window.setTimeout(() => triggerRef.current?.focus(), 0);
+    }
   };
 
   useEffect(() => {
@@ -396,7 +397,9 @@ export function TimezoneSelect({
       const trigger = triggerRef.current ?? containerRef.current!;
       const rect = trigger.getBoundingClientRect();
       const panel = panelRef.current!;
-      const panelHeight = panel.offsetHeight;
+      // scrollHeight (natural content), not offsetHeight — a prior maxHeight clamp would make
+      // offsetHeight look like the panel already fits and drop the clamp on the next query.
+      const panelHeight = panel.scrollHeight;
       const spaceBelow = window.innerHeight - rect.bottom;
       const spaceAbove = rect.top;
       const above =
@@ -425,7 +428,9 @@ export function TimezoneSelect({
       });
     };
     updatePlacement();
-    return attachFixedOverlayLifecycle(panelRef.current, updatePlacement, closePanel);
+    return attachFixedOverlayLifecycle(panelRef.current, updatePlacement, () =>
+      closePanel("scroll"),
+    );
   }, [open, optionCount, query]);
 
   const openPanel = () => {

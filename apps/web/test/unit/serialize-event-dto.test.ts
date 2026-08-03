@@ -19,6 +19,7 @@ const baseRow = {
 
 afterEach(() => {
   delete process.env["LOCATION_MAPS_ENABLED"];
+  delete process.env["MAP_TILE_ATTRIBUTION"];
 });
 
 describe("serializeEventDto — has_coordinates / map_preview_path", () => {
@@ -46,6 +47,7 @@ describe("serializeEventDto — has_coordinates / map_preview_path", () => {
     expect(dto.map_preview_path).toBe(
       "/m/evt-1.png?v=9_52.230000_21.010000_z15&context=list",
     );
+    expect(dto.map_attribution).toMatch(/OpenStreetMap/);
   });
 
   it("omits map_preview_path when LOCATION_MAPS_ENABLED=false despite a pin", () => {
@@ -59,6 +61,21 @@ describe("serializeEventDto — has_coordinates / map_preview_path", () => {
     });
     expect(dto.has_coordinates).toBe(true);
     expect(dto.map_preview_path).toBeNull();
+    expect(dto.map_attribution).toBeNull();
+  });
+
+  it("uses MAP_TILE_ATTRIBUTION plain text on list cards when maps are enabled", () => {
+    process.env["LOCATION_MAPS_ENABLED"] = "true";
+    process.env["MAP_TILE_ATTRIBUTION"] =
+      '&copy; <a href="https://carto.com/attributions">CARTO</a> &copy; OpenStreetMap';
+    const dto = serializeEventDto({
+      ...baseRow,
+      has_coordinates: true,
+      map_latitude: 52.23,
+      map_longitude: 21.01,
+      map_zoom: 15,
+    });
+    expect(dto.map_attribution).toBe("© CARTO © OpenStreetMap");
   });
 });
 

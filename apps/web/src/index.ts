@@ -106,9 +106,23 @@ async function main(): Promise<void> {
 
   if (loopbackHosts) {
     for (const hostname of loopbackHosts) {
-      serve({ fetch: app.fetch, port, hostname }, () => {
+      const optional = hostname === "::1";
+      const server = serve({ fetch: app.fetch, port, hostname }, () => {
         const label = hostname === "::1" ? "localhost" : hostname;
         console.log(`Admitto web running at http://${label}:${port}`);
+      });
+      server.on("error", (err: NodeJS.ErrnoException) => {
+        if (
+          optional &&
+          (err.code === "EAFNOSUPPORT" || err.code === "EADDRNOTAVAIL")
+        ) {
+          console.warn(
+            `IPv6 loopback (::1) unavailable (${err.code}); continuing with 127.0.0.1 only`,
+          );
+          return;
+        }
+        console.error(err);
+        process.exit(1);
       });
     }
     return;

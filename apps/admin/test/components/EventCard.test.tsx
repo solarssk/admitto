@@ -21,6 +21,7 @@ const baseEvent: EventDto = {
   location: "Warsaw",
   has_coordinates: true,
   map_preview_path: "/m/evt-1.png?v=9_52.230000_21.010000_z15&context=list",
+  map_attribution: "© OpenStreetMap contributors",
   organization_id: "org-1",
   archived_at: null,
   attendee_count: 42,
@@ -228,7 +229,17 @@ describe("EventCard", () => {
   it("shows OpenStreetMap attribution on the map when a preview is present", () => {
     renderCard();
     expect(document.querySelector(".event-card__map-attribution")?.textContent).toBe(
-      "© OpenStreetMap",
+      "© OpenStreetMap contributors",
+    );
+  });
+
+  it("renders configured map_attribution for custom tile providers", () => {
+    renderCard(
+      {},
+      { ...baseEvent, map_attribution: "© CARTO © OpenStreetMap" },
+    );
+    expect(document.querySelector(".event-card__map-attribution")?.textContent).toBe(
+      "© CARTO © OpenStreetMap",
     );
   });
 

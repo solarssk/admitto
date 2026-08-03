@@ -6,6 +6,8 @@ import { canManageInstance, listAdminEvents } from "@admitto/auth";
 import { ensureBadgeEventItem, ensureStandardTicketType, writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { assertCoordinatePairing, buildEventStaticMapPath, isLocationMapsEnabled, LOCATION_LIMITS, LocationValidationError } from "@admitto/location";
+import { resolveMapTileConfig } from "../maps/config.js";
+import { plainMapAttribution } from "../maps/static-map.js";
 import {
   adminAuditFromContext,
   countAttendeesByEvent,
@@ -110,6 +112,10 @@ export function serializeEventDto(
 ) {
   const createdBy = event.created_by_user_id ? userDisplayMap?.[event.created_by_user_id] : undefined;
   const archivedBy = event.archived_by_user_id ? userDisplayMap?.[event.archived_by_user_id] : undefined;
+  const mapPreviewPath = eventListMapPreviewPath(event);
+  const mapAttribution = mapPreviewPath
+    ? plainMapAttribution(resolveMapTileConfig().attribution) || null
+    : null;
   return {
     id: event.id,
     title: event.title,
@@ -118,7 +124,8 @@ export function serializeEventDto(
     timezone: event.timezone,
     location: event.location,
     has_coordinates: event.has_coordinates === true,
-    map_preview_path: eventListMapPreviewPath(event),
+    map_preview_path: mapPreviewPath,
+    map_attribution: mapAttribution,
     organization_id: event.organization_id,
     archived_at: event.archived_at?.toISOString() ?? null,
     created_at: event.created_at.toISOString(),

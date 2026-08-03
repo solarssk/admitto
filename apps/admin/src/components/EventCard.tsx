@@ -43,6 +43,7 @@ export function EventCard({
   const locationText = event.location?.trim() || null;
   const attendeeCount = event.attendee_count;
   const mapPlaceholderLabel = hasPin && !mapSrc ? "Maps unavailable" : "No location";
+  const mapAttribution = event.map_attribution?.trim() || "© OpenStreetMap";
 
   return (
     <Link to={href} state={{ event }} className="event-card-link">
@@ -59,7 +60,7 @@ export function EventCard({
               />
               {/* Nested <a> is illegal inside the card Link. List PNGs skip burn-in so the
                   pin stays centered under object-fit:cover; this HTML credit stays in frame. */}
-              <span className="event-card__map-attribution">© OpenStreetMap</span>
+              <span className="event-card__map-attribution">{mapAttribution}</span>
             </>
           ) : (
             <div className="event-card__map-placeholder" aria-hidden="true">

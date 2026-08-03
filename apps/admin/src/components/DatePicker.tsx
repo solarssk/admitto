@@ -128,13 +128,14 @@ export function DatePicker({
   const days = daysInMonth(viewYear, viewMonth);
   const offset = mondayFirstOffset(viewYear, viewMonth);
 
-  // `reason === "focus"` means the user already tabbed focus elsewhere on purpose — pulling
-  // it back to this input would trap keyboard navigation, so only restore focus for every
-  // other close path (Escape, picking a date, an outside pointerdown, typing a valid date).
+  // `reason === "focus"` / `"scroll"`: do not steal focus back (Tab already moved on, or an
+  // ancestor scroll closed the fixed panel — refocusing would undo that scroll).
   const closePanel = (reason?: OutsideInteraction) => {
     setOpen(false);
     setPanelStyle(HIDDEN_FIXED_PANEL);
-    if (reason !== "focus") window.setTimeout(() => inputRef.current?.focus(), 0);
+    if (reason !== "focus" && reason !== "scroll") {
+      window.setTimeout(() => inputRef.current?.focus(), 0);
+    }
   };
 
   useEffect(() => {
@@ -205,7 +206,9 @@ export function DatePicker({
       });
     };
     updatePlacement();
-    return attachFixedOverlayLifecycle(panelRef.current, updatePlacement, closePanel);
+    return attachFixedOverlayLifecycle(panelRef.current, updatePlacement, () =>
+      closePanel("scroll"),
+    );
   }, [open, viewMonth, viewYear]);
 
   const commitText = (raw: string) => {

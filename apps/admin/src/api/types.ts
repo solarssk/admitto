@@ -51,6 +51,11 @@ export interface EventDto {
    * and a pin exists; null otherwise (show the card placeholder — do not request `/m/`).
    */
   map_preview_path?: string | null;
+  /**
+   * Plain-text map credit for the card strip when `map_preview_path` is set (from
+   * `MAP_TILE_ATTRIBUTION` / default OSM). List PNGs omit burn-in so the pin stays centered.
+   */
+  map_attribution?: string | null;
   organization_id: string;
   attendee_count?: number;
   archived_at: string | null;
