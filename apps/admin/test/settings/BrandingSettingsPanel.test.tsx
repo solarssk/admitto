@@ -323,6 +323,41 @@ describe("BrandingSettingsPanel — organisation fields", () => {
       expect(isDisabled(screen.getByRole("button", { name: "Save" }))).toBe(false);
     });
   });
+
+  it("saves logo_original_url and logo_crop after a cropped upload", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
+    mockUploadFile
+      .mockResolvedValueOnce({ url: "/uploads/default/logo-original.png" })
+      .mockResolvedValueOnce({ url: "/uploads/default/logo.png" });
+    mockPatchOrg.mockResolvedValueOnce({
+      org_name: "Acme Corp",
+      logo_url: "/uploads/default/logo.png",
+      logo_original_url: "/uploads/default/logo-original.png",
+      logo_crop: { unit: "%", x: 4, y: 4, width: 92, height: 92, zoom: 1 },
+    });
+    mockSaveTheme.mockResolvedValueOnce({ theme: {} });
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    const [logoInput] = document.querySelectorAll(".logo-upload__file-input");
+    fireEvent.change(logoInput!, {
+      target: { files: [new File(["x"], "logo.png", { type: "image/png" })] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    await screen.findByAltText("Organisation logo preview");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(mockPatchOrg).toHaveBeenCalledWith(
+        expect.objectContaining({
+          logo_url: "/uploads/default/logo.png",
+          logo_original_url: "/uploads/default/logo-original.png",
+          logo_crop: { unit: "%", x: 4, y: 4, width: 92, height: 92, zoom: 1 },
+        }),
+      );
+    });
+  });
 });
 
 describe("BrandingSettingsPanel — colour palette", () => {

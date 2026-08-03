@@ -191,6 +191,21 @@ describe("EventImageAssetLibrary", () => {
     expect(await screen.findByText("dropped.png")).toBeTruthy();
   });
 
+  it("cancelling the crop modal leaves no pending file selected", async () => {
+    mockFetch.mockResolvedValueOnce([]);
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    await screen.findByText("No images yet");
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: { files: [new File(["x"], "sponsor.png", { type: "image/png" })] },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog", { name: "Adjust image" })).toBeNull();
+    expect(screen.queryByText("sponsor.png")).toBeNull();
+    expect(screen.getByRole("button", { name: "Add asset" }).hasAttribute("disabled")).toBe(true);
+  });
+
   it("rejects a file over 2 MB client-side without calling the API", async () => {
     mockFetch.mockResolvedValueOnce([]);
     renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);

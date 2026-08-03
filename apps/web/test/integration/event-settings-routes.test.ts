@@ -664,6 +664,20 @@ describe("PATCH /api/admin/events/:eventId", () => {
     expect(clearBody.event.logo_crop).toBeNull();
   });
 
+  it("rejects an out-of-range logo_crop zoom with 400", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        logo_url: "/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png",
+        logo_crop: { unit: "%", x: 0, y: 0, width: 50, height: 50, zoom: 9 },
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/zoom/);
+  });
+
   it("clears logo_url back to inherited branding when set to null", async () => {
     await prisma.organization.update({
       where: { id: ORG_SET },

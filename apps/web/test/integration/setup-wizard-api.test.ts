@@ -398,6 +398,49 @@ describe("setup org-branding", () => {
     });
   });
 
+  it("PATCH stores logo_original_url and logo_crop for an uploaded logo", async () => {
+    const crop = { unit: "%", x: 8, y: 6, width: 70, height: 60, zoom: 1.25 };
+    const res = await app.request("/api/admin/setup/org-branding", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({
+        logo_url: "/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png",
+        logo_original_url: "/uploads/default/b2c3d4e5-f6a7-8901-bcde-f12345678901.png",
+        logo_crop: crop,
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      logo_url: string | null;
+      logo_original_url: string | null;
+      logo_crop: typeof crop | null;
+    };
+    expect(body.logo_url).toBe("/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png");
+    expect(body.logo_original_url).toBe(
+      "/uploads/default/b2c3d4e5-f6a7-8901-bcde-f12345678901.png",
+    );
+    expect(body.logo_crop).toEqual(crop);
+  });
+
+  it("PATCH rejects a malformed logo_crop body", async () => {
+    const res = await app.request("/api/admin/setup/org-branding", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ logo_crop: { unit: "%", x: 0 } }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("invalid body");
+  });
+
   it("rolls back the organization name when a companion logo URL is invalid", async () => {
     resetSystemLogBufferForTest();
     const before = await prisma.organization.findUniqueOrThrow({

@@ -250,6 +250,65 @@ describe("LogoUploadZone", () => {
     vi.unstubAllGlobals();
   });
 
+  it("Edit falls back to file picker when the persisted original cannot be fetched", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        blob: async () => new Blob(),
+      }),
+    );
+    renderWithToast(
+      <LogoUploadZone
+        value="/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png"
+        originalUrl="/uploads/default/b2c3d4e5-f6a7-8901-bcde-f12345678901.png"
+        cropMeta={{ unit: "%", x: 0, y: 0, width: 100, height: 100, zoom: 1 }}
+        onChange={() => {}}
+      />,
+    );
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const clickSpy = vi.spyOn(input, "click");
+    fireEvent.click(screen.getByRole("button", { name: "Edit image" }));
+    await waitFor(() => {
+      expect(clickSpy).toHaveBeenCalled();
+      expect(screen.getByText(/Could not load the original image/i)).toBeTruthy();
+    });
+    expect(screen.queryByRole("dialog", { name: "Adjust image" })).toBeNull();
+    clickSpy.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it("Replace Apply uploads a new original and cropped pair and reports crop meta", async () => {
+    mockUploadFile
+      .mockResolvedValueOnce({ url: "/uploads/default/replaced-original.png" })
+      .mockResolvedValueOnce({ url: "/uploads/default/replaced.png" });
+    const onChange = vi.fn();
+    const onSourceChange = vi.fn();
+    renderWithToast(
+      <LogoUploadZone
+        value="/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png"
+        originalUrl="/uploads/default/b2c3d4e5-f6a7-8901-bcde-f12345678901.png"
+        cropMeta={{ unit: "%", x: 1, y: 1, width: 90, height: 90, zoom: 1 }}
+        onChange={onChange}
+        onSourceChange={onSourceChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Replace image" }));
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { files: [new File(["new"], "new.png", { type: "image/png" })] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledWith("/uploads/default/replaced.png");
+      expect(onSourceChange).toHaveBeenCalledWith({
+        originalUrl: "/uploads/default/replaced-original.png",
+        crop: { unit: "%", x: 4, y: 4, width: 92, height: 92, zoom: 1.5 },
+      });
+    });
+  });
+
   it("Edit without an in-memory original asks for the full file again", async () => {
     renderWithToast(
       <LogoUploadZone
