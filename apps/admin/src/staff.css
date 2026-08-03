@@ -87,10 +87,9 @@
   display: block;
   width: 100%;
   height: 100%;
-  /* Prefer the bottom of the list PNG so the burned-in OSM credit stays in frame when
-     the card strip is narrower than the image aspect (cover crops top/bottom). */
+  /* Pin is composited at the PNG center — keep that point in the middle of the strip. */
   object-fit: cover;
-  object-position: center bottom;
+  object-position: center center;
   pointer-events: none;
 }
 
