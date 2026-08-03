@@ -120,8 +120,9 @@ interface WriteValidatedUploadOptions {
 /**
  * Re-encode a branding raster through sharp: auto-orient, drop metadata, keep alpha for PNG/WebP.
  * ADR 0008 "strip metadata" — do not persist the client-supplied byte stream as-is.
+ * Exported for unit tests covering dimension / MIME edge paths.
  */
-async function reencodeBrandingImage(buf: Buffer, mime: string): Promise<Buffer> {
+export async function reencodeBrandingImage(buf: Buffer, mime: string): Promise<Buffer> {
   try {
     const meta = await sharp(buf, {
       failOn: "error",

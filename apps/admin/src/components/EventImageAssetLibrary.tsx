@@ -32,6 +32,12 @@ function extensionForMime(mime: string): string {
   return ".png";
 }
 
+/** @internal Unit-test surface for small helpers. */
+export const eventImageAssetLibraryTestUtils = {
+  pluralSuffix,
+  extensionForMime,
+};
+
 const UPLOAD_IMAGES_HINT =
   "Each asset is stored for this event only. Remove it from the mail template before deleting.";
 

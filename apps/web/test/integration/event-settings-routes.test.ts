@@ -782,6 +782,33 @@ describe("PATCH /api/admin/events/:eventId", () => {
     expect(body.event.logo_crop).toBeNull();
   });
 
+  it("patches header_image_url and logo_original_url independently", async () => {
+    await prisma.event.update({ where: { id: EVENT_SET }, data: { archived_at: null } });
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        header_image_url: "https://cdn.example.com/header.png",
+        logo_url: "/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png",
+        logo_original_url: "/uploads/default/b2c3d4e5-f6a7-8901-bcde-f12345678901.png",
+        logo_crop: null,
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      event: {
+        header_image_url: string | null;
+        logo_original_url: string | null;
+        logo_crop: unknown;
+      };
+    };
+    expect(body.event.header_image_url).toBe("https://cdn.example.com/header.png");
+    expect(body.event.logo_original_url).toBe(
+      "/uploads/default/b2c3d4e5-f6a7-8901-bcde-f12345678901.png",
+    );
+    expect(body.event.logo_crop).toBeNull();
+  });
+
   it("updates capacity and clears capacity with null", async () => {
     const setRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
       method: "PATCH",

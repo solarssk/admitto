@@ -494,4 +494,34 @@ describe("LogoUploadZone", () => {
     const uploaded = fd.get("file") as File;
     expect(uploaded.name).toMatch(/logo-original\.jpe?g$/i);
   });
+
+  it("prompts to re-pick when Edit has no stored original upload", async () => {
+    renderWithToast(
+      <LogoUploadZone
+        value="/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png"
+        onChange={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Edit image" }));
+    expect(await screen.findByText(/original image is not available/i)).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: "Adjust image" })).toBeNull();
+  });
+
+  it("Edit with a .webp original uses webp MIME without re-uploading", async () => {
+    mockUploadFile.mockResolvedValueOnce({ url: "/uploads/default/cropped-webp.png" });
+    renderWithToast(
+      <LogoUploadZone
+        value="/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.webp"
+        originalUrl="/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890-original.webp"
+        cropMeta={{ unit: "%", x: 0, y: 0, width: 80, height: 80, zoom: 1 }}
+        onChange={() => {}}
+        onSourceChange={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Edit image" }));
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: "Adjust image" })).toBeTruthy();
+    });
+    expect(mockUploadFile).not.toHaveBeenCalled();
+  });
 });

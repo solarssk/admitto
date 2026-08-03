@@ -168,6 +168,15 @@ function toLogoCropMeta(meta: CropApplyMeta): LogoCropMeta {
   };
 }
 
+/** @internal Unit-test surface for MIME/path helpers (keeps branch coverage explicit). */
+export const logoUploadZoneTestUtils = {
+  extensionForMime,
+  mimeFromUploadPath,
+  cropMetaToPercent,
+  toLogoCropMeta,
+  buildLogoZoneClassName,
+};
+
 async function postUpload(
   uploadFn: (formData: FormData) => Promise<{ url: string }>,
   blob: Blob,

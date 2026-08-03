@@ -18,6 +18,7 @@ describe("resolveCropOutputMime", () => {
   it("defaults to PNG for PNG and unknown types", () => {
     expect(resolveCropOutputMime("image/png")).toBe("image/png");
     expect(resolveCropOutputMime("")).toBe("image/png");
+    expect(resolveCropOutputMime("image/jpeg; charset=binary")).toBe("image/jpeg");
   });
 });
 

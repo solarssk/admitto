@@ -135,6 +135,27 @@ describe("saveBrandingUpload", () => {
       status: 415,
     });
   });
+
+  it("rejects decoded images larger than the max edge", async () => {
+    const wide = await sharp({
+      create: { width: 8193, height: 1, channels: 3, background: { r: 0, g: 0, b: 0 } },
+    })
+      .png()
+      .toBuffer();
+    await expect(
+      saveBrandingUpload(new File([wide], "wide.png", { type: "image/png" }), "default"),
+    ).rejects.toMatchObject({ code: "invalid_image", status: 400 });
+  });
+});
+
+describe("reencodeBrandingImage", () => {
+  it("rejects an unsupported mime after a successful decode", async () => {
+    const { reencodeBrandingImage } = await import("../../src/admin/branding-upload.js");
+    await expect(reencodeBrandingImage(PNG_BYTES, "image/gif")).rejects.toMatchObject({
+      code: "unsupported_file_type",
+      status: 415,
+    });
+  });
 });
 
 describe("saveEventUpload", () => {

@@ -186,4 +186,33 @@ describe("CropImageModal apply / cancel", () => {
     fireEvent.click(apply);
     expect(mockGetCropped).not.toHaveBeenCalled();
   });
+
+  it("renders nothing when open is false", () => {
+    const { container } = render(
+      <CropImageModal
+        open={false}
+        imageSrc={TINY_PNG}
+        sourceMime="image/png"
+        onCancel={vi.fn()}
+        onApply={vi.fn()}
+      />,
+    );
+    expect(container.querySelector(".crop-image-modal")).toBeNull();
+  });
+
+  it("Apply while already applying is a no-op", async () => {
+    mockGetCropped.mockImplementation(
+      () =>
+        new Promise(() => {
+          /* hang */
+        }),
+    );
+    await renderReadyCrop();
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    await waitFor(() => {
+      expect(mockGetCropped).toHaveBeenCalledTimes(1);
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Working/i }));
+    expect(mockGetCropped).toHaveBeenCalledTimes(1);
+  });
 });
