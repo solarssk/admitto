@@ -12,6 +12,7 @@ import type {
   DeliveryDto,
   EventDto,
   EventSettingsDto,
+  LogoCropMeta,
   LookupAttendeeResult,
   MeResponse,
   ResendTicketBody,
@@ -410,7 +411,7 @@ export async function fetchEventSettings(
   return parseJson<EventSettingsDto>(res);
 }
 
-/** Patch basic event fields (title, date, location, capacity, branding overrides). */
+/** Patch basic event fields (title, date, capacity, branding overrides). */
 export async function patchEvent(
   eventId: string,
   body: Partial<{
@@ -420,6 +421,8 @@ export async function patchEvent(
     location: string | null;
     capacity: number | null;
     logo_url: string | null;
+    logo_original_url: string | null;
+    logo_crop: LogoCropMeta | null;
     header_image_url: string | null;
   }>,
 ): Promise<{ event: EventSettingsDto }> {

@@ -68,6 +68,39 @@ vi.mock("../../src/settings/MapPicker.js", () => ({
   MapPicker: () => <div data-testid="map-picker" />,
 }));
 
+vi.mock("../../src/components/crop/CropImageModal.js", () => ({
+  CropImageModal: ({
+    open,
+    onApply,
+    onCancel,
+  }: {
+    open: boolean;
+    onApply: (
+      blob: Blob,
+      meta: { crop: { unit: "%"; x: number; y: number; width: number; height: number }; zoom: number },
+    ) => void | Promise<void>;
+    onCancel: () => void;
+  }) =>
+    open ? (
+      <div role="dialog" aria-label="Adjust image">
+        <button
+          type="button"
+          onClick={() =>
+            void onApply(new Blob(["x"], { type: "image/png" }), {
+              crop: { unit: "%", x: 4, y: 4, width: 92, height: 92 },
+              zoom: 1.25,
+            })
+          }
+        >
+          Apply changes
+        </button>
+        <button type="button" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    ) : null,
+}));
+
 import {
   archiveEvent,
   deleteEvent,
@@ -113,6 +146,8 @@ const activeEvent = {
   organization_name: "Org",
   active_items: [] as Array<{ id: string; name: string; enabled: boolean }>,
   logo_url: null,
+  logo_original_url: null,
+  logo_crop: null,
   header_image_url: null,
   resolved_logo_url: null,
   resolved_header_image_url: null,
@@ -269,6 +304,17 @@ describe("EventSettingsPage save label", () => {
 
     expect(await screen.findByRole("button", { name: "Save" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Reset" })).toBeTruthy();
+  });
+
+  it("shows Missing event when the route has no eventId param", () => {
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/settings"]}>
+        <Routes>
+          <Route path="/admin/events/settings" element={<EventSettingsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("Missing event.")).toBeTruthy();
   });
 });
 
@@ -499,7 +545,9 @@ describe("EventSettingsPage tabs", () => {
 
   it("uploads a branding file through the event-scoped upload endpoint", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
-    vi.mocked(uploadEventBrandingFile).mockResolvedValueOnce({ url: "/uploads/default/logo.png" });
+    vi.mocked(uploadEventBrandingFile)
+      .mockResolvedValueOnce({ url: "/uploads/default/logo-original.png" })
+      .mockResolvedValueOnce({ url: "/uploads/default/logo.png" });
     renderSettings();
     await screen.findByRole("tab", { name: "Images" });
     fireEvent.click(screen.getByRole("tab", { name: "Images" }));
@@ -509,18 +557,20 @@ describe("EventSettingsPage tabs", () => {
     expect(fileInputs).toHaveLength(1);
     const file = new File(["x"], "logo.png", { type: "image/png" });
     fireEvent.change(fileInputs[0]!, { target: { files: [file] } });
+    fireEvent.click(await screen.findByRole("button", { name: "Apply changes" }));
 
     await waitFor(() => {
+      expect(uploadEventBrandingFile).toHaveBeenCalledTimes(2);
       expect(uploadEventBrandingFile).toHaveBeenCalledWith("evt-1", expect.any(FormData));
     });
   });
 
   it("disables Save while a branding upload is in flight, even if another field is already dirty", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
-    let resolveLogo!: (result: { url: string }) => void;
-    vi.mocked(uploadEventBrandingFile).mockReturnValueOnce(
-      new Promise((resolve) => (resolveLogo = resolve)),
-    );
+    let resolveOriginal!: (result: { url: string }) => void;
+    vi.mocked(uploadEventBrandingFile)
+      .mockReturnValueOnce(new Promise((resolve) => (resolveOriginal = resolve)))
+      .mockResolvedValueOnce({ url: "/uploads/default/logo.png" });
     renderSettings();
     await screen.findByLabelText("Event title");
 
@@ -538,13 +588,15 @@ describe("EventSettingsPage tabs", () => {
       target: { files: [new File(["x"], "logo.png", { type: "image/png" })] },
     });
 
+    // Pre-crop original upload is in flight before the modal opens.
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Uploading…" }).hasAttribute("disabled")).toBe(
         true,
       );
     });
 
-    resolveLogo({ url: "/uploads/default/logo.png" });
+    resolveOriginal({ url: "/uploads/default/logo-original.png" });
+    fireEvent.click(await screen.findByRole("button", { name: "Apply changes" }));
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(
         false,
@@ -554,11 +606,15 @@ describe("EventSettingsPage tabs", () => {
 
   it("saves the logo field after uploading, sending the patch payload", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
-    vi.mocked(uploadEventBrandingFile).mockResolvedValueOnce({ url: "/uploads/default/logo.png" });
+    vi.mocked(uploadEventBrandingFile)
+      .mockResolvedValueOnce({ url: "/uploads/default/logo-original.png" })
+      .mockResolvedValueOnce({ url: "/uploads/default/logo.png" });
     vi.mocked(patchEvent).mockResolvedValueOnce({
       event: {
         ...activeEvent,
         logo_url: "/uploads/default/logo.png",
+        logo_original_url: "/uploads/default/logo-original.png",
+        logo_crop: { unit: "%", x: 4, y: 4, width: 92, height: 92, zoom: 1.25 },
       },
     });
     renderSettings();
@@ -570,6 +626,7 @@ describe("EventSettingsPage tabs", () => {
     fireEvent.change(logoInput!, {
       target: { files: [new File(["x"], "logo.png", { type: "image/png" })] },
     });
+    fireEvent.click(await screen.findByRole("button", { name: "Apply changes" }));
     await screen.findByAltText("Event logo preview");
 
     // The alt-text preview and the Save button's label flip in separate React commits
@@ -581,6 +638,8 @@ describe("EventSettingsPage tabs", () => {
     await waitFor(() => {
       expect(patchEvent).toHaveBeenCalledWith("evt-1", {
         logo_url: "/uploads/default/logo.png",
+        logo_original_url: "/uploads/default/logo-original.png",
+        logo_crop: { unit: "%", x: 4, y: 4, width: 92, height: 92, zoom: 1.25 },
       });
     });
   });
