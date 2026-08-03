@@ -4111,8 +4111,11 @@ output.mail-field-hint {
   gap: var(--space-2);
 }
 
-.mail-field-env-badge {
+.mail-field-env-badge,
+.settings-env-badge {
   align-self: flex-start;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .mail-secret-field {

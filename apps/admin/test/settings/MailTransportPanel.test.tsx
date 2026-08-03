@@ -327,7 +327,7 @@ describe("MailTransportPanel — secret field behavior (#407)", () => {
     expect(screen.getByRole("button", { name: "Change" })).toBeTruthy();
   });
 
-  it("hides Set/Change/Clear and shows an env badge when the secret is locked", async () => {
+  it("hides Set/Change/Clear and shows an ENV card badge when the secret is locked", async () => {
     mockFetch.mockResolvedValueOnce(
       makeResponse(smtpFields({ smtpPassword: secret(true, { source: "env", locked: true }) })),
     );
@@ -337,7 +337,7 @@ describe("MailTransportPanel — secret field behavior (#407)", () => {
     });
     expect(screen.queryByRole("button", { name: "Change" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
-    expect(screen.getByText("Managed by environment")).toBeTruthy();
+    expect(screen.getByLabelText("Managed by environment").textContent).toBe("ENV");
   });
 });
 
