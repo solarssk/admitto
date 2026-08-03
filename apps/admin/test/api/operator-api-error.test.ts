@@ -137,6 +137,21 @@ describe("operatorApiErrorMessage", () => {
     ).toMatch(/Instance URL/);
     expect(
       operatorApiErrorMessage(
+        new ApiError(422, "mail_destination_blocked", "mail_destination_blocked"),
+        "Resend failed.",
+      ),
+    ).toMatch(/private address/);
+    expect(
+      operatorApiErrorMessage(
+        new ApiError(422, "mail_destination_unresolved", "mail_destination_unresolved"),
+        "Resend failed.",
+      ),
+    ).toMatch(/resolve the mail server/);
+    expect(
+      operatorApiErrorMessage(new ApiError(500, "internal_error", "internal_error"), "Resend failed."),
+    ).toMatch(/System logs/);
+    expect(
+      operatorApiErrorMessage(
         new ApiError(403, "manual_lookup_disabled", "manual_lookup_disabled"),
         "Request failed.",
       ),

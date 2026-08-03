@@ -25,7 +25,7 @@ jobs:
         )
       }}
     steps:
-      - uses: Codium-ai/pr-agent@8e4d32e5497defd43c023a404f73560c62728961  # HEAD 2026-06-08
+      - uses: Codium-ai/pr-agent@570f67ed5fc8db5be74c18df070bc20079b64b0d  # HEAD 2026-06-08
         env:
           ANTHROPIC__KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

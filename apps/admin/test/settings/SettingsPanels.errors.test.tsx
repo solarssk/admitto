@@ -76,7 +76,12 @@ afterEach(() => {
 
 describe("Settings panels delayed loading", () => {
   it("BrandingSettingsPanel shows the loading placeholder once the fetch has genuinely taken a moment", () => {
-    vi.mocked(fetchOrgBranding).mockResolvedValueOnce({ org_name: "Acme", logo_url: null });
+    vi.mocked(fetchOrgBranding).mockResolvedValueOnce({
+      org_name: "Acme",
+      logo_url: null,
+      logo_original_url: null,
+      logo_crop: null,
+    });
     vi.mocked(fetchStaffTheme).mockImplementationOnce(() => new Promise(() => {}));
     vi.useFakeTimers();
     renderWithToast(<BrandingSettingsPanel />);
@@ -155,7 +160,12 @@ describe("AuditLogPanel operator errors", () => {
 
 describe("BrandingSettingsPanel operator errors", () => {
   it("toasts operator-safe save failure when both org branding and theme fail to save", async () => {
-    vi.mocked(fetchOrgBranding).mockResolvedValueOnce({ org_name: "Acme", logo_url: null });
+    vi.mocked(fetchOrgBranding).mockResolvedValueOnce({
+      org_name: "Acme",
+      logo_url: null,
+      logo_original_url: null,
+      logo_crop: null,
+    });
     vi.mocked(fetchStaffTheme).mockResolvedValueOnce({ theme: { primary: "#112233" } });
     vi.mocked(patchOrgBranding).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     vi.mocked(saveStaffTheme).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
@@ -171,9 +181,19 @@ describe("BrandingSettingsPanel operator errors", () => {
   });
 
   it("toasts a partial-failure message when only the theme save fails", async () => {
-    vi.mocked(fetchOrgBranding).mockResolvedValueOnce({ org_name: "Acme", logo_url: null });
+    vi.mocked(fetchOrgBranding).mockResolvedValueOnce({
+      org_name: "Acme",
+      logo_url: null,
+      logo_original_url: null,
+      logo_crop: null,
+    });
     vi.mocked(fetchStaffTheme).mockResolvedValueOnce({ theme: { primary: "#112233" } });
-    vi.mocked(patchOrgBranding).mockResolvedValueOnce({ org_name: "Acme", logo_url: null });
+    vi.mocked(patchOrgBranding).mockResolvedValueOnce({
+      org_name: "Acme",
+      logo_url: null,
+      logo_original_url: null,
+      logo_crop: null,
+    });
     vi.mocked(saveStaffTheme).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToast(<BrandingSettingsPanel />);
     await waitFor(() => {

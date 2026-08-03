@@ -22,7 +22,7 @@ import {
   uploadEventBrandingFile,
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { EventSettingsDto, TicketTypeDto } from "../api/types.js";
+import type { EventSettingsDto, LogoCropMeta, TicketTypeDto } from "../api/types.js";
 import { TicketTypesCard } from "../settings/TicketTypesCard.js";
 import { EventMailSettingsCard } from "../settings/EventMailSettingsCard.js";
 import { LocationSettingsPanel } from "../settings/LocationSettingsPanel.js";
@@ -53,6 +53,8 @@ type SettingsForm = {
   timezone: string;
   capacity: string;
   logoUrl: string;
+  logoOriginalUrl: string;
+  logoCrop: LogoCropMeta | null;
 };
 
 type SettingsPatch = Partial<{
@@ -61,6 +63,8 @@ type SettingsPatch = Partial<{
   timezone: string;
   capacity: number | null;
   logo_url: string | null;
+  logo_original_url: string | null;
+  logo_crop: LogoCropMeta | null;
 }>;
 
 const EVENT_SETTINGS_SUBTITLE = "Manage this event's details, images, and access controls.";
@@ -99,6 +103,8 @@ function toForm(data: EventSettingsDto): SettingsForm {
     timezone: data.timezone,
     capacity: data.capacity?.toString() ?? "",
     logoUrl: data.logo_url ?? "",
+    logoOriginalUrl: data.logo_original_url ?? "",
+    logoCrop: data.logo_crop ?? null,
   };
 }
 
@@ -123,6 +129,16 @@ function buildSettingsPatch(form: SettingsForm, original: SettingsForm): Setting
     patch.capacity = parseCapacityInput(form.capacity);
   }
   if (form.logoUrl !== original.logoUrl) patch.logo_url = form.logoUrl.trim() || null;
+  if (form.logoOriginalUrl !== original.logoOriginalUrl) {
+    patch.logo_original_url = form.logoOriginalUrl.trim() || null;
+  }
+  const cropChanged = JSON.stringify(form.logoCrop) !== JSON.stringify(original.logoCrop);
+  if (cropChanged) patch.logo_crop = form.logoCrop;
+  // When display logo changes, always send original+crop together so the server stays consistent.
+  if (patch.logo_url !== undefined) {
+    patch.logo_original_url = form.logoOriginalUrl.trim() || null;
+    patch.logo_crop = form.logoCrop;
+  }
   return patch;
 }
 
@@ -1003,8 +1019,20 @@ export function EventSettingsPage() {
             hideLabel
             hint="PNG, JPG, WebP · max 2 MB · leave blank to use the organization's logo"
             value={form.logoUrl}
+            originalUrl={form.logoOriginalUrl || null}
+            cropMeta={form.logoCrop}
             disabled={isArchived || saving}
             onChange={(url) => setForm((prev) => prev && { ...prev, logoUrl: url })}
+            onSourceChange={(source) =>
+              setForm(
+                (prev) =>
+                  prev && {
+                    ...prev,
+                    logoOriginalUrl: source.originalUrl ?? "",
+                    logoCrop: source.crop,
+                  },
+              )
+            }
             uploadFn={(fd) => uploadEventBrandingFile(eventId, fd)}
             onUploadingChange={setLogoUploading}
           />
