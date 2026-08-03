@@ -100,9 +100,9 @@ function HealthCheckRowView({
       >
         <span
           className={`health-check__dot ${rowDotClass(check.status)}`}
-          role="img"
-          aria-label={`Status: ${ROW_STATUS_TEXT[check.status]}`}
+          aria-hidden="true"
         />
+        <span className="sr-only">{`Status: ${ROW_STATUS_TEXT[check.status]}`}</span>
         <span className="health-check__row-icon" aria-hidden="true">
           <i className={`ti ti-${icon}`} />
         </span>

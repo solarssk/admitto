@@ -772,6 +772,138 @@ describe("collectAdminHealth", () => {
         .find((c) => c.id === "email_sending")
         ?.details.some((d) => d.key === "live_check" && d.value === "skipped"),
     ).toBe(true);
+
+    describeMailConfigForOrg.mockResolvedValue({
+      provider: { value: "smtp", source: "organization", locked: false },
+    });
+    probeMail.mockResolvedValueOnce({ ok: true, skipped: true });
+    const skippedProbe = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+      live: true,
+      probeMail,
+    });
+    expect(skippedProbe.groups[1]!.checks.find((c) => c.id === "email_sending")?.summary).toBe(
+      "Configured",
+    );
+    expect(
+      skippedProbe.groups[1]!.checks
+        .find((c) => c.id === "email_sending")
+        ?.details.some((d) => d.key === "live_check" && d.value === "skipped"),
+    ).toBe(true);
+  });
+
+  it("covers Graph label, unknown provider, redis/db slow without latency, encryption optional, IdP protocols", async () => {
+    collectSetupChecks.mockResolvedValue({
+      database: { ok: true, warn: true, detail: "PostgreSQL connected · slow" },
+      redis: { ok: true, warn: true, detail: "Redis OK · elevated latency" },
+      encryption: { ok: true, detail: "Optional in development" },
+      base_url: { ok: true, detail: "https://tickets.example.com" },
+    });
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+    });
+    checkDatabase.mockResolvedValue({ status: "ok" });
+    checkMailer.mockReturnValue({ configured: true, provider: "graph" });
+    resolveInstanceOrganizationId.mockResolvedValue("org-1");
+    describeMailConfigForOrg.mockResolvedValue({
+      provider: { value: "graph", source: "organization", locked: false },
+    });
+    listOidcProviders.mockResolvedValue([
+      {
+        id: "saml-1",
+        provider_type: "saml",
+        display_name: "Okta SAML",
+        issuer: "https://okta.example.com",
+        authorization_endpoint: "https://okta.example.com/auth",
+        token_endpoint: "https://okta.example.com/token",
+        jwks_uri: "https://okta.example.com/jwks",
+        enabled: false,
+      },
+      {
+        id: "custom-1",
+        provider_type: "custom_sso",
+        display_name: "Custom",
+        issuer: "https://sso.example.com",
+        authorization_endpoint: "https://sso.example.com/auth",
+        token_endpoint: "https://sso.example.com/token",
+        jwks_uri: "https://sso.example.com/jwks",
+        enabled: false,
+      },
+    ]);
+    findEnabledOidcProviders.mockResolvedValue([]);
+    getCfAccessConfig.mockResolvedValue({
+      enabled: false,
+      teamDomain: "",
+      audience: [],
+      protectedPrefixes: [],
+      jwksUri: "",
+    });
+
+    const report = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+    });
+    const core = report.groups[0]!.checks;
+    expect(core.find((c) => c.id === "database")?.summary).toBe("Responding slowly");
+    expect(core.find((c) => c.id === "rate_limit_storage")?.summary).toBe("Responding slowly");
+    expect(core.find((c) => c.id === "data_encryption")?.status).toBe("not_configured");
+    expect(report.groups[1]!.checks.find((c) => c.id === "email_sending")?.label).toBe(
+      "Email sending, Microsoft Graph",
+    );
+    expect(report.groups[1]!.checks.find((c) => c.id === "identity_provider_saml-1")?.label).toBe(
+      "Identity provider, SAML - Okta SAML",
+    );
+    expect(report.groups[1]!.checks.find((c) => c.id === "identity_provider_custom-1")?.label).toBe(
+      "Identity provider, CUSTOM SSO - Custom",
+    );
+
+    // Healthy DB: fall back to latency parsed from setup detail when probe omits latency_ms.
+    collectSetupChecks.mockResolvedValue({
+      ...okSetup,
+      database: { ok: true, detail: "PostgreSQL connected (7 ms)" },
+    });
+    listOidcProviders.mockResolvedValue([]);
+    describeMailConfigForOrg.mockResolvedValue({
+      provider: { value: null, source: "default", locked: false },
+    });
+    checkDatabase.mockResolvedValue({ status: "ok" });
+    const latencyFromSetup = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+    });
+    expect(
+      latencyFromSetup.groups[0]!.checks
+        .find((c) => c.id === "database")
+        ?.details.some((d) => d.key === "latency_ms" && d.value === "7"),
+    ).toBe(true);
+
+    describeMailConfigForOrg.mockResolvedValue({
+      provider: { value: "sendgrid", source: "organization", locked: false },
+    });
+    const unknown = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+    });
+    expect(unknown.groups[1]!.checks.find((c) => c.id === "email_sending")?.label).toBe(
+      "Email sending",
+    );
+    expect(unknown.groups[1]!.checks.find((c) => c.id === "email_sending")?.status).toBe(
+      "not_configured",
+    );
+
+    checkDatabase.mockRejectedValueOnce(new Error("probe boom"));
+    collectSetupChecks.mockResolvedValue(okSetup);
+    listOidcProviders.mockResolvedValue([]);
+    describeMailConfigForOrg.mockResolvedValue({
+      provider: { value: null, source: "default", locked: false },
+    });
+    const dbProbeFail = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+    });
+    expect(dbProbeFail.groups[0]!.checks.find((c) => c.id === "database")?.status).toBe("ok");
   });
 
   it("covers Cloudflare Access configured-disabled and passive enabled rows", async () => {

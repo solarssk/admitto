@@ -118,6 +118,52 @@ describe("formatHealthCheckMarkdown", () => {
     expect(md).not.toContain("<script>");
   });
 
+  it("formats non-numeric detail values without units and labels all row statuses", () => {
+    expect(formatHealthDetailValue("queued", "n/a")).toBe("n/a");
+    expect(formatHealthDetailValue("failed_retryable", "n/a")).toBe("n/a");
+    expect(formatHealthDetailValue("degraded_threshold", "n/a")).toBe("n/a");
+
+    const md = formatHealthCheckMarkdown({
+      ...sample,
+      overall: "ok",
+      groups: [
+        {
+          id: "core",
+          label: "Core",
+          subtitle: "Owned",
+          status: "ok",
+          checks: [
+            {
+              id: "a",
+              label: "A",
+              status: "degraded",
+              summary: "Slow",
+              details: [{ key: "status", value: "degraded" }],
+            },
+            {
+              id: "b",
+              label: "B",
+              status: "down",
+              summary: "Down",
+              details: [{ key: "status", value: "down" }],
+            },
+            {
+              id: "c",
+              label: "C",
+              status: "not_configured",
+              summary: "Missing",
+              details: [{ key: "status", value: "not_configured" }],
+            },
+          ],
+        },
+      ],
+    });
+    expect(md).toContain("Overall: Healthy");
+    expect(md).toContain("| A | degraded | Slow |");
+    expect(md).toContain("| B | down | Down |");
+    expect(md).toContain("| C | not_configured | Missing |");
+  });
+
   it("emits Outage overall and skips details blocks with only unsafe keys", () => {
     const md = formatHealthCheckMarkdown({
       ...sample,

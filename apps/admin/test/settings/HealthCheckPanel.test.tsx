@@ -86,6 +86,13 @@ function sampleReport(overrides?: Partial<HealthReportDto>): HealthReportDto {
             summary: "Coming in a later release",
             details: [],
           },
+          {
+            id: "email_sending",
+            label: "Email sending, SMTP",
+            status: "down",
+            summary: "Unreachable",
+            details: [{ key: "status", value: "down" }],
+          },
         ],
       },
     ],
@@ -149,6 +156,8 @@ describe("HealthCheckPanel", () => {
     await screen.findByText("Database");
 
     const rowBtn = screen.getByRole("button", { name: /Database/ });
+    expect(within(rowBtn).getByText("Status: Healthy")).toBeTruthy();
+    expect(screen.getByText("Status: Down")).toBeTruthy();
     expect(rowBtn.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(rowBtn);
     expect(rowBtn.getAttribute("aria-expanded")).toBe("true");

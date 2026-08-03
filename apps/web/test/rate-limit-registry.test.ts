@@ -74,6 +74,15 @@ describe("RATE_POLICIES registry", () => {
       else process.env.TRUST_PROXY = prev;
     }
   });
+
+  it("returns health_live_rate_limited JSON when admin:health-live is exceeded", () => {
+    const check = RATE_POLICIES["admin:health-live"].checks[0]!;
+    expect(check.onExceeded).toBeTypeOf("function");
+    const json = vi.fn((body: unknown, status: number) => ({ body, status }));
+    const response = check.onExceeded!({ json } as never);
+    expect(json).toHaveBeenCalledWith({ error: "health_live_rate_limited" }, 429);
+    expect(response).toEqual({ body: { error: "health_live_rate_limited" }, status: 429 });
+  });
 });
 
 describe("INLINE_RATE_LIMITS", () => {
