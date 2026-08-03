@@ -13,7 +13,23 @@ if (!event.pull_request) {
   process.exit(0);
 }
 
-const body = event.pull_request.body ?? "";
+const pullRequest = event.pull_request;
+const authorLogin = pullRequest.user?.login ?? "";
+const headRef = pullRequest.head?.ref ?? "";
+const isAutomatedDependencyPr =
+  authorLogin === "dependabot[bot]"
+  || authorLogin === "renovate[bot]"
+  || headRef.startsWith("dependabot/")
+  || headRef.startsWith("renovate/");
+
+if (isAutomatedDependencyPr) {
+  console.log(
+    "docs:pr-check: automated dependency PR; skipping documentation impact declaration check.",
+  );
+  process.exit(0);
+}
+
+const body = pullRequest.body ?? "";
 const wikiUpdated = /^- \[[xX]\] Wiki updated\s*$/m.test(body);
 // Accepts an em dash, en dash, or plain hyphen before the reason - the template shows an em
 // dash, but that's an easy, invisible thing to mistype/autocorrect away from, and the exact
@@ -32,7 +48,7 @@ if (wikiUpdated === noWikiUpdate) {
 
 const changedFiles = execFileSync(
   "/usr/bin/git",
-  ["diff", "--name-only", `${event.pull_request.base.sha}...${event.pull_request.head.sha}`],
+  ["diff", "--name-only", `${pullRequest.base.sha}...${pullRequest.head.sha}`],
   { encoding: "utf8" },
 ).split("\n").filter(Boolean);
 const wikiChanged = changedFiles.some((file) => file.startsWith("docs/wiki/"));
