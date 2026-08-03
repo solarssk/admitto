@@ -1,7 +1,5 @@
 import type { AddressComponents } from "@admitto/location";
 
-const PLACEHOLDER = "-";
-
 const CELLS: ReadonlyArray<{
   key: keyof AddressComponents;
   label: string;
@@ -15,7 +13,7 @@ const CELLS: ReadonlyArray<{
   { key: "country", label: "Country", icon: "ti-flag" },
 ];
 
-/** Always-visible 2-column address grid — empty fields show a dash so the card height is stable. */
+/** Always-visible 2-column address grid. Empty fields show muted "Not filled" text. */
 export function AddressComponentsGrid({
   components,
 }: Readonly<{ components: AddressComponents }>) {
@@ -29,7 +27,9 @@ export function AddressComponentsGrid({
               <i className={`ti ${icon}`} aria-hidden="true" />
               {label}
             </dt>
-            <dd className="location-address-grid__value">{value || PLACEHOLDER}</dd>
+            <dd className="location-address-grid__value">
+              {value || <span className="location-address-grid__empty">Not filled</span>}
+            </dd>
           </div>
         );
       })}

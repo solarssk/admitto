@@ -15,6 +15,11 @@ import type { MapTileConfig } from "./config.js";
 
 export const STATIC_MAP_WIDTH = 600;
 export const STATIC_MAP_HEIGHT = 300;
+/** Events list / operator picker thumbnails — wider than ticket maps (≈3.3:1) so
+ * `object-fit: cover` on the card strip keeps the mid pin and bottom attribution in frame.
+ * Height must be ≥ tile size (256): sharp rejects composite overlays larger than the canvas. */
+export const STATIC_MAP_LIST_WIDTH = 840;
+export const STATIC_MAP_LIST_HEIGHT = 256;
 const TILE_SIZE = 256;
 const DEFAULT_TILE_TIMEOUT_MS = 8_000;
 /** Encoded response body cap (before sharp decode). */
@@ -97,6 +102,12 @@ export interface RenderStaticMapOptions {
   timeoutMs?: number;
   /** Injectable sharp factory — production omits this; tests use it for error-path coverage. */
   imagePipeline?: typeof sharp;
+  /**
+   * When false, skip the PNG burn-in credit (Events list cards show HTML attribution instead,
+   * so object-fit:cover can keep the pin centered without cropping a bottom credit away).
+   * Default true for ticket/mail maps.
+   */
+  burnInAttribution?: boolean;
 }
 
 export class StaticMapRenderError extends Error {
@@ -147,6 +158,7 @@ export function buildStaticMapCacheKey(
   req: StaticMapRequest,
   tileUrl: string,
   attribution = "",
+  burnInAttribution = true,
 ): string {
   const width = req.width ?? STATIC_MAP_WIDTH;
   const height = req.height ?? STATIC_MAP_HEIGHT;
@@ -159,7 +171,7 @@ export function buildStaticMapCacheKey(
     String(height),
     tileUrl,
     plainMapAttribution(attribution),
-    ATTRIBUTION_OVERLAY_VERSION,
+    burnInAttribution ? ATTRIBUTION_OVERLAY_VERSION : "no-burn-in",
   ].join("|");
   return createHash("sha256").update(payload).digest("hex");
 }
@@ -457,9 +469,11 @@ export async function renderStaticMapPng(
   const pinTop = Math.round(height / 2 - 14);
   composites.push({ input: PIN_SVG, left: pinLeft, top: pinTop });
 
-  const attrOverlay = buildAttributionOverlay(width, options.tileConfig.attribution);
-  if (attrOverlay) {
-    composites.push({ input: attrOverlay, left: 0, top: height - ATTRIBUTION_OVERLAY_HEIGHT });
+  if (options.burnInAttribution !== false) {
+    const attrOverlay = buildAttributionOverlay(width, options.tileConfig.attribution);
+    if (attrOverlay) {
+      composites.push({ input: attrOverlay, left: 0, top: height - ATTRIBUTION_OVERLAY_HEIGHT });
+    }
   }
 
   try {
