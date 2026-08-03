@@ -684,4 +684,36 @@ describe("PUT /api/admin/events/:eventId/location", () => {
     const body = (await res.json()) as { error: string };
     expect(body.error).toMatch(/google_maps_url_override/);
   });
+
+  it("rejects non-Maps www.google.com routes as Google overrides", async () => {
+    const res = await putLocation(EVENT_LOC, adminCookie, {
+      google_maps_url_override: "https://www.google.com/search?q=venue",
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/Google Maps link/);
+  });
+
+  it("clears Maps URL overrides when coordinates change without new override values", async () => {
+    await prisma.eventLocation.create({
+      data: {
+        event_id: EVENT_LOC,
+        latitude: 50.06,
+        longitude: 19.94,
+        google_maps_url_override: "https://www.google.com/maps/place/Old+Hall",
+        apple_maps_url_override: "https://maps.apple.com/?ll=50.06,19.94&q=Old",
+      },
+    });
+
+    const res = await putLocation(EVENT_LOC, adminCookie, {
+      latitude: 52.23,
+      longitude: 21.01,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as EventLocationDto;
+    expect(body.latitude).toBe(52.23);
+    expect(body.longitude).toBe(21.01);
+    expect(body.google_maps_url_override).toBeNull();
+    expect(body.apple_maps_url_override).toBeNull();
+  });
 });

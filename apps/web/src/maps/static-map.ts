@@ -17,7 +17,14 @@ export const STATIC_MAP_WIDTH = 600;
 export const STATIC_MAP_HEIGHT = 300;
 const TILE_SIZE = 256;
 const DEFAULT_TILE_TIMEOUT_MS = 8_000;
+/** Encoded response body cap (before sharp decode). */
 const MAX_TILE_BYTES = 512 * 1024;
+/**
+ * Decoded raster cap before resize. MapTiler/commercial XYZ tiles are typically 256 or 512;
+ * reject absurd IHDR dimensions that would expand far beyond the encoded-byte budget.
+ */
+const MAX_DECODED_TILE_EDGE = 2048;
+const MAX_DECODED_TILE_PIXELS = MAX_DECODED_TILE_EDGE * MAX_DECODED_TILE_EDGE;
 const MAX_TILE_REDIRECTS = 3;
 const ATTRIBUTION_OVERLAY_HEIGHT = 22;
 /** Bump when burn-in layout changes so Redis/memory caches miss stale PNGs. */
@@ -359,6 +366,15 @@ async function normalizeTilePngToCompositorSize(tilePng: Buffer, sourceUrl: stri
   if (width === TILE_SIZE && height === TILE_SIZE) return tilePng;
   if (!width || !height) {
     throw new StaticMapRenderError(`Tile PNG has no dimensions: ${redactTileUrlForLogs(sourceUrl)}`);
+  }
+  if (
+    width > MAX_DECODED_TILE_EDGE ||
+    height > MAX_DECODED_TILE_EDGE ||
+    width * height > MAX_DECODED_TILE_PIXELS
+  ) {
+    throw new StaticMapRenderError(
+      `Tile PNG dimensions too large (${width}x${height}): ${redactTileUrlForLogs(sourceUrl)}`,
+    );
   }
   try {
     return await sharp(tilePng).resize(TILE_SIZE, TILE_SIZE).png().toBuffer();

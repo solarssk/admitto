@@ -26,6 +26,7 @@ export {
   GOOGLE_MAPS_URL_HOSTS,
   APPLE_MAPS_URL_HOSTS,
   isAllowedMapsUrlHost,
+  isAllowedMapsUrl,
 } from "./mapsUrlOverride.js";
 export { formatCompactAddress, formatStreetLine, formatVenueName, formatDirectionsAddress } from "./formatAddress.js";
 export type { CompactAddressParts } from "./formatAddress.js";

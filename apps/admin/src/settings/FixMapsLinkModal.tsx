@@ -105,7 +105,8 @@ export function FixMapsLinkModal({
         <p className="add-attendee-modal__hint">
           The map pin stays where it is. Paste a Google Maps or Apple Maps link that opens the
           correct place. Those links are used for Copy, browser tickets, and mail templates. Leave a
-          field blank to build that link from the pin again.
+          field blank to build that link from the pin again. Apply updates the draft — use Save in
+          Location settings to persist the changes.
         </p>
         <div className="add-attendee-modal__fields">
           <Input
@@ -146,7 +147,7 @@ export function FixMapsLinkModal({
               Cancel
             </Button>
             <Button type="button" variant="primary" onClick={handleSave}>
-              Save links
+              Apply links
             </Button>
           </div>
         </div>

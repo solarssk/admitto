@@ -158,6 +158,44 @@ function mergedCoordinate(
   return patchValue !== undefined ? patchValue : (existingValue ?? null);
 }
 
+/** True when the merged pin differs from the stored row (stale Maps overrides must not survive). */
+function coordinatesActuallyChanged(
+  existing: { latitude: number | null; longitude: number | null } | null,
+  mergedLatitude: number | null,
+  mergedLongitude: number | null,
+): boolean {
+  if (!existing) return false;
+  return existing.latitude !== mergedLatitude || existing.longitude !== mergedLongitude;
+}
+
+/**
+ * Maps URL override columns for an update. Explicit patch wins; otherwise a real pin move
+ * clears both overrides so Copy / tickets / mail do not keep linking to the previous venue.
+ */
+function mapsUrlOverrideUpdate(
+  patch: LocationPatch,
+  clearStaleOverrides: boolean,
+): {
+  google_maps_url_override?: string | null;
+  apple_maps_url_override?: string | null;
+} {
+  const out: {
+    google_maps_url_override?: string | null;
+    apple_maps_url_override?: string | null;
+  } = {};
+  if (patch.google_maps_url_override !== undefined) {
+    out.google_maps_url_override = patch.google_maps_url_override;
+  } else if (clearStaleOverrides) {
+    out.google_maps_url_override = null;
+  }
+  if (patch.apple_maps_url_override !== undefined) {
+    out.apple_maps_url_override = patch.apple_maps_url_override;
+  } else if (clearStaleOverrides) {
+    out.apple_maps_url_override = null;
+  }
+  return out;
+}
+
 async function parseLocationPutBody(
   c: Context,
 ): Promise<{ patch: LocationPatch; geocodingProvider: string | null | undefined } | Response> {
@@ -247,12 +285,24 @@ export async function handlePutEventLocation(c: Context, db: PrismaClient): Prom
   // null. Explicit `geocoding_provider: null` without a coordinate change also clears
   // provenance (free-text venue rename). Omitting the field leaves provenance untouched.
   const coordinatesInPatch = patch.latitude !== undefined || patch.longitude !== undefined;
+  const clearStaleMapsOverrides = coordinatesActuallyChanged(
+    existing,
+    mergedLatitude,
+    mergedLongitude,
+  );
   const geocodingPatch = geocodingProvenancePatch(coordinatesInPatch, geocodingProvider);
+  const mapsOverridePatch = mapsUrlOverrideUpdate(patch, clearStaleMapsOverrides);
 
   const componentsJson = componentsToJson(patch.address_components);
   const changedFields = [
     ...Object.keys(patch),
     ...("geocoding_provider" in geocodingPatch ? ["geocoding_provider"] : []),
+    ...(clearStaleMapsOverrides && patch.google_maps_url_override === undefined
+      ? ["google_maps_url_override"]
+      : []),
+    ...(clearStaleMapsOverrides && patch.apple_maps_url_override === undefined
+      ? ["apple_maps_url_override"]
+      : []),
   ];
   const audit = adminAuditFromContext(c);
   const actorUserId = c.get("auth").userId;
@@ -290,12 +340,7 @@ export async function handlePutEventLocation(c: Context, db: PrismaClient): Prom
           ...(patch.directions_text !== undefined && { directions_text: patch.directions_text }),
           ...(patch.accessibility_text !== undefined && { accessibility_text: patch.accessibility_text }),
           ...(componentsJson !== undefined && { address_components: componentsJson }),
-          ...(patch.google_maps_url_override !== undefined && {
-            google_maps_url_override: patch.google_maps_url_override,
-          }),
-          ...(patch.apple_maps_url_override !== undefined && {
-            apple_maps_url_override: patch.apple_maps_url_override,
-          }),
+          ...mapsOverridePatch,
           ...geocodingPatch,
         },
       });

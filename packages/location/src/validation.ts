@@ -2,7 +2,7 @@ import {
   normalizeAddressComponents,
   type AddressComponents,
 } from "./addressComponents.js";
-import { isAllowedMapsUrlHost } from "./mapsUrlOverride.js";
+import { isAllowedMapsUrl } from "./mapsUrlOverride.js";
 import type { EventLocationInput } from "./types.js";
 
 export const LOCATION_LIMITS = {
@@ -131,12 +131,11 @@ export function normalizeMapsUrlOverride(
   if (parsed.protocol !== "https:") {
     throw new LocationValidationError(`${fieldName} must use https`);
   }
-  const hostname = parsed.hostname.toLowerCase();
-  if (!isAllowedMapsUrlHost(hostname, kind)) {
+  if (!isAllowedMapsUrl(parsed, kind)) {
     const expected =
       kind === "google"
-        ? "www.google.com, maps.google.com, or maps.app.goo.gl"
-        : "maps.apple.com";
+        ? "https://www.google.com/maps/..., maps.google.com, or maps.app.goo.gl"
+        : "maps.apple.com (or an Apple Maps short link)";
     throw new LocationValidationError(
       `${fieldName} must be a ${kind === "google" ? "Google" : "Apple"} Maps link (${expected})`,
     );

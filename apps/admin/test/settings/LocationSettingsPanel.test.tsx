@@ -975,7 +975,7 @@ describe("LocationSettingsPanel — map links and timezone", () => {
     );
   });
 
-  it("applies Fix link modal Save to the draft without calling the API yet", async () => {
+  it("applies Fix link modal Apply to the draft without calling the API yet", async () => {
     mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
     renderPanel();
 
@@ -985,7 +985,7 @@ describe("LocationSettingsPanel — map links and timezone", () => {
     fireEvent.change(googleInput, {
       target: { value: "https://maps.app.goo.gl/example" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save links" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply links" }));
     expect(await screen.findByText(/Using a manually entered link instead of the pin-built/)).toBeTruthy();
     expect(mockSaveLocation).not.toHaveBeenCalled();
   });
@@ -1053,7 +1053,7 @@ describe("LocationSettingsPanel — map links and timezone", () => {
     fireEvent.change(googleInput, {
       target: { value: "https://evil.example/maps" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save links" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply links" }));
     expect(await screen.findByText(/must be a Google Maps link/i)).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Fix a wrong map link" })).toBeTruthy();
     expect(screen.queryByText(/Using a manually entered link instead of the pin-built/)).toBeNull();

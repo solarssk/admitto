@@ -533,7 +533,7 @@ export function LocationSettingsPanel({
               <button
                 type="button"
                 className="location-map-footer__link location-map-footer__link--fix"
-                disabled={!hasCoordinates || isArchived}
+                disabled={!hasCoordinates || isArchived || saving}
                 onClick={() => setFixLinksOpen(true)}
               >
                 <i className="ti ti-link-off" aria-hidden="true" />

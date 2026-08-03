@@ -121,6 +121,8 @@ describe("normalizeEventLocationInput", () => {
   it.each([
     ["http://www.google.com/maps", "https"],
     ["https://evil.example/maps", "Google Maps link"],
+    ["https://www.google.com/search?q=venue", "Google Maps link"],
+    ["https://www.google.com/", "Google Maps link"],
     ["not-a-url", "valid URL"],
     ["https://maps.google.com/" + "a".repeat(LOCATION_LIMITS.MAPS_URL_OVERRIDE_MAX_LENGTH), "at most"],
   ])("rejects invalid google_maps_url_override (%s)", (value, msgPart) => {
@@ -132,6 +134,19 @@ describe("normalizeEventLocationInput", () => {
     } catch (err) {
       expect((err as Error).message).toContain(msgPart);
     }
+  });
+
+  it("accepts www.google.com only on /maps routes", () => {
+    expect(
+      normalizeEventLocationInput({
+        google_maps_url_override: "https://www.google.com/maps/place/Hall",
+      }).google_maps_url_override,
+    ).toBe("https://www.google.com/maps/place/Hall");
+    expect(
+      normalizeEventLocationInput({
+        google_maps_url_override: "https://www.google.com/maps/search/?api=1&query=1%2C2",
+      }).google_maps_url_override,
+    ).toBe("https://www.google.com/maps/search/?api=1&query=1%2C2");
   });
 
   it("rejects Apple override on a non-Apple host", () => {

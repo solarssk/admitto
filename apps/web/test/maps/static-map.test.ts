@@ -756,6 +756,35 @@ describe("renderStaticMapPng", () => {
     ).rejects.toMatchObject({ message: expect.stringContaining("Tile PNG metadata unreadable") });
   });
 
+  it("rejects tiles whose decoded dimensions exceed the compositor safety cap", async () => {
+    const oversized = await sharp({
+      create: { width: 2049, height: 256, channels: 3, background: { r: 1, g: 2, b: 3 } },
+    })
+      .png()
+      .toBuffer();
+    const fetchFn = vi.fn().mockImplementation(async () =>
+      new Response(oversized, {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      }),
+    );
+    await expect(
+      renderStaticMapPng(
+        { latitude: 52.23, longitude: 21.01, zoom: 14, width: 256, height: 256 },
+        {
+          tileConfig: {
+            enabled: true,
+            tileUrl: "https://tiles.example/{z}/{x}/{y}.png",
+            attribution: "",
+            maxZoom: 19,
+          },
+          userAgent: "Admitto/test",
+          fetchFn,
+        },
+      ),
+    ).rejects.toMatchObject({ message: expect.stringContaining("Tile PNG dimensions too large") });
+  });
+
   it("uses global fetch when fetchFn is omitted", async () => {
     const tile = await solidTilePng({ r: 10, g: 20, b: 30 });
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
