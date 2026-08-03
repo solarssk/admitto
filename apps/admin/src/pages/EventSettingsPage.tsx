@@ -26,7 +26,7 @@ import type { EventSettingsDto, TicketTypeDto } from "../api/types.js";
 import { TicketTypesCard } from "../settings/TicketTypesCard.js";
 import { EventMailSettingsCard } from "../settings/EventMailSettingsCard.js";
 import { LocationSettingsPanel } from "../settings/LocationSettingsPanel.js";
-import { SettingsFooter } from "../settings/mailTransportFormParts.js";
+import { SettingsFooter, NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
@@ -884,6 +884,7 @@ export function EventSettingsPage() {
                 value={form.title}
                 disabled={isArchived || saving}
                 hint="Shown everywhere - to attendees, on tickets, and in emails."
+                {...NO_AUTOFILL_PROPS}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
               />
             </div>
@@ -897,6 +898,7 @@ export function EventSettingsPage() {
                   disabled={isArchived || saving}
                   onChange={(next) => setForm({ ...form, date: next })}
                 />
+                <span className="at-hint">When the event takes place. Times and reports use the timezone below.</span>
               </div>
 
               <div className="settings-field-group">
@@ -1012,18 +1014,6 @@ export function EventSettingsPage() {
           )}
         </Card>
 
-        {!isArchived && (
-          <SettingsFooter
-            validationErrors={[]}
-            validationErrorsRef={basicValidationErrorsRef}
-            hasUnsavedChanges={dirty}
-            saving={saving || logoUploading}
-            busyLabel={logoUploading && !saving ? "Uploading…" : "Saving…"}
-            onReset={handleBasicReset}
-            onSave={() => void handleSave()}
-          />
-        )}
-
         {isSa ? (
           <EventImageAssetLibrary eventId={eventId} disabled={isArchived} />
         ) : (
@@ -1034,6 +1024,18 @@ export function EventSettingsPage() {
               description="Uploading and managing named branding images for this event's email templates is restricted to superadmins."
             />
           </Card>
+        )}
+
+        {!isArchived && (
+          <SettingsFooter
+            validationErrors={[]}
+            validationErrorsRef={basicValidationErrorsRef}
+            hasUnsavedChanges={dirty}
+            saving={saving || logoUploading}
+            busyLabel={logoUploading && !saving ? "Uploading…" : "Saving…"}
+            onReset={handleBasicReset}
+            onSave={() => void handleSave()}
+          />
         )}
       </EventSettingsTabPanel>
 

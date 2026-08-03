@@ -29,9 +29,14 @@ import { FontFamilyModal, styleLabel } from "./FontFamilyModal.js";
 const EMPTY_ORG_DRAFT: SetupOrgBrandingDto = { org_name: "", logo_url: "" };
 const EMPTY_THEME_DRAFT: BrandingThemeDto = {};
 
-const ORG_BRANDING_HINT = "Shown on the public ticket page and emails.";
+const ORG_BRANDING_HINT =
+  "A single event can override the logo under Event settings → Images.";
+const ORG_BRANDING_INTRO =
+  "Name and logo used as the default on tickets and email headers.";
 const THEME_HINT =
-  "Instance-wide accent colour, plus a font for each surface below. Ticket logos are set in Organisation branding above, not here.";
+  "Ticket logos are set in Organisation branding above, not here.";
+const THEME_INTRO =
+  "Accent colour and fonts for the staff app and public ticket page.";
 
 const THEME_COLORS = [
   { key: "blue", hex: "#066fd1", label: "Admitto blue" },
@@ -629,7 +634,8 @@ export function BrandingSettingsPanel() {
   return (
     <>
       <Card title={<HintLabel hint={ORG_BRANDING_HINT}>Organisation branding</HintLabel>}>
-        <div className="branding-form">
+        <div className="settings-card-stack branding-form">
+          <p className="settings-card-intro">{ORG_BRANDING_INTRO}</p>
           <Input
             label="Organisation name"
             value={orgDraft.org_name ?? ""}
@@ -656,6 +662,8 @@ export function BrandingSettingsPanel() {
           </Button>
         }
       >
+        <div className="settings-card-stack">
+          <p className="settings-card-intro">{THEME_INTRO}</p>
         <span className="at-label" id="branding-primary-label">
           Primary colour
         </span>
@@ -880,6 +888,7 @@ export function BrandingSettingsPanel() {
               )}
             </span>
           </div>
+        </div>
         </div>
       </Card>
 

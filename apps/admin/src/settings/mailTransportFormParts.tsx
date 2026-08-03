@@ -101,7 +101,9 @@ export function EnvBadge({ locked }: Readonly<{ locked: boolean }>) {
   );
 }
 
-const SENDER_HINT = "From, reply-to, and bounce addresses used on every email this sends.";
+const SENDER_HINT =
+  "Envelope From is the SMTP bounce path; Reply-to is what recipients see when they reply.";
+const SENDER_INTRO = "From, reply-to, and bounce addresses used on every email this sends.";
 // Shared by MailTransportPanel (organization-wide) and EventMailSettingsCard (per-event) - both
 // render their own "Send test email" card against the same underlying test-send flow.
 export const SEND_TEST_EMAIL_HINT =
@@ -114,6 +116,17 @@ export const PROVIDER_GUIDE: Record<MailProvider | "", string> = {
   powerautomate: "HTTP fallback when SMTP/Graph are unavailable.",
   export_only: "No network send. Message export only (non-production).",
 };
+
+const SMTP_CARD_HINT = "Port 587 + STARTTLS, or 465 + implicit TLS.";
+const SMTP_CARD_INTRO = "Host, port, and credentials for the outbound SMTP relay.";
+const GRAPH_CARD_HINT = "Mailbox may differ from the From address in Sender above.";
+const GRAPH_CARD_INTRO = "App-only Microsoft Graph send with Mail.Send application permission.";
+const POWER_AUTOMATE_CARD_HINT = "URL and key from your Power Automate HTTP trigger.";
+const POWER_AUTOMATE_CARD_INTRO = "HTTP fallback when SMTP or Graph are unavailable.";
+const MAIL_TRANSPORT_HINT =
+  "Events can override this under Event settings → Mailing.";
+const MAIL_TRANSPORT_INTRO =
+  "Instance-wide outbound transport for tickets and lifecycle mail.";
 
 const TRANSPORT_ICON: Record<MailProvider | "", string> = {
   "": "plug-off",
@@ -365,7 +378,9 @@ export function SenderCard({
   const isDisabled: FieldLocked = (key) => fieldLocked(key) || disabled;
   return (
     <Card title={<HintLabel hint={SENDER_HINT}>Sender</HintLabel>}>
-      <div className="mail-transport-section">
+      <div className="settings-card-stack">
+        <p className="settings-card-intro">{SENDER_INTRO}</p>
+        <div className="mail-transport-section">
         <Input
           label="From address"
           type="text"
@@ -407,6 +422,7 @@ export function SenderCard({
           onChange={(e) => updateDraft({ allowedFromDomain: e.target.value })}
           hint="Optional. Send fails when From (or Graph mailbox) is outside this domain."
         />
+        </div>
       </div>
     </Card>
   );
@@ -432,8 +448,10 @@ export function SmtpConnectionCard({
 }>) {
   const isDisabled: FieldLocked = (key) => fieldLocked(key) || disabled;
   return (
-    <Card title={<HintLabel hint={PROVIDER_GUIDE.smtp}>SMTP connection</HintLabel>}>
-      <div className="mail-transport-form">
+    <Card title={<HintLabel hint={SMTP_CARD_HINT}>SMTP connection</HintLabel>}>
+      <div className="settings-card-stack">
+        <p className="settings-card-intro">{SMTP_CARD_INTRO}</p>
+        <div className="mail-transport-form">
         <div className="mail-transport-section">
           <Input
             label="SMTP host"
@@ -568,6 +586,7 @@ export function SmtpConnectionCard({
           </div>
         </details>
       </div>
+      </div>
     </Card>
   );
 }
@@ -592,8 +611,10 @@ export function GraphCard({
 }>) {
   const isDisabled: FieldLocked = (key) => fieldLocked(key) || disabled;
   return (
-    <Card title={<HintLabel hint={PROVIDER_GUIDE.graph}>Microsoft Graph</HintLabel>}>
-      <div className="mail-transport-form">
+    <Card title={<HintLabel hint={GRAPH_CARD_HINT}>Microsoft Graph</HintLabel>}>
+      <div className="settings-card-stack">
+        <p className="settings-card-intro">{GRAPH_CARD_INTRO}</p>
+        <div className="mail-transport-form">
         <details className="mail-graph-setup-info">
           <summary>Entra app registration steps</summary>
           <ol>
@@ -665,6 +686,7 @@ export function GraphCard({
           />
         </div>
       </div>
+      </div>
     </Card>
   );
 }
@@ -686,8 +708,10 @@ export function PowerAutomateCard({
   disabled?: boolean;
 }>) {
   return (
-    <Card title={<HintLabel hint={PROVIDER_GUIDE.powerautomate}>Power Automate</HintLabel>}>
-      <div className="mail-transport-section">
+    <Card title={<HintLabel hint={POWER_AUTOMATE_CARD_HINT}>Power Automate</HintLabel>}>
+      <div className="settings-card-stack">
+        <p className="settings-card-intro">{POWER_AUTOMATE_CARD_INTRO}</p>
+        <div className="mail-transport-section">
         <SecretFieldRow
           label="Flow URL"
           field={powerAutomateUrlField}
@@ -702,6 +726,7 @@ export function PowerAutomateCard({
           disabled={disabled}
           {...makeSecretHandlers("powerAutomateKey", updateSecrets)}
         />
+        </div>
       </div>
     </Card>
   );
@@ -843,14 +868,18 @@ export function SendTestEmailCard({
 
 export function MailTransportCard({
   title = "Mail transport",
-  description = "Instance-wide outbound transport for tickets and lifecycle mail.",
+  hint = MAIL_TRANSPORT_HINT,
+  intro = MAIL_TRANSPORT_INTRO,
   provider,
   providerOptions,
   fieldLocked,
   onSelectProvider,
 }: Readonly<{
   title?: string;
-  description?: string;
+  /** Extra tip for the (i) icon — must not repeat `intro`. */
+  hint?: string;
+  /** Visible card body intro under the title. */
+  intro?: string;
   provider: MailProvider | "";
   providerOptions: ReturnType<typeof buildMailProviderOptions>;
   fieldLocked: FieldLocked;
@@ -858,12 +887,14 @@ export function MailTransportCard({
 }>) {
   return (
     <Card
-      title={<HintLabel hint={description}>{title}</HintLabel>}
+      title={<HintLabel hint={hint}>{title}</HintLabel>}
       actions={
         <Badge variant={provider ? "ok" : "neutral"}>{provider ? "Configured" : "Not configured"}</Badge>
       }
     >
-      <div className="mail-transport-form">
+      <div className="settings-card-stack">
+        <p className="settings-card-intro">{intro}</p>
+        <div className="mail-transport-form">
         {fieldLocked("provider") && (
           <p className="mail-transport__env-note">
             Some transport settings are managed by your deployment configuration and cannot be changed
@@ -881,6 +912,7 @@ export function MailTransportCard({
             Dev/test only. Cannot send real mail in production.
           </output>
         )}
+        </div>
       </div>
     </Card>
   );

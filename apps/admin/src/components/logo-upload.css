@@ -11,10 +11,12 @@
   margin-bottom: calc(var(--space-1) - var(--space-3));
 }
 
-/* Card-level intro: same size as Event Settings .field-hint (--fs-sm), not generic .at-hint (--fs-xs). */
+/* Field-level hint under the logo label — same size as Input's .at-hint.
+   Event Settings bumps this to --fs-sm when LogoUploadZone is the card body intro
+   (hideLabel + .event-settings-page .logo-upload__intro). */
 .logo-upload__intro {
   margin: 0;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
   color: var(--text-muted);
 }
 
