@@ -14,7 +14,7 @@ import type {
   SettingSource,
   SystemSettingsDto,
 } from "../api/types.js";
-import { NO_AUTOFILL_PROPS, SettingsFooter } from "./mailTransportFormParts.js";
+import { NO_AUTOFILL_PROPS, EnvBadge, SettingsFooter } from "./mailTransportFormParts.js";
 
 const EMPTY_SUPPORT_CONTACT: SetupSupportContactDto = {
   support_contact_name: null,
@@ -230,7 +230,9 @@ export function GeneralSettingsPanel() {
       <Card
         title={<HintLabel hint={INSTANCE_URL_HINT}>Instance URL</HintLabel>}
         actions={
-          !urlLocked ? (
+          urlLocked ? (
+            <EnvBadge locked />
+          ) : (
             <Button
               type="button"
               variant="ghost"
@@ -240,7 +242,7 @@ export function GeneralSettingsPanel() {
             >
               {clearing ? "Clearing…" : "Clear"}
             </Button>
-          ) : undefined
+          )
         }
       >
         <div className="settings-card-stack">

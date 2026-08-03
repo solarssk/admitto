@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Badge, Button, Card, HintLabel, Input, Switch, Tooltip, useToast } from "@admitto/ui";
+import { Button, Card, HintLabel, Input, Switch, Tooltip, useToast } from "@admitto/ui";
 import { fetchSecuritySettings, patchSecuritySettings } from "../api/client.js";
 import { roleLabel } from "../auth/role-labels.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { SystemSettingsDto, SettingSource } from "../api/types.js";
-import { SettingsFooter } from "./mailTransportFormParts.js";
+import { EnvBadge, SettingsFooter } from "./mailTransportFormParts.js";
 import {
   buildSecurityPatchBody,
   draftFromSettings,
@@ -42,15 +42,6 @@ function fieldLocked(source: SettingSource): boolean {
   return source === "env";
 }
 
-function EnvBadge({ source }: Readonly<{ source: SettingSource }>) {
-  if (!fieldLocked(source)) return null;
-  return (
-    <Badge variant="neutral" className="mail-field-env-badge">
-      Managed by environment
-    </Badge>
-  );
-}
-
 function SecurityFieldWarning({ message }: Readonly<{ message: string }>) {
   return (
     <Tooltip content={message} className="security-field-warning-trigger">
@@ -61,6 +52,17 @@ function SecurityFieldWarning({ message }: Readonly<{ message: string }>) {
 
 function securityDraftHasChanges(settings: SystemSettingsDto, draft: SecuritySettingsDraft): boolean {
   return buildSecurityPatchBody(settings, draft, fieldLocked).hasChanges;
+}
+
+function anySecurityEnvLocked(settings: SystemSettingsDto): boolean {
+  return (
+    fieldLocked(settings.session_ttl_ms.source) ||
+    fieldLocked(settings.session_idle_timeout_ms.source) ||
+    fieldLocked(settings.operator_session_ttl_ms.source) ||
+    fieldLocked(settings.operator_session_idle_timeout_ms.source) ||
+    fieldLocked(settings.trusted_device_days.source) ||
+    fieldLocked(settings.mfa_required_roles.source)
+  );
 }
 
 interface SecurityNumericRowProps {
@@ -119,7 +121,6 @@ function SecurityNumericRow({
             onBlur={commit}
           />
         </div>
-        <EnvBadge source={source} />
       </div>
       {showDivider && <div className="security-settings-row-divider" aria-hidden="true" />}
     </div>
@@ -237,7 +238,10 @@ export function SecurityPanel() {
 
   return (
     <>
-      <Card title={<HintLabel hint={SECURITY_CARD_HINT}>Security</HintLabel>}>
+      <Card
+        title={<HintLabel hint={SECURITY_CARD_HINT}>Security</HintLabel>}
+        actions={<EnvBadge locked={anySecurityEnvLocked(settings)} />}
+      >
         <div className="settings-card-stack">
           <p className="settings-card-intro">{SECURITY_CARD_INTRO}</p>
           <div className="mail-transport-section security-settings-rows">
@@ -337,7 +341,6 @@ export function SecurityPanel() {
                   onChange={() => toggleRole(role.value)}
                 />
               ))}
-              <EnvBadge source={settings.mfa_required_roles.source} />
             </div>
           </div>
         </div>

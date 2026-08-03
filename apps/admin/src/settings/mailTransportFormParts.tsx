@@ -92,14 +92,53 @@ export function draftFromFields(f: MailSettingsFieldsDto): MailDraft {
   };
 }
 
+/** Card-header badge when one or more fields are env-locked — stays out of field rows so mobile controls don't wrap. */
 export function EnvBadge({ locked }: Readonly<{ locked: boolean }>) {
   if (!locked) return null;
   return (
-    <Badge variant="neutral" className="mail-field-env-badge">
-      Managed by environment
+    <Badge variant="neutral" className="settings-env-badge">
+      From environment
     </Badge>
   );
 }
+
+function anyFieldLocked(fieldLocked: FieldLocked, keys: ReadonlyArray<keyof MailSettingsFieldsDto>): boolean {
+  return keys.some((key) => fieldLocked(key));
+}
+
+const SENDER_ENV_KEYS = [
+  "fromAddress",
+  "fromName",
+  "replyTo",
+  "envelopeFrom",
+  "allowedFromDomain",
+] as const satisfies ReadonlyArray<keyof MailSettingsFieldsDto>;
+
+const SMTP_ENV_KEYS = [
+  "host",
+  "port",
+  "user",
+  "smtpPassword",
+  "secure",
+  "requireTls",
+  "pool",
+  "tlsRejectUnauthorized",
+  "heloName",
+  "rateLimitPerMinute",
+  "maxConnections",
+  "maxMessages",
+  "connectionTimeout",
+  "greetingTimeout",
+  "socketTimeout",
+] as const satisfies ReadonlyArray<keyof MailSettingsFieldsDto>;
+
+const GRAPH_ENV_KEYS = [
+  "mailbox",
+  "tenantId",
+  "clientId",
+  "graphClientSecret",
+  "saveToSentItems",
+] as const satisfies ReadonlyArray<keyof MailSettingsFieldsDto>;
 
 const SENDER_HINT =
   "Envelope From is the SMTP bounce path; Reply-to is what recipients see when they reply.";
@@ -247,9 +286,7 @@ export function SecretFieldRow({
                 <i className="ti ti-lock" aria-hidden="true" />
                 {field.set ? "•••••••• set" : "Not set"}
               </span>
-              {field.locked ? (
-                <EnvBadge locked />
-              ) : (
+              {!field.locked && (
                 <div className="mail-secret-field__display-actions">
                   <button
                     type="button"
@@ -377,7 +414,10 @@ export function SenderCard({
 }>) {
   const isDisabled: FieldLocked = (key) => fieldLocked(key) || disabled;
   return (
-    <Card title={<HintLabel hint={SENDER_HINT}>Sender</HintLabel>}>
+    <Card
+      title={<HintLabel hint={SENDER_HINT}>Sender</HintLabel>}
+      actions={<EnvBadge locked={anyFieldLocked(fieldLocked, SENDER_ENV_KEYS)} />}
+    >
       <div className="settings-card-stack">
         <p className="settings-card-intro">{SENDER_INTRO}</p>
         <div className="mail-transport-section">
@@ -448,7 +488,10 @@ export function SmtpConnectionCard({
 }>) {
   const isDisabled: FieldLocked = (key) => fieldLocked(key) || disabled;
   return (
-    <Card title={<HintLabel hint={SMTP_CARD_HINT}>SMTP connection</HintLabel>}>
+    <Card
+      title={<HintLabel hint={SMTP_CARD_HINT}>SMTP connection</HintLabel>}
+      actions={<EnvBadge locked={anyFieldLocked(fieldLocked, SMTP_ENV_KEYS)} />}
+    >
       <div className="settings-card-stack">
         <p className="settings-card-intro">{SMTP_CARD_INTRO}</p>
         <div className="mail-transport-form">
@@ -611,7 +654,10 @@ export function GraphCard({
 }>) {
   const isDisabled: FieldLocked = (key) => fieldLocked(key) || disabled;
   return (
-    <Card title={<HintLabel hint={GRAPH_CARD_HINT}>Microsoft Graph</HintLabel>}>
+    <Card
+      title={<HintLabel hint={GRAPH_CARD_HINT}>Microsoft Graph</HintLabel>}
+      actions={<EnvBadge locked={anyFieldLocked(fieldLocked, GRAPH_ENV_KEYS)} />}
+    >
       <div className="settings-card-stack">
         <p className="settings-card-intro">{GRAPH_CARD_INTRO}</p>
         <div className="mail-transport-form">
@@ -707,8 +753,12 @@ export function PowerAutomateCard({
   /** Read-only override — e.g. an archived event. */
   disabled?: boolean;
 }>) {
+  const envLocked = powerAutomateUrlField.locked || powerAutomateKeyField.locked;
   return (
-    <Card title={<HintLabel hint={POWER_AUTOMATE_CARD_HINT}>Power Automate</HintLabel>}>
+    <Card
+      title={<HintLabel hint={POWER_AUTOMATE_CARD_HINT}>Power Automate</HintLabel>}
+      actions={<EnvBadge locked={envLocked} />}
+    >
       <div className="settings-card-stack">
         <p className="settings-card-intro">{POWER_AUTOMATE_CARD_INTRO}</p>
         <div className="mail-transport-section">
@@ -885,17 +935,23 @@ export function MailTransportCard({
   fieldLocked: FieldLocked;
   onSelectProvider: (value: MailProvider | "") => void;
 }>) {
+  const providerLocked = fieldLocked("provider");
   return (
     <Card
       title={<HintLabel hint={hint}>{title}</HintLabel>}
       actions={
-        <Badge variant={provider ? "ok" : "neutral"}>{provider ? "Configured" : "Not configured"}</Badge>
+        <>
+          <Badge variant={provider ? "ok" : "neutral"}>
+            {provider ? "Configured" : "Not configured"}
+          </Badge>
+          <EnvBadge locked={providerLocked} />
+        </>
       }
     >
       <div className="settings-card-stack">
         <p className="settings-card-intro">{intro}</p>
         <div className="mail-transport-form">
-        {fieldLocked("provider") && (
+        {providerLocked && (
           <p className="mail-transport__env-note">
             Some transport settings are managed by your deployment configuration and cannot be changed
             here. Contact your instance administrator if you need to update them.
@@ -904,7 +960,7 @@ export function MailTransportCard({
         <TransportTileGrid
           provider={provider}
           providerOptions={providerOptions}
-          locked={fieldLocked("provider")}
+          locked={providerLocked}
           onSelect={onSelectProvider}
         />
         {provider === "export_only" && (
