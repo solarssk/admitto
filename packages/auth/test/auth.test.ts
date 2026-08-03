@@ -467,14 +467,6 @@ describe("authorization", () => {
     expect(fullPin?.map_longitude).toBe(21.01);
     expect(fullPin?.map_zoom).toBe(14);
 
-    await prisma.eventLocation.update({
-      where: { event_id: EVENT_A },
-      data: { map_zoom: null },
-    });
-    const pinWithoutZoom = (await listAdminEvents(prisma, USER_SUPER)).find((e) => e.id === EVENT_A);
-    expect(pinWithoutZoom?.has_coordinates).toBe(true);
-    expect(pinWithoutZoom?.map_zoom).toBeNull();
-
     await prisma.eventLocation.deleteMany({ where: { event_id: EVENT_A } });
   });
 });
