@@ -1,17 +1,23 @@
 .logo-upload {
   display: flex;
   flex-direction: column;
+  /* Match Event Settings card intro rhythm (tighter than full --pad-card). */
+  gap: var(--space-3);
 }
 
-/* A uniform gap here would also space the heading from its own description below it - tight
-   there to match Primary colour/Font's own heading-to-description spacing (a plain label with no
-   margin of its own, not a flex gap), while every other pair keeps the same rhythm as before. */
-.logo-upload > *:not(:last-child) {
-  margin-bottom: var(--space-2);
-}
-
+/* When the visible label is shown (org branding / wizard), keep it tight to the intro — a full
+   pad-card gap there would look like a second section header. */
 .logo-upload > .at-label {
-  margin-bottom: 0;
+  margin-bottom: calc(var(--space-1) - var(--space-3));
+}
+
+/* Field-level hint under the logo label — same size as Input's .at-hint.
+   Event Settings bumps this to --fs-sm when LogoUploadZone is the card body intro
+   (hideLabel + .event-settings-page .logo-upload__intro). */
+.logo-upload__intro {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
 }
 
 .logo-upload__zone {

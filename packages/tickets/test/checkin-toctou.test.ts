@@ -105,6 +105,8 @@ describe("checkInScan TOCTOU — CAS re-read branch (count=0 due to status chang
         mapZoom: null,
         directionsText: null,
         accessibilityText: null,
+        googleMapsUrlOverride: null,
+        appleMapsUrlOverride: null,
       },
     });
 

@@ -196,6 +196,26 @@ describe("TicketTypesCard", () => {
     expect(await screen.findByText("Ticket type limit reached for this event.")).toBeTruthy();
   });
 
+  it("shows the generic error toast when add fails for an unexpected reason", async () => {
+    vi.mocked(createTicketType).mockRejectedValueOnce(new ApiError(500, "server error", "server error"));
+    renderCard([vipType]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add ticket type" }));
+
+    expect(await screen.findByText("Something went wrong. Try again.")).toBeTruthy();
+  });
+
+  it("shows a generic inline delete error when delete fails for an unexpected reason", async () => {
+    vi.mocked(deleteTicketType).mockRejectedValueOnce(new ApiError(500, "server error", "server error"));
+    renderCard([vipType]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove VIP" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+
+    expect(await screen.findByText("Something went wrong. Try again.")).toBeTruthy();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
   it("deletes a ticket type on confirm and calls onChanged", async () => {
     vi.mocked(deleteTicketType).mockResolvedValueOnce(undefined);
     const { onChanged } = renderCard([vipType]);

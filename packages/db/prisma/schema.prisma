@@ -172,6 +172,10 @@ model EventLocation {
   // Structured address grid from the last geocode/reverse (object_name, street, postcode,
   // city, region, country). Null when never set or cleared with the map pin.
   address_components Json?
+  // Manual deep-link overrides when the lat/lng-built Google/Apple URL opens the wrong place.
+  // Null = build from coordinates as usual. Does not move the OSM pin or static map.
+  google_maps_url_override String? @db.Text
+  apple_maps_url_override  String? @db.Text
   created_at         DateTime  @default(now())
   updated_at         DateTime  @updatedAt
 }

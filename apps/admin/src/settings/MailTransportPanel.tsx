@@ -158,7 +158,7 @@ export function MailTransportPanel() {
       "Save your changes first. The test uses the saved configuration from the database, not unsaved form values.";
   } else {
     testSendReason = undefined;
-    testSendHint = "Verifies transport credentials with a trivial message (not an event template).";
+    testSendHint = "Checks that the saved instance transport can deliver mail.";
   }
 
   const handleTestSend = async () => {

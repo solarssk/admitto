@@ -198,5 +198,9 @@ export type ResolvedTicket = {
     mapZoom: number | null;
     directionsText: string | null;
     accessibilityText: string | null;
+    /** Manual Google Maps URL when set; otherwise ticket builds from lat/lng. */
+    googleMapsUrlOverride: string | null;
+    /** Manual Apple Maps URL when set; otherwise ticket builds from lat/lng. */
+    appleMapsUrlOverride: string | null;
   };
 };

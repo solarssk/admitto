@@ -92,19 +92,61 @@ export function draftFromFields(f: MailSettingsFieldsDto): MailDraft {
   };
 }
 
+/** Card-header badge when one or more fields are env-locked — stays out of field rows so mobile controls don't wrap. */
 export function EnvBadge({ locked }: Readonly<{ locked: boolean }>) {
   if (!locked) return null;
   return (
-    <Badge variant="neutral" className="mail-field-env-badge">
-      Managed by environment
+    <Badge variant="neutral" className="settings-env-badge">
+      From environment
     </Badge>
   );
 }
 
-const SENDER_HINT = "From, reply-to, and bounce addresses used on every email this sends.";
+function anyFieldLocked(fieldLocked: FieldLocked, keys: ReadonlyArray<keyof MailSettingsFieldsDto>): boolean {
+  return keys.some((key) => fieldLocked(key));
+}
+
+const SENDER_ENV_KEYS = [
+  "fromAddress",
+  "fromName",
+  "replyTo",
+  "envelopeFrom",
+  "allowedFromDomain",
+] as const satisfies ReadonlyArray<keyof MailSettingsFieldsDto>;
+
+const SMTP_ENV_KEYS = [
+  "host",
+  "port",
+  "user",
+  "smtpPassword",
+  "secure",
+  "requireTls",
+  "pool",
+  "tlsRejectUnauthorized",
+  "heloName",
+  "rateLimitPerMinute",
+  "maxConnections",
+  "maxMessages",
+  "connectionTimeout",
+  "greetingTimeout",
+  "socketTimeout",
+] as const satisfies ReadonlyArray<keyof MailSettingsFieldsDto>;
+
+const GRAPH_ENV_KEYS = [
+  "mailbox",
+  "tenantId",
+  "clientId",
+  "graphClientSecret",
+  "saveToSentItems",
+] as const satisfies ReadonlyArray<keyof MailSettingsFieldsDto>;
+
+const SENDER_HINT =
+  "Envelope From is the SMTP bounce path; Reply-to is what recipients see when they reply.";
+const SENDER_INTRO = "From, reply-to, and bounce addresses used on every email this sends.";
 // Shared by MailTransportPanel (organization-wide) and EventMailSettingsCard (per-event) - both
 // render their own "Send test email" card against the same underlying test-send flow.
-export const SEND_TEST_EMAIL_HINT = "Verifies transport credentials with a trivial message, not an event template.";
+export const SEND_TEST_EMAIL_HINT =
+  "Sends a trivial message to confirm delivery — not an event ticket or reminder template.";
 
 export const PROVIDER_GUIDE: Record<MailProvider | "", string> = {
   "": "No mail will be sent yet.",
@@ -113,6 +155,17 @@ export const PROVIDER_GUIDE: Record<MailProvider | "", string> = {
   powerautomate: "HTTP fallback when SMTP/Graph are unavailable.",
   export_only: "No network send. Message export only (non-production).",
 };
+
+const SMTP_CARD_HINT = "Port 587 + STARTTLS, or 465 + implicit TLS.";
+const SMTP_CARD_INTRO = "Host, port, and credentials for the outbound SMTP relay.";
+const GRAPH_CARD_HINT = "Mailbox may differ from the From address in Sender above.";
+const GRAPH_CARD_INTRO = "App-only Microsoft Graph send with Mail.Send application permission.";
+const POWER_AUTOMATE_CARD_HINT = "URL and key from your Power Automate HTTP trigger.";
+const POWER_AUTOMATE_CARD_INTRO = "HTTP fallback when SMTP or Graph are unavailable.";
+const MAIL_TRANSPORT_HINT =
+  "Events can override this under Event settings → Mailing.";
+const MAIL_TRANSPORT_INTRO =
+  "Instance-wide outbound transport for tickets and lifecycle mail.";
 
 const TRANSPORT_ICON: Record<MailProvider | "", string> = {
   "": "plug-off",
@@ -233,9 +286,7 @@ export function SecretFieldRow({
                 <i className="ti ti-lock" aria-hidden="true" />
                 {field.set ? "•••••••• set" : "Not set"}
               </span>
-              {field.locked ? (
-                <EnvBadge locked />
-              ) : (
+              {!field.locked && (
                 <div className="mail-secret-field__display-actions">
                   <button
                     type="button"
@@ -363,8 +414,13 @@ export function SenderCard({
 }>) {
   const isDisabled: FieldLocked = (key) => fieldLocked(key) || disabled;
   return (
-    <Card title={<HintLabel hint={SENDER_HINT}>Sender</HintLabel>}>
-      <div className="mail-transport-section">
+    <Card
+      title={<HintLabel hint={SENDER_HINT}>Sender</HintLabel>}
+      actions={<EnvBadge locked={anyFieldLocked(fieldLocked, SENDER_ENV_KEYS)} />}
+    >
+      <div className="settings-card-stack">
+        <p className="settings-card-intro">{SENDER_INTRO}</p>
+        <div className="mail-transport-section">
         <Input
           label="From address"
           type="text"
@@ -406,6 +462,7 @@ export function SenderCard({
           onChange={(e) => updateDraft({ allowedFromDomain: e.target.value })}
           hint="Optional. Send fails when From (or Graph mailbox) is outside this domain."
         />
+        </div>
       </div>
     </Card>
   );
@@ -431,8 +488,13 @@ export function SmtpConnectionCard({
 }>) {
   const isDisabled: FieldLocked = (key) => fieldLocked(key) || disabled;
   return (
-    <Card title={<HintLabel hint={PROVIDER_GUIDE.smtp}>SMTP connection</HintLabel>}>
-      <div className="mail-transport-form">
+    <Card
+      title={<HintLabel hint={SMTP_CARD_HINT}>SMTP connection</HintLabel>}
+      actions={<EnvBadge locked={anyFieldLocked(fieldLocked, SMTP_ENV_KEYS)} />}
+    >
+      <div className="settings-card-stack">
+        <p className="settings-card-intro">{SMTP_CARD_INTRO}</p>
+        <div className="mail-transport-form">
         <div className="mail-transport-section">
           <Input
             label="SMTP host"
@@ -567,6 +629,7 @@ export function SmtpConnectionCard({
           </div>
         </details>
       </div>
+      </div>
     </Card>
   );
 }
@@ -591,8 +654,13 @@ export function GraphCard({
 }>) {
   const isDisabled: FieldLocked = (key) => fieldLocked(key) || disabled;
   return (
-    <Card title={<HintLabel hint={PROVIDER_GUIDE.graph}>Microsoft Graph</HintLabel>}>
-      <div className="mail-transport-form">
+    <Card
+      title={<HintLabel hint={GRAPH_CARD_HINT}>Microsoft Graph</HintLabel>}
+      actions={<EnvBadge locked={anyFieldLocked(fieldLocked, GRAPH_ENV_KEYS)} />}
+    >
+      <div className="settings-card-stack">
+        <p className="settings-card-intro">{GRAPH_CARD_INTRO}</p>
+        <div className="mail-transport-form">
         <details className="mail-graph-setup-info">
           <summary>Entra app registration steps</summary>
           <ol>
@@ -664,6 +732,7 @@ export function GraphCard({
           />
         </div>
       </div>
+      </div>
     </Card>
   );
 }
@@ -684,9 +753,15 @@ export function PowerAutomateCard({
   /** Read-only override — e.g. an archived event. */
   disabled?: boolean;
 }>) {
+  const envLocked = powerAutomateUrlField.locked || powerAutomateKeyField.locked;
   return (
-    <Card title={<HintLabel hint={PROVIDER_GUIDE.powerautomate}>Power Automate</HintLabel>}>
-      <div className="mail-transport-section">
+    <Card
+      title={<HintLabel hint={POWER_AUTOMATE_CARD_HINT}>Power Automate</HintLabel>}
+      actions={<EnvBadge locked={envLocked} />}
+    >
+      <div className="settings-card-stack">
+        <p className="settings-card-intro">{POWER_AUTOMATE_CARD_INTRO}</p>
+        <div className="mail-transport-section">
         <SecretFieldRow
           label="Flow URL"
           field={powerAutomateUrlField}
@@ -701,6 +776,7 @@ export function PowerAutomateCard({
           disabled={disabled}
           {...makeSecretHandlers("powerAutomateKey", updateSecrets)}
         />
+        </div>
       </div>
     </Card>
   );
@@ -804,64 +880,78 @@ export function SendTestEmailCard({
   const reasonId = `${idPrefix}-reason`;
   return (
     <Card title={<HintLabel hint={SEND_TEST_EMAIL_HINT}>Send test email</HintLabel>}>
-      <p className="mail-test-send__hint">{testSendHint}</p>
-      <div className="mail-test-send__row">
-        <Input
-          label="Recipient"
-          type="text"
-          inputMode="email"
-          value={testEmail}
-          onChange={(e) => onTestEmailChange(e.target.value)}
-          placeholder="you@example.com"
-          disabled={!!testSendReason}
-          {...NO_AUTOFILL_PROPS}
-        />
-        <Tooltip content={testSendReason}>
-          {testSendReason && (
-            <span id={reasonId} className="sr-only">
-              {testSendReason}
-            </span>
-          )}
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={testSending || !!testSendReason}
-            aria-describedby={testSendReason ? reasonId : undefined}
-            onClick={onTestSend}
-          >
-            {testSending ? "Sending…" : "Send test"}
-          </Button>
-        </Tooltip>
+      <div className="settings-card-stack">
+        <p className="mail-test-send__hint settings-card-intro">{testSendHint}</p>
+        <div className="mail-test-send__row">
+          <Input
+            label="Recipient"
+            type="text"
+            inputMode="email"
+            value={testEmail}
+            onChange={(e) => onTestEmailChange(e.target.value)}
+            placeholder="you@example.com"
+            disabled={!!testSendReason}
+            {...NO_AUTOFILL_PROPS}
+          />
+          <Tooltip content={testSendReason}>
+            {testSendReason && (
+              <span id={reasonId} className="sr-only">
+                {testSendReason}
+              </span>
+            )}
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={testSending || !!testSendReason}
+              aria-describedby={testSendReason ? reasonId : undefined}
+              onClick={onTestSend}
+            >
+              {testSending ? "Sending…" : "Send test"}
+            </Button>
+          </Tooltip>
+        </div>
+        {testResult && <TestResultPreview testResult={testResult} />}
       </div>
-      {testResult && <TestResultPreview testResult={testResult} />}
     </Card>
   );
 }
 
 export function MailTransportCard({
   title = "Mail transport",
-  description = "Instance-wide outbound transport for tickets and lifecycle mail.",
+  hint = MAIL_TRANSPORT_HINT,
+  intro = MAIL_TRANSPORT_INTRO,
   provider,
   providerOptions,
   fieldLocked,
   onSelectProvider,
 }: Readonly<{
   title?: string;
-  description?: string;
+  /** Extra tip for the (i) icon — must not repeat `intro`. */
+  hint?: string;
+  /** Visible card body intro under the title. */
+  intro?: string;
   provider: MailProvider | "";
   providerOptions: ReturnType<typeof buildMailProviderOptions>;
   fieldLocked: FieldLocked;
   onSelectProvider: (value: MailProvider | "") => void;
 }>) {
+  const providerLocked = fieldLocked("provider");
   return (
     <Card
-      title={<HintLabel hint={description}>{title}</HintLabel>}
+      title={<HintLabel hint={hint}>{title}</HintLabel>}
       actions={
-        <Badge variant={provider ? "ok" : "neutral"}>{provider ? "Configured" : "Not configured"}</Badge>
+        <>
+          <Badge variant={provider ? "ok" : "neutral"}>
+            {provider ? "Configured" : "Not configured"}
+          </Badge>
+          <EnvBadge locked={providerLocked} />
+        </>
       }
     >
-      <div className="mail-transport-form">
-        {fieldLocked("provider") && (
+      <div className="settings-card-stack">
+        <p className="settings-card-intro">{intro}</p>
+        <div className="mail-transport-form">
+        {providerLocked && (
           <p className="mail-transport__env-note">
             Some transport settings are managed by your deployment configuration and cannot be changed
             here. Contact your instance administrator if you need to update them.
@@ -870,7 +960,7 @@ export function MailTransportCard({
         <TransportTileGrid
           provider={provider}
           providerOptions={providerOptions}
-          locked={fieldLocked("provider")}
+          locked={providerLocked}
           onSelect={onSelectProvider}
         />
         {provider === "export_only" && (
@@ -878,6 +968,7 @@ export function MailTransportCard({
             Dev/test only. Cannot send real mail in production.
           </output>
         )}
+        </div>
       </div>
     </Card>
   );
@@ -908,6 +999,7 @@ export function SettingsFooter({
   validationErrorsRef,
   hasUnsavedChanges,
   saving,
+  busyLabel = "Saving…",
   onReset,
   onSave,
 }: Readonly<{
@@ -915,10 +1007,12 @@ export function SettingsFooter({
   validationErrorsRef: RefObject<HTMLUListElement | null>;
   hasUnsavedChanges: boolean;
   saving: boolean;
+  /** Label while `saving` is true (e.g. "Uploading…" for a logo transfer). */
+  busyLabel?: string;
   onReset: () => void;
   onSave: () => void;
 }>) {
-  const saveLabel = saving ? "Saving…" : "Save";
+  const saveLabel = saving ? busyLabel : "Save";
 
   return (
     <div className="settings-footer">

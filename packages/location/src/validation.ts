@@ -2,12 +2,15 @@ import {
   normalizeAddressComponents,
   type AddressComponents,
 } from "./addressComponents.js";
+import { isAllowedMapsUrl } from "./mapsUrlOverride.js";
 import type { EventLocationInput } from "./types.js";
 
 export const LOCATION_LIMITS = {
   VENUE_NAME_MAX_LENGTH: 300,
   ADDRESS_MAX_LENGTH: 500,
   TEXT_MAX_LENGTH: 2000,
+  /** Same cap as other long Location text fields (directions / accessibility). */
+  MAPS_URL_OVERRIDE_MAX_LENGTH: 2000,
   LATITUDE_MIN: -90,
   LATITUDE_MAX: 90,
   LONGITUDE_MIN: -180,
@@ -67,6 +70,8 @@ export interface NormalizedEventLocationInput {
   directions_text?: string | null;
   accessibility_text?: string | null;
   address_components?: AddressComponents | null;
+  google_maps_url_override?: string | null;
+  apple_maps_url_override?: string | null;
 }
 
 function normalizeMapZoom(value: number | null | undefined): number | undefined {
@@ -96,6 +101,46 @@ function normalizeAddressComponentsField(
       err instanceof Error ? err.message : "address_components is invalid",
     );
   }
+}
+
+/**
+ * Trims / clears a Maps URL override. Empty → null. When set: https only + allowlisted host.
+ * `undefined` means omit (leave unchanged).
+ */
+export function normalizeMapsUrlOverride(
+  value: string | null | undefined,
+  kind: "google" | "apple",
+  fieldName: string,
+): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  if (trimmed.length > LOCATION_LIMITS.MAPS_URL_OVERRIDE_MAX_LENGTH) {
+    throw new LocationValidationError(
+      `${fieldName} must be at most ${LOCATION_LIMITS.MAPS_URL_OVERRIDE_MAX_LENGTH} characters`,
+    );
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new LocationValidationError(`${fieldName} must be a valid URL`);
+  }
+  if (parsed.protocol !== "https:") {
+    throw new LocationValidationError(`${fieldName} must use https`);
+  }
+  if (!isAllowedMapsUrl(parsed, kind)) {
+    const expected =
+      kind === "google"
+        ? "https://www.google.com/maps/..., maps.google.com, or maps.app.goo.gl"
+        : "maps.apple.com (or an Apple Maps short link)";
+    throw new LocationValidationError(
+      `${fieldName} must be a ${kind === "google" ? "Google" : "Apple"} Maps link (${expected})`,
+    );
+  }
+  return trimmed;
 }
 
 /** Trims/validates a submitted patch. Keys omitted from `input` stay omitted (meaning "leave
@@ -145,6 +190,20 @@ export function normalizeEventLocationInput(input: EventLocationInput): Normaliz
 
   const components = normalizeAddressComponentsField(input.address_components);
   if (components !== undefined) result.address_components = components;
+
+  const googleOverride = normalizeMapsUrlOverride(
+    input.google_maps_url_override,
+    "google",
+    "google_maps_url_override",
+  );
+  if (googleOverride !== undefined) result.google_maps_url_override = googleOverride;
+
+  const appleOverride = normalizeMapsUrlOverride(
+    input.apple_maps_url_override,
+    "apple",
+    "apple_maps_url_override",
+  );
+  if (appleOverride !== undefined) result.apple_maps_url_override = appleOverride;
 
   return result;
 }

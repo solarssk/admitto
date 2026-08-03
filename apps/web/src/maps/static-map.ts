@@ -1,8 +1,8 @@
 /**
  * Server-side static map PNG compositor for the public ticket / mail `{{event_map_url}}`.
  * Fetches raster tiles from the configured `MAP_TILE_URL` (never from the request), stitches
- * them with sharp, and draws a center pin plus a burned-in attribution strip (mail has no
- * surrounding HTML credit).
+ * them with sharp, and burns a bottom-right attribution credit into the PNG (tickets and mail
+ * have no separate HTML credit under the image).
  */
 import { createHash } from "node:crypto";
 import {
@@ -15,11 +15,25 @@ import type { MapTileConfig } from "./config.js";
 
 export const STATIC_MAP_WIDTH = 600;
 export const STATIC_MAP_HEIGHT = 300;
+/** Events list / operator picker thumbnails — wider than ticket maps (≈3.3:1) so
+ * `object-fit: cover` on the card strip keeps the mid pin and bottom attribution in frame.
+ * Height must be ≥ tile size (256): sharp rejects composite overlays larger than the canvas. */
+export const STATIC_MAP_LIST_WIDTH = 840;
+export const STATIC_MAP_LIST_HEIGHT = 256;
 const TILE_SIZE = 256;
 const DEFAULT_TILE_TIMEOUT_MS = 8_000;
+/** Encoded response body cap (before sharp decode). */
 const MAX_TILE_BYTES = 512 * 1024;
+/**
+ * Decoded raster cap before resize. MapTiler/commercial XYZ tiles are typically 256 or 512;
+ * reject absurd IHDR dimensions that would expand far beyond the encoded-byte budget.
+ */
+const MAX_DECODED_TILE_EDGE = 2048;
+const MAX_DECODED_TILE_PIXELS = MAX_DECODED_TILE_EDGE * MAX_DECODED_TILE_EDGE;
 const MAX_TILE_REDIRECTS = 3;
-const ATTRIBUTION_BAR_HEIGHT = 18;
+const ATTRIBUTION_OVERLAY_HEIGHT = 22;
+/** Bump when burn-in layout changes so Redis/memory caches miss stale PNGs. */
+const ATTRIBUTION_OVERLAY_VERSION = "br-outline-5";
 /** PNG signature (ISO 15948) — reject non-image bodies before sharp composite. */
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -56,7 +70,7 @@ export function assertSafeTileFetchUrl(raw: string, env: EnvLike = process.env):
   try {
     url = new URL(raw);
   } catch {
-    throw new StaticMapRenderError(`Invalid tile URL: ${raw}`);
+    throw new StaticMapRenderError(`Invalid tile URL: ${redactTileUrlForLogs(raw)}`);
   }
 
   if (url.protocol === "https:") {
@@ -64,7 +78,7 @@ export function assertSafeTileFetchUrl(raw: string, env: EnvLike = process.env):
   } else if (isDevLocalhostHttp(url, env)) {
     return;
   } else {
-    throw new StaticMapRenderError(`Tile URL must use https: ${raw}`);
+    throw new StaticMapRenderError(`Tile URL must use https: ${redactTileUrlForLogs(raw)}`);
   }
 
   const host = unbracketHostname(url.hostname);
@@ -86,6 +100,14 @@ export interface RenderStaticMapOptions {
   userAgent: string;
   fetchFn?: typeof fetch;
   timeoutMs?: number;
+  /** Injectable sharp factory — production omits this; tests use it for error-path coverage. */
+  imagePipeline?: typeof sharp;
+  /**
+   * When false, skip the PNG burn-in credit (Events list cards show HTML attribution instead,
+   * so object-fit:cover can keep the pin centered without cropping a bottom credit away).
+   * Default true for ticket/mail maps.
+   */
+  burnInAttribution?: boolean;
 }
 
 export class StaticMapRenderError extends Error {
@@ -98,7 +120,26 @@ export class StaticMapRenderError extends Error {
   }
 }
 
-/** Plain-text credit for the PNG strip (mail has no HTML attribution under the image). */
+/**
+ * Strip query/hash/userinfo from tile URLs before they enter error messages or logs.
+ * Commercial `MAP_TILE_URL` templates often carry `?api_key=` / tokens in the query string.
+ */
+export function redactTileUrlForLogs(raw: string): string {
+  try {
+    const u = new URL(raw);
+    return `${u.protocol}//${u.host}${u.pathname}`;
+  } catch {
+    // Unparseable URLs (e.g. `https://user:secret@`) still must not leak credentials.
+    const stripped = raw
+      .replace(/\?[^#\s]*/, "")
+      .replace(/#[^\s]*/, "")
+      .replace(/\/\/[^/@\s]*@/g, "//")
+      .trim();
+    return stripped.slice(0, 200) || "[invalid-url]";
+  }
+}
+
+/** Plain-text credit for the PNG burn-in (mail/ticket have no HTML attribution under the image). */
 export function plainMapAttribution(attribution: string): string {
   return attribution
     .replaceAll("&copy;", "©")
@@ -117,6 +158,7 @@ export function buildStaticMapCacheKey(
   req: StaticMapRequest,
   tileUrl: string,
   attribution = "",
+  burnInAttribution = true,
 ): string {
   const width = req.width ?? STATIC_MAP_WIDTH;
   const height = req.height ?? STATIC_MAP_HEIGHT;
@@ -129,6 +171,7 @@ export function buildStaticMapCacheKey(
     String(height),
     tileUrl,
     plainMapAttribution(attribution),
+    burnInAttribution ? ATTRIBUTION_OVERLAY_VERSION : "no-burn-in",
   ].join("|");
   return createHash("sha256").update(payload).digest("hex");
 }
@@ -174,16 +217,42 @@ function escXmlText(s: string): string {
     .replaceAll("'", "&apos;");
 }
 
+/**
+ * Bottom-right credit — dark text with a light outline so it stays readable on both light
+ * CARTO/OSM tiles and dark custom `MAP_TILE_URL` basemaps (ticket HTML attribution was removed).
+ */
 function buildAttributionOverlay(width: number, attribution: string): Buffer | null {
   const text = plainMapAttribution(attribution);
   if (!text) return null;
   const safe = escXmlText(text);
+  const x = width - 6;
   return Buffer.from(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${ATTRIBUTION_BAR_HEIGHT}">
-      <rect width="100%" height="100%" fill="rgba(255,255,255,0.82)"/>
-      <text x="6" y="12" font-size="9" font-family="DejaVu Sans, Arial, Helvetica, sans-serif" fill="#334155">${safe}</text>
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${ATTRIBUTION_OVERLAY_HEIGHT}">
+      <text x="${x}" y="16" text-anchor="end" font-size="11"
+        font-family="DejaVu Sans, Arial, Helvetica, sans-serif"
+        fill="#1e293b" stroke="#ffffff" stroke-width="3" stroke-linejoin="round"
+        paint-order="stroke fill">${safe}</text>
     </svg>`,
   );
+}
+
+/** Memoized gray PNG for tile CDN outages — same size as a real static map so mail layout stays stable. */
+let unavailableMapPng: Buffer | null = null;
+
+/**
+ * Placeholder image when tile fetch/composite fails after retries.
+ * Served as HTTP 200 with a short Cache-Control so mail clients do not show a broken
+ * image icon, without caching the failure for a full day like a real map.
+ */
+export async function buildUnavailableStaticMapPng(): Promise<Buffer> {
+  if (unavailableMapPng) return unavailableMapPng;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${STATIC_MAP_WIDTH}" height="${STATIC_MAP_HEIGHT}">
+  <rect width="100%" height="100%" fill="#f1f5f9"/>
+  <text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle"
+    font-size="16" font-family="DejaVu Sans, Arial, Helvetica, sans-serif" fill="#64748b">Map unavailable</text>
+</svg>`;
+  unavailableMapPng = await sharp(Buffer.from(svg)).png().toBuffer();
+  return unavailableMapPng;
 }
 
 /**
@@ -192,8 +261,9 @@ function buildAttributionOverlay(width: number, attribution: string): Buffer | n
  * header must not let an oversized body buffer into process memory.
  */
 async function readTileBodyCapped(res: Response, maxBytes: number, url: string): Promise<Buffer> {
+  const safeUrl = redactTileUrlForLogs(url);
   if (!res.body) {
-    throw new StaticMapRenderError(`Tile empty body: ${url}`);
+    throw new StaticMapRenderError(`Tile empty body: ${safeUrl}`);
   }
 
   const contentLength = res.headers.get("content-length");
@@ -201,7 +271,7 @@ async function readTileBodyCapped(res: Response, maxBytes: number, url: string):
     const declared = Number(contentLength);
     if (!isAllowedDeclaredTileSize(declared, maxBytes)) {
       await res.body.cancel().catch(() => undefined);
-      throw new StaticMapRenderError(`Tile too large (declared ${declared} bytes): ${url}`);
+      throw new StaticMapRenderError(`Tile too large (declared ${declared} bytes): ${safeUrl}`);
     }
   }
 
@@ -217,13 +287,13 @@ async function readTileBodyCapped(res: Response, maxBytes: number, url: string):
       total += value.byteLength;
       if (total > maxBytes) {
         await reader.cancel().catch(() => undefined);
-        throw new StaticMapRenderError(`Tile too large (${total} bytes): ${url}`);
+        throw new StaticMapRenderError(`Tile too large (${total} bytes): ${safeUrl}`);
       }
       chunks.push(value);
     }
   } catch (err) {
     if (err instanceof StaticMapRenderError) throw err;
-    throw new StaticMapRenderError(`Tile read failed: ${url}`, err);
+    throw new StaticMapRenderError(`Tile read failed: ${safeUrl}`, err);
   }
 
   return Buffer.concat(chunks.map((c) => Buffer.from(c)));
@@ -234,12 +304,12 @@ async function nextTileRedirectUrl(response: Response, current: string): Promise
   const location = response.headers.get("location");
   await response.body?.cancel().catch(() => undefined);
   if (!location) {
-    throw new StaticMapRenderError(`Tile redirect without Location: ${current}`);
+    throw new StaticMapRenderError(`Tile redirect without Location: ${redactTileUrlForLogs(current)}`);
   }
   try {
     return new URL(location, current).href;
   } catch {
-    throw new StaticMapRenderError(`Tile redirect to invalid URL: ${location}`);
+    throw new StaticMapRenderError(`Tile redirect to invalid URL: ${redactTileUrlForLogs(location)}`);
   }
 }
 
@@ -248,10 +318,17 @@ async function fetchTilePng(
   userAgent: string,
   fetchFn: typeof fetch,
   timeoutMs: number,
+  /** Aborts the whole render attempt so sibling tiles stop when Promise.all fails. */
+  attemptSignal?: AbortSignal,
+  image: typeof sharp = sharp,
 ): Promise<Buffer> {
   let current = url;
   for (let hop = 0; hop <= MAX_TILE_REDIRECTS; hop++) {
     assertSafeTileFetchUrl(current);
+
+    const signal = attemptSignal
+      ? AbortSignal.any([AbortSignal.timeout(timeoutMs), attemptSignal])
+      : AbortSignal.timeout(timeoutMs);
 
     let response: Response;
     try {
@@ -261,10 +338,10 @@ async function fetchTilePng(
           Accept: "image/png,image/*;q=0.8,*/*;q=0.5",
         },
         redirect: "manual",
-        signal: AbortSignal.timeout(timeoutMs),
+        signal,
       });
     } catch (err) {
-      throw new StaticMapRenderError(`Tile fetch failed: ${current}`, err);
+      throw new StaticMapRenderError(`Tile fetch failed: ${redactTileUrlForLogs(current)}`, err);
     }
 
     if (response.status >= 300 && response.status < 400) {
@@ -274,17 +351,55 @@ async function fetchTilePng(
 
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
-      throw new StaticMapRenderError(`Tile HTTP ${response.status}: ${current}`);
+      throw new StaticMapRenderError(`Tile HTTP ${response.status}: ${redactTileUrlForLogs(current)}`);
     }
 
     const body = await readTileBodyCapped(response, MAX_TILE_BYTES, current);
     if (!bufferLooksLikePng(body)) {
-      throw new StaticMapRenderError(`Tile is not a PNG: ${current}`);
+      throw new StaticMapRenderError(`Tile is not a PNG: ${redactTileUrlForLogs(current)}`);
     }
-    return body;
+    return normalizeTilePngToCompositorSize(body, current, image);
   }
 
-  throw new StaticMapRenderError(`Too many tile redirects: ${url}`);
+  throw new StaticMapRenderError(`Too many tile redirects: ${redactTileUrlForLogs(url)}`);
+}
+
+/**
+ * MapTiler / some commercial XYZ styles serve 512×512 (or other) rasters for the same z/x/y
+ * as OSM's 256 grid. Resize to the compositor tile size so sharp can place them on the canvas.
+ */
+export async function normalizeTilePngToCompositorSize(
+  tilePng: Buffer,
+  sourceUrl: string,
+  image: typeof sharp = sharp,
+): Promise<Buffer> {
+  let width: number | undefined;
+  let height: number | undefined;
+  try {
+    const meta = await image(tilePng).metadata();
+    width = meta.width;
+    height = meta.height;
+  } catch (err) {
+    throw new StaticMapRenderError(`Tile PNG metadata unreadable: ${redactTileUrlForLogs(sourceUrl)}`, err);
+  }
+  if (width === TILE_SIZE && height === TILE_SIZE) return tilePng;
+  if (!width || !height) {
+    throw new StaticMapRenderError(`Tile PNG has no dimensions: ${redactTileUrlForLogs(sourceUrl)}`);
+  }
+  if (
+    width > MAX_DECODED_TILE_EDGE ||
+    height > MAX_DECODED_TILE_EDGE ||
+    width * height > MAX_DECODED_TILE_PIXELS
+  ) {
+    throw new StaticMapRenderError(
+      `Tile PNG dimensions too large (${width}x${height}): ${redactTileUrlForLogs(sourceUrl)}`,
+    );
+  }
+  try {
+    return await image(tilePng).resize(TILE_SIZE, TILE_SIZE).png().toBuffer();
+  } catch (err) {
+    throw new StaticMapRenderError(`Tile PNG resize failed: ${redactTileUrlForLogs(sourceUrl)}`, err);
+  }
 }
 
 /**
@@ -304,6 +419,7 @@ export async function renderStaticMapPng(
   const zoom = clampZoom(req.zoom, options.tileConfig.maxZoom);
   const fetchFn = options.fetchFn ?? fetch;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TILE_TIMEOUT_MS;
+  const image = options.imagePipeline ?? sharp;
 
   const center = latLngToTileFraction(req.latitude, req.longitude, zoom);
   const centerPxX = center.x * TILE_SIZE;
@@ -317,6 +433,8 @@ export async function renderStaticMapPng(
   const tileY1 = Math.floor((topLeftPxY + height - 1) / TILE_SIZE);
   const n = 2 ** zoom;
 
+  // One controller for the attempt: if any tile fails, abort siblings before the caller retries.
+  const attempt = new AbortController();
   const tileJobs: Array<Promise<OverlayOptions>> = [];
   for (let ty = tileY0; ty <= tileY1; ty++) {
     if (ty < 0 || ty >= n) continue;
@@ -324,7 +442,7 @@ export async function renderStaticMapPng(
       const wrappedX = ((tx % n) + n) % n;
       const url = expandTileUrl(options.tileConfig.tileUrl, zoom, wrappedX, ty);
       tileJobs.push(
-        fetchTilePng(url, options.userAgent, fetchFn, timeoutMs).then((tilePng) => ({
+        fetchTilePng(url, options.userAgent, fetchFn, timeoutMs, attempt.signal, image).then((tilePng) => ({
           input: tilePng,
           left: Math.round(tx * TILE_SIZE - topLeftPxX),
           top: Math.round(ty * TILE_SIZE - topLeftPxY),
@@ -332,7 +450,16 @@ export async function renderStaticMapPng(
       );
     }
   }
-  const composites: OverlayOptions[] = await Promise.all(tileJobs);
+
+  let composites: OverlayOptions[];
+  try {
+    composites = await Promise.all(tileJobs);
+  } catch (err) {
+    attempt.abort();
+    throw err instanceof StaticMapRenderError
+      ? err
+      : new StaticMapRenderError("Tile fetch failed", err);
+  }
 
   if (composites.length === 0) {
     throw new StaticMapRenderError("No map tiles covered the requested viewport");
@@ -342,13 +469,15 @@ export async function renderStaticMapPng(
   const pinTop = Math.round(height / 2 - 14);
   composites.push({ input: PIN_SVG, left: pinLeft, top: pinTop });
 
-  const attrOverlay = buildAttributionOverlay(width, options.tileConfig.attribution);
-  if (attrOverlay) {
-    composites.push({ input: attrOverlay, left: 0, top: height - ATTRIBUTION_BAR_HEIGHT });
+  if (options.burnInAttribution !== false) {
+    const attrOverlay = buildAttributionOverlay(width, options.tileConfig.attribution);
+    if (attrOverlay) {
+      composites.push({ input: attrOverlay, left: 0, top: height - ATTRIBUTION_OVERLAY_HEIGHT });
+    }
   }
 
   try {
-    return await sharp({
+    return await image({
       create: {
         width,
         height,

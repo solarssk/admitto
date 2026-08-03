@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
+import type { ResolveEventStaticMapResult } from "../src/maps/event-static-map-service.js";
 import { readTicketAssetForTest } from "../src/wallet-badges.js";
 
 describe("wallet / ticket mark assets", () => {
@@ -55,7 +56,7 @@ describe("GET /m/:filename", () => {
     expect((await app.request("/m/.png")).status).toBe(404);
   });
 
-  it("returns PNG bytes on success and maps failure reasons to status codes", async () => {
+  it("returns PNG bytes on success and maps miss reasons to 404", async () => {
     const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
     const appOk = createApp({
       eventStaticMapService: {
@@ -65,20 +66,40 @@ describe("GET /m/:filename", () => {
     const ok = await appOk.request("/m/evt_1.png");
     expect(ok.status).toBe(200);
     expect(ok.headers.get("content-type")).toContain("image/png");
+    expect(ok.headers.get("cache-control")).toBe("public, max-age=86400");
     expect(Buffer.from(await ok.arrayBuffer())).toEqual(png);
 
-    for (const [reason, status] of [
-      ["disabled", 404],
-      ["not_found", 404],
-      ["no_coordinates", 404],
-      ["render_failed", 502],
-    ] as const) {
+    const appPlaceholder = createApp({
+      eventStaticMapService: {
+        getForEvent: async () => ({ ok: true, png, cacheHit: false, placeholder: true }),
+      },
+    });
+    const placeholder = await appPlaceholder.request("/m/evt_1.png");
+    expect(placeholder.status).toBe(200);
+    expect(placeholder.headers.get("cache-control")).toBe("public, max-age=120");
+
+    for (const reason of ["disabled", "not_found", "no_coordinates"] as const) {
       const app = createApp({
         eventStaticMapService: {
           getForEvent: async () => ({ ok: false, reason }),
         },
       });
-      expect((await app.request("/m/evt_1.png")).status).toBe(status);
+      expect((await app.request("/m/evt_1.png")).status).toBe(404);
     }
+  });
+
+  it("passes listPreview when context=list and empty options otherwise", async () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    const getForEvent = vi.fn(
+      async (): Promise<ResolveEventStaticMapResult> => ({ ok: true, png, cacheHit: false }),
+    );
+    const app = createApp({ eventStaticMapService: { getForEvent } });
+
+    expect((await app.request("/m/evt_list.png?context=list&v=2")).status).toBe(200);
+    expect(getForEvent).toHaveBeenCalledWith(expect.anything(), "evt_list", { listPreview: true });
+
+    getForEvent.mockClear();
+    expect((await app.request("/m/evt_ticket.png")).status).toBe(200);
+    expect(getForEvent).toHaveBeenCalledWith(expect.anything(), "evt_ticket", {});
   });
 });

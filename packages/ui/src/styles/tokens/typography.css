@@ -37,7 +37,8 @@
   /* Semantic roles */
   --text-page-title-size:   var(--fs-h1);
   --text-page-title-weight: var(--fw-semibold);
-  --text-card-title-size:   var(--fs-h2);
+  /* Card headers use the subsection step (same as .at-card__title), not section/h2. */
+  --text-card-title-size:   var(--fs-h3);
   --text-card-title-weight: var(--fw-semibold);
   --text-label-size:        var(--fs-xs);
   --text-label-weight:      var(--fw-semibold);

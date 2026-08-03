@@ -29,17 +29,18 @@ export interface MapPickerProps {
   tileConfig: MapTileConfigDto;
   /** Read-only mode (e.g. archived event) - clicking the map or dragging the pin is disabled. */
   disabled?: boolean;
-  /** Called with the picked point on map click or pin drag. */
+  /** Called when the admin double-clicks the map or finishes dragging the pin. */
   onPick: (latitude: number, longitude: number) => void;
   /** Called when the operator changes Leaflet zoom (controls or pinch) so draft.map_zoom persists. */
   onZoomChange?: (zoom: number) => void;
 }
 
 /**
- * Interactive Leaflet map for the Location tab: click anywhere to drop/move the pin, or drag
- * an existing pin. Re-centers when `latitude`/`longitude` change from outside the map itself
- * (loading saved data, picking a geocoding search result) without fighting the user's own pan
- * and zoom once a pin already exists.
+ * Interactive Leaflet map for the Location tab.
+ *
+ * Pan and zoom freely without moving the pin. Place or relocate with a **double-click**;
+ * fine-tune an existing pin by dragging it. Single-click is intentionally ignored so
+ * exploring the basemap does not overwrite the saved venue.
  */
 export function MapPicker({
   latitude,
@@ -56,6 +57,8 @@ export function MapPicker({
   const onPickRef = useRef(onPick);
   const onZoomChangeRef = useRef(onZoomChange);
   const disabledRef = useRef(disabled);
+  /** Last lat/lng we synced onto the marker — used so zoom-only draft updates do not panTo. */
+  const syncedCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
   onPickRef.current = onPick;
   onZoomChangeRef.current = onZoomChange;
   disabledRef.current = disabled;
@@ -69,12 +72,14 @@ export function MapPicker({
     const map = L.map(container, {
       center: hasInitialPosition ? [latitude, longitude] : FALLBACK_CENTER,
       zoom: hasInitialPosition ? zoom : FALLBACK_ZOOM,
+      // Double-click places/moves the pin — keep Leaflet from also zooming in.
+      doubleClickZoom: false,
     });
     L.tileLayer(tileConfig.tile_url, {
       attribution: tileConfig.attribution,
       maxZoom: tileConfig.max_zoom,
     }).addTo(map);
-    map.on("click", (e: L.LeafletMouseEvent) => {
+    map.on("dblclick", (e: L.LeafletMouseEvent) => {
       if (disabledRef.current) return;
       onPickRef.current(e.latlng.lat, e.latlng.lng);
     });
@@ -93,25 +98,35 @@ export function MapPicker({
       map.remove();
       mapRef.current = null;
       markerRef.current = null;
+      syncedCoordsRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-once map setup, see comment above
   }, []);
 
   // Sync the pin with the current coordinates. A brand-new pin snaps the view to it (zoomed
-  // in); once a pin exists, only pan to follow it so we don't fight the user's own zoom level.
+  // in). When coordinates change from search/dblclick/drag, pan (or setView if zoom also
+  // changed). Zoom-only updates from the draft must not yank the viewport back to the pin.
   useEffect(() => {
     const map = mapRef.current!;
 
     if (latitude === null || longitude === null) {
       markerRef.current?.remove();
       markerRef.current = null;
+      syncedCoordsRef.current = null;
       return;
     }
 
     const latLng: L.LatLngTuple = [latitude, longitude];
+    const prev = syncedCoordsRef.current;
+    const coordsChanged = prev?.lat !== latitude || prev?.lng !== longitude;
+    syncedCoordsRef.current = { lat: latitude, lng: longitude };
+
     if (markerRef.current) {
       markerRef.current.setLatLng(latLng);
-      map.panTo(latLng);
+      if (coordsChanged) {
+        if (map.getZoom() !== zoom) map.setView(latLng, zoom);
+        else map.panTo(latLng);
+      }
     } else {
       const marker = L.marker(latLng, { icon: MARKER_ICON, draggable: !disabledRef.current });
       marker.on("dragend", () => {
