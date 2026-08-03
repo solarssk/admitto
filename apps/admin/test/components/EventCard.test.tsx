@@ -49,6 +49,10 @@ describe("eventCardDateParts", () => {
   it("uses the UTC calendar day from the stored event date", () => {
     expect(eventCardDateParts("2026-06-02T12:00:00.000Z")).toEqual({ month: "JUN", day: "2" });
   });
+
+  it("returns em dashes for an invalid date", () => {
+    expect(eventCardDateParts("not-a-date")).toEqual({ month: "—", day: "—" });
+  });
 });
 
 describe("eventCardStatus", () => {
@@ -85,6 +89,49 @@ describe("eventCardStatus", () => {
         archived_at: null,
       }),
     ).toEqual({ label: "In 57 days", variant: "neutral" });
+  });
+
+  it("falls back to Active when the date is empty", () => {
+    expect(
+      eventCardStatus({
+        date: "",
+        timezone: "Europe/Warsaw",
+        archived_at: null,
+      }),
+    ).toEqual({ label: "Active", variant: "neutral" });
+  });
+
+  it("labels tomorrow", () => {
+    expect(
+      eventCardStatus({
+        date: "2026-08-04T12:00:00.000Z",
+        timezone: "Europe/Warsaw",
+        archived_at: null,
+      }),
+    ).toEqual({ label: "Tomorrow", variant: "neutral" });
+  });
+
+  it("labels today with remaining hours", () => {
+    // Event stored at UTC noon; "now" is 08:00 UTC same calendar day → several hours left.
+    vi.setSystemTime(new Date("2026-08-03T08:00:00.000Z"));
+    expect(
+      eventCardStatus({
+        date: "2026-08-03T12:00:00.000Z",
+        timezone: "UTC",
+        archived_at: null,
+      }),
+    ).toEqual({ label: "Today in 4h", variant: "neutral" });
+  });
+
+  it("labels today as Starting soon in the final hour", () => {
+    vi.setSystemTime(new Date("2026-08-03T11:30:00.000Z"));
+    expect(
+      eventCardStatus({
+        date: "2026-08-03T12:00:00.000Z",
+        timezone: "UTC",
+        archived_at: null,
+      }),
+    ).toEqual({ label: "Starting soon", variant: "neutral" });
   });
 });
 
