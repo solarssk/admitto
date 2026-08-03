@@ -52,6 +52,6 @@ Enabled providers appear in the staff sign-in flow. Updated mappings apply when 
 ## Related pages
 
 - [Users and Roles Administration](Users-and-Roles-Administration)
-- [Instance Settings](Instance-Settings)
+- [Organisation Settings](Organisation-Settings)
 - [Logs and Audit](Logs-and-Audit)
 - [Technical Documentation](Technical-Documentation)

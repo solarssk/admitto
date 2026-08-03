@@ -75,6 +75,11 @@ export class SmtpAdapter implements MailerAdapter {
     this.transporter.close();
   }
 
+  /** SMTP AUTH + greeting check without sending a message (nodemailer `verify`). */
+  async verifyConnection(): Promise<void> {
+    await this.transporter.verify();
+  }
+
   /** Validate and send one HTML message via SMTP.
    * Returns a rejected result on soft failures; rethrows {@link MailDestinationError}
    * so ticket send/resend can map destination SSRF/DNS failures to 422. */

@@ -1,10 +1,10 @@
-import type { DeliveryDto } from "@admitto/shared";
+import type { DeliveryDto, HealthOverallStatus, HealthRowStatus } from "@admitto/shared";
 import type { LogoPersistenceDto } from "@admitto/mail-templates";
 
 // DeliveryDto is also used locally below (AttendeeDetailDto.deliveries, the deliveries-list
 // response's items) so this file still needs its own bound import above - DeliveryDetailDto
 // isn't used locally, only re-exported, so it's not repeated in that import (Sonar S1128).
-export type { DeliveryDetailDto, DeliveryDto } from "@admitto/shared";
+export type { DeliveryDetailDto, DeliveryDto, HealthOverallStatus, HealthRowStatus } from "@admitto/shared";
 export type { EventSettingsDto, LogoCropMeta, LogoPersistenceDto } from "@admitto/mail-templates";
 
 export type MailerProvider = "smtp" | "graph" | "powerautomate" | "export_only";
@@ -1026,6 +1026,33 @@ export interface SetupCheckResult {
 export interface SetupChecksResponse {
   checks: Record<SetupCheckKey, SetupCheckResult>;
 }
+
+export type HealthDetailDto = { key: string; value: string };
+
+export type HealthCheckRowDto = {
+  id: string;
+  label: string;
+  status: HealthRowStatus;
+  summary: string;
+  details: HealthDetailDto[];
+};
+
+export type HealthGroupDto = {
+  id: "core" | "external";
+  label: string;
+  subtitle: string;
+  status: HealthOverallStatus;
+  checks: HealthCheckRowDto[];
+};
+
+/** GET /api/admin/health and POST /api/admin/health/live payload. */
+export type HealthReportDto = {
+  generated_at: string;
+  version: string;
+  commit: string;
+  overall: HealthOverallStatus;
+  groups: HealthGroupDto[];
+};
 
 export type SetupOrgBrandingDto = {
   org_name: string | null;

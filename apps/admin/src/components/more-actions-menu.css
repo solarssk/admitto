@@ -1,0 +1,131 @@
+/* Shared More actions dropdown (Attendees, Health check, and future staff menus). */
+
+.more-actions-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+/* The panel positions itself relative to .more-actions-menu by default (a bare inline-flex
+   wrapper around the trigger button, sized to the button's own narrow width) - fine on
+   desktop, where that wrapper sits flush against the row's right edge anyway. On mobile the
+   trigger can land anywhere along the row depending on how much space the other buttons
+   took, so anchoring to the trigger's own box put the panel off-screen either direction
+   (PO review, twice: first past the left edge when the trigger used to wrap alone onto its
+   own line, then past the right edge once the row above was widened to fit all three buttons
+   on one line). Anchoring to the whole row instead (each row's own position: relative -
+   .attendees-bulkbar__actions, .attendees-pageheader .at-pageheader__actions above) - a
+   stable, always-on-screen edge - fixes both: the trigger's own position becomes irrelevant.
+   Shared by both the bulk bar's "More actions" menu and the header's "More" menu. Declared
+   here (after the base rule above, same specificity) rather than inside an earlier
+   @media (max-width: 767px) block so it reliably wins the cascade - a same-
+   specificity override earlier in a consumer stylesheet was silently losing to this later
+   base rule. */
+@media (max-width: 767px) {
+  .more-actions-menu {
+    position: static;
+  }
+}
+
+.more-actions-menu__panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: var(--z-dropdown);
+  /* Wide enough that item hints ("CSV of 25 attendees") stay on one line (PO review). */
+  min-width: 260px;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Tooltip's trigger wrapper defaults to inline-flex (shrink-to-fit) - override to block/full
+   width here so wrapping a menu item in <Tooltip> doesn't change its layout in this stacked,
+   full-width list. */
+.more-actions-menu__item-wrapper {
+  display: block;
+  width: 100%;
+}
+
+.more-actions-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.more-actions-menu__item:hover {
+  background: var(--surface-hover);
+}
+
+.more-actions-menu__item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.more-actions-menu__item:disabled:hover {
+  background: none;
+}
+
+.more-actions-menu__item-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.more-actions-menu__item-hint {
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+/** Retry link for a failed ticket-type catalog fetch, shown under the disabled "Change ticket
+ * type" item - same horizontal padding as a menu item so it lines up with the item above it. */
+.more-actions-menu__retry {
+  padding: 0 var(--space-3) var(--space-1);
+  text-align: left;
+}
+
+.more-actions-menu__divider {
+  height: 1px;
+  margin: var(--space-1) 0;
+  background: var(--border);
+  border: none;
+}
+
+.more-actions-menu__item--danger {
+  color: var(--status-error);
+}
+
+.more-actions-menu__item--danger:hover {
+  background: var(--status-error-tint);
+}
+
+/** Lighter-weight "caution" treatment for mutating-but-reversible actions (Revoke check-in,
+ * Revoke items) - red stays reserved for genuinely irreversible/high-stakes items like Revoke
+ * pass and Delete (PO review across the Revoke check-in / Revoke items / Revoke pass sibling
+ * PRs). --status-warn-fg (muted amber), not the raw --status-warn (bright yellow) - the raw tone
+ * is only ever paired with --status-warn-tint as a background elsewhere in this codebase, never
+ * used alone as plain text; used directly here it read as too vivid (PO review). */
+.more-actions-menu__item--warning {
+  color: var(--status-warn-fg);
+}
+
+.more-actions-menu__item--warning:hover {
+  background: var(--status-warn-tint);
+}

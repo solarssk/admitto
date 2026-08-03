@@ -588,6 +588,44 @@ describe("setup org-branding", () => {
   });
 });
 
+describe("GET/POST /api/admin/health", () => {
+  it("returns the passive report and runs live checks for superadmin", async () => {
+    const getRes = await app.request("/api/admin/health", {
+      headers: { Cookie: superCookie },
+    });
+    expect(getRes.status).toBe(200);
+    const getBody = (await getRes.json()) as { groups: unknown[]; overall: string };
+    expect(getBody.groups).toHaveLength(2);
+    expect(getBody.overall).toBeTruthy();
+
+    const liveRes = await app.request("/api/admin/health/live", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+    expect(liveRes.status).toBe(200);
+    const liveBody = (await liveRes.json()) as { groups: unknown[] };
+    expect(liveBody.groups).toHaveLength(2);
+  });
+
+  it("returns 403 for non-superadmin on both routes", async () => {
+    expect(
+      (
+        await app.request("/api/admin/health", {
+          headers: { Cookie: adminCookie },
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await app.request("/api/admin/health/live", {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin },
+        })
+      ).status,
+    ).toBe(403);
+  });
+});
+
 describe("POST /api/admin/setup/complete", () => {
   it("marks setup complete for superadmin", async () => {
     await setSetting(prisma, SETTING_SETUP_COMPLETE, false);

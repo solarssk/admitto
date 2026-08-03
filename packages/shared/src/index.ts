@@ -1,6 +1,7 @@
 export { splitCsvLine } from "./csvUtils.js";
 export { redactEmail } from "./redact.js";
 export type { DeliveryDetailDto, DeliveryDto } from "./deliveryDto.js";
+export type { HealthOverallStatus, HealthRowStatus } from "./healthStatus.js";
 export {
   SUPPORTED_LOCALE_TAGS,
   isSupportedLocale,

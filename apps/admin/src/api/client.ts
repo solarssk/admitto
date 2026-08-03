@@ -68,6 +68,7 @@ import type {
   UserListItemDto,
   RoleAssignmentsListResponse,
   SetupChecksResponse,
+  HealthReportDto,
   SetupOrgBrandingDto,
   PatchSetupOrgBrandingBody,
   SetupSupportContactDto,
@@ -1744,6 +1745,18 @@ export async function fetchRoleAssignments(
 export async function fetchSetupChecks(signal?: AbortSignal): Promise<SetupChecksResponse> {
   const res = await fetch("/api/admin/setup/checks", { credentials: "same-origin", signal });
   return parseJson<SetupChecksResponse>(res);
+}
+
+/** Settings → Health check passive report (superadmin). */
+export async function fetchAdminHealth(signal?: AbortSignal): Promise<HealthReportDto> {
+  const res = await fetch("/api/admin/health", { credentials: "same-origin", signal });
+  return parseJson<HealthReportDto>(res);
+}
+
+/** Settings → Health check with on-demand live probes (Nominatim / OIDC). */
+export async function runAdminHealthLive(): Promise<HealthReportDto> {
+  const res = await fetch("/api/admin/health/live", jsonPostInit({}));
+  return parseJson<HealthReportDto>(res);
 }
 
 /** Load instance organisation name and logo URL — setup wizard branding step and Settings → General. */

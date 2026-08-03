@@ -238,6 +238,10 @@ import { NominatimProvider } from "./maps/nominatim-provider.js";
 import { createGeocodingCache } from "./maps/geocoding-cache.js";
 import { GeocodingService } from "./maps/geocoding-service.js";
 import { handleGetSetupChecks } from "./admin/setup-checks-routes.js";
+import {
+  handleGetAdminHealth,
+  handlePostAdminHealthLive,
+} from "./admin/health-check-routes.js";
 import { handlePostSetupComplete } from "./admin/setup-complete-routes.js";
 import {
   handleGetSetupOrgBranding,
@@ -470,6 +474,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminCommunicationRateLimit = rateLimit(rateLimitStore, "admin:test-send");
   const adminMailSettingsRateLimit = rateLimit(rateLimitStore, "admin:mail-transport-test");
   const adminEventMailSettingsRateLimit = rateLimit(rateLimitStore, "admin:event-mail-transport-test");
+  const adminHealthLiveRateLimit = rateLimit(rateLimitStore, "admin:health-live");
   const adminImportPreviewRateLimit = rateLimit(rateLimitStore, "admin:import-preview");
   const adminAttendeesSearchRateLimit = rateLimit(rateLimitStore, "admin:attendees-search");
   const adminGeocodingSearchRateLimit = rateLimit(rateLimitStore, "admin:geocoding-search");
@@ -1052,6 +1057,23 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.get("/api/admin/setup/checks", staffAdminGate, (c) =>
     handleGetSetupChecks(c, db, rateLimitStore, mailInjectedBaseUrl),
+  );
+  app.get("/api/admin/health", staffAdminGate, (c) =>
+    handleGetAdminHealth(c, db, rateLimitStore, {
+      geocodingProvider,
+      injectedBaseUrl: mailInjectedBaseUrl,
+    }),
+  );
+  app.post(
+    "/api/admin/health/live",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminHealthLiveRateLimit,
+    (c) =>
+      handlePostAdminHealthLive(c, db, rateLimitStore, {
+        geocodingProvider,
+        injectedBaseUrl: mailInjectedBaseUrl,
+      }),
   );
   app.get("/api/admin/setup/org-branding", staffAdminGate, (c) => handleGetSetupOrgBranding(c, db));
   app.patch("/api/admin/setup/org-branding", jsonPostCsrf, staffAdminGate, (c) =>

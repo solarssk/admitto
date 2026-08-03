@@ -62,6 +62,8 @@ export class GraphAdapter implements MailerAdapter {
           client_secret: this.config.clientSecret,
           scope: "https://graph.microsoft.com/.default",
         }),
+        // Match OIDC connection tests so hung token endpoints cannot stall live health.
+        signal: AbortSignal.timeout(15_000),
       });
     } catch (e) {
       const mapped = mapNetworkError();
@@ -97,6 +99,11 @@ export class GraphAdapter implements MailerAdapter {
 
   async close(): Promise<void> {
     return;
+  }
+
+  /** App-only token fetch - proves tenant/client credentials without sending mail. */
+  async verifyConnection(): Promise<void> {
+    await this.getAccessToken();
   }
 
   async send(message: MailMessage): Promise<SendResult> {

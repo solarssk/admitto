@@ -18,6 +18,7 @@ const EXPECTED_POLICIES: Record<
   "admin:oidc-provider-ops": { windowMs: [60_000], max: [10], checks: 1 },
   "admin:test-send": { windowMs: [60_000], max: [5], checks: 1 },
   "admin:mail-transport-test": { windowMs: [60_000], max: [5], checks: 1 },
+  "admin:health-live": { windowMs: [60_000], max: [5], checks: 1 },
   "admin:event-mail-transport-test": { windowMs: [60_000], max: [5], checks: 1 },
   "admin:export": { windowMs: [3_600_000], max: [10], checks: 1 },
   "admin:export-pii": { windowMs: [3_600_000], max: [5], checks: 1 },
@@ -72,6 +73,30 @@ describe("RATE_POLICIES registry", () => {
       if (prev === undefined) delete process.env.TRUST_PROXY;
       else process.env.TRUST_PROXY = prev;
     }
+  });
+
+  it("returns health_live_rate_limited JSON when admin:health-live is exceeded", () => {
+    const check = RATE_POLICIES["admin:health-live"].checks[0]!;
+    expect(check.onExceeded).toBeTypeOf("function");
+    const json = vi.fn((body: unknown, status: number) => ({ body, status }));
+    const response = check.onExceeded!({ json } as never);
+    expect(json).toHaveBeenCalledWith({ error: "health_live_rate_limited" }, 429);
+    expect(response).toEqual({ body: { error: "health_live_rate_limited" }, status: 429 });
+  });
+
+  it("scopes admin:health-live and authUserScopedPolicy keys by user id", () => {
+    const authCtx = {
+      get: (key: string) => (key === "auth" ? { userId: "user-42" } : undefined),
+    } as never;
+    expect(RATE_POLICIES["admin:health-live"].checks[0]!.keyOf(authCtx)).toBe(
+      "admin:health-live:user:user-42",
+    );
+    expect(RATE_POLICIES["admin:mail-transport-test"].checks[0]!.keyOf(authCtx)).toBe(
+      "admin:mail-transport-test:user:user-42",
+    );
+    expect(RATE_POLICIES["admin:event-mail-transport-test"].checks[0]!.keyOf(authCtx)).toBe(
+      "admin:event-mail-transport-test:user:user-42",
+    );
   });
 });
 

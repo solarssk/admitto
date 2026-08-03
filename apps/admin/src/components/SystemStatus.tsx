@@ -361,6 +361,22 @@ export function SystemStatus({
                 className="user-menu__item"
                 onClick={() => {
                   close();
+                  navigate(`${SETTINGS_INDEX_PATH}?tab=health`);
+                }}
+              >
+                <span className="user-menu__item-icon">
+                  <i className="ti ti-heartbeat" aria-hidden="true" />
+                </span>
+                <span className="user-menu__item-text">
+                  <strong>View health check</strong>
+                </span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="user-menu__item"
+                onClick={() => {
+                  close();
                   navigate(`${SETTINGS_INDEX_PATH}?tab=logs`);
                 }}
               >

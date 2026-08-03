@@ -397,6 +397,18 @@ describe("SystemStatus", () => {
     expect(screen.getByTestId("settings-page").textContent).toContain("tab=logs");
   });
 
+  it("navigates to Settings → Health check when 'View health check' is clicked", async () => {
+    fetchSetupChecks.mockResolvedValueOnce({ checks: OK_CHECKS });
+
+    renderStatus(SUPERADMIN);
+    await screen.findByRole("button", { name: /All systems normal/ });
+
+    openMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: /View health check/ }));
+
+    expect(screen.getByTestId("settings-page").textContent).toContain("tab=health");
+  });
+
   it("closes when the user tabs to the adjacent UserMenu trigger, instead of leaving both dropdowns open", () => {
     const user: AuthUser = {
       id: "u1",

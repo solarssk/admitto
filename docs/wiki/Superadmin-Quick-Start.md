@@ -18,7 +18,7 @@ Sign in with your own Superadmin account and complete the security steps shown b
 1. Confirm the organisation and first administrator before handing over event work.
 2. Use **Organisations** for organisation details and limits.
 3. Use **Users & roles** for staff users and role assignments.
-4. Use **Instance settings** for supported general, branding, mail, security, archiving, identity, and log settings.
+4. Use **Organisation settings** for supported general, branding, mail, security, archiving, identity, and log settings.
 5. Use organisation settings for configuration that belongs to one organisation.
 6. Use event settings for event-specific overrides and lifecycle actions.
 7. Verify every material change with a synthetic account or test event.
@@ -50,7 +50,7 @@ Depending on scope, a change can affect the entire instance, one organisation, o
 
 - [Organisation Administration](Organisation-Administration)
 - [Users and Roles Administration](Users-and-Roles-Administration)
-- [Instance Settings](Instance-Settings)
+- [Organisation Settings](Organisation-Settings)
 - [Mail Delivery Administration](Mail-Delivery-Administration)
 - [Identity and SSO](Identity-and-SSO)
 - [Logs and Audit](Logs-and-Audit)

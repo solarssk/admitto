@@ -1,9 +1,9 @@
-# Instance Settings
+# Organisation Settings
 
 > **Audience:** Superadmins
 > **Required role:** Superadmin
 > **Feature status:** Available
-> **Last verified:** Admitto 0.4.12
+> **Last verified:** Admitto Unreleased
 
 ## What this page helps you do
 
@@ -25,7 +25,8 @@ Use a named Superadmin account, record the intended change, and prepare a synthe
 6. Use **Archiving** for retention and completed-event controls.
 7. Use **Identity** for OIDC providers and Cloudflare Access.
 8. Use **Logs** to review system, administration, and security activity.
-9. Save one area at a time and verify the visible result.
+9. Use **Health check** to review Core infrastructure and External integrations status. External rows are labelled **role, provider** (for example `Address lookup, Nominatim` and `Map tiles, OpenStreetMap`). Each configured identity provider appears as its own row; Cloudflare Access is listed separately. Expand a row for diagnostics such as latency or endpoint host (no secrets). Use **Run live checks** only when you need an on-demand probe of address lookup, mail transport (SMTP verify / Microsoft Graph token; Power Automate is listed as configured without a live probe), identity providers, or Cloudflare Access. **Copy for GitHub Issue** / **Export** produce a sanitized Markdown snapshot (no secrets or instance URL in the dump).
+10. Save one area at a time and verify the visible result.
 
 ## Expected result
 
@@ -33,7 +34,7 @@ The selected setting is saved, an audit record is created where supported, and t
 
 ## Important decisions
 
-- Instance settings can affect every organisation or staff login.
+- Organisation settings can affect every organisation or staff login.
 - Environment-locked values are read-only in the UI and cannot be overridden there.
 - Event-specific mail settings can override the organisation transport for that event.
 - Deployment and emergency recovery are not UI tasks; use the technical documentation.

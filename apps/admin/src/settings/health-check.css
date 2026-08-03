@@ -1,0 +1,278 @@
+/* Organisation Settings → Health check (ADR 0037) — single Overview cassette. */
+
+.health-check__card .at-card__header {
+  flex-wrap: wrap;
+  row-gap: var(--space-2);
+}
+
+.health-check__card .at-card__actions {
+  /* Let .health-check__actions own the toolbar layout. */
+  display: contents;
+}
+
+.health-check__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  /* Anchor .more-actions-menu panel on narrow viewports (shared attendees.css rule). */
+  position: relative;
+}
+
+.health-check__actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.health-check__actions .ti-refresh.at-spin {
+  display: inline-block;
+  animation: at-spin 0.7s linear infinite;
+}
+
+.health-check__intro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.health-check__intro-copy {
+  margin: 0;
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.health-check__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  flex: 0 1 auto;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--fs-mono, var(--fs-xs));
+  color: var(--text-muted, var(--tblr-secondary));
+  white-space: nowrap;
+}
+
+.health-check__meta .ti {
+  font-size: 0.95em;
+  opacity: 0.85;
+}
+
+.health-check__groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.health-check__section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: var(--space-3);
+}
+
+.health-check__section-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  background: var(--surface-sunken, var(--tblr-bg-surface-secondary, #f1f5f9));
+  color: var(--text-secondary, var(--tblr-secondary));
+  border: 1px solid var(--border, var(--tblr-border-color));
+}
+
+.health-check__section-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.health-check__section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text-primary, var(--tblr-body-color));
+}
+
+.health-check__section-subtitle {
+  margin: 0.15rem 0 0;
+  font-size: var(--fs-sm);
+  color: var(--text-muted, var(--tblr-secondary));
+}
+
+/* Separate framed rows (same idea as .org-mail-summary / transport tiles): each check
+ * gets its own border + radius, stacked with a gap — not one shared table chrome, and
+ * not a full status-tint fill like .org-mail-summary--configured. */
+.health-check__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.health-check__row {
+  background: var(--surface-card, var(--tblr-bg-surface));
+  border: 1px solid var(--border, var(--tblr-border-color));
+  border-radius: var(--radius, var(--tblr-border-radius));
+  transition: background-color 0.12s ease;
+}
+
+.health-check__row:hover,
+.health-check__row--expanded {
+  background: var(--surface-sunken, #f1f5f9);
+}
+
+.health-check__row--warn {
+  border-color: var(--status-warn, var(--tblr-warning));
+}
+
+.health-check__row--err {
+  border-color: var(--status-err, var(--tblr-danger));
+}
+
+.health-check__row-btn {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0.7rem 0.9rem;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  border-radius: inherit;
+}
+
+.health-check__row-btn:hover {
+  background: transparent;
+}
+
+.health-check__row-icon {
+  display: inline-flex;
+  width: 1.25rem;
+  justify-content: center;
+  color: var(--text-secondary, var(--tblr-secondary));
+  flex-shrink: 0;
+}
+
+.health-check__row-text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.75rem;
+}
+
+.health-check__row-text strong {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-primary, var(--tblr-body-color));
+}
+
+.health-check__row-text span {
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  color: var(--text-muted, var(--tblr-secondary));
+}
+
+.health-check__row--warn .health-check__row-text span {
+  color: var(--status-warn-fg, var(--tblr-warning));
+  font-weight: 500;
+}
+
+.health-check__row--err .health-check__row-text span {
+  color: var(--status-err-fg, var(--tblr-danger));
+  font-weight: 500;
+}
+
+.health-check__chevron {
+  color: var(--tblr-secondary);
+  flex-shrink: 0;
+}
+
+/* Explicit hex fallbacks — Tabler CSS vars are not always present on every surface.
+ * Colour lives only on background/box-shadow (empty status dots have no text). */
+.health-check__dot {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #64748b;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #64748b 12%, transparent);
+}
+
+.health-check__dot--ok {
+  background: #2fb344;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #2fb344 12%, transparent);
+}
+
+.health-check__dot--warn {
+  background: #f59f00;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #f59f00 12%, transparent);
+}
+
+.health-check__dot--err {
+  background: #d63939;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #d63939 12%, transparent);
+}
+
+.health-check__dot--muted,
+.health-check__dot--planned {
+  background: #64748b;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #64748b 12%, transparent);
+}
+
+.health-check__details {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0 0.9rem 0.85rem 2.4rem;
+  border-top: 1px solid var(--border, var(--tblr-border-color));
+  padding-top: 0.65rem;
+}
+
+.health-check__detail {
+  display: grid;
+  grid-template-columns: minmax(7rem, 9rem) 1fr;
+  gap: var(--space-2);
+  font-size: var(--fs-xs);
+}
+
+.health-check__detail dt {
+  margin: 0;
+  color: var(--tblr-secondary);
+  text-transform: capitalize;
+}
+
+.health-check__detail dd {
+  margin: 0;
+  font-family: var(--tblr-font-monospace, ui-monospace, monospace);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  .health-check__actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .health-check__detail {
+    grid-template-columns: 1fr;
+    gap: 0.1rem;
+  }
+}
