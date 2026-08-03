@@ -76,4 +76,47 @@ describe("deliverPendingBatch", () => {
       }),
     );
   });
+
+  it("rethrows duck-typed destination failures when class identity does not match", async () => {
+    const update = vi.fn(async () => ({}));
+    const prisma = { emailDelivery: { update } } as unknown as PrismaClient;
+    const destErr = Object.assign(new Error("hostname could not be resolved"), {
+      name: "MailDestinationError",
+      code: "mail_destination_unresolved",
+    });
+    const adapter: MailerAdapter = {
+      provider: "smtp",
+      send: vi.fn(async () => {
+        throw destErr;
+      }),
+      close: vi.fn(async () => undefined),
+    };
+
+    await expect(
+      deliverPendingBatch(adapter, [pendingFixture("del-dest-duck")], prisma),
+    ).rejects.toBe(destErr);
+
+    expect(update).toHaveBeenCalled();
+  });
+
+  it("does not rethrow when name matches but code is not a mail_destination_* string", async () => {
+    const update = vi.fn(async () => ({}));
+    const prisma = { emailDelivery: { update } } as unknown as PrismaClient;
+    const weird = Object.assign(new Error("nope"), {
+      name: "MailDestinationError",
+      code: 535,
+    });
+    const adapter: MailerAdapter = {
+      provider: "smtp",
+      send: vi.fn(async () => {
+        throw weird;
+      }),
+      close: vi.fn(async () => undefined),
+    };
+
+    await expect(
+      deliverPendingBatch(adapter, [pendingFixture("del-weird")], prisma),
+    ).resolves.toBe(0);
+    expect(update).toHaveBeenCalled();
+  });
 });

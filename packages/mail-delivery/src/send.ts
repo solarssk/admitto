@@ -17,7 +17,6 @@ import {
 import {
   createMailer,
   sendBatch,
-  MailDestinationError,
   type ExportSink,
   type MailerAdapter,
   type MailMessage,
@@ -287,6 +286,18 @@ async function processAttendeeForSend({
 }
 
 /**
+ * True when `err` is a mail destination SSRF/DNS failure that API routes map to 422.
+ * Duck-types on name/code so Vitest dual-package class identity does not drop the rethrow.
+ */
+function isMailDestinationFailure(err: unknown): boolean {
+  if (!(err instanceof Error) || err.name !== "MailDestinationError" || !("code" in err)) {
+    return false;
+  }
+  const code = err.code;
+  return typeof code === "string" && code.startsWith("mail_destination_");
+}
+
+/**
  * Send the batched messages via the mailer and persist per-attendee delivery outcomes.
  * Returns the number of messages accepted by the provider (0 when the whole batch send throws).
  * Exported for unit tests of destination-error rethrow behaviour.
@@ -334,15 +345,9 @@ export async function deliverPendingBatch(
     );
     // Destination SSRF/DNS failures must surface to API mappers (422), not look like a
     // soft batch failure with only failed EmailDelivery rows.
-    // Name/code check: Vitest (and some dual package graphs) can load two copies of the
-    // class, so `instanceof` alone is not enough for the rethrow contract.
-    if (
-      err instanceof MailDestinationError ||
-      (err instanceof Error &&
-        err.name === "MailDestinationError" &&
-        "code" in err &&
-        (err.code === "mail_destination_blocked" || err.code === "mail_destination_unresolved"))
-    ) {
+    // Duck-type on name/code (not instanceof): Vitest and some dual package graphs can
+    // load two copies of MailDestinationError, so identity checks alone miss the rethrow.
+    if (isMailDestinationFailure(err)) {
       throw err;
     }
     return 0;
