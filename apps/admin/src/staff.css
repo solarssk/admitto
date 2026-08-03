@@ -6926,34 +6926,35 @@ select.system-log-panel__field {
 .timezone-select__trigger-text {
   display: flex;
   flex-direction: row;
-  align-items: center;
+  align-items: baseline;
   gap: 0.35rem;
   min-width: 0;
   font-size: var(--fs-body);
-  line-height: 1;
+  line-height: 1.25;
   overflow: hidden;
 }
 
 .timezone-select__trigger-line {
   display: inline-flex;
-  align-items: center;
+  align-items: baseline;
   gap: 0.35rem;
   min-width: 0;
   overflow: hidden;
+  font-size: var(--fs-body);
+  line-height: 1.25;
 }
 
 .timezone-select__trigger-city {
   font-weight: var(--fw-medium);
-  line-height: 1;
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .timezone-select__trigger-meta,
 .timezone-select__trigger-placeholder {
-  font-size: var(--fs-sm);
+  font-size: inherit;
   color: var(--text-muted);
-  line-height: 1;
+  font-weight: var(--fw-normal, 400);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -7013,7 +7014,6 @@ select.system-log-panel__field {
 }
 
 .timezone-select--compact .timezone-select__trigger-meta {
-  font-size: var(--fs-body);
   color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;

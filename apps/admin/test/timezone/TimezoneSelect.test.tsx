@@ -24,6 +24,18 @@ describe("TimezoneSelect", () => {
     expect(text).not.toMatch(/GMT[+-]/);
   });
 
+  it("renders an optional hint describing timezone IDs", () => {
+    render(
+      <TimezoneSelect
+        value="Europe/Warsaw"
+        onChange={() => {}}
+        hint="Search by city. The saved value is a standard timezone ID."
+      />,
+    );
+    expect(screen.getByText(/standard timezone ID/)).toBeTruthy();
+    expect(screen.getByRole("button").getAttribute("aria-describedby")).toBeTruthy();
+  });
+
   it("renders the placeholder when no timezone is selected", () => {
     render(<TimezoneSelect value="" onChange={() => {}} />);
     expect(screen.getByText("Select timezone…")).toBeTruthy();

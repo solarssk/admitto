@@ -22,7 +22,7 @@ Prepare the event title, calendar date, timezone, and optional location. Choose 
 2. Select **New event**. On an empty list, the button can read **Create event**.
 3. Enter the **Event title**.
 4. Review the auto-filled **Link name**. It is the short text used in ticket web links (for example `/t/summer-summit/…`). Use only lowercase letters, numbers, `_`, or `-`.
-5. Select the **Event date** and **Event timezone** (shown with a **UTC±N** offset).
+5. Select the **Event date** and **Event timezone** (shown with a **UTC±N** offset). You can search by city; Admitto stores a standard timezone ID such as `Europe/Warsaw` or `Asia/Kolkata`.
 6. Add **Location** when it should appear on tickets and calendar information — start typing a venue name or address and pick a match from the suggestions, or type it in by hand.
 7. Select **Create event**.
 

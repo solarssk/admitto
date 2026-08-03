@@ -158,6 +158,7 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
               onChange={setTimezone}
               disabled={submitting}
               required
+              hint="Search by city (for example Delhi or Warsaw). The saved value is a standard timezone ID such as Asia/Kolkata or Europe/Warsaw — often a region name, not the city you typed."
             />
           </div>
           <VenueAutocomplete

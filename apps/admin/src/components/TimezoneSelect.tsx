@@ -299,6 +299,8 @@ interface TimezoneSelectProps {
   required?: boolean;
   /** Single-line trigger label (wizard / tight forms). */
   compact?: boolean;
+  /** Optional help text under the control (plain language for IANA zone IDs). */
+  hint?: string;
 }
 
 export function TimezoneSelect({
@@ -308,10 +310,12 @@ export function TimezoneSelect({
   id,
   required,
   compact = false,
+  hint,
 }: Readonly<TimezoneSelectProps>) {
   const autoId = useId();
   const controlId = id ?? `tz-${autoId}`;
   const listboxId = `${controlId}-listbox`;
+  const hintId = hint ? `${controlId}-hint` : undefined;
 
   const [open, setOpen] = useState(false);
   const [panelAbove, setPanelAbove] = useState(false);
@@ -443,6 +447,7 @@ export function TimezoneSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listboxId}
+        aria-describedby={hintId}
         onClick={() => {
           if (disabled) return;
           setOpen((prev) => !prev);
@@ -451,6 +456,12 @@ export function TimezoneSelect({
         <span className="timezone-select__trigger-text">{triggerLabel}</span>
         <i className="ti ti-chevron-down timezone-select__chevron" aria-hidden="true" />
       </button>
+
+      {hint ? (
+        <span id={hintId} className="at-hint">
+          {hint}
+        </span>
+      ) : null}
 
       {open && (
         <div
