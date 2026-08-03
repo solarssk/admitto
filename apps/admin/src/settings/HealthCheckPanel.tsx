@@ -12,6 +12,7 @@ import type {
   HealthRowStatus,
 } from "../api/types.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
+import { formatUtcDateTime } from "../utils/event-dates.js";
 import { formatHealthCheckMarkdown, formatHealthDetailLabel, formatHealthDetailValue } from "./healthCheckMarkdown.js";
 import "./health-check.css";
 
@@ -48,21 +49,6 @@ function rowToneClass(status: HealthRowStatus): string {
   if (status === "degraded") return "health-check__row--warn";
   if (status === "down") return "health-check__row--err";
   return "";
-}
-
-function formatGeneratedAt(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString(undefined, {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
 }
 
 function downloadTextFile(filename: string, content: string): void {
@@ -371,7 +357,7 @@ export function HealthCheckPanel() {
           <p className="health-check__meta">
             <i className="ti ti-clock" aria-hidden="true" />
             <span>
-              Generated {formatGeneratedAt(report.generated_at)}
+              Generated {formatUtcDateTime(report.generated_at)}
               {report.commit !== "unknown"
                 ? ` · v${report.version} · ${report.commit}`
                 : ` · v${report.version}`}
