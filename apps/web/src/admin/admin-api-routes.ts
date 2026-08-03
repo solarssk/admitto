@@ -11,6 +11,8 @@ import { plainMapAttribution } from "../maps/static-map.js";
 import {
   adminAuditFromContext,
   countAttendeesByEvent,
+  isValidCalendarDate,
+  parseEventDateInput,
   resolveActorEmailForLog,
   resolveUserDisplayMap,
   type UserDisplayRow,
@@ -84,22 +86,6 @@ export function eventListMapPreviewPath(event: {
     longitude: lng,
     zoom: event.map_zoom,
   })}&context=list`;
-}
-
-function isValidCalendarDate(value: string): boolean {
-  const [year, month, day] = value.split("-").map(Number);
-  if (!year || !month || !day) return false;
-  const parsed = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-  return (
-    parsed.getUTCFullYear() === year &&
-    parsed.getUTCMonth() === month - 1 &&
-    parsed.getUTCDate() === day
-  );
-}
-
-/** Parse date-only values at UTC noon to avoid locale off-by-one in date pickers. */
-function parseEventDateInput(date: string): Date {
-  return new Date(date.includes("T") ? date : `${date}T12:00:00.000Z`);
 }
 
 /** Map an event row to the admin/check-in picker JSON shape. `userDisplayMap` resolves

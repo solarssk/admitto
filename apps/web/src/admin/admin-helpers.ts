@@ -213,6 +213,11 @@ export function isValidCalendarDate(value: string): boolean {
   );
 }
 
+/** Parse date-only values at UTC noon to avoid locale off-by-one in date pickers. */
+export function parseEventDateInput(date: string): Date {
+  return new Date(date.includes("T") ? date : `${date}T12:00:00.000Z`);
+}
+
 /**
  * Parse a query date bound. Date-only values (`YYYY-MM-DD`) use UTC day bounds:
  * start → 00:00:00.000, end → 23:59:59.999 (inclusive through the selected day).

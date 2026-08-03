@@ -26,7 +26,12 @@ import {
 } from "./brandingValidation.js";
 import { FontFamilyModal, styleLabel } from "./FontFamilyModal.js";
 
-const EMPTY_ORG_DRAFT: SetupOrgBrandingDto = { org_name: "", logo_url: "" };
+const EMPTY_ORG_DRAFT: SetupOrgBrandingDto = {
+  org_name: "",
+  logo_url: null,
+  logo_original_url: null,
+  logo_crop: null,
+};
 const EMPTY_THEME_DRAFT: BrandingThemeDto = {};
 
 const ORG_BRANDING_HINT =
@@ -369,9 +374,15 @@ export function BrandingSettingsPanel() {
         fetchStaffTheme(signal),
       ]);
       if (signal.aborted) return;
-      orgSavedRef.current = org;
+      const normalizedOrg: SetupOrgBrandingDto = {
+        org_name: org.org_name ?? "",
+        logo_url: org.logo_url ?? null,
+        logo_original_url: org.logo_original_url ?? null,
+        logo_crop: org.logo_crop ?? null,
+      };
+      orgSavedRef.current = normalizedOrg;
       themeSavedRef.current = theme;
-      setOrgDraft(org);
+      setOrgDraft(normalizedOrg);
       setThemeDraft(theme);
       syncColorUiState(theme);
       setOrgNameError(null);
@@ -563,7 +574,12 @@ export function BrandingSettingsPanel() {
     setSaving(true);
     try {
       const [orgResult, themeResult] = await Promise.allSettled([
-        patchOrgBranding({ org_name: name, logo_url: logo || null }),
+        patchOrgBranding({
+          org_name: name,
+          logo_url: logo || null,
+          logo_original_url: orgDraft.logo_original_url ?? null,
+          logo_crop: orgDraft.logo_crop ?? null,
+        }),
         saveStaffTheme(brandingDraftForSave(themeDraft)),
       ]);
 
@@ -647,8 +663,17 @@ export function BrandingSettingsPanel() {
           />
           <LogoUploadZone
             value={orgDraft.logo_url ?? ""}
+            originalUrl={orgDraft.logo_original_url}
+            cropMeta={orgDraft.logo_crop}
             disabled={formDisabled}
             onChange={(url) => setOrgDraft((prev) => ({ ...prev, logo_url: url }))}
+            onSourceChange={(source) =>
+              setOrgDraft((prev) => ({
+                ...prev,
+                logo_original_url: source.originalUrl,
+                logo_crop: source.crop,
+              }))
+            }
             onUploadingChange={setLogoUploading}
           />
         </div>

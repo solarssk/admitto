@@ -116,6 +116,8 @@ const eventSettings = {
   organization_name: "Org",
   active_items: [] as Array<{ id: string; name: string; enabled: boolean }>,
   logo_url: null as string | null,
+  logo_original_url: null as string | null,
+  logo_crop: null,
   header_image_url: null as string | null,
   resolved_logo_url: null as string | null,
   resolved_header_image_url: null as string | null,
