@@ -235,6 +235,8 @@ describe("GET /api/admin/events/:eventId/settings", () => {
       organization_name: string;
       active_items: { id: string; name: string; enabled: boolean }[];
       logo_url: string | null;
+      logo_original_url: string | null;
+      logo_crop: unknown;
       header_image_url: string | null;
       resolved_logo_url: string | null;
       resolved_header_image_url: string | null;
@@ -253,6 +255,8 @@ describe("GET /api/admin/events/:eventId/settings", () => {
     expect(body.organization_name).toBe("Settings Org");
     expect(body.active_items.some((i) => i.id === ITEM_SET && i.name === "Badge")).toBe(true);
     expect(body.logo_url).toBeNull();
+    expect(body.logo_original_url).toBeNull();
+    expect(body.logo_crop).toBeNull();
     expect(body.header_image_url).toBeNull();
     expect(body.resolved_logo_url).toBeNull();
     expect(body.resolved_header_image_url).toBeNull();
@@ -615,6 +619,49 @@ describe("PATCH /api/admin/events/:eventId", () => {
     const meta = audit!.metadata as { fields?: string[] };
     expect(meta.fields).toContain("logo_url");
     expect(meta.fields).toContain("header_image_url");
+  });
+
+  it("persists logo_original_url and logo_crop for uploaded logos, and clears them with the logo", async () => {
+    const crop = { unit: "%", x: 5, y: 10, width: 80, height: 70, zoom: 1.5 };
+    const setRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        logo_url: "/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png",
+        logo_original_url: "/uploads/default/b2c3d4e5-f6a7-8901-bcde-f12345678901.png",
+        logo_crop: crop,
+      }),
+    });
+    expect(setRes.status).toBe(200);
+    const setBody = (await setRes.json()) as {
+      event: {
+        logo_url: string | null;
+        logo_original_url: string | null;
+        logo_crop: typeof crop | null;
+      };
+    };
+    expect(setBody.event.logo_url).toBe("/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png");
+    expect(setBody.event.logo_original_url).toBe(
+      "/uploads/default/b2c3d4e5-f6a7-8901-bcde-f12345678901.png",
+    );
+    expect(setBody.event.logo_crop).toEqual(crop);
+
+    const clearRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ logo_url: null }),
+    });
+    expect(clearRes.status).toBe(200);
+    const clearBody = (await clearRes.json()) as {
+      event: {
+        logo_url: string | null;
+        logo_original_url: string | null;
+        logo_crop: unknown;
+      };
+    };
+    expect(clearBody.event.logo_url).toBeNull();
+    expect(clearBody.event.logo_original_url).toBeNull();
+    expect(clearBody.event.logo_crop).toBeNull();
   });
 
   it("clears logo_url back to inherited branding when set to null", async () => {

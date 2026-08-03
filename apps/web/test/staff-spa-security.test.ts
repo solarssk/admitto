@@ -109,20 +109,25 @@ describe("getStaffSpaSecurityHeaders", () => {
 
   it("keeps img-src https: for optional superadmin branding logos (regression guard)", () => {
     const csp = getStaffSpaSecurityHeaders()["Content-Security-Policy"]!;
-    expect(csp).toContain("img-src 'self' data: https:");
+    expect(csp).toContain("img-src 'self' data: blob: https:");
     expect(cspAllowsOrigin(csp, "img-src", "https://cdn.example.com")).toBe(true);
+  });
+
+  it("allows blob: in img-src for local crop/preview object URLs", () => {
+    const csp = getStaffSpaSecurityHeaders()["Content-Security-Policy"]!;
+    expect(csp).toContain("data: blob: https:");
   });
 
   it("allows http://localhost:* in img-src only when NODE_ENV=development", () => {
     const devCsp = getStaffSpaSecurityHeaders({ NODE_ENV: "development" })[
       "Content-Security-Policy"
     ]!;
-    expect(devCsp).toContain("img-src 'self' data: https: http://localhost:*");
+    expect(devCsp).toContain("img-src 'self' data: blob: https: http://localhost:*");
 
     for (const nodeEnv of ["production", "test", undefined]) {
       const csp = getStaffSpaSecurityHeaders({ NODE_ENV: nodeEnv })["Content-Security-Policy"]!;
       expect(csp).not.toContain("http://localhost");
-      expect(csp).toContain("img-src 'self' data: https:");
+      expect(csp).toContain("img-src 'self' data: blob: https:");
     }
   });
 });

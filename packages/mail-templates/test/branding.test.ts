@@ -100,6 +100,32 @@ describe("setBranding", () => {
     expect(org.logo_url).toBe("/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png");
   });
 
+  it("stores logo original URL and crop with an upload, then clears them for an external logo", async () => {
+    const crop = { unit: "%" as const, x: 5, y: 10, width: 80, height: 70, zoom: 1.5 };
+    await setBranding(
+      { scopeType: "organization", scopeId: "org-br" },
+      {
+        logoUrl: "/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png",
+        logoOriginalUrl: "/uploads/default/b2c3d4e5-f6a7-8901-bcde-f12345678901.png",
+        logoCrop: crop,
+      },
+      prisma,
+    );
+    let org = await prisma.organization.findUniqueOrThrow({ where: { id: "org-br" } });
+    expect(org.logo_original_url).toBe("/uploads/default/b2c3d4e5-f6a7-8901-bcde-f12345678901.png");
+    expect(org.logo_crop).toEqual(crop);
+
+    await setBranding(
+      { scopeType: "organization", scopeId: "org-br" },
+      { logoUrl: "https://cdn.example.com/external.png" },
+      prisma,
+    );
+    org = await prisma.organization.findUniqueOrThrow({ where: { id: "org-br" } });
+    expect(org.logo_url).toBe("https://cdn.example.com/external.png");
+    expect(org.logo_original_url).toBeNull();
+    expect(org.logo_crop).toBeNull();
+  });
+
   it("renders uploaded logo as absolute URL when baseUrl is provided", () => {
     const html = renderTemplate(
       {

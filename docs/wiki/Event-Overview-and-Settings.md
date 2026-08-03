@@ -22,7 +22,7 @@ Open the correct organisation and event. If another manager may be editing the s
 5. Leave capacity empty for an unlimited event, or enter the maximum number of attendees that may be added.
 6. Save the General card.
 7. Open **Location** to set the venue's name and address. Start typing a venue name or an address into the single search field — matching places appear as you type; pick one to also set the map pin, or keep typing free text if nothing matches. Drag the pin or double-click the map to adjust it by hand. Add directions or accessibility notes if attendees need them. If Copy Google/Apple Maps opens the wrong place while the pin looks correct, use **Pin wrong? Fix link** to paste the correct Maps URLs (the pin and static map stay as they are).
-8. Review **Ticket types** and **Images** when the event needs them.
+8. Review **Ticket types** and **Images** when the event needs them. On **Images**, drop or browse a logo to open the adjust popup, then drag the selection edges to trim margins and Apply. Use **Edit image** to reopen the adjust popup on the full upload, with the last crop and zoom restored, including after Save and page reload. External web-link logos cannot be re-cropped in Admitto. Extra named images for mail templates go through the same adjust step before **Add asset**.
 9. Return to **Overview** and confirm that the event now shows the intended state.
 
 Superadmins can also see event-level **Mailing** and **Integrations** settings. Wallet settings are planned and are not part of the current event workflow.

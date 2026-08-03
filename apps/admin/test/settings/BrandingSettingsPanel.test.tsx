@@ -16,6 +16,39 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   };
 });
 
+vi.mock("../../src/components/crop/CropImageModal.js", () => ({
+  CropImageModal: ({
+    open,
+    onApply,
+    onCancel,
+  }: {
+    open: boolean;
+    onApply: (
+      blob: Blob,
+      meta: { crop: { unit: "%"; x: number; y: number; width: number; height: number }; zoom: number },
+    ) => void | Promise<void>;
+    onCancel: () => void;
+  }) =>
+    open ? (
+      <div role="dialog" aria-label="Adjust image">
+        <button
+          type="button"
+          onClick={() =>
+            void onApply(new Blob(["x"], { type: "image/png" }), {
+              crop: { unit: "%", x: 4, y: 4, width: 92, height: 92 },
+              zoom: 1,
+            })
+          }
+        >
+          Apply changes
+        </button>
+        <button type="button" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    ) : null,
+}));
+
 // The modal owns its own dropzone/upload/FontFace-preview behavior, covered by its own
 // dedicated FontFamilyModal.test.tsx - stubbed here so this file only exercises how the panel
 // wires the modal's result into the theme draft, not the modal's own internals.
@@ -97,7 +130,12 @@ function ticketFontSelect(): HTMLSelectElement {
   return screen.getByLabelText("Ticket page font") as HTMLSelectElement;
 }
 
-const defaultOrg = { org_name: "Acme Corp", logo_url: "" };
+const defaultOrg = {
+  org_name: "Acme Corp",
+  logo_url: null as string | null,
+  logo_original_url: null as string | null,
+  logo_crop: null as null,
+};
 const defaultTheme = { theme: {} };
 
 beforeEach(() => {
@@ -202,7 +240,12 @@ describe("BrandingSettingsPanel — loading and errors", () => {
 
 describe("BrandingSettingsPanel — organisation fields", () => {
   it("loads and displays the saved organisation name and logo preview", async () => {
-    mockFetchOrg.mockResolvedValueOnce({ org_name: "Acme Corp", logo_url: "https://cdn.example.com/logo.png" });
+    mockFetchOrg.mockResolvedValueOnce({
+      org_name: "Acme Corp",
+      logo_url: "https://cdn.example.com/logo.png",
+      logo_original_url: null,
+      logo_crop: null,
+    });
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
     renderWithToast(<BrandingSettingsPanel />);
     await waitFor(() => {
@@ -257,8 +300,10 @@ describe("BrandingSettingsPanel — organisation fields", () => {
   it("disables Save and Reset while a logo upload is in flight", async () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
-    let resolveUpload!: (result: { url: string }) => void;
-    mockUploadFile.mockReturnValueOnce(new Promise((resolve) => (resolveUpload = resolve)));
+    let resolveOriginal!: (result: { url: string }) => void;
+    mockUploadFile
+      .mockReturnValueOnce(new Promise((resolve) => (resolveOriginal = resolve)))
+      .mockResolvedValueOnce({ url: "/uploads/default/logo.png" });
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
@@ -266,13 +311,14 @@ describe("BrandingSettingsPanel — organisation fields", () => {
     fireEvent.change(logoInput!, {
       target: { files: [new File(["x"], "logo.png", { type: "image/png" })] },
     });
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
 
     await waitFor(() => {
       expect(isDisabled(screen.getByRole("button", { name: "Save" }))).toBe(true);
     });
     expect(isDisabled(screen.getByRole("button", { name: "Reset to saved" }))).toBe(true);
 
-    resolveUpload({ url: "/uploads/default/logo.png" });
+    resolveOriginal({ url: "/uploads/default/logo-original.png" });
     await waitFor(() => {
       expect(isDisabled(screen.getByRole("button", { name: "Save" }))).toBe(false);
     });
@@ -319,7 +365,12 @@ describe("BrandingSettingsPanel — colour palette", () => {
   });
 
   it("Restore defaults reverts colour and font (both surfaces) to Admitto's own defaults without touching organisation name/logo", async () => {
-    mockFetchOrg.mockResolvedValueOnce({ org_name: "Acme Corp", logo_url: "https://cdn.example.com/logo.png" });
+    mockFetchOrg.mockResolvedValueOnce({
+      org_name: "Acme Corp",
+      logo_url: "https://cdn.example.com/logo.png",
+      logo_original_url: null,
+      logo_crop: null,
+    });
     mockFetchTheme.mockResolvedValueOnce({
       theme: {
         primary: "#123456",
@@ -977,7 +1028,12 @@ describe("BrandingSettingsPanel — save and reset", () => {
   it("saves both organisation branding and theme together", async () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
-    mockPatchOrg.mockResolvedValueOnce({ org_name: "New Name Inc", logo_url: "" });
+    mockPatchOrg.mockResolvedValueOnce({
+      org_name: "New Name Inc",
+      logo_url: null,
+      logo_original_url: null,
+      logo_crop: null,
+    });
     mockSaveTheme.mockResolvedValueOnce({ theme: { primary: "#7c3aed" } });
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
@@ -987,7 +1043,12 @@ describe("BrandingSettingsPanel — save and reset", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
-      expect(mockPatchOrg).toHaveBeenCalledWith({ org_name: "New Name Inc", logo_url: null });
+      expect(mockPatchOrg).toHaveBeenCalledWith({
+        org_name: "New Name Inc",
+        logo_url: null,
+        logo_original_url: null,
+        logo_crop: null,
+      });
     });
     expect(mockSaveTheme).toHaveBeenCalledWith(expect.objectContaining({ primary: "#7c3aed" }));
     await waitFor(() => {
@@ -1034,7 +1095,12 @@ describe("BrandingSettingsPanel — save and reset", () => {
   it("reports a partial failure when the theme save rejects but the organisation save succeeds", async () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
-    mockPatchOrg.mockResolvedValueOnce({ org_name: "Acme Corp", logo_url: "" });
+    mockPatchOrg.mockResolvedValueOnce({
+      org_name: "Acme Corp",
+      logo_url: null,
+      logo_original_url: null,
+      logo_crop: null,
+    });
     mockSaveTheme.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
@@ -1114,7 +1180,12 @@ describe("BrandingSettingsPanel — save and reset", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
-      expect(mockPatchOrg).toHaveBeenCalledWith({ org_name: "Acme Corp", logo_url: null });
+      expect(mockPatchOrg).toHaveBeenCalledWith({
+        org_name: "Acme Corp",
+        logo_url: null,
+        logo_original_url: null,
+        logo_crop: null,
+      });
     });
   });
 

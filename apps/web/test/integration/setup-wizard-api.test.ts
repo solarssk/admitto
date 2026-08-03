@@ -337,9 +337,16 @@ describe("setup org-branding", () => {
       headers: { Cookie: superCookie },
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { org_name: string | null; logo_url: string | null };
+    const body = (await res.json()) as {
+      org_name: string | null;
+      logo_url: string | null;
+      logo_original_url: string | null;
+      logo_crop: unknown;
+    };
     expect(body).toHaveProperty("org_name");
     expect(body).toHaveProperty("logo_url");
+    expect(body).toHaveProperty("logo_original_url");
+    expect(body).toHaveProperty("logo_crop");
   });
 
   it("PATCH updates org name", async () => {

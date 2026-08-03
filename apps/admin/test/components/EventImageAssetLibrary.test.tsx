@@ -16,6 +16,39 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   };
 });
 
+vi.mock("../../src/components/crop/CropImageModal.js", () => ({
+  CropImageModal: ({
+    open,
+    onApply,
+    onCancel,
+  }: {
+    open: boolean;
+    onApply: (
+      blob: Blob,
+      meta: { crop: { unit: "%"; x: number; y: number; width: number; height: number }; zoom: number },
+    ) => void | Promise<void>;
+    onCancel: () => void;
+  }) =>
+    open ? (
+      <div role="dialog" aria-label="Adjust image">
+        <button
+          type="button"
+          onClick={() =>
+            void onApply(new Blob(["x"], { type: "image/png" }), {
+              crop: { unit: "%", x: 4, y: 4, width: 92, height: 92 },
+              zoom: 1,
+            })
+          }
+        >
+          Apply changes
+        </button>
+        <button type="button" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    ) : null,
+}));
+
 import {
   createEventImageAsset,
   deleteEventImageAsset,
@@ -25,6 +58,12 @@ import {
 const mockFetch = vi.mocked(fetchEventImageAssets);
 const mockCreate = vi.mocked(createEventImageAsset);
 const mockDelete = vi.mocked(deleteEventImageAsset);
+
+async function pickImageAndApply(file: File) {
+  const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+  fireEvent.change(fileInput, { target: { files: [file] } });
+  fireEvent.click(await screen.findByRole("button", { name: "Apply changes" }));
+}
 
 const asset: EventImageAssetDto = {
   id: "asset-1",
@@ -132,7 +171,11 @@ describe("EventImageAssetLibrary", () => {
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(["x"], "sponsor.png", { type: "image/png" });
     fireEvent.change(fileInput, { target: { files: [file] } });
-    expect(addButton.hasAttribute("disabled")).toBe(false);
+    expect(addButton.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(await screen.findByRole("button", { name: "Apply changes" }));
+    await waitFor(() => {
+      expect(addButton.hasAttribute("disabled")).toBe(false);
+    });
   });
 
   it("accepts a file dropped onto the dropzone", async () => {
@@ -143,6 +186,7 @@ describe("EventImageAssetLibrary", () => {
     const dropzone = screen.getByRole("button", { name: /Drop image here or click to browse/ });
     const file = new File(["x"], "dropped.png", { type: "image/png" });
     fireEvent.drop(dropzone, { dataTransfer: { files: [file] } });
+    fireEvent.click(await screen.findByRole("button", { name: "Apply changes" }));
 
     expect(await screen.findByText("dropped.png")).toBeTruthy();
   });
@@ -167,14 +211,12 @@ describe("EventImageAssetLibrary", () => {
     await screen.findByText("No images yet");
 
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "sponsor_logo" } });
-    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
-    const file = new File(["x"], "sponsor.png", { type: "image/png" });
-    fireEvent.change(fileInput, { target: { files: [file] } });
+    await pickImageAndApply(new File(["x"], "sponsor.png", { type: "image/png" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Add asset" }));
 
     await waitFor(() => {
-      expect(mockCreate).toHaveBeenCalledWith("evt-1", file, "sponsor_logo");
+      expect(mockCreate).toHaveBeenCalledWith("evt-1", expect.any(File), "sponsor_logo");
     });
     expect(await screen.findByText("sponsor.png")).toBeTruthy();
     expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("");
@@ -187,10 +229,7 @@ describe("EventImageAssetLibrary", () => {
     await screen.findByText("No images yet");
 
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "event_title" } });
-    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
-    fireEvent.change(fileInput, {
-      target: { files: [new File(["x"], "logo.png", { type: "image/png" })] },
-    });
+    await pickImageAndApply(new File(["x"], "logo.png", { type: "image/png" }));
     fireEvent.click(screen.getByRole("button", { name: "Add asset" }));
 
     expect(

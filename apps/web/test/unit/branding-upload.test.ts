@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   BrandingUploadError,
@@ -10,15 +11,19 @@ import {
   saveThemeFontUpload,
 } from "../../src/admin/branding-upload.js";
 
-/** Minimal valid 1×1 PNG (89 bytes). */
+/** Minimal valid 1×1 PNG (transparent). */
 const PNG_BYTES = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
   "base64",
 );
-/** JPEG magic bytes only (FF D8 FF) - detection reads the first 3 bytes, no full image needed. */
-const JPEG_BYTES = Buffer.from([0xff, 0xd8, 0xff]);
-/** Minimal RIFF/WEBP container header - detection reads bytes 0-3 ("RIFF") and 8-11 ("WEBP"). */
-const WEBP_BYTES = Buffer.concat([Buffer.from("RIFF", "ascii"), Buffer.from([0, 0, 0, 0]), Buffer.from("WEBP", "ascii")]);
+/** JPEG magic only - not a decodable image (sharp must reject). */
+const JPEG_MAGIC_ONLY = Buffer.from([0xff, 0xd8, 0xff]);
+/** Minimal RIFF/WEBP header only - not a decodable image. */
+const WEBP_MAGIC_ONLY = Buffer.concat([
+  Buffer.from("RIFF", "ascii"),
+  Buffer.from([0, 0, 0, 0]),
+  Buffer.from("WEBP", "ascii"),
+]);
 const WOFF_BYTES = Buffer.from("wOFF", "ascii");
 const OTF_BYTES = Buffer.from("OTTO", "ascii");
 const TTF_BYTES = Buffer.from([0x00, 0x01, 0x00, 0x00]);
@@ -29,11 +34,23 @@ function pngFile(name = "logo.png"): File {
 
 let uploadDir: string;
 let savedUploadDir: string | undefined;
+let jpegBytes: Buffer;
+let webpBytes: Buffer;
 
-beforeEach(() => {
+beforeEach(async () => {
   savedUploadDir = process.env.UPLOAD_DIR;
   uploadDir = mkdtempSync(join(tmpdir(), "admitto-branding-upload-"));
   process.env.UPLOAD_DIR = uploadDir;
+  jpegBytes = await sharp({
+    create: { width: 1, height: 1, channels: 3, background: { r: 0, g: 0, b: 0 } },
+  })
+    .jpeg()
+    .toBuffer();
+  webpBytes = await sharp({
+    create: { width: 1, height: 1, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+  })
+    .webp()
+    .toBuffer();
 });
 
 afterEach(() => {
@@ -53,20 +70,36 @@ describe("resolveUploadDir", () => {
 });
 
 describe("saveBrandingUpload", () => {
-  it("writes org-level files under uploads/{orgId}/", async () => {
+  it("writes a re-encoded PNG under uploads/{orgId}/", async () => {
     const result = await saveBrandingUpload(pngFile(), "default");
     expect(result.url).toMatch(/^\/uploads\/default\/[0-9a-f-]+\.png$/);
+    expect(result.mimeType).toBe("image/png");
+    expect(result.sizeBytes).toBeGreaterThan(0);
 
     const rel = result.url.slice("/uploads/".length);
     const diskPath = join(resolveUploadDir(), rel);
-    expect(readFileSync(diskPath).equals(PNG_BYTES)).toBe(true);
+    const onDisk = readFileSync(diskPath);
+    // Re-encode may change bytes; must remain a PNG and not be the raw client buffer when EXIF-like
+    // garbage would have survived (here: still a valid PNG signature).
+    expect(onDisk.subarray(0, 8).equals(PNG_BYTES.subarray(0, 8))).toBe(true);
+    expect(onDisk.length).toBe(result.sizeBytes);
   });
 
-  it("detects JPEG and WEBP from magic bytes alone (not the declared Content-Type)", async () => {
-    const jpeg = await saveBrandingUpload(new File([JPEG_BYTES], "logo.jpg", { type: "image/jpeg" }), "default");
+  it("accepts decodable JPEG and WEBP and rejects magic-only stubs", async () => {
+    const jpeg = await saveBrandingUpload(new File([jpegBytes], "logo.jpg", { type: "image/jpeg" }), "default");
     expect(jpeg.url).toMatch(/\.jpg$/);
-    const webp = await saveBrandingUpload(new File([WEBP_BYTES], "logo.webp", { type: "image/webp" }), "default");
+    expect(jpeg.mimeType).toBe("image/jpeg");
+
+    const webp = await saveBrandingUpload(new File([webpBytes], "logo.webp", { type: "image/webp" }), "default");
     expect(webp.url).toMatch(/\.webp$/);
+    expect(webp.mimeType).toBe("image/webp");
+
+    await expect(
+      saveBrandingUpload(new File([JPEG_MAGIC_ONLY], "logo.jpg", { type: "image/jpeg" }), "default"),
+    ).rejects.toMatchObject({ code: "invalid_image", status: 400 });
+    await expect(
+      saveBrandingUpload(new File([WEBP_MAGIC_ONLY], "logo.webp", { type: "image/webp" }), "default"),
+    ).rejects.toMatchObject({ code: "invalid_image", status: 400 });
   });
 
   it("rejects invalid org IDs", async () => {
@@ -103,7 +136,8 @@ describe("saveEventUpload", () => {
 
     const rel = result.url.slice("/uploads/".length);
     const diskPath = join(resolveUploadDir(), rel);
-    expect(readFileSync(diskPath).equals(PNG_BYTES)).toBe(true);
+    const onDisk = readFileSync(diskPath);
+    expect(onDisk.subarray(0, 8).equals(PNG_BYTES.subarray(0, 8))).toBe(true);
   });
 
   it("rejects invalid event IDs", async () => {

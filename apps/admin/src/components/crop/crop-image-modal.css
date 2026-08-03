@@ -1,0 +1,174 @@
+.crop-image-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+}
+
+.crop-image-modal__panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  box-sizing: border-box;
+  max-width: min(920px, calc(100vw - 2 * var(--space-4)));
+  min-width: min(280px, 100%);
+  max-height: min(92vh, 880px);
+  padding: var(--space-5);
+  background: var(--surface-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  /* Clip only the card chrome; the stage must stay inside padding so radius never slices the photo. */
+  overflow: hidden;
+}
+
+.crop-image-modal__title {
+  margin: 0;
+  width: 100%;
+  font-size: var(--fs-h3);
+  font-weight: 600;
+}
+
+.crop-image-modal__hint {
+  margin: 0;
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+
+/*
+ * Viewport = fit size (content-box). Padding is outside that box for handles.
+ * At 1× the image equals the viewport. When zoomed, overflow scrolls (no visible bars).
+ */
+.crop-image-modal__stage {
+  display: block;
+  align-self: center;
+  box-sizing: content-box;
+  max-width: 100%;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: #e8eaef;
+  line-height: 0;
+  overflow: hidden;
+  overscroll-behavior: contain;
+  touch-action: none;
+}
+
+.crop-image-modal__stage--zoomed {
+  overflow: auto;
+  cursor: grab;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.crop-image-modal__stage--zoomed:active {
+  cursor: grabbing;
+}
+
+.crop-image-modal__stage--zoomed::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.crop-image-modal__stage--loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 200px;
+  min-height: 120px;
+  padding: var(--space-6);
+}
+
+.crop-image-modal__stage .ReactCrop {
+  display: inline-block;
+  max-width: none;
+  vertical-align: top;
+  background-color: #d0d4dc;
+  background-image:
+    linear-gradient(45deg, #b8bec9 25%, transparent 25%),
+    linear-gradient(-45deg, #b8bec9 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #b8bec9 75%),
+    linear-gradient(-45deg, transparent 75%, #b8bec9 75%);
+  background-size: 16px 16px;
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
+}
+
+.crop-image-modal__stage .ReactCrop__child-wrapper {
+  max-height: none;
+}
+
+.crop-image-modal__stage .ReactCrop__child-wrapper > img,
+.crop-image-modal__img {
+  display: block;
+  max-width: none;
+  max-height: none;
+}
+
+.crop-image-modal__zoom {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.crop-image-modal__zoom-label {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.crop-image-modal__zoom-input {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.crop-image-modal__zoom-input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.crop-image-modal__stage .ReactCrop__drag-handle {
+  width: 10px;
+  height: 10px;
+  background: #fff;
+  border: 2px solid var(--accent, #206bc4);
+  box-shadow: 0 0 0 1px rgb(15 23 42 / 20%);
+  cursor: pointer;
+}
+
+.crop-image-modal__stage .ReactCrop__crop-selection {
+  border: 2px solid var(--accent, #206bc4);
+}
+
+.crop-image-modal__error {
+  margin: 0;
+  width: 100%;
+  color: var(--status-danger-text, var(--danger-700, #b91c1c));
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+}
+
+.crop-image-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  width: 100%;
+}

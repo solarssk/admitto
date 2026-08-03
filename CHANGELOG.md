@@ -7,12 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Logo Edit after Save/reload.** Organisation and event logos now keep the full pre-crop upload and last crop/zoom framing, so **Edit image** restores the adjust popup after refresh instead of forcing a new file pick. Tickets and mail still use the cropped `logo_url` only. Legacy logos uploaded before this change still ask for the full file once when you re-crop.
+- **Event Settings → Images typography.** Event logo and Upload images now share the same intro / dropzone title / format-hint sizes (and the upload dropzone no longer inherits browser button font quirks).
+
 ### Added
 - **Location tab: Pin wrong? Fix link.** When the OpenStreetMap pin is right but the generated Google/Apple Maps deep link opens the wrong place, admins can paste corrected Maps URLs. Overrides are used for Copy links, the public browser ticket, and mail `{{google_maps_url}}` / `{{apple_maps_url}}`; the pin, address grid, and static map image are unchanged. Moving the pin or selecting a new venue search result clears the overrides.
+- **Logo and event image crop before upload.** After dropping or browsing a PNG/JPG/WebP, a popup lets you trim margins by dragging the selection edges/corners (free-form, any aspect). Transparent PNG/WebP stay transparent (no white fill). Server re-encodes branding uploads through `sharp` to strip metadata and reject undecodable files.
 
 ### Security
 - **Static map tile fetches harden outbound SSRF edges:** tile downloads use `redirect: "manual"` and reject private / loopback / link-local / cloud-metadata redirect targets (and non-https URLs outside local development), and tile bodies must start with PNG magic bytes before sharp composites them for `GET /m/{eventId}.png`.
 - **Static map tile failure logs redact credential-bearing URLs:** `StaticMapRenderError` messages and system-log reasons strip query/hash from tile URLs so a commercial `MAP_TILE_URL` with `?api_key=` does not land in stdout or the admin System logs buffer.
+- **Branding image uploads re-encode on the server** (PNG/JPEG/WebP via `sharp`): EXIF/IPTC/XMP are dropped, magic-only stubs are rejected, and only decoded pixels are written under `/uploads/`.
+- **Staff SPA CSP allows `blob:` in `img-src`** so the logo/image crop modal can preview a local `URL.createObjectURL` selection without being blocked.
 
 ### Changed
 - **New event dialog matches the Add attendee pattern:** icon title, short subtitle, shared field styling (`Input` / same modal chrome), and a `* Required` footer. **Link name** explains that it is a permanent event ID used in agency ticket links (`/t/{name}/a/…`), while ordinary tickets stay token-only (`/t/…`); it is filled from the title and cannot change after create. Location hint covers searching a venue and setting the pin later under Event settings if search fails. Timezone trigger is one line and uses **UTC±N** (not GMT), with a short hint that values like `Europe/Warsaw` are standard timezone IDs (search Delhi, get `Asia/Kolkata`).

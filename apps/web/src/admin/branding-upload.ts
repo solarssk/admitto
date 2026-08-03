@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import sharp from "sharp";
 
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
+/** Reject absurd decoded dimensions before re-encode (DoS / decoder abuse). */
+const MAX_DECODED_EDGE = 8192;
 const ALLOWED_EXT = new Map([
   ["image/png", ".png"],
   ["image/jpeg", ".jpg"],
@@ -107,13 +110,62 @@ interface WriteValidatedUploadOptions {
   /** Also reject when the client-declared Content-Type disagrees with the detected MIME.
    * Image-only — see validateAndWriteFont for why fonts skip this. */
   readonly crossCheckDeclaredMime?: boolean;
+  /**
+   * Optional transform after MIME detection (branding images: sharp re-encode strips EXIF/IPTC
+   * and rejects undecodable polyglots). Fonts pass through raw bytes.
+   */
+  readonly transformBytes?: (buf: Buffer, mime: string) => Promise<Buffer>;
+}
+
+/**
+ * Re-encode a branding raster through sharp: auto-orient, drop metadata, keep alpha for PNG/WebP.
+ * ADR 0008 "strip metadata" — do not persist the client-supplied byte stream as-is.
+ */
+async function reencodeBrandingImage(buf: Buffer, mime: string): Promise<Buffer> {
+  try {
+    const meta = await sharp(buf, {
+      failOn: "error",
+      limitInputPixels: MAX_DECODED_EDGE * MAX_DECODED_EDGE,
+    }).metadata();
+    if (
+      (meta.width != null && meta.width > MAX_DECODED_EDGE) ||
+      (meta.height != null && meta.height > MAX_DECODED_EDGE)
+    ) {
+      throw new BrandingUploadError("invalid_image", 400);
+    }
+
+    const pipeline = sharp(buf, {
+      failOn: "error",
+      limitInputPixels: MAX_DECODED_EDGE * MAX_DECODED_EDGE,
+    }).rotate();
+
+    if (mime === "image/png") {
+      return await pipeline.png().toBuffer();
+    }
+    if (mime === "image/jpeg") {
+      return await pipeline.jpeg({ quality: 90, mozjpeg: true }).toBuffer();
+    }
+    if (mime === "image/webp") {
+      return await pipeline.webp({ quality: 90 }).toBuffer();
+    }
+  } catch (err) {
+    if (err instanceof BrandingUploadError) throw err;
+    throw new BrandingUploadError("invalid_image", 400);
+  }
+  throw new BrandingUploadError("unsupported_file_type", 415, {
+    allowedTypes: [...ALLOWED_EXT.keys()],
+  });
 }
 
 /** Shared validate-then-write sequence for both branding image and font uploads: size limit,
  * magic-byte MIME detection (never the client-declared Content-Type alone), extension lookup, and
  * a UUID-named write. What differs between callers (size limit, detector, allowed types, and
  * whether the declared Content-Type is also cross-checked) is passed in, not duplicated. */
-async function writeValidatedUpload(file: File, dir: string, opts: WriteValidatedUploadOptions): Promise<string> {
+async function writeValidatedUpload(
+  file: File,
+  dir: string,
+  opts: WriteValidatedUploadOptions,
+): Promise<{ filename: string; sizeBytes: number; mime: string }> {
   if (file.size > opts.maxBytes) {
     throw new BrandingUploadError("file_too_large", 413, { maxBytes: opts.maxBytes });
   }
@@ -135,31 +187,47 @@ async function writeValidatedUpload(file: File, dir: string, opts: WriteValidate
     }
   }
 
+  const outBuf = opts.transformBytes ? await opts.transformBytes(buf, detectedMime) : buf;
+  if (outBuf.length > opts.maxBytes) {
+    throw new BrandingUploadError("file_too_large", 413, { maxBytes: opts.maxBytes });
+  }
+
   const ext = opts.allowedExt.get(detectedMime)!;
   const filename = `${randomUUID()}${ext}`;
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
   await mkdir(dir, { recursive: true });
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
-  await writeFile(join(dir, filename), buf);
-  return filename;
+  await writeFile(join(dir, filename), outBuf);
+  return { filename, sizeBytes: outBuf.length, mime: detectedMime };
 }
 
-/** Validate image bytes and write to `dir`; returns generated filename with extension. */
-async function validateAndWriteImage(file: File, dir: string): Promise<string> {
+/** Validate image bytes and write to `dir`; returns generated filename, size, and MIME. */
+async function validateAndWriteImage(
+  file: File,
+  dir: string,
+): Promise<{ filename: string; sizeBytes: number; mime: string }> {
   return writeValidatedUpload(file, dir, {
     maxBytes: MAX_UPLOAD_BYTES,
     detectMime: detectImageMime,
     allowedExt: ALLOWED_EXT,
     crossCheckDeclaredMime: true,
+    transformBytes: reencodeBrandingImage,
   });
 }
 
 /** Local filesystem branding upload (ADR 0008 — future StorageAdapter swap). */
-export async function saveBrandingUpload(file: File, orgId: string): Promise<{ url: string }> {
+export async function saveBrandingUpload(
+  file: File,
+  orgId: string,
+): Promise<{ url: string; sizeBytes: number; mimeType: string }> {
   assertSafeOrgId(orgId);
   const dir = join(resolveUploadDir(), orgId);
-  const filename = await validateAndWriteImage(file, dir);
-  return { url: `/uploads/${orgId}/${filename}` };
+  const written = await validateAndWriteImage(file, dir);
+  return {
+    url: `/uploads/${orgId}/${written.filename}`,
+    sizeBytes: written.sizeBytes,
+    mimeType: written.mime,
+  };
 }
 
 /**
@@ -171,12 +239,16 @@ export async function saveEventUpload(
   file: File,
   orgId: string,
   eventId: string,
-): Promise<{ url: string }> {
+): Promise<{ url: string; sizeBytes: number; mimeType: string }> {
   assertSafeOrgId(orgId);
   assertSafeEventId(eventId);
   const dir = join(resolveUploadDir(), orgId, "events", eventId);
-  const filename = await validateAndWriteImage(file, dir);
-  return { url: `/uploads/${orgId}/events/${eventId}/${filename}` };
+  const written = await validateAndWriteImage(file, dir);
+  return {
+    url: `/uploads/${orgId}/events/${eventId}/${written.filename}`,
+    sizeBytes: written.sizeBytes,
+    mimeType: written.mime,
+  };
 }
 
 /** Validate font bytes and write to `dir`; returns generated filename with extension. Unlike
@@ -185,11 +257,12 @@ export async function saveEventUpload(
  * string, `application/font-woff2`, `application/octet-stream`, …), so the magic-byte check
  * alone is both the meaningful security boundary and the only reliable one here. */
 async function validateAndWriteFont(file: File, dir: string): Promise<string> {
-  return writeValidatedUpload(file, dir, {
+  const written = await writeValidatedUpload(file, dir, {
     maxBytes: MAX_FONT_UPLOAD_BYTES,
     detectMime: detectFontMime,
     allowedExt: ALLOWED_FONT_EXT,
   });
+  return written.filename;
 }
 
 /** Instance-wide theme font upload (superadmin only) — stored separately from per-org/per-event

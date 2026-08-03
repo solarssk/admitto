@@ -7,6 +7,16 @@ export type { DeliveryDetailDto, DeliveryDto } from "@admitto/shared";
 
 export type MailerProvider = "smtp" | "graph" | "powerautomate" | "export_only";
 
+/** Last applied free-form crop on a branding logo (percent of the original + zoom). */
+export type LogoCropMeta = {
+  unit: "%";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  zoom: number;
+};
+
 export interface MailerStatus {
   configured: boolean;
   provider: MailerProvider | null;
@@ -104,6 +114,10 @@ export interface EventSettingsDto {
   active_items: Array<{ id: string; name: string; enabled: boolean }>;
   /** Event's own branding overrides — null means "inherited from organization". */
   logo_url: string | null;
+  /** Full pre-crop upload for re-Edit; null for external logos or legacy cropped-only rows. */
+  logo_original_url: string | null;
+  /** Last crop framing on the original; null when unknown. */
+  logo_crop: LogoCropMeta | null;
   header_image_url: string | null;
   /** Effective branding actually used today (event value, else organization's). */
   resolved_logo_url: string | null;
@@ -1056,11 +1070,15 @@ export interface SetupChecksResponse {
 export interface SetupOrgBrandingDto {
   org_name: string | null;
   logo_url: string | null;
+  logo_original_url: string | null;
+  logo_crop: LogoCropMeta | null;
 }
 
 export interface PatchSetupOrgBrandingBody {
   org_name?: string;
   logo_url?: string | null;
+  logo_original_url?: string | null;
+  logo_crop?: LogoCropMeta | null;
 }
 
 export interface SetupSupportContactDto {

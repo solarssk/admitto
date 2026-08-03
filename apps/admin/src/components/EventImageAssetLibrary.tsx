@@ -7,11 +7,14 @@ import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { formatFileSize } from "../utils/formatFileSize.js";
 import { brandingLogoImgSrc } from "../utils/safeBrandingLogoHref.js";
 import { ConfirmDialog } from "./ConfirmDialog.js";
+import { CropImageModal } from "./crop/CropImageModal.js";
+import { resolveCropOutputMime } from "./crop/getCroppedImageBlob.js";
 import "./event-image-asset-library.css";
 
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
 const TOKEN_MAX_LENGTH = 40;
 const TOKEN_PATTERN = /^[a-z][a-z0-9_]*$/;
+const ALLOWED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
 export interface EventImageAssetLibraryProps {
   readonly eventId: string;
@@ -23,8 +26,20 @@ function pluralSuffix(count: number): string {
   return count === 1 ? "" : "s";
 }
 
+function extensionForMime(mime: string): string {
+  if (mime === "image/jpeg") return ".jpg";
+  if (mime === "image/webp") return ".webp";
+  return ".png";
+}
+
 const UPLOAD_IMAGES_HINT =
   "Each asset is stored for this event only. Remove it from the mail template before deleting.";
+
+type PendingCrop = {
+  imageSrc: string;
+  sourceMime: string;
+  originalName: string;
+};
 
 /**
  * Named branding image library for an event: upload extra images (e.g. sponsor logos) and give
@@ -43,6 +58,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
   const [tokenTouched, setTokenTouched] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [pendingCrop, setPendingCrop] = useState<PendingCrop | null>(null);
 
   const [dragging, setDragging] = useState(false);
 
@@ -93,15 +109,37 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
     if (fileRef.current) fileRef.current.value = "";
   };
 
+  const closePendingCrop = () => {
+    setPendingCrop((prev) => {
+      if (prev) URL.revokeObjectURL(prev.imageSrc);
+      return null;
+    });
+  };
+
   const handleFilePick = (picked: File | null) => {
     setFormError(null);
-    if (picked && picked.size > MAX_UPLOAD_BYTES) {
+    if (!picked) {
+      setFile(null);
+      return;
+    }
+    if (picked.size > MAX_UPLOAD_BYTES) {
       setFormError("File must be 2 MB or smaller.");
       setFile(null);
       if (fileRef.current) fileRef.current.value = "";
       return;
     }
-    setFile(picked);
+    const declared = picked.type.split(";")[0]?.trim().toLowerCase() ?? "";
+    if (!ALLOWED_IMAGE_TYPES.has(declared)) {
+      setFormError("Use a PNG, JPG, or WebP image.");
+      setFile(null);
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
+    setPendingCrop({
+      imageSrc: URL.createObjectURL(picked),
+      sourceMime: declared,
+      originalName: picked.name || `asset${extensionForMime(declared)}`,
+    });
   };
 
   const openFilePicker = () => {
@@ -180,7 +218,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
     }
     return (
       <>
-        <p className="settings-card-intro image-asset-library__intro">
+        <p className="settings-card-intro">
           {assets.length} image{pluralSuffix(assets.length)}. Each one has a short name you can use
           in any email.
         </p>
@@ -237,7 +275,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
     <>
       <Card title={<HintLabel hint={UPLOAD_IMAGES_HINT}>Upload images</HintLabel>} className="event-settings-card">
         <div className="settings-card-stack">
-          <p className="field-hint image-asset-library__intro settings-card-intro">
+          <p className="settings-card-intro">
             Upload extra images such as sponsor logos. Give each one a short name to use as{" "}
             {"{{name}}"} in email templates.
           </p>
@@ -350,6 +388,26 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
           setDeleteError(null);
         }}
       />
+
+      {pendingCrop ? (
+        <CropImageModal
+          open
+          title="Adjust image"
+          imageSrc={pendingCrop.imageSrc}
+          sourceMime={pendingCrop.sourceMime}
+          onCancel={() => {
+            closePendingCrop();
+            if (fileRef.current) fileRef.current.value = "";
+          }}
+          onApply={(blob) => {
+            const outMime = resolveCropOutputMime(pendingCrop.sourceMime);
+            const base = pendingCrop.originalName.replace(/\.[^.]+$/, "") || "asset";
+            setFile(new File([blob], `${base}${extensionForMime(outMime)}`, { type: outMime }));
+            closePendingCrop();
+            if (fileRef.current) fileRef.current.value = "";
+          }}
+        />
+      ) : null}
     </>
   );
 }
