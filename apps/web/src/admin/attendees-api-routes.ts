@@ -79,7 +79,7 @@ import {
   resolveClientTimezone,
   resolveMailInstanceBaseUrl,
 } from "./admin-helpers.js";
-import { mailNotConfiguredResponse } from "./mail-settings-shared.js";
+import { mailTransportSetupErrorResponse } from "./mail-settings-shared.js";
 import { assertEventCapacityForIncoming, acquireEventCapacityLock, isCapacityReactivation } from "./event-capacity.js";
 import { attachmentContentDisposition } from "./content-disposition.js";
 import { randomUUID } from "node:crypto";
@@ -2698,7 +2698,7 @@ export async function handleResendEventAttendeeTicket(
       sessionId: resendAudit.sessionId,
     });
   } catch (err) {
-    const mailErr = mailNotConfiguredResponse(c, err);
+    const mailErr = mailTransportSetupErrorResponse(c, err);
     if (mailErr) return mailErr;
     throw err;
   }
@@ -3044,7 +3044,7 @@ export async function handleBulkResendTickets(
       mailDeps,
     );
   } catch (err) {
-    const mailErr = mailNotConfiguredResponse(c, err);
+    const mailErr = mailTransportSetupErrorResponse(c, err);
     if (mailErr) return mailErr;
     throw err;
   }

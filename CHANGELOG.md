@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Resend / bulk send mail destination failures return a clear operator message** instead of a bare “Internal Server Error” when the SMTP or webhook host cannot be resolved or resolves to a private address (SSRF guard). Local lab SMTP on RFC1918 still needs `ALLOW_PRIVATE_MAIL_DESTINATIONS=true` in the web process environment.
 - **Logo Edit after Save/reload.** Organisation and event logos now keep the full pre-crop upload and last crop/zoom framing, so **Edit image** restores the adjust popup after refresh instead of forcing a new file pick. Tickets and mail still use the cropped `logo_url` only. Legacy logos uploaded before this change still ask for the full file once when you re-crop.
 - **Event Settings → Images typography.** Event logo and Upload images now share the same intro / dropzone title / format-hint sizes (and the upload dropzone no longer inherits browser button font quirks).
 
@@ -21,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Branding image uploads re-encode on the server** (PNG/JPEG/WebP via `sharp`): EXIF/IPTC/XMP are dropped, magic-only stubs are rejected, and only decoded pixels are written under `/uploads/`.
 
 ### Changed
+- **Unhandled API errors return JSON `{ "error": "internal_error" }`** (mapped in the admin SPA) instead of plain-text “Internal Server Error”. System logs for those failures now include `error_name` and, when present, a stable `error_code` (still no stack or exception text in the live tail).
+- **`npm run dev` for `@admitto/web` loads `apps/web/.env`** via Node `--env-file=.env`, so lab flags such as `ALLOW_PRIVATE_MAIL_DESTINATIONS` apply without a manual export. Production `npm start` is unchanged (container env only).
 - **New event dialog matches the Add attendee pattern:** icon title, short subtitle, shared field styling (`Input` / same modal chrome), and a `* Required` footer. **Link name** explains that it is a permanent event ID used in agency ticket links (`/t/{name}/a/…`), while ordinary tickets stay token-only (`/t/…`); it is filled from the title and cannot change after create. Location hint covers searching a venue and setting the pin later under Event settings if search fails. Timezone trigger is one line and uses **UTC±N** (not GMT), with a short hint that values like `Europe/Warsaw` are standard timezone IDs (search Delhi, get `Asia/Kolkata`).
 - **Events list map attribution:** list cards show a bottom-right HTML credit from the configured `MAP_TILE_ATTRIBUTION` (via `map_attribution` on the event DTO; pin stays centered under `object-fit: cover`). List-preview PNGs skip the burned-in credit to avoid cropping; ticket/mail maps still burn attribution into the PNG. List previews use a wider 840×256 canvas (height at least one map tile so sharp can composite). The separate HTML line under the grid was removed.
 - **Default map tiles are OpenStreetMap again** (`tile.openstreetmap.org`), not CARTO Voyager. Override with `MAP_TILE_URL` / `MAP_TILE_ATTRIBUTION` when you want CARTO or a self-hosted server.

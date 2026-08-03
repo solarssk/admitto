@@ -3,6 +3,7 @@ import {
   isBlockedPrivateOrMetadataHost,
   isLoopbackHost,
   resolveSafeHostname,
+  SafeHostnameError,
   unbracketHostname,
 } from "@admitto/shared/ssrf-guard";
 
@@ -12,6 +13,22 @@ import {
  * server itself makes the outbound connection, so an unvalidated destination lets whoever
  * can write that config make Admitto's server reach internal/loopback/metadata addresses.
  */
+
+/** Stable API / operator-facing codes for mail destination SSRF failures at connect time. */
+export type MailDestinationErrorCode =
+  | "mail_destination_blocked"
+  | "mail_destination_unresolved";
+
+/** Thrown when SMTP/Power Automate destination fails DNS or SSRF checks before send. */
+export class MailDestinationError extends Error {
+  readonly code: MailDestinationErrorCode;
+
+  constructor(code: MailDestinationErrorCode, message: string) {
+    super(message);
+    this.name = "MailDestinationError";
+    this.code = code;
+  }
+}
 
 /**
  * Opt-in lab escape hatch. Honored only when `ALLOW_PRIVATE_MAIL_DESTINATIONS=true` and
@@ -39,6 +56,13 @@ export function isBlockedMailHost(hostname: string): boolean {
   return isLoopbackHost(host) || isBlockedPrivateOrMetadataHost(host);
 }
 
+function mapSafeHostnameError(err: SafeHostnameError): MailDestinationError {
+  if (err.code === "hostname_unresolved") {
+    return new MailDestinationError("mail_destination_unresolved", err.message);
+  }
+  return new MailDestinationError("mail_destination_blocked", err.message);
+}
+
 /**
  * DNS-resolution-time recheck - call immediately before the real outbound connection
  * (Power Automate fetch / SMTP connect). Throws if the hostname is, or resolves to, a
@@ -55,12 +79,29 @@ export async function resolveSafeMailDestination(hostname: string): Promise<Look
   const host = unbracketHostname(hostname);
   if (allowPrivateMailDestinations()) {
     const { lookup } = await import("node:dns/promises");
-    return lookup(host, { all: true, verbatim: true });
+    try {
+      return await lookup(host, { all: true, verbatim: true });
+    } catch {
+      throw new MailDestinationError(
+        "mail_destination_unresolved",
+        "hostname could not be resolved",
+      );
+    }
   }
   if (isLoopbackHost(host) || isBlockedPrivateOrMetadataHost(host)) {
-    throw new Error("destination is a private, loopback, or link-local address");
+    throw new MailDestinationError(
+      "mail_destination_blocked",
+      "destination is a private, loopback, or link-local address",
+    );
   }
-  return resolveSafeHostname(host);
+  try {
+    return await resolveSafeHostname(host);
+  } catch (err) {
+    if (err instanceof SafeHostnameError) {
+      throw mapSafeHostnameError(err);
+    }
+    throw err;
+  }
 }
 
 /** Same check as {@link resolveSafeMailDestination}, for callers that don't need the records. */

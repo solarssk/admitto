@@ -8,7 +8,7 @@ import {
   type SendTicketEmailsResult,
 } from "@admitto/mail-delivery";
 import { resolveTemplateById, TemplateNotFoundError } from "@admitto/mail-templates";
-import { mailNotConfiguredResponse } from "./mail-settings-shared.js";
+import { mailTransportSetupErrorResponse } from "./mail-settings-shared.js";
 import {
   assertTicketTypeInCatalog,
   loadEventTicketTypes,
@@ -342,7 +342,7 @@ async function sendBulkEmailsOrError({
     if (err instanceof TemplateNotFoundError) {
       return c.json({ error: "template_not_found" }, 404);
     }
-    const mailErr = mailNotConfiguredResponse(c, err);
+    const mailErr = mailTransportSetupErrorResponse(c, err);
     if (mailErr) return mailErr;
     throw err;
   }

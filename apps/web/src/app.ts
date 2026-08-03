@@ -404,16 +404,24 @@ export function createApp(options: CreateAppOptions = {}) {
 
   const app = new Hono();
   // Catch route errors once with enough request context in System logs. Keep raw exception
-  // diagnostics on stderr, but never put exception text or concrete request paths in the live tail.
+  // diagnostics on stderr. Live-tail gets error class/code only - never stack, Prisma detail,
+  // or concrete request paths beyond the matched route template.
   app.onError((err, c) => {
     if (err instanceof HTTPException) return err.getResponse();
 
     console.error("unhandled_exception:", err);
+    const errorName = err instanceof Error ? err.name : typeof err;
+    const errorCode =
+      err && typeof err === "object" && "code" in err && typeof err.code === "string"
+        ? err.code
+        : undefined;
     emitSystemLog("api", "error", "unhandled_exception", {
       method: c.req.method,
       path: c.req.routePath || "/[unmatched]",
+      error_name: errorName,
+      ...(errorCode ? { error_code: errorCode } : {}),
     });
-    return c.text("Internal Server Error", 500);
+    return c.json({ error: "internal_error" }, 500);
   });
   // First middleware so the access log also covers 404s and rate-limited requests.
   if (options.logHttpRequests ?? resolveLogHttpRequests()) {

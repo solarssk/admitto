@@ -16,6 +16,13 @@ export { ExportOnlyAdapter, type ExportSink } from "./adapters/exportOnly.js";
 export { MockAdapter } from "./adapters/mock.js";
 export { configFromEnv } from "./configFromEnv.js";
 export { validateMailMessage } from "./validation.js";
+export {
+  MailDestinationError,
+  assertSafeMailDestination,
+  isBlockedMailHost,
+  resolveSafeMailDestination,
+  type MailDestinationErrorCode,
+} from "./ssrfGuard.js";
 
 export interface CreateMailerDeps {
   /** Injectable fetch (for tests). Applies to graph/powerautomate adapters. */
