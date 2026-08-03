@@ -139,7 +139,7 @@ function dedicatedResponse(overrides: Partial<EventMailSettingsResponse> = {}): 
 }
 
 const SMTP_SUMMARY_TEXT = "SMTP · sends as org@example.com";
-const DEDICATED_HINT = /This event sends its own mail instead of the organization/;
+const DEDICATED_HINT = /Useful for a co-branded event or a separate mailbox/;
 
 function renderCard(isArchived = false) {
   const ref = createRef<EventMailSettingsCardHandle>();

@@ -1,4 +1,10 @@
 /* Event Settings — Ticket types tab (batch 04 / #351) */
+.ticket-types-card__intro {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
 .tt-count-badge {
   display: inline-flex;
   align-items: center;

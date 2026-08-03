@@ -80,6 +80,39 @@ describe("toResolved location fields", () => {
     expect(resolved.event.mapZoom).toBe(15);
     expect(resolved.event.directionsText).toBe("East gate");
     expect(resolved.event.accessibilityText).toBe("Step-free");
+    expect(resolved.event.googleMapsUrlOverride).toBeNull();
+    expect(resolved.event.appleMapsUrlOverride).toBeNull();
+  });
+
+  it("maps Maps URL overrides onto the ResolvedTicket event shape", () => {
+    const resolved = toResolved(
+      {
+        ...baseAttendee,
+        event: {
+          id: "e1",
+          title: "Launch",
+          date: new Date("2026-09-01T09:00:00Z"),
+          location_details: {
+            venue_name: "Hall",
+            formatted_address: "1 Main St, Warsaw",
+            address_components: null,
+            latitude: 52.2,
+            longitude: 21.0,
+            map_zoom: 15,
+            directions_text: null,
+            accessibility_text: null,
+            google_maps_url_override: "https://www.google.com/maps/place/Hall",
+            apple_maps_url_override: "https://maps.apple.com/?q=Hall",
+          },
+          logo_url: null,
+          header_image_url: null,
+          organization: { logo_url: null, header_image_url: null },
+        },
+      },
+      "internal",
+    );
+    expect(resolved.event.googleMapsUrlOverride).toBe("https://www.google.com/maps/place/Hall");
+    expect(resolved.event.appleMapsUrlOverride).toBe("https://maps.apple.com/?q=Hall");
   });
 
   it("leaves location fields null when location_details is absent", () => {

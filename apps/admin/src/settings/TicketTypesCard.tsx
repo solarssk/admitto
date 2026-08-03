@@ -31,7 +31,7 @@ function pluralSuffix(count: number): string {
 }
 
 const TICKET_TYPES_HINT =
-  "Each ticket type's name and color. Used in the attendee form, CSV import, the attendees list, check-in, and reports.";
+  "Used in the attendee form, CSV import, the attendees list, check-in, and reports.";
 
 /** Click the current color to open a small swatch grid — same popover pattern as the app's other
  * menus (ExportMenu, ActionMenu): one clean chip that reveals choices on demand. */
@@ -287,41 +287,46 @@ export function TicketTypesCard({
           </>
         }
       >
-        {error && !loading ? (
-          <EmptyState
-            title="Could not load ticket types"
-            description={error}
-            action={
-              onRetry && (
-                <Button type="button" variant="secondary" onClick={onRetry}>
-                  Retry
-                </Button>
-              )
-            }
-          />
-        ) : (
-          <>
-            {loading ? (
-              whenShown(showLoading, <p className="field-hint">Loading…</p>)
-            ) : (
-              <div className="tt-list">
-                {types.map((type) => (
-                  <TicketTypeRow
-                    key={type.id}
-                    type={type}
-                    disabled={disabled}
-                    autoFocus={justAddedId === type.id}
-                    onUpdate={handleUpdate}
-                    onRemove={() => setDeleteTarget(type)}
-                  />
-                ))}
-                {types.length === 0 && (
-                  <p className="field-hint">No ticket types yet. Add at least one before sending tickets.</p>
-                )}
-              </div>
-            )}
-          </>
-        )}
+        <div className="settings-card-stack">
+          <p className="field-hint ticket-types-card__intro settings-card-intro">
+            Define the names and colours attendees can be assigned.
+          </p>
+          {error && !loading ? (
+            <EmptyState
+              title="Could not load ticket types"
+              description={error}
+              action={
+                onRetry && (
+                  <Button type="button" variant="secondary" onClick={onRetry}>
+                    Retry
+                  </Button>
+                )
+              }
+            />
+          ) : (
+            <>
+              {loading ? (
+                whenShown(showLoading, <p className="field-hint">Loading…</p>)
+              ) : (
+                <div className="tt-list">
+                  {types.map((type) => (
+                    <TicketTypeRow
+                      key={type.id}
+                      type={type}
+                      disabled={disabled}
+                      autoFocus={justAddedId === type.id}
+                      onUpdate={handleUpdate}
+                      onRemove={() => setDeleteTarget(type)}
+                    />
+                  ))}
+                  {types.length === 0 && (
+                    <p className="field-hint">No ticket types yet. Add at least one before sending tickets.</p>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </Card>
 
       <ConfirmDialog

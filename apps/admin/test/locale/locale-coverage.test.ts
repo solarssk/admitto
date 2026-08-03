@@ -10,6 +10,7 @@ const ALLOWLIST = new Set([
   "utils/event-dates.ts",
   "utils/locale-store.ts",
   "utils/event-countdown.ts",
+  "utils/event-card-status.ts",
   "pages/ReportsPage.tsx",
   "account/AccountPage.tsx",
   "components/TimezoneSelect.tsx",

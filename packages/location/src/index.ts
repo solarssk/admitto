@@ -8,6 +8,7 @@ export {
   LOCATION_LIMITS,
   LocationValidationError,
   normalizeEventLocationInput,
+  normalizeMapsUrlOverride,
   assertCoordinatePairing,
 } from "./validation.js";
 export type { NormalizedEventLocationInput } from "./validation.js";
@@ -15,10 +16,18 @@ export { isMapReady, isLocationMapsEnabled } from "./readiness.js";
 export {
   buildGoogleMapsUrl,
   buildAppleMapsUrl,
+  resolveGoogleMapsUrl,
+  resolveAppleMapsUrl,
   buildOsmUrl,
   buildEventStaticMapPath,
   buildEventStaticMapUrl,
 } from "./links.js";
+export {
+  GOOGLE_MAPS_URL_HOSTS,
+  APPLE_MAPS_URL_HOSTS,
+  isAllowedMapsUrlHost,
+  isAllowedMapsUrl,
+} from "./mapsUrlOverride.js";
 export { formatCompactAddress, formatStreetLine, formatVenueName, formatDirectionsAddress } from "./formatAddress.js";
 export type { CompactAddressParts } from "./formatAddress.js";
 export {

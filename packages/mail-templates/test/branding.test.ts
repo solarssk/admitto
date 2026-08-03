@@ -175,7 +175,7 @@ describe("previewTemplate", () => {
       baseUrl: "https://tickets.example.com/",
     });
     expect(result.subject).toBe("Sample venue");
-    expect(result.html).toContain('src="https://tickets.example.com/m/evt-br.png?v=2_52.229700_21.012200_z15"');
+    expect(result.html).toContain('src="https://tickets.example.com/m/evt-br.png?v=9_52.229700_21.012200_z15"');
     expect(result.html).toContain("Example Street 1, Warsaw");
     expect(result.html).toContain("Use the main entrance.");
     expect(result.html).toContain("Step-free access is available.");

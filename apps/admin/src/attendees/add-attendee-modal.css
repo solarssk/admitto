@@ -61,7 +61,7 @@
 .add-attendee-modal__fields {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--space-4);
 }
 
 /* The global .at-select rule (apps/admin/src/staff.css) caps native <select>

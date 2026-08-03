@@ -37,7 +37,10 @@ import {
   type FieldLocked,
 } from "./mailTransportFormParts.js";
 
-const EVENT_MAIL_TRANSPORT_HINT = "Which mailbox and provider send this event's tickets and reminders.";
+const EVENT_MAIL_TRANSPORT_HINT =
+  "Organization uses the instance default. Dedicated lets this event send from its own mailbox.";
+const EVENT_MAIL_TRANSPORT_INTRO =
+  "Which mailbox and provider send this event's tickets and reminders.";
 
 type Mode = "org" | "dedicated";
 
@@ -406,47 +409,49 @@ export const EventMailSettingsCard = forwardRef<
           />
         }
       >
-        {mode === "org" &&
-          (orgSummaryTrustworthy ? (
-            <OrgMailSummary
-              data={apiData}
-              canOpenInstanceSettings={isSa}
-              onOpenInstanceSettings={() => navigate("/admin/settings?tab=mail")}
-            />
-          ) : (
-            <p className="mail-transport__env-note">
-              Reverting will remove this event&apos;s dedicated transport and fall back to the
-              organization&apos;s mail settings. Save to confirm.
-            </p>
-          ))}
-
-        {mode === "org" && !isSa && (
-          <p className="field-hint">
-            Only a superadmin can view or change the organization&apos;s mail settings.
-          </p>
-        )}
-
-        {mode === "dedicated" && (
-          <div className="mail-transport-form">
-            <p className="mail-transport__desc">
-              This event sends its own mail instead of the organization&apos;s. Useful for a
-              co-branded event or a separate mailbox.
-            </p>
-            {fieldLocked("provider") && (
+        <div className="settings-card-stack">
+          <p className="settings-card-intro">{EVENT_MAIL_TRANSPORT_INTRO}</p>
+          {mode === "org" &&
+            (orgSummaryTrustworthy ? (
+              <OrgMailSummary
+                data={apiData}
+                canOpenInstanceSettings={isSa}
+                onOpenInstanceSettings={() => navigate("/admin/settings?tab=mail")}
+              />
+            ) : (
               <p className="mail-transport__env-note">
-                Some transport settings are managed by your deployment configuration and cannot be
-                changed here. Contact your instance administrator if you need to update them.
+                Reverting will remove this event&apos;s dedicated transport and fall back to the
+                organization&apos;s mail settings. Save to confirm.
               </p>
-            )}
-            <TransportTileGrid
-              provider={draft.provider}
-              providerOptions={providerOptions}
-              locked={fieldLocked("provider") || isArchived}
-              onSelect={handleSelectProvider}
-              includeNotConfigured={false}
-            />
-          </div>
-        )}
+            ))}
+
+          {mode === "org" && !isSa && (
+            <p className="field-hint">
+              Only a superadmin can view or change the organization&apos;s mail settings.
+            </p>
+          )}
+
+          {mode === "dedicated" && (
+            <div className="mail-transport-form">
+              <p className="mail-transport__desc">
+                Useful for a co-branded event or a separate mailbox.
+              </p>
+              {fieldLocked("provider") && (
+                <p className="mail-transport__env-note">
+                  Some transport settings are managed by your deployment configuration and cannot be
+                  changed here. Contact your instance administrator if you need to update them.
+                </p>
+              )}
+              <TransportTileGrid
+                provider={draft.provider}
+                providerOptions={providerOptions}
+                locked={fieldLocked("provider") || isArchived}
+                onSelect={handleSelectProvider}
+                includeNotConfigured={false}
+              />
+            </div>
+          )}
+        </div>
       </Card>
 
       {mode === "dedicated" && (
