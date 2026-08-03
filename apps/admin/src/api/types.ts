@@ -44,6 +44,18 @@ export interface EventDto {
   date: string;
   timezone: string;
   location: string | null;
+  /** True when EventLocation has both latitude and longitude. */
+  has_coordinates?: boolean;
+  /**
+   * Same-origin list preview path (`/m/{id}.png?v=…&context=list`) when maps are enabled
+   * and a pin exists; null otherwise (show the card placeholder — do not request `/m/`).
+   */
+  map_preview_path?: string | null;
+  /**
+   * Plain-text map credit for the card strip when `map_preview_path` is set (from
+   * `MAP_TILE_ATTRIBUTION` / default OSM). List PNGs omit burn-in so the pin stays centered.
+   */
+  map_attribution?: string | null;
   organization_id: string;
   attendee_count?: number;
   archived_at: string | null;
