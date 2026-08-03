@@ -130,8 +130,12 @@ export interface EventSummary {
   date: Date;
   timezone: string;
   location: string | null;
-  /** True when EventLocation has both latitude and longitude (static map preview available). */
+  /** True when EventLocation has both latitude and longitude. */
   has_coordinates: boolean;
+  /** Pin fields for list-card static map cache-busting (null when incomplete). */
+  map_latitude: number | null;
+  map_longitude: number | null;
+  map_zoom: number | null;
   organization_id: string;
   archived_at: Date | null;
   created_at: Date;
@@ -147,7 +151,9 @@ const eventSelect = {
   slug: true,
   date: true,
   timezone: true,
-  location_details: { select: { venue_name: true, latitude: true, longitude: true } },
+  location_details: {
+    select: { venue_name: true, latitude: true, longitude: true, map_zoom: true },
+  },
   organization_id: true,
   archived_at: true,
   created_at: true,
@@ -164,12 +170,16 @@ function toEventSummary(
   row: Prisma.EventGetPayload<{ select: typeof eventSelect }>,
 ): EventSummary {
   const { location_details, ...rest } = row;
-  const lat = location_details?.latitude;
-  const lng = location_details?.longitude;
+  const lat = location_details?.latitude ?? null;
+  const lng = location_details?.longitude ?? null;
+  const hasCoordinates = lat != null && lng != null;
   return {
     ...rest,
     location: location_details?.venue_name ?? null,
-    has_coordinates: lat != null && lng != null,
+    has_coordinates: hasCoordinates,
+    map_latitude: hasCoordinates ? lat : null,
+    map_longitude: hasCoordinates ? lng : null,
+    map_zoom: hasCoordinates ? (location_details?.map_zoom ?? null) : null,
   };
 }
 

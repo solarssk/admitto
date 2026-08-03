@@ -20,6 +20,7 @@ const baseEvent: EventDto = {
   timezone: "Europe/Warsaw",
   location: "Warsaw",
   has_coordinates: true,
+  map_preview_path: "/m/evt-1.png?v=5_52.230000_21.010000_z15&context=list",
   organization_id: "org-1",
   archived_at: null,
   attendee_count: 42,
@@ -111,8 +112,7 @@ describe("eventCardStatus", () => {
     ).toEqual({ label: "Tomorrow", variant: "neutral" });
   });
 
-  it("labels today with remaining hours", () => {
-    // Event stored at UTC noon; "now" is 08:00 UTC same calendar day → several hours left.
+  it("labels the event calendar day as Today (date-only, no fabricated hours)", () => {
     vi.setSystemTime(new Date("2026-08-03T08:00:00.000Z"));
     expect(
       eventCardStatus({
@@ -120,18 +120,16 @@ describe("eventCardStatus", () => {
         timezone: "UTC",
         archived_at: null,
       }),
-    ).toEqual({ label: "Today in 4h", variant: "neutral" });
-  });
+    ).toEqual({ label: "Today", variant: "neutral" });
 
-  it("labels today as Starting soon in the final hour", () => {
-    vi.setSystemTime(new Date("2026-08-03T11:30:00.000Z"));
+    vi.setSystemTime(new Date("2026-08-03T23:30:00.000Z"));
     expect(
       eventCardStatus({
         date: "2026-08-03T12:00:00.000Z",
         timezone: "UTC",
         archived_at: null,
       }),
-    ).toEqual({ label: "Starting soon", variant: "neutral" });
+    ).toEqual({ label: "Today", variant: "neutral" });
   });
 });
 
@@ -199,14 +197,22 @@ describe("EventCard", () => {
     expect(document.querySelector(".event-card")?.className).toContain("event-card--touch");
   });
 
-  it("renders a map image when has_coordinates is true", () => {
+  it("renders a map image from map_preview_path", () => {
     renderCard();
     const img = document.querySelector(".event-card__map-img") as HTMLImageElement | null;
-    expect(img?.getAttribute("src")).toBe("/m/evt-1.png?context=list&v=2");
+    expect(img?.getAttribute("src")).toBe(
+      "/m/evt-1.png?v=5_52.230000_21.010000_z15&context=list",
+    );
   });
 
-  it("renders a map placeholder when has_coordinates is false", () => {
-    renderCard({}, { ...baseEvent, has_coordinates: false });
+  it("renders a map placeholder when map_preview_path is null", () => {
+    renderCard({}, { ...baseEvent, has_coordinates: true, map_preview_path: null });
+    expect(document.querySelector(".event-card__map-img")).toBeNull();
+    expect(screen.getByText("No location")).toBeTruthy();
+  });
+
+  it("renders a map placeholder when map_preview_path is missing", () => {
+    renderCard({}, { ...baseEvent, has_coordinates: false, map_preview_path: undefined });
     expect(document.querySelector(".event-card__map-img")).toBeNull();
     expect(screen.getByText("No location")).toBeTruthy();
   });

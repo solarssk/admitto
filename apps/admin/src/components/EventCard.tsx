@@ -38,7 +38,7 @@ export function EventCard({
 
   const { month, day } = eventCardDateParts(event.date);
   const status = showStatusBadge ? eventCardStatus(event) : null;
-  const hasMap = event.has_coordinates === true;
+  const mapSrc = event.map_preview_path?.trim() || null;
   const locationText = event.location?.trim() || null;
   const attendeeCount = event.attendee_count;
 
@@ -46,10 +46,10 @@ export function EventCard({
     <Link to={href} state={{ event }} className="event-card-link">
       <Card className={cardClassName} padded={false}>
         <div className="event-card__map">
-          {hasMap ? (
+          {mapSrc ? (
             <img
               className="event-card__map-img"
-              src={`/m/${event.id}.png?context=list&v=2`}
+              src={mapSrc}
               alt=""
               loading="lazy"
               decoding="async"

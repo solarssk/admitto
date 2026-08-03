@@ -41,13 +41,9 @@ export function eventCardStatus(event: {
   if (daysUntil < 0) {
     return { label: "Needs archiving", variant: "warn" };
   }
+  // Date-only: Event.date is a UTC-noon calendar sentinel, not a real start time.
   if (daysUntil === 0) {
-    const msLeft = new Date(event.date).getTime() - Date.now();
-    const h = Math.max(0, Math.floor((msLeft % 86_400_000) / 3_600_000));
-    return {
-      label: h === 0 ? "Starting soon" : `Today in ${h}h`,
-      variant: "neutral",
-    };
+    return { label: "Today", variant: "neutral" };
   }
   if (daysUntil === 1) {
     return { label: "Tomorrow", variant: "neutral" };

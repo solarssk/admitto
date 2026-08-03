@@ -44,8 +44,13 @@ export interface EventDto {
   date: string;
   timezone: string;
   location: string | null;
-  /** Static map preview (`/m/{id}.png`) is available when both coordinates are set. */
+  /** True when EventLocation has both latitude and longitude. */
   has_coordinates?: boolean;
+  /**
+   * Same-origin list preview path (`/m/{id}.png?v=…&context=list`) when maps are enabled
+   * and a pin exists; null otherwise (show the card placeholder — do not request `/m/`).
+   */
+  map_preview_path?: string | null;
   organization_id: string;
   attendee_count?: number;
   archived_at: string | null;
