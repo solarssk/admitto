@@ -305,6 +305,17 @@ describe("EventSettingsPage save label", () => {
     expect(await screen.findByRole("button", { name: "Save" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Reset" })).toBeTruthy();
   });
+
+  it("shows Missing event when the route has no eventId param", () => {
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/settings"]}>
+        <Routes>
+          <Route path="/admin/events/settings" element={<EventSettingsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("Missing event.")).toBeTruthy();
+  });
 });
 
 describe("EventSettingsPage subtitle", () => {

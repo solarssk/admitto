@@ -546,6 +546,46 @@ describe("setup org-branding", () => {
     });
     expect(res.status).toBe(403);
   });
+
+  it("rejects malformed JSON with 400 invalid JSON", async () => {
+    const res = await app.request("/api/admin/setup/org-branding", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: "{not-json",
+    });
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({ error: "invalid JSON" });
+  });
+
+  it("rejects org_name null and wrong-typed logo fields", async () => {
+    const nullName = await app.request("/api/admin/setup/org-branding", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ org_name: null }),
+    });
+    expect(nullName.status).toBe(400);
+    await expect(nullName.json()).resolves.toEqual({ error: "org_name required" });
+
+    const badLogo = await app.request("/api/admin/setup/org-branding", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ logo_url: 1 }),
+    });
+    expect(badLogo.status).toBe(400);
+    await expect(badLogo.json()).resolves.toEqual({ error: "invalid body" });
+  });
 });
 
 describe("POST /api/admin/setup/complete", () => {

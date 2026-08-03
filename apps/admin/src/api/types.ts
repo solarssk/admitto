@@ -1,21 +1,13 @@
 import type { DeliveryDto } from "@admitto/shared";
+import type { LogoPersistenceDto } from "@admitto/mail-templates";
 
 // DeliveryDto is also used locally below (AttendeeDetailDto.deliveries, the deliveries-list
 // response's items) so this file still needs its own bound import above - DeliveryDetailDto
 // isn't used locally, only re-exported, so it's not repeated in that import (Sonar S1128).
 export type { DeliveryDetailDto, DeliveryDto } from "@admitto/shared";
+export type { LogoCropMeta, LogoPersistenceDto } from "@admitto/mail-templates";
 
 export type MailerProvider = "smtp" | "graph" | "powerautomate" | "export_only";
-
-/** Last applied free-form crop on a branding logo (percent of the original + zoom). */
-export type LogoCropMeta = {
-  unit: "%";
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  zoom: number;
-};
 
 export interface MailerStatus {
   configured: boolean;
@@ -92,7 +84,7 @@ export interface CreateEventBody {
   geocoding_provider?: string;
 }
 
-export interface EventSettingsDto {
+export type EventSettingsDto = {
   id: string;
   title: string;
   slug: string;
@@ -113,16 +105,11 @@ export interface EventSettingsDto {
   organization_name: string;
   active_items: Array<{ id: string; name: string; enabled: boolean }>;
   /** Event's own branding overrides — null means "inherited from organization". */
-  logo_url: string | null;
-  /** Full pre-crop upload for re-Edit; null for external logos or legacy cropped-only rows. */
-  logo_original_url: string | null;
-  /** Last crop framing on the original; null when unknown. */
-  logo_crop: LogoCropMeta | null;
   header_image_url: string | null;
   /** Effective branding actually used today (event value, else organization's). */
   resolved_logo_url: string | null;
   resolved_header_image_url: string | null;
-}
+} & LogoPersistenceDto;
 
 /** One uploaded font file for a specific weight+style within a custom font family - a real
  * family needs one of these per weight/style it has for the browser to render a true bold/
@@ -1067,19 +1054,13 @@ export interface SetupChecksResponse {
   checks: Record<SetupCheckKey, SetupCheckResult>;
 }
 
-export interface SetupOrgBrandingDto {
+export type SetupOrgBrandingDto = {
   org_name: string | null;
-  logo_url: string | null;
-  logo_original_url: string | null;
-  logo_crop: LogoCropMeta | null;
-}
+} & LogoPersistenceDto;
 
-export interface PatchSetupOrgBrandingBody {
+export type PatchSetupOrgBrandingBody = {
   org_name?: string;
-  logo_url?: string | null;
-  logo_original_url?: string | null;
-  logo_crop?: LogoCropMeta | null;
-}
+} & Partial<LogoPersistenceDto>;
 
 export interface SetupSupportContactDto {
   support_contact_name: string | null;

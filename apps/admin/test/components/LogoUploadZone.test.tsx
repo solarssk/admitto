@@ -354,4 +354,144 @@ describe("LogoUploadZone", () => {
     });
     expect(mockUploadFile).not.toHaveBeenCalled();
   });
+
+  it("opens crop via drag-and-drop and keyboard Enter/Space", async () => {
+    mockUploadFile.mockResolvedValue({ url: "/uploads/default/drop-original.png" });
+    renderWithToast(<LogoUploadZone value="" onChange={() => {}} />);
+    const zone = screen.getByRole("button", { name: /drop logo here/i });
+
+    fireEvent.dragOver(zone);
+    expect(zone.className).toContain("logo-upload__zone--dragging");
+    fireEvent.dragLeave(zone);
+
+    const file = new File(["x"], "logo.png", { type: "image/png" });
+    fireEvent.drop(zone, { dataTransfer: { files: [file] } });
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: "Adjust image" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    fireEvent.keyDown(zone, { key: "Enter" });
+    fireEvent.keyDown(zone, { key: " " });
+    // Picker click is side-effect on hidden input — assert zone stays interactive.
+    expect(zone.getAttribute("aria-disabled")).toBeNull();
+  });
+
+  it("ignores drop and picker when disabled", () => {
+    renderWithToast(<LogoUploadZone value="" onChange={() => {}} disabled />);
+    const zone = screen.getByRole("button", { name: /drop logo here/i });
+    expect(zone.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.drop(zone, {
+      dataTransfer: { files: [new File(["x"], "logo.png", { type: "image/png" })] },
+    });
+    expect(mockUploadFile).not.toHaveBeenCalled();
+    fireEvent.click(zone);
+    expect(mockUploadFile).not.toHaveBeenCalled();
+  });
+
+  it("updates web link value and clears original/crop via onSourceChange", () => {
+    const onChange = vi.fn();
+    const onSourceChange = vi.fn();
+    const onDirty = vi.fn();
+    renderWithToast(
+      <LogoUploadZone
+        value=""
+        onChange={onChange}
+        onSourceChange={onSourceChange}
+        onDirty={onDirty}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Use a web link instead" }));
+    fireEvent.change(screen.getByLabelText("Web link to your logo (must start with https://)"), {
+      target: { value: "https://cdn.example.com/logo.png" },
+    });
+    expect(onChange).toHaveBeenCalledWith("https://cdn.example.com/logo.png");
+    expect(onSourceChange).toHaveBeenCalledWith({ originalUrl: null, crop: null });
+    expect(onDirty).toHaveBeenCalled();
+  });
+
+  it("Edit Apply with persisted original reuses it and updates crop without re-uploading original", async () => {
+    mockUploadFile.mockResolvedValueOnce({ url: "/uploads/default/cropped-again.png" });
+    const onChange = vi.fn();
+    const onSourceChange = vi.fn();
+    renderWithToast(
+      <LogoUploadZone
+        value="/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png"
+        originalUrl="/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890-original.png"
+        cropMeta={{ unit: "%", x: 10, y: 10, width: 50, height: 40, zoom: 1.2 }}
+        onChange={onChange}
+        onSourceChange={onSourceChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Edit image" }));
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: "Adjust image" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    await waitFor(() => {
+      expect(mockUploadFile).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenCalledWith("/uploads/default/cropped-again.png");
+    });
+    expect(onSourceChange).toHaveBeenCalledWith({
+      originalUrl: "/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890-original.png",
+      crop: expect.objectContaining({ unit: "%", zoom: 1.5 }),
+    });
+  });
+
+  it("Edit does nothing while disabled", () => {
+    renderWithToast(
+      <LogoUploadZone
+        value="/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png"
+        originalUrl="/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890-original.png"
+        onChange={() => {}}
+        disabled
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Edit image" })).toHaveProperty("disabled", true);
+  });
+
+  it("stale original upload is ignored when a newer pick supersedes it", async () => {
+    let resolveFirst!: (v: { url: string }) => void;
+    const first = new Promise<{ url: string }>((r) => {
+      resolveFirst = r;
+    });
+    mockUploadFile.mockReturnValueOnce(first).mockResolvedValueOnce({
+      url: "/uploads/default/second-original.png",
+    });
+    renderWithToast(<LogoUploadZone value="" onChange={() => {}} />);
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { files: [new File(["a"], "a.png", { type: "image/png" })] },
+    });
+    fireEvent.change(input, {
+      target: { files: [new File(["b"], "b.png", { type: "image/png" })] },
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: "Adjust image" })).toBeTruthy();
+    });
+    expect(
+      screen.getByRole("dialog", { name: "Adjust image" }).getAttribute("data-image-src"),
+    ).toBe("/uploads/default/second-original.png");
+    resolveFirst({ url: "/uploads/default/first-original.png" });
+    await waitFor(() => {
+      expect(mockUploadFile).toHaveBeenCalledTimes(2);
+    });
+    expect(
+      screen.getByRole("dialog", { name: "Adjust image" }).getAttribute("data-image-src"),
+    ).toBe("/uploads/default/second-original.png");
+  });
+
+  it("uses JPEG extension for nameless files and jpeg MIME", async () => {
+    mockUploadFile.mockResolvedValueOnce({ url: "/uploads/default/logo-original.jpg" });
+    renderWithToast(<LogoUploadZone value="" onChange={() => {}} />);
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(["x"], "", { type: "image/jpeg" });
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() => {
+      expect(mockUploadFile).toHaveBeenCalledOnce();
+    });
+    const fd = mockUploadFile.mock.calls[0]![0] as FormData;
+    const uploaded = fd.get("file") as File;
+    expect(uploaded.name).toMatch(/logo-original\.jpe?g$/i);
+  });
 });

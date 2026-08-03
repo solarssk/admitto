@@ -127,6 +127,14 @@ describe("saveBrandingUpload", () => {
     const result = await saveBrandingUpload(noType, "default");
     expect(result.url).toMatch(/\.png$/);
   });
+
+  it("rejects bytes that are not a known image type (415)", async () => {
+    const bogus = new File([Buffer.from("not-an-image")], "logo.png", { type: "image/png" });
+    await expect(saveBrandingUpload(bogus, "default")).rejects.toMatchObject({
+      code: "unsupported_file_type",
+      status: 415,
+    });
+  });
 });
 
 describe("saveEventUpload", () => {
@@ -161,6 +169,16 @@ describe("saveThemeFontUpload", () => {
     expect(otf.url).toMatch(/\.otf$/);
     const ttf = await saveThemeFontUpload(new File([TTF_BYTES], "Brand.ttf", { type: "font/ttf" }), "default");
     expect(ttf.url).toMatch(/\.ttf$/);
+  });
+
+  it("accepts fonts with empty or generic declared MIME when magic bytes match", async () => {
+    const empty = await saveThemeFontUpload(new File([WOFF_BYTES], "Brand.woff", { type: "" }), "default");
+    expect(empty.url).toMatch(/\.woff$/);
+    const octet = await saveThemeFontUpload(
+      new File([WOFF_BYTES], "Brand.woff", { type: "application/octet-stream" }),
+      "default",
+    );
+    expect(octet.url).toMatch(/\.woff$/);
   });
 
   it("rejects a file larger than the font size limit", async () => {

@@ -131,4 +131,59 @@ describe("CropImageModal apply / cancel", () => {
       expect(screen.getByRole("alert").textContent).toMatch(/encode/i);
     });
   });
+
+  it("shows a generic error when crop export rejects a non-Error value", async () => {
+    mockGetCropped.mockRejectedValueOnce("boom");
+    await renderReadyCrop();
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toMatch(/Could not crop image/i);
+    });
+  });
+
+  it("shows an error when the image reports zero natural size", async () => {
+    Object.defineProperty(HTMLImageElement.prototype, "naturalWidth", {
+      configurable: true,
+      get() {
+        return 0;
+      },
+    });
+    Object.defineProperty(HTMLImageElement.prototype, "naturalHeight", {
+      configurable: true,
+      get() {
+        return 0;
+      },
+    });
+    render(
+      <CropImageModal
+        open
+        imageSrc={TINY_PNG}
+        sourceMime="image/png"
+        onCancel={vi.fn()}
+        onApply={vi.fn()}
+      />,
+    );
+    const img = document.querySelector("img.crop-image-modal__img") as HTMLImageElement;
+    fireEvent.load(img);
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toMatch(/Could not read this image/i);
+    });
+  });
+
+  it("does not call export when Apply is clicked before a completed crop exists", async () => {
+    render(
+      <CropImageModal
+        open
+        imageSrc={TINY_PNG}
+        sourceMime="image/png"
+        onCancel={vi.fn()}
+        onApply={vi.fn()}
+      />,
+    );
+    // No load event → no completed crop; Apply stays disabled.
+    const apply = screen.getByRole("button", { name: "Apply changes" });
+    expect(apply).toHaveProperty("disabled", true);
+    fireEvent.click(apply);
+    expect(mockGetCropped).not.toHaveBeenCalled();
+  });
 });

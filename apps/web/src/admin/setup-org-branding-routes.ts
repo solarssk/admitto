@@ -7,6 +7,7 @@ import {
   logoCropFromDb,
   parseLogoCrop,
   type LogoCropMeta,
+  type LogoPersistenceDto,
 } from "@admitto/mail-templates";
 import { emitSystemLog } from "@admitto/shared/system-log";
 import { resolveActorEmailForLog } from "./admin-helpers.js";
@@ -14,10 +15,7 @@ import { resolveInstanceOrganizationId } from "./instance-org.js";
 
 export type SetupOrgBrandingDto = {
   org_name: string | null;
-  logo_url: string | null;
-  logo_original_url: string | null;
-  logo_crop: LogoCropMeta | null;
-};
+} & LogoPersistenceDto;
 
 type OrgBrandingPatch = {
   org_name?: string;
@@ -26,24 +24,36 @@ type OrgBrandingPatch = {
   logo_crop?: LogoCropMeta | null;
 };
 
+/** Read an optional string|null field; returns null on type mismatch. */
+function readOptionalStringField(
+  record: Record<string, unknown>,
+  key: string,
+): { ok: true; value: string | null | undefined } | { ok: false } {
+  if (!(key in record)) return { ok: true, value: undefined };
+  const raw = record[key];
+  if (raw !== null && typeof raw !== "string") return { ok: false };
+  return { ok: true, value: raw };
+}
+
 function parsePatchBody(body: unknown): OrgBrandingPatch | null {
   if (!body || typeof body !== "object") return null;
   const record = body as Record<string, unknown>;
   const out: OrgBrandingPatch = {};
-  if ("org_name" in record) {
-    if (record.org_name !== null && typeof record.org_name !== "string") return null;
-    out.org_name = record.org_name === null ? "" : record.org_name.trim();
+
+  const orgName = readOptionalStringField(record, "org_name");
+  if (!orgName.ok) return null;
+  if (orgName.value !== undefined) {
+    out.org_name = orgName.value === null ? "" : orgName.value.trim();
   }
-  if ("logo_url" in record) {
-    if (record.logo_url !== null && typeof record.logo_url !== "string") return null;
-    out.logo_url = record.logo_url;
-  }
-  if ("logo_original_url" in record) {
-    if (record.logo_original_url !== null && typeof record.logo_original_url !== "string") {
-      return null;
-    }
-    out.logo_original_url = record.logo_original_url;
-  }
+
+  const logoUrl = readOptionalStringField(record, "logo_url");
+  if (!logoUrl.ok) return null;
+  if (logoUrl.value !== undefined) out.logo_url = logoUrl.value;
+
+  const logoOriginal = readOptionalStringField(record, "logo_original_url");
+  if (!logoOriginal.ok) return null;
+  if (logoOriginal.value !== undefined) out.logo_original_url = logoOriginal.value;
+
   if ("logo_crop" in record) {
     try {
       out.logo_crop = parseLogoCrop(record.logo_crop);
@@ -51,6 +61,7 @@ function parsePatchBody(body: unknown): OrgBrandingPatch | null {
       return null;
     }
   }
+
   if (Object.keys(out).length === 0) return null;
   return out;
 }

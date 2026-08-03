@@ -4,8 +4,10 @@ import type { PrismaClient } from "@admitto/db";
 import {
   countAttendeesByEvent,
   isValidCalendarDate,
+  positiveIntQuery,
   resolveActorEmailForLog,
   resolveClientTimezone,
+  resolveUserDisplayMap,
 } from "../src/admin/admin-helpers.js";
 
 function appWithRequest(headers: Record<string, string> = {}) {
@@ -89,5 +91,42 @@ describe("countAttendeesByEvent", () => {
     const db = dbReturning([]);
     const result = await countAttendeesByEvent(db, ["evt-empty"]);
     expect(result.has("evt-empty")).toBe(false);
+  });
+});
+
+describe("resolveUserDisplayMap", () => {
+  it("returns an empty map without querying when given no ids", async () => {
+    const findMany = vi.fn();
+    const db = { user: { findMany } } as unknown as PrismaClient;
+    await expect(resolveUserDisplayMap(db, [])).resolves.toEqual({});
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
+  it("dedupes ids and maps found users", async () => {
+    const findMany = vi.fn().mockResolvedValue([
+      { id: "u1", email: "a@example.com", display_name: "A" },
+    ]);
+    const db = { user: { findMany } } as unknown as PrismaClient;
+    const map = await resolveUserDisplayMap(db, ["u1", "u1", "missing"]);
+    expect(findMany).toHaveBeenCalledWith({
+      where: { id: { in: ["u1", "missing"] } },
+      select: { id: true, email: true, display_name: true },
+    });
+    expect(map.u1).toEqual({ id: "u1", email: "a@example.com", display_name: "A" });
+    expect(map.missing).toBeUndefined();
+  });
+});
+
+describe("positiveIntQuery", () => {
+  it("falls back for invalid or non-positive values", () => {
+    expect(positiveIntQuery(undefined, 10)).toBe(10);
+    expect(positiveIntQuery("0", 10)).toBe(10);
+    expect(positiveIntQuery("-3", 10)).toBe(10);
+    expect(positiveIntQuery("nope", 10)).toBe(10);
+  });
+
+  it("returns the parsed value and optionally caps at max", () => {
+    expect(positiveIntQuery("7", 10)).toBe(7);
+    expect(positiveIntQuery("99", 10, 50)).toBe(50);
   });
 });

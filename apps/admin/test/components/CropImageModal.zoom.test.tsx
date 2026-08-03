@@ -1,10 +1,19 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("../../src/components/crop/getCroppedImageBlob.js", () => ({
+  getCroppedImageBlob: vi.fn(),
+}));
+
 import { CropImageModal } from "../../src/components/crop/CropImageModal.js";
+import { getCroppedImageBlob } from "../../src/components/crop/getCroppedImageBlob.js";
+
+const mockGetCropped = vi.mocked(getCroppedImageBlob);
 
 afterEach(() => {
   cleanup();
+  vi.clearAllMocks();
 });
 
 beforeEach(() => {
@@ -131,5 +140,99 @@ describe("CropImageModal zoom", () => {
       expect(selection?.style.width).toBe("50%");
       expect(selection?.style.height).toBe("40%");
     });
+  });
+
+  it("falls back to a centered crop when initialCrop is not restorable", async () => {
+    render(
+      <CropImageModal
+        open
+        imageSrc={TINY_PNG}
+        sourceMime="image/png"
+        initialCrop={{ unit: "%", x: 90, y: 0, width: 20, height: 10 }}
+        initialZoom={Number.NaN}
+        onCancel={vi.fn()}
+        onApply={vi.fn()}
+      />,
+    );
+    const img = document.querySelector("img.crop-image-modal__img") as HTMLImageElement;
+    fireEvent.load(img);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Zoom")).toHaveProperty("value", "1");
+    });
+    await waitFor(() => {
+      const selection = document.querySelector(".ReactCrop__crop-selection") as HTMLElement;
+      expect(selection?.style.width).toBe("92%");
+    });
+  });
+
+  it("zooms out with wheel and uses a larger step with Shift", async () => {
+    const img = await renderReadyCrop();
+    fireEvent.change(screen.getByLabelText("Zoom"), { target: { value: "2" } });
+    await waitFor(() => {
+      expect(img.style.width).toBe("800px");
+    });
+    const stage = document.querySelector(".crop-image-modal__stage")!;
+    stage.dispatchEvent(
+      new WheelEvent("wheel", { deltaY: 100, shiftKey: true, bubbles: true, cancelable: true }),
+    );
+    await waitFor(() => {
+      expect(Number.parseFloat(img.style.width)).toBeLessThan(800);
+    });
+  });
+
+  it("ignores wheel zoom while Apply is in progress", async () => {
+    mockGetCropped.mockImplementation(
+      () =>
+        new Promise(() => {
+          /* never resolves — keeps applying=true */
+        }),
+    );
+    const img = await renderReadyCrop();
+    await waitFor(() => {
+      expect(document.querySelector(".ReactCrop__crop-selection")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    await waitFor(() => {
+      expect(mockGetCropped).toHaveBeenCalled();
+      expect(screen.getByText("Working…")).toBeTruthy();
+    });
+    const widthBefore = Number.parseFloat(img.style.width);
+    const stage = document.querySelector(".crop-image-modal__stage")!;
+    stage.dispatchEvent(new WheelEvent("wheel", { deltaY: -100, bubbles: true, cancelable: true }));
+    expect(Number.parseFloat(img.style.width)).toBe(widthBefore);
+  });
+
+  it("pans the stage when zoomed and ignores crop-handle targets", async () => {
+    const img = await renderReadyCrop();
+    fireEvent.change(screen.getByLabelText("Zoom"), { target: { value: "2" } });
+    await waitFor(() => {
+      expect(img.style.width).toBe("800px");
+    });
+    const stage = document.querySelector(".crop-image-modal__stage") as HTMLElement;
+    Object.defineProperty(stage, "scrollLeft", { configurable: true, writable: true, value: 0 });
+    Object.defineProperty(stage, "scrollTop", { configurable: true, writable: true, value: 0 });
+    Object.defineProperty(stage, "clientWidth", { configurable: true, value: 400 });
+    Object.defineProperty(stage, "clientHeight", { configurable: true, value: 80 });
+    stage.setPointerCapture = vi.fn();
+    stage.releasePointerCapture = vi.fn();
+    stage.hasPointerCapture = vi.fn(() => true);
+
+    fireEvent.pointerDown(stage, { button: 2, clientX: 10, clientY: 10 });
+    expect(stage.scrollLeft).toBe(0);
+
+    fireEvent.pointerDown(stage, { button: 0, clientX: 50, clientY: 20, pointerId: 1 });
+    fireEvent.pointerMove(stage, { clientX: 20, clientY: 5, pointerId: 1 });
+    expect(stage.scrollLeft).toBe(30);
+    expect(stage.scrollTop).toBe(15);
+    fireEvent.pointerUp(stage, { pointerId: 1 });
+    expect(stage.releasePointerCapture).toHaveBeenCalled();
+
+    const handle = document.createElement("div");
+    handle.className = "ReactCrop__drag-handle";
+    stage.appendChild(handle);
+    fireEvent.pointerDown(handle, { button: 0, clientX: 10, clientY: 10, bubbles: true });
+    const leftAfterPan = stage.scrollLeft;
+    fireEvent.pointerMove(stage, { clientX: 0, clientY: 0 });
+    expect(stage.scrollLeft).toBe(leftAfterPan);
   });
 });

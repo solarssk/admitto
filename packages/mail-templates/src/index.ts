@@ -60,7 +60,7 @@ export {
 export type { CreatedMailTemplateRow } from "./mailTemplate.js";
 export { resolveBranding, resolveBrandingFromEvent, setBranding, resolveEventImageAssetVars } from "./branding.js";
 export { parseLogoCrop, logoCropFromDb } from "./logo-crop.js";
-export type { LogoCropMeta } from "./logo-crop.js";
+export type { LogoCropMeta, LogoPersistenceDto } from "./logo-crop.js";
 export {
   previewTemplate,
   DEFAULT_SAMPLE_VARS,

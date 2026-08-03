@@ -17,6 +17,7 @@
   "dependencies": {
     "@admitto/db": "*",
     "@admitto/location": "*",
+    "@admitto/mail-templates": "*",
     "@admitto/shared": "*",
     "@admitto/tickets": "*",
     "@admitto/ui": "*",

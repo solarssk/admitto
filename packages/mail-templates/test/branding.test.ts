@@ -126,6 +126,53 @@ describe("setBranding", () => {
     expect(org.logo_crop).toBeNull();
   });
 
+  it("treats whitespace-only branding URLs as empty and normalizes blank clears", async () => {
+    await prisma.event.update({
+      where: { id: "evt-br" },
+      data: { logo_url: "   ", header_image_url: null },
+    });
+    await prisma.organization.update({
+      where: { id: "org-br" },
+      data: { logo_url: " https://cdn.example.com/org-trim.png ", header_image_url: "  " },
+    });
+    const branding = await resolveBranding("evt-br", prisma);
+    expect(branding.logo_url).toBe("https://cdn.example.com/org-trim.png");
+    expect(branding.header_image_url).toBe("");
+
+    await setBranding(
+      { scopeType: "event", scopeId: "evt-br" },
+      { logoUrl: null, headerImageUrl: "   " },
+      prisma,
+    );
+    const event = await prisma.event.findUniqueOrThrow({ where: { id: "evt-br" } });
+    expect(event.logo_url).toBeNull();
+    expect(event.header_image_url).toBeNull();
+  });
+
+  it("no-ops when setBranding receives an empty patch", async () => {
+    const before = await prisma.organization.findUniqueOrThrow({ where: { id: "org-br" } });
+    await setBranding({ scopeType: "organization", scopeId: "org-br" }, {}, prisma);
+    const after = await prisma.organization.findUniqueOrThrow({ where: { id: "org-br" } });
+    expect(after.logo_url).toBe(before.logo_url);
+    expect(after.logo_original_url).toBe(before.logo_original_url);
+    expect(after.header_image_url).toBe(before.header_image_url);
+  });
+
+  it("updates event-scoped branding independently of the organization", async () => {
+    await setBranding(
+      { scopeType: "event", scopeId: "evt-br" },
+      {
+        logoUrl: "/uploads/default/c3d4e5f6-a7b8-9012-cdef-123456789012.png",
+        logoOriginalUrl: "/uploads/default/d4e5f6a7-b8c9-0123-def0-234567890123.png",
+        logoCrop: { unit: "%", x: 1, y: 2, width: 90, height: 80, zoom: 1 },
+      },
+      prisma,
+    );
+    const event = await prisma.event.findUniqueOrThrow({ where: { id: "evt-br" } });
+    expect(event.logo_url).toBe("/uploads/default/c3d4e5f6-a7b8-9012-cdef-123456789012.png");
+    expect(event.logo_original_url).toBe("/uploads/default/d4e5f6a7-b8c9-0123-def0-234567890123.png");
+  });
+
   it("renders uploaded logo as absolute URL when baseUrl is provided", () => {
     const html = renderTemplate(
       {

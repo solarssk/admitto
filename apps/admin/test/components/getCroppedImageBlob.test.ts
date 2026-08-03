@@ -163,4 +163,29 @@ describe("getCroppedImageBlob", () => {
       getCroppedImageBlob(image, { x: 0, y: 0, width: 50, height: 25 }, "image/png"),
     ).rejects.toThrow(/2 MB/);
   });
+
+  it("rejects JPEG/WebP when every quality step stays over 2 MB", async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      fillRect: vi.fn(),
+      drawImage: vi.fn(),
+    } as unknown as CanvasRenderingContext2D);
+    const oversized = new Blob([new Uint8Array(2 * 1024 * 1024 + 1)], { type: "image/jpeg" });
+    const toBlob = vi.fn((cb: BlobCallback, _mime?: string, quality?: number) => {
+      expect([0.92, 0.8, 0.65, 0.5]).toContain(quality);
+      cb(oversized);
+    });
+    vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation(toBlob);
+
+    const image = {
+      width: 100,
+      height: 50,
+      naturalWidth: 200,
+      naturalHeight: 100,
+    } as HTMLImageElement;
+    await expect(
+      getCroppedImageBlob(image, { x: 0, y: 0, width: 40, height: 20 }, "image/jpeg"),
+    ).rejects.toThrow(/2 MB/);
+    expect(toBlob).toHaveBeenCalledTimes(4);
+    expect(toBlob.mock.calls.map((c) => c[2])).toEqual([0.92, 0.8, 0.65, 0.5]);
+  });
 });

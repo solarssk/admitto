@@ -9,6 +9,13 @@ export type LogoCropMeta = {
   zoom: number;
 };
 
+/** Display logo + optional pre-crop original and framing (API/DB shape). */
+export type LogoPersistenceDto = {
+  logo_url: string | null;
+  logo_original_url: string | null;
+  logo_crop: LogoCropMeta | null;
+};
+
 function isFiniteNumber(n: unknown): n is number {
   return typeof n === "number" && Number.isFinite(n);
 }

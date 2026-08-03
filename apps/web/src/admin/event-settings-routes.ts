@@ -5,7 +5,7 @@ import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@admitto/db";
 import { canManageInstance } from "@admitto/auth";
 import { ADMITTABLE_STATUS_LIST, REVOCABLE_ITEM_STATES, writeAdminAuditLog } from "@admitto/tickets";
-import { InvalidHttpUrlError, logoCropFromDb, parseLogoCrop, resolveBrandingFromEvent, validateBrandingUrl, type LogoCropMeta } from "@admitto/mail-templates";
+import { InvalidHttpUrlError, logoCropFromDb, parseLogoCrop, resolveBrandingFromEvent, validateBrandingUrl, type LogoCropMeta, type LogoPersistenceDto } from "@admitto/mail-templates";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { z } from "zod";
 import {
@@ -76,17 +76,11 @@ export type EventSettingsDto = {
   issued_items_count: number;
   organization_name: string;
   active_items: Array<{ id: string; name: string; enabled: boolean }>;
-  /** Event's own branding overrides — null means "inherited from organization". */
-  logo_url: string | null;
-  /** Full pre-crop upload for re-Edit; null for external logos or legacy cropped-only rows. */
-  logo_original_url: string | null;
-  /** Last crop framing on the original; null when unknown. */
-  logo_crop: LogoCropMeta | null;
   header_image_url: string | null;
   /** Effective branding actually used today (event value, else organization's). */
   resolved_logo_url: string | null;
   resolved_header_image_url: string | null;
-};
+} & LogoPersistenceDto;
 
 type EventSettingsRow = {
   id: string;
@@ -248,54 +242,69 @@ function buildBasicFieldsPatch(patch: PatchEventBody): {
   return data;
 }
 
+type BrandingPatchData = {
+  logo_url?: string | null;
+  logo_original_url?: string | null;
+  logo_crop?: LogoCropMeta | typeof Prisma.JsonNull;
+  header_image_url?: string | null;
+};
+
+function patchOptionalBrandingUrl(
+  field: "logo_url" | "logo_original_url" | "header_image_url",
+  raw: string | null | undefined,
+  data: BrandingPatchData,
+): void {
+  const trimmed = raw?.trim() ?? "";
+  data[field] = trimmed ? validateBrandingUrl(field, trimmed) : null;
+}
+
+/** External or cleared display logo cannot keep an upload original / crop. */
+function clearOriginalWhenDisplayIsNotUpload(
+  data: BrandingPatchData,
+  patch: PatchEventBody,
+): void {
+  if (patch.logo_url === undefined) return;
+  const display = data.logo_url;
+  if (typeof display === "string" && display.startsWith("/uploads/")) return;
+  if (patch.logo_original_url === undefined) data.logo_original_url = null;
+  if (patch.logo_crop === undefined) data.logo_crop = Prisma.JsonNull;
+}
+
+function brandingPatchErrorResponse(c: Context, err: unknown): Response | null {
+  if (err instanceof InvalidHttpUrlError) {
+    return c.json({ error: err.message }, 400);
+  }
+  if (err instanceof Error && err.message.startsWith("logo_crop")) {
+    return c.json({ error: err.message }, 400);
+  }
+  return null;
+}
+
 /** Validates and writes branding URL / crop fields into `data`; returns an error Response, or null. */
 function applyBrandingPatch(
   c: Context,
-  data: {
-    logo_url?: string | null;
-    logo_original_url?: string | null;
-    logo_crop?: LogoCropMeta | typeof Prisma.JsonNull;
-    header_image_url?: string | null;
-  },
+  data: BrandingPatchData,
   patch: PatchEventBody,
 ): Response | null {
   try {
     if (patch.logo_url !== undefined) {
-      const trimmed = patch.logo_url?.trim() ?? "";
-      data.logo_url = trimmed ? validateBrandingUrl("logo_url", trimmed) : null;
+      patchOptionalBrandingUrl("logo_url", patch.logo_url, data);
     }
     if (patch.logo_original_url !== undefined) {
-      const trimmed = patch.logo_original_url?.trim() ?? "";
-      data.logo_original_url = trimmed
-        ? validateBrandingUrl("logo_original_url", trimmed)
-        : null;
+      patchOptionalBrandingUrl("logo_original_url", patch.logo_original_url, data);
     }
     if (patch.logo_crop !== undefined) {
       const crop = parseLogoCrop(patch.logo_crop ?? null);
       data.logo_crop = crop === null ? Prisma.JsonNull : crop;
     }
     if (patch.header_image_url !== undefined) {
-      const trimmed = patch.header_image_url?.trim() ?? "";
-      data.header_image_url = trimmed ? validateBrandingUrl("header_image_url", trimmed) : null;
+      patchOptionalBrandingUrl("header_image_url", patch.header_image_url, data);
     }
-
-    // External / cleared display logo cannot keep an upload original or crop.
-    if (patch.logo_url !== undefined) {
-      const display = data.logo_url;
-      const isUpload = typeof display === "string" && display.startsWith("/uploads/");
-      if (!isUpload) {
-        if (patch.logo_original_url === undefined) data.logo_original_url = null;
-        if (patch.logo_crop === undefined) data.logo_crop = Prisma.JsonNull;
-      }
-    }
+    clearOriginalWhenDisplayIsNotUpload(data, patch);
     return null;
   } catch (err) {
-    if (err instanceof InvalidHttpUrlError) {
-      return c.json({ error: err.message }, 400);
-    }
-    if (err instanceof Error && err.message.startsWith("logo_crop")) {
-      return c.json({ error: err.message }, 400);
-    }
+    const response = brandingPatchErrorResponse(c, err);
+    if (response) return response;
     throw err;
   }
 }

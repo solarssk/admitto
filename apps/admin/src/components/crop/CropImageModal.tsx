@@ -128,6 +128,104 @@ export function trustedCropPreviewSrc(src: string): string | null {
   return null;
 }
 
+function scrollStageToCropCenter(
+  stage: HTMLElement,
+  pixel: { x: number; y: number; width: number; height: number },
+): void {
+  stage.scrollLeft = Math.max(0, pixel.x + pixel.width / 2 - stage.clientWidth / 2);
+  stage.scrollTop = Math.max(0, pixel.y + pixel.height / 2 - stage.clientHeight / 2);
+}
+
+function cropStageClassName(zoomed: boolean, hasFit: boolean): string {
+  if (zoomed) return "crop-image-modal__stage crop-image-modal__stage--zoomed";
+  if (hasFit) return "crop-image-modal__stage";
+  return "crop-image-modal__stage crop-image-modal__stage--loading";
+}
+
+function percentCropForApply(
+  crop: Crop | undefined,
+  completedCrop: PixelCrop,
+  img: HTMLImageElement,
+): PercentCrop {
+  if (crop?.unit === "%") return crop as PercentCrop;
+  return convertToPercentCrop(completedCrop, img.width, img.height);
+}
+
+/** @internal Exported for unit tests covering pixel-unit conversion. */
+export { percentCropForApply as percentCropForApplyForTest };
+
+/** Crop + call onApply; returns an operator-facing error string, or null on success. */
+async function runCropApply(
+  img: HTMLImageElement,
+  completedCrop: PixelCrop,
+  crop: Crop | undefined,
+  zoom: number,
+  sourceMime: string,
+  onApply: CropImageModalProps["onApply"],
+): Promise<string | null> {
+  if (completedCrop.width < 1 || completedCrop.height < 1) {
+    return "Drag the edges to select the area you want to keep.";
+  }
+  try {
+    const blob = await getCroppedImageBlob(img, completedCrop, sourceMime);
+    await onApply(blob, {
+      crop: percentCropForApply(crop, completedCrop, img),
+      zoom,
+    });
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : "Could not crop image.";
+  }
+}
+
+/** @internal Exported for unit tests covering empty-selection Apply. */
+export { runCropApply as runCropApplyForTest };
+
+function cropPanelWidthPx(fit: FitSize | null, viewportWidthCap: number): number | undefined {
+  if (!fit) return undefined;
+  return Math.min(
+    920,
+    viewportWidthCap,
+    Math.max(320, fit.width + HANDLE_INSET_PX * 2 + PANEL_PAD_X_PX),
+  );
+}
+
+/** Seed fit/zoom/crop after the preview image reports natural size. */
+function seedCropFromLoadedImage(
+  img: HTMLImageElement,
+  initialCrop: PercentCrop | undefined,
+  initialZoom: number | undefined,
+  stage: HTMLElement | null,
+  setFitSize: (fit: FitSize) => void,
+  setZoom: (z: number) => void,
+  setPrevZoom: (z: number) => void,
+  setCrop: (c: Crop) => void,
+  setCompletedCrop: (c: PixelCrop) => void,
+  setError: (msg: string | null) => void,
+): void {
+  if (img.naturalWidth < 1 || img.naturalHeight < 1) {
+    setError("Could not read this image.");
+    return;
+  }
+  const limits = cropViewportLimits();
+  const fit = fitNaturalSize(img.naturalWidth, img.naturalHeight, limits.width, limits.height);
+  const restoredZoom = clampCropZoom(initialZoom ?? CROP_ZOOM_MIN);
+  setFitSize(fit);
+  setZoom(restoredZoom);
+  setPrevZoom(restoredZoom);
+  requestAnimationFrame(() => {
+    if (img.width < 1 || img.height < 1) return;
+    const initial = isRestorablePercentCrop(initialCrop)
+      ? initialCrop
+      : centerCrop({ unit: "%", width: 92, height: 92 }, img.width, img.height);
+    setCrop(initial);
+    setCompletedCrop(convertToPixelCrop(initial, img.width, img.height));
+    if (restoredZoom > 1 && stage) {
+      scrollStageToCropCenter(stage, convertToPixelCrop(initial, img.width, img.height));
+    }
+  });
+}
+
 /**
  * Free-form crop modal: edge/corner handles.
  * Stage viewport stays at fit size; zoom magnifies the bitmap inside it.
@@ -189,42 +287,26 @@ export function CropImageModal({
     const img = imgRef.current;
     const stage = stageRef.current;
     if (!img || !stage || !crop || img.width < 1) return;
-    const pixel = convertToPixelCrop(crop, img.width, img.height);
-    stage.scrollLeft = Math.max(0, pixel.x + pixel.width / 2 - stage.clientWidth / 2);
-    stage.scrollTop = Math.max(0, pixel.y + pixel.height / 2 - stage.clientHeight / 2);
+    scrollStageToCropCenter(stage, convertToPixelCrop(crop, img.width, img.height));
   }, [zoom, crop]);
 
   const onImageLoad = (e: SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget;
     imgRef.current = img;
-    if (img.naturalWidth < 1 || img.naturalHeight < 1) {
-      setError("Could not read this image.");
-      return;
-    }
-    const limits = cropViewportLimits();
-    const fit = fitNaturalSize(img.naturalWidth, img.naturalHeight, limits.width, limits.height);
-    const restoredZoom = clampCropZoom(initialZoom ?? CROP_ZOOM_MIN);
-    setFitSize(fit);
-    setZoom(restoredZoom);
-    prevZoomRef.current = restoredZoom;
-    // Next paint has explicit width/height; then seed the % crop (restored or default).
-    requestAnimationFrame(() => {
-      const el = imgRef.current;
-      if (!el || el.width < 1 || el.height < 1) return;
-      const initial = isRestorablePercentCrop(initialCrop)
-        ? initialCrop
-        : centerCrop({ unit: "%", width: 92, height: 92 }, el.width, el.height);
-      setCrop(initial);
-      setCompletedCrop(convertToPixelCrop(initial, el.width, el.height));
-      if (restoredZoom > 1) {
-        const pixel = convertToPixelCrop(initial, el.width, el.height);
-        const stage = stageRef.current;
-        if (stage) {
-          stage.scrollLeft = Math.max(0, pixel.x + pixel.width / 2 - stage.clientWidth / 2);
-          stage.scrollTop = Math.max(0, pixel.y + pixel.height / 2 - stage.clientHeight / 2);
-        }
-      }
-    });
+    seedCropFromLoadedImage(
+      img,
+      initialCrop,
+      initialZoom,
+      stageRef.current,
+      setFitSize,
+      setZoom,
+      (z) => {
+        prevZoomRef.current = z;
+      },
+      setCrop,
+      setCompletedCrop,
+      setError,
+    );
   };
 
   const adjustZoom = useCallback((next: number) => {
@@ -286,27 +368,18 @@ export function CropImageModal({
     }
   };
 
-  const handleApply = async () => {
+  const handleApply = () => {
     const img = imgRef.current;
     if (!img || !completedCrop || applying) return;
-    if (completedCrop.width < 1 || completedCrop.height < 1) {
-      setError("Drag the edges to select the area you want to keep.");
-      return;
-    }
     setApplying(true);
     setError(null);
-    try {
-      const blob = await getCroppedImageBlob(img, completedCrop, sourceMime);
-      const percent =
-        crop?.unit === "%"
-          ? (crop as PercentCrop)
-          : convertToPercentCrop(completedCrop, img.width, img.height);
-      await onApply(blob, { crop: percent, zoom });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not crop image.");
-    } finally {
-      setApplying(false);
-    }
+    runCropApply(img, completedCrop, crop, zoom, sourceMime, onApply)
+      .then((errMsg) => {
+        if (errMsg) setError(errMsg);
+      })
+      .finally(() => {
+        setApplying(false);
+      });
   };
 
   if (!open) return null;
@@ -315,19 +388,8 @@ export function CropImageModal({
   const zoomed = zoom > 1.001;
   const previewSrc = trustedCropPreviewSrc(imageSrc);
   const viewportWidthCap = typeof window !== "undefined" ? window.innerWidth - 32 : 920;
-  const panelWidthPx = fitSize
-    ? Math.min(
-        920,
-        viewportWidthCap,
-        Math.max(320, fitSize.width + HANDLE_INSET_PX * 2 + PANEL_PAD_X_PX),
-      )
-    : undefined;
-  let stageClassName = "crop-image-modal__stage crop-image-modal__stage--loading";
-  if (zoomed) {
-    stageClassName = "crop-image-modal__stage crop-image-modal__stage--zoomed";
-  } else if (fitSize) {
-    stageClassName = "crop-image-modal__stage";
-  }
+  const panelWidthPx = cropPanelWidthPx(fitSize, viewportWidthCap);
+  const stageClassName = cropStageClassName(zoomed, Boolean(fitSize));
 
   return (
     <dialog open className="crop-image-modal" aria-modal="true" aria-labelledby={titleId}>
@@ -425,7 +487,7 @@ export function CropImageModal({
             variant="primary"
             disabled={!completedCrop || applying}
             icon={applying ? <Spinner size="sm" label="Working" /> : undefined}
-            onClick={() => void handleApply()}
+            onClick={handleApply}
           >
             {applying ? "Working…" : "Apply changes"}
           </Button>

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 import { ApiError } from "../../src/api/client.js";
 import { EventImageAssetLibrary } from "../../src/components/EventImageAssetLibrary.js";
 import { renderWithToast } from "../test-utils.js";
@@ -407,5 +408,104 @@ describe("EventImageAssetLibrary", () => {
     await screen.findByText("sponsor.png");
     expect(document.querySelector(".image-asset-library__card-thumb img")).toBeNull();
     expect(document.querySelector(".image-asset-library__card-thumb .ti-photo")).toBeTruthy();
+  });
+
+  it("rejects non-image MIME and empty file picks without opening crop", async () => {
+    mockFetch.mockResolvedValueOnce([]);
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    await screen.findByText("No images yet");
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: { files: [new File(["x"], "doc.pdf", { type: "application/pdf" })] },
+    });
+    expect(await screen.findByText(/PNG, JPG, or WebP/i)).toBeTruthy();
+    expect(mockUploadPreview).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    fireEvent.change(fileInput, { target: { files: [] } });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("shows an inline error when preview upload fails before crop", async () => {
+    mockFetch.mockResolvedValueOnce([]);
+    mockUploadPreview.mockRejectedValueOnce(new ApiError(500, "upload_failed", "upload_failed"));
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    await screen.findByText("No images yet");
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: { files: [new File(["x"], "logo.png", { type: "image/png" })] },
+    });
+    expect(await screen.findByText(/Could not prepare image for cropping/i)).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("toasts when clipboard copy fails", async () => {
+    mockFetch.mockResolvedValueOnce([asset]);
+    const writeText = vi.fn().mockRejectedValue(new Error("denied"));
+    const originalClipboard = navigator.clipboard;
+    Object.assign(navigator, { clipboard: { writeText } });
+    try {
+      renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+      await screen.findByText("sponsor.png");
+      fireEvent.click(await screen.findByTitle("Copy placeholder"));
+      expect(await screen.findByText("Could not copy")).toBeTruthy();
+    } finally {
+      Object.assign(navigator, { clipboard: originalClipboard });
+    }
+  });
+
+  it("ignores a stale asset list response after eventId changes", async () => {
+    let resolveFirst!: (v: EventImageAssetDto[]) => void;
+    const first = new Promise<EventImageAssetDto[]>((r) => {
+      resolveFirst = r;
+    });
+    mockFetch.mockReturnValueOnce(first).mockResolvedValueOnce([]);
+
+    function Harness() {
+      const [eventId, setEventId] = useState("evt-1");
+      return (
+        <>
+          <button type="button" onClick={() => setEventId("evt-2")}>
+            switch event
+          </button>
+          <EventImageAssetLibrary eventId={eventId} />
+        </>
+      );
+    }
+
+    renderWithToast(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "switch event" }));
+    await screen.findByText("No images yet");
+    resolveFirst([asset]);
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.queryByText("sponsor.png")).toBeNull();
+  });
+
+  it("ignores drops while uploading", async () => {
+    mockFetch.mockResolvedValueOnce([]);
+    let resolveUpload!: (v: { url: string }) => void;
+    mockUploadPreview.mockReturnValueOnce(
+      new Promise((r) => {
+        resolveUpload = r;
+      }),
+    );
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    await screen.findByText("No images yet");
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: { files: [new File(["a"], "a.png", { type: "image/png" })] },
+    });
+    const dropzone = screen.getByRole("button", { name: /Drop image here or click to browse/ });
+    fireEvent.drop(dropzone, {
+      dataTransfer: { files: [new File(["b"], "b.png", { type: "image/png" })] },
+    });
+    expect(mockUploadPreview).toHaveBeenCalledTimes(1);
+    resolveUpload({ url: "/uploads/default/events/evt-1/preview.png" });
+    await screen.findByRole("dialog", { name: "Adjust image" });
   });
 });

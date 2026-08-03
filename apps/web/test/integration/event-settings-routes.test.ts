@@ -728,6 +728,60 @@ describe("PATCH /api/admin/events/:eventId", () => {
     expect(body.code).toBe("event_archived");
   });
 
+  it("rejects malformed JSON and empty PATCH bodies", async () => {
+    await prisma.event.update({ where: { id: EVENT_SET }, data: { archived_at: null } });
+
+    const badJson = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{not-json",
+    });
+    expect(badJson.status).toBe(400);
+    await expect(badJson.json()).resolves.toEqual({ error: "invalid json" });
+
+    const empty = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(empty.status).toBe(400);
+    await expect(empty.json()).resolves.toEqual({ error: "validation_failed" });
+  });
+
+  it("accepts a date-only YYYY-MM-DD patch and clears original when display logo is external", async () => {
+    await prisma.event.update({
+      where: { id: EVENT_SET },
+      data: {
+        archived_at: null,
+        logo_url: "/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png",
+        logo_original_url: "/uploads/default/b2c3d4e5-f6a7-8901-bcde-f12345678901.png",
+        logo_crop: { unit: "%", x: 0, y: 0, width: 50, height: 50, zoom: 1 },
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        date: "2026-11-15",
+        logo_url: "https://cdn.example.com/external-only.png",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      event: {
+        date: string;
+        logo_url: string | null;
+        logo_original_url: string | null;
+        logo_crop: unknown;
+      };
+    };
+    expect(body.event.date.startsWith("2026-11-15")).toBe(true);
+    expect(body.event.logo_url).toBe("https://cdn.example.com/external-only.png");
+    expect(body.event.logo_original_url).toBeNull();
+    expect(body.event.logo_crop).toBeNull();
+  });
+
   it("updates capacity and clears capacity with null", async () => {
     const setRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
       method: "PATCH",

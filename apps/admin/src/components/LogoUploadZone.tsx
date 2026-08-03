@@ -480,7 +480,7 @@ export function LogoUploadZone({
             size="sm"
             disabled={uploading || disabled}
             icon={<i className="ti ti-crop" aria-hidden="true" />}
-            onClick={() => void openCropForEdit()}
+            onClick={openCropForEdit}
           >
             Edit image
           </Button>
