@@ -169,16 +169,33 @@ async function readPostgresEngine(db: PrismaClient): Promise<string | undefined>
   }
 }
 
+function resolveDatabaseLatencyMs(
+  check: SetupCheckResult,
+  extras?: { latencyMs?: number },
+): string | undefined {
+  const fromSetup = check.detail.match(/\((\d+)\s*ms\)/)?.[1];
+  const setupMs = fromSetup != null ? Number(fromSetup) : undefined;
+  const probeMs = extras?.latencyMs;
+  // When setup flagged the DB as slow, keep (or take the max of) that latency so a faster
+  // parallel checkDatabase probe cannot under-report "Responding slowly · N ms".
+  if (check.warn) {
+    const candidates = [setupMs, probeMs].filter(
+      (n): n is number => typeof n === "number" && Number.isFinite(n),
+    );
+    if (candidates.length === 0) return undefined;
+    return String(Math.max(...candidates));
+  }
+  if (probeMs != null && Number.isFinite(probeMs)) return String(probeMs);
+  return fromSetup;
+}
+
 function setupToDatabaseRow(
   check: SetupCheckResult,
   checkedAt: string,
   extras?: { latencyMs?: number; engine?: string },
 ): HealthCheckRow {
   const label = "Database";
-  const latency =
-    extras?.latencyMs != null
-      ? String(extras.latencyMs)
-      : check.detail.match(/\((\d+)\s*ms\)/)?.[1];
+  const latency = resolveDatabaseLatencyMs(check, extras);
   if (!check.ok && check.reason === "unreachable") {
     return {
       id: "database",

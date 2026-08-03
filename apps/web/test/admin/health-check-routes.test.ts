@@ -5,6 +5,7 @@ const {
   collectSetupChecks,
   collectGauges,
   checkMailer,
+  checkDatabase,
   describeMailConfigForOrg,
   resolveInstanceOrganizationId,
   listOidcProviders,
@@ -18,6 +19,7 @@ const {
   collectSetupChecks: vi.fn(),
   collectGauges: vi.fn(),
   checkMailer: vi.fn(),
+  checkDatabase: vi.fn(async () => ({ status: "ok", latency_ms: 2 })),
   describeMailConfigForOrg: vi.fn(),
   resolveInstanceOrganizationId: vi.fn(),
   listOidcProviders: vi.fn(),
@@ -35,7 +37,7 @@ vi.mock("../../src/admin/setup-checks-routes.js", async (importOriginal) => {
 });
 vi.mock("../../src/ops/readyz.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/ops/readyz.js")>();
-  return { ...actual, collectGauges, checkMailer };
+  return { ...actual, collectGauges, checkMailer, checkDatabase };
 });
 vi.mock("../../src/ops/product-version.js", () => ({ resolveProductVersion }));
 vi.mock("../../src/admin/instance-org.js", () => ({ resolveInstanceOrganizationId }));
@@ -219,6 +221,46 @@ describe("collectAdminHealth", () => {
     expect(external.find((c) => c.id === "identity_provider_idp-2")?.summary).toBe(
       "Configured · disabled",
     );
+  });
+
+  it("keeps slow setup latency when parallel DB probe is faster", async () => {
+    collectSetupChecks.mockResolvedValue({
+      ...okSetup,
+      database: {
+        ok: true,
+        warn: true,
+        detail: "PostgreSQL connected · slow (1200 ms)",
+      },
+    });
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+    });
+    checkDatabase.mockResolvedValue({ status: "ok", latency_ms: 5 });
+    checkMailer.mockReturnValue({ configured: false, provider: null });
+    resolveInstanceOrganizationId.mockResolvedValue("org-1");
+    describeMailConfigForOrg.mockResolvedValue({
+      provider: { value: null, source: "default", locked: false },
+    });
+    listOidcProviders.mockResolvedValue([]);
+    findEnabledOidcProviders.mockResolvedValue([]);
+    getCfAccessConfig.mockResolvedValue({
+      enabled: false,
+      teamDomain: "",
+      audience: [],
+      protectedPrefixes: [],
+      jwksUri: "",
+    });
+
+    const report = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockResolvedValue([{ version: "PostgreSQL 16.0" }]) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+    });
+
+    const database = report.groups[0]!.checks.find((c) => c.id === "database");
+    expect(database?.status).toBe("degraded");
+    expect(database?.summary).toBe("Responding slowly · 1200 ms");
+    expect(database?.details.some((d) => d.key === "latency_ms" && d.value === "1200")).toBe(true);
   });
 
   it("marks mail queue degraded above threshold", async () => {

@@ -272,7 +272,13 @@ export function HealthCheckPanel() {
     try {
       const data = await runAdminHealthLive();
       setReport(data);
-      addToast("Live checks finished", "success");
+      if (data.overall === "down") {
+        addToast("Live checks finished with outages", "error");
+      } else if (data.overall === "degraded") {
+        addToast("Live checks finished with warnings", "warning");
+      } else {
+        addToast("Live checks finished", "success");
+      }
     } catch (err) {
       addToast(operatorApiErrorMessage(err, "Live checks failed."), "error");
     } finally {
