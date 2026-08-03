@@ -67,7 +67,7 @@ describe("EventsPickerPage — non-superadmin, everything archived", () => {
     ).toBeTruthy();
   });
 
-  it("uses the three-column grid when at least four events are active", async () => {
+  it("uses the two-column grid when at least four events are active", async () => {
     vi.mocked(fetchAdminEvents).mockResolvedValue(
       Array.from({ length: 4 }, (_, index) => ({
         id: `evt-${index + 1}`,
@@ -90,6 +90,7 @@ describe("EventsPickerPage — non-superadmin, everything archived", () => {
     );
 
     await screen.findByText("Event 4");
-    expect(document.querySelector(".event-grid")?.className).toContain("event-grid--cols-3");
+    expect(document.querySelector(".event-grid")?.className).toContain("event-grid--cols-2");
+    expect(document.querySelector(".event-grid")?.className).not.toContain("event-grid--cols-3");
   });
 });

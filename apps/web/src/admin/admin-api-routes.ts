@@ -5,7 +5,9 @@ import { z } from "zod";
 import { canManageInstance, listAdminEvents } from "@admitto/auth";
 import { ensureBadgeEventItem, ensureStandardTicketType, writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
-import { assertCoordinatePairing, LOCATION_LIMITS, LocationValidationError } from "@admitto/location";
+import { assertCoordinatePairing, buildEventStaticMapPath, isLocationMapsEnabled, LOCATION_LIMITS, LocationValidationError } from "@admitto/location";
+import { resolveMapTileConfig } from "../maps/config.js";
+import { plainMapAttribution } from "../maps/static-map.js";
 import {
   adminAuditFromContext,
   countAttendeesByEvent,
@@ -53,6 +55,10 @@ type EventJsonRow = {
   date: Date;
   timezone: string;
   location: string | null;
+  has_coordinates?: boolean;
+  map_latitude?: number | null;
+  map_longitude?: number | null;
+  map_zoom?: number | null;
   organization_id: string;
   archived_at: Date | null;
   created_at: Date;
@@ -61,6 +67,24 @@ type EventJsonRow = {
   archived_by_user_id: string | null;
   archived_by_timezone: string | null;
 };
+
+/** List-card `/m/` path when maps are enabled and the event has a complete pin; otherwise null. */
+export function eventListMapPreviewPath(event: {
+  id: string;
+  map_latitude?: number | null;
+  map_longitude?: number | null;
+  map_zoom?: number | null;
+}): string | null {
+  if (!isLocationMapsEnabled(process.env)) return null;
+  const lat = event.map_latitude;
+  const lng = event.map_longitude;
+  if (lat == null || lng == null) return null;
+  return `${buildEventStaticMapPath(event.id, {
+    latitude: lat,
+    longitude: lng,
+    zoom: event.map_zoom,
+  })}&context=list`;
+}
 
 function isValidCalendarDate(value: string): boolean {
   const [year, month, day] = value.split("-").map(Number);
@@ -88,6 +112,10 @@ export function serializeEventDto(
 ) {
   const createdBy = event.created_by_user_id ? userDisplayMap?.[event.created_by_user_id] : undefined;
   const archivedBy = event.archived_by_user_id ? userDisplayMap?.[event.archived_by_user_id] : undefined;
+  const mapPreviewPath = eventListMapPreviewPath(event);
+  const mapAttribution = mapPreviewPath
+    ? plainMapAttribution(resolveMapTileConfig().attribution) || null
+    : null;
   return {
     id: event.id,
     title: event.title,
@@ -95,6 +123,9 @@ export function serializeEventDto(
     date: event.date.toISOString(),
     timezone: event.timezone,
     location: event.location,
+    has_coordinates: event.has_coordinates === true,
+    map_preview_path: mapPreviewPath,
+    map_attribution: mapAttribution,
     organization_id: event.organization_id,
     archived_at: event.archived_at?.toISOString() ?? null,
     created_at: event.created_at.toISOString(),
@@ -250,7 +281,14 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
         metadata: { eventId: created.id, title: created.title, slug: created.slug },
       });
 
-      return { ...created, location: trimmedVenueName };
+      return {
+        ...created,
+        location: trimmedVenueName,
+        has_coordinates: latitude != null && longitude != null,
+        map_latitude: latitude ?? null,
+        map_longitude: longitude ?? null,
+        map_zoom: latitude != null && longitude != null ? 15 : null,
+      };
     });
 
     emitSystemLog("admin", "info", "event_created", {

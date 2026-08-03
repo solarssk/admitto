@@ -85,6 +85,11 @@
   min-height: 1.25em;
 }
 
+.location-address-grid__empty {
+  font-weight: var(--fw-normal, 400);
+  color: var(--text-muted, var(--text-secondary));
+}
+
 .location-map-footer {
   display: flex;
   flex-wrap: wrap;
@@ -108,12 +113,6 @@
   display: inline-flex;
   align-items: center;
   min-height: 1.5rem;
-}
-
-.location-map-footer__verified-placeholder {
-  display: inline-block;
-  width: 10.5rem;
-  height: 1.5rem;
 }
 
 .location-map-footer__coords {

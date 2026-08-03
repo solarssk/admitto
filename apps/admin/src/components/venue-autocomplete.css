@@ -47,16 +47,15 @@
 }
 
 .venue-suggest {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  z-index: 60;
+  /* Position comes from inline `position: fixed` + top/left/width (escapes overflow:auto
+     ancestors such as the New event modal; same pattern as DeliveryRowMenu). */
+  z-index: 1100;
   list-style: none;
   margin: 0;
   padding: 4px;
-  max-height: 320px;
+  overflow-x: hidden;
   overflow-y: auto;
+  box-sizing: border-box;
   background: var(--surface-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-md, 8px);
