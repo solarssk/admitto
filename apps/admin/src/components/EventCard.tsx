@@ -47,13 +47,18 @@ export function EventCard({
       <Card className={cardClassName} padded={false}>
         <div className="event-card__map">
           {mapSrc ? (
-            <img
-              className="event-card__map-img"
-              src={mapSrc}
-              alt=""
-              loading="lazy"
-              decoding="async"
-            />
+            <>
+              <img
+                className="event-card__map-img"
+                src={mapSrc}
+                alt=""
+                loading="lazy"
+                decoding="async"
+              />
+              {/* Nested <a> is illegal inside the card Link. List PNGs skip burn-in so the
+                  pin stays centered under object-fit:cover; this HTML credit stays in frame. */}
+              <span className="event-card__map-attribution">© OpenStreetMap</span>
+            </>
           ) : (
             <div className="event-card__map-placeholder" aria-hidden="true">
               <i className="ti ti-map-off" />

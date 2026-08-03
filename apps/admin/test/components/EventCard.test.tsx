@@ -20,7 +20,7 @@ const baseEvent: EventDto = {
   timezone: "Europe/Warsaw",
   location: "Warsaw",
   has_coordinates: true,
-  map_preview_path: "/m/evt-1.png?v=8_52.230000_21.010000_z15&context=list",
+  map_preview_path: "/m/evt-1.png?v=9_52.230000_21.010000_z15&context=list",
   organization_id: "org-1",
   archived_at: null,
   attendee_count: 42,
@@ -201,7 +201,7 @@ describe("EventCard", () => {
     renderCard();
     const img = document.querySelector(".event-card__map-img") as HTMLImageElement | null;
     expect(img?.getAttribute("src")).toBe(
-      "/m/evt-1.png?v=8_52.230000_21.010000_z15&context=list",
+      "/m/evt-1.png?v=9_52.230000_21.010000_z15&context=list",
     );
   });
 
@@ -222,6 +222,18 @@ describe("EventCard", () => {
     expect(screen.getByText("No location set")).toBeTruthy();
     expect(document.querySelector(".event-card__location--empty")).toBeTruthy();
     expect(document.querySelector(".event-card__location")).toBeTruthy();
+  });
+
+  it("shows OpenStreetMap attribution on the map when a preview is present", () => {
+    renderCard();
+    expect(document.querySelector(".event-card__map-attribution")?.textContent).toBe(
+      "© OpenStreetMap",
+    );
+  });
+
+  it("hides map attribution when there is no map preview", () => {
+    renderCard({}, { ...baseEvent, map_preview_path: null });
+    expect(document.querySelector(".event-card__map-attribution")).toBeNull();
   });
 
   it("includes a weather coming-soon placeholder on the map", () => {

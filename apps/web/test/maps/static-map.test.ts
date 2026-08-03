@@ -131,6 +131,25 @@ describe("renderStaticMapPng content-length accept path", () => {
 });
 
 describe("buildStaticMapCacheKey", () => {
+  it("changes when burn-in attribution is toggled off for list previews", () => {
+    const base = { latitude: 52.23, longitude: 21.01, zoom: 15 };
+    const withBurn = buildStaticMapCacheKey(
+      "evt1",
+      base,
+      "https://tiles.example/{z}/{x}/{y}.png",
+      "© A",
+      true,
+    );
+    const withoutBurn = buildStaticMapCacheKey(
+      "evt1",
+      base,
+      "https://tiles.example/{z}/{x}/{y}.png",
+      "© A",
+      false,
+    );
+    expect(withBurn).not.toBe(withoutBurn);
+  });
+
   it("changes when coordinates, tile URL, or attribution change", () => {
     const base = {
       latitude: 52.23,

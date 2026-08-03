@@ -102,6 +102,12 @@ export interface RenderStaticMapOptions {
   timeoutMs?: number;
   /** Injectable sharp factory — production omits this; tests use it for error-path coverage. */
   imagePipeline?: typeof sharp;
+  /**
+   * When false, skip the PNG burn-in credit (Events list cards show HTML attribution instead,
+   * so object-fit:cover can keep the pin centered without cropping a bottom credit away).
+   * Default true for ticket/mail maps.
+   */
+  burnInAttribution?: boolean;
 }
 
 export class StaticMapRenderError extends Error {
@@ -152,6 +158,7 @@ export function buildStaticMapCacheKey(
   req: StaticMapRequest,
   tileUrl: string,
   attribution = "",
+  burnInAttribution = true,
 ): string {
   const width = req.width ?? STATIC_MAP_WIDTH;
   const height = req.height ?? STATIC_MAP_HEIGHT;
@@ -164,7 +171,7 @@ export function buildStaticMapCacheKey(
     String(height),
     tileUrl,
     plainMapAttribution(attribution),
-    ATTRIBUTION_OVERLAY_VERSION,
+    burnInAttribution ? ATTRIBUTION_OVERLAY_VERSION : "no-burn-in",
   ].join("|");
   return createHash("sha256").update(payload).digest("hex");
 }
@@ -462,9 +469,11 @@ export async function renderStaticMapPng(
   const pinTop = Math.round(height / 2 - 14);
   composites.push({ input: PIN_SVG, left: pinLeft, top: pinTop });
 
-  const attrOverlay = buildAttributionOverlay(width, options.tileConfig.attribution);
-  if (attrOverlay) {
-    composites.push({ input: attrOverlay, left: 0, top: height - ATTRIBUTION_OVERLAY_HEIGHT });
+  if (options.burnInAttribution !== false) {
+    const attrOverlay = buildAttributionOverlay(width, options.tileConfig.attribution);
+    if (attrOverlay) {
+      composites.push({ input: attrOverlay, left: 0, top: height - ATTRIBUTION_OVERLAY_HEIGHT });
+    }
   }
 
   try {

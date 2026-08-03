@@ -123,6 +123,7 @@ export class EventStaticMapService {
     },
     userAgent: string,
     tileConfig: ReturnType<typeof resolveMapTileConfig>,
+    burnInAttribution = true,
   ): Promise<Buffer> {
     let lastErr: unknown;
     for (let attempt = 1; attempt <= RENDER_ATTEMPTS; attempt++) {
@@ -131,6 +132,7 @@ export class EventStaticMapService {
           tileConfig,
           userAgent,
           ...this.renderOptions,
+          burnInAttribution,
         });
       } catch (err) {
         lastErr = err;
@@ -199,6 +201,7 @@ export class EventStaticMapService {
       req,
       tileConfig.tileUrl,
       tileConfig.attribution,
+      !options.listPreview,
     );
     const cached = await this.cache.get(cacheKey);
     if (cached) {
@@ -215,7 +218,12 @@ export class EventStaticMapService {
     const renderTask = (async (): Promise<ResolveEventStaticMapResult> => {
       try {
         const userAgent = await this.buildUserAgent(db);
-        const png = await this.renderWithRetry(req, userAgent, tileConfig);
+        const png = await this.renderWithRetry(
+          req,
+          userAgent,
+          tileConfig,
+          !options.listPreview,
+        );
         this.negativeUntil.delete(cacheKey);
         await this.cache.set(cacheKey, png);
         return { ok: true, png, cacheHit: false };

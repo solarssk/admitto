@@ -140,7 +140,7 @@ describe("EventStaticMapService.getForEvent", () => {
     );
     expect(renderPng).toHaveBeenCalledWith(
       expect.objectContaining({ zoom: 12, width: 840, height: 256 }),
-      expect.any(Object),
+      expect.objectContaining({ burnInAttribution: false }),
     );
 
     renderPng.mockClear();
@@ -150,7 +150,7 @@ describe("EventStaticMapService.getForEvent", () => {
     );
     expect(renderPng).toHaveBeenCalledWith(
       expect.objectContaining({ zoom: 16 }),
-      expect.any(Object),
+      expect.objectContaining({ burnInAttribution: true }),
     );
   });
 
