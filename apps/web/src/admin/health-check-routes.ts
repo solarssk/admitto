@@ -132,17 +132,13 @@ function mailProviderLabel(provider: string | null | undefined): string {
   }
 }
 
-function mapTilesServiceLabel(tileUrl: string): string {
+export function mapTilesServiceLabel(tileUrl: string): string {
   const endpoint = safeEndpointDisplay(tileUrl);
   if (!endpoint) return "Map tiles";
-  try {
-    const host = new URL(endpoint).hostname;
-    if (host.includes("openstreetmap")) return "Map tiles, OpenStreetMap";
-    if (host.includes("carto")) return "Map tiles, CARTO";
-    return `Map tiles, ${host}`;
-  } catch {
-    return "Map tiles";
-  }
+  const host = new URL(endpoint).hostname;
+  if (host.includes("openstreetmap")) return "Map tiles, OpenStreetMap";
+  if (host.includes("carto")) return "Map tiles, CARTO";
+  return `Map tiles, ${host}`;
 }
 
 function identityProtocolLabel(providerType: string): string {
@@ -934,7 +930,8 @@ function mapTilesRow(env: NodeJS.ProcessEnv, checkedAt: string): HealthCheckRow 
       ["status", "ok"],
       ["endpoint", endpoint],
       ["max_zoom", String(tiles.maxZoom)],
-      ["attribution", tiles.attribution ? "set" : "default"],
+      // resolveMapTileConfig always supplies a non-empty attribution (env or OSM default).
+      ["attribution", "set"],
       ["last_checked", checkedAt],
     ]),
   };

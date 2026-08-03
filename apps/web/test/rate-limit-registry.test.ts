@@ -83,6 +83,21 @@ describe("RATE_POLICIES registry", () => {
     expect(json).toHaveBeenCalledWith({ error: "health_live_rate_limited" }, 429);
     expect(response).toEqual({ body: { error: "health_live_rate_limited" }, status: 429 });
   });
+
+  it("scopes admin:health-live and authUserScopedPolicy keys by user id", () => {
+    const authCtx = {
+      get: (key: string) => (key === "auth" ? { userId: "user-42" } : undefined),
+    } as never;
+    expect(RATE_POLICIES["admin:health-live"].checks[0]!.keyOf(authCtx)).toBe(
+      "admin:health-live:user:user-42",
+    );
+    expect(RATE_POLICIES["admin:mail-transport-test"].checks[0]!.keyOf(authCtx)).toBe(
+      "admin:mail-transport-test:user:user-42",
+    );
+    expect(RATE_POLICIES["admin:event-mail-transport-test"].checks[0]!.keyOf(authCtx)).toBe(
+      "admin:event-mail-transport-test:user:user-42",
+    );
+  });
 });
 
 describe("INLINE_RATE_LIMITS", () => {

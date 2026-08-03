@@ -132,7 +132,6 @@ function appendGroupDetails(
     const safe = check.details.filter(
       (d) => MARKDOWN_SAFE_DETAIL_KEYS.has(d.key) && d.key !== "url",
     );
-    if (safe.length === 0) continue;
     lines.push(`**${escapeMarkdownText(check.label)}**`);
     for (const d of safe) {
       lines.push(

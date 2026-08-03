@@ -44,6 +44,13 @@ const config: SmtpConfig = {
 };
 
 describe("SmtpAdapter", () => {
+  it("verifyConnection delegates to transporter.verify", async () => {
+    const verify = vi.fn(async () => undefined);
+    const adapter = new SmtpAdapter(config, { verify, sendMail: vi.fn() } as unknown as nodemailer.Transporter);
+    await adapter.verifyConnection();
+    expect(verify).toHaveBeenCalled();
+  });
+
   it("sends via injected transporter (jsonTransport) => accepted + messageId", async () => {
     const transporter = nodemailer.createTransport({ jsonTransport: true });
     const adapter = new SmtpAdapter(config, transporter);

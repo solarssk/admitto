@@ -93,6 +93,13 @@ function sampleReport(overrides?: Partial<HealthReportDto>): HealthReportDto {
             summary: "Unreachable",
             details: [{ key: "status", value: "down" }],
           },
+          {
+            id: "custom_probe",
+            label: "Custom probe",
+            status: "ok",
+            summary: "Connected",
+            details: [],
+          },
         ],
       },
     ],
@@ -113,6 +120,59 @@ afterEach(() => {
 });
 
 describe("HealthCheckPanel", () => {
+  it("renders fallback icons for unknown check and group ids", async () => {
+    mockFetch.mockResolvedValueOnce(
+      sampleReport({
+        groups: [
+          {
+            id: "other",
+            label: "Other",
+            subtitle: "Extra",
+            status: "ok",
+            checks: [
+              {
+                id: "mystery",
+                label: "Mystery",
+                status: "ok",
+                summary: "Fine",
+                details: [],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    renderWithToast(<HealthCheckPanel />);
+    await screen.findByText("Mystery");
+    expect(document.querySelector(".ti-circle-dot")).toBeTruthy();
+  });
+
+  it("ignores aborted errors from the passive fetch", async () => {
+    let rejectFetch!: (reason?: unknown) => void;
+    mockFetch.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          rejectFetch = reject;
+        }),
+    );
+
+    const { unmount } = renderWithToast(<HealthCheckPanel />);
+    expect(screen.getByText("Loading health checks…")).toBeTruthy();
+    unmount();
+
+    await act(async () => {
+      rejectFetch(new DOMException("Aborted", "AbortError"));
+    });
+  });
+
+  it("shows fallback empty copy when the API returns an empty payload", async () => {
+    mockFetch.mockResolvedValueOnce(undefined as unknown as HealthReportDto);
+    renderWithToast(<HealthCheckPanel />);
+    await waitFor(() => {
+      expect(screen.getByText("Could not load health checks.")).toBeTruthy();
+    });
+  });
+
   it("shows loading copy while the passive fetch is in flight", () => {
     mockFetch.mockImplementationOnce(() => new Promise(() => {}));
     renderWithToast(<HealthCheckPanel />);

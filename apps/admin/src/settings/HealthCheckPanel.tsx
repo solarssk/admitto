@@ -286,23 +286,6 @@ export function HealthCheckPanel() {
     }
   };
 
-  const handleCopy = async () => {
-    if (!report) return;
-    try {
-      await navigator.clipboard.writeText(formatHealthCheckMarkdown(report));
-      addToast("Health snapshot copied to clipboard", "success");
-    } catch {
-      addToast("Could not copy. Clipboard access was blocked.", "error");
-    }
-  };
-
-  const handleExport = () => {
-    if (!report) return;
-    const stamp = report.generated_at.replaceAll(":", "-").slice(0, 19);
-    downloadTextFile(`admitto-health-${stamp}.md`, formatHealthCheckMarkdown(report));
-    addToast("Health snapshot downloaded", "success");
-  };
-
   if (initialLoading && !report) {
     return (
       <div className="settings-sections">
@@ -313,12 +296,12 @@ export function HealthCheckPanel() {
     );
   }
 
-  if (error && !report) {
+  if (!report) {
     return (
       <div className="settings-sections">
         <EmptyState
           title="Could not load health checks"
-          description={error}
+          description={error ?? "Could not load health checks."}
           action={
             <Button type="button" variant="secondary" onClick={() => void loadPassive()}>
               Retry
@@ -329,7 +312,20 @@ export function HealthCheckPanel() {
     );
   }
 
-  if (!report) return null;
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(formatHealthCheckMarkdown(report));
+      addToast("Health snapshot copied to clipboard", "success");
+    } catch {
+      addToast("Could not copy. Clipboard access was blocked.", "error");
+    }
+  };
+
+  const handleExport = () => {
+    const stamp = report.generated_at.replaceAll(":", "-").slice(0, 19);
+    downloadTextFile(`admitto-health-${stamp}.md`, formatHealthCheckMarkdown(report));
+    addToast("Health snapshot downloaded", "success");
+  };
 
   return (
     <div className="settings-sections health-check">

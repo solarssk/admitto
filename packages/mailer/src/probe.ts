@@ -24,7 +24,8 @@ function probeErrorMessage(err: unknown): string {
 }
 
 async function withProbeTimeout(work: Promise<void>, timeoutMs: number): Promise<void> {
-  const signal = AbortSignal.timeout(timeoutMs);
+  const signal =
+    timeoutMs <= 0 ? AbortSignal.abort() : AbortSignal.timeout(timeoutMs);
   await Promise.race([
     work,
     new Promise<never>((_, reject) => {

@@ -73,6 +73,7 @@ import {
   MAIL_QUEUE_DEGRADED_THRESHOLD,
   resolveHealthCommit,
   safeEndpointDisplay,
+  mapTilesServiceLabel,
   worstHealthStatus,
 } from "../../src/admin/health-check-routes.js";
 
@@ -144,6 +145,21 @@ describe("safeEndpointDisplay", () => {
 
   it("returns undefined for an unparseable URL", () => {
     expect(safeEndpointDisplay("not a url at all")).toBeUndefined();
+  });
+});
+
+describe("mapTilesServiceLabel", () => {
+  it("labels known hosts and falls back when the URL cannot be displayed", () => {
+    expect(mapTilesServiceLabel("https://tile.openstreetmap.org/{z}/{x}/{y}.png")).toBe(
+      "Map tiles, OpenStreetMap",
+    );
+    expect(mapTilesServiceLabel("https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png")).toBe(
+      "Map tiles, CARTO",
+    );
+    expect(mapTilesServiceLabel("https://tiles.example.com/{z}/{x}/{y}.png")).toBe(
+      "Map tiles, tiles.example.com",
+    );
+    expect(mapTilesServiceLabel("not a url")).toBe("Map tiles");
   });
 });
 
@@ -1015,6 +1031,90 @@ describe("collectAdminHealth", () => {
     expect(disabled.groups[1]!.checks.find((c) => c.id === "map_tiles")?.status).toBe(
       "not_configured",
     );
+  });
+
+  it("covers in-memory redis ok and IdP userinfo live probe", async () => {
+    collectSetupChecks.mockResolvedValue({
+      ...okSetup,
+      redis: { ok: true, detail: "Redis OK (in-memory) (2 ms)" },
+      base_url: { ok: true, detail: "tickets.example.com" },
+    });
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+    });
+    stubHappyPathMailAndIdp();
+    listOidcProviders.mockResolvedValue([
+      {
+        id: "idp-2",
+        provider_type: "oidc",
+        display_name: "With Userinfo",
+        issuer: "https://auth.example.com",
+        authorization_endpoint: "https://auth.example.com/auth",
+        token_endpoint: "https://auth.example.com/token",
+        jwks_uri: "https://auth.example.com/jwks",
+        userinfo_endpoint: "https://auth.example.com/userinfo",
+        enabled: true,
+      },
+    ]);
+    findEnabledOidcProviders.mockResolvedValue([
+      { id: "idp-2", provider_type: "oidc", display_name: "With Userinfo" },
+    ]);
+    testOidcConnection.mockResolvedValue({ ok: true });
+
+    const report = await collectAdminHealth({
+      db: {
+        $queryRaw: vi.fn().mockResolvedValue([{ version: "AcmeDB 12.0.1 for testing engines" }]),
+      } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+      live: true,
+      env: {
+        MAP_TILE_URL: "https://tiles.example.com/{z}/{x}/{y}.png",
+        MAP_TILE_ATTRIBUTION: "© Example Tiles",
+      },
+    });
+    expect(report.groups[0]!.checks.find((c) => c.id === "rate_limit_storage")?.summary).toBe(
+      "Connected (in-memory)",
+    );
+    expect(
+      report.groups[0]!.checks
+        .find((c) => c.id === "instance_url")
+        ?.details.some((d) => d.key === "url"),
+    ).toBe(false);
+    expect(
+      report.groups[0]!.checks
+        .find((c) => c.id === "database")
+        ?.details.some((d) => d.key === "engine" && d.value?.startsWith("AcmeDB")),
+    ).toBe(true);
+    expect(
+      report.groups[1]!.checks
+        .find((c) => c.id === "map_tiles")
+        ?.details.some((d) => d.key === "attribution" && d.value === "set"),
+    ).toBe(true);
+    expect(testOidcConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ userinfo_endpoint: "https://auth.example.com/userinfo" }),
+    );
+
+    const emptyEngine = await collectAdminHealth({
+      db: {
+        $queryRaw: vi.fn().mockResolvedValue([{ version: "   " }]),
+      } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+      env: {
+        MAP_TILE_URL: "https://tiles.example.com/{z}/{x}/{y}.png",
+        MAP_TILE_ATTRIBUTION: "",
+      },
+    });
+    expect(
+      emptyEngine.groups[0]!.checks
+        .find((c) => c.id === "database")
+        ?.details.some((d) => d.key === "engine"),
+    ).toBe(false);
+    expect(
+      emptyEngine.groups[1]!.checks
+        .find((c) => c.id === "map_tiles")
+        ?.details.some((d) => d.key === "attribution" && d.value === "set"),
+    ).toBe(true);
   });
 });
 

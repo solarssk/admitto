@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { lookup } from "node:dns/promises";
 import { createMailer, sendBatch, MockAdapter, configFromEnv } from "../src/index.js";
 import type { EmailProviderCapabilities, MailMessage } from "../src/types.js";
+import * as mailerConfig from "../src/config.js";
 
 vi.mock("node:dns/promises", () => ({
   lookup: vi.fn(),
@@ -84,6 +85,13 @@ describe("createMailer", () => {
       createMailer({ provider: "powerautomate", url: "not-a-url", fromAddress: "a@example.com" }),
     ).rejects.toThrow();
     await expect(createMailer({ provider: "unknown-provider" })).rejects.toThrow();
+  });
+
+  it("throws on an exhaustive-default unknown provider from parseMailerConfig", async () => {
+    vi.spyOn(mailerConfig, "parseMailerConfig").mockReturnValueOnce({
+      provider: "legacy_fax",
+    } as never);
+    await expect(createMailer({ provider: "smtp" })).rejects.toThrow(/Unknown provider/);
   });
 });
 
