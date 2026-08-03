@@ -15,7 +15,7 @@ Confirm that your account has the Admin role for the organisation that owns the 
 
 ## Steps
 
-1. Open **Events** to see active and archived events in your organisation. Each card shows a map preview when maps are enabled and the event has a pin, a short status (for example **Needs archiving**, **Today**, or **In N days**), location, and attendee count. Map thumbnails show a **© OpenStreetMap** credit on the image (and the same credit is burned into ticket/mail map PNGs; CARTO only appears in the image burn-in if you configure CARTO tiles). Archive and restore stay in **Event settings** / organisation Event archiving, not on the card.
+1. Open **Events** to see active and archived events in your organisation. Each card shows a map preview when maps are enabled and the event has a pin, a short status (for example **Needs archiving**, **Today**, or **In N days**), location, and attendee count. Map thumbnails include the © OpenStreetMap credit burned into the image (same as tickets and mail; CARTO only appears if you configure CARTO tiles). Archive and restore stay in **Event settings** / organisation Event archiving, not on the card.
 2. Create events and manage their attendees, requirements, communication, reports, and settings.
 3. Open **Users & roles** to review assignments available to your administration scope.
 4. Give operators event-scoped access only to the events where they work.

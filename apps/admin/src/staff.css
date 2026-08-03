@@ -109,29 +109,10 @@
   font-size: 1.5rem;
 }
 
-.event-card__map-attribution {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 1;
-  padding: 3px 7px;
-  border-radius: var(--radius-sm, 6px);
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-sm, 0 1px 2px rgba(15, 23, 42, 0.12));
-  color: var(--text-secondary);
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 1.2;
-  pointer-events: none;
-  white-space: nowrap;
-}
-
 .event-card__weather {
   position: absolute;
   top: 8px;
-  left: 8px;
-  right: auto;
+  right: 8px;
   display: inline-flex;
   align-items: center;
   gap: 4px;
