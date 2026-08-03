@@ -841,6 +841,36 @@ export function EventSettingsPage() {
       />
 
       <EventSettingsTabPanel tab="general" activeTab={tab} visited={visitedTabs} label="General">
+        <Card title={<HintLabel hint={STATUS_HINT}>Status</HintLabel>} className="event-settings-card">
+          <div className="settings-status-grid">
+            <div className="settings-field-group">
+              <p>
+                Current status:{" "}
+                <Badge variant={isArchived ? "neutral" : "info"} dot={false}>
+                  {isArchived ? "Archived" : "Active"}
+                </Badge>
+              </p>
+              <p className="field-hint">
+                {isArchived && event.archived_at
+                  ? `Archived on ${formatUtcDateTime(event.archived_at)}.`
+                  : "Active events accept check-ins and allow attendee edits."}
+              </p>
+            </div>
+            <div className="settings-field-group">
+              <p>
+                Organization: <strong>{event.organization_name}</strong>
+              </p>
+              <p className="field-hint">Events belong to an organization and use its branding by default.</p>
+            </div>
+            <div className="settings-field-group">
+              <p>
+                Created: <strong>{formatUtcDateTime(event.created_at)}</strong>
+              </p>
+              <p className="field-hint">When this event was first set up.</p>
+            </div>
+          </div>
+        </Card>
+
         <Card
           title={<HintLabel hint={BASIC_INFORMATION_HINT}>Basic information</HintLabel>}
           className="event-settings-card"
@@ -921,36 +951,6 @@ export function EventSettingsPage() {
             onSave={() => void handleSave()}
           />
         )}
-
-        <Card title={<HintLabel hint={STATUS_HINT}>Status</HintLabel>} className="event-settings-card">
-          <div className="settings-status-grid">
-            <div className="settings-field-group">
-              <p>
-                Current status:{" "}
-                <Badge variant={isArchived ? "neutral" : "info"} dot={false}>
-                  {isArchived ? "Archived" : "Active"}
-                </Badge>
-              </p>
-              <p className="field-hint">
-                {isArchived && event.archived_at
-                  ? `Archived on ${formatUtcDateTime(event.archived_at)}.`
-                  : "Active events accept check-ins and allow attendee edits."}
-              </p>
-            </div>
-            <div className="settings-field-group">
-              <p>
-                Organization: <strong>{event.organization_name}</strong>
-              </p>
-              <p className="field-hint">Events belong to an organization and use its branding by default.</p>
-            </div>
-            <div className="settings-field-group">
-              <p>
-                Created: <strong>{formatUtcDateTime(event.created_at)}</strong>
-              </p>
-              <p className="field-hint">When this event was first set up.</p>
-            </div>
-          </div>
-        </Card>
       </EventSettingsTabPanel>
 
       <EventSettingsTabPanel tab="location" activeTab={tab} visited={visitedTabs} label="Location">
