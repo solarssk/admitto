@@ -47,13 +47,18 @@ export function EventCard({
       <Card className={cardClassName} padded={false}>
         <div className="event-card__map">
           {mapSrc ? (
-            <img
-              className="event-card__map-img"
-              src={mapSrc}
-              alt=""
-              loading="lazy"
-              decoding="async"
-            />
+            <>
+              <img
+                className="event-card__map-img"
+                src={mapSrc}
+                alt=""
+                loading="lazy"
+                decoding="async"
+              />
+              {/* Nested <a> is illegal inside the card Link — plain text credit only.
+                  PNG burn-in can be cropped by object-fit on narrow cards; this stays visible. */}
+              <span className="event-card__map-attribution">© OpenStreetMap</span>
+            </>
           ) : (
             <div className="event-card__map-placeholder" aria-hidden="true">
               <i className="ti ti-map-off" />

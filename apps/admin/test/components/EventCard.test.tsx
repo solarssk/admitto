@@ -224,6 +224,18 @@ describe("EventCard", () => {
     expect(document.querySelector(".event-card__location")).toBeTruthy();
   });
 
+  it("shows OpenStreetMap attribution on the map when a preview is present", () => {
+    renderCard();
+    expect(document.querySelector(".event-card__map-attribution")?.textContent).toBe(
+      "© OpenStreetMap",
+    );
+  });
+
+  it("hides map attribution when there is no map preview", () => {
+    renderCard({}, { ...baseEvent, map_preview_path: null });
+    expect(document.querySelector(".event-card__map-attribution")).toBeNull();
+  });
+
   it("includes a weather coming-soon placeholder on the map", () => {
     renderCard();
     expect(screen.getByLabelText("Weather forecast coming soon")).toBeTruthy();
