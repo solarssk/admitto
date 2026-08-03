@@ -50,4 +50,4 @@ New sessions use the updated assignments. Use **Active sessions** when access mu
 - [Roles and Permissions](Roles-and-Permissions)
 - [Organisation Administration](Organisation-Administration)
 - [Identity and SSO](Identity-and-SSO)
-- [Instance Settings](Instance-Settings)
+- [Organisation Settings](Organisation-Settings)

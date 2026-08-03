@@ -16,8 +16,8 @@ Start with the page for the failed workflow:
 | Invalid or revoked check-in result | [Scanning Tickets and Check-in Results](Scanning-Tickets-and-Results) |
 | No manual lookup result or wrong admission | [Manual Lookup and Corrections](Manual-Lookup-and-Corrections) |
 | Offline or reconnecting check-in | [Check-in Connection Problems](Check-in-Connection-Problems) |
-| Instance configuration or logs | [Instance Settings](Instance-Settings) and [Logs and Audit](Logs-and-Audit) |
-| System health or support dump for a bug report | [Instance Settings](Instance-Settings) → Health check |
+| Instance configuration or logs | [Organisation Settings](Organisation-Settings) and [Logs and Audit](Logs-and-Audit) |
+| System health or support dump for a bug report | [Organisation Settings](Organisation-Settings) → Health check |
 
 ## Report a product problem
 

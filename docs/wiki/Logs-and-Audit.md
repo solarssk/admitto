@@ -45,6 +45,6 @@ Viewing does not change product state. Exporting can create an audit entry and p
 
 ## Related pages
 
-- [Instance Settings](Instance-Settings)
+- [Organisation Settings](Organisation-Settings)
 - [Identity and SSO](Identity-and-SSO)
 - [Technical Documentation](Technical-Documentation)

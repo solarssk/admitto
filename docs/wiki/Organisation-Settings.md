@@ -1,4 +1,4 @@
-# Instance Settings
+# Organisation Settings
 
 > **Audience:** Superadmins
 > **Required role:** Superadmin
@@ -34,7 +34,7 @@ The selected setting is saved, an audit record is created where supported, and t
 
 ## Important decisions
 
-- Instance settings can affect every organisation or staff login.
+- Organisation settings can affect every organisation or staff login.
 - Environment-locked values are read-only in the UI and cannot be overridden there.
 - Event-specific mail settings can override the organisation transport for that event.
 - Deployment and emergency recovery are not UI tasks; use the technical documentation.

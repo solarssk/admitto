@@ -54,7 +54,7 @@
 **System Administration**
 
 - [Superadmin Quick Start](Superadmin-Quick-Start)
-- [Instance Settings](Instance-Settings)
+- [Organisation Settings](Organisation-Settings)
 - [Logs and Audit](Logs-and-Audit)
 
 **Integrations**
