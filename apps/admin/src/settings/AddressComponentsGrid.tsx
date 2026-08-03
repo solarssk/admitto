@@ -28,7 +28,7 @@ export function AddressComponentsGrid({
               {label}
             </dt>
             <dd className="location-address-grid__value">
-              {value ? value : <span className="location-address-grid__empty">Not filled</span>}
+              {value || <span className="location-address-grid__empty">Not filled</span>}
             </dd>
           </div>
         );
