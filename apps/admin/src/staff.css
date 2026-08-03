@@ -104,9 +104,10 @@
   display: block;
   width: 100%;
   height: 100%;
-  /* Keep the PNG attribution strip (bottom) inside the crop; cover alone clipped it away. */
+  /* Center the pin (drawn mid-image). OSM/CARTO credit lives under the grid, so we
+     do not crop to the PNG attribution strip. */
   object-fit: cover;
-  object-position: center bottom;
+  object-position: center center;
   pointer-events: none;
 }
 
@@ -248,15 +249,19 @@
   font-size: var(--fs-sm);
   line-height: 1.35;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 6px;
 }
 
 .event-card__location i {
-  margin-top: 0.15em;
+  margin: 0;
   font-size: 14px;
+  line-height: 1;
   color: var(--text-muted);
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .event-card__location span {
