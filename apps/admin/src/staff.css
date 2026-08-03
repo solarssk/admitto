@@ -3603,6 +3603,37 @@
   flex-direction: column;
 }
 
+/* Primary colour / Font / Font by surface — same rhythm as .theme-preview: tight label→hint,
+   10px to the control, 20px between sections. Do not wrap these in .settings-card-stack (its
+   uniform gap stacks with the section margins and blows out the spacing). */
+.theme-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.theme-section + .theme-section {
+  margin-top: 20px;
+}
+
+.theme-section > *:not(:last-child) {
+  margin-bottom: 10px;
+}
+
+.theme-section > .at-label {
+  margin-bottom: 0;
+}
+
+/* Hint already owns the gap to the control — drop the grid's extra top margin. */
+.theme-section .theme-swatch-grid,
+.theme-section .font-option-grid {
+  margin-top: 0;
+}
+
+/* Card intro → first theme section: same 20px step as between sections. */
+.settings-card-intro + .theme-section {
+  margin-top: 20px;
+}
+
 /* Same reasoning as .logo-upload: a uniform gap would also space the heading from its own
    description below it - tight there to match Primary colour/Font, every other pair keeps the
    same 10px rhythm as before. */
