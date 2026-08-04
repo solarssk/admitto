@@ -287,7 +287,7 @@ export function UsersPage() {
       />
 
       {tab === "staff" && superadmin && (
-        <Card>
+        <Card title="Staff users">
           <div className="users-page__toolbar">
             <label className="users-page__search">
               <i className="ti ti-search" aria-hidden="true" />
@@ -447,7 +447,7 @@ export function UsersPage() {
       )}
 
       {tab === "roles" && (
-        <Card>
+        <Card title="Role assignments">
           <RoleAssignmentsTab onAssignmentsChanged={() => void load()} />
         </Card>
       )}
