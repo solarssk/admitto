@@ -122,13 +122,18 @@ type WalkDeps = {
 async function* walkManagedFiles(
   root: string,
   dir: string,
-  deps: WalkDeps = { readdir: fsp.readdir, safeStat: safeStatManagedFile },
+  deps?: WalkDeps,
 ): AsyncGenerator<StorageListEntry> {
+  // Resolve once per walk (not as a default param object - Sonar S7737).
+  const resolved: WalkDeps = deps ?? {
+    readdir: fsp.readdir,
+    safeStat: safeStatManagedFile,
+  };
   let entries;
   try {
     // dir is always under root (starts at root, descends via readdir join).
     // eslint-disable-next-line security/detect-non-literal-fs-filename
-    entries = await deps.readdir(dir, { withFileTypes: true });
+    entries = await resolved.readdir(dir, { withFileTypes: true });
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "ENOENT") return;
@@ -138,7 +143,7 @@ async function* walkManagedFiles(
   for (const entry of entries) {
     const abs = join(dir, entry.name);
     if (entry.isDirectory()) {
-      yield* walkManagedFiles(root, abs, deps);
+      yield* walkManagedFiles(root, abs, resolved);
       continue;
     }
     if (!entry.isFile()) continue;
@@ -146,7 +151,7 @@ async function* walkManagedFiles(
     const key = relative(root, abs).split(sep).join("/");
     if (!isManagedUploadKey(key)) continue;
 
-    const st = await deps.safeStat(abs);
+    const st = await resolved.safeStat(abs);
     if (!st) continue;
     yield { key, mtimeMs: st.mtimeMs, sizeBytes: st.size };
   }
