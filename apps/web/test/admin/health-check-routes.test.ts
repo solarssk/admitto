@@ -208,6 +208,11 @@ describe("resolveHealthCommit", () => {
     expect(resolveHealthVersion()).toBe("0.4.12");
   });
 
+  it("skips build-meta when its commit is unknown and uses GIT_COMMIT", () => {
+    readAdminBuildMetaMock.mockReturnValue({ version: "0.4.12", commit: "unknown" });
+    expect(resolveHealthCommit({ GIT_COMMIT: "abcdef0123456789" })).toBe("abcdef0");
+  });
+
   it("uses GIT_COMMIT in development when no SPA build-meta is present", () => {
     expect(
       resolveHealthCommit({
@@ -215,6 +220,15 @@ describe("resolveHealthCommit", () => {
         GIT_COMMIT: "deadbeefdeadbeef",
       }),
     ).toBe("deadbee");
+  });
+
+  it("returns unknown when git HEAD cannot be resolved", () => {
+    expect(
+      resolveHealthCommit({}, { gitHead: () => {
+        throw new Error("no git");
+      } }),
+    ).toBe("unknown");
+    expect(resolveHealthCommit({}, { gitHead: () => "" })).toBe("unknown");
   });
 });
 

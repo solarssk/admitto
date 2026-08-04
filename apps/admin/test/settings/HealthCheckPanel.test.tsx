@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { HealthCheckPanel } from "../../src/settings/HealthCheckPanel.js";
+import {
+  formatRunningBuildLabel,
+  HealthCheckPanel,
+} from "../../src/settings/HealthCheckPanel.js";
 import { renderWithToast } from "../test-utils.js";
 import type { HealthReportDto } from "../../src/api/types.js";
 
@@ -121,6 +124,16 @@ afterEach(() => {
   vi.resetAllMocks();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+describe("formatRunningBuildLabel", () => {
+  it("includes commit when known", () => {
+    expect(formatRunningBuildLabel("0.4.12", "a529cd5")).toBe(" · v0.4.12 · a529cd5");
+  });
+
+  it("omits commit when unknown", () => {
+    expect(formatRunningBuildLabel("0.4.12", "unknown")).toBe(" · v0.4.12");
+  });
 });
 
 describe("HealthCheckPanel", () => {

@@ -74,9 +74,14 @@ function stampRunningBuild(report: HealthReportDto): HealthReportDto {
   return { ...report, version, commit };
 }
 
+/** Label suffix for Overview meta / tests (` · vX.Y.Z · abcdef0`). */
+export function formatRunningBuildLabel(version: string, commit: string): string {
+  return commit !== "unknown" ? ` · v${version} · ${commit}` : ` · v${version}`;
+}
+
 function runningBuildLabel(): string {
   const { version, commit } = runningBuildMeta();
-  return commit !== "unknown" ? ` · v${version} · ${commit}` : ` · v${version}`;
+  return formatRunningBuildLabel(version, commit);
 }
 
 const ROW_STATUS_TEXT: Record<HealthRowStatus, string> = {

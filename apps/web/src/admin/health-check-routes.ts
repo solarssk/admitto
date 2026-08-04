@@ -92,6 +92,8 @@ export type CollectAdminHealthDeps = {
 export type ResolveHealthCommitOpts = {
   /** Override SPA dist root (tests). Omit to scan default admin dist candidates. */
   adminDistRoot?: string;
+  /** Injectable git HEAD reader (tests); defaults to `git rev-parse HEAD`. */
+  gitHead?: () => string;
 };
 
 /**
@@ -109,9 +111,14 @@ export function resolveHealthCommit(
   if (raw) return raw.slice(0, 7);
 
   try {
-    // Trusted build/runtime tooling; same pattern as apps/admin/build-meta.ts (Sonar S4036).
-    // Bare "git" resolves via PATH like the rest of the monorepo toolchain - not untrusted input.
-    const sha = execSync("git rev-parse HEAD", { cwd: process.cwd(), encoding: "utf8" }).trim(); // NOSONAR - see comment above
+    const sha = (
+      opts.gitHead ??
+      (() => {
+        // Trusted build/runtime tooling; same pattern as apps/admin/build-meta.ts (Sonar S4036).
+        // Bare "git" resolves via PATH like the rest of the monorepo toolchain - not untrusted input.
+        return execSync("git rev-parse HEAD", { cwd: process.cwd(), encoding: "utf8" }); // NOSONAR - see comment above
+      })
+    )().trim();
     return sha ? sha.slice(0, 7) : "unknown";
   } catch {
     return "unknown";
