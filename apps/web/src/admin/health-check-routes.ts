@@ -26,6 +26,7 @@ import type { HealthOverallStatus, HealthRowStatus } from "@admitto/shared";
 import { collectSetupChecks, type SetupCheckResult } from "./setup-checks-routes.js";
 import { collectGauges, checkMailer, checkDatabase } from "../ops/readyz.js";
 import { resolveProductVersion } from "../ops/product-version.js";
+import { readAdminBuildMeta } from "./admin-build-meta.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { resolveGeocodingConfig, resolveMapTileConfig } from "../maps/config.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
@@ -74,6 +75,11 @@ export type CollectAdminHealthDeps = {
   geocodingProvider?: GeocodingProvider;
   injectedBaseUrl?: string;
   env?: NodeJS.ProcessEnv;
+  /**
+   * Admin SPA dist root to read `build-meta.json` from. Defaults to the same candidates
+   * `staff-spa` uses. Tests pass an empty temp dir so ambient dist does not leak in.
+   */
+  adminDistRoot?: string;
   /** When true, run Nominatim + identity provider + Cloudflare Access + mail live probes (POST /health/live only). */
   live?: boolean;
   now?: () => Date;
@@ -83,31 +89,46 @@ export type CollectAdminHealthDeps = {
   resolveOrgMailConfig?: typeof resolveMailConfigForOrg;
 };
 
-/** Short commit for dumps. Docker sets GIT_COMMIT; local/dev prefers live git HEAD (same as admin SPA). */
-export function resolveHealthCommit(env: NodeJS.ProcessEnv = process.env): string {
+export type ResolveHealthCommitOpts = {
+  /** Override SPA dist root (tests). Omit to scan default admin dist candidates. */
+  adminDistRoot?: string;
+  /** Injectable git HEAD reader (tests); defaults to `git rev-parse HEAD`. */
+  gitHead?: () => string;
+};
+
+/**
+ * Short commit for health dumps: served admin SPA build first (matches sidebar), then
+ * `GIT_COMMIT` (Docker), then live `git rev-parse HEAD`.
+ */
+export function resolveHealthCommit(
+  env: NodeJS.ProcessEnv = process.env,
+  opts: ResolveHealthCommitOpts = {},
+): string {
+  const meta = readAdminBuildMeta(opts.adminDistRoot);
+  if (meta && meta.commit !== "unknown") return meta.commit;
+
   const raw = env.GIT_COMMIT?.trim();
-
-  const fromGit = (): string | null => {
-    try {
-      // Trusted build/runtime tooling; same pattern as apps/admin/build-meta.ts (Sonar S4036).
-      // Bare "git" resolves via PATH like the rest of the monorepo toolchain - not untrusted input.
-      const sha = execSync("git rev-parse HEAD", { cwd: process.cwd(), encoding: "utf8" }).trim(); // NOSONAR - see comment above
-      return sha || null;
-    } catch {
-      return null;
-    }
-  };
-
-  // Local `npm run dev` loads apps/web/.env; a stale GIT_COMMIT there used to diverge from the
-  // sidebar (Vite build-meta always falls back to git). Prefer HEAD whenever NODE_ENV=development.
-  if (env.NODE_ENV === "development") {
-    const sha = fromGit();
-    if (sha) return sha.slice(0, 7);
-  }
-
   if (raw) return raw.slice(0, 7);
-  const sha = fromGit();
-  return sha ? sha.slice(0, 7) : "unknown";
+
+  try {
+    const sha = (
+      opts.gitHead ??
+      (() => {
+        // Trusted build/runtime tooling; same pattern as apps/admin/build-meta.ts (Sonar S4036).
+        // Bare "git" resolves via PATH like the rest of the monorepo toolchain - not untrusted input.
+        return execSync("git rev-parse HEAD", { cwd: process.cwd(), encoding: "utf8" }); // NOSONAR - see comment above
+      })
+    )().trim();
+    return sha ? sha.slice(0, 7) : "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+/** Product version for health dumps: served SPA build first, else root package.json. */
+export function resolveHealthVersion(opts: ResolveHealthCommitOpts = {}): string {
+  const meta = readAdminBuildMeta(opts.adminDistRoot);
+  return meta?.version ?? resolveProductVersion();
 }
 
 /** Worst-of among statuses that affect overall health (ADR 0037). */
@@ -1243,19 +1264,29 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
 
   return {
     generated_at: generatedAt,
-    version: resolveProductVersion(),
-    commit: resolveHealthCommit(env),
+    version: resolveHealthVersion({ adminDistRoot: deps.adminDistRoot }),
+    commit: resolveHealthCommit(env, { adminDistRoot: deps.adminDistRoot }),
     overall: worstHealthStatus(groups.flatMap((g) => g.checks.map((c) => c.status))),
     groups,
   };
 }
 
-/** GET /api/admin/health: passive report for Settings → Health check. */
-export async function handleGetAdminHealth(
+/** Shared opts for Settings → Health check GET/POST handlers. */
+export type AdminHealthHandlerOpts = {
+  geocodingProvider?: GeocodingProvider;
+  injectedBaseUrl?: string;
+  /** Same dist root passed to `createStaffSpaHandlers` (custom deploy / tests). */
+  adminDistRoot?: string;
+  /** When true, run on-demand live probes (POST /health/live). */
+  live?: boolean;
+};
+
+/** GET /api/admin/health and POST /api/admin/health/live (set `opts.live`). */
+export async function handleAdminHealth(
   c: Context,
   db: PrismaClient,
   rateLimitStore: RateLimitStore,
-  opts?: { geocodingProvider?: GeocodingProvider; injectedBaseUrl?: string },
+  opts?: AdminHealthHandlerOpts,
 ): Promise<Response> {
   const auth = c.get("auth");
   if (!(await canManageInstance(db, auth.userId))) {
@@ -1267,29 +1298,8 @@ export async function handleGetAdminHealth(
     rateLimitStore,
     geocodingProvider: opts?.geocodingProvider,
     injectedBaseUrl: opts?.injectedBaseUrl,
-    live: false,
-  });
-  return c.json(report, 200);
-}
-
-/** POST /api/admin/health/live: same report with on-demand live probes (ADR 0037). */
-export async function handlePostAdminHealthLive(
-  c: Context,
-  db: PrismaClient,
-  rateLimitStore: RateLimitStore,
-  opts?: { geocodingProvider?: GeocodingProvider; injectedBaseUrl?: string },
-): Promise<Response> {
-  const auth = c.get("auth");
-  if (!(await canManageInstance(db, auth.userId))) {
-    return c.json({ error: "forbidden" }, 403);
-  }
-
-  const report = await collectAdminHealth({
-    db,
-    rateLimitStore,
-    geocodingProvider: opts?.geocodingProvider,
-    injectedBaseUrl: opts?.injectedBaseUrl,
-    live: true,
+    adminDistRoot: opts?.adminDistRoot,
+    live: opts?.live === true,
   });
   return c.json(report, 200);
 }

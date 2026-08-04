@@ -72,6 +72,10 @@ vi.mock("../../src/ops/readyz.js", async (importOriginal) => {
   return { ...actual, collectGauges, checkMailer, checkDatabase };
 });
 vi.mock("../../src/ops/product-version.js", () => ({ resolveProductVersion }));
+vi.mock("../../src/admin/admin-build-meta.js", () => ({
+  readAdminBuildMeta: vi.fn(() => null),
+  adminDistCandidates: vi.fn(() => []),
+}));
 vi.mock("../../src/admin/instance-org.js", () => ({ resolveInstanceOrganizationId }));
 vi.mock("@admitto/mailer-config", () => ({
   describeMailConfigForOrg,
@@ -96,17 +100,20 @@ vi.mock("@admitto/auth", async (importOriginal) => {
 
 import { canManageInstance } from "@admitto/auth";
 import type { Context } from "hono";
+import { readAdminBuildMeta } from "../../src/admin/admin-build-meta.js";
 import {
   collectAdminHealth,
   fileStorageRow,
-  handleGetAdminHealth,
-  handlePostAdminHealthLive,
+  handleAdminHealth,
   MAIL_QUEUE_DEGRADED_THRESHOLD,
   resolveHealthCommit,
+  resolveHealthVersion,
   safeEndpointDisplay,
   mapTilesServiceLabel,
   worstHealthStatus,
 } from "../../src/admin/health-check-routes.js";
+
+const readAdminBuildMetaMock = vi.mocked(readAdminBuildMeta);
 
 /** Writable upload root so File storage does not flip overall to down in CI (uploads/ is gitignored). */
 const uploadFixture = { dir: "" };
@@ -163,6 +170,7 @@ afterEach(() => {
   restoreWriteFile();
   checkDatabase.mockResolvedValue({ status: "ok", latency_ms: 2 });
   resolveProductVersion.mockReturnValue("0.4.13");
+  readAdminBuildMetaMock.mockReturnValue(null);
   isLocationMapsEnabled.mockReturnValue(true);
   vi.mocked(canManageInstance).mockResolvedValue(true);
 });
@@ -188,13 +196,38 @@ describe("resolveHealthCommit", () => {
     expect(sha).not.toBe("unknown");
   });
 
-  it("prefers git HEAD over a stale GIT_COMMIT in development", () => {
-    const sha = resolveHealthCommit({
-      NODE_ENV: "development",
-      GIT_COMMIT: "deadbeefdeadbeef",
-    });
-    expect(sha).toMatch(/^[0-9a-f]{7}$/);
-    expect(sha).not.toBe("deadbee");
+  it("prefers the served admin SPA build-meta over GIT_COMMIT", () => {
+    readAdminBuildMetaMock.mockReturnValue({ version: "0.4.12", commit: "a21c357" });
+    expect(
+      resolveHealthCommit({
+        NODE_ENV: "development",
+        GIT_COMMIT: "deadbeefdeadbeef",
+      }),
+    ).toBe("a21c357");
+    expect(resolveHealthVersion()).toBe("0.4.12");
+  });
+
+  it("skips build-meta when its commit is unknown and uses GIT_COMMIT", () => {
+    readAdminBuildMetaMock.mockReturnValue({ version: "0.4.12", commit: "unknown" });
+    expect(resolveHealthCommit({ GIT_COMMIT: "abcdef0123456789" })).toBe("abcdef0");
+  });
+
+  it("uses GIT_COMMIT in development when no SPA build-meta is present", () => {
+    expect(
+      resolveHealthCommit({
+        NODE_ENV: "development",
+        GIT_COMMIT: "deadbeefdeadbeef",
+      }),
+    ).toBe("deadbee");
+  });
+
+  it("returns unknown when git HEAD cannot be resolved", () => {
+    expect(
+      resolveHealthCommit({}, { gitHead: () => {
+        throw new Error("no git");
+      } }),
+    ).toBe("unknown");
+    expect(resolveHealthCommit({}, { gitHead: () => "" })).toBe("unknown");
   });
 });
 
@@ -1250,10 +1283,10 @@ describe("collectAdminHealth", () => {
   });
 });
 
-describe("handleGetAdminHealth / handlePostAdminHealthLive", () => {
+describe("handleAdminHealth", () => {
   it("returns 403 when the caller cannot manage the instance", async () => {
     vi.mocked(canManageInstance).mockResolvedValueOnce(false);
-    const res = await handleGetAdminHealth(fakeHealthContext(), {} as PrismaClient, {} as never);
+    const res = await handleAdminHealth(fakeHealthContext(), {} as PrismaClient, {} as never);
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "forbidden" });
   });
@@ -1266,34 +1299,53 @@ describe("handleGetAdminHealth / handlePostAdminHealthLive", () => {
     });
     stubHappyPathMailAndIdp();
     vi.mocked(canManageInstance).mockResolvedValue(true);
+    readAdminBuildMetaMock.mockImplementation((root) =>
+      root === "/served-admin-dist" ? { version: "0.4.12", commit: "a21c357" } : null,
+    );
 
-    const getRes = await handleGetAdminHealth(
+    const getRes = await handleAdminHealth(
       fakeHealthContext(),
       { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
       {} as never,
+      { adminDistRoot: "/served-admin-dist" },
     );
     expect(getRes.status).toBe(200);
-    const getBody = (await getRes.json()) as { overall: string; groups: unknown[] };
+    const getBody = (await getRes.json()) as {
+      overall: string;
+      groups: unknown[];
+      version: string;
+      commit: string;
+    };
     expect(getBody.groups).toHaveLength(2);
+    expect(getBody.version).toBe("0.4.12");
+    expect(getBody.commit).toBe("a21c357");
+    expect(readAdminBuildMetaMock).toHaveBeenCalledWith("/served-admin-dist");
 
     const search = vi.fn().mockResolvedValue([{ label: "Warsaw" }]);
     isLocationMapsEnabled.mockReturnValue(true);
-    const postRes = await handlePostAdminHealthLive(
+    const postRes = await handleAdminHealth(
       fakeHealthContext(),
       { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
       {} as never,
-      { geocodingProvider: { name: "nominatim", search, reverse: vi.fn() } },
+      {
+        geocodingProvider: { name: "nominatim", search, reverse: vi.fn() },
+        adminDistRoot: "/served-admin-dist",
+        live: true,
+      },
     );
     expect(postRes.status).toBe(200);
     expect(search).toHaveBeenCalled();
+    const postBody = (await postRes.json()) as { commit: string };
+    expect(postBody.commit).toBe("a21c357");
   });
 
   it("returns 403 on live when the caller cannot manage the instance", async () => {
     vi.mocked(canManageInstance).mockResolvedValueOnce(false);
-    const res = await handlePostAdminHealthLive(
+    const res = await handleAdminHealth(
       fakeHealthContext(),
       {} as PrismaClient,
       {} as never,
+      { live: true },
     );
     expect(res.status).toBe(403);
   });

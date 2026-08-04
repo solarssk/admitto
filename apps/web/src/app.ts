@@ -240,8 +240,7 @@ import { createGeocodingCache } from "./maps/geocoding-cache.js";
 import { GeocodingService } from "./maps/geocoding-service.js";
 import { handleGetSetupChecks } from "./admin/setup-checks-routes.js";
 import {
-  handleGetAdminHealth,
-  handlePostAdminHealthLive,
+  handleAdminHealth,
 } from "./admin/health-check-routes.js";
 import { handlePostSetupComplete } from "./admin/setup-complete-routes.js";
 import {
@@ -1059,22 +1058,20 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/api/admin/setup/checks", staffAdminGate, (c) =>
     handleGetSetupChecks(c, db, rateLimitStore, mailInjectedBaseUrl),
   );
+  const adminHealthOpts = {
+    geocodingProvider,
+    injectedBaseUrl: mailInjectedBaseUrl,
+    adminDistRoot: options.adminDistRoot,
+  };
   app.get("/api/admin/health", staffAdminGate, (c) =>
-    handleGetAdminHealth(c, db, rateLimitStore, {
-      geocodingProvider,
-      injectedBaseUrl: mailInjectedBaseUrl,
-    }),
+    handleAdminHealth(c, db, rateLimitStore, adminHealthOpts),
   );
   app.post(
     "/api/admin/health/live",
     jsonPostCsrf,
     staffAdminGate,
     adminHealthLiveRateLimit,
-    (c) =>
-      handlePostAdminHealthLive(c, db, rateLimitStore, {
-        geocodingProvider,
-        injectedBaseUrl: mailInjectedBaseUrl,
-      }),
+    (c) => handleAdminHealth(c, db, rateLimitStore, { ...adminHealthOpts, live: true }),
   );
   app.get("/api/admin/setup/org-branding", staffAdminGate, (c) => handleGetSetupOrgBranding(c, db));
   app.patch("/api/admin/setup/org-branding", jsonPostCsrf, staffAdminGate, (c) =>
