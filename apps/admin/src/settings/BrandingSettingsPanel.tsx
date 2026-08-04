@@ -38,8 +38,8 @@ const EMPTY_THEME_DRAFT: BrandingThemeDto = {};
 function themeFontUploadUrls(theme: BrandingThemeDto): Set<string> {
   const urls = new Set<string>();
   for (const fam of theme.custom_font_families ?? []) {
-    for (const v of fam.variants ?? []) {
-      if (typeof v.url === "string" && v.url.startsWith("/uploads/")) urls.add(v.url);
+    for (const v of fam.variants) {
+      if (v.url.startsWith("/uploads/")) urls.add(v.url);
     }
   }
   return urls;
@@ -520,7 +520,7 @@ export function BrandingSettingsPanel() {
    * in sync too, not just Admin panel's. */
   const handleFamilySaved = ({ familyName, variants }: { familyName: string; variants: BrandingCustomFontFamilyDto["variants"] }) => {
     for (const v of variants) {
-      if (typeof v.url === "string" && v.url.startsWith("/uploads/")) {
+      if (v.url.startsWith("/uploads/")) {
         provisionalFontUrlsRef.current.add(v.url);
       }
     }
@@ -528,19 +528,17 @@ export function BrandingSettingsPanel() {
       const isNewFamily = editingFamilyName === null;
       const wasAdminActive = !isNewFamily && prev.font_family_name === editingFamilyName;
       const wasTicketActive = !isNewFamily && prev.ticket_font_family_name === editingFamilyName;
-      const withoutOldEntry = (prev.custom_font_families ?? []).filter(
+      const families = prev.custom_font_families ?? [];
+      const withoutOldEntry = families.filter(
         (f) => f.name !== familyName && f.name !== editingFamilyName,
       );
-      const replaced = (prev.custom_font_families ?? []).find(
+      const replaced = families.find(
         (f) => f.name === editingFamilyName || f.name === familyName,
       );
       if (replaced) {
-        const kept = new Set(
-          variants.map((v) => v.url).filter((u): u is string => typeof u === "string"),
-        );
+        const kept = new Set(variants.map((v) => v.url));
         for (const v of replaced.variants) {
           if (
-            typeof v.url === "string" &&
             v.url.startsWith("/uploads/") &&
             !kept.has(v.url) &&
             provisionalFontUrlsRef.current.has(v.url)
@@ -567,20 +565,18 @@ export function BrandingSettingsPanel() {
    * that's merely saved (not active anywhere) can be removed with no other effect. */
   const handleDeleteCustomFamily = (name: string) => {
     setThemeDraft((prev) => {
-      const removed = (prev.custom_font_families ?? []).find((f) => f.name === name);
-      if (removed) {
-        for (const v of removed.variants) {
-          if (
-            typeof v.url === "string" &&
-            v.url.startsWith("/uploads/") &&
-            provisionalFontUrlsRef.current.has(v.url)
-          ) {
+      // Remove is only offered for families already in the draft library.
+      const families = prev.custom_font_families!;
+      for (const fam of families) {
+        if (fam.name !== name) continue;
+        for (const v of fam.variants) {
+          if (v.url.startsWith("/uploads/") && provisionalFontUrlsRef.current.has(v.url)) {
             provisionalFontUrlsRef.current.delete(v.url);
             void deleteUploadedFile(v.url);
           }
         }
       }
-      const remaining = (prev.custom_font_families ?? []).filter((f) => f.name !== name);
+      const remaining = families.filter((f) => f.name !== name);
       const wasAdminActive = prev.font_family_name === name;
       const wasTicketActive = prev.ticket_font_family_name === name;
       return {

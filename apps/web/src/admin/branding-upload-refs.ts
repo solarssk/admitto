@@ -35,7 +35,7 @@ export async function findManagedUploadReference(
 
   const theme = await getBrandingTheme(db);
   for (const family of theme.custom_font_families ?? []) {
-    for (const variant of family.variants ?? []) {
+    for (const variant of family.variants) {
       if (variant.url === url) return "branding";
     }
   }

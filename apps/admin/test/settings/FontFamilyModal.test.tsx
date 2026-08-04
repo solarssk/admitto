@@ -207,6 +207,31 @@ describe("FontFamilyModal", () => {
     expect(rows()).toHaveLength(0);
   });
 
+  it("rolls back without a registered preview face when FontFace.load fails before upload", async () => {
+    class FailFontFace {
+      constructor(
+        public family: string,
+        public source: unknown,
+        public descriptors?: { weight?: string; style?: string },
+      ) {}
+      async load(): Promise<this> {
+        throw new Error("decode failed");
+      }
+    }
+    vi.stubGlobal("FontFace", FailFontFace);
+    renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText(/Drop font files here/), {
+      target: { files: [new File(["x"], "Acme-Sans-Regular.woff2")] },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Couldn't upload "Acme-Sans-Regular\.woff2"/);
+    });
+    expect(mockUploadFont).not.toHaveBeenCalled();
+    expect(rows()).toHaveLength(0);
+  });
+
   it("reverts (not removes) an existing row when replacing its file fails to upload", async () => {
     mockUploadFont
       .mockResolvedValueOnce({ url: "/uploads/default/theme/first.woff2" })
@@ -435,7 +460,38 @@ describe("FontFamilyModal", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Remove variant" }));
     expect(rows()).toHaveLength(0);
-    expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/theme/a.woff2");
+    // Disk cleanup is deferred to Cancel/Save so save() can drop abandoned session URLs.
+    expect(mockDeleteUploadedFile).not.toHaveBeenCalled();
+  });
+
+  it("Save deletes session uploads for variants removed before saving", async () => {
+    mockUploadFont
+      .mockResolvedValueOnce({ url: "/uploads/default/theme/keep.woff2" })
+      .mockResolvedValueOnce({ url: "/uploads/default/theme/drop.woff2" });
+    const onSaved = vi.fn();
+    renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={onSaved} />);
+
+    fireEvent.change(screen.getByLabelText(/Drop font files here/), {
+      target: {
+        files: [
+          new File(["x"], "Acme-Sans-Regular.woff2"),
+          new File(["y"], "Acme-Sans-Bold.woff2"),
+        ],
+      },
+    });
+    await waitFor(() => expect(rows()).toHaveLength(2));
+    await waitFor(() => expect(mockUploadFont).toHaveBeenCalledTimes(2));
+
+    fireEvent.change(screen.getByLabelText("Family name"), { target: { value: "Acme Sans" } });
+    // Remove the second variant; its upload stays in the session set until Save.
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove variant" })[1]!);
+    expect(rows()).toHaveLength(1);
+    mockDeleteUploadedFile.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save font family" }));
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/theme/drop.woff2");
+    expect(mockDeleteUploadedFile).not.toHaveBeenCalledWith("/uploads/default/theme/keep.woff2");
   });
 
   it("removes an empty (never-uploaded) row cleanly", () => {

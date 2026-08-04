@@ -15,8 +15,8 @@ import { isManagedUploadUrlReferenced } from "./branding-upload-refs.js";
 function customFontUrls(theme: BrandingTheme | null): string[] {
   const urls: string[] = [];
   for (const fam of theme?.custom_font_families ?? []) {
-    for (const variant of fam.variants ?? []) {
-      if (typeof variant.url === "string") urls.push(variant.url);
+    for (const variant of fam.variants) {
+      urls.push(variant.url);
     }
   }
   return urls;

@@ -301,10 +301,10 @@ export function parseUploadsUrl(url: string): ParsedUploadsUrl {
 
 /** Resolve `relativePath` under the upload root; rejects escape attempts. */
 export function absolutePathUnderUploadRoot(relativePath: string): string {
+  // resolve() never keeps a trailing separator (except filesystem root), so prefer root+sep.
   const root = resolve(resolveUploadDir());
   const abs = resolve(join(root, relativePath));
-  const rootWithSep = root.endsWith(sep) ? root : root + sep;
-  if (abs !== root && !abs.startsWith(rootWithSep)) {
+  if (abs !== root && !abs.startsWith(root + sep)) {
     throw new BrandingUploadError("invalid_upload_url", 400);
   }
   return abs;

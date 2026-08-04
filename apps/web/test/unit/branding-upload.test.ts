@@ -382,6 +382,24 @@ describe("bestEffortDeleteUploadUrl / bestEffortDeleteReplacedUploadUrls", () =>
     await bestEffortDeleteUploadUrl(`/uploads/default/${UUID_PNG}`, orgTrust);
   });
 
+  it("refuses to delete when trusted kind or org does not match the URL", async () => {
+    const orgFile = await saveBrandingUpload(pngFile(), "default");
+    const orgAbs = join(uploadDir, orgFile.url.slice("/uploads/".length));
+    expect(existsSync(orgAbs)).toBe(true);
+
+    await bestEffortDeleteUploadUrl(orgFile.url, {
+      expectedOrgId: "default",
+      expectedKind: "theme",
+    });
+    expect(existsSync(orgAbs)).toBe(true);
+
+    await bestEffortDeleteUploadUrl(orgFile.url, {
+      expectedOrgId: "other-org",
+      expectedKind: "org",
+    });
+    expect(existsSync(orgAbs)).toBe(true);
+  });
+
   it("refuses to delete another event's managed upload (trusted owner)", async () => {
     const other = await saveEventUpload(pngFile(), "default", "evt-other");
     const otherAbs = join(uploadDir, other.url.slice("/uploads/".length));

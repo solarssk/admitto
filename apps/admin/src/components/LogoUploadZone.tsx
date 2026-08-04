@@ -246,7 +246,6 @@ export function LogoUploadZone({
   };
 
   const deleteProvisional = (url: string) => {
-    if (!provisionalUrlsRef.current.has(url) || isCommittedUrl(url)) return;
     provisionalUrlsRef.current.delete(url);
     void deleteUploadedFile(url);
   };
@@ -255,11 +254,15 @@ export function LogoUploadZone({
     return () => {
       uploadSeqRef.current += 1;
       const abandoned = cropSessionRef.current?.uploadedOriginalUrl;
-      if (abandoned?.startsWith("/uploads/") && !isCommittedUrl(abandoned)) {
+      if (
+        typeof abandoned === "string" &&
+        abandoned.startsWith("/uploads/") &&
+        !isCommittedUrl(abandoned)
+      ) {
         void deleteUploadedFile(abandoned);
       }
       for (const url of provisionalUrlsRef.current) {
-        if (!isCommittedUrl(url)) void deleteUploadedFile(url);
+        void deleteUploadedFile(url);
       }
       provisionalUrlsRef.current.clear();
     };
@@ -306,11 +309,8 @@ export function LogoUploadZone({
     const live = new Set(
       [value, originalUrl ?? ""].filter((u): u is string => typeof u === "string" && u.startsWith("/uploads/")),
     );
-    for (const url of provisionalUrlsRef.current) {
-      if (live.has(url) || isCommittedUrl(url)) {
-        if (isCommittedUrl(url)) provisionalUrlsRef.current.delete(url);
-        continue;
-      }
+    for (const url of [...provisionalUrlsRef.current]) {
+      if (live.has(url)) continue;
       deleteProvisional(url);
     }
   }, [value, originalUrl]);
@@ -324,9 +324,16 @@ export function LogoUploadZone({
     const abandoned = session?.uploadedOriginalUrl;
     // Do not delete a saved original that Edit reopened (same URL as props.originalUrl).
     const isPersistedOriginal =
-      Boolean(abandoned) && abandoned === originalUrl && abandoned?.startsWith("/uploads/");
+      typeof abandoned === "string" &&
+      abandoned === originalUrl &&
+      abandoned.startsWith("/uploads/");
     setCropSession(null);
-    if (abandoned && !isPersistedOriginal && abandoned.startsWith("/uploads/") && !isCommittedUrl(abandoned)) {
+    if (
+      typeof abandoned === "string" &&
+      !isPersistedOriginal &&
+      abandoned.startsWith("/uploads/") &&
+      !isCommittedUrl(abandoned)
+    ) {
       void deleteUploadedFile(abandoned);
     }
   };

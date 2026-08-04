@@ -221,7 +221,7 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
         id: ++rowSeqRef.current,
         weight: v.weight,
         style: v.style,
-        fileName: v.url.split("/").pop() ?? null,
+        fileName: v.url.slice(v.url.lastIndexOf("/") + 1),
         url: v.url,
         loading: false,
         loaded: true,
@@ -286,11 +286,8 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
       facesRef.current.delete(id);
     }
     setRows((prev) => {
-      const row = prev.find((r) => r.id === id);
-      if (row?.url && sessionUploadsRef.current.has(row.url)) {
-        sessionUploadsRef.current.delete(row.url);
-        void deleteUploadedFile(row.url);
-      }
+      // Leave sessionUploadsRef entries for save()/close cleanup so abandoned files are
+      // deleted once, after the operator finishes editing the family.
       return prev.filter((r) => r.id !== id);
     });
   }
@@ -321,10 +318,8 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
 
   function rollbackFailedFontRow(id: number, existingId: number | null) {
     const oldFace = facesRef.current.get(id);
-    if (oldFace) {
-      document.fonts.delete(oldFace);
-      facesRef.current.delete(id);
-    }
+    facesRef.current.delete(id);
+    if (oldFace) document.fonts.delete(oldFace);
     if (existingId) {
       updateRow(id, { fileName: null, url: null, loaded: false, loading: false });
     } else {

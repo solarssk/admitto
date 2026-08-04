@@ -784,7 +784,7 @@ export function EventSettingsPage() {
     );
   }
 
-  if (!event || !form || !original) return null;
+  if (!event || !form) return null;
 
   const revokeCheckinsTooltip = computeSuperadminTooltip(
     isSa,
@@ -1021,8 +1021,8 @@ export function EventSettingsPage() {
             value={form.logoUrl}
             originalUrl={form.logoOriginalUrl || null}
             cropMeta={form.logoCrop}
-            committedValue={original.logoUrl || null}
-            committedOriginalUrl={original.logoOriginalUrl || null}
+            committedValue={original!.logoUrl}
+            committedOriginalUrl={original!.logoOriginalUrl}
             disabled={isArchived || saving}
             onChange={(url) => setForm((prev) => prev && { ...prev, logoUrl: url })}
             onSourceChange={(source) =>

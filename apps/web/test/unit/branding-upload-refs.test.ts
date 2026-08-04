@@ -74,16 +74,6 @@ describe("findManagedUploadReference", () => {
     expect(await findManagedUploadReference(db, THEME_URL)).toBeNull();
   });
 
-  it("treats a family with undefined variants as empty via nullish coalesce", async () => {
-    vi.mocked(getBrandingTheme).mockResolvedValueOnce({
-      custom_font_families: [
-        { name: "Broken", variants: undefined as unknown as [] },
-      ],
-    });
-    const db = dbStub({});
-    expect(await findManagedUploadReference(db, THEME_URL)).toBeNull();
-  });
-
   it("returns null when nothing references the URL", async () => {
     const db = dbStub({});
     expect(await findManagedUploadReference(db, URL)).toBeNull();
