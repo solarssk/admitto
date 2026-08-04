@@ -684,6 +684,35 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     ]);
   });
 
+  it("shows a delivery error code and omits the recipient arrow when no snapshot email was stored", async () => {
+    mockLoad(
+      baseDetail({
+        deliveries: [
+          {
+            id: "del-fail",
+            attendee_id: "att-1",
+            attendee_name: "Anna",
+            purpose: "initial",
+            status: "failed",
+            recipient_email: null,
+            rendered_subject: "Your ticket",
+            queued_at: "2026-01-05T09:31:00.000Z",
+            accepted_at: null,
+            sent_at: null,
+            failed_at: "2026-01-05T09:31:05.000Z",
+            error_code: "smtp_connect",
+          },
+        ],
+      }),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    expect(screen.getByText("smtp_connect")).toBeTruthy();
+    expect(document.querySelector(".attendee-delivery__to")).toBeNull();
+    expect(document.querySelector(".attendee-delivery__icon--error")).toBeTruthy();
+  });
+
   it("shows the send-to address for both matching and alternate recipients, and a generic placeholder for an unset subject", async () => {
     mockLoad(
       baseDetail({
