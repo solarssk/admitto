@@ -52,7 +52,7 @@ const logoCropSchema = z
   .nullish();
 
 /**
- * Strict schema: unknown keys (including `slug`) return 400 — slug is immutable and
+ * Strict schema: unknown keys (including `slug`) return 400 - slug is immutable and
  * clients must omit it; we do not silently strip extra fields.
  */
 const patchEventSchema = z
@@ -292,7 +292,7 @@ function applyBrandingPatch(
   }
 }
 
-/** PATCH /api/admin/events/:eventId — basic fields only (archive guard applied upstream). */
+/** PATCH /api/admin/events/:eventId - basic fields only (archive guard applied upstream). */
 export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
@@ -393,7 +393,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
 
 const PII_EXPORT_MAX_ROWS = 10_000;
 
-/** GET /api/admin/events/:eventId/export-pii — superadmin CSV of attendee PII. */
+/** GET /api/admin/events/:eventId/export-pii - superadmin CSV of attendee PII. */
 export async function handleExportEventPii(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;

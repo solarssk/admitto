@@ -13,7 +13,7 @@ import {
 import { BrandingUploadError, bestEffortDeleteUploadUrl, saveEventUpload } from "./branding-upload.js";
 import { logger } from "../logger.js";
 
-/** Per-event cap on uploaded branding assets — generous for a sponsor-logo/photo library
+/** Per-event cap on uploaded branding assets - generous for a sponsor-logo/photo library
  * while still bounding storage growth (mirrors MAX_TEMPLATES_PER_EVENT's precedent in
  * communication-api-routes.ts). */
 export const MAX_IMAGE_ASSETS_PER_EVENT = 20;
@@ -80,7 +80,7 @@ function serializeImageAsset(row: {
   };
 }
 
-/** GET /api/admin/events/:eventId/image-assets — superadmin only (this data flows into
+/** GET /api/admin/events/:eventId/image-assets - superadmin only (this data flows into
  * attendee-facing email content, same posture as the sibling branding upload/revoke routes). */
 export async function handleListEventImageAssets(c: Context, db: PrismaClient): Promise<Response> {
   const superadminDenied = await requireSuperadmin(c, db);
@@ -111,7 +111,7 @@ export async function handleListEventImageAssets(c: Context, db: PrismaClient): 
 }
 
 /**
- * POST /api/admin/events/:eventId/image-assets — multipart upload (fields: `file`, `token`).
+ * POST /api/admin/events/:eventId/image-assets - multipart upload (fields: `file`, `token`).
  * Superadmin only (same posture as the sibling branding upload/revoke routes, since this data
  * flows into attendee-facing email content). Archive guard applied by the caller (app.ts wraps
  * with guardArchivedEvent).

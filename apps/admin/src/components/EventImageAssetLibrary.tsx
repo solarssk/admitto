@@ -45,7 +45,7 @@ const UPLOAD_IMAGES_HINT =
   "Each asset is stored for this event only. Remove it from the mail template before deleting.";
 
 type PendingCrop = {
-  /** Same-origin `/uploads/…` preview (uploaded before crop — no File→blob:→img.src). */
+  /** Same-origin `/uploads/…` preview (uploaded before crop - no File→blob:→img.src). */
   imageSrc: string;
   sourceMime: string;
   originalName: string;
@@ -231,7 +231,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
 
   const deletingAsset = assets.find((a) => a.id === confirmDeleteId) ?? null;
   // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
-  // the "Loading…" text on and off faster than it can register as loading — show it only
+  // the "Loading…" text on and off faster than it can register as loading - show it only
   // once the fetch has genuinely taken a moment.
   const showLoading = useDelayedLoading(loading);
 

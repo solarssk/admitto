@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 import { FontFamilyModal, styleLabel } from "../../src/settings/FontFamilyModal.js";
 import { renderWithToast } from "../test-utils.js";
 
@@ -627,6 +628,28 @@ describe("FontFamilyModal", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onClose).toHaveBeenCalledTimes(1);
+    expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/theme/regular.woff2");
+  });
+
+  it("closing the modal after a row upload bumps row generations so late results are ignored", async () => {
+    mockUploadFont.mockResolvedValueOnce({ url: "/uploads/default/theme/regular.woff2" });
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return <FontFamilyModal open={open} onClose={() => setOpen(false)} onSaved={vi.fn()} />;
+    }
+    renderWithToast(<Harness />);
+
+    fireEvent.change(screen.getByLabelText(/Drop font files here/), {
+      target: { files: [new File(["x"], "Acme-Sans-Regular.woff2")] },
+    });
+    await waitFor(() => expect(mockUploadFont).toHaveBeenCalledTimes(1));
+    expect(screen.getByText(/Acme-Sans-Regular\.woff2/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => {
+      expect(screen.queryByText("Create font family")).toBeNull();
+    });
+    // Session uploads were discarded on close; a second open starts clean.
     expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/theme/regular.woff2");
   });
 

@@ -65,6 +65,8 @@ const mockDeleteUploadedFile = vi.mocked(deleteUploadedFile);
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  mockUploadFile.mockReset();
+  mockDeleteUploadedFile.mockReset();
 });
 
 describe("LogoUploadZone", () => {
@@ -376,7 +378,7 @@ describe("LogoUploadZone", () => {
 
     fireEvent.keyDown(zone, { key: "Enter" });
     fireEvent.keyDown(zone, { key: " " });
-    // Picker click is side-effect on hidden input — assert zone stays interactive.
+    // Picker click is side-effect on hidden input - assert zone stays interactive.
     expect(zone.getAttribute("aria-disabled")).toBeNull();
   });
 
@@ -565,5 +567,64 @@ describe("LogoUploadZone", () => {
       expect(screen.getByRole("dialog", { name: "Adjust image" })).toBeTruthy();
     });
     expect(mockUploadFile).not.toHaveBeenCalled();
+  });
+
+  it("second Apply in an unsaved session deletes the previous session display upload", async () => {
+    mockUploadFile
+      .mockResolvedValueOnce({ url: "/uploads/default/orig-a.png" })
+      .mockResolvedValueOnce({ url: "/uploads/default/cropped-a.png" })
+      .mockResolvedValueOnce({ url: "/uploads/default/cropped-b.png" });
+    function Harness() {
+      const [value, setValue] = useState("");
+      const [originalUrl, setOriginalUrl] = useState<string | null>(null);
+      return (
+        <LogoUploadZone
+          value={value}
+          originalUrl={originalUrl}
+          onChange={setValue}
+          onSourceChange={(s) => setOriginalUrl(s.originalUrl)}
+        />
+      );
+    }
+    renderWithToast(<Harness />);
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { files: [new File(["a"], "a.png", { type: "image/png" })] },
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: "Adjust image" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Edit image" })).toBeTruthy();
+      expect(screen.queryByRole("dialog", { name: "Adjust image" })).toBeNull();
+    });
+
+    // Re-crop the same session original: Apply writes a new display URL and should delete the
+    // previous unsaved session display (not the persisted-on-server case).
+    fireEvent.click(screen.getByRole("button", { name: "Edit image" }));
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: "Adjust image" }).getAttribute("data-image-src")).toBe(
+        "/uploads/default/orig-a.png",
+      );
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    await waitFor(() => {
+      expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/cropped-a.png");
+    });
+  });
+
+  it("unmount with an open crop session deletes the abandoned non-persisted original", async () => {
+    mockUploadFile.mockResolvedValueOnce({ url: "/uploads/default/abandoned-orig.png" });
+    const { unmount } = renderWithToast(<LogoUploadZone value="" onChange={() => {}} />);
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { files: [new File(["x"], "logo.png", { type: "image/png" })] },
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: "Adjust image" })).toBeTruthy();
+    });
+    unmount();
+    expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/abandoned-orig.png");
   });
 });

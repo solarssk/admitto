@@ -67,7 +67,7 @@ function parsePatchBody(body: unknown): OrgBrandingPatch | null {
   return out;
 }
 
-/** GET /api/admin/setup/org-branding — instance org name and logo URL. */
+/** GET /api/admin/setup/org-branding - instance org name and logo URL. */
 export async function handleGetSetupOrgBranding(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");
   if (!(await canManageInstance(db, auth.userId))) {
@@ -89,7 +89,7 @@ export async function handleGetSetupOrgBranding(c: Context, db: PrismaClient): P
   return c.json(payload, 200);
 }
 
-/** PATCH /api/admin/setup/org-branding — update org display name and HTTPS logo URL. */
+/** PATCH /api/admin/setup/org-branding - update org display name and HTTPS logo URL. */
 export async function handlePatchSetupOrgBranding(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");
   if (!(await canManageInstance(db, auth.userId))) {

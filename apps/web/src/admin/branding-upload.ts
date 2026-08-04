@@ -95,7 +95,7 @@ function detectImageMime(buf: Buffer): string | null {
   return null;
 }
 
-/** Detect font MIME from magic bytes (not client-declared Content-Type) — WOFF2/WOFF/OTF/TTF. */
+/** Detect font MIME from magic bytes (not client-declared Content-Type) - WOFF2/WOFF/OTF/TTF. */
 function detectFontMime(buf: Buffer): string | null {
   if (buf.length >= 4 && buf.subarray(0, 4).toString("ascii") === "wOF2") {
     return "font/woff2";
@@ -106,7 +106,7 @@ function detectFontMime(buf: Buffer): string | null {
   if (buf.length >= 4 && buf.subarray(0, 4).toString("ascii") === "OTTO") {
     return "font/otf";
   }
-  // TrueType sfnt version 1.0 — the standard .ttf signature.
+  // TrueType sfnt version 1.0 - the standard .ttf signature.
   if (
     buf.length >= 4 &&
     buf[0] === 0x00 &&
@@ -124,7 +124,7 @@ interface WriteValidatedUploadOptions {
   readonly detectMime: (buf: Buffer) => string | null;
   readonly allowedExt: ReadonlyMap<string, string>;
   /** Also reject when the client-declared Content-Type disagrees with the detected MIME.
-   * Image-only — see validateAndWriteFont for why fonts skip this. */
+   * Image-only - see validateAndWriteFont for why fonts skip this. */
   readonly crossCheckDeclaredMime?: boolean;
   /**
    * Optional transform after MIME detection (branding images: sharp re-encode strips EXIF/IPTC
@@ -135,7 +135,7 @@ interface WriteValidatedUploadOptions {
 
 /**
  * Re-encode a branding raster through sharp: auto-orient, drop metadata, keep alpha for PNG/WebP.
- * ADR 0008 "strip metadata" — do not persist the client-supplied byte stream as-is.
+ * ADR 0008 "strip metadata" - do not persist the client-supplied byte stream as-is.
  * Exported for unit tests covering dimension / MIME edge paths.
  */
 export async function reencodeBrandingImage(buf: Buffer, mime: string): Promise<Buffer> {
@@ -380,7 +380,7 @@ export async function bestEffortDeleteReplacedUploadUrls(
   }
 }
 
-/** Local filesystem branding upload (ADR 0008 — future StorageAdapter swap). */
+/** Local filesystem branding upload (ADR 0008 - future StorageAdapter swap). */
 export async function saveBrandingUpload(
   file: File,
   orgId: string,
@@ -396,7 +396,7 @@ export async function saveBrandingUpload(
 }
 
 /**
- * Event-scoped image upload — same validation as org logo. Used both by
+ * Event-scoped image upload - same validation as org logo. Used both by
  * handlePostEventBrandingUpload (event logo/header) and handleCreateEventImageAsset (named
  * branding assets referenced as {{token}} in email templates).
  */
@@ -430,7 +430,7 @@ async function validateAndWriteFont(file: File, dir: string): Promise<string> {
   return written.filename;
 }
 
-/** Instance-wide theme font upload (superadmin only) — stored separately from per-org/per-event
+/** Instance-wide theme font upload (superadmin only) - stored separately from per-org/per-event
  * branding images since it's a different asset type entirely (used for @font-face, not <img>). */
 export async function saveThemeFontUpload(file: File, orgId: string): Promise<{ url: string }> {
   assertSafeOrgId(orgId);

@@ -21,14 +21,14 @@ function customFontUrls(theme: BrandingTheme | null): string[] {
   return urls;
 }
 
-/** GET /api/staff/theme — any authenticated staff. */
+/** GET /api/staff/theme - any authenticated staff. */
 export async function handleGetStaffTheme(c: Context, db: PrismaClient): Promise<Response> {
   const theme = await getBrandingTheme(db);
   const vars = resolveThemeVars(theme);
   return c.json({ theme, vars });
 }
 
-/** PUT /api/staff/theme — superadmin only. */
+/** PUT /api/staff/theme - superadmin only. */
 export async function handlePutStaffTheme(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");
   if (!(await canManageInstance(db, auth.userId))) {

@@ -167,7 +167,7 @@ function ColorPaletteField({
   );
 }
 
-/** Small "N styles" pill — click reveals the exact list in a popover instead of inlining chips
+/** Small "N styles" pill - click reveals the exact list in a popover instead of inlining chips
  * into the card (keeps every font tile the same height). */
 function FontStylesPill({ styles }: Readonly<{ styles: readonly string[] }>) {
   const [open, setOpen] = useState(false);
@@ -318,7 +318,7 @@ function resolveFontInfo(
 }
 
 /** Combined Organisation branding (name/logo) + Theme (colour/font) settings, one shared
- * Save/Reset pair — replaces the two separately-footed cards previously split across the
+ * Save/Reset pair - replaces the two separately-footed cards previously split across the
  * General tab. Superadmin only (route-gated by SettingsLayout's SuperadminGuard). */
 export function BrandingSettingsPanel() {
   const { addToast } = useToast();

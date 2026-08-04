@@ -43,7 +43,7 @@ export interface LogoUploadZoneProps {
   readonly hint?: string;
   /** Custom upload function (e.g. event-scoped upload). Defaults to the org-level upload endpoint. */
   readonly uploadFn?: (formData: FormData) => Promise<{ url: string }>;
-  /** Disables all interaction (e.g. archived event). Defaults to false — org branding is never disabled. */
+  /** Disables all interaction (e.g. archived event). Defaults to false - org branding is never disabled. */
   readonly disabled?: boolean;
   /** Notified whenever an upload starts/finishes, so a caller can e.g. block Save while one is in flight. */
   readonly onUploadingChange?: (uploading: boolean) => void;
@@ -60,7 +60,7 @@ interface LogoPreviewProps {
 }
 
 type CropSession = {
-  /** Same-origin `/uploads/…` URL (never `blob:` from File — CodeQL FilesSource barrier). */
+  /** Same-origin `/uploads/…` URL (never `blob:` from File - CodeQL FilesSource barrier). */
   imageSrc: string;
   sourceMime: string;
   filename: string;
@@ -191,7 +191,7 @@ async function postUpload(
   return result.url;
 }
 
-/** Upload to server or link an external HTTPS image — both are supported. */
+/** Upload to server or link an external HTTPS image - both are supported. */
 export function LogoUploadZone({
   value,
   originalUrl = null,
@@ -210,7 +210,7 @@ export function LogoUploadZone({
   const urlInputId = useId();
   const fileRef = useRef<HTMLInputElement>(null);
   const uploadSeqRef = useRef(0);
-  /** Display URL we last wrote via Apply — keeps session original across parent re-renders. */
+  /** Display URL we last wrote via Apply - keeps session original across parent re-renders. */
   const lastUploadedUrlRef = useRef<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [showUrlInput, setShowUrlInput] = useState(false);
@@ -228,11 +228,7 @@ export function LogoUploadZone({
       uploadSeqRef.current += 1;
       const abandoned = cropSessionRef.current?.uploadedOriginalUrl;
       const persisted = originalUrlRef.current;
-      if (
-        abandoned &&
-        abandoned.startsWith("/uploads/") &&
-        abandoned !== persisted
-      ) {
+      if (abandoned?.startsWith("/uploads/") && abandoned !== persisted) {
         void deleteUploadedFile(abandoned);
       }
     };
@@ -252,7 +248,7 @@ export function LogoUploadZone({
     if (previewSrc) setZoneError(null);
   }, [previewSrc]);
 
-  // Display URL changed from outside this zone's last Apply — drop the in-memory File.
+  // Display URL changed from outside this zone's last Apply - drop the in-memory File.
   useEffect(() => {
     if (value !== lastUploadedUrlRef.current) {
       setSourceOriginal(null);

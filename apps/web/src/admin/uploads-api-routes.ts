@@ -56,7 +56,7 @@ async function respondToUpload(
   }
 }
 
-/** POST /api/admin/uploads — superadmin only, multipart branding image. */
+/** POST /api/admin/uploads - superadmin only, multipart branding image. */
 export async function handlePostUpload(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");
   if (!(await canManageInstance(db, auth.userId))) {
@@ -64,7 +64,7 @@ export async function handlePostUpload(c: Context, db: PrismaClient): Promise<Re
   }
 
   // TODO(multi-org): hardcoded until organization context is threaded through the upload
-  // handler (see ROADMAP v0.5+). Safe today — single-tenant deployment, only one Organization
+  // handler (see ROADMAP v0.5+). Safe today - single-tenant deployment, only one Organization
   // row exists. MUST be replaced before enabling multi-org (would leak uploads cross-tenant).
   const orgId = "default";
 
@@ -88,7 +88,7 @@ export async function handlePostUpload(c: Context, db: PrismaClient): Promise<Re
 }
 
 /**
- * POST /api/admin/events/:eventId/branding-upload — event managers (not superadmin-only,
+ * POST /api/admin/events/:eventId/branding-upload - event managers (not superadmin-only,
  * matches the rest of Event settings' editable fields), multipart branding image scoped to
  * this event. Archive guard is applied by the caller (app.ts wraps with guardArchivedEvent).
  */
@@ -101,7 +101,7 @@ export async function handlePostEventBrandingUpload(c: Context, db: PrismaClient
   if (forbidden) return forbidden;
 
   // assertEventManageAccess short-circuits true for superadmin without checking the event
-  // exists (org admins already get a 403 "no leak" via canManageEvent's org lookup) — confirm
+  // exists (org admins already get a 403 "no leak" via canManageEvent's org lookup) - confirm
   // existence explicitly so a superadmin can't write orphaned files under a fake event id.
   const exists = await db.event.findUnique({ where: { id: eventId }, select: { id: true } });
   if (!exists) return c.json({ error: "not_found" }, 404);
@@ -129,14 +129,14 @@ export async function handlePostEventBrandingUpload(c: Context, db: PrismaClient
   });
 }
 
-/** POST /api/admin/theme-font-upload — superadmin only, multipart custom brand font. */
+/** POST /api/admin/theme-font-upload - superadmin only, multipart custom brand font. */
 export async function handlePostThemeFontUpload(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");
   if (!(await canManageInstance(db, auth.userId))) {
     return c.json({ error: "forbidden" }, 403);
   }
 
-  // NOSONAR — TODO(multi-org): same single-tenant assumption as handlePostUpload above. Tracked on the v0.5+ roadmap, not a forgotten task; safe today since only one Organization row exists.
+  // NOSONAR - TODO(multi-org): same single-tenant assumption as handlePostUpload above. Tracked on the v0.5+ roadmap, not a forgotten task; safe today since only one Organization row exists.
   const orgId = "default";
 
   const fileOrRes = await parseUploadedFile(c);
