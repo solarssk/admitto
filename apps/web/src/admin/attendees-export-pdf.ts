@@ -6,8 +6,8 @@ import {
 } from "@admitto/tickets/attendees-export";
 
 /** Fixed column PDF widths for export (includes check-off). Attribute columns appended at runtime.
- * Prefer Name + Email for paper checklists; narrower Department / Admitted at. */
-export const EXPORT_BASE_PDF_WIDTHS = [22, 100, 150, 70, 50, 60, 65, 55] as const;
+ * Prefer Name + Email for paper checklists. Admitted at (≥75) fits YYYY-MM-DD HH:mm at 8pt. */
+export const EXPORT_BASE_PDF_WIDTHS = [22, 100, 145, 65, 45, 55, 65, 75] as const;
 export const EXPORT_ATTRIBUTE_PDF_WIDTH = 55;
 /** Printable width on A4 landscape with 40pt side margins (pdfkit default). */
 export const PDF_PRINTABLE_WIDTH = 762;
@@ -39,12 +39,29 @@ function sumPdfColumnWidths(widths: number[]): number {
   return widths.reduce((sum, w) => sum + w, 0);
 }
 
-/** Scale columns down proportionally when rounding pushed the layout past the printable width. */
+/** Scale columns down proportionally when the layout exceeds printable width.
+ * Min-width clamp can still overshoot; shave 1pt from the widest columns until we fit
+ * (or every column is already at the minimum). */
 function scalePdfColumnWidths(widths: number[], maxTotal: number): number[] {
   const total = sumPdfColumnWidths(widths);
   if (total <= maxTotal) return widths;
   const scale = maxTotal / total;
-  return widths.map((w) => Math.max(PDF_MIN_COLUMN_WIDTH, Math.floor(w * scale)));
+  const scaled = widths.map((w) => Math.max(PDF_MIN_COLUMN_WIDTH, Math.floor(w * scale)));
+  let scaledTotal = sumPdfColumnWidths(scaled);
+  while (scaledTotal > maxTotal) {
+    let widest = -1;
+    let widestWidth = PDF_MIN_COLUMN_WIDTH;
+    for (let i = 0; i < scaled.length; i++) {
+      if (scaled[i]! > widestWidth) {
+        widestWidth = scaled[i]!;
+        widest = i;
+      }
+    }
+    if (widest < 0) break;
+    scaled[widest]!--;
+    scaledTotal--;
+  }
+  return scaled;
 }
 
 export function buildExportPdfColumnWidths(attributeFieldCount: number): number[] {
