@@ -11,7 +11,7 @@ import type {
   HealthRowStatus,
 } from "../api/types.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
-import { formatEventDateTime } from "../utils/event-dates.js";
+import { formatEventDateTime, getBrowserTimeZone } from "../utils/event-dates.js";
 import { formatHealthCheckMarkdown, formatHealthDetailLabel, formatHealthDetailValue } from "./healthCheckMarkdown.js";
 import "./health-check.css";
 
@@ -367,11 +367,7 @@ export function HealthCheckPanel() {
           <p className="health-check__meta">
             <i className="ti ti-clock" aria-hidden="true" />
             <span>
-              Generated{" "}
-              {formatEventDateTime(
-                report.generated_at,
-                Intl.DateTimeFormat().resolvedOptions().timeZone,
-              )}
+              Generated {formatEventDateTime(report.generated_at, getBrowserTimeZone())}
               {report.commit !== "unknown"
                 ? ` · v${report.version} · ${report.commit}`
                 : ` · v${report.version}`}

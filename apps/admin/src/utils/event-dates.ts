@@ -71,6 +71,11 @@ export function zonedTimeLabel(iso: string, timezone = "UTC"): string {
   return offset ? `(${timezone}, ${offset})` : `(${timezone})`;
 }
 
+/** Browser IANA zone for Category-1 stamps in staff UI (Send test, Health check Generated). */
+export function getBrowserTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
 /** Category 2 companion — "HH:MM (IANA, UTC±offset)", the secondary line under a Category 2 UTC
  * primary time showing the same instant in a specific known zone (an actor's or a delivery's
  * client_timezone) - not a full date, since this always sits directly under a line that already

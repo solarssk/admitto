@@ -15,6 +15,16 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   };
 });
 
+/** Stable stub for Send-at assertions - Intl.resolvedOptions spies are flaky under CI TZ=UTC. */
+const { getBrowserTimeZoneMock } = vi.hoisted(() => ({
+  getBrowserTimeZoneMock: vi.fn((): string => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"),
+}));
+
+vi.mock("../../src/utils/event-dates.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/utils/event-dates.js")>();
+  return { ...actual, getBrowserTimeZone: getBrowserTimeZoneMock };
+});
+
 import {
   ApiError,
   fetchMailSettings,
@@ -503,10 +513,8 @@ describe("MailTransportPanel — test result panel (#411)", () => {
   }
 
   it("renders recipient, provider, host, and message ID on a successful send", async () => {
-    // CI runners often resolve to UTC; mock a non-UTC zone so Category-1 offset (UTC±N) is asserted.
-    const resolvedOptionsSpy = vi
-      .spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions")
-      .mockReturnValue({ timeZone: "Europe/Warsaw" } as Intl.ResolvedDateTimeFormatOptions);
+    // Force a non-UTC browser zone so Category-1 UTC±N is deterministic on CI (often TZ=UTC).
+    getBrowserTimeZoneMock.mockReturnValue("Europe/Warsaw");
     try {
       await renderReadySmtp();
       mockTest.mockResolvedValueOnce({
@@ -529,8 +537,13 @@ describe("MailTransportPanel — test result panel (#411)", () => {
       // Browser-local wall clock (not bare "… UTC") - same Category-1 pattern as Delivery history.
       expect(panel?.textContent).toMatch(/UTC[+-]/);
       expect(panel?.textContent).not.toMatch(/Sent at[\s\S]* UTC(?!\+)/);
+      expect(getBrowserTimeZoneMock).toHaveBeenCalled();
+      expect(getBrowserTimeZoneMock).toHaveReturnedWith("Europe/Warsaw");
     } finally {
-      resolvedOptionsSpy.mockRestore();
+      getBrowserTimeZoneMock.mockReset();
+      getBrowserTimeZoneMock.mockImplementation(
+        () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+      );
     }
   });
 
