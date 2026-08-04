@@ -211,45 +211,51 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
       return;
     }
     sessionUploadsRef.current.clear();
+    let cancelled = false;
     if (!initialFamily) {
       setFamilyName("");
       setRows([]);
-      return;
-    }
-    setFamilyName(initialFamily.name);
-    const newRows: FontRow[] = initialFamily.variants.map((v) => ({
-      id: ++rowSeqRef.current,
-      weight: v.weight,
-      style: v.style,
-      fileName: v.url.split("/").pop() ?? null,
-      url: v.url,
-      loading: false,
-      loaded: true,
-    }));
-    setRows(newRows);
-    // Register each already-saved variant's own real preview (by URL, since there's no local
-    // File to read anymore), same as BrandingSettingsPanel does for the picker's own tiles -
-    // otherwise every row would show the fallback sample instead of its real font.
-    let cancelled = false;
-    void (async () => {
-      for (const row of newRows) {
-        const face = new FontFace(PREVIEW_FAMILY, `url("${row.url}")`, {
-          weight: String(row.weight),
-          style: row.style,
-        });
-        try {
-          await face.load();
-          if (cancelled) return;
-          document.fonts.add(face);
-          facesRef.current.set(row.id, face);
-        } catch {
-          // Broken/unreachable file - the row still shows as loaded (it's a real saved
-          // variant), just falls back to a system font for this preview only.
+    } else {
+      setFamilyName(initialFamily.name);
+      const newRows: FontRow[] = initialFamily.variants.map((v) => ({
+        id: ++rowSeqRef.current,
+        weight: v.weight,
+        style: v.style,
+        fileName: v.url.split("/").pop() ?? null,
+        url: v.url,
+        loading: false,
+        loaded: true,
+      }));
+      setRows(newRows);
+      // Register each already-saved variant's own real preview (by URL, since there's no local
+      // File to read anymore), same as BrandingSettingsPanel does for the picker's own tiles -
+      // otherwise every row would show the fallback sample instead of its real font.
+      void (async () => {
+        for (const row of newRows) {
+          const face = new FontFace(PREVIEW_FAMILY, `url("${row.url}")`, {
+            weight: String(row.weight),
+            style: row.style,
+          });
+          try {
+            await face.load();
+            if (cancelled) return;
+            document.fonts.add(face);
+            facesRef.current.set(row.id, face);
+          } catch {
+            // Broken/unreachable file - the row still shows as loaded (it's a real saved
+            // variant), just falls back to a system font for this preview only.
+          }
         }
-      }
-    })();
+      })();
+    }
     return () => {
       cancelled = true;
+      // Unmount (or close) while open: discard provisional uploads the parent never received
+      // via onSaved, and invalidate in-flight row loads so late resolves cannot re-add them.
+      discardSessionUploads();
+      for (const [id, gen] of rowGenerationRef.current) {
+        rowGenerationRef.current.set(id, gen + 1);
+      }
     };
     // Only re-run when the modal opens or closes, not on every render's fresh initialFamily
     // object identity.

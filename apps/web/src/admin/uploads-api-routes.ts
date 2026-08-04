@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@admitto/db";
-import { canManageInstance, getBrandingTheme } from "@admitto/auth";
+import { canManageInstance } from "@admitto/auth";
 import { writeAdminAuditLogBestEffort } from "@admitto/tickets";
 import {
   BrandingUploadError,
@@ -11,6 +11,7 @@ import {
   saveThemeFontUpload,
   type ParsedUploadsUrl,
 } from "./branding-upload.js";
+import { findManagedUploadReference } from "./branding-upload-refs.js";
 import { assertEventManageAccess, adminAuditFromContext, requireEventId } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { logger } from "../logger.js";
@@ -196,52 +197,18 @@ async function authorizeDeleteUpload(
 }
 
 /**
- * Block DELETE when the URL is still referenced by persisted branding (logo/header/theme font)
- * or by an event image-asset library row. Those must be cleared via their own PATCH/DELETE
- * paths so tickets and emails never lose a live file.
+ * Block DELETE when the URL is still referenced by any persisted branding surface
+ * (org / any event / theme fonts) or by an event image-asset library row. Those must be
+ * cleared via their own PATCH/DELETE paths so tickets and emails never lose a live file.
  */
 async function rejectIfPersistedBrandingReference(
   c: Context,
   db: PrismaClient,
-  parsed: ParsedUploadsUrl,
   url: string,
 ): Promise<Response | null> {
-  if (parsed.kind === "event") {
-    const asset = await db.eventImageAsset.findFirst({
-      where: { event_id: parsed.eventId!, url },
-      select: { id: true },
-    });
-    if (asset) return c.json({ error: "persisted_image_asset" }, 409);
-
-    const eventHit = await db.event.findFirst({
-      where: {
-        id: parsed.eventId!,
-        OR: [{ logo_url: url }, { logo_original_url: url }, { header_image_url: url }],
-      },
-      select: { id: true },
-    });
-    if (eventHit) return c.json({ error: "persisted_branding_url" }, 409);
-    return null;
-  }
-
-  if (parsed.kind === "org") {
-    const orgHit = await db.organization.findFirst({
-      where: {
-        OR: [{ logo_url: url }, { logo_original_url: url }, { header_image_url: url }],
-      },
-      select: { id: true },
-    });
-    if (orgHit) return c.json({ error: "persisted_branding_url" }, 409);
-    return null;
-  }
-
-  // theme
-  const theme = await getBrandingTheme(db);
-  for (const family of theme?.custom_font_families ?? []) {
-    for (const variant of family.variants ?? []) {
-      if (variant.url === url) return c.json({ error: "persisted_branding_url" }, 409);
-    }
-  }
+  const ref = await findManagedUploadReference(db, url);
+  if (ref === "image_asset") return c.json({ error: "persisted_image_asset" }, 409);
+  if (ref === "branding") return c.json({ error: "persisted_branding_url" }, 409);
   return null;
 }
 
@@ -276,7 +243,7 @@ export async function handleDeleteUpload(c: Context, db: PrismaClient): Promise<
   const forbidden = await authorizeDeleteUpload(c, db, parsed);
   if (forbidden) return forbidden;
 
-  const persisted = await rejectIfPersistedBrandingReference(c, db, parsed, urlOrErr.url);
+  const persisted = await rejectIfPersistedBrandingReference(c, db, urlOrErr.url);
   if (persisted) return persisted;
 
   try {

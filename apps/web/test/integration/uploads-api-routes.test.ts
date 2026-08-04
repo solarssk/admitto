@@ -549,4 +549,36 @@ describe("DELETE /api/admin/uploads", () => {
       body: JSON.stringify({ logo_url: null, logo_original_url: null, logo_crop: null }),
     });
   });
+
+  it("rejects DELETE of an event-path URL still referenced by organisation branding", async () => {
+    const up = await app.request(`/api/admin/events/${EVENT_OWN}/branding-upload`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: uploadForm(new Blob([VALID_PNG], { type: "image/png" }), "shared.png"),
+    });
+    expect(up.status).toBe(201);
+    const { url } = (await up.json()) as { url: string };
+
+    // Cross-scope reuse: event-path upload stored on organisation logo (validateBrandingUrl allows it).
+    const org = await prisma.organization.findFirst({ where: { id: "org-uploads" } });
+    expect(org).toBeTruthy();
+    await prisma.organization.update({
+      where: { id: "org-uploads" },
+      data: { logo_url: url },
+    });
+
+    const del = await app.request("/api/admin/uploads", {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    expect(del.status).toBe(409);
+    expect(await del.json()).toEqual({ error: "persisted_branding_url" });
+    expect((await app.request(url)).status).toBe(200);
+
+    await prisma.organization.update({
+      where: { id: "org-uploads" },
+      data: { logo_url: null },
+    });
+  });
 });

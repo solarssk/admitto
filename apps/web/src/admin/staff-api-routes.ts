@@ -9,6 +9,7 @@ import {
 } from "@admitto/auth";
 import { resolveThemeVars } from "@admitto/ui";
 import { bestEffortDeleteReplacedUploadUrls } from "./branding-upload.js";
+import { isManagedUploadUrlReferenced } from "./branding-upload-refs.js";
 
 /** Collect managed font file URLs from a saved theme (custom_font_families variants). */
 function customFontUrls(theme: BrandingTheme | null): string[] {
@@ -68,15 +69,7 @@ export async function handlePutStaffTheme(c: Context, db: PrismaClient): Promise
     expectedOrgId: "default",
     expectedKind: "theme",
   }, {
-    isStillReferenced: async (url) => {
-      const live = await getBrandingTheme(db);
-      for (const family of live?.custom_font_families ?? []) {
-        for (const variant of family.variants ?? []) {
-          if (variant.url === url) return true;
-        }
-      }
-      return false;
-    },
+    isStillReferenced: (url) => isManagedUploadUrlReferenced(db, url),
   });
   return c.json({ theme, vars: resolveThemeVars(theme) });
 }

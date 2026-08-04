@@ -7,6 +7,7 @@ vi.mock("@admitto/auth", async (importOriginal) => {
   return {
     ...actual,
     canManageInstance: vi.fn(),
+    getBrandingTheme: vi.fn().mockResolvedValue(null),
   };
 });
 
@@ -130,7 +131,9 @@ describe("handleDeleteUpload", () => {
   it("rejects DELETE when the URL is still on Organization branding", async () => {
     vi.mocked(canManageInstance).mockResolvedValueOnce(true);
     const db = {
+      eventImageAsset: { findFirst: vi.fn().mockResolvedValue(null) },
       organization: { findFirst: vi.fn().mockResolvedValue({ id: "org-1" }) },
+      event: { findFirst: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
     const res = await handleDeleteUpload(fakeContext({ body: { url: ORG_URL } }), db);
     expect(res.status).toBe(409);
@@ -143,11 +146,58 @@ describe("handleDeleteUpload", () => {
     vi.mocked(assertEventManageAccess).mockResolvedValueOnce(null);
     const db = {
       eventImageAsset: { findFirst: vi.fn().mockResolvedValue(null) },
+      organization: { findFirst: vi.fn().mockResolvedValue(null) },
       event: { findFirst: vi.fn().mockResolvedValue({ id: "evt-1" }) },
     } as unknown as PrismaClient;
     const res = await handleDeleteUpload(fakeContext({ body: { url: eventUrl } }), db);
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: "persisted_branding_url" });
+    expect(deleteBrandingUploadByUrl).not.toHaveBeenCalled();
+  });
+
+  it("rejects event-path DELETE when the same URL is live on organisation branding", async () => {
+    const eventUrl = `/uploads/default/events/evt-1/${UUID}`;
+    vi.mocked(assertEventManageAccess).mockResolvedValueOnce(null);
+    const db = {
+      eventImageAsset: { findFirst: vi.fn().mockResolvedValue(null) },
+      organization: { findFirst: vi.fn().mockResolvedValue({ id: "org-1" }) },
+      event: { findFirst: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaClient;
+    const res = await handleDeleteUpload(fakeContext({ body: { url: eventUrl } }), db);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "persisted_branding_url" });
+    expect(deleteBrandingUploadByUrl).not.toHaveBeenCalled();
+  });
+
+  it("rejects DELETE when a theme font still references the URL", async () => {
+    const themeUrl = `/uploads/default/theme/${UUID.replace(/\.png$/, ".woff2")}`;
+    vi.mocked(canManageInstance).mockResolvedValueOnce(true);
+    const { getBrandingTheme } = await import("@admitto/auth");
+    vi.mocked(getBrandingTheme).mockResolvedValueOnce({
+      custom_font_families: [
+        {
+          name: "Acme",
+          variants: [{ weight: 400, style: "normal", url: themeUrl }],
+        },
+      ],
+    });
+    const res = await handleDeleteUpload(fakeContext({ body: { url: themeUrl } }), emptyDb());
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "persisted_branding_url" });
+    expect(deleteBrandingUploadByUrl).not.toHaveBeenCalled();
+  });
+
+  it("rejects DELETE of a persisted image asset URL with persisted_image_asset", async () => {
+    const eventUrl = `/uploads/default/events/evt-1/${UUID}`;
+    vi.mocked(assertEventManageAccess).mockResolvedValueOnce(null);
+    const db = {
+      eventImageAsset: { findFirst: vi.fn().mockResolvedValue({ id: "asset-1" }) },
+      organization: { findFirst: vi.fn().mockResolvedValue(null) },
+      event: { findFirst: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaClient;
+    const res = await handleDeleteUpload(fakeContext({ body: { url: eventUrl } }), db);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "persisted_image_asset" });
     expect(deleteBrandingUploadByUrl).not.toHaveBeenCalled();
   });
 });

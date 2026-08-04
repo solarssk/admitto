@@ -653,6 +653,21 @@ describe("FontFamilyModal", () => {
     expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/theme/regular.woff2");
   });
 
+  it("unmount while open discards session font uploads the parent never received", async () => {
+    mockUploadFont.mockResolvedValueOnce({ url: "/uploads/default/theme/orphan.woff2" });
+    const { unmount } = renderWithToast(
+      <FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/Drop font files here/), {
+      target: { files: [new File(["x"], "Acme-Sans-Regular.woff2")] },
+    });
+    await waitFor(() => expect(mockUploadFont).toHaveBeenCalledTimes(1));
+
+    unmount();
+    expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/theme/orphan.woff2");
+  });
+
   it("disables Save while any row upload is still in flight, even with a name and no other blockers", () => {
     mockUploadFont.mockReturnValueOnce(new Promise(() => {}));
     renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />);

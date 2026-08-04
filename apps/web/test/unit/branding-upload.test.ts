@@ -416,4 +416,18 @@ describe("bestEffortDeleteUploadUrl / bestEffortDeleteReplacedUploadUrls", () =>
     });
     expect(existsSync(goneAbs)).toBe(false);
   });
+
+  it("skips unlink when isStillReferenced throws (already-committed save must not fail)", async () => {
+    const gone = await saveBrandingUpload(pngFile(), "default");
+    const goneAbs = join(uploadDir, gone.url.slice("/uploads/".length));
+
+    await expect(
+      bestEffortDeleteReplacedUploadUrls([gone.url], [null], orgTrust, {
+        isStillReferenced: async () => {
+          throw new Error("db unavailable");
+        },
+      }),
+    ).resolves.toBeUndefined();
+    expect(existsSync(goneAbs)).toBe(true);
+  });
 });

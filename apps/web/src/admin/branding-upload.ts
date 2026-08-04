@@ -375,6 +375,8 @@ export async function bestEffortDeleteReplacedUploadUrls(
     /**
      * Re-check immediately before unlink. Concurrent saves can restore a URL after this
      * caller's snapshot of `next` was taken; skip delete when the URL is live again.
+     * Failures are treated as "still referenced" so a transient DB error never turns a
+     * successful branding save into a misleading 500 / audit_failed.
      */
     isStillReferenced?: (url: string) => Promise<boolean>;
   },
@@ -383,7 +385,14 @@ export async function bestEffortDeleteReplacedUploadUrls(
   for (const url of previous) {
     if (typeof url !== "string" || !url.startsWith("/uploads/")) continue;
     if (kept.has(url)) continue;
-    if (opts?.isStillReferenced && (await opts.isStillReferenced(url))) continue;
+    if (opts?.isStillReferenced) {
+      try {
+        if (await opts.isStillReferenced(url)) continue;
+      } catch {
+        // Check could not complete: skip unlink rather than failing the already-committed save.
+        continue;
+      }
+    }
     await bestEffortDeleteUploadUrl(url, trust);
   }
 }
