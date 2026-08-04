@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
-import { dirname, join, normalize, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, normalize, sep } from "node:path";
 import type { Context, MiddlewareHandler } from "hono";
+import { resolveDefaultAdminDistRoot } from "./admin/admin-build-meta.js";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -75,25 +75,6 @@ export function getStaffSpaSecurityHeaders(env: EnvLike = process.env): Record<s
   };
 }
 
-function defaultAdminDistRoot(): string {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const candidates = [
-    normalize(join(here, "../../admin/dist")),
-    normalize(join(process.cwd(), "apps/admin/dist")),
-    normalize(join(process.cwd(), "../admin/dist")),
-  ];
-  for (const root of candidates) {
-    try {
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
-      readFileSync(join(root, "index.html"));
-      return root;
-    } catch {
-      // try next candidate
-    }
-  }
-  return candidates[0]!;
-}
-
 function safeJoin(root: string, relative: string): string | null {
   const target = normalize(join(root, relative));
   if (!target.startsWith(root + sep) && target !== root) return null;
@@ -119,7 +100,7 @@ export interface StaffSpaOptions {
 
 /** Serve built Vite assets and SPA index.html fallback for staff routes. */
 export function createStaffSpaHandlers(options: StaffSpaOptions = {}) {
-  const root = normalize(options.distRoot ?? defaultAdminDistRoot());
+  const root = normalize(options.distRoot ?? resolveDefaultAdminDistRoot());
   const indexHtml = () => readDistFile(root, "index.html");
 
   const serveAsset: MiddlewareHandler = async (c) => {

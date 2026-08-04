@@ -2,15 +2,26 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { adminDistCandidates, readAdminBuildMeta } from "../../src/admin/admin-build-meta.js";
+import {
+  adminDistCandidates,
+  readAdminBuildMeta,
+  resolveDefaultAdminDistRoot,
+} from "../../src/admin/admin-build-meta.js";
 
 describe("adminDistCandidates", () => {
-  it("resolves the same relative roots as staff-spa", () => {
-    const paths = adminDistCandidates("file:///repo/apps/web/src/admin/admin-build-meta.ts");
+  it("resolves apps/admin/dist candidates from this package layout", () => {
+    const paths = adminDistCandidates();
     expect(paths).toHaveLength(3);
     expect(paths[0]).toMatch(/admin[/\\]dist$/);
-    expect(paths[1]).toMatch(/apps[/\\]admin[/\\]dist$/);
-    expect(paths[2]).toMatch(/admin[/\\]dist$/);
+    expect(paths.some((p) => /apps[/\\]admin[/\\]dist$/.test(p))).toBe(true);
+  });
+});
+
+describe("resolveDefaultAdminDistRoot", () => {
+  it("returns a candidate path string", () => {
+    const root = resolveDefaultAdminDistRoot();
+    expect(root.length).toBeGreaterThan(0);
+    expect(root).toMatch(/dist$/);
   });
 });
 
@@ -41,25 +52,19 @@ describe("readAdminBuildMeta", () => {
     expect(readAdminBuildMeta(root)).toBeNull();
   });
 
-  it("returns null for an empty commit or version", async () => {
+  it("returns null for blank version or commit", async () => {
     root = await mkdtemp(join(tmpdir(), "admitto-build-meta-"));
     await mkdir(root, { recursive: true });
-    await writeFile(
-      join(root, "build-meta.json"),
-      JSON.stringify({ version: "  ", commit: "abc" }),
-      "utf8",
-    );
-    expect(readAdminBuildMeta(root)).toBeNull();
-    await writeFile(
-      join(root, "build-meta.json"),
-      JSON.stringify({ version: "0.4.12", commit: "   " }),
-      "utf8",
-    );
-    expect(readAdminBuildMeta(root)).toBeNull();
+    for (const body of [
+      { version: "  ", commit: "abc" },
+      { version: "0.4.12", commit: "   " },
+    ]) {
+      await writeFile(join(root, "build-meta.json"), JSON.stringify(body), "utf8");
+      expect(readAdminBuildMeta(root)).toBeNull();
+    }
   });
 
   it("scans default candidates when distRoot is omitted", () => {
-    // May resolve ambient apps/admin/dist after a local build, or null - either exercises the scan.
     const meta = readAdminBuildMeta();
     if (meta) {
       expect(meta.version.length).toBeGreaterThan(0);

@@ -104,8 +104,7 @@ import { readAdminBuildMeta } from "../../src/admin/admin-build-meta.js";
 import {
   collectAdminHealth,
   fileStorageRow,
-  handleGetAdminHealth,
-  handlePostAdminHealthLive,
+  handleAdminHealth,
   MAIL_QUEUE_DEGRADED_THRESHOLD,
   resolveHealthCommit,
   resolveHealthVersion,
@@ -1284,10 +1283,10 @@ describe("collectAdminHealth", () => {
   });
 });
 
-describe("handleGetAdminHealth / handlePostAdminHealthLive", () => {
+describe("handleAdminHealth", () => {
   it("returns 403 when the caller cannot manage the instance", async () => {
     vi.mocked(canManageInstance).mockResolvedValueOnce(false);
-    const res = await handleGetAdminHealth(fakeHealthContext(), {} as PrismaClient, {} as never);
+    const res = await handleAdminHealth(fakeHealthContext(), {} as PrismaClient, {} as never);
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "forbidden" });
   });
@@ -1304,7 +1303,7 @@ describe("handleGetAdminHealth / handlePostAdminHealthLive", () => {
       root === "/served-admin-dist" ? { version: "0.4.12", commit: "a21c357" } : null,
     );
 
-    const getRes = await handleGetAdminHealth(
+    const getRes = await handleAdminHealth(
       fakeHealthContext(),
       { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
       {} as never,
@@ -1324,13 +1323,14 @@ describe("handleGetAdminHealth / handlePostAdminHealthLive", () => {
 
     const search = vi.fn().mockResolvedValue([{ label: "Warsaw" }]);
     isLocationMapsEnabled.mockReturnValue(true);
-    const postRes = await handlePostAdminHealthLive(
+    const postRes = await handleAdminHealth(
       fakeHealthContext(),
       { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
       {} as never,
       {
         geocodingProvider: { name: "nominatim", search, reverse: vi.fn() },
         adminDistRoot: "/served-admin-dist",
+        live: true,
       },
     );
     expect(postRes.status).toBe(200);
@@ -1341,10 +1341,11 @@ describe("handleGetAdminHealth / handlePostAdminHealthLive", () => {
 
   it("returns 403 on live when the caller cannot manage the instance", async () => {
     vi.mocked(canManageInstance).mockResolvedValueOnce(false);
-    const res = await handlePostAdminHealthLive(
+    const res = await handleAdminHealth(
       fakeHealthContext(),
       {} as PrismaClient,
       {} as never,
+      { live: true },
     );
     expect(res.status).toBe(403);
   });

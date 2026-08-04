@@ -1277,13 +1277,15 @@ export type AdminHealthHandlerOpts = {
   injectedBaseUrl?: string;
   /** Same dist root passed to `createStaffSpaHandlers` (custom deploy / tests). */
   adminDistRoot?: string;
+  /** When true, run on-demand live probes (POST /health/live). */
+  live?: boolean;
 };
 
-async function handleAdminHealthReport(
+/** GET /api/admin/health and POST /api/admin/health/live (set `opts.live`). */
+export async function handleAdminHealth(
   c: Context,
   db: PrismaClient,
   rateLimitStore: RateLimitStore,
-  live: boolean,
   opts?: AdminHealthHandlerOpts,
 ): Promise<Response> {
   const auth = c.get("auth");
@@ -1297,27 +1299,7 @@ async function handleAdminHealthReport(
     geocodingProvider: opts?.geocodingProvider,
     injectedBaseUrl: opts?.injectedBaseUrl,
     adminDistRoot: opts?.adminDistRoot,
-    live,
+    live: opts?.live === true,
   });
   return c.json(report, 200);
-}
-
-/** GET /api/admin/health: passive report for Settings → Health check. */
-export async function handleGetAdminHealth(
-  c: Context,
-  db: PrismaClient,
-  rateLimitStore: RateLimitStore,
-  opts?: AdminHealthHandlerOpts,
-): Promise<Response> {
-  return handleAdminHealthReport(c, db, rateLimitStore, false, opts);
-}
-
-/** POST /api/admin/health/live: same report with on-demand live probes (ADR 0037). */
-export async function handlePostAdminHealthLive(
-  c: Context,
-  db: PrismaClient,
-  rateLimitStore: RateLimitStore,
-  opts?: AdminHealthHandlerOpts,
-): Promise<Response> {
-  return handleAdminHealthReport(c, db, rateLimitStore, true, opts);
 }
