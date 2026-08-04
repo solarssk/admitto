@@ -14,8 +14,12 @@ export type EventSettingsDto = {
   status: "active" | "archived";
   /** Null unless status is "archived". */
   archived_at: string | null;
+  /** Browser timezone of whoever archived the event, when known. */
+  archived_by_timezone: string | null;
   /** When the event was first created. */
   created_at: string;
+  /** Browser timezone of whoever created the event, when known. */
+  created_by_timezone: string | null;
   /** True when the event has zero real activity and can be permanently deleted. */
   is_deletable: boolean;
   /** Attendees currently checked in — drives the "Revoke all check-ins" Danger Zone row. */

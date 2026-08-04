@@ -21,7 +21,7 @@ export function formatDeliveryHistoryTime(
 
 /** The row's client-local time ("HH:MM (IANA, UTC±offset)"), when the send/resend that produced
  * it carried a known browser timezone - same "UTC primary, local secondary" pattern and
- * composition as Audit/Security log's own actorLocalTime, using client_timezone (the browser
+ * composition as Audit/Security log's own userLocalTimeText, using client_timezone (the browser
  * that triggered the send) instead of an actor's. Null when absent, so callers only render a
  * second line when there's something to show. */
 export function deliveryLocalTime(row: Pick<DeliveryDto, "client_timezone">, iso: string | null): string | null {

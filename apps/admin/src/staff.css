@@ -5288,11 +5288,28 @@ output.mail-field-hint {
 .audit-log-time {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
+  /* Stack UTC + local (td white-space / inline children must not keep them on one row). */
+  white-space: normal;
 }
 
 .audit-log-time .sessions-subdued {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
+}
+
+/* Secondary local-time line under UTC (block flex, not inline - otherwise it sits beside UTC). */
+.audit-log-time__local {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  max-width: 100%;
+}
+
+.audit-log-time__local .ti {
+  flex-shrink: 0;
+  font-size: 0.95em;
+  opacity: 0.85;
+  line-height: 1;
 }
 
 /* Re-fetching with existing rows still on screen (filter/page change) — dim them

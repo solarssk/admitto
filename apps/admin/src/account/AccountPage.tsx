@@ -18,7 +18,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { GeoCell } from "../components/GeoCell.js";
 import { SessionRevokeAction, SessionSignIn } from "../pages/users/SessionListItem.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
-import { formatRelativeTime, formatUtcDateTime } from "../utils/event-dates.js";
+import { formatRelativeTime, zonedTimeLabel } from "../utils/event-dates.js";
 import { LOCALE_OPTIONS, setPreferredLocale as setPreferredLocaleStore } from "../utils/locale-store.js";
 import { parseUserAgent } from "../utils/parseUserAgent.js";
 import { TotpDigitInput } from "./TotpDigitInput.js";
@@ -34,8 +34,29 @@ const stepUpCodeFieldAttrs = {
   "data-form-type": "other",
 } as const;
 
-function formatDate(iso: string): string {
-  return formatUtcDateTime(iso);
+/** "2026-01-01 12:00:00" - same UTC-primary convention as Users → Active sessions. */
+function formatSessionPrimaryTime(iso: string): string {
+  return `${iso.slice(0, 19).replace("T", " ")} UTC`;
+}
+
+const sessionHourMinuteCache = new Map<string, Intl.DateTimeFormat>();
+
+function sessionHourMinuteFormat(timeZone: string): Intl.DateTimeFormat {
+  const locale = Intl.DateTimeFormat().resolvedOptions().locale;
+  const key = `${locale}\0${timeZone}`;
+  let format = sessionHourMinuteCache.get(key);
+  if (!format) {
+    format = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", hour12: false, timeZone });
+    sessionHourMinuteCache.set(key, format);
+  }
+  return format;
+}
+
+/** Viewer-local secondary line under Logged in - matches Active sessions (no actor TZ on sessions). */
+function sessionViewerLocalTime(iso: string): string {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const hhmm = sessionHourMinuteFormat(timeZone).format(new Date(iso));
+  return `${hhmm} ${zonedTimeLabel(iso, timeZone)}`;
 }
 
 /** Same .txt format and filename as the server-rendered MFA enrollment download. */
@@ -651,7 +672,10 @@ export function AccountPage() {
                       {s.ip ?? "-"}
                       {s.ip && <div className="sessions-subdued"><GeoCell location={s.country} /></div>}
                     </td>
-                    <td>{formatDate(s.loginAt)}</td>
+                    <td>
+                      {formatSessionPrimaryTime(s.loginAt)}
+                      <div className="sessions-subdued">{sessionViewerLocalTime(s.loginAt)}</div>
+                    </td>
                     <td>{formatRelativeTime(s.lastSeenAt)}</td>
                     <td>
                       <SessionSignIn authMethod={s.authMethod} />

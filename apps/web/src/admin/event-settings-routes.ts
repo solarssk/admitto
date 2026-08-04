@@ -79,7 +79,9 @@ type EventSettingsRow = {
   timezone: string;
   capacity: number | null;
   archived_at: Date | null;
+  archived_by_timezone: string | null;
   created_at: Date;
+  created_by_timezone: string | null;
   logo_url: string | null;
   logo_original_url: string | null;
   logo_crop: unknown;
@@ -104,7 +106,9 @@ function serializeEventSettings(
     capacity: event.capacity,
     status: event.archived_at ? "archived" : "active",
     archived_at: event.archived_at ? event.archived_at.toISOString() : null,
+    archived_by_timezone: event.archived_by_timezone,
     created_at: event.created_at.toISOString(),
+    created_by_timezone: event.created_by_timezone,
     is_deletable: deletability.isDeletable,
     admitted_count: revokeCounts.admittedCount,
     issued_items_count: revokeCounts.issuedItemsCount,
@@ -131,7 +135,9 @@ const EVENT_SETTINGS_SELECT = {
   timezone: true,
   capacity: true,
   archived_at: true,
+  archived_by_timezone: true,
   created_at: true,
+  created_by_timezone: true,
   pinned_note: true,
   organization_id: true,
   logo_url: true,

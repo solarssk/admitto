@@ -28,8 +28,9 @@ The selected view shows a bounded, relevant sequence of events without requiring
 
 ## Important decisions
 
-- System logs are a recent operational view, not a permanent audit record.
+- System logs are a recent operational view, not a permanent audit record. Their timestamps stay in **UTC** so every viewer sees the same instant and can match container or stdout logs.
 - Audit and security logs have different event types and filters.
+- On Audit and Security, Time shows **UTC on top** and local time **on the line below**: **user** icon (Audit: the user's timezone when known) or **desktop** icon (Security: your browser timezone). Health check **Generated** is browser-local only.
 - A missing row does not prove an action never happened if it is outside retention or the selected filters.
 - Log exports can contain staff identifiers. Handle them as controlled operational data.
 
