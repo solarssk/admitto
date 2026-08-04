@@ -303,6 +303,9 @@ describe("FontFamilyModal", () => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Replaced 1 existing variant/);
     });
     expect(rows()).toHaveLength(1);
+    await waitFor(() => {
+      expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/theme/first.woff2");
+    });
   });
 
   it("keeps the newest file's result for a row even if an earlier, still-in-flight upload for it resolves later", async () => {
@@ -331,6 +334,7 @@ describe("FontFamilyModal", () => {
 
     expect(within(row).getByText("Acme-Sans-Bold.woff2")).toBeTruthy();
     expect(rows()).toHaveLength(1);
+    expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/theme/first.woff2");
   });
 
   it("silently ignores a stale upload's own rejection once a newer pick has already replaced it", async () => {
@@ -430,6 +434,7 @@ describe("FontFamilyModal", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Remove variant" }));
     expect(rows()).toHaveLength(0);
+    expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/theme/a.woff2");
   });
 
   it("removes an empty (never-uploaded) row cleanly", () => {

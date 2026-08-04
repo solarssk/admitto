@@ -1,10 +1,11 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   BrandingUploadError,
+  absolutePathUnderUploadRoot,
   assertDecodedImageWithinLimits,
   bestEffortDeleteReplacedUploadUrls,
   bestEffortDeleteUploadUrl,
@@ -297,6 +298,26 @@ describe("parseUploadsUrl", () => {
     expect(() => parseUploadsUrl(`/uploads/default/events/${UUID_EVENT_PNG}`)).toThrow(
       BrandingUploadError,
     );
+    expect(() => parseUploadsUrl("/uploads/default/")).toThrow(BrandingUploadError);
+    expect(() => parseUploadsUrl("/uploads//default/x.png")).toThrow(BrandingUploadError);
+    expect(() => parseUploadsUrl(`/uploads/default/theme/not-uuid.woff2`)).toThrow(BrandingUploadError);
+    expect(() => parseUploadsUrl(`/uploads/default/events/evt-1/not-uuid.png`)).toThrow(
+      BrandingUploadError,
+    );
+    expect(() => parseUploadsUrl(`/uploads/default/?q=1`)).toThrow(BrandingUploadError);
+    expect(() => parseUploadsUrl(`/uploads/default/./${UUID_PNG}`)).toThrow(BrandingUploadError);
+    expect(() => parseUploadsUrl(`/uploads/default//${UUID_PNG}`)).toThrow(BrandingUploadError);
+  });
+});
+
+describe("absolutePathUnderUploadRoot", () => {
+  it("rejects a relative path that escapes the upload root", () => {
+    expect(() => absolutePathUnderUploadRoot("../outside.png")).toThrow(BrandingUploadError);
+  });
+
+  it("accepts a path under the upload root", () => {
+    const abs = absolutePathUnderUploadRoot(`default/${UUID_PNG}`);
+    expect(abs.startsWith(uploadDir)).toBe(true);
   });
 });
 
@@ -317,6 +338,26 @@ describe("deleteBrandingUploadByUrl", () => {
     await expect(
       deleteBrandingUploadByUrl(result.url, { expectedOrgId: "other" }),
     ).rejects.toMatchObject({ code: "invalid_upload_url" });
+  });
+
+  it("rejects eventId mismatch for event-scoped URLs", async () => {
+    const result = await saveEventUpload(pngFile(), "default", "evt-a");
+    await expect(
+      deleteBrandingUploadByUrl(result.url, {
+        expectedOrgId: "default",
+        expectedEventId: "evt-b",
+      }),
+    ).rejects.toMatchObject({ code: "invalid_upload_url" });
+  });
+
+  it("rethrows non-ENOENT unlink failures", async () => {
+    const result = await saveBrandingUpload(pngFile(), "default");
+    const abs = join(uploadDir, result.url.slice("/uploads/".length));
+    unlinkSync(abs);
+    mkdirSync(abs);
+    await expect(deleteBrandingUploadByUrl(result.url, { expectedOrgId: "default" })).rejects.toMatchObject({
+      code: expect.not.stringMatching(/^ENOENT$/),
+    });
   });
 });
 

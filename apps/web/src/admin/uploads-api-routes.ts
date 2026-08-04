@@ -9,6 +9,7 @@ import {
   saveBrandingUpload,
   saveEventUpload,
   saveThemeFontUpload,
+  type ParsedUploadsUrl,
 } from "./branding-upload.js";
 import { assertEventManageAccess, adminAuditFromContext, requireEventId } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
@@ -157,6 +158,43 @@ export async function handlePostThemeFontUpload(c: Context, db: PrismaClient): P
   });
 }
 
+/** Map BrandingUploadError to a JSON response; other errors return null. */
+function brandingUploadErrorResponse(c: Context, err: unknown): Response | null {
+  if (!(err instanceof BrandingUploadError)) return null;
+  return c.json({ error: err.code, ...err.details }, err.status as BrandingUploadStatus);
+}
+
+/** Validate DELETE body shape; returns trimmed URL or a 400 payload. */
+function readDeleteUploadUrl(body: unknown): { url: string } | { error: string } {
+  if (!body || typeof body !== "object") return { error: "invalid_body" };
+  const url = (body as { url?: unknown }).url;
+  if (typeof url !== "string" || url.trim() === "") return { error: "url_required" };
+  return { url: url.trim() };
+}
+
+/**
+ * Auth for DELETE: org/theme → superadmin; event path → event manage access.
+ * Single-tenant: org segment must be `default` (same contract as POST upload writers;
+ * multi-org threading is tracked on the v0.5+ roadmap).
+ */
+async function authorizeDeleteUpload(
+  c: Context,
+  db: PrismaClient,
+  parsed: ParsedUploadsUrl,
+): Promise<Response | null> {
+  if (parsed.orgId !== "default") {
+    return c.json({ error: "invalid_upload_url" }, 400);
+  }
+  if (parsed.kind === "event") {
+    return assertEventManageAccess(c, db, parsed.eventId!);
+  }
+  const auth = c.get("auth");
+  if (!(await canManageInstance(db, auth.userId))) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+  return null;
+}
+
 /**
  * DELETE /api/admin/uploads — remove a managed `/uploads/…` file by URL.
  * Org/theme paths: superadmin. Event paths: event manage access matching the URL's eventId.
@@ -169,48 +207,31 @@ export async function handleDeleteUpload(c: Context, db: PrismaClient): Promise<
   } catch {
     return c.json({ error: "invalid_json" }, 400);
   }
-  if (!body || typeof body !== "object") {
-    return c.json({ error: "invalid_body" }, 400);
-  }
-  const url = (body as { url?: unknown }).url;
-  if (typeof url !== "string" || url.trim() === "") {
-    return c.json({ error: "url_required" }, 400);
-  }
 
-  let parsed;
+  const urlOrErr = readDeleteUploadUrl(body);
+  if ("error" in urlOrErr) return c.json({ error: urlOrErr.error }, 400);
+
+  let parsed: ParsedUploadsUrl;
   try {
-    parsed = parseUploadsUrl(url.trim());
+    parsed = parseUploadsUrl(urlOrErr.url);
   } catch (err) {
-    if (err instanceof BrandingUploadError) {
-      return c.json({ error: err.code, ...err.details }, err.status as BrandingUploadStatus);
-    }
-    throw err;
+    const mapped = brandingUploadErrorResponse(c, err);
+    if (mapped) return mapped;
+    logger.error("handleDeleteUpload parse failed", { err });
+    return c.json({ error: "server error" }, 500);
   }
 
-  // TODO(multi-org): same hardcoded orgId as POST upload handlers.
-  if (parsed.orgId !== "default") {
-    return c.json({ error: "invalid_upload_url" }, 400);
-  }
-
-  if (parsed.kind === "event") {
-    const forbidden = await assertEventManageAccess(c, db, parsed.eventId!);
-    if (forbidden) return forbidden;
-  } else {
-    const auth = c.get("auth");
-    if (!(await canManageInstance(db, auth.userId))) {
-      return c.json({ error: "forbidden" }, 403);
-    }
-  }
+  const forbidden = await authorizeDeleteUpload(c, db, parsed);
+  if (forbidden) return forbidden;
 
   try {
-    await deleteBrandingUploadByUrl(url.trim(), {
+    await deleteBrandingUploadByUrl(urlOrErr.url, {
       expectedOrgId: parsed.orgId,
       expectedEventId: parsed.kind === "event" ? parsed.eventId : undefined,
     });
   } catch (err) {
-    if (err instanceof BrandingUploadError) {
-      return c.json({ error: err.code, ...err.details }, err.status as BrandingUploadStatus);
-    }
+    const mapped = brandingUploadErrorResponse(c, err);
+    if (mapped) return mapped;
     logger.error("handleDeleteUpload failed", { err });
     return c.json({ error: "server error" }, 500);
   }

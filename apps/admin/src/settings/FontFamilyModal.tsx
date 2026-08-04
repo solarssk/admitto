@@ -297,6 +297,27 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
     updateRow(id, patch);
   }
 
+  /** Track a freshly uploaded font URL; best-effort delete the previous session URL it replaced. */
+  function adoptSessionUpload(url: string, previousUrl: string | null) {
+    sessionUploadsRef.current.add(url);
+    if (!previousUrl || previousUrl === url || !sessionUploadsRef.current.has(previousUrl)) return;
+    sessionUploadsRef.current.delete(previousUrl);
+    void deleteUploadedFile(previousUrl);
+  }
+
+  function rollbackFailedFontRow(id: number, existingId: number | null) {
+    const oldFace = facesRef.current.get(id);
+    if (oldFace) {
+      document.fonts.delete(oldFace);
+      facesRef.current.delete(id);
+    }
+    if (existingId) {
+      updateRow(id, { fileName: null, url: null, loaded: false, loading: false });
+    } else {
+      setRows((prev) => prev.filter((r) => r.id !== id));
+    }
+  }
+
   async function loadIntoRow(file: File, guess: { weight: number; style: "normal" | "italic" }, existingId: number | null) {
     const id = existingId ?? ++rowSeqRef.current;
     const generation = (rowGenerationRef.current.get(id) ?? 0) + 1;
@@ -335,24 +356,11 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
         void deleteUploadedFile(url);
         return;
       }
-      sessionUploadsRef.current.add(url);
-      if (previousUrl && previousUrl !== url && sessionUploadsRef.current.has(previousUrl)) {
-        sessionUploadsRef.current.delete(previousUrl);
-        void deleteUploadedFile(previousUrl);
-      }
+      adoptSessionUpload(url, previousUrl);
       updateRow(id, { loaded: true, loading: false, url });
     } catch (err) {
       if (isStale()) return;
-      const oldFace = facesRef.current.get(id);
-      if (oldFace) {
-        document.fonts.delete(oldFace);
-        facesRef.current.delete(id);
-      }
-      if (existingId) {
-        updateRow(id, { fileName: null, url: null, loaded: false, loading: false });
-      } else {
-        setRows((prev) => prev.filter((r) => r.id !== id));
-      }
+      rollbackFailedFontRow(id, existingId);
       addToast(operatorApiErrorMessage(err, `Couldn't upload "${file.name}".`), "error");
     }
   }
@@ -406,8 +414,9 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
   function save() {
     cleanupPreviewFaces();
     // Persisted into the theme draft - do not delete these on close.
+    // loadedRows already requires a truthy url.
     for (const r of loadedRows) {
-      if (r.url) sessionUploadsRef.current.delete(r.url);
+      sessionUploadsRef.current.delete(r.url!);
     }
     discardSessionUploads();
     onSaved({

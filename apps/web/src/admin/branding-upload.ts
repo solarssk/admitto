@@ -299,7 +299,8 @@ export function parseUploadsUrl(url: string): ParsedUploadsUrl {
   throw new BrandingUploadError("invalid_upload_url", 400);
 }
 
-function absolutePathUnderUploadRoot(relativePath: string): string {
+/** Resolve `relativePath` under the upload root; rejects escape attempts. */
+export function absolutePathUnderUploadRoot(relativePath: string): string {
   const root = resolve(resolveUploadDir());
   const abs = resolve(join(root, relativePath));
   const rootWithSep = root.endsWith(sep) ? root : root + sep;

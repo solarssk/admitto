@@ -482,6 +482,45 @@ describe("LogoUploadZone", () => {
     expect(
       screen.getByRole("dialog", { name: "Adjust image" }).getAttribute("data-image-src"),
     ).toBe("/uploads/default/second-original.png");
+    expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/first-original.png");
+  });
+
+  it("stale Apply deletes the cropped upload when a newer pick supersedes it", async () => {
+    let resolveCropped!: (v: { url: string }) => void;
+    const croppedPending = new Promise<{ url: string }>((r) => {
+      resolveCropped = r;
+    });
+    mockUploadFile
+      .mockResolvedValueOnce({ url: "/uploads/default/orig.png" })
+      .mockReturnValueOnce(croppedPending)
+      .mockResolvedValueOnce({ url: "/uploads/default/second-original.png" });
+    const onChange = vi.fn();
+    renderWithToast(<LogoUploadZone value="" onChange={onChange} />);
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { files: [new File(["a"], "a.png", { type: "image/png" })] },
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: "Adjust image" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    await waitFor(() => {
+      expect(mockUploadFile).toHaveBeenCalledTimes(2);
+    });
+    // Supersede Apply mid-flight with a new pick.
+    fireEvent.change(input, {
+      target: { files: [new File(["b"], "b.png", { type: "image/png" })] },
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: "Adjust image" }).getAttribute("data-image-src")).toBe(
+        "/uploads/default/second-original.png",
+      );
+    });
+    resolveCropped({ url: "/uploads/default/stale-cropped.png" });
+    await waitFor(() => {
+      expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/stale-cropped.png");
+    });
+    expect(onChange).not.toHaveBeenCalledWith("/uploads/default/stale-cropped.png");
   });
 
   it("uses JPEG extension for nameless files and jpeg MIME", async () => {
