@@ -1271,17 +1271,20 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
   };
 }
 
-/** GET /api/admin/health: passive report for Settings → Health check. */
-export async function handleGetAdminHealth(
+/** Shared opts for Settings → Health check GET/POST handlers. */
+export type AdminHealthHandlerOpts = {
+  geocodingProvider?: GeocodingProvider;
+  injectedBaseUrl?: string;
+  /** Same dist root passed to `createStaffSpaHandlers` (custom deploy / tests). */
+  adminDistRoot?: string;
+};
+
+async function handleAdminHealthReport(
   c: Context,
   db: PrismaClient,
   rateLimitStore: RateLimitStore,
-  opts?: {
-    geocodingProvider?: GeocodingProvider;
-    injectedBaseUrl?: string;
-    /** Same dist root passed to `createStaffSpaHandlers` (custom deploy / tests). */
-    adminDistRoot?: string;
-  },
+  live: boolean,
+  opts?: AdminHealthHandlerOpts,
 ): Promise<Response> {
   const auth = c.get("auth");
   if (!(await canManageInstance(db, auth.userId))) {
@@ -1294,9 +1297,19 @@ export async function handleGetAdminHealth(
     geocodingProvider: opts?.geocodingProvider,
     injectedBaseUrl: opts?.injectedBaseUrl,
     adminDistRoot: opts?.adminDistRoot,
-    live: false,
+    live,
   });
   return c.json(report, 200);
+}
+
+/** GET /api/admin/health: passive report for Settings → Health check. */
+export async function handleGetAdminHealth(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+  opts?: AdminHealthHandlerOpts,
+): Promise<Response> {
+  return handleAdminHealthReport(c, db, rateLimitStore, false, opts);
 }
 
 /** POST /api/admin/health/live: same report with on-demand live probes (ADR 0037). */
@@ -1304,25 +1317,7 @@ export async function handlePostAdminHealthLive(
   c: Context,
   db: PrismaClient,
   rateLimitStore: RateLimitStore,
-  opts?: {
-    geocodingProvider?: GeocodingProvider;
-    injectedBaseUrl?: string;
-    /** Same dist root passed to `createStaffSpaHandlers` (custom deploy / tests). */
-    adminDistRoot?: string;
-  },
+  opts?: AdminHealthHandlerOpts,
 ): Promise<Response> {
-  const auth = c.get("auth");
-  if (!(await canManageInstance(db, auth.userId))) {
-    return c.json({ error: "forbidden" }, 403);
-  }
-
-  const report = await collectAdminHealth({
-    db,
-    rateLimitStore,
-    geocodingProvider: opts?.geocodingProvider,
-    injectedBaseUrl: opts?.injectedBaseUrl,
-    adminDistRoot: opts?.adminDistRoot,
-    live: true,
-  });
-  return c.json(report, 200);
+  return handleAdminHealthReport(c, db, rateLimitStore, true, opts);
 }
