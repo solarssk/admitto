@@ -7,7 +7,8 @@ describe("auth-page-security", () => {
     expect(headers["Content-Security-Policy"]).toContain("script-src 'nonce-test-nonce-value'");
     expect(headers["Content-Security-Policy"]).not.toContain("script-src 'unsafe-inline'");
     expect(headers["Content-Security-Policy"]).toContain("base-uri 'none'");
-    expect(headers["Content-Security-Policy"]).toContain("style-src 'self' 'unsafe-inline'");
-    expect(headers["Content-Security-Policy"]).toContain("font-src 'self'");
+    expect(headers["Content-Security-Policy"]).toContain("style-src 'unsafe-inline'");
+    expect(headers["Content-Security-Policy"]).not.toContain("font-src");
+    expect(headers["Content-Security-Policy"]).not.toContain("style-src 'self'");
   });
 });

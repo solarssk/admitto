@@ -1,7 +1,6 @@
 /** Product name for auth HTML (browser tab, password managers, TOTP issuer). */
 import { AUTH_PASSWORD_STRENGTH_CSS } from "@admitto/auth/password-strength-script";
 import { renderAdmittoFaviconLink } from "./favicon.js";
-import { TABLER_ICONS_CSS_PATH } from "./vendor-assets.js";
 
 export const AUTH_PRODUCT_NAME = "Admitto";
 
@@ -139,7 +138,11 @@ body {
   border-radius: 6px;
   font-size: 0.8125rem;
 }
-.at-notice__icon { margin-top: 3px; flex: none; }
+.at-notice__icon {
+  margin-top: 3px;
+  flex: none;
+  display: block;
+}
 .at-notice__body { flex: 1; }
 .at-notice--info {
   border-color: var(--border);
@@ -436,7 +439,6 @@ export function renderAuthDocument(options: AuthDocumentOptions): string {
   <meta property="og:site_name" content="${esc(AUTH_PRODUCT_NAME)}">
   <meta name="description" content="${esc(description)}">
   ${renderAdmittoFaviconLink()}
-  <link rel="stylesheet" href="${TABLER_ICONS_CSS_PATH}">
   <title>${esc(AUTH_PRODUCT_NAME)}${step ? ` - ${esc(step)}` : ""}</title>
   <style>${css}</style>
 </head>
