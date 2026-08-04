@@ -23,7 +23,7 @@ describe("InviteUserModal", () => {
     render(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
 
     expect(screen.queryByLabelText("Send invite email")).toBeNull();
-    expect(screen.getByText("At least 8 characters.")).toBeTruthy();
+    expect(screen.getByText("At least 12 characters.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
   });
 

@@ -4,6 +4,7 @@ import {
   Button,
   IconButton,
   StatusBadge,
+  Tooltip,
 } from "@admitto/ui";
 import type { UserListItemDto } from "../../api/types.js";
 import { roleBadgeVariant, roleLabel } from "../../auth/role-labels.js";
@@ -71,41 +72,43 @@ function UserMfa({ hasMfa }: Readonly<{ hasMfa: boolean }>) {
 
 function UserStatusBadge({ active }: Readonly<{ active: boolean }>) {
   return active ? (
-    <StatusBadge status="ok" label="Active" dot />
+    <StatusBadge status="ok" label="Active" />
   ) : (
-    <StatusBadge status="neutral" label="Disabled" dot className="users-page__status-disabled" />
+    <StatusBadge status="neutral" label="Disabled" className="users-page__status-disabled" />
   );
 }
 
 function UserSessionsBadge({ count }: Readonly<{ count: number }>) {
-  return (
-    <span
-      className={`users-page__sessions-badge ${
-        count > 0 ? "users-page__sessions-badge--active" : "users-page__sessions-badge--empty"
-      }`}
-    >
-      {count}
-    </span>
+  return count > 0 ? (
+    <Badge variant="info">{count}</Badge>
+  ) : (
+    <span style={{ color: "var(--text-disabled)" }}>—</span>
   );
 }
 
-/** Compact icon-only actions for the desktop table row. */
+/** Compact icon-only actions for the desktop table row - a bare icon (especially the reset/
+ * refresh glyph, easy to mistake for "revoke all sessions") doesn't self-explain, so each gets
+ * the app's standard hover/focus Tooltip in addition to its aria-label. */
 function UserActionsRow({ user, onEdit, onRevokeSessions }: Readonly<StaffUserListItemProps>) {
   const label = user.display_name?.trim() || user.email;
   return (
     <div className="users-page__actions">
-      <IconButton
-        icon={<i className="ti ti-pencil" aria-hidden="true" />}
-        label={`Edit profile for ${label}`}
-        size="sm"
-        onClick={() => onEdit(user)}
-      />
-      <IconButton
-        icon={<i className="ti ti-refresh" aria-hidden="true" />}
-        label={`Reset sessions for ${label}`}
-        size="sm"
-        onClick={() => onRevokeSessions(user)}
-      />
+      <Tooltip content="Edit profile">
+        <IconButton
+          icon={<i className="ti ti-pencil" aria-hidden="true" />}
+          label={`Edit profile for ${label}`}
+          size="sm"
+          onClick={() => onEdit(user)}
+        />
+      </Tooltip>
+      <Tooltip content="Reset sessions">
+        <IconButton
+          icon={<i className="ti ti-refresh" aria-hidden="true" />}
+          label={`Reset sessions for ${label}`}
+          size="sm"
+          onClick={() => onRevokeSessions(user)}
+        />
+      </Tooltip>
     </div>
   );
 }

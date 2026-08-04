@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, EmptyState, IconButton, Skeleton, useToast } from "@admitto/ui";
+import { Badge, Button, EmptyState, IconButton, Skeleton, Tooltip, useToast } from "@admitto/ui";
 import { useDelayedLoading } from "../../hooks/useDelayedLoading.js";
 import { fetchRoleAssignments, revokeUserRole } from "../../api/client.js";
 import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
@@ -45,12 +45,15 @@ function AssignmentTableRow({ row, canRevoke, onRevoke }: Readonly<AssignmentRow
       <td>{formatUtcDateTime(row.granted_at)}</td>
       <td>
         {canRevoke ? (
-          <IconButton
-            icon={<i className="ti ti-trash" aria-hidden="true" />}
-            label={`Revoke ${roleLabel(row.role)} for ${row.user_display_name ?? row.user_email}`}
-            size="sm"
-            onClick={() => onRevoke(row)}
-          />
+          <Tooltip content="Revoke assignment">
+            <IconButton
+              icon={<i className="ti ti-trash" aria-hidden="true" />}
+              label={`Revoke ${roleLabel(row.role)} for ${row.user_display_name ?? row.user_email}`}
+              size="sm"
+              className="users-page__icon-danger"
+              onClick={() => onRevoke(row)}
+            />
+          </Tooltip>
         ) : (
           <span className="form-hint">-</span>
         )}
@@ -186,7 +189,7 @@ export function RoleAssignmentsTab({ onAssignmentsChanged }: Readonly<RoleAssign
                   <th>User</th>
                   <th>Role</th>
                   <th>Granted</th>
-                  <th>Actions</th>
+                  <th><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -235,7 +238,7 @@ export function RoleAssignmentsTab({ onAssignmentsChanged }: Readonly<RoleAssign
                   <th>User</th>
                   <th>Role</th>
                   <th>Granted</th>
-                  <th>Actions</th>
+                  <th><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody>

@@ -55,7 +55,7 @@ function StaffUsersSkeleton() {
               <th>Last login</th>
               <th>Sessions</th>
               <th>Status</th>
-              <th>Actions</th>
+              <th><span className="sr-only">Actions</span></th>
             </tr>
           </thead>
           <tbody>
@@ -393,7 +393,7 @@ export function UsersPage() {
                       <th>Last login</th>
                       <th>Sessions</th>
                       <th>Status</th>
-                      <th>Actions</th>
+                      <th><span className="sr-only">Actions</span></th>
                     </tr>
                   </thead>
                   <tbody>

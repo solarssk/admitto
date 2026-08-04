@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Button, Input, ModalBackdrop, Notice, Select, Switch } from "@admitto/ui";
+import { PASSWORD_MIN_LENGTH } from "@admitto/auth/constants";
 import {
   ApiError,
   createAdminUser,
@@ -11,6 +12,7 @@ import { hasApiErrorCode, operatorApiErrorMessage } from "../../api/operator-api
 import type { EventDto, UserListItemDto } from "../../api/types.js";
 import { useModalFocusTrap } from "../../components/useModalFocusTrap.js";
 import { roleLabel } from "../../auth/role-labels.js";
+import { NO_AUTOFILL_PROPS } from "../../settings/mailTransportFormParts.js";
 import "../../attendees/add-attendee-modal.css";
 
 export type InviteUserCreatedResult = {
@@ -98,7 +100,7 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
   };
 
   const handleSubmit = async () => {
-    if (submitting || !email.trim() || !password || password.length < 8) return;
+    if (submitting || !email.trim() || !password || password.length < PASSWORD_MIN_LENGTH) return;
     if (initialRole === "operator" && !eventId) {
       setError("Select an event for the operator role.");
       return;
@@ -137,8 +139,10 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
     } catch (err) {
       if (err instanceof ApiError && (hasApiErrorCode(err, "email_taken") || hasApiErrorCode(err, "email_conflict"))) {
         setError("A user with this email already exists.");
+      } else if (err instanceof ApiError && hasApiErrorCode(err, "invalid_request")) {
+        setError(`Check the email address and the temporary password (at least ${PASSWORD_MIN_LENGTH} characters).`);
       } else {
-        setError(operatorApiErrorMessage(err, "Failed to invite user."));
+        setError(operatorApiErrorMessage(err, "Failed to invite user. Check the email address and password."));
       }
     } finally {
       setSubmitting(false);
@@ -162,11 +166,13 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
             id="invite-email"
             label="Email address"
             icon={<i className="ti ti-mail" aria-hidden="true" />}
-            type="email"
+            type="text"
+            inputMode="email"
             value={email}
             required
             disabled={submitting}
             onChange={(e) => setEmail(e.target.value)}
+            {...NO_AUTOFILL_PROPS}
           />
           <Input
             id="invite-name"
@@ -229,12 +235,13 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
             label="Temporary password"
             icon={<i className="ti ti-key" aria-hidden="true" />}
             type="password"
-            minLength={8}
-            hint="At least 8 characters."
+            minLength={PASSWORD_MIN_LENGTH}
+            hint={`At least ${PASSWORD_MIN_LENGTH} characters.`}
             value={password}
             required
             disabled={submitting}
             onChange={(e) => setPassword(e.target.value)}
+            {...NO_AUTOFILL_PROPS}
           />
           <Switch
             label="Require password change on first login"
@@ -251,7 +258,7 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
             <Button
               type="button"
               variant="primary"
-              disabled={submitting || !email.trim() || password.length < 8}
+              disabled={submitting || !email.trim() || password.length < PASSWORD_MIN_LENGTH}
               onClick={() => void handleSubmit()}
             >
               {submitting ? "Sending…" : "Send"}

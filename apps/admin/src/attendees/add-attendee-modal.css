@@ -64,6 +64,14 @@
   gap: var(--space-4);
 }
 
+/* .at-notice carries no margin of its own (packages/ui) - it normally relies on a flex/grid
+ * parent's `gap`, but here it sits directly in the panel between the title and the fields
+ * block below, neither of which is a gap container, so it would otherwise touch the fields
+ * with zero breathing room. */
+.add-attendee-modal__panel > .at-notice {
+  margin-bottom: var(--space-4);
+}
+
 /* The global .at-select rule (apps/admin/src/staff.css) caps native <select>
    elements at max-width: 24rem for filter-style contexts elsewhere in the app.
    Override it here so Ticket type matches the other fields' full column width

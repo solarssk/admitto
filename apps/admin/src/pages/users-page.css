@@ -272,28 +272,6 @@
   font-size: var(--fs-sm);
 }
 
-.users-page__sessions-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.5rem;
-  height: 1.5rem;
-  padding: 0 var(--space-2);
-  border-radius: 999px;
-  font-size: var(--fs-xs);
-  font-weight: 600;
-}
-
-.users-page__sessions-badge--active {
-  background: var(--primary);
-  color: #fff;
-}
-
-.users-page__sessions-badge--empty {
-  background: var(--surface-muted);
-  color: var(--text-muted);
-}
-
 .users-page__actions {
   display: flex;
   flex-wrap: wrap;
@@ -302,6 +280,14 @@
    * within that box instead of centering — reads as misaligned next to Previous/Next (#398). */
   align-items: center;
   gap: var(--space-2);
+}
+
+/* Same red-on-hover treatment as the Active sessions tab's own revoke icon
+ * (.sessions-row-actions__revoke, staff.css) - reused here for Role assignments' revoke action so
+ * both tables give the same visual cue for an irreversible action. */
+.users-page__icon-danger:hover:not(:disabled) {
+  background: var(--status-error-tint);
+  color: var(--status-error-fg);
 }
 
 /* Neutral badge tokens (--at-gray-100 bg / text-secondary fg) pass AA contrast on their own but
