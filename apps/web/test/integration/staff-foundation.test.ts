@@ -434,6 +434,175 @@ describe("PUT /api/admin/theme", () => {
     expect(res.status).toBe(403);
   });
 
+  it("returns 400 for invalid JSON body", async () => {
+    const res = await app.request("/api/admin/theme", {
+      method: "PUT",
+      headers: {
+        Cookie: await sessionCookieFor(superId),
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: "{not-json",
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid JSON" });
+  });
+
+  it("returns 400 for a non-object JSON body", async () => {
+    const res = await app.request("/api/admin/theme", {
+      method: "PUT",
+      headers: {
+        Cookie: await sessionCookieFor(superId),
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify("theme"),
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid body" });
+  });
+
+  it("deletes a replaced local theme font file on save", async () => {
+    const { mkdtempSync, rmSync, existsSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { saveThemeFontUpload } = await import("../../src/admin/branding-upload.js");
+
+    const uploadDir = mkdtempSync(join(tmpdir(), "admitto-theme-cleanup-"));
+    const prevUploadDir = process.env.UPLOAD_DIR;
+    process.env.UPLOAD_DIR = uploadDir;
+    try {
+      const woff = new File([new Uint8Array([0x77, 0x4f, 0x46, 0x32, 0, 0, 0, 0])], "a.woff2", {
+        type: "font/woff2",
+      });
+      const first = await saveThemeFontUpload(woff, "default");
+      const second = await saveThemeFontUpload(woff, "default");
+      const firstAbs = join(uploadDir, first.url.slice("/uploads/".length));
+      expect(existsSync(firstAbs)).toBe(true);
+
+      const put1 = await app.request("/api/admin/theme", {
+        method: "PUT",
+        headers: {
+          Cookie: await sessionCookieFor(superId),
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify({
+          font_family_name: "Cleanup Sans",
+          custom_font_families: [
+            {
+              name: "Cleanup Sans",
+              variants: [{ weight: 400, style: "normal", url: first.url }],
+            },
+          ],
+        }),
+      });
+      expect(put1.status).toBe(200);
+
+      const put2 = await app.request("/api/admin/theme", {
+        method: "PUT",
+        headers: {
+          Cookie: await sessionCookieFor(superId),
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify({
+          font_family_name: "Cleanup Sans",
+          custom_font_families: [
+            {
+              name: "Cleanup Sans",
+              variants: [{ weight: 400, style: "normal", url: second.url }],
+            },
+          ],
+        }),
+      });
+      expect(put2.status).toBe(200);
+      expect(existsSync(firstAbs)).toBe(false);
+    } finally {
+      if (prevUploadDir === undefined) delete process.env.UPLOAD_DIR;
+      else process.env.UPLOAD_DIR = prevUploadDir;
+      rmSync(uploadDir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a replaced theme font when an event branding field still references it", async () => {
+    const { mkdtempSync, rmSync, existsSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { saveThemeFontUpload } = await import("../../src/admin/branding-upload.js");
+
+    const uploadDir = mkdtempSync(join(tmpdir(), "admitto-theme-shared-"));
+    const prevUploadDir = process.env.UPLOAD_DIR;
+    process.env.UPLOAD_DIR = uploadDir;
+    const eventId = "evt-theme-font-share";
+    try {
+      const woff = new File([new Uint8Array([0x77, 0x4f, 0x46, 0x32, 0, 0, 0, 0])], "a.woff2", {
+        type: "font/woff2",
+      });
+      const first = await saveThemeFontUpload(woff, "default");
+      const second = await saveThemeFontUpload(woff, "default");
+      const firstAbs = join(uploadDir, first.url.slice("/uploads/".length));
+
+      const put1 = await app.request("/api/admin/theme", {
+        method: "PUT",
+        headers: {
+          Cookie: await sessionCookieFor(superId),
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify({
+          font_family_name: "Shared Sans",
+          custom_font_families: [
+            {
+              name: "Shared Sans",
+              variants: [{ weight: 400, style: "normal", url: first.url }],
+            },
+          ],
+        }),
+      });
+      expect(put1.status).toBe(200);
+
+      // Cross-scope: event header still points at the theme-path URL.
+      const org = await prisma.organization.findFirst({ select: { id: true } });
+      expect(org).toBeTruthy();
+      await prisma.event.create({
+        data: {
+          id: eventId,
+          title: "Theme font share",
+          slug: "theme-font-share",
+          date: new Date("2026-11-02T12:00:00.000Z"),
+          organization_id: org!.id,
+          header_image_url: first.url,
+        },
+      });
+
+      const put2 = await app.request("/api/admin/theme", {
+        method: "PUT",
+        headers: {
+          Cookie: await sessionCookieFor(superId),
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify({
+          font_family_name: "Shared Sans",
+          custom_font_families: [
+            {
+              name: "Shared Sans",
+              variants: [{ weight: 400, style: "normal", url: second.url }],
+            },
+          ],
+        }),
+      });
+      expect(put2.status).toBe(200);
+      expect(existsSync(firstAbs)).toBe(true);
+    } finally {
+      if (prevUploadDir === undefined) delete process.env.UPLOAD_DIR;
+      else process.env.UPLOAD_DIR = prevUploadDir;
+      rmSync(uploadDir, { recursive: true, force: true });
+      await prisma.event.deleteMany({ where: { id: eventId } });
+    }
+  });
+
   it("degrades invalid primary and non-HTTPS variant URL on save", async () => {
     const res = await app.request("/api/admin/theme", {
       method: "PUT",

@@ -12,6 +12,8 @@ import {
 import { emitSystemLog } from "@admitto/shared/system-log";
 import { resolveActorEmailForLog } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
+import { bestEffortDeleteReplacedUploadUrls } from "./branding-upload.js";
+import { isManagedUploadUrlReferenced } from "./branding-upload-refs.js";
 
 export type SetupOrgBrandingDto = {
   org_name: string | null;
@@ -66,7 +68,7 @@ function parsePatchBody(body: unknown): OrgBrandingPatch | null {
   return out;
 }
 
-/** GET /api/admin/setup/org-branding — instance org name and logo URL. */
+/** GET /api/admin/setup/org-branding - instance org name and logo URL. */
 export async function handleGetSetupOrgBranding(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");
   if (!(await canManageInstance(db, auth.userId))) {
@@ -88,7 +90,7 @@ export async function handleGetSetupOrgBranding(c: Context, db: PrismaClient): P
   return c.json(payload, 200);
 }
 
-/** PATCH /api/admin/setup/org-branding — update org display name and HTTPS logo URL. */
+/** PATCH /api/admin/setup/org-branding - update org display name and HTTPS logo URL. */
 export async function handlePatchSetupOrgBranding(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");
   if (!(await canManageInstance(db, auth.userId))) {
@@ -113,6 +115,11 @@ export async function handlePatchSetupOrgBranding(c: Context, db: PrismaClient):
   if (patch.org_name !== undefined && !name) {
     return c.json({ error: "org_name required" }, 400);
   }
+
+  const previous = await db.organization.findUniqueOrThrow({
+    where: { id: orgId },
+    select: { logo_url: true, logo_original_url: true },
+  });
 
   try {
     await db.$transaction(async (tx) => {
@@ -145,6 +152,18 @@ export async function handlePatchSetupOrgBranding(c: Context, db: PrismaClient):
     }
     throw err;
   }
+
+  const next = await db.organization.findUniqueOrThrow({
+    where: { id: orgId },
+    select: { logo_url: true, logo_original_url: true },
+  });
+  // Interim orphan cleanup (ADR 0008): drop replaced/cleared managed upload files.
+  await bestEffortDeleteReplacedUploadUrls(
+    [previous.logo_url, previous.logo_original_url],
+    [next.logo_url, next.logo_original_url],
+    { expectedOrgId: "default", expectedKind: "org" },
+    { isStillReferenced: (url) => isManagedUploadUrlReferenced(db, url) },
+  );
 
   emitSystemLog("admin", "info", "org_branding_updated", {
     orgId,

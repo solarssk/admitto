@@ -30,6 +30,8 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
     const [logoUrl, setLogoUrl] = useState("");
     const [logoOriginalUrl, setLogoOriginalUrl] = useState("");
     const [logoCrop, setLogoCrop] = useState<LogoCropMeta | null>(null);
+    const [committedLogoUrl, setCommittedLogoUrl] = useState<string | null>(null);
+    const [committedLogoOriginalUrl, setCommittedLogoOriginalUrl] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const loadAbortRef = useRef<AbortController | null>(null);
 
@@ -46,6 +48,8 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
           setLogoUrl(data.logo_url ?? "");
           setLogoOriginalUrl(data.logo_original_url ?? "");
           setLogoCrop(data.logo_crop ?? null);
+          setCommittedLogoUrl(data.logo_url ?? null);
+          setCommittedLogoOriginalUrl(data.logo_original_url ?? null);
         } catch (err) {
           if (ac.signal.aborted) return;
           addToast(
@@ -83,6 +87,8 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
         setLogoUrl(data.logo_url ?? "");
         setLogoOriginalUrl(data.logo_original_url ?? "");
         setLogoCrop(data.logo_crop ?? null);
+        setCommittedLogoUrl(data.logo_url ?? null);
+        setCommittedLogoOriginalUrl(data.logo_original_url ?? null);
         onDirtyChange?.(false);
         setBrandingSkipped(false);
         setSummary({ brandingLabel: name });
@@ -98,7 +104,7 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
     }));
 
     // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
-    // the "Loading…" text on and off faster than it can register as loading — show it only
+    // the "Loading…" text on and off faster than it can register as loading - show it only
     // once the fetch has genuinely taken a moment.
     const showLoading = useDelayedLoading(loading);
 
@@ -132,6 +138,8 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
                 value={logoUrl}
                 originalUrl={logoOriginalUrl || null}
                 cropMeta={logoCrop}
+                committedValue={committedLogoUrl}
+                committedOriginalUrl={committedLogoOriginalUrl}
                 onChange={(url) => {
                   setLogoUrl(url);
                   onDirtyChange?.(true);

@@ -1,0 +1,17 @@
+---
+description: Always run relevant local tests (and typecheck) before push/PR
+alwaysApply: true
+---
+
+# Always verify locally before push
+
+Before `git push`, opening a PR, or telling Filip that CI should be green:
+
+1. **Run the tests that cover what you changed** (package-scoped is fine; full `npm test` when the blast radius is unclear).
+2. **Run the same build/typecheck CI runs** for touched packages. For `@admitto/web`, that means
+   `npm run build -w @admitto/web` (or equivalent `tsc`) because test files are included in the
+   web `tsconfig` and Vitest can pass while `tsc` fails.
+3. **Do not push on red.** Fix first, then push.
+4. Coverage-only commits still need the suites that generate that coverage (admin + web as applicable).
+
+Passing a subset from earlier in the chat is not enough after further edits: re-run after the final diff.

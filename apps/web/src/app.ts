@@ -155,6 +155,7 @@ import {
   handleDeleteResource,
 } from "./admin/event-context-routes.js";
 import {
+  handleDeleteUpload,
   handlePostEventBrandingUpload,
   handlePostThemeFontUpload,
   handlePostUpload,
@@ -1148,6 +1149,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/api/admin/uploads", jsonPostCsrf, staffAdminGate, uploadBodyLimit, (c) =>
     handlePostUpload(c, db),
   );
+  app.delete("/api/admin/uploads", jsonPostCsrf, staffAdminGate, (c) => handleDeleteUpload(c, db));
   app.post(
     "/api/admin/theme-font-upload",
     jsonPostCsrf,

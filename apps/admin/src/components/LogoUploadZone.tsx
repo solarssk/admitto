@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { PercentCrop } from "react-image-crop";
 import { Button, useToast } from "@admitto/ui";
 import type { LogoCropMeta } from "../api/types.js";
-import { uploadFile } from "../api/client.js";
+import { uploadFile, deleteUploadedFile } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { brandingLogoImgSrc } from "../utils/safeBrandingLogoHref.js";
 import { CropImageModal, type CropApplyMeta } from "./crop/CropImageModal.js";
@@ -29,6 +29,13 @@ export interface LogoUploadZoneProps {
   readonly originalUrl?: string | null;
   /** Last crop framing stored with the logo. */
   readonly cropMeta?: LogoCropMeta | null;
+  /**
+   * Last successfully persisted display URL (parent's saved state). Provisional Apply uploads
+   * matching this are released to server GC ownership and must not be client-deleted.
+   */
+  readonly committedValue?: string | null;
+  /** Last successfully persisted original upload URL (parent's saved state). */
+  readonly committedOriginalUrl?: string | null;
   readonly onChange: (url: string) => void;
   /** Fired whenever original/crop change (Apply, clear, external link). */
   readonly onSourceChange?: (source: LogoSourceChange) => void;
@@ -43,7 +50,7 @@ export interface LogoUploadZoneProps {
   readonly hint?: string;
   /** Custom upload function (e.g. event-scoped upload). Defaults to the org-level upload endpoint. */
   readonly uploadFn?: (formData: FormData) => Promise<{ url: string }>;
-  /** Disables all interaction (e.g. archived event). Defaults to false — org branding is never disabled. */
+  /** Disables all interaction (e.g. archived event). Defaults to false - org branding is never disabled. */
   readonly disabled?: boolean;
   /** Notified whenever an upload starts/finishes, so a caller can e.g. block Save while one is in flight. */
   readonly onUploadingChange?: (uploading: boolean) => void;
@@ -60,7 +67,7 @@ interface LogoPreviewProps {
 }
 
 type CropSession = {
-  /** Same-origin `/uploads/…` URL (never `blob:` from File — CodeQL FilesSource barrier). */
+  /** Same-origin `/uploads/…` URL (never `blob:` from File - CodeQL FilesSource barrier). */
   imageSrc: string;
   sourceMime: string;
   filename: string;
@@ -191,11 +198,13 @@ async function postUpload(
   return result.url;
 }
 
-/** Upload to server or link an external HTTPS image — both are supported. */
+/** Upload to server or link an external HTTPS image - both are supported. */
 export function LogoUploadZone({
   value,
   originalUrl = null,
   cropMeta = null,
+  committedValue = null,
+  committedOriginalUrl = null,
   onChange,
   onSourceChange,
   onDirty,
@@ -210,14 +219,54 @@ export function LogoUploadZone({
   const urlInputId = useId();
   const fileRef = useRef<HTMLInputElement>(null);
   const uploadSeqRef = useRef(0);
-  /** Display URL we last wrote via Apply — keeps session original across parent re-renders. */
+  /** Display URL we last wrote via Apply - keeps session original across parent re-renders. */
   const lastUploadedUrlRef = useRef<string | null>(null);
+  /** Applied `/uploads/…` URLs not yet acknowledged by parent Save (draft-only ownership). */
+  const provisionalUrlsRef = useRef(new Set<string>());
   const [uploading, setUploading] = useState(false);
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [zoneError, setZoneError] = useState<string | null>(null);
   const [cropSession, setCropSession] = useState<CropSession | null>(null);
   const [sourceOriginal, setSourceOriginal] = useState<SourceOriginal | null>(null);
+  const cropSessionRef = useRef<CropSession | null>(null);
+  const committedValueRef = useRef(committedValue);
+  const committedOriginalRef = useRef(committedOriginalUrl);
+  cropSessionRef.current = cropSession;
+  committedValueRef.current = committedValue;
+  committedOriginalRef.current = committedOriginalUrl;
+
+  const isCommittedUrl = (url: string) =>
+    url === committedValueRef.current || url === committedOriginalRef.current;
+
+  const trackProvisional = (url: string | null | undefined) => {
+    if (typeof url === "string" && url.startsWith("/uploads/") && !isCommittedUrl(url)) {
+      provisionalUrlsRef.current.add(url);
+    }
+  };
+
+  const deleteProvisional = (url: string) => {
+    provisionalUrlsRef.current.delete(url);
+    void deleteUploadedFile(url);
+  };
+
+  useEffect(() => {
+    return () => {
+      uploadSeqRef.current += 1;
+      const abandoned = cropSessionRef.current?.uploadedOriginalUrl;
+      if (
+        typeof abandoned === "string" &&
+        abandoned.startsWith("/uploads/") &&
+        !isCommittedUrl(abandoned)
+      ) {
+        void deleteUploadedFile(abandoned);
+      }
+      for (const url of provisionalUrlsRef.current) {
+        void deleteUploadedFile(url);
+      }
+      provisionalUrlsRef.current.clear();
+    };
+  }, []);
 
   const isUploadedFile = value.startsWith("/uploads/");
   const previewSrc = useMemo(() => brandingLogoImgSrc(value), [value]);
@@ -233,15 +282,63 @@ export function LogoUploadZone({
     if (previewSrc) setZoneError(null);
   }, [previewSrc]);
 
-  // Display URL changed from outside this zone's last Apply — drop the in-memory File.
+  // Display URL changed from outside this zone's last Apply - drop the in-memory File.
   useEffect(() => {
     if (value !== lastUploadedUrlRef.current) {
       setSourceOriginal(null);
     }
   }, [value]);
 
+  // Parent Save acknowledged these URLs: transfer ownership to server-side replacement GC.
+  useEffect(() => {
+    const committed = new Set(
+      [committedValue, committedOriginalUrl].filter(
+        (u): u is string => typeof u === "string" && u.startsWith("/uploads/"),
+      ),
+    );
+    for (const url of committed) {
+      provisionalUrlsRef.current.delete(url);
+    }
+    if (lastUploadedUrlRef.current && committed.has(lastUploadedUrlRef.current)) {
+      lastUploadedUrlRef.current = null;
+    }
+  }, [committedValue, committedOriginalUrl]);
+
+  // Draft discarded (Reset / clear / external replace): delete Applied uploads that left the draft.
+  useEffect(() => {
+    const live = new Set(
+      [value, originalUrl ?? ""].filter((u): u is string => typeof u === "string" && u.startsWith("/uploads/")),
+    );
+    const abandoned: string[] = [];
+    for (const url of provisionalUrlsRef.current) {
+      if (!live.has(url)) abandoned.push(url);
+    }
+    for (const url of abandoned) {
+      deleteProvisional(url);
+    }
+  }, [value, originalUrl]);
+
   const closeCropSession = () => {
     setCropSession(null);
+  };
+
+  /** Drop an open crop session and best-effort delete a pre-crop upload that was never Applied. */
+  const abandonCropSession = (session: CropSession | null = cropSession) => {
+    const abandoned = session?.uploadedOriginalUrl;
+    // Do not delete a saved original that Edit reopened (same URL as props.originalUrl).
+    const isPersistedOriginal =
+      typeof abandoned === "string" &&
+      abandoned === originalUrl &&
+      abandoned.startsWith("/uploads/");
+    setCropSession(null);
+    if (
+      typeof abandoned === "string" &&
+      !isPersistedOriginal &&
+      abandoned.startsWith("/uploads/") &&
+      !isCommittedUrl(abandoned)
+    ) {
+      void deleteUploadedFile(abandoned);
+    }
   };
 
   const clearLogo = () => {
@@ -250,7 +347,7 @@ export function LogoUploadZone({
     setSourceOriginal(null);
     setZoneError(null);
     setPreviewFailed(false);
-    closeCropSession();
+    abandonCropSession();
     onChange("");
     onSourceChange?.({ originalUrl: null, crop: null });
     onDirty?.();
@@ -264,6 +361,7 @@ export function LogoUploadZone({
     existingOriginalUrl: string,
   ) => {
     const seq = ++uploadSeqRef.current;
+    const previousDisplay = value;
     setZoneError(null);
     setUploading(true);
     try {
@@ -281,10 +379,19 @@ export function LogoUploadZone({
         new File([cropped], croppedName, { type: cropped.type || outMime }),
         croppedName,
       );
-      if (seq !== uploadSeqRef.current) return;
+      if (seq !== uploadSeqRef.current) {
+        void deleteUploadedFile(croppedUrl);
+        return;
+      }
 
       const crop = toLogoCropMeta(applyMeta);
+      // Only provisional (unsaved) display URLs may be deleted client-side; persisted logos are
+      // cleaned by the server after a successful branding PATCH.
+      const previousWasUnsavedSession =
+        previousDisplay.startsWith("/uploads/") && provisionalUrlsRef.current.has(previousDisplay);
       lastUploadedUrlRef.current = croppedUrl;
+      trackProvisional(croppedUrl);
+      trackProvisional(originalUploadedUrl);
       if (originalFile) {
         setSourceOriginal({
           file: originalFile,
@@ -303,10 +410,17 @@ export function LogoUploadZone({
       onSourceChange?.({ originalUrl: originalUploadedUrl, crop });
       onDirty?.();
       closeCropSession();
+      if (
+        previousWasUnsavedSession &&
+        previousDisplay !== croppedUrl &&
+        previousDisplay !== originalUploadedUrl
+      ) {
+        deleteProvisional(previousDisplay);
+      }
     } catch (err) {
       if (seq !== uploadSeqRef.current) return;
       setZoneError(operatorApiErrorMessage(err, "Upload failed."));
-      closeCropSession();
+      // Keep cropSession so the operator can retry Apply or Cancel (and cleanup can run).
     } finally {
       if (seq === uploadSeqRef.current) setUploading(false);
     }
@@ -323,6 +437,7 @@ export function LogoUploadZone({
       setZoneError("Use a PNG, JPG, or WebP image.");
       return;
     }
+    abandonCropSession();
     const seq = ++uploadSeqRef.current;
     setZoneError(null);
     setUploading(true);
@@ -331,7 +446,10 @@ export function LogoUploadZone({
       const base = filename.replace(/\.[^.]+$/, "") || "logo";
       const originalName = `${base}-original${extensionForMime(declared)}`;
       const url = await postUpload(uploadFn, file, originalName);
-      if (seq !== uploadSeqRef.current) return;
+      if (seq !== uploadSeqRef.current) {
+        void deleteUploadedFile(url);
+        return;
+      }
       setCropSession({
         imageSrc: url,
         sourceMime: declared,
@@ -538,7 +656,7 @@ export function LogoUploadZone({
           sourceMime={cropSession.sourceMime}
           initialCrop={cropSession.initialCrop}
           initialZoom={cropSession.initialZoom}
-          onCancel={closeCropSession}
+          onCancel={() => abandonCropSession()}
           onApply={async (blob, meta) => {
             const base =
               cropSession.filename.replace(/\.[^.]+$/, "") ||

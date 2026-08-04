@@ -1,11 +1,16 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   BrandingUploadError,
+  absolutePathUnderUploadRoot,
   assertDecodedImageWithinLimits,
+  bestEffortDeleteReplacedUploadUrls,
+  bestEffortDeleteUploadUrl,
+  deleteBrandingUploadByUrl,
+  parseUploadsUrl,
   resolveUploadDir,
   saveBrandingUpload,
   saveEventUpload,
@@ -256,5 +261,191 @@ describe("saveThemeFontUpload", () => {
       code: "unsupported_file_type",
       status: 415,
     });
+  });
+});
+
+const UUID_PNG = "a1b2c3d4-e5f6-7890-abcd-ef1234567890.png";
+const UUID_WOFF2 = "b2c3d4e5-f6a7-8901-bcde-f12345678901.woff2";
+const UUID_EVENT_PNG = "c3d4e5f6-a7b8-9012-cdef-123456789012.png";
+
+describe("parseUploadsUrl", () => {
+  it("parses org, theme, and event paths", () => {
+    expect(parseUploadsUrl(`/uploads/default/${UUID_PNG}`)).toEqual({
+      orgId: "default",
+      kind: "org",
+      filename: UUID_PNG,
+      relativePath: `default/${UUID_PNG}`,
+    });
+    expect(parseUploadsUrl(`/uploads/default/theme/${UUID_WOFF2}`)).toEqual({
+      orgId: "default",
+      kind: "theme",
+      filename: UUID_WOFF2,
+      relativePath: `default/theme/${UUID_WOFF2}`,
+    });
+    expect(parseUploadsUrl(`/uploads/default/events/evt-1/${UUID_EVENT_PNG}`)).toEqual({
+      orgId: "default",
+      kind: "event",
+      eventId: "evt-1",
+      filename: UUID_EVENT_PNG,
+      relativePath: `default/events/evt-1/${UUID_EVENT_PNG}`,
+    });
+  });
+
+  it("rejects traversal, wrong shape, and non-UUID filenames", () => {
+    expect(() => parseUploadsUrl("/uploads/default/../etc/passwd")).toThrow(BrandingUploadError);
+    expect(() => parseUploadsUrl("/uploads/default/not-a-uuid.png")).toThrow(BrandingUploadError);
+    expect(() => parseUploadsUrl("https://cdn.example.com/logo.png")).toThrow(BrandingUploadError);
+    expect(() => parseUploadsUrl(`/uploads/default/events/${UUID_EVENT_PNG}`)).toThrow(
+      BrandingUploadError,
+    );
+    expect(() => parseUploadsUrl("/uploads/default/")).toThrow(BrandingUploadError);
+    expect(() => parseUploadsUrl("/uploads//default/x.png")).toThrow(BrandingUploadError);
+    expect(() => parseUploadsUrl(`/uploads/default/theme/not-uuid.woff2`)).toThrow(BrandingUploadError);
+    expect(() => parseUploadsUrl(`/uploads/default/events/evt-1/not-uuid.png`)).toThrow(
+      BrandingUploadError,
+    );
+    expect(() => parseUploadsUrl(`/uploads/default/?q=1`)).toThrow(BrandingUploadError);
+    expect(() => parseUploadsUrl(`/uploads/default/./${UUID_PNG}`)).toThrow(BrandingUploadError);
+    expect(() => parseUploadsUrl(`/uploads/default//${UUID_PNG}`)).toThrow(BrandingUploadError);
+  });
+});
+
+describe("absolutePathUnderUploadRoot", () => {
+  it("rejects a relative path that escapes the upload root", () => {
+    expect(() => absolutePathUnderUploadRoot("../outside.png")).toThrow(BrandingUploadError);
+  });
+
+  it("accepts a path under the upload root", () => {
+    const abs = absolutePathUnderUploadRoot(`default/${UUID_PNG}`);
+    expect(abs.startsWith(uploadDir)).toBe(true);
+  });
+});
+
+describe("deleteBrandingUploadByUrl", () => {
+  it("unlinks a managed file and treats missing as success", async () => {
+    const result = await saveBrandingUpload(pngFile(), "default");
+    const abs = join(uploadDir, result.url.slice("/uploads/".length));
+    expect(existsSync(abs)).toBe(true);
+
+    await deleteBrandingUploadByUrl(result.url, { expectedOrgId: "default" });
+    expect(existsSync(abs)).toBe(false);
+
+    await deleteBrandingUploadByUrl(result.url, { expectedOrgId: "default" });
+  });
+
+  it("rejects org mismatch", async () => {
+    const result = await saveBrandingUpload(pngFile(), "default");
+    await expect(
+      deleteBrandingUploadByUrl(result.url, { expectedOrgId: "other" }),
+    ).rejects.toMatchObject({ code: "invalid_upload_url" });
+  });
+
+  it("rejects eventId mismatch for event-scoped URLs", async () => {
+    const result = await saveEventUpload(pngFile(), "default", "evt-a");
+    await expect(
+      deleteBrandingUploadByUrl(result.url, {
+        expectedOrgId: "default",
+        expectedEventId: "evt-b",
+      }),
+    ).rejects.toMatchObject({ code: "invalid_upload_url" });
+  });
+
+  it("rethrows non-ENOENT unlink failures", async () => {
+    const result = await saveBrandingUpload(pngFile(), "default");
+    const abs = join(uploadDir, result.url.slice("/uploads/".length));
+    unlinkSync(abs);
+    mkdirSync(abs);
+    await expect(deleteBrandingUploadByUrl(result.url, { expectedOrgId: "default" })).rejects.toMatchObject({
+      code: expect.not.stringMatching(/^ENOENT$/),
+    });
+  });
+});
+
+describe("bestEffortDeleteUploadUrl / bestEffortDeleteReplacedUploadUrls", () => {
+  const orgTrust = { expectedOrgId: "default", expectedKind: "org" as const };
+
+  it("deletes only replaced managed URLs and ignores external URLs", async () => {
+    const kept = await saveBrandingUpload(pngFile(), "default");
+    const gone = await saveBrandingUpload(pngFile(), "default");
+    const goneAbs = join(uploadDir, gone.url.slice("/uploads/".length));
+    const keptAbs = join(uploadDir, kept.url.slice("/uploads/".length));
+
+    await bestEffortDeleteReplacedUploadUrls(
+      [gone.url, kept.url, "https://cdn.example.com/x.png"],
+      [kept.url],
+      orgTrust,
+    );
+    expect(existsSync(goneAbs)).toBe(false);
+    expect(existsSync(keptAbs)).toBe(true);
+
+    await bestEffortDeleteUploadUrl("not-an-upload", orgTrust);
+    await bestEffortDeleteUploadUrl(`/uploads/default/${UUID_PNG}`, orgTrust);
+  });
+
+  it("refuses to delete when trusted kind or org does not match the URL", async () => {
+    const orgFile = await saveBrandingUpload(pngFile(), "default");
+    const orgAbs = join(uploadDir, orgFile.url.slice("/uploads/".length));
+    expect(existsSync(orgAbs)).toBe(true);
+
+    await bestEffortDeleteUploadUrl(orgFile.url, {
+      expectedOrgId: "default",
+      expectedKind: "theme",
+    });
+    expect(existsSync(orgAbs)).toBe(true);
+
+    await bestEffortDeleteUploadUrl(orgFile.url, {
+      expectedOrgId: "other-org",
+      expectedKind: "org",
+    });
+    expect(existsSync(orgAbs)).toBe(true);
+  });
+
+  it("refuses to delete another event's managed upload (trusted owner)", async () => {
+    const other = await saveEventUpload(pngFile(), "default", "evt-other");
+    const otherAbs = join(uploadDir, other.url.slice("/uploads/".length));
+    expect(existsSync(otherAbs)).toBe(true);
+
+    await bestEffortDeleteReplacedUploadUrls(
+      [other.url],
+      [null],
+      { expectedOrgId: "default", expectedKind: "event", expectedEventId: "evt-mine" },
+    );
+    expect(existsSync(otherAbs)).toBe(true);
+
+    await bestEffortDeleteReplacedUploadUrls(
+      [other.url],
+      [null],
+      { expectedOrgId: "default", expectedKind: "event", expectedEventId: "evt-other" },
+    );
+    expect(existsSync(otherAbs)).toBe(false);
+  });
+
+  it("skips unlink when isStillReferenced reports the URL is live again", async () => {
+    const gone = await saveBrandingUpload(pngFile(), "default");
+    const goneAbs = join(uploadDir, gone.url.slice("/uploads/".length));
+
+    await bestEffortDeleteReplacedUploadUrls([gone.url], [null], orgTrust, {
+      isStillReferenced: async () => true,
+    });
+    expect(existsSync(goneAbs)).toBe(true);
+
+    await bestEffortDeleteReplacedUploadUrls([gone.url], [null], orgTrust, {
+      isStillReferenced: async () => false,
+    });
+    expect(existsSync(goneAbs)).toBe(false);
+  });
+
+  it("skips unlink when isStillReferenced throws (already-committed save must not fail)", async () => {
+    const gone = await saveBrandingUpload(pngFile(), "default");
+    const goneAbs = join(uploadDir, gone.url.slice("/uploads/".length));
+
+    await expect(
+      bestEffortDeleteReplacedUploadUrls([gone.url], [null], orgTrust, {
+        isStillReferenced: async () => {
+          throw new Error("db unavailable");
+        },
+      }),
+    ).resolves.toBeUndefined();
+    expect(existsSync(goneAbs)).toBe(true);
   });
 });

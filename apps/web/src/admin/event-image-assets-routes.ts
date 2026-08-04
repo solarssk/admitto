@@ -10,10 +10,10 @@ import {
   requireEventId,
   requireSuperadmin,
 } from "./admin-helpers.js";
-import { BrandingUploadError, saveEventUpload } from "./branding-upload.js";
+import { BrandingUploadError, bestEffortDeleteUploadUrl, saveEventUpload } from "./branding-upload.js";
 import { logger } from "../logger.js";
 
-/** Per-event cap on uploaded branding assets — generous for a sponsor-logo/photo library
+/** Per-event cap on uploaded branding assets - generous for a sponsor-logo/photo library
  * while still bounding storage growth (mirrors MAX_TEMPLATES_PER_EVENT's precedent in
  * communication-api-routes.ts). */
 export const MAX_IMAGE_ASSETS_PER_EVENT = 20;
@@ -80,7 +80,7 @@ function serializeImageAsset(row: {
   };
 }
 
-/** GET /api/admin/events/:eventId/image-assets — superadmin only (this data flows into
+/** GET /api/admin/events/:eventId/image-assets - superadmin only (this data flows into
  * attendee-facing email content, same posture as the sibling branding upload/revoke routes). */
 export async function handleListEventImageAssets(c: Context, db: PrismaClient): Promise<Response> {
   const superadminDenied = await requireSuperadmin(c, db);
@@ -111,7 +111,7 @@ export async function handleListEventImageAssets(c: Context, db: PrismaClient): 
 }
 
 /**
- * POST /api/admin/events/:eventId/image-assets — multipart upload (fields: `file`, `token`).
+ * POST /api/admin/events/:eventId/image-assets - multipart upload (fields: `file`, `token`).
  * Superadmin only (same posture as the sibling branding upload/revoke routes, since this data
  * flows into attendee-facing email content). Archive guard applied by the caller (app.ts wraps
  * with guardArchivedEvent).
@@ -265,19 +265,17 @@ export async function handleCreateEventImageAsset(c: Context, db: PrismaClient):
 async function loadImageAssetInEvent(db: PrismaClient, eventId: string, assetId: string) {
   const row = await db.eventImageAsset.findUnique({
     where: { id: assetId },
-    select: { id: true, event_id: true, token: true },
+    select: { id: true, event_id: true, token: true, url: true },
   });
   if (row?.event_id !== eventId) return null;
   return row;
 }
 
 /**
- * DELETE /api/admin/events/:eventId/image-assets/:assetId — deletes only the DB row. The
- * uploaded file is intentionally left on disk (same precedent as removing a logo/header image
- * elsewhere in this app - nothing in this codebase deletes uploaded files from disk yet; a real
- * StorageAdapter cleanup pass is future work per ADR 0008, not introduced here). If the token is
- * still referenced by a saved event template's {{token}}, the delete is rejected (409
- * asset_in_use) - the batch send path renders saved templates without whitelist re-validation
+ * DELETE /api/admin/events/:eventId/image-assets/:assetId: deletes the DB row and best-effort
+ * removes the managed `/uploads/…` file (interim orphan cleanup; full StorageAdapter GC is ADR 0008).
+ * If the token is still referenced by a saved event template's {{token}}, the delete is rejected
+ * (409 asset_in_use) - the batch send path renders saved templates without whitelist re-validation
  * (renderTemplateTrustedForStorage), so after a delete the token would silently resolve to ""
  * and the image would just vanish from attendee emails. Superadmin only, same posture as the
  * sibling branding upload/revoke routes.
@@ -340,5 +338,11 @@ export async function handleDeleteEventImageAsset(c: Context, db: PrismaClient):
     }
     throw err;
   }
+
+  await bestEffortDeleteUploadUrl(existing.url, {
+    expectedOrgId: "default",
+    expectedKind: "event",
+    expectedEventId: eventId,
+  });
   return c.json({ ok: true });
 }

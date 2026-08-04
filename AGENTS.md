@@ -109,6 +109,11 @@ Do **not** pass `ApiError.message` straight into toasts or inline error strings.
 
 When an agent repeats a mistake, add a precise rule here (or in a scoped `.cursor/rules/*.mdc` file). One line per gotcha; cut rules that no longer prevent real errors.
 
+**Before push / claiming CI will pass:** run the tests for what you changed **and** the same
+gate CI uses for those packages (`npm run build` / typecheck when `.ts`/`.tsx` or tests included
+in `tsc` changed). Vitest alone is not enough if `apps/web` builds with `tsc -p tsconfig.json`
+(tests are typechecked). Do not push on red.
+
 **Renaming a Vitest project (`test.name`):** grep `package.json` scripts and CI workflows for
 `--project <old-name>` first — the filter is an anchored exact match, so a stale reference fails
 at startup ("No projects matched the filter").

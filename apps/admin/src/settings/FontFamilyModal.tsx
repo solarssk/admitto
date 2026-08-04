@@ -8,7 +8,7 @@ import {
   Select,
   useToast,
 } from "@admitto/ui";
-import { uploadThemeFont } from "../api/client.js";
+import { deleteUploadedFile, uploadThemeFont } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { BrandingCustomFontFamilyDto, BrandingFontVariantDto } from "../api/types.js";
 import { Segmented } from "../components/Segmented.js";
@@ -183,65 +183,89 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
   // discards its own result instead of overwriting whatever the newer load already produced.
   const rowGenerationRef = useRef(new Map<number, number>());
   const facesRef = useRef(new Map<number, FontFace>());
+  /** URLs uploaded during this modal session (not yet saved into the theme). */
+  const sessionUploadsRef = useRef(new Set<string>());
 
   const [familyName, setFamilyName] = useState("");
   const [rows, setRows] = useState<FontRow[]>([]);
   const [dragOver, setDragOver] = useState(false);
 
+  const discardSessionUploads = () => {
+    for (const url of sessionUploadsRef.current) {
+      void deleteUploadedFile(url);
+    }
+    sessionUploadsRef.current.clear();
+  };
+
+  const cleanupPreviewFaces = () => {
+    for (const face of facesRef.current.values()) document.fonts.delete(face);
+    facesRef.current.clear();
+  };
+
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      discardSessionUploads();
+      for (const [id, gen] of rowGenerationRef.current) {
+        rowGenerationRef.current.set(id, gen + 1);
+      }
+      return;
+    }
+    sessionUploadsRef.current.clear();
+    let cancelled = false;
     if (!initialFamily) {
       setFamilyName("");
       setRows([]);
-      return;
-    }
-    setFamilyName(initialFamily.name);
-    const newRows: FontRow[] = initialFamily.variants.map((v) => ({
-      id: ++rowSeqRef.current,
-      weight: v.weight,
-      style: v.style,
-      fileName: v.url.split("/").pop() ?? null,
-      url: v.url,
-      loading: false,
-      loaded: true,
-    }));
-    setRows(newRows);
-    // Register each already-saved variant's own real preview (by URL, since there's no local
-    // File to read anymore), same as BrandingSettingsPanel does for the picker's own tiles -
-    // otherwise every row would show the fallback sample instead of its real font.
-    let cancelled = false;
-    void (async () => {
-      for (const row of newRows) {
-        const face = new FontFace(PREVIEW_FAMILY, `url("${row.url}")`, {
-          weight: String(row.weight),
-          style: row.style,
-        });
-        try {
-          await face.load();
-          if (cancelled) return;
-          document.fonts.add(face);
-          facesRef.current.set(row.id, face);
-        } catch {
-          // Broken/unreachable file - the row still shows as loaded (it's a real saved
-          // variant), just falls back to a system font for this preview only.
+    } else {
+      setFamilyName(initialFamily.name);
+      const newRows: FontRow[] = initialFamily.variants.map((v) => ({
+        id: ++rowSeqRef.current,
+        weight: v.weight,
+        style: v.style,
+        fileName: v.url.slice(v.url.lastIndexOf("/") + 1),
+        url: v.url,
+        loading: false,
+        loaded: true,
+      }));
+      setRows(newRows);
+      // Register each already-saved variant's own real preview (by URL, since there's no local
+      // File to read anymore), same as BrandingSettingsPanel does for the picker's own tiles -
+      // otherwise every row would show the fallback sample instead of its real font.
+      void (async () => {
+        for (const row of newRows) {
+          const face = new FontFace(PREVIEW_FAMILY, `url("${row.url}")`, {
+            weight: String(row.weight),
+            style: row.style,
+          });
+          try {
+            await face.load();
+            if (cancelled) return;
+            document.fonts.add(face);
+            facesRef.current.set(row.id, face);
+          } catch {
+            // Broken/unreachable file - the row still shows as loaded (it's a real saved
+            // variant), just falls back to a system font for this preview only.
+          }
         }
-      }
-    })();
+      })();
+    }
     return () => {
       cancelled = true;
+      // Unmount (or close) while open: discard provisional uploads the parent never received
+      // via onSaved, and invalidate in-flight row loads so late resolves cannot re-add them.
+      discardSessionUploads();
+      for (const [id, gen] of rowGenerationRef.current) {
+        rowGenerationRef.current.set(id, gen + 1);
+      }
     };
     // Only re-run when the modal opens or closes, not on every render's fresh initialFamily
     // object identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const cleanupPreviewFaces = () => {
-    for (const face of facesRef.current.values()) document.fonts.delete(face);
-    facesRef.current.clear();
-  };
   useEffect(() => cleanupPreviewFaces, []);
 
   const handleClose = () => {
+    discardSessionUploads();
     cleanupPreviewFaces();
     onClose();
   };
@@ -255,12 +279,17 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
   }
 
   function removeRow(id: number) {
+    rowGenerationRef.current.set(id, (rowGenerationRef.current.get(id) ?? 0) + 1);
     const face = facesRef.current.get(id);
     if (face) {
       document.fonts.delete(face);
       facesRef.current.delete(id);
     }
-    setRows((prev) => prev.filter((r) => r.id !== id));
+    setRows((prev) => {
+      // Leave sessionUploadsRef entries for save()/close cleanup so abandoned files are
+      // deleted once, after the operator finishes editing the family.
+      return prev.filter((r) => r.id !== id);
+    });
   }
 
   function addEmptyRow() {
@@ -279,11 +308,31 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
     updateRow(id, patch);
   }
 
+  /** Track a freshly uploaded font URL; best-effort delete the previous session URL it replaced. */
+  function adoptSessionUpload(url: string, previousUrl: string | null) {
+    sessionUploadsRef.current.add(url);
+    if (!previousUrl || previousUrl === url || !sessionUploadsRef.current.has(previousUrl)) return;
+    sessionUploadsRef.current.delete(previousUrl);
+    void deleteUploadedFile(previousUrl);
+  }
+
+  function rollbackFailedFontRow(id: number, existingId: number | null) {
+    const oldFace = facesRef.current.get(id);
+    facesRef.current.delete(id);
+    if (oldFace) document.fonts.delete(oldFace);
+    if (existingId) {
+      updateRow(id, { fileName: null, url: null, loaded: false, loading: false });
+    } else {
+      setRows((prev) => prev.filter((r) => r.id !== id));
+    }
+  }
+
   async function loadIntoRow(file: File, guess: { weight: number; style: "normal" | "italic" }, existingId: number | null) {
     const id = existingId ?? ++rowSeqRef.current;
     const generation = (rowGenerationRef.current.get(id) ?? 0) + 1;
     rowGenerationRef.current.set(id, generation);
     const isStale = () => rowGenerationRef.current.get(id) !== generation;
+    const previousUrl = existingId != null ? rows.find((r) => r.id === existingId)?.url ?? null : null;
 
     if (existingId) {
       updateRow(id, { weight: guess.weight, style: guess.style, fileName: file.name, url: null, loaded: false, loading: true });
@@ -312,20 +361,15 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
       const formData = new FormData();
       formData.append("file", file);
       const { url } = await uploadThemeFont(formData);
-      if (isStale()) return;
+      if (isStale()) {
+        void deleteUploadedFile(url);
+        return;
+      }
+      adoptSessionUpload(url, previousUrl);
       updateRow(id, { loaded: true, loading: false, url });
     } catch (err) {
       if (isStale()) return;
-      const oldFace = facesRef.current.get(id);
-      if (oldFace) {
-        document.fonts.delete(oldFace);
-        facesRef.current.delete(id);
-      }
-      if (existingId) {
-        updateRow(id, { fileName: null, url: null, loaded: false, loading: false });
-      } else {
-        setRows((prev) => prev.filter((r) => r.id !== id));
-      }
+      rollbackFailedFontRow(id, existingId);
       addToast(operatorApiErrorMessage(err, `Couldn't upload "${file.name}".`), "error");
     }
   }
@@ -378,6 +422,15 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
 
   function save() {
     cleanupPreviewFaces();
+    // Keep uploaded variant URLs for the parent draft; only discard abandoned session files.
+    // Parent (BrandingSettingsPanel) owns cleanup until outer theme Save / Reset.
+    const kept = new Set(
+      loadedRows.map((r) => r.url).filter((u): u is string => typeof u === "string"),
+    );
+    for (const url of sessionUploadsRef.current) {
+      if (!kept.has(url)) void deleteUploadedFile(url);
+    }
+    sessionUploadsRef.current.clear();
     onSaved({
       familyName: familyName.trim(),
       variants: loadedRows.map((r) => ({ weight: r.weight, style: r.style, url: r.url! })),

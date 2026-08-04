@@ -30,6 +30,8 @@ import { quoteCsvCell, sanitizeCsvCell } from "./csv-sanitize.js";
 import { timezoneField } from "./timezone.js";
 import { countEventActivitySignals, isEventDeletable } from "./event-deletion.js";
 import { attachmentContentDisposition } from "./content-disposition.js";
+import { bestEffortDeleteReplacedUploadUrls } from "./branding-upload.js";
+import { isManagedUploadUrlReferenced } from "./branding-upload-refs.js";
 
 const dateOnlyField = z
   .string()
@@ -51,7 +53,7 @@ const logoCropSchema = z
   .nullish();
 
 /**
- * Strict schema: unknown keys (including `slug`) return 400 — slug is immutable and
+ * Strict schema: unknown keys (including `slug`) return 400 - slug is immutable and
  * clients must omit it; we do not silently strip extra fields.
  */
 const patchEventSchema = z
@@ -291,7 +293,7 @@ function applyBrandingPatch(
   }
 }
 
-/** PATCH /api/admin/events/:eventId — basic fields only (archive guard applied upstream). */
+/** PATCH /api/admin/events/:eventId - basic fields only (archive guard applied upstream). */
 export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
@@ -368,6 +370,14 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
       actorEmail: await resolveActorEmailForLog(db, actorUserId),
     });
 
+    // Interim orphan cleanup (ADR 0008): drop replaced/cleared managed upload files.
+    await bestEffortDeleteReplacedUploadUrls(
+      [existing.logo_url, existing.logo_original_url, existing.header_image_url],
+      [updated.logo_url, updated.logo_original_url, updated.header_image_url],
+      { expectedOrgId: "default", expectedKind: "event", expectedEventId: eventId },
+      { isStillReferenced: (url) => isManagedUploadUrlReferenced(db, url) },
+    );
+
     const deletability = await loadDeletability(db, eventId, updated);
     const revokeCounts = await loadRevokeCounts(db, eventId);
     return c.json({ event: serializeEventSettings(updated, deletability, revokeCounts) });
@@ -385,7 +395,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
 
 const PII_EXPORT_MAX_ROWS = 10_000;
 
-/** GET /api/admin/events/:eventId/export-pii — superadmin CSV of attendee PII. */
+/** GET /api/admin/events/:eventId/export-pii - superadmin CSV of attendee PII. */
 export async function handleExportEventPii(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;

@@ -1021,6 +1021,8 @@ export function EventSettingsPage() {
             value={form.logoUrl}
             originalUrl={form.logoOriginalUrl || null}
             cropMeta={form.logoCrop}
+            committedValue={original!.logoUrl}
+            committedOriginalUrl={original!.logoOriginalUrl}
             disabled={isArchived || saving}
             onChange={(url) => setForm((prev) => prev && { ...prev, logoUrl: url })}
             onSourceChange={(source) =>

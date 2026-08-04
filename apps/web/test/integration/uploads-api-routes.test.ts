@@ -402,3 +402,183 @@ describe("POST /api/admin/events/:eventId/branding-upload", () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe("DELETE /api/admin/uploads", () => {
+  it("deletes an org upload for superadmin", async () => {
+    const up = await app.request("/api/admin/uploads", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: uploadForm(new Blob([VALID_PNG], { type: "image/png" }), "logo.png"),
+    });
+    const { url } = (await up.json()) as { url: string };
+    expect((await app.request(url)).status).toBe(200);
+
+    const del = await app.request("/api/admin/uploads", {
+      method: "DELETE",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    expect(del.status).toBe(200);
+    expect((await del.json()) as { ok: boolean }).toEqual({ ok: true });
+    expect((await app.request(url)).status).toBe(404);
+  });
+
+  it("returns 403 for non-superadmin on org path", async () => {
+    const up = await app.request("/api/admin/uploads", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: uploadForm(new Blob([VALID_PNG], { type: "image/png" }), "logo.png"),
+    });
+    const { url } = (await up.json()) as { url: string };
+
+    const del = await app.request("/api/admin/uploads", {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    expect(del.status).toBe(403);
+  });
+
+  it("lets an event manager delete an event-scoped upload", async () => {
+    const up = await app.request(`/api/admin/events/${EVENT_OWN}/branding-upload`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin },
+      body: uploadForm(new Blob([VALID_PNG], { type: "image/png" }), "logo.png"),
+    });
+    const { url } = (await up.json()) as { url: string };
+
+    const del = await app.request("/api/admin/uploads", {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    expect(del.status).toBe(200);
+    expect((await app.request(url)).status).toBe(404);
+  });
+
+  it("returns 403 when a different-org admin deletes an event upload", async () => {
+    const up = await app.request(`/api/admin/events/${EVENT_OWN}/branding-upload`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: uploadForm(new Blob([VALID_PNG], { type: "image/png" }), "logo.png"),
+    });
+    const { url } = (await up.json()) as { url: string };
+
+    const del = await app.request("/api/admin/uploads", {
+      method: "DELETE",
+      headers: { Cookie: adminOtherCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    expect(del.status).toBe(403);
+  });
+
+  it("rejects path traversal and non-UUID filenames", async () => {
+    for (const url of [
+      "/uploads/default/../etc/passwd",
+      "/uploads/default/not-a-uuid.png",
+      "/uploads/other-org/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png",
+    ]) {
+      const del = await app.request("/api/admin/uploads", {
+        method: "DELETE",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      expect(del.status).toBe(400);
+    }
+  });
+
+  it("rejects DELETE of a persisted event image asset URL (use image-assets delete)", async () => {
+    const createRes = await app.request(`/api/admin/events/${EVENT_OWN}/image-assets`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: (() => {
+        const fd = new FormData();
+        fd.append("file", new Blob([VALID_PNG], { type: "image/png" }), "asset.png");
+        fd.append("token", "cleanup_guard");
+        return fd;
+      })(),
+    });
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as { id: string; url: string };
+
+    const del = await app.request("/api/admin/uploads", {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ url: created.url }),
+    });
+    expect(del.status).toBe(409);
+    expect(await del.json()).toEqual({ error: "persisted_image_asset" });
+    expect((await app.request(created.url)).status).toBe(200);
+
+    // Cleanup via the proper asset delete path.
+    await app.request(`/api/admin/events/${EVENT_OWN}/image-assets/${created.id}`, {
+      method: "DELETE",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+  });
+
+  it("rejects DELETE when the URL is still stored on Event branding fields", async () => {
+    const up = await app.request(`/api/admin/events/${EVENT_OWN}/branding-upload`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: uploadForm(new Blob([VALID_PNG], { type: "image/png" }), "logo.png"),
+    });
+    expect(up.status).toBe(201);
+    const { url } = (await up.json()) as { url: string };
+
+    const patch = await app.request(`/api/admin/events/${EVENT_OWN}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ logo_url: url }),
+    });
+    expect(patch.status).toBe(200);
+
+    const del = await app.request("/api/admin/uploads", {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    expect(del.status).toBe(409);
+    expect(await del.json()).toEqual({ error: "persisted_branding_url" });
+    expect((await app.request(url)).status).toBe(200);
+
+    // Clear via event settings so the file can be GC'd by replacement cleanup.
+    await app.request(`/api/admin/events/${EVENT_OWN}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ logo_url: null, logo_original_url: null, logo_crop: null }),
+    });
+  });
+
+  it("rejects DELETE of an event-path URL still referenced by organisation branding", async () => {
+    const up = await app.request(`/api/admin/events/${EVENT_OWN}/branding-upload`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: uploadForm(new Blob([VALID_PNG], { type: "image/png" }), "shared.png"),
+    });
+    expect(up.status).toBe(201);
+    const { url } = (await up.json()) as { url: string };
+
+    // Cross-scope reuse: event-path upload stored on organisation logo (validateBrandingUrl allows it).
+    const org = await prisma.organization.findFirst({ where: { id: "org-uploads" } });
+    expect(org).toBeTruthy();
+    await prisma.organization.update({
+      where: { id: "org-uploads" },
+      data: { logo_url: url },
+    });
+
+    const del = await app.request("/api/admin/uploads", {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    expect(del.status).toBe(409);
+    expect(await del.json()).toEqual({ error: "persisted_branding_url" });
+    expect((await app.request(url)).status).toBe(200);
+
+    await prisma.organization.update({
+      where: { id: "org-uploads" },
+      data: { logo_url: null },
+    });
+  });
+});

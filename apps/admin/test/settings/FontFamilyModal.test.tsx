@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 import { FontFamilyModal, styleLabel } from "../../src/settings/FontFamilyModal.js";
 import { renderWithToast } from "../test-utils.js";
 
@@ -9,12 +10,14 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   return {
     ...actual,
     uploadThemeFont: vi.fn(),
+    deleteUploadedFile: vi.fn(),
   };
 });
 
-import { ApiError, uploadThemeFont } from "../../src/api/client.js";
+import { ApiError, deleteUploadedFile, uploadThemeFont } from "../../src/api/client.js";
 
 const mockUploadFont = vi.mocked(uploadThemeFont);
+const mockDeleteUploadedFile = vi.mocked(deleteUploadedFile);
 
 function isDisabled(el: HTMLElement): boolean {
   return (el as HTMLButtonElement).disabled;
@@ -204,6 +207,31 @@ describe("FontFamilyModal", () => {
     expect(rows()).toHaveLength(0);
   });
 
+  it("rolls back without a registered preview face when FontFace.load fails before upload", async () => {
+    class FailFontFace {
+      constructor(
+        public family: string,
+        public source: unknown,
+        public descriptors?: { weight?: string; style?: string },
+      ) {}
+      async load(): Promise<this> {
+        throw new Error("decode failed");
+      }
+    }
+    vi.stubGlobal("FontFace", FailFontFace);
+    renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText(/Drop font files here/), {
+      target: { files: [new File(["x"], "Acme-Sans-Regular.woff2")] },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Couldn't upload "Acme-Sans-Regular\.woff2"/);
+    });
+    expect(mockUploadFont).not.toHaveBeenCalled();
+    expect(rows()).toHaveLength(0);
+  });
+
   it("reverts (not removes) an existing row when replacing its file fails to upload", async () => {
     mockUploadFont
       .mockResolvedValueOnce({ url: "/uploads/default/theme/first.woff2" })
@@ -301,6 +329,9 @@ describe("FontFamilyModal", () => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Replaced 1 existing variant/);
     });
     expect(rows()).toHaveLength(1);
+    await waitFor(() => {
+      expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/theme/first.woff2");
+    });
   });
 
   it("keeps the newest file's result for a row even if an earlier, still-in-flight upload for it resolves later", async () => {
@@ -329,6 +360,7 @@ describe("FontFamilyModal", () => {
 
     expect(within(row).getByText("Acme-Sans-Bold.woff2")).toBeTruthy();
     expect(rows()).toHaveLength(1);
+    expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/theme/first.woff2");
   });
 
   it("silently ignores a stale upload's own rejection once a newer pick has already replaced it", async () => {
@@ -428,6 +460,38 @@ describe("FontFamilyModal", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Remove variant" }));
     expect(rows()).toHaveLength(0);
+    // Disk cleanup is deferred to Cancel/Save so save() can drop abandoned session URLs.
+    expect(mockDeleteUploadedFile).not.toHaveBeenCalled();
+  });
+
+  it("Save deletes session uploads for variants removed before saving", async () => {
+    mockUploadFont
+      .mockResolvedValueOnce({ url: "/uploads/default/theme/keep.woff2" })
+      .mockResolvedValueOnce({ url: "/uploads/default/theme/drop.woff2" });
+    const onSaved = vi.fn();
+    renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={onSaved} />);
+
+    fireEvent.change(screen.getByLabelText(/Drop font files here/), {
+      target: {
+        files: [
+          new File(["x"], "Acme-Sans-Regular.woff2"),
+          new File(["y"], "Acme-Sans-Bold.woff2"),
+        ],
+      },
+    });
+    await waitFor(() => expect(rows()).toHaveLength(2));
+    await waitFor(() => expect(mockUploadFont).toHaveBeenCalledTimes(2));
+
+    fireEvent.change(screen.getByLabelText("Family name"), { target: { value: "Acme Sans" } });
+    // Remove the second variant; its upload stays in the session set until Save.
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove variant" })[1]!);
+    expect(rows()).toHaveLength(1);
+    mockDeleteUploadedFile.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save font family" }));
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/theme/drop.woff2");
+    expect(mockDeleteUploadedFile).not.toHaveBeenCalledWith("/uploads/default/theme/keep.woff2");
   });
 
   it("removes an empty (never-uploaded) row cleanly", () => {
@@ -606,6 +670,58 @@ describe("FontFamilyModal", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it("Cancel after upload best-effort deletes session font files", async () => {
+    mockUploadFont.mockResolvedValueOnce({ url: "/uploads/default/theme/regular.woff2" });
+    const onClose = vi.fn();
+    renderWithToast(<FontFamilyModal open onClose={onClose} onSaved={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText(/Drop font files here/), {
+      target: { files: [new File(["x"], "Acme-Sans-Regular.woff2")] },
+    });
+    await waitFor(() => expect(mockUploadFont).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/theme/regular.woff2");
+  });
+
+  it("closing the modal after a row upload bumps row generations so late results are ignored", async () => {
+    mockUploadFont.mockResolvedValueOnce({ url: "/uploads/default/theme/regular.woff2" });
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return <FontFamilyModal open={open} onClose={() => setOpen(false)} onSaved={vi.fn()} />;
+    }
+    renderWithToast(<Harness />);
+
+    fireEvent.change(screen.getByLabelText(/Drop font files here/), {
+      target: { files: [new File(["x"], "Acme-Sans-Regular.woff2")] },
+    });
+    await waitFor(() => expect(mockUploadFont).toHaveBeenCalledTimes(1));
+    expect(screen.getByText(/Acme-Sans-Regular\.woff2/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => {
+      expect(screen.queryByText("Create font family")).toBeNull();
+    });
+    // Session uploads were discarded on close; a second open starts clean.
+    expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/theme/regular.woff2");
+  });
+
+  it("unmount while open discards session font uploads the parent never received", async () => {
+    mockUploadFont.mockResolvedValueOnce({ url: "/uploads/default/theme/orphan.woff2" });
+    const { unmount } = renderWithToast(
+      <FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/Drop font files here/), {
+      target: { files: [new File(["x"], "Acme-Sans-Regular.woff2")] },
+    });
+    await waitFor(() => expect(mockUploadFont).toHaveBeenCalledTimes(1));
+
+    unmount();
+    expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/theme/orphan.woff2");
   });
 
   it("disables Save while any row upload is still in flight, even with a name and no other blockers", () => {

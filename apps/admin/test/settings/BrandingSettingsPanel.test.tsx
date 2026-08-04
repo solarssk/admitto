@@ -13,6 +13,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchStaffTheme: vi.fn(),
     saveStaffTheme: vi.fn(),
     uploadFile: vi.fn(),
+    deleteUploadedFile: vi.fn(),
   };
 });
 
@@ -88,12 +89,37 @@ vi.mock("../../src/settings/FontFamilyModal.js", () => ({
             mock-save-family-renamed
           </button>
         )}
+        {initialFamily && (
+          <button
+            type="button"
+            onClick={() =>
+              onSaved({
+                familyName: initialFamily.name,
+                variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/replaced.woff2" }],
+              })
+            }
+          >
+            mock-save-family-replaced-url
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() =>
+            onSaved({
+              familyName: "Https Only",
+              variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/font.woff2" }],
+            })
+          }
+        >
+          mock-save-family-https
+        </button>
       </div>
     ) : null,
 }));
 
 import {
   ApiError,
+  deleteUploadedFile,
   fetchOrgBranding,
   fetchStaffTheme,
   patchOrgBranding,
@@ -106,6 +132,7 @@ const mockPatchOrg = vi.mocked(patchOrgBranding);
 const mockFetchTheme = vi.mocked(fetchStaffTheme);
 const mockSaveTheme = vi.mocked(saveStaffTheme);
 const mockUploadFile = vi.mocked(uploadFile);
+const mockDeleteUploadedFile = vi.mocked(deleteUploadedFile);
 
 function isDisabled(el: HTMLElement): boolean {
   return (el as HTMLInputElement | HTMLButtonElement).disabled;
@@ -171,7 +198,7 @@ afterEach(() => {
   Reflect.deleteProperty(document, "fonts");
 });
 
-describe("BrandingSettingsPanel — loading and errors", () => {
+describe("BrandingSettingsPanel - loading and errors", () => {
   it("shows the loading placeholder once the fetch has genuinely taken a moment", () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockImplementationOnce(() => new Promise(() => {}));
@@ -238,7 +265,7 @@ describe("BrandingSettingsPanel — loading and errors", () => {
   });
 });
 
-describe("BrandingSettingsPanel — organisation fields", () => {
+describe("BrandingSettingsPanel - organisation fields", () => {
   it("loads and displays the saved organisation name and logo preview", async () => {
     mockFetchOrg.mockResolvedValueOnce({
       org_name: "Acme Corp",
@@ -360,7 +387,7 @@ describe("BrandingSettingsPanel — organisation fields", () => {
   });
 });
 
-describe("BrandingSettingsPanel — colour palette", () => {
+describe("BrandingSettingsPanel - colour palette", () => {
   it("shows the Admitto blue palette swatch active by default", async () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
@@ -431,7 +458,7 @@ describe("BrandingSettingsPanel — colour palette", () => {
   });
 });
 
-describe("BrandingSettingsPanel — font picker", () => {
+describe("BrandingSettingsPanel - font picker", () => {
   it("shows Admitto Sans as the default in both the tile-grid's library and the Font-by-surface selects", async () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
@@ -1059,7 +1086,7 @@ describe("BrandingSettingsPanel — font picker", () => {
   });
 });
 
-describe("BrandingSettingsPanel — save and reset", () => {
+describe("BrandingSettingsPanel - save and reset", () => {
   it("saves both organisation branding and theme together", async () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
@@ -1238,5 +1265,155 @@ describe("BrandingSettingsPanel — save and reset", () => {
     expect(screen.getByRole("button", { name: "Admitto blue" }).getAttribute("aria-pressed")).toBe("true");
     expect(mockPatchOrg).not.toHaveBeenCalled();
     expect(mockSaveTheme).not.toHaveBeenCalled();
+  });
+
+  it("replacing a provisional family's variant URL deletes the orphaned upload", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /^Custom font/ }));
+    fireEvent.click(screen.getByText("mock-save-family"));
+    await waitFor(() => {
+      expect(within(adminFontPicker()).getByText("Acme Sans")).toBeTruthy();
+    });
+
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Edit Acme Sans" }));
+    fireEvent.click(screen.getByText("mock-save-family-replaced-url"));
+
+    await waitFor(() => {
+      expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/theme/abc123.woff2");
+    });
+  });
+
+  it("removing a provisional custom family deletes its uploaded font files", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /^Custom font/ }));
+    fireEvent.click(screen.getByText("mock-save-family"));
+    await waitFor(() => {
+      expect(within(adminFontPicker()).getByText("Acme Sans")).toBeTruthy();
+    });
+
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Remove Acme Sans" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove", exact: true }));
+
+    await waitFor(() => {
+      expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/theme/abc123.woff2");
+    });
+    expect(within(adminFontPicker()).queryByText("Acme Sans")).toBeNull();
+  });
+
+  it("Reset to saved deletes provisional font uploads that left the draft", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /^Custom font/ }));
+    fireEvent.click(screen.getByText("mock-save-family"));
+    await waitFor(() => {
+      expect(within(adminFontPicker()).getByText("Acme Sans")).toBeTruthy();
+    });
+    mockDeleteUploadedFile.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset to saved" }));
+    await waitFor(() => {
+      expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/theme/abc123.woff2");
+    });
+    expect(within(adminFontPicker()).queryByText("Acme Sans")).toBeNull();
+  });
+
+  it("saving a family with an external HTTPS font URL does not track it as provisional", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /^Custom font/ }));
+    fireEvent.click(screen.getByText("mock-save-family-https"));
+    await waitFor(() => {
+      expect(within(adminFontPicker()).getByText("Https Only")).toBeTruthy();
+    });
+    expect(mockDeleteUploadedFile).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset to saved" }));
+    expect(mockDeleteUploadedFile).not.toHaveBeenCalled();
+  });
+
+  it("Reset skips non-upload font URLs when releasing provisional drafts", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce({
+      theme: {
+        custom_font_families: [
+          {
+            name: "Cdn Sans",
+            variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/cdn.woff2" }],
+          },
+        ],
+      },
+    });
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+    await waitFor(() => {
+      expect(within(adminFontPicker()).getByText("Cdn Sans")).toBeTruthy();
+    });
+
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /^Custom font/ }));
+    fireEvent.click(screen.getByText("mock-save-family"));
+    await waitFor(() => {
+      expect(within(adminFontPicker()).getByText("Acme Sans")).toBeTruthy();
+    });
+    mockDeleteUploadedFile.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Reset to saved" }));
+    await waitFor(() => {
+      expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/theme/abc123.woff2");
+    });
+    // Saved CDN URL must not be passed to deleteUploadedFile.
+    expect(mockDeleteUploadedFile).not.toHaveBeenCalledWith("https://cdn.example.com/cdn.woff2");
+  });
+
+  it("removing one of two provisional families only deletes that family's uploads", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /^Custom font/ }));
+    fireEvent.click(screen.getByText("mock-save-family"));
+    await waitFor(() => expect(within(adminFontPicker()).getByText("Acme Sans")).toBeTruthy());
+
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /^Custom font/ }));
+    fireEvent.click(screen.getByText("mock-save-family-https"));
+    await waitFor(() => expect(within(adminFontPicker()).getByText("Https Only")).toBeTruthy());
+
+    mockDeleteUploadedFile.mockClear();
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Remove Acme Sans" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove", exact: true }));
+
+    await waitFor(() => {
+      expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/theme/abc123.woff2");
+    });
+    expect(within(adminFontPicker()).getByText("Https Only")).toBeTruthy();
+  });
+
+  it("unmount deletes provisional font uploads that were never saved to the theme", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
+    const { unmount } = renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /^Custom font/ }));
+    fireEvent.click(screen.getByText("mock-save-family"));
+    await waitFor(() => {
+      expect(within(adminFontPicker()).getByText("Acme Sans")).toBeTruthy();
+    });
+    mockDeleteUploadedFile.mockClear();
+    unmount();
+    expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/theme/abc123.woff2");
   });
 });

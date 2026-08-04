@@ -15,6 +15,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     createEventImageAsset: vi.fn(),
     deleteEventImageAsset: vi.fn(),
     uploadEventBrandingFile: vi.fn(),
+    deleteUploadedFile: vi.fn(),
   };
 });
 
@@ -54,6 +55,7 @@ vi.mock("../../src/components/crop/CropImageModal.js", () => ({
 import {
   createEventImageAsset,
   deleteEventImageAsset,
+  deleteUploadedFile,
   fetchEventImageAssets,
   uploadEventBrandingFile,
 } from "../../src/api/client.js";
@@ -62,6 +64,7 @@ const mockFetch = vi.mocked(fetchEventImageAssets);
 const mockCreate = vi.mocked(createEventImageAsset);
 const mockDelete = vi.mocked(deleteEventImageAsset);
 const mockUploadPreview = vi.mocked(uploadEventBrandingFile);
+const mockDeleteUploadedFile = vi.mocked(deleteUploadedFile);
 
 async function pickImageAndApply(file: File) {
   mockUploadPreview.mockResolvedValueOnce({
@@ -92,7 +95,7 @@ describe("EventImageAssetLibrary", () => {
   it("shows a loading state, then an empty-state message when there are no assets", async () => {
     mockFetch.mockResolvedValueOnce([]);
     // useDelayedLoading only shows the text once the fetch has stayed pending past its
-    // 200ms grace window (avoids flashing it for a near-instant response) — fake timers
+    // 200ms grace window (avoids flashing it for a near-instant response) - fake timers
     // must be installed before render so the hook's setTimeout is one of ours, and the
     // synchronous advance+assert below runs before the resolved fetch's microtask can flip
     // `loading` back to false.
@@ -220,6 +223,7 @@ describe("EventImageAssetLibrary", () => {
     expect(screen.queryByRole("dialog", { name: "Adjust image" })).toBeNull();
     expect(screen.queryByText("sponsor.png")).toBeNull();
     expect(screen.getByRole("button", { name: "Add asset" }).hasAttribute("disabled")).toBe(true);
+    expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/events/evt-1/preview.png");
   });
 
   it("rejects a file over 2 MB client-side without calling the API", async () => {
@@ -507,5 +511,30 @@ describe("EventImageAssetLibrary", () => {
     expect(mockUploadPreview).toHaveBeenCalledTimes(1);
     resolveUpload({ url: "/uploads/default/events/evt-1/preview.png" });
     await screen.findByRole("dialog", { name: "Adjust image" });
+  });
+
+  it("deletes the preview upload when unmounted before the upload resolves", async () => {
+    mockFetch.mockResolvedValueOnce([]);
+    let resolveUpload!: (v: { url: string }) => void;
+    mockUploadPreview.mockReturnValueOnce(
+      new Promise((r) => {
+        resolveUpload = r;
+      }),
+    );
+    const { unmount } = renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    await screen.findByText("No images yet");
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: { files: [new File(["x"], "sponsor.png", { type: "image/png" })] },
+    });
+    expect(mockUploadPreview).toHaveBeenCalledTimes(1);
+    unmount();
+    resolveUpload({ url: "/uploads/default/events/evt-1/orphan-preview.png" });
+    await waitFor(() => {
+      expect(mockDeleteUploadedFile).toHaveBeenCalledWith(
+        "/uploads/default/events/evt-1/orphan-preview.png",
+      );
+    });
   });
 });

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
+import { join, resolve, sep } from "node:path";
 import sharp from "sharp";
 
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
@@ -95,7 +95,7 @@ function detectImageMime(buf: Buffer): string | null {
   return null;
 }
 
-/** Detect font MIME from magic bytes (not client-declared Content-Type) — WOFF2/WOFF/OTF/TTF. */
+/** Detect font MIME from magic bytes (not client-declared Content-Type) - WOFF2/WOFF/OTF/TTF. */
 function detectFontMime(buf: Buffer): string | null {
   if (buf.length >= 4 && buf.subarray(0, 4).toString("ascii") === "wOF2") {
     return "font/woff2";
@@ -106,7 +106,7 @@ function detectFontMime(buf: Buffer): string | null {
   if (buf.length >= 4 && buf.subarray(0, 4).toString("ascii") === "OTTO") {
     return "font/otf";
   }
-  // TrueType sfnt version 1.0 — the standard .ttf signature.
+  // TrueType sfnt version 1.0 - the standard .ttf signature.
   if (
     buf.length >= 4 &&
     buf[0] === 0x00 &&
@@ -124,7 +124,7 @@ interface WriteValidatedUploadOptions {
   readonly detectMime: (buf: Buffer) => string | null;
   readonly allowedExt: ReadonlyMap<string, string>;
   /** Also reject when the client-declared Content-Type disagrees with the detected MIME.
-   * Image-only — see validateAndWriteFont for why fonts skip this. */
+   * Image-only - see validateAndWriteFont for why fonts skip this. */
   readonly crossCheckDeclaredMime?: boolean;
   /**
    * Optional transform after MIME detection (branding images: sharp re-encode strips EXIF/IPTC
@@ -135,7 +135,7 @@ interface WriteValidatedUploadOptions {
 
 /**
  * Re-encode a branding raster through sharp: auto-orient, drop metadata, keep alpha for PNG/WebP.
- * ADR 0008 "strip metadata" — do not persist the client-supplied byte stream as-is.
+ * ADR 0008 "strip metadata" - do not persist the client-supplied byte stream as-is.
  * Exported for unit tests covering dimension / MIME edge paths.
  */
 export async function reencodeBrandingImage(buf: Buffer, mime: string): Promise<Buffer> {
@@ -231,7 +231,173 @@ async function validateAndWriteImage(
   });
 }
 
-/** Local filesystem branding upload (ADR 0008 — future StorageAdapter swap). */
+/** UUID filename written by save* helpers (images + theme fonts). */
+const UPLOAD_FILENAME_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|webp|woff2|woff|ttf|otf)$/;
+
+export type ParsedUploadsUrl = {
+  orgId: string;
+  kind: "org" | "event" | "theme";
+  eventId?: string;
+  filename: string;
+  /** Path relative to the upload root (no leading slash). */
+  relativePath: string;
+};
+
+/** Parse a public `/uploads/…` URL into confined org/event/theme segments. */
+export function parseUploadsUrl(url: string): ParsedUploadsUrl {
+  if (typeof url !== "string" || !url.startsWith("/uploads/")) {
+    throw new BrandingUploadError("invalid_upload_url", 400);
+  }
+  if (url.includes("?") || url.includes("#") || url.includes("\\") || url.includes("..")) {
+    throw new BrandingUploadError("invalid_upload_url", 400);
+  }
+
+  const rest = url.slice("/uploads/".length);
+  if (!rest || rest.startsWith("/") || rest.endsWith("/")) {
+    throw new BrandingUploadError("invalid_upload_url", 400);
+  }
+  const parts = rest.split("/");
+  if (parts.some((p) => p === "" || p === "." || p === "..")) {
+    throw new BrandingUploadError("invalid_upload_url", 400);
+  }
+
+  if (parts.length === 2) {
+    const [orgId, filename] = parts as [string, string];
+    assertSafeOrgId(orgId);
+    if (!UPLOAD_FILENAME_PATTERN.test(filename)) {
+      throw new BrandingUploadError("invalid_upload_url", 400);
+    }
+    return { orgId, kind: "org", filename, relativePath: `${orgId}/${filename}` };
+  }
+
+  if (parts.length === 3 && parts[1] === "theme") {
+    const [orgId, , filename] = parts as [string, string, string];
+    assertSafeOrgId(orgId);
+    if (!UPLOAD_FILENAME_PATTERN.test(filename)) {
+      throw new BrandingUploadError("invalid_upload_url", 400);
+    }
+    return { orgId, kind: "theme", filename, relativePath: `${orgId}/theme/${filename}` };
+  }
+
+  if (parts.length === 4 && parts[1] === "events") {
+    const [orgId, , eventId, filename] = parts as [string, string, string, string];
+    assertSafeOrgId(orgId);
+    assertSafeEventId(eventId);
+    if (!UPLOAD_FILENAME_PATTERN.test(filename)) {
+      throw new BrandingUploadError("invalid_upload_url", 400);
+    }
+    return {
+      orgId,
+      kind: "event",
+      eventId,
+      filename,
+      relativePath: `${orgId}/events/${eventId}/${filename}`,
+    };
+  }
+
+  throw new BrandingUploadError("invalid_upload_url", 400);
+}
+
+/** Resolve `relativePath` under the upload root; rejects escape attempts. */
+export function absolutePathUnderUploadRoot(relativePath: string): string {
+  // resolve() never keeps a trailing separator (except filesystem root), so prefer root+sep.
+  const root = resolve(resolveUploadDir());
+  const abs = resolve(join(root, relativePath));
+  if (abs !== root && !abs.startsWith(root + sep)) {
+    throw new BrandingUploadError("invalid_upload_url", 400);
+  }
+  return abs;
+}
+
+/**
+ * Delete a branding upload by its public `/uploads/…` URL.
+ * Missing file is success (idempotent). Caller must authorize ownership first.
+ */
+export async function deleteBrandingUploadByUrl(
+  url: string,
+  opts: { expectedOrgId: string; expectedEventId?: string },
+): Promise<void> {
+  const parsed = parseUploadsUrl(url);
+  if (parsed.orgId !== opts.expectedOrgId) {
+    throw new BrandingUploadError("invalid_upload_url", 400);
+  }
+  if (opts.expectedEventId !== undefined) {
+    if (parsed.kind !== "event" || parsed.eventId !== opts.expectedEventId) {
+      throw new BrandingUploadError("invalid_upload_url", 400);
+    }
+  }
+
+  const abs = absolutePathUnderUploadRoot(parsed.relativePath);
+  try {
+    // Path confined by parseUploadsUrl + resolve-under-root check above.
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    await unlink(abs);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return;
+    throw err;
+  }
+}
+
+/** Trusted owner context for best-effort disk cleanup (never derive solely from the URL). */
+export type UploadDeleteTrust = {
+  expectedOrgId: string;
+  expectedKind: ParsedUploadsUrl["kind"];
+  expectedEventId?: string;
+};
+
+/** Best-effort disk delete for a single managed upload URL (never throws). */
+export async function bestEffortDeleteUploadUrl(
+  url: string | null | undefined,
+  trust: UploadDeleteTrust,
+): Promise<void> {
+  if (typeof url !== "string" || !url.startsWith("/uploads/")) return;
+  try {
+    const parsed = parseUploadsUrl(url);
+    if (parsed.orgId !== trust.expectedOrgId || parsed.kind !== trust.expectedKind) return;
+    if (trust.expectedKind === "event" && parsed.eventId !== trust.expectedEventId) return;
+    await deleteBrandingUploadByUrl(url, {
+      expectedOrgId: trust.expectedOrgId,
+      expectedEventId: trust.expectedKind === "event" ? trust.expectedEventId : undefined,
+    });
+  } catch {
+    // Cancel/replace must not fail the operator action if disk cleanup races or fails.
+  }
+}
+
+/** Delete previous `/uploads/…` values that were replaced or cleared. */
+export async function bestEffortDeleteReplacedUploadUrls(
+  previous: Array<string | null | undefined>,
+  next: Array<string | null | undefined>,
+  trust: UploadDeleteTrust,
+  opts?: {
+    /**
+     * Re-check immediately before unlink. Concurrent saves can restore a URL after this
+     * caller's snapshot of `next` was taken; skip delete when the URL is live again.
+     * Failures are treated as "still referenced" so a transient DB error never turns a
+     * successful branding save into a misleading 500 / audit_failed.
+     */
+    isStillReferenced?: (url: string) => Promise<boolean>;
+  },
+): Promise<void> {
+  const kept = new Set(next.filter((u): u is string => typeof u === "string" && u.startsWith("/uploads/")));
+  for (const url of previous) {
+    if (typeof url !== "string" || !url.startsWith("/uploads/")) continue;
+    if (kept.has(url)) continue;
+    if (opts?.isStillReferenced) {
+      try {
+        if (await opts.isStillReferenced(url)) continue;
+      } catch {
+        // Check could not complete: skip unlink rather than failing the already-committed save.
+        continue;
+      }
+    }
+    await bestEffortDeleteUploadUrl(url, trust);
+  }
+}
+
+/** Local filesystem branding upload (ADR 0008 - future StorageAdapter swap). */
 export async function saveBrandingUpload(
   file: File,
   orgId: string,
@@ -247,7 +413,7 @@ export async function saveBrandingUpload(
 }
 
 /**
- * Event-scoped image upload — same validation as org logo. Used both by
+ * Event-scoped image upload - same validation as org logo. Used both by
  * handlePostEventBrandingUpload (event logo/header) and handleCreateEventImageAsset (named
  * branding assets referenced as {{token}} in email templates).
  */
@@ -281,7 +447,7 @@ async function validateAndWriteFont(file: File, dir: string): Promise<string> {
   return written.filename;
 }
 
-/** Instance-wide theme font upload (superadmin only) — stored separately from per-org/per-event
+/** Instance-wide theme font upload (superadmin only) - stored separately from per-org/per-event
  * branding images since it's a different asset type entirely (used for @font-face, not <img>). */
 export async function saveThemeFontUpload(file: File, orgId: string): Promise<{ url: string }> {
   assertSafeOrgId(orgId);
