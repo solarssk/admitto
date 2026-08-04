@@ -1807,6 +1807,11 @@ export async function patchAdminUser(
   return parseJson<{ user: UserListItemDto }>(res);
 }
 
+export async function deleteAdminUser(id: string): Promise<void> {
+  const res = await fetch(`/api/admin/users/${encodeURIComponent(id)}`, jsonDeleteInit());
+  await parseJson(res);
+}
+
 export async function grantUserRole(
   id: string,
   body: GrantUserRoleBody,

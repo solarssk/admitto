@@ -16,6 +16,7 @@ const CODE_MESSAGES: Record<string, string> = {
   authentication_required: "Your session has expired. Sign in again.",
   body_required: "Request body is required.",
   cannot_deactivate_self: "You cannot deactivate your own account.",
+  cannot_delete_self: "You cannot delete your own account.",
   cannot_revoke_current: "You cannot revoke your current session.",
   cannot_revoke_own_session: "You cannot revoke your current session.",
   delivery_not_created: "Could not create the delivery.",

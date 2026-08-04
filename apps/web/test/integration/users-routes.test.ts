@@ -382,6 +382,139 @@ describe("PATCH /api/admin/users/:id profile", () => {
   });
 });
 
+describe("PATCH /api/admin/users/:id email", () => {
+  const EMAIL_PATCH_ORIGINAL = "users-patch-email@example.com";
+  const EMAIL_PATCH_NEW = "users-patch-email-new@example.com";
+  let patchUserId = "";
+
+  beforeAll(async () => {
+    const created = await prisma.user.create({
+      data: { email: EMAIL_PATCH_ORIGINAL, password_hash: await hashPassword(PASSWORD) },
+    });
+    patchUserId = created.id;
+  });
+
+  afterAll(async () => {
+    await prisma.user.deleteMany({ where: { id: patchUserId } });
+  });
+
+  it("updates the email and records user_email_changed", async () => {
+    const res = await app.request(`/api/admin/users/${patchUserId}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: EMAIL_PATCH_NEW }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { user: { email: string } };
+    expect(body.user.email).toBe(EMAIL_PATCH_NEW);
+    expect(
+      await prisma.adminAuditLog.findFirst({
+        where: { organization_id: ORG_USERS, action_type: "user_email_changed" },
+        orderBy: { created_at: "desc" },
+      }),
+    ).toMatchObject({ metadata: { userId: patchUserId } });
+  });
+
+  it("returns 409 email_conflict for a duplicate email", async () => {
+    const res = await app.request(`/api/admin/users/${patchUserId}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: EMAIL_TARGET }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("email_conflict");
+  });
+
+  it("returns 400 invalid_request for a blank email", async () => {
+    const res = await app.request(`/api/admin/users/${patchUserId}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "   " }),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("DELETE /api/admin/users/:id", () => {
+  let deleteUserId = "";
+  let deleteAssignmentId = "";
+
+  beforeAll(async () => {
+    const created = await prisma.user.create({
+      data: { email: "users-delete-target@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    deleteUserId = created.id;
+    const assignment = await prisma.roleAssignment.create({
+      data: { user_id: deleteUserId, role: "operator", scope_type: "event", scope_id: eventId },
+    });
+    deleteAssignmentId = assignment.id;
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: deleteUserId,
+        type: "totp",
+        secret_enc: encryptTotpSecret(generateTotpSecret()),
+        confirmed_at: new Date(),
+      },
+    });
+    await createSession(prisma, { userId: deleteUserId, stage: SESSION_STAGE.FULL, ip: "127.0.0.9" });
+  });
+
+  it("returns 401 without auth", async () => {
+    const res = await app.request(`/api/admin/users/${deleteUserId}`, {
+      method: "DELETE",
+      headers: { ...sameOrigin },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 403 for operator", async () => {
+    const res = await app.request(`/api/admin/users/${deleteUserId}`, {
+      method: "DELETE",
+      headers: { Cookie: operatorCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 409 cannot_delete_self", async () => {
+    const res = await app.request(`/api/admin/users/${superId}`, {
+      method: "DELETE",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("cannot_delete_self");
+  });
+
+  it("deletes the user and cascades sessions, roles, and MFA methods", async () => {
+    const res = await app.request(`/api/admin/users/${deleteUserId}`, {
+      method: "DELETE",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(200);
+
+    expect(await prisma.user.findUnique({ where: { id: deleteUserId } })).toBeNull();
+    expect(await prisma.roleAssignment.findUnique({ where: { id: deleteAssignmentId } })).toBeNull();
+    expect(await prisma.session.findMany({ where: { user_id: deleteUserId } })).toHaveLength(0);
+    expect(await prisma.userMfaMethod.findMany({ where: { user_id: deleteUserId } })).toHaveLength(0);
+
+    expect(
+      await prisma.adminAuditLog.findFirst({
+        where: { organization_id: ORG_USERS, action_type: "user_deleted" },
+        orderBy: { created_at: "desc" },
+      }),
+    ).toMatchObject({ metadata: { userId: deleteUserId } });
+  });
+
+  it("returns 404 for an unknown user", async () => {
+    const res = await app.request(`/api/admin/users/${deleteUserId}`, {
+      method: "DELETE",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(404);
+  });
+});
+
 describe("DELETE /api/admin/users/:id/roles/:assignmentId anti-lockout", () => {
   it("returns 409 last_superadmin for final superadmin assignment", async () => {
     const globalSuperadmins = await prisma.roleAssignment.count({

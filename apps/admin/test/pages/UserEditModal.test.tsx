@@ -4,10 +4,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EventDto, UserListItemDto } from "../../src/api/types.js";
 import { UserEditModal } from "../../src/pages/users/UserEditModal.js";
 
+const useAuthMock = vi.fn(() => ({ user: { id: "usr-current-admin" } }));
+
+vi.mock("../../src/auth/AuthProvider.js", () => ({
+  useAuth: () => useAuthMock(),
+}));
+
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
   return {
     ...actual,
+    deleteAdminUser: vi.fn(),
     fetchAdminEvents: vi.fn(),
     fetchAdminOrganizations: vi.fn(),
     grantUserRole: vi.fn(),
@@ -19,6 +26,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
 });
 
 import {
+  deleteAdminUser,
   fetchAdminEvents,
   fetchAdminOrganizations,
   grantUserRole,
@@ -33,6 +41,7 @@ const mockGrantUserRole = vi.mocked(grantUserRole);
 const mockPatchAdminUser = vi.mocked(patchAdminUser);
 const mockResetUserMfa = vi.mocked(resetUserMfa);
 const mockResetUserPassword = vi.mocked(resetUserPassword);
+const mockDeleteAdminUser = vi.mocked(deleteAdminUser);
 
 const event: EventDto = {
   id: "evt-1",
@@ -61,10 +70,17 @@ const user: UserListItemDto = {
 function renderModal(userOverride: Partial<UserListItemDto> = {}) {
   const onClose = vi.fn();
   const onUpdated = vi.fn();
+  const onDeleted = vi.fn();
   render(
-    <UserEditModal open user={{ ...user, ...userOverride }} onClose={onClose} onUpdated={onUpdated} />,
+    <UserEditModal
+      open
+      user={{ ...user, ...userOverride }}
+      onClose={onClose}
+      onUpdated={onUpdated}
+      onDeleted={onDeleted}
+    />,
   );
-  return { onClose, onUpdated };
+  return { onClose, onUpdated, onDeleted };
 }
 
 beforeEach(() => {
@@ -78,11 +94,13 @@ beforeEach(() => {
   });
   mockResetUserMfa.mockResolvedValue(undefined);
   mockResetUserPassword.mockResolvedValue(undefined);
+  mockDeleteAdminUser.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  useAuthMock.mockReturnValue({ user: { id: "usr-current-admin" } });
 });
 
 describe("UserEditModal role scope controls", () => {
@@ -204,10 +222,36 @@ describe("UserEditModal save state", () => {
     await waitFor(() => {
       expect(mockPatchAdminUser).toHaveBeenCalledWith("usr-1", {
         display_name: "Staff User",
+        email: "staff@example.com",
         is_active: true,
       });
     });
     expect(screen.getByRole("button", { name: "Saving…" })).toHaveProperty("disabled", true);
     expect(screen.getByRole("button", { name: "Cancel" })).toHaveProperty("disabled", true);
+  });
+});
+
+describe("UserEditModal delete account", () => {
+  it("disables Delete account for the signed-in user's own account", async () => {
+    useAuthMock.mockReturnValue({ user: { id: "usr-1" } });
+    renderModal();
+    await screen.findByRole("button", { name: "Save" });
+
+    expect(screen.getByRole("button", { name: "Delete account" })).toHaveProperty("disabled", true);
+  });
+
+  it("deletes the account after confirmation", async () => {
+    const { onClose, onDeleted } = renderModal();
+    await screen.findByRole("button", { name: "Delete account" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+    const dialog = await screen.findByRole("dialog", { name: "Delete account" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(mockDeleteAdminUser).toHaveBeenCalledWith("usr-1");
+    });
+    expect(onDeleted).toHaveBeenCalledWith(user);
+    expect(onClose).toHaveBeenCalled();
   });
 });
