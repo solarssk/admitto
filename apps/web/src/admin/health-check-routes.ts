@@ -83,18 +83,31 @@ export type CollectAdminHealthDeps = {
   resolveOrgMailConfig?: typeof resolveMailConfigForOrg;
 };
 
-/** Short commit for dumps. Docker sets GIT_COMMIT; local/dev falls back to git HEAD (same as admin SPA). */
+/** Short commit for dumps. Docker sets GIT_COMMIT; local/dev prefers live git HEAD (same as admin SPA). */
 export function resolveHealthCommit(env: NodeJS.ProcessEnv = process.env): string {
   const raw = env.GIT_COMMIT?.trim();
-  if (raw) return raw.slice(0, 7);
-  try {
-    // Trusted build/runtime tooling; same pattern as apps/admin/build-meta.ts (Sonar S4036).
-    // Bare "git" resolves via PATH like the rest of the monorepo toolchain - not untrusted input.
-    const sha = execSync("git rev-parse HEAD", { cwd: process.cwd(), encoding: "utf8" }).trim(); // NOSONAR - see comment above
-    return sha ? sha.slice(0, 7) : "unknown";
-  } catch {
-    return "unknown";
+
+  const fromGit = (): string | null => {
+    try {
+      // Trusted build/runtime tooling; same pattern as apps/admin/build-meta.ts (Sonar S4036).
+      // Bare "git" resolves via PATH like the rest of the monorepo toolchain - not untrusted input.
+      const sha = execSync("git rev-parse HEAD", { cwd: process.cwd(), encoding: "utf8" }).trim(); // NOSONAR - see comment above
+      return sha || null;
+    } catch {
+      return null;
+    }
+  };
+
+  // Local `npm run dev` loads apps/web/.env; a stale GIT_COMMIT there used to diverge from the
+  // sidebar (Vite build-meta always falls back to git). Prefer HEAD whenever NODE_ENV=development.
+  if (env.NODE_ENV === "development") {
+    const sha = fromGit();
+    if (sha) return sha.slice(0, 7);
   }
+
+  if (raw) return raw.slice(0, 7);
+  const sha = fromGit();
+  return sha ? sha.slice(0, 7) : "unknown";
 }
 
 /** Worst-of among statuses that affect overall health (ADR 0037). */

@@ -159,6 +159,15 @@ describe("resolveHealthCommit", () => {
     expect(sha).toMatch(/^[0-9a-f]{7}$/);
     expect(sha).not.toBe("unknown");
   });
+
+  it("prefers git HEAD over a stale GIT_COMMIT in development", () => {
+    const sha = resolveHealthCommit({
+      NODE_ENV: "development",
+      GIT_COMMIT: "deadbeefdeadbeef",
+    });
+    expect(sha).toMatch(/^[0-9a-f]{7}$/);
+    expect(sha).not.toBe("deadbee");
+  });
 });
 
 describe("fileStorageRow", () => {
