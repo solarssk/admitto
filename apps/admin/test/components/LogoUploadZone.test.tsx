@@ -614,6 +614,28 @@ describe("LogoUploadZone", () => {
     });
   });
 
+  it("Cancel after Edit of a persisted original does not delete that original", async () => {
+    mockUploadFile.mockClear();
+    mockDeleteUploadedFile.mockClear();
+    renderWithToast(
+      <LogoUploadZone
+        value="/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png"
+        originalUrl="/uploads/default/b2c3d4e5-f6a7-8901-bcde-f12345678901.png"
+        cropMeta={{ unit: "%", x: 10, y: 12, width: 80, height: 70, zoom: 1.8 }}
+        committedValue="/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png"
+        committedOriginalUrl="/uploads/default/b2c3d4e5-f6a7-8901-bcde-f12345678901.png"
+        onChange={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Edit image" }));
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: "Adjust image" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog", { name: "Adjust image" })).toBeNull();
+    expect(mockDeleteUploadedFile).not.toHaveBeenCalled();
+  });
+
   it("unmount with an open crop session deletes the abandoned non-persisted original", async () => {
     mockUploadFile.mockResolvedValueOnce({ url: "/uploads/default/abandoned-orig.png" });
     const { unmount } = renderWithToast(<LogoUploadZone value="" onChange={() => {}} />);

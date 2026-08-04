@@ -426,6 +426,124 @@ describe("setup org-branding", () => {
     expect(body.logo_crop).toEqual(crop);
   });
 
+  it("deletes a replaced organisation logo upload on PATCH", async () => {
+    const { mkdtempSync, rmSync, existsSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { saveBrandingUpload } = await import("../../src/admin/branding-upload.js");
+
+    const uploadDir = mkdtempSync(join(tmpdir(), "admitto-org-logo-cleanup-"));
+    const prevUploadDir = process.env.UPLOAD_DIR;
+    process.env.UPLOAD_DIR = uploadDir;
+    const pngBytes = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    try {
+      const png = new File([pngBytes], "logo.png", { type: "image/png" });
+      const first = await saveBrandingUpload(png, "default");
+      const second = await saveBrandingUpload(png, "default");
+      const firstAbs = join(uploadDir, first.url.slice("/uploads/".length));
+      expect(existsSync(firstAbs)).toBe(true);
+
+      const put1 = await app.request("/api/admin/setup/org-branding", {
+        method: "PATCH",
+        headers: {
+          Cookie: superCookie,
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify({
+          logo_url: first.url,
+          logo_original_url: first.url,
+          logo_crop: null,
+        }),
+      });
+      expect(put1.status).toBe(200);
+
+      const put2 = await app.request("/api/admin/setup/org-branding", {
+        method: "PATCH",
+        headers: {
+          Cookie: superCookie,
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify({
+          logo_url: second.url,
+          logo_original_url: second.url,
+          logo_crop: null,
+        }),
+      });
+      expect(put2.status).toBe(200);
+      expect(existsSync(firstAbs)).toBe(false);
+    } finally {
+      if (prevUploadDir === undefined) delete process.env.UPLOAD_DIR;
+      else process.env.UPLOAD_DIR = prevUploadDir;
+      rmSync(uploadDir, { recursive: true, force: true });
+      await prisma.organization.update({
+        where: { id: "org_default" },
+        data: { logo_url: null, logo_original_url: null, logo_crop: null },
+      });
+    }
+  });
+
+  it("keeps a replaced org logo file when an event still references it", async () => {
+    const { mkdtempSync, rmSync, existsSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { saveBrandingUpload } = await import("../../src/admin/branding-upload.js");
+
+    const uploadDir = mkdtempSync(join(tmpdir(), "admitto-org-logo-shared-"));
+    const prevUploadDir = process.env.UPLOAD_DIR;
+    process.env.UPLOAD_DIR = uploadDir;
+    const pngBytes = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    const eventId = "evt-org-logo-share";
+    try {
+      const png = new File([pngBytes], "logo.png", { type: "image/png" });
+      const first = await saveBrandingUpload(png, "default");
+      const second = await saveBrandingUpload(png, "default");
+      const firstAbs = join(uploadDir, first.url.slice("/uploads/".length));
+
+      await app.request("/api/admin/setup/org-branding", {
+        method: "PATCH",
+        headers: { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin },
+        body: JSON.stringify({ logo_url: first.url, logo_original_url: null, logo_crop: null }),
+      });
+
+      await prisma.event.create({
+        data: {
+          id: eventId,
+          title: "Shares org logo",
+          slug: "shares-org-logo",
+          date: new Date("2026-11-01T12:00:00.000Z"),
+          organization_id: "org_default",
+          logo_url: first.url,
+        },
+      });
+
+      const put2 = await app.request("/api/admin/setup/org-branding", {
+        method: "PATCH",
+        headers: { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin },
+        body: JSON.stringify({ logo_url: second.url, logo_original_url: null, logo_crop: null }),
+      });
+      expect(put2.status).toBe(200);
+      // Cross-scope reference: event still points at first.url, so GC must not unlink it.
+      expect(existsSync(firstAbs)).toBe(true);
+    } finally {
+      if (prevUploadDir === undefined) delete process.env.UPLOAD_DIR;
+      else process.env.UPLOAD_DIR = prevUploadDir;
+      rmSync(uploadDir, { recursive: true, force: true });
+      await prisma.event.deleteMany({ where: { id: eventId } });
+      await prisma.organization.update({
+        where: { id: "org_default" },
+        data: { logo_url: null, logo_original_url: null, logo_crop: null },
+      });
+    }
+  });
+
   it("PATCH rejects a malformed logo_crop body", async () => {
     const res = await app.request("/api/admin/setup/org-branding", {
       method: "PATCH",

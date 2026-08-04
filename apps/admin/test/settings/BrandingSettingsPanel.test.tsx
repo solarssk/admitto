@@ -1296,4 +1296,24 @@ describe("BrandingSettingsPanel - save and reset", () => {
     });
     expect(within(adminFontPicker()).queryByText("Acme Sans")).toBeNull();
   });
+
+  it("Reset to saved deletes provisional font uploads that left the draft", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /^Custom font/ }));
+    fireEvent.click(screen.getByText("mock-save-family"));
+    await waitFor(() => {
+      expect(within(adminFontPicker()).getByText("Acme Sans")).toBeTruthy();
+    });
+    mockDeleteUploadedFile.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset to saved" }));
+    await waitFor(() => {
+      expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/theme/abc123.woff2");
+    });
+    expect(within(adminFontPicker()).queryByText("Acme Sans")).toBeNull();
+  });
 });
