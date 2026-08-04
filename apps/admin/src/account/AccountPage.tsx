@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Badge, Button, Card, Checkbox, HintLabel, Input, Notice, PasswordStrengthMeter, Select, Spinner, useToast } from "@admitto/ui";
+import { Badge, Button, Card, Checkbox, EmptyState, HintLabel, Input, Notice, PasswordStrengthMeter, Select, Spinner, useToast } from "@admitto/ui";
 import {
   ApiError,
   cancelMfaEnroll,
@@ -214,14 +214,25 @@ export function AccountPage() {
       </Card>
     );
   }
-  if (error || !account) {
+  if (error) {
     return (
       <Card title="Profile">
-        <p role="alert">{error ?? "Failed to load account."}</p>
-        <Button type="button" variant="secondary" onClick={() => void loadAccount()}>Retry</Button>
+        <EmptyState
+          title="Could not load account"
+          description={error}
+          action={
+            <Button type="button" variant="secondary" onClick={() => void loadAccount()}>
+              Retry
+            </Button>
+          }
+        />
       </Card>
     );
   }
+
+  // account is set after a successful load; failures always set error above.
+  /* v8 ignore if */
+  if (!account) return null;
 
   const totpEnrolled = isTotpEnrolled(account);
   const otherSessions = sessions.filter((s) => !s.isCurrent);

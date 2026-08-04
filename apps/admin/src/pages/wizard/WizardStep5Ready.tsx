@@ -5,7 +5,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import { Button, useToast } from "@admitto/ui";
+import { Button, Notice, useToast } from "@admitto/ui";
 import { useNavigate } from "react-router";
 import { ApiError, completeSetup } from "../../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../../api/operator-api-error.js";
@@ -125,14 +125,18 @@ export const WizardStep5Ready = forwardRef<WizardStep5ReadyHandle, WizardStep5Re
       </div>
 
       {checksNotReady ? (
-        <div className="setup-wizard__checks-error" role="alert">
-          <p className="setup-wizard__hint">
-            System checks are not passing yet. Review step 1 and fix any failed checks.
-          </p>
-          <Button type="button" variant="secondary" size="sm" onClick={onGoToChecks}>
-            Review system checks
-          </Button>
-        </div>
+        <Notice
+          variant="error"
+          role="alert"
+          className="setup-wizard__check-error-banner"
+          action={
+            <Button type="button" variant="secondary" size="sm" onClick={onGoToChecks}>
+              Review system checks
+            </Button>
+          }
+        >
+          System checks are not passing yet. Review step 1 and fix any failed checks.
+        </Notice>
       ) : null}
     </div>
   );

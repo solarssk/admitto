@@ -210,12 +210,13 @@ describe("BrandingSettingsPanel - loading and errors", () => {
     expect(screen.getByText("Loading branding settings…")).toBeTruthy();
   });
 
-  it("shows an operator-safe inline message with Retry when loading fails, without a toast", async () => {
+  it("shows an operator-safe EmptyState with Retry when loading fails, without a toast", async () => {
     mockFetchOrg.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByRole("button", { name: "Retry" });
-    expect(screen.getByRole("alert").textContent).toMatch(/Failed to load branding settings/);
+    expect(screen.getByText("Could not load branding settings")).toBeTruthy();
+    expect(screen.getByText(/Failed to load branding settings/)).toBeTruthy();
     expect(screen.queryByText("secret_internal")).toBeNull();
     expect(screen.queryByTestId("at-toast")).toBeNull();
   });

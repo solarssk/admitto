@@ -97,12 +97,18 @@ export function WizardStep1Checks({ onChecksOk }: Readonly<WizardStep1ChecksProp
       )}
 
       {!loading && loadError && (
-        <div className="setup-wizard__checks-error" role="alert">
-          <p className="setup-wizard__hint">{loadError}</p>
-          <Button type="button" variant="secondary" size="sm" onClick={retry}>
-            Retry
-          </Button>
-        </div>
+        <Notice
+          variant="error"
+          role="alert"
+          className="setup-wizard__check-error-banner"
+          action={
+            <Button type="button" variant="secondary" size="sm" onClick={retry}>
+              Retry
+            </Button>
+          }
+        >
+          {loadError}
+        </Notice>
       )}
     </>
   );

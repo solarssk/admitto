@@ -4,7 +4,7 @@ import {
   useImperativeHandle,
   useState,
 } from "react";
-import { Input, useToast } from "@admitto/ui";
+import { Input, Notice, useToast } from "@admitto/ui";
 import { LOCATION_LIMITS } from "@admitto/location";
 import { ApiError, createEvent, fetchAdminEvents } from "../../api/client.js";
 import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
@@ -115,13 +115,10 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
         </p>
 
         {!loadingEvents && existingEvents.length > 0 && (
-          <output className="setup-wizard__info">
-            <i className="ti ti-info-circle" aria-hidden="true" />
-            <span>
-              You already have {existingEvents.length === 1 ? "an event" : `${existingEvents.length} events`}.
-              You can skip this step or create another.
-            </span>
-          </output>
+          <Notice variant="info" as="output">
+            You already have {existingEvents.length === 1 ? "an event" : `${existingEvents.length} events`}.
+            You can skip this step or create another.
+          </Notice>
         )}
 
         <div className="setup-wizard__field">

@@ -7,10 +7,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { Button, EmptyState, applyThemeVars } from "@admitto/ui";
 import { ApiError, fetchMe, fetchStaffTheme } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AuthUser, RoleAssignment } from "../api/types.js";
-import { applyThemeVars } from "@admitto/ui";
 import { setPreferredLocale } from "../utils/locale-store.js";
 
 export interface AuthContextValue {
@@ -97,11 +97,16 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
 
   if (authError) {
     return (
-      <div className="shell-loading" style={{ padding: "2rem", textAlign: "center" }}>
-        <p role="alert">{authError}</p>
-        <button type="button" onClick={() => void refresh()}>
-          Retry
-        </button>
+      <div className="shell-loading" style={{ padding: "2rem" }}>
+        <EmptyState
+          title="Could not load session"
+          description={authError}
+          action={
+            <Button type="button" variant="secondary" onClick={() => void refresh()}>
+              Retry
+            </Button>
+          }
+        />
       </div>
     );
   }

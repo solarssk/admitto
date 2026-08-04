@@ -6,6 +6,7 @@ import {
   renderAuthDocument,
   renderAuthPage,
 } from "./shared-auth-styles.js";
+import { renderNoticeHtml } from "./auth-notice.js";
 import { getAuthPageInlineScriptHeaders } from "./auth-page-security.js";
 
 function esc(s: string): string {
@@ -96,9 +97,15 @@ export function renderLoginForm(
   const ssoFailed = error === "oidc_failed";
   const loginError = !ssoFailed ? loginErrorMessage(error) : undefined;
   const ssoFallbackBlock = ssoFailed
-    ? `<div class="auth-sso-fallback" role="alert">SSO unavailable. Use your local password below.</div>`
+    ? renderNoticeHtml({
+        variant: "warning",
+        role: "alert",
+        message: "SSO unavailable. Use your local password below.",
+      })
     : "";
-  const errorBlock = loginError ? `<div class="auth-error" role="alert">${esc(loginError)}</div>` : "";
+  const errorBlock = loginError
+    ? renderNoticeHtml({ variant: "error", role: "alert", message: loginError })
+    : "";
   const nextField = next ? `<input type="hidden" name="next" value="${esc(next)}">` : "";
   const ssoBlock = renderSsoBlock(ssoProviders, next);
 

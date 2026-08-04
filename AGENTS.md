@@ -88,7 +88,8 @@ Staff UI uses `useToast()` from `@admitto/ui` (`ToastProvider` in the admin shel
 | Pattern | When | Examples |
 |--------|------|----------|
 | **Toast** | Transient outcome of an action the user just took; does not need a retry control | Save/test success, mutation API errors, import finished, wizard step saved |
-| **Inline / `EmptyState`** | Initial page load failed or data is missing until the user retries | Attendees/Requirements load error with **Retry** |
+| **`Notice`** | Persistent fact or warning about the surrounding view (bordered/tinted box with icon) | Settings warnings, wizard banners, form-level auth errors. Server-rendered auth pages use the same `.at-notice` markup via `renderNoticeHtml` (not the React component) |
+| **Inline / `EmptyState`** | Initial page load failed or data is missing until the user retries | Attendees/Requirements load error with **Retry**; AuthProvider session bootstrap failure |
 | **`ConfirmDialog`** | Destructive or irreversible confirmation | Delete attendee, archive event — do not also toast the same message |
 | **In-context inline** | Error is tied to a modal, form field, or overlay that already has focus | Mobile check-in camera overlay (no-match → overlay message, not toast behind overlay); form field validation |
 

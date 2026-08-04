@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useNavigate } from "react-router";
-import { Card, HintLabel, Button, useToast } from "@admitto/ui";
+import { Card, HintLabel, Button, EmptyState, useToast } from "@admitto/ui";
 import {
   clearEventMailSettings,
   fetchEventMailSettings,
@@ -356,24 +356,31 @@ export const EventMailSettingsCard = forwardRef<
     );
   }
 
-  if (loadError || !apiData) {
+  if (loadError) {
     return (
       <Card title="Mail transport">
-        <p role="alert" className="text-error">
-          {loadError ?? "Failed to load mail settings."}{" "}
-          <button
-            type="button"
-            className="settings-retry-link"
-            onClick={() => {
-              loadSettings().catch(() => {});
-            }}
-          >
-            Retry
-          </button>
-        </p>
+        <EmptyState
+          title="Could not load mail settings"
+          description={loadError}
+          action={
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                loadSettings().catch(() => {});
+              }}
+            >
+              Retry
+            </Button>
+          }
+        />
       </Card>
     );
   }
+
+  // Successful load always populates apiData; failures always set loadError above.
+  /* v8 ignore if */
+  if (!apiData) return null;
 
   const showExportOnly =
     !apiData.isProduction || (fieldLocked("provider") && draft.provider === "export_only");

@@ -569,13 +569,14 @@ describe("EventMailSettingsCard — loading and errors", () => {
     expect(screen.getByText("Loading mail settings…")).toBeTruthy();
   });
 
-  it("shows a retry link on load failure and recovers on retry", async () => {
+  it("shows a retry EmptyState on load failure and recovers on retry", async () => {
     mockFetch.mockRejectedValueOnce(new Error("network"));
     mockFetch.mockResolvedValueOnce(inheritedResponse());
     renderCard();
 
-    expect(await screen.findByText("Failed to load mail settings.")).toBeTruthy();
-    fireEvent.click(screen.getByText("Retry"));
+    expect(await screen.findByText("Could not load mail settings")).toBeTruthy();
+    expect(screen.getByText("Failed to load mail settings.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     expect(await screen.findByText(SMTP_SUMMARY_TEXT)).toBeTruthy();
   });

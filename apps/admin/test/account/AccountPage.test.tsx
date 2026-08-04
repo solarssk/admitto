@@ -1205,8 +1205,10 @@ describe("AccountPage toasts", () => {
     mockFetchSessions.mockResolvedValueOnce({ sessions: [] });
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText(/Failed to load account/)).toBeTruthy();
+      expect(screen.getByText("Could not load account")).toBeTruthy();
     });
+    expect(screen.getByText(/Failed to load account/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     expect(screen.queryByText("secret_internal")).toBeNull();
   });
 
