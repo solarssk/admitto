@@ -259,7 +259,7 @@ describe("LocalStorageAdapter", () => {
         for await (const _entry of storage.list()) {
           // drain
         }
-      }).rejects.toMatchObject({ code: expect.stringMatching(/^EACCES|EPERM$/) });
+      }).rejects.toMatchObject({ code: expect.stringMatching(/^(?:EACCES|EPERM)$/) });
     } finally {
       chmodSync(uploadDir, 0o755);
     }
