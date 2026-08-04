@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { PrismaClient } from "@admitto/db";
+import { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import {
   createSession,
@@ -482,7 +482,7 @@ describe("setup org-branding", () => {
       rmSync(uploadDir, { recursive: true, force: true });
       await prisma.organization.update({
         where: { id: "org_default" },
-        data: { logo_url: null, logo_original_url: null, logo_crop: null },
+        data: { logo_url: null, logo_original_url: null, logo_crop: Prisma.JsonNull },
       });
     }
   });
@@ -539,7 +539,7 @@ describe("setup org-branding", () => {
       await prisma.event.deleteMany({ where: { id: eventId } });
       await prisma.organization.update({
         where: { id: "org_default" },
-        data: { logo_url: null, logo_original_url: null, logo_crop: null },
+        data: { logo_url: null, logo_original_url: null, logo_crop: Prisma.JsonNull },
       });
     }
   });
