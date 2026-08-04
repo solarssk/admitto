@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import {
   Button,
   Card,
@@ -11,9 +11,9 @@ import {
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { roleLabel } from "../auth/role-labels.js";
-import { fetchAdminUsers, revokeUserSessions } from "../api/client.js";
+import { fetchAdminUsers, fetchUserStats, revokeUserSessions } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { UserListItemDto } from "../api/types.js";
+import type { UserListItemDto, UserStatsDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { ScrollFadeTabs } from "../components/ScrollFadeTabs.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
@@ -81,6 +81,7 @@ function StaffUsersSkeleton() {
 export function UsersPage() {
   const { assignments } = useAuth();
   const { addToast } = useToast();
+  const navigate = useNavigate();
   const superadmin = isSuperadmin(assignments);
   const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState<UsersTab>(() => usersTabFromSearch(searchParams, superadmin));
@@ -99,6 +100,7 @@ export function UsersPage() {
   const [revoking, setRevoking] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
   const [sessionsCount, setSessionsCount] = useState<number | undefined>(undefined);
+  const [stats, setStats] = useState<UserStatsDto | null>(null);
 
   // The URL is the source of truth for the active tab (e.g. the Security tab's
   // "Manage individual sessions" link deep-links here with ?tab=sessions). Realign on
@@ -135,19 +137,23 @@ export function UsersPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchAdminUsers(
-        {
-          q: searchQuery || undefined,
-          page,
-          pageSize: PAGE_SIZE,
-          role: roleFilter,
-          status: statusFilter,
-        },
-        signal,
-      );
+      const [data, statsData] = await Promise.all([
+        fetchAdminUsers(
+          {
+            q: searchQuery || undefined,
+            page,
+            pageSize: PAGE_SIZE,
+            role: roleFilter,
+            status: statusFilter,
+          },
+          signal,
+        ),
+        fetchUserStats(signal),
+      ]);
       if (signal?.aborted) return;
       setUsers(data.users);
       setTotal(data.total);
+      setStats(statsData);
     } catch (err) {
       if (signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
       setError(operatorApiErrorMessage(err, "Failed to load users."));
@@ -196,9 +202,80 @@ export function UsersPage() {
     ...(superadmin ? [{ id: "sessions" as const, label: "Active sessions", count: sessionsCount }] : []),
   ];
 
+  const mfaPct = stats && stats.total > 0 ? Math.round((stats.mfa / stats.total) * 100) : 0;
+
   return (
     <div className="screen">
-      <PageHeader title="Users & roles" subtitle="Manage staff accounts, roles, and access" />
+      <PageHeader
+        title="Users & roles"
+        subtitle="Manage staff accounts, roles, and access"
+        actions={
+          superadmin && (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => navigate("/admin/settings?tab=logs")}
+            >
+              Audit history
+            </Button>
+          )
+        }
+      />
+
+      {superadmin && stats && (
+        <div className="users-page__stats">
+          <Card className="users-page__stat-card">
+            <div className="users-page__stat">
+              <div className="users-page__stat-icon users-page__stat-icon--neutral">
+                <i className="ti ti-users" aria-hidden="true" />
+              </div>
+              <div className="users-page__stat-body">
+                <span className="users-page__stat-value">{stats.total}</span>
+                <span className="users-page__stat-label">Staff users</span>
+                <span className="users-page__stat-sub">{stats.active} active</span>
+              </div>
+            </div>
+          </Card>
+          <Card className="users-page__stat-card">
+            <div className="users-page__stat">
+              <div className="users-page__stat-icon users-page__stat-icon--info">
+                <i className="ti ti-cloud-lock" aria-hidden="true" />
+              </div>
+              <div className="users-page__stat-body">
+                <span className="users-page__stat-value">{stats.sso}</span>
+                <span className="users-page__stat-label">Via SSO</span>
+                <span className="users-page__stat-sub">of {stats.total} total</span>
+              </div>
+            </div>
+          </Card>
+          <Card className="users-page__stat-card">
+            <div className="users-page__stat">
+              <div
+                className={`users-page__stat-icon users-page__stat-icon--${mfaPct === 100 ? "ok" : "warn"}`}
+              >
+                <i className="ti ti-shield-check" aria-hidden="true" />
+              </div>
+              <div className="users-page__stat-body">
+                <span className="users-page__stat-value">{mfaPct}%</span>
+                <span className="users-page__stat-label">MFA coverage</span>
+                <span className="users-page__stat-sub">{stats.mfa} of {stats.total} enrolled</span>
+              </div>
+            </div>
+          </Card>
+          <Card className="users-page__stat-card">
+            <div className="users-page__stat">
+              <div className="users-page__stat-icon users-page__stat-icon--ok">
+                <i className="ti ti-plug-connected" aria-hidden="true" />
+              </div>
+              <div className="users-page__stat-body">
+                <span className="users-page__stat-value">{stats.active_sessions}</span>
+                <span className="users-page__stat-label">Active sessions</span>
+                <span className="users-page__stat-sub">across {stats.active_sessions_users} users</span>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
 
       <ScrollFadeTabs
         tabs={tabs}
@@ -383,7 +460,7 @@ export function UsersPage() {
 
       {tab === "roles" && (
         <Card>
-          <RoleAssignmentsTab />
+          <RoleAssignmentsTab onAssignmentsChanged={() => void load()} />
         </Card>
       )}
 

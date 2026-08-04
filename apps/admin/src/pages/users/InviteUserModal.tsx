@@ -247,6 +247,7 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
             disabled={submitting}
             onChange={(e) => setPassword(e.target.value)}
           />
+          <span className="form-hint">At least 8 characters.</span>
         </div>
         <div className="users-modal__switch-row">
           <Switch
@@ -255,12 +256,6 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
             disabled={submitting}
             onChange={(e) => setMustChange(e.target.checked)}
           />
-        </div>
-        <div className="users-modal__switch-row users-modal__disabled-switch">
-          <div>
-            <Switch label="Send invite email" checked={false} disabled />
-            <span className="form-hint">Coming soon. Share the password manually for now.</span>
-          </div>
         </div>
         <div className="users-modal__actions">
           <Button type="button" variant="secondary" disabled={submitting} onClick={handleClose}>

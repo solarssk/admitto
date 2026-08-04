@@ -5,14 +5,18 @@ import {
   StatusBadge,
 } from "@admitto/ui";
 import type { UserListItemDto } from "../../api/types.js";
-import { roleBadgeVariant } from "../../auth/role-labels.js";
+import { roleBadgeVariant, roleLabel } from "../../auth/role-labels.js";
 import { formatRelativeTime as formatRelativeTimeShared } from "../../utils/event-dates.js";
 
-function roleShort(role: string): string {
-  if (role === "superadmin") return "SA";
-  if (role === "admin") return "AD";
-  if (role === "operator") return "OP";
-  return role.slice(0, 2).toUpperCase();
+const SCOPE_TYPE_LABELS: Record<string, string> = {
+  instance: "Instance-wide",
+  organization: "Organization scope",
+  event: "Event scope",
+};
+
+function roleScopeTitle(role: UserListItemDto["roles"][number]): string {
+  const scope = SCOPE_TYPE_LABELS[role.scope_type] ?? role.scope_type;
+  return role.is_oidc ? `${scope} · managed by identity provider` : scope;
 }
 
 /** Thin null handling wrapper ("Never" for a user who hasn't logged in) around the shared
@@ -36,10 +40,10 @@ function UserRoles({ user }: Readonly<{ user: UserListItemDto }>) {
         <Badge
           key={role.id}
           variant={roleBadgeVariant(role.role)}
-          title={role.is_oidc ? "Managed by identity provider" : undefined}
+          title={roleScopeTitle(role)}
         >
           {role.is_oidc && <i className="ti ti-cloud" aria-hidden="true" />}{" "}
-          {roleShort(role.role)}
+          {roleLabel(role.role)}
         </Badge>
       ))}
     </div>
@@ -61,6 +65,14 @@ function UserMfa({ hasMfa }: Readonly<{ hasMfa: boolean }>) {
         </>
       )}
     </span>
+  );
+}
+
+function UserStatusBadge({ active }: Readonly<{ active: boolean }>) {
+  return active ? (
+    <StatusBadge status="ok" label="Active" dot />
+  ) : (
+    <StatusBadge status="neutral" label="Disabled" dot className="users-page__status-disabled" />
   );
 }
 
@@ -128,11 +140,7 @@ export function StaffUserTableRow({ user, onEdit, onRevokeSessions }: Readonly<S
         <UserSessionsBadge count={user.active_sessions_count} />
       </td>
       <td>
-        {user.is_active ? (
-          <StatusBadge status="ok" label="Active" />
-        ) : (
-          <StatusBadge status="neutral" label="Disabled" />
-        )}
+        <UserStatusBadge active={user.is_active} />
       </td>
       <td>
         <UserActions user={user} onEdit={onEdit} onRevokeSessions={onRevokeSessions} />
@@ -153,11 +161,7 @@ export function StaffUserCard({ user, onEdit, onRevokeSessions }: Readonly<Staff
             <div className="users-page__user-email">{user.email}</div>
           </div>
         </div>
-        {user.is_active ? (
-          <StatusBadge status="ok" label="Active" />
-        ) : (
-          <StatusBadge status="neutral" label="Disabled" />
-        )}
+        <UserStatusBadge active={user.is_active} />
       </div>
       <dl className="users-page__card-meta">
         <div>

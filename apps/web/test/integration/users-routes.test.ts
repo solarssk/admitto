@@ -255,6 +255,17 @@ describe("GET /api/admin/users security", () => {
     expect(raw).not.toContain("secret_enc");
   });
 
+  it("includes has_sso on each user row", async () => {
+    const res = await app.request("/api/admin/users?role=superadmin", {
+      headers: { Cookie: superCookie },
+    });
+    const body = (await res.json()) as { users: Array<{ has_sso: boolean }> };
+    expect(body.users.length).toBeGreaterThan(0);
+    for (const user of body.users) {
+      expect(typeof user.has_sso).toBe("boolean");
+    }
+  });
+
   it("filters by role and status query params", async () => {
     const superOnly = await app.request("/api/admin/users?role=superadmin", {
       headers: { Cookie: superCookie },
@@ -279,6 +290,37 @@ describe("GET /api/admin/users security", () => {
     for (const user of activeBody.users) {
       expect(user.is_active).toBe(true);
     }
+  });
+});
+
+describe("GET /api/admin/users/stats security", () => {
+  it("returns 401 without auth", async () => {
+    const res = await app.request("/api/admin/users/stats");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 403 for operator", async () => {
+    const res = await app.request("/api/admin/users/stats", { headers: { Cookie: operatorCookie } });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns instance-wide counts unaffected by pagination", async () => {
+    const res = await app.request("/api/admin/users/stats", { headers: { Cookie: superCookie } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      total: number;
+      active: number;
+      mfa: number;
+      sso: number;
+      active_sessions: number;
+      active_sessions_users: number;
+    };
+    expect(body.total).toBeGreaterThanOrEqual(4);
+    expect(body.active).toBeGreaterThanOrEqual(1);
+    expect(body.mfa).toBeGreaterThanOrEqual(0);
+    expect(body.sso).toBeGreaterThanOrEqual(0);
+    expect(body.active_sessions).toBeGreaterThanOrEqual(1);
+    expect(body.active_sessions_users).toBeGreaterThanOrEqual(1);
   });
 });
 

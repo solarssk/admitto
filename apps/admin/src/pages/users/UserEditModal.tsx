@@ -369,6 +369,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
                   disabled={resetPasswordBusy}
                   onChange={(e) => setNewPassword(e.target.value)}
                 />
+                <span className="form-hint">At least 8 characters.</span>
               </div>
               <p className="form-hint">User sessions will be revoked. They must log in with the new password.</p>
               <div className="users-modal__actions" style={{ justifyContent: "flex-start" }}>

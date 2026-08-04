@@ -61,6 +61,7 @@ import type {
   SystemSettingsDto,
   PatchSystemSettingsBody,
   UserListResponse,
+  UserStatsDto,
   CreateAdminUserBody,
   PatchAdminUserBody,
   GrantUserRoleBody,
@@ -1681,6 +1682,13 @@ export async function fetchAdminUsers(
 ): Promise<UserListResponse> {
   const res = await fetch(usersListQuery(params), { credentials: "same-origin", signal });
   return parseJson<UserListResponse>(res);
+}
+
+/** Instance-wide counts for the Users & roles KPI tiles — separate from the paginated list,
+ * which is capped at 50 rows/page and would undercount past that many users. */
+export async function fetchUserStats(signal?: AbortSignal): Promise<UserStatsDto> {
+  const res = await fetch("/api/admin/users/stats", { credentials: "same-origin", signal });
+  return parseJson<UserStatsDto>(res);
 }
 
 export async function createAdminUser(body: CreateAdminUserBody): Promise<{ user: UserListItemDto }> {

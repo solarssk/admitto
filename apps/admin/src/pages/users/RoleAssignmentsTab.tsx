@@ -93,8 +93,14 @@ function AssignmentCard({ row, canRevoke, onRevoke }: Readonly<AssignmentRowProp
   );
 }
 
+type RoleAssignmentsTabProps = {
+  /** Called after a successful revoke so the parent's Staff users list (and any open Edit
+   * modal, which renders from that same list) picks up the change without a full page reload. */
+  onAssignmentsChanged?: () => void;
+};
+
 /** Role assignments tab — per-event/org grants with revoke action. */
-export function RoleAssignmentsTab() {
+export function RoleAssignmentsTab({ onAssignmentsChanged }: Readonly<RoleAssignmentsTabProps>) {
   const { assignments } = useAuth();
   const { addToast } = useToast();
   const canRevokeAll = isSuperadmin(assignments);
@@ -146,6 +152,7 @@ export function RoleAssignmentsTab() {
       setConfirmTarget(null);
       addToast(`Role revoked for ${label}`, "success");
       await load();
+      onAssignmentsChanged?.();
     } catch (err) {
       const message =
         operatorApiErrorMessage(err, "Failed to revoke role.");
