@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PrismaClient } from "@admitto/db";
@@ -194,6 +194,16 @@ describe("fileStorageRow", () => {
     await expect(
       fileStorageRow({ STORAGE_PROVIDER: "azure", UPLOAD_DIR: uploadFixture.dir }, checkedAt, false),
     ).resolves.toMatchObject({ status: "degraded", summary: "Unknown provider (azure)" });
+  });
+
+  it("reports degraded when the live write probe fails", async () => {
+    // Pass access(R_OK|W_OK) on a file path, then write into a child path fails (ENOTDIR).
+    const fileAsUploadRoot = join(uploadFixture.dir, "not-a-directory");
+    await writeFile(fileAsUploadRoot, "x");
+    const row = await fileStorageRow({ UPLOAD_DIR: fileAsUploadRoot }, checkedAt, true);
+    expect(row.status).toBe("degraded");
+    expect(row.summary).toBe("Write probe failed");
+    expect(row.details.find((d) => d.key === "reason")?.value).toBe("write_probe_failed");
   });
 });
 
