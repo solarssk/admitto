@@ -648,6 +648,7 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
             purpose: "initial",
             status: "sent",
             recipient_email: "anna@example.com",
+            client_timezone: "Europe/Warsaw",
             rendered_subject: "Your ticket",
             queued_at: "2026-01-05T09:31:00.000Z",
             accepted_at: "2026-01-05T09:31:05.000Z",
@@ -664,6 +665,15 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     expect(screen.getByText("Delivery history")).toBeTruthy();
     expect(screen.getByText("Your ticket")).toBeTruthy();
     expect(screen.queryByText("No delivery attempts yet")).toBeNull();
+    // Always show the snapshot recipient, even when it matches the current profile email.
+    expect(document.querySelector(".attendee-delivery__to")?.textContent).toMatch(
+      /→\s*anna@example.com/,
+    );
+    // Actor/event zone (Warsaw, UTC+1 in January), not a bare UTC suffix.
+    const deliveryCard = document.querySelector(".attendee-delivery") as HTMLElement;
+    expect(deliveryCard.textContent).toMatch(/UTC\+1/);
+    expect(deliveryCard.textContent).not.toMatch(/ UTC(?!\+)/);
+    expect(deliveryCard.querySelector(".ti-ticket")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Actions for Anna's message" }));
     const menu = screen.getByRole("menu");
@@ -674,7 +684,7 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     ]);
   });
 
-  it("shows the actual send-to address when it differs from the attendee's own email, and a generic placeholder for an unset subject", async () => {
+  it("shows the send-to address for both matching and alternate recipients, and a generic placeholder for an unset subject", async () => {
     mockLoad(
       baseDetail({
         deliveries: [
@@ -699,7 +709,10 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     await screen.findByRole("heading", { name: "Anna" });
 
     expect(screen.getByText("Ticket email")).toBeTruthy();
-    expect(screen.getByText("to forwarded@example.com")).toBeTruthy();
+    expect(document.querySelector(".attendee-delivery__to")?.textContent).toMatch(
+      /→\s*forwarded@example.com/,
+    );
+    expect(document.querySelector(".attendee-delivery .ti-mail-forward")).toBeTruthy();
   });
 
   it("opens and closes both delivery modals from the row menu, including the details-to-sent-message swap", async () => {

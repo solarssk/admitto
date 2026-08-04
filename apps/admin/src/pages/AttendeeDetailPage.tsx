@@ -75,10 +75,10 @@ import {
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { canRevokeCheckIn } from "../checkin/revokeEligibility.js";
-import { DeliveryDetailsModal } from "../communication/DeliveryDetailsModal.js";
-import { formatDateTime, rowTimestamp } from "../communication/delivery-format.js";
+import { formatDeliveryHistoryTime, deliveryHistoryIcon, rowTimestamp } from "../communication/delivery-format.js";
 import { DeliveryRowMenu } from "../communication/DeliveryRowMenu.js";
 import { SentMessagePreviewModal } from "../communication/SentMessagePreviewModal.js";
+import { DeliveryDetailsModal } from "../communication/DeliveryDetailsModal.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isOrgAdmin, isSuperadmin } from "../auth/capabilities.js";
@@ -606,30 +606,45 @@ function AttendeeOverviewTab({
             />
           ) : (
             <ul className="attendee-deliveries">
-              {detail.deliveries.map((delivery) => (
-                <li className="attendee-delivery" key={delivery.id}>
-                  <div className="attendee-delivery__top">
-                    <div className="attendee-delivery__subject">
-                      {delivery.rendered_subject ?? "Ticket email"}
+              {detail.deliveries.map((delivery) => {
+                const iconTone = resolveStatusMeta(delivery.status).variant;
+                return (
+                  <li className="attendee-delivery" key={delivery.id}>
+                    <span
+                      className={`attendee-delivery__icon attendee-delivery__icon--${iconTone}`}
+                      aria-hidden="true"
+                    >
+                      <i className={`ti ti-${deliveryHistoryIcon(delivery.purpose)}`} />
+                    </span>
+                    <div className="attendee-delivery__body">
+                      <div className="attendee-delivery__subject">
+                        {delivery.rendered_subject ?? "Ticket email"}
+                      </div>
+                      {delivery.recipient_email && (
+                        <div className="attendee-delivery__to">
+                          <span aria-hidden="true">→</span> {delivery.recipient_email}
+                        </div>
+                      )}
+                      {delivery.error_code && (
+                        <p className="attendee-delivery__error">{delivery.error_code}</p>
+                      )}
                     </div>
+                    <span className="attendee-delivery__time mono">
+                      {formatDeliveryHistoryTime(
+                        rowTimestamp(delivery),
+                        delivery.client_timezone,
+                        event.timezone,
+                      )}
+                    </span>
+                    <MailStatusBadge status={delivery.status} />
                     <DeliveryRowMenu
                       row={delivery}
                       onViewSentMessage={setSentMessageRow}
                       onViewDetails={setDetailsRow}
                     />
-                  </div>
-                  <div className="attendee-delivery__meta">
-                    <MailStatusBadge status={delivery.status} />
-                    <span className="mono">{formatDateTime(rowTimestamp(delivery))}</span>
-                    {delivery.recipient_email && delivery.recipient_email !== detail.email && (
-                      <span>to {delivery.recipient_email}</span>
-                    )}
-                  </div>
-                  {delivery.error_code && (
-                    <p className="attendee-delivery__error">{delivery.error_code}</p>
-                  )}
-                </li>
-              ))}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </Card>
@@ -644,6 +659,7 @@ function AttendeeOverviewTab({
       {detailsRow && (
         <DeliveryDetailsModal
           eventId={event.id}
+          eventTimezone={event.timezone}
           row={detailsRow}
           onClose={() => setDetailsRow(null)}
           onViewSentMessage={(row) => {
