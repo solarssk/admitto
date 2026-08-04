@@ -89,10 +89,8 @@ export function resolveHealthCommit(env: NodeJS.ProcessEnv = process.env): strin
   if (raw) return raw.slice(0, 7);
   try {
     // Trusted build/runtime tooling; same pattern as apps/admin/build-meta.ts (Sonar S4036).
-    const sha = execSync("git rev-parse HEAD", {
-      cwd: process.cwd(),
-      encoding: "utf8",
-    }).trim(); // NOSONAR — see comment above
+    // Bare "git" resolves via PATH like the rest of the monorepo toolchain - not untrusted input.
+    const sha = execSync("git rev-parse HEAD", { cwd: process.cwd(), encoding: "utf8" }).trim(); // NOSONAR - see comment above
     return sha ? sha.slice(0, 7) : "unknown";
   } catch {
     return "unknown";
