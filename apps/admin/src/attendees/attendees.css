@@ -646,46 +646,126 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
 }
 
 .attendee-delivery {
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--at-gray-100);
   font-size: var(--fs-sm);
+  min-width: 0;
 }
 
-.attendee-delivery__top {
+.attendee-delivery:last-child {
+  border-bottom: 0;
+}
+
+.attendee-delivery__icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  flex: none;
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-2);
-  margin-bottom: var(--space-1);
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  background: var(--at-gray-100);
+  color: var(--text-muted);
+}
+
+.attendee-delivery__icon--ok {
+  background: var(--status-ok-tint);
+  color: var(--status-ok-fg);
+}
+
+.attendee-delivery__icon--warn {
+  background: var(--status-warn-tint);
+  color: var(--status-warn-fg);
+}
+
+.attendee-delivery__icon--error {
+  background: var(--status-error-tint);
+  color: var(--status-error-fg);
+}
+
+.attendee-delivery__icon--info {
+  background: var(--status-info-tint);
+  color: var(--status-info-fg);
+}
+
+.attendee-delivery__icon--confirmed {
+  background: var(--status-confirmed-tint);
+  color: var(--status-confirmed-fg);
+}
+
+.attendee-delivery__icon--vip {
+  background: var(--status-vip-tint);
+  color: var(--status-vip-fg);
+}
+
+.attendee-delivery__icon--primary,
+.attendee-delivery__icon--neutral {
+  background: var(--at-gray-100);
+  color: var(--text-muted);
+}
+
+.attendee-delivery__body {
+  flex: 1;
+  min-width: 0;
 }
 
 .attendee-delivery__subject {
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.attendee-delivery__meta {
+.attendee-delivery__to {
+  margin-top: 2px;
   color: var(--text-muted);
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  align-items: center;
+  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* --fs-mono (13px) matches this row's own body text numerically, but a monospace typeface's
-   glyphs read visually larger than a proportional one at the same size - --fs-xs is what
-   actually looks the same size as the subject/badge next to it (same fix as .audit-log-time). */
-.attendee-delivery__meta .mono {
+.attendee-delivery__time {
+  flex: none;
+  color: var(--text-muted);
   font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.attendee-delivery .delivery-row-menu,
+.attendee-delivery .at-badge {
+  flex: none;
 }
 
 .attendee-delivery__error {
-  margin-top: var(--space-2);
+  margin: 2px 0 0;
   color: var(--status-error);
+  font-size: var(--fs-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1100px) {
+  /* Side column is narrow: keep icon + body on the first line, tuck time under the subject. */
+  .attendee-delivery {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  .attendee-delivery__time {
+    flex: 1 1 auto;
+    order: 5;
+    margin-left: 38px;
+  }
 }
 
 /* Change-ticket-type dialog — card options carrying the type's colored badge, selected one

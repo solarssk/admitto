@@ -1,10 +1,22 @@
-import { formatUtcDateTime, formatZonedClockTime } from "../utils/event-dates.js";
+import { formatEventDateTime, formatUtcDateTime, formatZonedClockTime } from "../utils/event-dates.js";
 import type { DeliveryDto } from "../api/types.js";
 
 /** Format an ISO timestamp for the delivery log, or "-" when absent. */
 export function formatDateTime(iso: string | null): string {
   if (!iso) return "-";
   return formatUtcDateTime(iso);
+}
+
+/** Single-line time for Attendee Detail's Delivery history card: actor browser zone when
+ * known, else event zone (same Category-1 pattern as Registered on / Activity). Not the
+ * Communication log's UTC-primary + local-secondary pair. */
+export function formatDeliveryHistoryTime(
+  iso: string | null,
+  clientTimezone: string | null | undefined,
+  eventTimezone: string,
+): string {
+  if (!iso) return "-";
+  return formatEventDateTime(iso, clientTimezone ?? eventTimezone);
 }
 
 /** The row's client-local time ("HH:MM (IANA, UTC±offset)"), when the send/resend that produced
@@ -19,6 +31,11 @@ export function deliveryLocalTime(row: Pick<DeliveryDto, "client_timezone">, iso
 
 export function purposeLabel(purpose: string): string {
   return purpose === "resend" ? "Resend" : "Initial";
+}
+
+/** Tabler icon name for the Delivery history row: ticket for the first send, forward for resends. */
+export function deliveryHistoryIcon(purpose: string): "ticket" | "mail-forward" {
+  return purpose === "resend" ? "mail-forward" : "ticket";
 }
 
 export function templateLabel(row: Pick<DeliveryDto, "template_name">): string {

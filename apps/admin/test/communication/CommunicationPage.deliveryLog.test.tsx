@@ -17,7 +17,7 @@ const exportDeliveryLog = vi.fn();
 const { connectionState, outletContext } = vi.hoisted(() => ({
   connectionState: { reportApiError: vi.fn() },
   outletContext: {
-    event: { id: "evt-1", title: "Demo", archived_at: null },
+    event: { id: "evt-1", title: "Demo", archived_at: null, timezone: "Europe/Warsaw" },
   },
 }));
 
@@ -611,6 +611,11 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
 
     expect(within(dialog).getByText("Initial send")).toBeTruthy();
     expect(within(dialog).getByText("Resend 1")).toBeTruthy();
+
+    // Overview + timeline use actor/event zone (Warsaw), not bare UTC.
+    const timeline = within(dialog).getByText("Delivery timeline").closest("div");
+    expect(timeline?.textContent).toMatch(/UTC\+/);
+    expect(timeline?.textContent).not.toMatch(/ UTC(?!\+)/);
 
     expect(fetchEventDelivery).toHaveBeenCalledWith("evt-1", "dlv-2", expect.any(AbortSignal));
   });

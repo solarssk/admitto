@@ -284,6 +284,7 @@ function DeliveryListContent({
 
 export interface DeliveryLogTabProps {
   eventId: string;
+  eventTimezone: string;
   deliveries: DeliveryDto[];
   deliveryTotal: number;
   deliveriesLoading: boolean;
@@ -321,6 +322,7 @@ const DELIVERY_LOG_HINT =
  * edit-modal state - the page only needs to hand it data plus filter/page change callbacks. */
 export function DeliveryLogTab({
   eventId,
+  eventTimezone,
   deliveries,
   deliveryTotal,
   deliveriesLoading,
@@ -454,6 +456,7 @@ export function DeliveryLogTab({
       {detailsRow && (
         <DeliveryDetailsModal
           eventId={eventId}
+          eventTimezone={eventTimezone}
           row={detailsRow}
           onClose={() => setDetailsRow(null)}
           onViewSentMessage={(row) => {

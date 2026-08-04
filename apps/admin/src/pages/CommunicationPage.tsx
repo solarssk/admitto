@@ -1643,6 +1643,7 @@ export function CommunicationPage() {
       ) : (
         <DeliveryLogTab
           eventId={eventId}
+          eventTimezone={event.timezone}
           deliveries={deliveries}
           deliveryTotal={deliveryTotal}
           deliveriesLoading={deliveriesLoading}
