@@ -26,6 +26,7 @@
     "@admitto/mail-templates": "*",
     "@admitto/mailer": "*",
     "@admitto/shared": "*",
+    "@admitto/storage": "*",
     "@admitto/tickets": "*",
     "@admitto/ui": "*",
     "@fontsource/ibm-plex-sans": "^5.3.0",

@@ -1,7 +1,7 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, unlink, writeFile } from "node:fs/promises";
-import { join, resolve, sep } from "node:path";
 import sharp from "sharp";
+import { getDefaultStorage, StoragePathError } from "@admitto/storage";
+
+export { resolveUploadDir } from "@admitto/storage";
 
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
 /** Reject absurd decoded dimensions before re-encode (DoS / decoder abuse). */
@@ -50,11 +50,6 @@ export class BrandingUploadError extends Error {
     super(code);
     this.name = "BrandingUploadError";
   }
-}
-
-/** Resolve local branding upload directory from `UPLOAD_DIR` or `./uploads`. */
-export function resolveUploadDir(): string {
-  return process.env.UPLOAD_DIR ?? join(process.cwd(), "uploads");
 }
 
 /** Reject org IDs that could escape the upload directory via path traversal. */
@@ -123,6 +118,9 @@ interface WriteValidatedUploadOptions {
   readonly maxBytes: number;
   readonly detectMime: (buf: Buffer) => string | null;
   readonly allowedExt: ReadonlyMap<string, string>;
+  readonly orgId: string;
+  readonly eventId?: string;
+  readonly scope: "org" | "event" | "theme";
   /** Also reject when the client-declared Content-Type disagrees with the detected MIME.
    * Image-only - see validateAndWriteFont for why fonts skip this. */
   readonly crossCheckDeclaredMime?: boolean;
@@ -173,13 +171,11 @@ export async function reencodeBrandingImage(buf: Buffer, mime: string): Promise<
 
 /** Shared validate-then-write sequence for both branding image and font uploads: size limit,
  * magic-byte MIME detection (never the client-declared Content-Type alone), extension lookup, and
- * a UUID-named write. What differs between callers (size limit, detector, allowed types, and
- * whether the declared Content-Type is also cross-checked) is passed in, not duplicated. */
+ * a UUID-named write via {@link StorageAdapter}. What differs between callers is passed in. */
 async function writeValidatedUpload(
   file: File,
-  dir: string,
   opts: WriteValidatedUploadOptions,
-): Promise<{ filename: string; sizeBytes: number; mime: string }> {
+): Promise<{ filename: string; sizeBytes: number; mime: string; url: string }> {
   if (file.size > opts.maxBytes) {
     throw new BrandingUploadError("file_too_large", 413, { maxBytes: opts.maxBytes });
   }
@@ -207,27 +203,40 @@ async function writeValidatedUpload(
   }
 
   const ext = opts.allowedExt.get(detectedMime)!;
-  const filename = `${randomUUID()}${ext}`;
-  // Path is join(trusted upload root, validated org/event segments, UUID filename).
-  // eslint-disable-next-line security/detect-non-literal-fs-filename
-  await mkdir(dir, { recursive: true });
-  // Same trusted join as mkdir above.
-  // eslint-disable-next-line security/detect-non-literal-fs-filename
-  await writeFile(join(dir, filename), outBuf);
-  return { filename, sizeBytes: outBuf.length, mime: detectedMime };
+  try {
+    const stored = await getDefaultStorage().put(outBuf, {
+      orgId: opts.orgId,
+      eventId: opts.eventId,
+      scope: opts.scope,
+      ext,
+    });
+    const filename = stored.key.slice(stored.key.lastIndexOf("/") + 1);
+    return {
+      filename,
+      sizeBytes: outBuf.length,
+      mime: detectedMime,
+      url: stored.url,
+    };
+  } catch (err) {
+    if (err instanceof StoragePathError) {
+      throw new BrandingUploadError("invalid_upload_url", 400);
+    }
+    throw err;
+  }
 }
 
-/** Validate image bytes and write to `dir`; returns generated filename, size, and MIME. */
+/** Validate image bytes and write via storage; returns generated filename, size, MIME, and URL. */
 async function validateAndWriteImage(
   file: File,
-  dir: string,
-): Promise<{ filename: string; sizeBytes: number; mime: string }> {
-  return writeValidatedUpload(file, dir, {
+  opts: { orgId: string; eventId?: string; scope: "org" | "event" },
+): Promise<{ filename: string; sizeBytes: number; mime: string; url: string }> {
+  return writeValidatedUpload(file, {
     maxBytes: MAX_UPLOAD_BYTES,
     detectMime: detectImageMime,
     allowedExt: ALLOWED_EXT,
     crossCheckDeclaredMime: true,
     transformBytes: reencodeBrandingImage,
+    ...opts,
   });
 }
 
@@ -299,17 +308,6 @@ export function parseUploadsUrl(url: string): ParsedUploadsUrl {
   throw new BrandingUploadError("invalid_upload_url", 400);
 }
 
-/** Resolve `relativePath` under the upload root; rejects escape attempts. */
-export function absolutePathUnderUploadRoot(relativePath: string): string {
-  // resolve() never keeps a trailing separator (except filesystem root), so prefer root+sep.
-  const root = resolve(resolveUploadDir());
-  const abs = resolve(join(root, relativePath));
-  if (abs !== root && !abs.startsWith(root + sep)) {
-    throw new BrandingUploadError("invalid_upload_url", 400);
-  }
-  return abs;
-}
-
 /**
  * Delete a branding upload by its public `/uploads/…` URL.
  * Missing file is success (idempotent). Caller must authorize ownership first.
@@ -328,14 +326,12 @@ export async function deleteBrandingUploadByUrl(
     }
   }
 
-  const abs = absolutePathUnderUploadRoot(parsed.relativePath);
   try {
-    // Path confined by parseUploadsUrl + resolve-under-root check above.
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
-    await unlink(abs);
+    await getDefaultStorage().delete(parsed.relativePath);
   } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === "ENOENT") return;
+    if (err instanceof StoragePathError) {
+      throw new BrandingUploadError("invalid_upload_url", 400);
+    }
     throw err;
   }
 }
@@ -397,16 +393,15 @@ export async function bestEffortDeleteReplacedUploadUrls(
   }
 }
 
-/** Local filesystem branding upload (ADR 0008 - future StorageAdapter swap). */
+/** Local filesystem branding upload via {@link StorageAdapter} (ADR 0038). */
 export async function saveBrandingUpload(
   file: File,
   orgId: string,
 ): Promise<{ url: string; sizeBytes: number; mimeType: string }> {
   assertSafeOrgId(orgId);
-  const dir = join(resolveUploadDir(), orgId);
-  const written = await validateAndWriteImage(file, dir);
+  const written = await validateAndWriteImage(file, { orgId, scope: "org" });
   return {
-    url: `/uploads/${orgId}/${written.filename}`,
+    url: written.url,
     sizeBytes: written.sizeBytes,
     mimeType: written.mime,
   };
@@ -424,34 +419,33 @@ export async function saveEventUpload(
 ): Promise<{ url: string; sizeBytes: number; mimeType: string }> {
   assertSafeOrgId(orgId);
   assertSafeEventId(eventId);
-  const dir = join(resolveUploadDir(), orgId, "events", eventId);
-  const written = await validateAndWriteImage(file, dir);
+  const written = await validateAndWriteImage(file, { orgId, eventId, scope: "event" });
   return {
-    url: `/uploads/${orgId}/events/${eventId}/${written.filename}`,
+    url: written.url,
     sizeBytes: written.sizeBytes,
     mimeType: written.mime,
   };
 }
 
-/** Validate font bytes and write to `dir`; returns generated filename with extension. Unlike
+/** Validate font bytes and write via storage; returns public URL. Unlike
  * validateAndWriteImage, this does not cross-check the client-declared Content-Type against the
  * detected one - browsers report wildly inconsistent MIME types for font file inputs (empty
  * string, `application/font-woff2`, `application/octet-stream`, …), so the magic-byte check
  * alone is both the meaningful security boundary and the only reliable one here. */
-async function validateAndWriteFont(file: File, dir: string): Promise<string> {
-  const written = await writeValidatedUpload(file, dir, {
+async function validateAndWriteFont(file: File, orgId: string): Promise<{ url: string }> {
+  const written = await writeValidatedUpload(file, {
     maxBytes: MAX_FONT_UPLOAD_BYTES,
     detectMime: detectFontMime,
     allowedExt: ALLOWED_FONT_EXT,
+    orgId,
+    scope: "theme",
   });
-  return written.filename;
+  return { url: written.url };
 }
 
 /** Instance-wide theme font upload (superadmin only) - stored separately from per-org/per-event
  * branding images since it's a different asset type entirely (used for @font-face, not <img>). */
 export async function saveThemeFontUpload(file: File, orgId: string): Promise<{ url: string }> {
   assertSafeOrgId(orgId);
-  const dir = join(resolveUploadDir(), orgId, "theme");
-  const filename = await validateAndWriteFont(file, dir);
-  return { url: `/uploads/${orgId}/theme/${filename}` };
+  return validateAndWriteFont(file, orgId);
 }

@@ -114,6 +114,11 @@ gate CI uses for those packages (`npm run build` / typecheck when `.ts`/`.tsx` o
 in `tsc` changed). Vitest alone is not enough if `apps/web` builds with `tsc -p tsconfig.json`
 (tests are typechecked). Do not push on red.
 
+**New runtime workspace package:** the Dockerfile production stage is an explicit allowlist.
+Copy both `packages/<name>/package.json` and `--from=builder …/packages/<name>/dist` (same
+pattern as crypto/location/…). Builder already has all of `packages/`; omitting the production
+COPY lines yields `ERR_MODULE_NOT_FOUND` when the container starts (CI `migration-safety`).
+
 **Renaming a Vitest project (`test.name`):** grep `package.json` scripts and CI workflows for
 `--project <old-name>` first — the filter is an anchored exact match, so a stale reference fails
 at startup ("No projects matched the filter").
