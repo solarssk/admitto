@@ -1063,6 +1063,7 @@ export function createApp(options: CreateAppOptions = {}) {
     handleGetAdminHealth(c, db, rateLimitStore, {
       geocodingProvider,
       injectedBaseUrl: mailInjectedBaseUrl,
+      adminDistRoot: options.adminDistRoot,
     }),
   );
   app.post(
@@ -1074,6 +1075,7 @@ export function createApp(options: CreateAppOptions = {}) {
       handlePostAdminHealthLive(c, db, rateLimitStore, {
         geocodingProvider,
         injectedBaseUrl: mailInjectedBaseUrl,
+        adminDistRoot: options.adminDistRoot,
       }),
   );
   app.get("/api/admin/setup/org-branding", staffAdminGate, (c) => handleGetSetupOrgBranding(c, db));

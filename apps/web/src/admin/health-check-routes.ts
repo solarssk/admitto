@@ -1269,7 +1269,12 @@ export async function handleGetAdminHealth(
   c: Context,
   db: PrismaClient,
   rateLimitStore: RateLimitStore,
-  opts?: { geocodingProvider?: GeocodingProvider; injectedBaseUrl?: string },
+  opts?: {
+    geocodingProvider?: GeocodingProvider;
+    injectedBaseUrl?: string;
+    /** Same dist root passed to `createStaffSpaHandlers` (custom deploy / tests). */
+    adminDistRoot?: string;
+  },
 ): Promise<Response> {
   const auth = c.get("auth");
   if (!(await canManageInstance(db, auth.userId))) {
@@ -1281,6 +1286,7 @@ export async function handleGetAdminHealth(
     rateLimitStore,
     geocodingProvider: opts?.geocodingProvider,
     injectedBaseUrl: opts?.injectedBaseUrl,
+    adminDistRoot: opts?.adminDistRoot,
     live: false,
   });
   return c.json(report, 200);
@@ -1291,7 +1297,12 @@ export async function handlePostAdminHealthLive(
   c: Context,
   db: PrismaClient,
   rateLimitStore: RateLimitStore,
-  opts?: { geocodingProvider?: GeocodingProvider; injectedBaseUrl?: string },
+  opts?: {
+    geocodingProvider?: GeocodingProvider;
+    injectedBaseUrl?: string;
+    /** Same dist root passed to `createStaffSpaHandlers` (custom deploy / tests). */
+    adminDistRoot?: string;
+  },
 ): Promise<Response> {
   const auth = c.get("auth");
   if (!(await canManageInstance(db, auth.userId))) {
@@ -1303,6 +1314,7 @@ export async function handlePostAdminHealthLive(
     rateLimitStore,
     geocodingProvider: opts?.geocodingProvider,
     injectedBaseUrl: opts?.injectedBaseUrl,
+    adminDistRoot: opts?.adminDistRoot,
     live: true,
   });
   return c.json(report, 200);

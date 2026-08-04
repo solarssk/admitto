@@ -1286,15 +1286,27 @@ describe("handleGetAdminHealth / handlePostAdminHealthLive", () => {
     });
     stubHappyPathMailAndIdp();
     vi.mocked(canManageInstance).mockResolvedValue(true);
+    readAdminBuildMetaMock.mockImplementation((root) =>
+      root === "/served-admin-dist" ? { version: "0.4.12", commit: "a21c357" } : null,
+    );
 
     const getRes = await handleGetAdminHealth(
       fakeHealthContext(),
       { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
       {} as never,
+      { adminDistRoot: "/served-admin-dist" },
     );
     expect(getRes.status).toBe(200);
-    const getBody = (await getRes.json()) as { overall: string; groups: unknown[] };
+    const getBody = (await getRes.json()) as {
+      overall: string;
+      groups: unknown[];
+      version: string;
+      commit: string;
+    };
     expect(getBody.groups).toHaveLength(2);
+    expect(getBody.version).toBe("0.4.12");
+    expect(getBody.commit).toBe("a21c357");
+    expect(readAdminBuildMetaMock).toHaveBeenCalledWith("/served-admin-dist");
 
     const search = vi.fn().mockResolvedValue([{ label: "Warsaw" }]);
     isLocationMapsEnabled.mockReturnValue(true);
@@ -1302,10 +1314,15 @@ describe("handleGetAdminHealth / handlePostAdminHealthLive", () => {
       fakeHealthContext(),
       { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
       {} as never,
-      { geocodingProvider: { name: "nominatim", search, reverse: vi.fn() } },
+      {
+        geocodingProvider: { name: "nominatim", search, reverse: vi.fn() },
+        adminDistRoot: "/served-admin-dist",
+      },
     );
     expect(postRes.status).toBe(200);
     expect(search).toHaveBeenCalled();
+    const postBody = (await postRes.json()) as { commit: string };
+    expect(postBody.commit).toBe("a21c357");
   });
 
   it("returns 403 on live when the caller cannot manage the instance", async () => {
