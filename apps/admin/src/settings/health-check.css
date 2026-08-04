@@ -48,19 +48,37 @@
 
 .health-check__meta {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.4rem;
   margin: 0;
   flex: 0 1 auto;
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--fs-mono, var(--fs-xs));
   color: var(--text-muted, var(--tblr-secondary));
-  white-space: nowrap;
 }
 
 .health-check__meta .ti {
   font-size: 0.95em;
   opacity: 0.85;
+  margin-top: 0.15em;
+}
+
+.health-check__meta-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.health-check__meta-local {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+}
+
+.health-check__meta-local .ti {
+  margin-top: 0;
+  flex-shrink: 0;
 }
 
 .health-check__groups {

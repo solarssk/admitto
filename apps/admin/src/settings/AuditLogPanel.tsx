@@ -174,10 +174,10 @@ function formatAuditPrimaryTime(iso: string): string {
   return iso.slice(0, 19).replace("T", " ");
 }
 
-/** Cached formatter for the hour/minute part of actorLocalTime/viewerLocalTime below -
+/** Cached formatter for the hour/minute part of userLocalTimeText/viewerLocalTimeText below -
  * SECURITY_COLUMNS calls these once per visible row on every live poll (~1.75s), so constructing
  * a fresh Intl.DateTimeFormat per cell per tick was measurable churn on a tab left open all day.
- * Keyed by locale + zone so both the actor's own zone (varies per row) and the viewer's fixed
+ * Keyed by locale + zone so both the user's own zone (varies per row) and the viewer's fixed
  * browser zone share the same small cache. */
 const hourMinuteFormatCache = new Map<string, Intl.DateTimeFormat>();
 
@@ -197,26 +197,42 @@ function hourMinuteFormat(timeZone: string): Intl.DateTimeFormat {
   return format;
 }
 
-/** Entry's own local time, for rows written from a browser request (the `X-Client-Timezone`
- * header) - null for rows predating the column or written from a non-browser path (CLI), which
- * have no timezone to show. Shares `zonedTimeLabel` (event-dates.ts) with every other zoned
- * timestamp in the app - one "(IANA, UTC±offset)" convention, not a separate abbreviation +
- * city/country lookup just for this panel. Prefixed "Actor ·" so the cell is not confused with
- * Security's viewer-local secondary line. */
-function actorLocalTime(entry: AuditLogEntryDto): string | null {
+/** Wall-clock text only (no label) - used in copy/export and under the Time column's user icon. */
+function userLocalTimeText(entry: AuditLogEntryDto): string | null {
   if (!entry.actor_timezone) return null;
   const hhmm = hourMinuteFormat(entry.actor_timezone).format(new Date(entry.created_at));
-  return `Actor · ${hhmm} ${zonedTimeLabel(entry.created_at, entry.actor_timezone)}`;
+  return `${hhmm} ${zonedTimeLabel(entry.created_at, entry.actor_timezone)}`;
 }
 
-/** The instant, converted to whoever is currently reading the log's own browser timezone - unlike
- * actorLocalTime above, this is never null: Security rows (e.g. a failed login) don't always have
- * a known actor to show a local time *for*, but the superadmin viewing the table always has one.
- * Prefixed "Your time ·" so it is not mistaken for Audit's actor-local secondary line. */
-function viewerLocalTime(iso: string): string {
+/** Viewer browser zone text only - Security has no stored user timezone (failed login etc.). */
+function viewerLocalTimeText(iso: string): string {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const hhmm = hourMinuteFormat(timeZone).format(new Date(iso));
-  return `Your time · ${hhmm} ${zonedTimeLabel(iso, timeZone)}`;
+  return `${hhmm} ${zonedTimeLabel(iso, timeZone)}`;
+}
+
+/** Audit secondary line: ti-user marks the staff member's local time (word "User" is too wide on mobile). */
+function UserLocalTimeLine({ entry }: Readonly<{ entry: AuditLogEntryDto }>): ReactNode {
+  const text = userLocalTimeText(entry);
+  if (!text) return null;
+  return (
+    <div className="sessions-subdued audit-log-time__local">
+      <i className="ti ti-user" aria-hidden="true" title="User's local time" />
+      <span className="sr-only">User's local time: </span>
+      {text}
+    </div>
+  );
+}
+
+/** Security secondary line: ti-device-desktop marks the current viewer's browser timezone. */
+function ViewerLocalTimeLine({ iso }: Readonly<{ iso: string }>): ReactNode {
+  return (
+    <div className="sessions-subdued audit-log-time__local">
+      <i className="ti ti-device-desktop" aria-hidden="true" title="Your local time" />
+      <span className="sr-only">Your local time: </span>
+      {viewerLocalTimeText(iso)}
+    </div>
+  );
 }
 
 /** Primary actor label; deleted users show a readable fallback (id in cell title). */
@@ -252,9 +268,9 @@ function scopeLabel(entry: AuditLogEntryDto, eventTitleById: Map<string, string>
 
 const SCOPE_HINT = "Which event this action affected, or “Instance” for account/organization-wide changes not tied to one event.";
 const TIME_HINT =
-  "Top: when this happened, in UTC (same instant for every viewer). Below: Actor · wall-clock time in the staff member's browser timezone when the action was recorded - use this to answer \"what time did they do it?\". Missing when the write had no known client timezone (older rows, CLI).";
+  "Top: when this happened, in UTC (same instant for every viewer). Below (user icon): wall-clock time in the staff member's browser timezone when the action was recorded. Missing when the write had no known client timezone (older rows, CLI).";
 const SECURITY_TIME_HINT =
-  "Top: when this happened, in UTC (same instant for every viewer). Below: Your time · the same moment in your browser timezone. Security events often have no signed-in actor (failed login), and this log does not store an actor timezone - unlike Audit, which shows Actor · when known.";
+  "Top: when this happened, in UTC (same instant for every viewer). Below (desktop icon): the same moment in your browser timezone. Security events often have no signed-in user (failed login), and this log does not store a user timezone - unlike Audit, which shows the user's local time when known.";
 
 /** camelCase or snake_case metadata key -> "Title case" label (e.g. "event_id"/"eventId" -> "Event id"). */
 function humanizeMetadataKey(key: string): string {
@@ -319,8 +335,8 @@ function hasVisibleMetadata(metadata: Record<string, unknown> | null): boolean {
  * for the row-level "copy" affordance (a non-technical operator sharing one entry over chat
  * shouldn't have to screenshot a table). */
 function buildRowSummary(entry: AuditLogEntryDto, eventTitleById: Map<string, string>): string {
-  const localTime = actorLocalTime(entry);
-  const localTimeSuffix = localTime ? ` (${localTime})` : "";
+  const localTime = userLocalTimeText(entry);
+  const localTimeSuffix = localTime ? ` (User · ${localTime})` : "";
   const actorEmailSuffix = entry.actor_display_name && entry.actor_email ? ` (${entry.actor_email})` : "";
   const locationText = entry.ip ? geoLocationText(entry.country) : "";
   const locationSuffix = locationText ? ` (${locationText})` : "";
@@ -641,15 +657,12 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
       key: "time",
       header: <HintLabel hint={TIME_HINT}>Time</HintLabel>,
       className: "audit-log-time",
-      cell: (entry) => {
-        const local = actorLocalTime(entry);
-        return (
-          <>
-            {formatAuditPrimaryTime(entry.created_at)} UTC
-            {local && <div className="sessions-subdued">{local}</div>}
-          </>
-        );
-      },
+      cell: (entry) => (
+        <>
+          {formatAuditPrimaryTime(entry.created_at)} UTC
+          <UserLocalTimeLine entry={entry} />
+        </>
+      ),
     },
     {
       key: "action",
@@ -690,13 +703,12 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
 /** Audit's LogCards top/meta slots - mirrors Security's own render*Card* functions below, plus
  * the Scope meta item Security has no equivalent of. */
 function renderAuditCardTop(entry: AuditLogEntryDto): ReactNode {
-  const local = actorLocalTime(entry);
   return (
     <>
       <Badge variant={actionTone(entry.action_type)}>{actionLabel(entry.action_type)}</Badge>
       <div className="audit-log-time audit-log-card__time">
         {formatAuditPrimaryTime(entry.created_at)} UTC
-        {local && <div className="sessions-subdued">{local}</div>}
+        <UserLocalTimeLine entry={entry} />
       </div>
     </>
   );
@@ -767,13 +779,13 @@ function securityUserEmail(entry: SecurityAuditLogEntryDto): string | undefined 
 
 /** Plain-text rendering of one full row, for the same row-level "copy" affordance as Audit's
  * buildRowSummary - no Scope line here, since that concept doesn't apply; the local time is the
- * viewer's own (see viewerLocalTime), not an actor's. */
+ * viewer's own (see viewerLocalTimeText), not the user's. */
 function buildSecurityRowSummary(entry: SecurityAuditLogEntryDto): string {
   const userEmailSuffix = securityUserEmail(entry) ? ` (${securityUserEmail(entry)})` : "";
   const locationText = entry.ip ? geoLocationText(entry.country) : "";
   const locationSuffix = locationText ? ` (${locationText})` : "";
   const lines = [
-    `Time: ${formatAuditPrimaryTime(entry.created_at)} UTC (${viewerLocalTime(entry.created_at)})`,
+    `Time: ${formatAuditPrimaryTime(entry.created_at)} UTC (Your local time · ${viewerLocalTimeText(entry.created_at)})`,
     `Event: ${securityEventLabel(entry.event_type)}`,
     `User: ${securityUserDisplay(entry)}${userEmailSuffix}`,
     `IP address: ${entry.ip ?? "-"}${locationSuffix}`,
@@ -789,8 +801,8 @@ function buildSecurityRowSummary(entry: SecurityAuditLogEntryDto): string {
 }
 
 /** Security's column config for LogTable - no Scope column (SecurityAuditLog rows aren't
- * event-scoped), and the Time column's second line is the viewer's own local time rather than an
- * actor's (see viewerLocalTime). Static (unlike Audit's, built per-render below) since nothing
+ * event-scoped), and the Time column's second line is the viewer's own local time rather than the
+ * user's (see ViewerLocalTimeLine). Static (unlike Audit's, built per-render below) since nothing
  * here depends on data outside the entry itself. */
 const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
   {
@@ -800,7 +812,7 @@ const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
     cell: (entry) => (
       <>
         {formatAuditPrimaryTime(entry.created_at)} UTC
-        <div className="sessions-subdued">{viewerLocalTime(entry.created_at)}</div>
+        <ViewerLocalTimeLine iso={entry.created_at} />
       </>
     ),
   },
@@ -841,7 +853,7 @@ function renderSecurityCardTop(entry: SecurityAuditLogEntryDto): ReactNode {
       <Badge variant={securityEventTone(entry.event_type)}>{securityEventLabel(entry.event_type)}</Badge>
       <div className="audit-log-time audit-log-card__time">
         {formatAuditPrimaryTime(entry.created_at)} UTC
-        <div className="sessions-subdued">{viewerLocalTime(entry.created_at)}</div>
+        <ViewerLocalTimeLine iso={entry.created_at} />
       </div>
     </>
   );

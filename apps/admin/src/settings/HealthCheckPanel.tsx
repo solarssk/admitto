@@ -11,7 +11,7 @@ import type {
   HealthRowStatus,
 } from "../api/types.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
-import { formatUtcDateTime } from "../utils/event-dates.js";
+import { formatUtcDateTime, zonedTimeLabel } from "../utils/event-dates.js";
 import { formatHealthCheckMarkdown, formatHealthDetailLabel, formatHealthDetailValue } from "./healthCheckMarkdown.js";
 import "./health-check.css";
 
@@ -35,6 +35,18 @@ const CHECK_ICONS: Record<string, string> = {
 function checkIcon(id: string): string {
   if (id.startsWith("identity_provider_")) return "shield-lock";
   return CHECK_ICONS[id] ?? "circle-dot";
+}
+
+/** Viewer-local secondary stamp under Generated - same desktop-icon convention as Security logs. */
+function healthViewerLocalTime(iso: string): string {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const hhmm = new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone,
+  }).format(new Date(iso));
+  return `${hhmm} ${zonedTimeLabel(iso, timeZone)}`;
 }
 
 function rowDotClass(status: HealthRowStatus | HealthOverallStatus): string {
@@ -366,11 +378,18 @@ export function HealthCheckPanel() {
           </p>
           <p className="health-check__meta">
             <i className="ti ti-clock" aria-hidden="true" />
-            <span>
-              Generated {formatUtcDateTime(report.generated_at)}
-              {report.commit !== "unknown"
-                ? ` · v${report.version} · ${report.commit}`
-                : ` · v${report.version}`}
+            <span className="health-check__meta-text">
+              <span>
+                Generated {formatUtcDateTime(report.generated_at)}
+                {report.commit !== "unknown"
+                  ? ` · v${report.version} · ${report.commit}`
+                  : ` · v${report.version}`}
+              </span>
+              <span className="health-check__meta-local">
+                <i className="ti ti-device-desktop" aria-hidden="true" title="Your local time" />
+                <span className="sr-only">Your local time: </span>
+                {healthViewerLocalTime(report.generated_at)}
+              </span>
             </span>
           </p>
         </div>

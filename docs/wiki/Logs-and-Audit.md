@@ -30,7 +30,7 @@ The selected view shows a bounded, relevant sequence of events without requiring
 
 - System logs are a recent operational view, not a permanent audit record. Their timestamps stay in **UTC** so every viewer sees the same instant and can match container or stdout logs.
 - Audit and security logs have different event types and filters.
-- On Audit and Security, the Time column shows **UTC on top**. The second line is labelled **Actor ·** (Audit: the staff member's browser timezone when known) or **Your time ·** (Security: the viewer's browser timezone - security events often have no signed-in actor and do not store an actor timezone).
+- On Audit and Security, the Time column shows **UTC on top**. The second line uses a compact icon instead of a text prefix (so mobile cards stay narrow): a **user** icon for Audit (the staff member's browser timezone when known) or a **desktop** icon for Security and Health check (your browser timezone - security events often have no signed-in user and do not store a user timezone).
 - A missing row does not prove an action never happened if it is outside retention or the selected filters.
 - Log exports can contain staff identifiers. Handle them as controlled operational data.
 

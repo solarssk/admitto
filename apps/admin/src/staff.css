@@ -5295,6 +5295,21 @@ output.mail-field-hint {
   font-size: var(--fs-xs);
 }
 
+/* Secondary local-time line: icon (user / desktop) instead of a text prefix that widens mobile cards. */
+.audit-log-time__local {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  max-width: 100%;
+}
+
+.audit-log-time__local .ti {
+  flex-shrink: 0;
+  font-size: 0.95em;
+  opacity: 0.85;
+  line-height: 1;
+}
+
 /* Re-fetching with existing rows still on screen (filter/page change) — dim them
    instead of blanking the table out while the new page loads (matches AttendeesTable). */
 .audit-log-table-wrap--loading {

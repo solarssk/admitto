@@ -186,6 +186,7 @@ describe("HealthCheckPanel", () => {
     expect(screen.getByText("Database")).toBeTruthy();
     expect(screen.getByText(/Generated/)).toBeTruthy();
     expect(screen.getByText(/v0\.4\.13 · a955ac9/)).toBeTruthy();
+    expect(screen.getByTitle("Your local time")).toBeTruthy();
     expect(screen.getByRole("button", { name: /Run live checks/ })).toBeTruthy();
   });
 

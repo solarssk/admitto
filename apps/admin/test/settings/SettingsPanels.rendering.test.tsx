@@ -329,7 +329,8 @@ describe("AuditLogPanel rendering", () => {
 
     const table = await screen.findByRole("table");
     expect(within(table).getByText("2026-06-15 12:00:00 UTC")).toBeTruthy();
-    expect(within(table).getByText(/Actor · .*Europe\/Warsaw, UTC\+2/)).toBeTruthy();
+    expect(within(table).getByText(/Europe\/Warsaw, UTC\+2/)).toBeTruthy();
+    expect(within(table).getByTitle("User's local time")).toBeTruthy();
   });
 
   it("humanizes the mail provider metadata value instead of showing the raw enum", async () => {
@@ -430,7 +431,7 @@ describe("AuditLogPanel rendering", () => {
       expect(summary).toContain("Action: Event created");
       expect(summary).toContain("User: Alice Admin (alice@example.com)");
       expect(summary).toMatch(
-        /Time: 2026-01-01 12:00:00 UTC \(Actor · 13:00 \(Europe\/Warsaw, UTC\+1\)\)/,
+        /Time: 2026-01-01 12:00:00 UTC \(User · 13:00 \(Europe\/Warsaw, UTC\+1\)\)/,
       );
       expect(summary).toContain("IP address: 192.0.2.10 (United States)");
       expect(summary).toContain("Details:");
@@ -1283,7 +1284,8 @@ describe("AuditLogPanel Security view rendering", () => {
 
       const table = await screen.findByRole("table");
       expect(within(table).getByText("2026-01-01 12:00:00 UTC")).toBeTruthy();
-      expect(within(table).getByText(/Your time · .*Europe\/Warsaw, UTC\+1/)).toBeTruthy();
+      expect(within(table).getByText(/Europe\/Warsaw, UTC\+1/)).toBeTruthy();
+      expect(within(table).getByTitle("Your local time")).toBeTruthy();
     } finally {
       resolvedOptionsSpy.mockRestore();
     }
@@ -1437,7 +1439,7 @@ describe("AuditLogPanel Security view rendering", () => {
       expect(writeText).toHaveBeenCalledTimes(1);
       const [summary] = writeText.mock.calls[0]!;
       expect(summary).toMatch(
-        /Time: 2026-01-01 12:00:00 UTC \(Your time · 13:00 \(Europe\/Warsaw, UTC\+1\)\)/,
+        /Time: 2026-01-01 12:00:00 UTC \(Your local time · 13:00 \(Europe\/Warsaw, UTC\+1\)\)/,
       );
       expect(summary).toContain("Event: Login succeeded");
       expect(summary).toContain("User: Alice Admin");
