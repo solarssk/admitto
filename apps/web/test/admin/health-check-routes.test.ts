@@ -1,4 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { PrismaClient } from "@admitto/db";
 
 const {
@@ -68,6 +71,7 @@ import { canManageInstance } from "@admitto/auth";
 import type { Context } from "hono";
 import {
   collectAdminHealth,
+  fileStorageRow,
   handleGetAdminHealth,
   handlePostAdminHealthLive,
   MAIL_QUEUE_DEGRADED_THRESHOLD,
@@ -76,6 +80,25 @@ import {
   mapTilesServiceLabel,
   worstHealthStatus,
 } from "../../src/admin/health-check-routes.js";
+
+/** Writable upload root so File storage does not flip overall to down in CI (uploads/ is gitignored). */
+const uploadFixture = { dir: "" };
+
+function envWithUpload(partial: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  return { UPLOAD_DIR: uploadFixture.dir, ...partial };
+}
+
+beforeAll(async () => {
+  uploadFixture.dir = await mkdtemp(join(tmpdir(), "admitto-health-upload-"));
+  process.env.UPLOAD_DIR = uploadFixture.dir;
+});
+
+afterAll(async () => {
+  delete process.env.UPLOAD_DIR;
+  if (uploadFixture.dir) {
+    await rm(uploadFixture.dir, { recursive: true, force: true });
+  }
+});
 
 const okSetup = {
   database: { ok: true, detail: "PostgreSQL connected · migrations current" },
@@ -131,8 +154,46 @@ describe("resolveHealthCommit", () => {
     expect(resolveHealthCommit({ GIT_COMMIT: "abcdef0123456789" })).toBe("abcdef0");
   });
 
-  it("returns unknown when unset", () => {
-    expect(resolveHealthCommit({})).toBe("unknown");
+  it("falls back to git HEAD when GIT_COMMIT is unset", () => {
+    const sha = resolveHealthCommit({});
+    expect(sha).toMatch(/^[0-9a-f]{7}$/);
+    expect(sha).not.toBe("unknown");
+  });
+});
+
+describe("fileStorageRow", () => {
+  const checkedAt = "2026-08-04T12:00:00.000Z";
+
+  it("reports ok for a writable local upload dir", async () => {
+    const row = await fileStorageRow({ UPLOAD_DIR: uploadFixture.dir }, checkedAt, false);
+    expect(row.status).toBe("ok");
+    expect(row.summary).toBe("Connected");
+    expect(row.details.find((d) => d.key === "provider")?.value).toBe("local");
+    expect(row.details.find((d) => d.key === "writable")?.value).toBe("yes");
+  });
+
+  it("runs a live write+unlink probe", async () => {
+    const row = await fileStorageRow({ UPLOAD_DIR: uploadFixture.dir }, checkedAt, true);
+    expect(row.status).toBe("ok");
+  });
+
+  it("reports down when the directory is missing", async () => {
+    const row = await fileStorageRow(
+      { UPLOAD_DIR: join(uploadFixture.dir, "does-not-exist") },
+      checkedAt,
+      false,
+    );
+    expect(row.status).toBe("down");
+    expect(row.summary).toBe("Missing directory");
+  });
+
+  it("reports degraded for s3 and unknown providers", async () => {
+    await expect(fileStorageRow({ STORAGE_PROVIDER: "s3" }, checkedAt, false)).resolves.toMatchObject(
+      { status: "degraded", summary: "S3 not implemented" },
+    );
+    await expect(
+      fileStorageRow({ STORAGE_PROVIDER: "azure", UPLOAD_DIR: uploadFixture.dir }, checkedAt, false),
+    ).resolves.toMatchObject({ status: "degraded", summary: "Unknown provider (azure)" });
   });
 });
 
@@ -188,7 +249,7 @@ describe("collectAdminHealth", () => {
     const report = await collectAdminHealth({
       db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
       rateLimitStore: {} as never,
-      env: { GIT_COMMIT: "deadbeef" },
+      env: envWithUpload({ GIT_COMMIT: "deadbeef" }),
       now: () => new Date("2026-08-03T12:00:00.000Z"),
     });
 
@@ -202,6 +263,8 @@ describe("collectAdminHealth", () => {
     expect(core.find((c) => c.id === "rate_limit_storage")?.label).toBe("Rate-limit storage");
     expect(core.find((c) => c.id === "mail_delivery_queue")?.label).toBe("Mail delivery queue");
     expect(core.find((c) => c.id === "file_storage")?.label).toBe("File storage");
+    expect(core.find((c) => c.id === "file_storage")?.status).toBe("ok");
+    expect(core.find((c) => c.id === "file_storage")?.summary).toBe("Connected");
 
     const external = report.groups[1]!.checks;
     expect(external.find((c) => c.id === "email_sending")?.label).toBe("Email sending, SMTP");
@@ -1006,9 +1069,9 @@ describe("collectAdminHealth", () => {
     const carto = await collectAdminHealth({
       db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
       rateLimitStore: {} as never,
-      env: {
+      env: envWithUpload({
         MAP_TILE_URL: "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-      },
+      }),
     });
     expect(carto.groups[1]!.checks.find((c) => c.id === "map_tiles")?.label).toBe(
       "Map tiles, CARTO",
@@ -1017,7 +1080,7 @@ describe("collectAdminHealth", () => {
     const custom = await collectAdminHealth({
       db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
       rateLimitStore: {} as never,
-      env: { MAP_TILE_URL: "https://tiles.example.com/{z}/{x}/{y}.png" },
+      env: envWithUpload({ MAP_TILE_URL: "https://tiles.example.com/{z}/{x}/{y}.png" }),
     });
     expect(custom.groups[1]!.checks.find((c) => c.id === "map_tiles")?.label).toBe(
       "Map tiles, tiles.example.com",
@@ -1068,10 +1131,10 @@ describe("collectAdminHealth", () => {
       } as unknown as PrismaClient,
       rateLimitStore: {} as never,
       live: true,
-      env: {
+      env: envWithUpload({
         MAP_TILE_URL: "https://tiles.example.com/{z}/{x}/{y}.png",
         MAP_TILE_ATTRIBUTION: "© Example Tiles",
-      },
+      }),
     });
     expect(report.groups[0]!.checks.find((c) => c.id === "rate_limit_storage")?.summary).toBe(
       "Connected (in-memory)",
@@ -1100,10 +1163,10 @@ describe("collectAdminHealth", () => {
         $queryRaw: vi.fn().mockResolvedValue([{ version: "   " }]),
       } as unknown as PrismaClient,
       rateLimitStore: {} as never,
-      env: {
+      env: envWithUpload({
         MAP_TILE_URL: "https://tiles.example.com/{z}/{x}/{y}.png",
         MAP_TILE_ATTRIBUTION: "",
-      },
+      }),
     });
     expect(
       emptyEngine.groups[0]!.checks
