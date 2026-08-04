@@ -306,7 +306,7 @@ export function LogoUploadZone({
     const live = new Set(
       [value, originalUrl ?? ""].filter((u): u is string => typeof u === "string" && u.startsWith("/uploads/")),
     );
-    for (const url of [...provisionalUrlsRef.current]) {
+    for (const url of provisionalUrlsRef.current) {
       if (live.has(url) || isCommittedUrl(url)) {
         if (isCommittedUrl(url)) provisionalUrlsRef.current.delete(url);
         continue;
