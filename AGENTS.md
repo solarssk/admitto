@@ -161,6 +161,14 @@ workflow replaces it from `docs/wiki/` after merge. Write user guidance in clear
 synthetic examples, and never publish customer names, personal data, environments, credentials,
 or unsupported operational workarounds.
 
+**`docs:pr-check` (CI wiki-docs job) is not `docs:check`.** The job also runs
+`scripts/check-pr-docs-impact.mjs`, which requires the PR body to include the template's
+`## Documentation impact` section with **exactly one** checked line on its own line:
+`- [x] Wiki updated` or `- [x] No Wiki update needed — <specific reason>` (em/en/hyphen dash
+accepted). A Checklist bullet that merely mentions "Wiki updated" does **not** pass. Keep the
+other option present and unchecked. If wiki files changed, the checked option must be
+`Wiki updated`; if none changed, it must be `No Wiki update needed` with a real reason.
+
 For workflow pages, use the same reader-facing structure: `What this page helps you do`, `Before
 you start`, `Steps`, `Expected result`, `Important decisions`, `What changes after this action`,
 `Common problems`, and `Related pages`. Reference and landing pages may use a structure that fits
