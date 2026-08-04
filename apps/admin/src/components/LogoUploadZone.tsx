@@ -309,8 +309,11 @@ export function LogoUploadZone({
     const live = new Set(
       [value, originalUrl ?? ""].filter((u): u is string => typeof u === "string" && u.startsWith("/uploads/")),
     );
-    for (const url of [...provisionalUrlsRef.current]) {
-      if (live.has(url)) continue;
+    const abandoned: string[] = [];
+    for (const url of provisionalUrlsRef.current) {
+      if (!live.has(url)) abandoned.push(url);
+    }
+    for (const url of abandoned) {
       deleteProvisional(url);
     }
   }, [value, originalUrl]);
