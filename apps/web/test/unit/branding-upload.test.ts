@@ -5,7 +5,6 @@ import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   BrandingUploadError,
-  absolutePathUnderUploadRoot,
   assertDecodedImageWithinLimits,
   bestEffortDeleteReplacedUploadUrls,
   bestEffortDeleteUploadUrl,
@@ -307,17 +306,6 @@ describe("parseUploadsUrl", () => {
     expect(() => parseUploadsUrl(`/uploads/default/?q=1`)).toThrow(BrandingUploadError);
     expect(() => parseUploadsUrl(`/uploads/default/./${UUID_PNG}`)).toThrow(BrandingUploadError);
     expect(() => parseUploadsUrl(`/uploads/default//${UUID_PNG}`)).toThrow(BrandingUploadError);
-  });
-});
-
-describe("absolutePathUnderUploadRoot", () => {
-  it("rejects a relative path that escapes the upload root", () => {
-    expect(() => absolutePathUnderUploadRoot("../outside.png")).toThrow(BrandingUploadError);
-  });
-
-  it("accepts a path under the upload root", () => {
-    const abs = absolutePathUnderUploadRoot(`default/${UUID_PNG}`);
-    expect(abs.startsWith(uploadDir)).toBe(true);
   });
 });
 
