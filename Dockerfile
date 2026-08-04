@@ -68,6 +68,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/crypto/package.json packages/crypto/
+COPY packages/storage/package.json packages/storage/
 COPY packages/location/package.json packages/location/
 COPY packages/db/package.json packages/db/
 COPY packages/tickets/package.json packages/tickets/
@@ -90,6 +91,7 @@ COPY --from=builder /app/apps/cli/dist ./apps/cli/dist
 COPY --from=builder /app/packages/ui/dist ./packages/ui/dist
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 COPY --from=builder /app/packages/crypto/dist ./packages/crypto/dist
+COPY --from=builder /app/packages/storage/dist ./packages/storage/dist
 COPY --from=builder /app/packages/location/dist ./packages/location/dist
 COPY --from=builder /app/packages/db/dist ./packages/db/dist
 COPY --from=builder /app/packages/db/prisma ./packages/db/prisma
