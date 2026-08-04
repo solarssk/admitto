@@ -21,10 +21,10 @@ function decodeQuotedPrintable(input: string): string {
   for (let i = 0; i < joined.length; i++) {
     const hex = joined.slice(i + 1, i + 3);
     if (joined[i] === "=" && /^[0-9A-Fa-f]{2}$/.test(hex)) {
-      bytes.push(parseInt(hex, 16));
+      bytes.push(Number.parseInt(hex, 16));
       i += 2;
     } else {
-      bytes.push(joined.charCodeAt(i) & 0xff);
+      bytes.push((joined.codePointAt(i) ?? 0) & 0xff);
     }
   }
   return Buffer.from(bytes).toString("utf8");
@@ -60,11 +60,11 @@ const NAMED_HTML_ENTITIES: Record<string, string> = {
 function decodeHtmlEntities(text: string): string {
   return text.replace(/&(#\d+|#x[0-9a-fA-F]+|[a-zA-Z]+);/g, (match, ref: string) => {
     if (ref.startsWith("#x") || ref.startsWith("#X")) {
-      const code = parseInt(ref.slice(2), 16);
+      const code = Number.parseInt(ref.slice(2), 16);
       return Number.isFinite(code) ? String.fromCodePoint(code) : match;
     }
     if (ref.startsWith("#")) {
-      const code = parseInt(ref.slice(1), 10);
+      const code = Number.parseInt(ref.slice(1), 10);
       return Number.isFinite(code) ? String.fromCodePoint(code) : match;
     }
     return NAMED_HTML_ENTITIES[ref.toLowerCase()] ?? match;

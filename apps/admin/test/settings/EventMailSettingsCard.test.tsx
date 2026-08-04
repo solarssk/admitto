@@ -678,6 +678,52 @@ describe("EventMailSettingsCard — test send", () => {
     expect(document.querySelector(".mail-preview--warn")).toBeTruthy();
     expect(screen.getAllByText(/no matching bounce appeared in IMAP/).length).toBeGreaterThan(0);
   });
+
+  it("shows transport-ok but bounce-unverified when the probe fails", async () => {
+    mockFetchBounce.mockResolvedValue({
+      eventId: "evt-1",
+      organizationId: "org-1",
+      configured: true,
+      enabled: true,
+      imap_host: "imap.example.com",
+      imap_port: 993,
+      imap_username: "bounce@example.com",
+      imap_password: { set: true, masked: "••••" },
+      reuse_smtp_credentials: false,
+      smtp_reuse_available: true,
+      folders: ["INBOX"],
+      poll_interval_minutes: 5,
+    });
+    mockFetch.mockResolvedValue(inheritedResponse());
+    mockTest.mockResolvedValue({
+      status: "sent",
+      provider: "smtp",
+      providerMessageId: "<mid@example.com>",
+      bounceProbe: {
+        status: "failed",
+        message:
+          "Mail was accepted by the transport, but the bounce check failed. Review IMAP settings and the bounce mailbox rule.",
+      },
+    });
+    renderCard();
+    await screen.findByText(SMTP_SUMMARY_TEXT);
+
+    const bounceSwitch = await screen.findByRole("switch", { name: "Also verify bounce" });
+    await waitFor(() => expect(isDisabled(bounceSwitch)).toBe(false));
+    fireEvent.click(bounceSwitch);
+    fireEvent.change(screen.getByLabelText("Recipient"), {
+      target: { value: "nobody@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Send test/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Mail transport works, but bounce was not verified")).toBeTruthy();
+    });
+    expect(document.querySelector(".mail-preview--warn")).toBeTruthy();
+    expect(
+      screen.getAllByText(/bounce check failed/).length,
+    ).toBeGreaterThan(0);
+  });
 });
 
 describe("EventMailSettingsCard — SMTP Test connection", () => {

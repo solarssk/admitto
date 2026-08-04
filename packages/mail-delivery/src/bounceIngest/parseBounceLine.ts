@@ -13,9 +13,11 @@ import type { ParsedBounceLine } from "./types.js";
 const MAX_EMAIL_LEN = 320;
 const MAX_REASON_LEN = 500;
 
-const EMAIL_RE = "([A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,})";
+/** Linear email pattern (no nested quantifiers) so Sonar S8786 does not flag ReDoS on NDR bodies. */
+const EMAIL_RE =
+  "([A-Z0-9](?:[A-Z0-9._%+-]{0,62}[A-Z0-9])?@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+)";
 const HOST_SAID = "host\\s+\\S+(?:\\s+\\([^)]*\\))?\\s+said:\\s+";
-const REPLY_TAIL = "(?:\\s+\\(in reply to\\s+.+?\\))?$";
+const REPLY_TAIL = "(?:\\s+\\(in reply to\\s+[^)]+\\))?$";
 
 function normalizeReason(raw: string): string {
   return raw.replace(/\s+/g, " ").trim().replace(/^:\s*/, "").slice(0, MAX_REASON_LEN);
@@ -74,7 +76,7 @@ function parseAddressTypeValue(raw: string | undefined): string | null {
  */
 export function parseRfc3464DsnBlocks(text: string): ParsedBounceLine[] {
   if (!text) return [];
-  const normalized = text.replace(/\r\n/g, "\n");
+  const normalized = text.replaceAll("\r\n", "\n");
   const out: ParsedBounceLine[] = [];
   const seen = new Set<string>();
 
@@ -85,9 +87,12 @@ export function parseRfc3464DsnBlocks(text: string): ParsedBounceLine[] {
 
     const fields = new Map<string, string>();
     for (const line of block.split("\n")) {
-      const m = line.match(/^([A-Za-z0-9-]+):\s*(.*)$/);
-      if (!m) continue;
-      fields.set(m[1]!.toLowerCase(), m[2]!.trim());
+      // Bounded field name + rest-of-line value (no unbounded `(.*)$` backtracking).
+      const colon = line.indexOf(":");
+      if (colon <= 0) continue;
+      const name = line.slice(0, colon);
+      if (!/^[A-Za-z0-9-]+$/.test(name)) continue;
+      fields.set(name.toLowerCase(), line.slice(colon + 1).trim());
     }
 
     const action = (fields.get("action") ?? "").toLowerCase();
@@ -128,9 +133,8 @@ export function parseRfc3464DsnBlocks(text: string): ParsedBounceLine[] {
 }
 
 function inferRecipientEmail(body: string): string | null {
-  for (const line of parseRfc3464DsnBlocks(body)) {
-    return line.recipientEmail;
-  }
+  const fromDsn = parseRfc3464DsnBlocks(body)[0]?.recipientEmail;
+  if (fromDsn) return fromDsn;
 
   const nearOrphan = body.match(
     new RegExp(`${EMAIL_RE}\\s*(?:\\n[^\\n]*){0,6}\\nfailed:\\s+host\\s+`, "i"),
@@ -188,7 +192,7 @@ function parsePostfixFallback(normalized: string, out: ParsedBounceLine[], seen:
 export function parseBounceLines(bodyText: string): ParsedBounceLine[] {
   if (!bodyText) return [];
 
-  const normalized = bodyText.replace(/\r\n/g, "\n");
+  const normalized = bodyText.replaceAll("\r\n", "\n");
   const out: ParsedBounceLine[] = [];
   const seen = new Set<string>();
 

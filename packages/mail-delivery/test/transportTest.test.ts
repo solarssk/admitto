@@ -10,6 +10,7 @@ import {
   resolveTransportTestHeaderLogo,
   sendEventTransportTestEmail,
   sendTransportTestEmail,
+  transportTestFieldsFromConfig,
 } from "../src/transportTest.js";
 
 const prisma = createTestPrismaClient();
@@ -259,5 +260,71 @@ describe("sendEventTransportTestEmail (event-scoped)", () => {
     expect(exported).toHaveLength(1);
     expect(exported[0]?.sender.fromAddress).toBe("event-transport@example.com");
     expect(exported[0]?.message.html).toContain("https://cdn.example.com/event-logo.png");
+  });
+});
+
+describe("transportTestFieldsFromConfig", () => {
+  it("maps SMTP host/port and optional fromName/replyTo", () => {
+    expect(
+      transportTestFieldsFromConfig(
+        {
+          provider: "smtp",
+          host: "smtp.example.com",
+          port: 587,
+          user: "u",
+          password: "p",
+          fromAddress: "from@example.com",
+          fromName: "  Admitto  ",
+          replyTo: "reply@example.com",
+        } as never,
+        "to@example.com",
+      ),
+    ).toEqual({
+      provider: "smtp",
+      toAddress: "to@example.com",
+      fromAddress: "from@example.com",
+      fromName: "Admitto",
+      replyTo: "reply@example.com",
+      envelopeFrom: undefined,
+      host: "smtp.example.com",
+      port: 587,
+    });
+  });
+
+  it("falls back Graph fromAddress to mailbox", () => {
+    expect(
+      transportTestFieldsFromConfig(
+        {
+          provider: "graph",
+          tenantId: "t",
+          clientId: "c",
+          clientSecret: "s",
+          mailbox: "mailbox@example.com",
+          fromAddress: "  ",
+        } as never,
+        "to@example.com",
+      ),
+    ).toMatchObject({
+      provider: "graph",
+      toAddress: "to@example.com",
+      fromAddress: "mailbox@example.com",
+      mailbox: "mailbox@example.com",
+    });
+  });
+
+  it("maps powerautomate/export_only without host", () => {
+    expect(
+      transportTestFieldsFromConfig(
+        {
+          provider: "export_only",
+          fromAddress: "export@example.com",
+        } as never,
+        "to@example.com",
+      ),
+    ).toMatchObject({
+      provider: "export_only",
+      toAddress: "to@example.com",
+      fromAddress: "export@example.com",
+    });
   });
 });

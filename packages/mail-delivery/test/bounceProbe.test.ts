@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import type { ExportPayload } from "@admitto/mailer";
+import { closeMailer, createMailer } from "@admitto/mailer";
 import { setMailSettings } from "@admitto/mailer-config";
 import {
   BounceProbeSetupError,
@@ -11,6 +12,15 @@ import {
 } from "../src/bounceProbe.js";
 import type { InboundMailProvider, InboundMessage } from "../src/bounceIngest/types.js";
 import { resetDb } from "./resetDb.js";
+
+vi.mock("@admitto/mailer", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@admitto/mailer")>();
+  return {
+    ...actual,
+    createMailer: vi.fn(actual.createMailer),
+    closeMailer: vi.fn(actual.closeMailer),
+  };
+});
 
 const prisma = createTestPrismaClient();
 const ORG_ID = "org-bounce-probe";
@@ -183,5 +193,69 @@ describe("runEventBounceProbe", () => {
 
     expect(result.status).toBe("timeout");
     expect(result.message).toMatch(/90 seconds|IMAP/i);
+  });
+
+  it("rejects when bounce detection is configured but Off", async () => {
+    await prisma.bounceIngestSettings.deleteMany({ where: { event_id: EVENT_ID } });
+    await prisma.bounceIngestSettings.create({
+      data: {
+        event_id: EVENT_ID,
+        imap_host: "imap.example.com",
+        imap_port: 993,
+        imap_username: "bounce@example.com",
+        imap_password_enc: "enc",
+        folders: ["INBOX"],
+        enabled: false,
+      },
+    });
+
+    await expect(
+      runEventBounceProbe(
+        { eventId: EVENT_ID, toAddress: "nobody@example.com" },
+        prisma,
+        { NODE_ENV: "test" },
+        { exportSink: (p) => exported.push(p) },
+      ),
+    ).rejects.toThrow(/Turn bounce detection On/i);
+  });
+
+  it("returns failed when the transport send fails", async () => {
+    await prisma.bounceIngestSettings.update({
+      where: { event_id: EVENT_ID },
+      data: { enabled: true },
+    });
+
+    vi.mocked(createMailer).mockResolvedValueOnce({
+      send: vi.fn().mockResolvedValue({
+        status: "failed",
+        error: "SMTP rejected",
+      }),
+    } as never);
+    vi.mocked(closeMailer).mockResolvedValueOnce(undefined);
+
+    const result = await runEventBounceProbe(
+      {
+        eventId: EVENT_ID,
+        toAddress: "nobody@example.com",
+        ingestOptions: {
+          createProvider: async () => mockProvider([]),
+        },
+      },
+      prisma,
+      { NODE_ENV: "test" },
+      { exportSink: (p) => exported.push(p) },
+    );
+
+    expect(result.status).toBe("failed");
+    expect(result.message).toMatch(/SMTP rejected|Send failed/i);
+    expect(result.sendResult.error).toBeTruthy();
+  });
+});
+
+describe("bounceProbeAttendeeEmail", () => {
+  it("sanitizes non-alphanumeric characters from the event id", () => {
+    expect(bounceProbeAttendeeEmail("evt/with spaces!")).toBe(
+      "bounce-probe+evtwithspaces@admitto.invalid",
+    );
   });
 });

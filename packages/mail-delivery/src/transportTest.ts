@@ -289,18 +289,19 @@ function buildTransportTestHtml(
  * (common on corporate smart hosts) do not drop a second click for the same recipient. */
 export function buildTransportTestMessage(
   now: Date = new Date(),
-  ctx: TransportTestMessageContext = { scope: "organization" },
+  ctx?: TransportTestMessageContext,
 ): {
   subject: string;
   html: string;
   nonce: string;
   stamp: string;
 } {
+  const messageCtx = ctx ?? { scope: "organization" as const };
   const stamp = now.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, " UTC");
   const nonce = randomBytes(4).toString("hex");
   return {
     subject: `${TRANSPORT_TEST_SUBJECT_PREFIX} (${stamp} - ${nonce})`,
-    html: buildTransportTestHtml(nonce, stamp, ctx),
+    html: buildTransportTestHtml(nonce, stamp, messageCtx),
     nonce,
     stamp,
   };

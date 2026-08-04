@@ -1,6 +1,23 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BounceIngestSettings } from "@admitto/db";
-import { ingestBounces } from "../../src/bounceIngest/index.js";
+
+const { resolveImapConnectConfigMock, ImapInboundProviderMock } = vi.hoisted(() => ({
+  resolveImapConnectConfigMock: vi.fn(),
+  ImapInboundProviderMock: vi.fn(),
+}));
+
+vi.mock("../../src/bounceIngest/resolveAuth.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/bounceIngest/resolveAuth.js")>();
+  return { ...actual, resolveImapConnectConfig: resolveImapConnectConfigMock };
+});
+
+vi.mock("../../src/bounceIngest/imapProvider.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/bounceIngest/imapProvider.js")>();
+  return { ...actual, ImapInboundProvider: ImapInboundProviderMock };
+});
+
+import { ingestBounces, testBounceImapConnection } from "../../src/bounceIngest/index.js";
+import { BounceAuthError } from "../../src/bounceIngest/resolveAuth.js";
 import type { InboundMailProvider, InboundMessage } from "../../src/bounceIngest/types.js";
 
 function settings(partial: Partial<BounceIngestSettings> = {}): BounceIngestSettings {
@@ -32,6 +49,9 @@ function mockProvider(messages: InboundMessage[]): InboundMailProvider {
 
 const HARD_BODY =
   "user@example.com failed: host mx.example.com (203.0.113.1) said: 550 5.1.1 user@example.com: User unknown (in reply to RCPT TO command)";
+
+const SOFT_BODY =
+  "user@example.com failed: host mx.example.com (203.0.113.1) said: 450 4.2.1 Greylisted (in reply to RCPT TO command)";
 
 describe("ingestBounces", () => {
   it("returns not_configured when no settings row exists for eventId", async () => {
@@ -187,5 +207,283 @@ describe("ingestBounces", () => {
 
     expect(summary.errors).toBeGreaterThanOrEqual(1);
     expect(summary.messagesSeen).toBe(2);
+  });
+
+  it("returns none_enabled when no eventId and nothing is enabled", async () => {
+    const db = {
+      bounceIngestSettings: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+    } as never;
+
+    const summary = await ingestBounces(db, {});
+    expect(summary.noopReason).toBe("none_enabled");
+  });
+
+  it("skips already-processed UIDs", async () => {
+    const row = settings();
+    const messages: InboundMessage[] = [
+      {
+        uid: "already",
+        receivedAt: new Date(),
+        subject: "Delivery Status Notification",
+        bodyText: HARD_BODY,
+      },
+    ];
+    const db = {
+      bounceIngestSettings: {
+        findMany: vi.fn().mockResolvedValue([row]),
+      },
+      bounceIngestProcessedUid: {
+        findUnique: vi.fn().mockResolvedValue({ id: "processed_1" }),
+        upsert: vi.fn(),
+      },
+      emailDelivery: {
+        findFirst: vi.fn(),
+        update: vi.fn(),
+      },
+    } as never;
+
+    const summary = await ingestBounces(db, {
+      eventId: "evt_1",
+      createProvider: async () => mockProvider(messages),
+      log: () => undefined,
+    });
+
+    expect(summary.messagesSeen).toBe(0);
+    expect(summary.bouncesApplied).toBe(0);
+    expect(db.emailDelivery.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("counts noMatchingDelivery when no EmailDelivery row exists", async () => {
+    const row = settings();
+    const db = {
+      bounceIngestSettings: {
+        findMany: vi.fn().mockResolvedValue([row]),
+      },
+      bounceIngestProcessedUid: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        upsert: vi.fn().mockResolvedValue({}),
+      },
+      emailDelivery: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        update: vi.fn(),
+      },
+    } as never;
+
+    const summary = await ingestBounces(db, {
+      eventId: "evt_1",
+      createProvider: async () =>
+        mockProvider([
+          {
+            uid: "201",
+            receivedAt: new Date(),
+            subject: "undeliverable",
+            bodyText: HARD_BODY,
+          },
+        ]),
+      log: () => undefined,
+    });
+
+    expect(summary.noMatchingDelivery).toBe(1);
+    expect(summary.bouncesApplied).toBe(0);
+    expect(db.emailDelivery.update).not.toHaveBeenCalled();
+  });
+
+  it("counts softBouncesLogged for a 4xx diagnostic", async () => {
+    const row = settings();
+    const updateDelivery = vi.fn().mockResolvedValue({});
+    const db = {
+      bounceIngestSettings: {
+        findMany: vi.fn().mockResolvedValue([row]),
+      },
+      bounceIngestProcessedUid: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        upsert: vi.fn().mockResolvedValue({}),
+      },
+      emailDelivery: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "del_soft",
+          status: "sent",
+          recipient_email: "user@example.com",
+          event_id: "evt_1",
+        }),
+        update: updateDelivery,
+      },
+    } as never;
+
+    const summary = await ingestBounces(db, {
+      eventId: "evt_1",
+      createProvider: async () =>
+        mockProvider([
+          {
+            uid: "301",
+            receivedAt: new Date(),
+            subject: "delayed",
+            bodyText: SOFT_BODY,
+          },
+        ]),
+      log: () => undefined,
+    });
+
+    expect(summary.softBouncesLogged).toBe(1);
+    expect(summary.bouncesApplied).toBe(0);
+  });
+
+  it("continues to the next folder when fetch throws", async () => {
+    const row = settings({ folders: ["INBOX", "Junk Email"] });
+    const fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("folder missing"))
+      .mockResolvedValueOnce([
+        {
+          uid: "401",
+          receivedAt: new Date(),
+          subject: "undeliverable",
+          bodyText: HARD_BODY,
+        },
+      ]);
+    const provider: InboundMailProvider = {
+      connect: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      fetchCandidateMessages: fetch,
+      markSeen: vi.fn().mockResolvedValue(undefined),
+    };
+    const db = {
+      bounceIngestSettings: {
+        findMany: vi.fn().mockResolvedValue([row]),
+      },
+      bounceIngestProcessedUid: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        upsert: vi.fn().mockResolvedValue({}),
+      },
+      emailDelivery: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "del_1",
+          status: "sent",
+          recipient_email: "user@example.com",
+          event_id: "evt_1",
+        }),
+        update: vi.fn().mockResolvedValue({}),
+      },
+    } as never;
+
+    const summary = await ingestBounces(db, {
+      eventId: "evt_1",
+      createProvider: async () => provider,
+      log: () => undefined,
+    });
+
+    expect(summary.errors).toBe(1);
+    expect(summary.bouncesApplied).toBe(1);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("swallows markSeen failures after a successful apply", async () => {
+    const row = settings();
+    const markSeen = vi.fn().mockRejectedValue(new Error("flags failed"));
+    const db = {
+      bounceIngestSettings: {
+        findMany: vi.fn().mockResolvedValue([row]),
+      },
+      bounceIngestProcessedUid: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        upsert: vi.fn().mockResolvedValue({}),
+      },
+      emailDelivery: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "del_1",
+          status: "sent",
+          recipient_email: "user@example.com",
+          event_id: "evt_1",
+        }),
+        update: vi.fn().mockResolvedValue({}),
+      },
+    } as never;
+
+    const summary = await ingestBounces(db, {
+      eventId: "evt_1",
+      createProvider: async () => ({
+        connect: vi.fn().mockResolvedValue(undefined),
+        close: vi.fn().mockResolvedValue(undefined),
+        fetchCandidateMessages: vi.fn().mockResolvedValue([
+          {
+            uid: "501",
+            receivedAt: new Date(),
+            subject: "undeliverable",
+            bodyText: HARD_BODY,
+          },
+        ]),
+        markSeen,
+      }),
+      log: () => undefined,
+    });
+
+    expect(summary.bouncesApplied).toBe(1);
+    expect(markSeen).toHaveBeenCalled();
+  });
+});
+
+describe("testBounceImapConnection", () => {
+  const db = {} as never;
+
+  beforeEach(() => {
+    resolveImapConnectConfigMock.mockReset();
+    ImapInboundProviderMock.mockReset();
+  });
+
+  it("probes the first configured folder when connect succeeds", async () => {
+    resolveImapConnectConfigMock.mockResolvedValue({
+      host: "imap.example.com",
+      port: 993,
+      user: "u",
+      password: "p",
+    });
+    const probeFolder = vi.fn().mockResolvedValue(undefined);
+    const connect = vi.fn().mockResolvedValue(undefined);
+    const close = vi.fn().mockResolvedValue(undefined);
+    ImapInboundProviderMock.mockImplementation(function MockProvider() {
+      return { connect, close, probeFolder };
+    });
+
+    const result = await testBounceImapConnection(db, settings());
+
+    expect(result).toEqual({ ok: true, foldersChecked: 1 });
+    expect(probeFolder).toHaveBeenCalledWith("INBOX");
+    expect(close).toHaveBeenCalled();
+  });
+
+  it("returns connect error detail including IMAP responseText", async () => {
+    resolveImapConnectConfigMock.mockResolvedValue({
+      host: "imap.example.com",
+      port: 993,
+      user: "u",
+      password: "p",
+    });
+    const err = new Error("Command failed") as Error & { responseText: string };
+    err.responseText = "AUTHENTICATIONFAILED";
+    const connect = vi.fn().mockRejectedValue(err);
+    ImapInboundProviderMock.mockImplementation(function MockProvider() {
+      return {
+        connect,
+        close: vi.fn(),
+        probeFolder: vi.fn(),
+      };
+    });
+
+    const result = await testBounceImapConnection(db, settings());
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Command failed: AUTHENTICATIONFAILED",
+    });
+  });
+
+  it("returns resolve auth errors without throwing", async () => {
+    resolveImapConnectConfigMock.mockRejectedValue(new BounceAuthError("IMAP host is not configured"));
+
+    const result = await testBounceImapConnection(db, settings({ imap_host: null }));
+
+    expect(result).toEqual({ ok: false, error: "IMAP host is not configured" });
   });
 });
