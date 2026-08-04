@@ -657,47 +657,47 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
       key: "time",
       header: <HintLabel hint={TIME_HINT}>Time</HintLabel>,
       className: "audit-log-time",
-      cell: (entry) => (
-        <>
-          {formatAuditPrimaryTime(entry.created_at)} UTC
-          <UserLocalTimeLine entry={entry} />
-        </>
-      ),
-    },
-    {
-      key: "action",
-      header: "Action",
-      cell: (entry) => <Badge variant={actionTone(entry.action_type)}>{actionLabel(entry.action_type)}</Badge>,
-    },
-    {
-      key: "scope",
-      header: <HintLabel hint={SCOPE_HINT}>Scope</HintLabel>,
-      cell: (entry) => scopeLabel(entry, eventTitleById),
-    },
-    {
-      key: "actor",
-      header: "User",
-      title: (entry) => actorTitle(entry),
-      cell: (entry) => (
-        <>
-          {actorDisplay(entry)}
-          {entry.actor_display_name && entry.actor_email && (
-            <div className="sessions-subdued">{entry.actor_email}</div>
-          )}
-        </>
-      ),
-    },
-    {
-      key: "ip",
-      header: "IP address",
-      cell: (entry) => (
-        <>
-          {entry.ip ?? "-"}
-          {entry.ip && <div className="sessions-subdued"><GeoCell location={entry.country} /></div>}
-        </>
-      ),
-    },
-  ];
+    cell: (entry) => (
+      <>
+        <div>{formatAuditPrimaryTime(entry.created_at)} UTC</div>
+        <UserLocalTimeLine entry={entry} />
+      </>
+    ),
+  },
+  {
+    key: "action",
+    header: "Action",
+    cell: (entry) => <Badge variant={actionTone(entry.action_type)}>{actionLabel(entry.action_type)}</Badge>,
+  },
+  {
+    key: "scope",
+    header: <HintLabel hint={SCOPE_HINT}>Scope</HintLabel>,
+    cell: (entry) => scopeLabel(entry, eventTitleById),
+  },
+  {
+    key: "actor",
+    header: "User",
+    title: (entry) => actorTitle(entry),
+    cell: (entry) => (
+      <>
+        {actorDisplay(entry)}
+        {entry.actor_display_name && entry.actor_email && (
+          <div className="sessions-subdued">{entry.actor_email}</div>
+        )}
+      </>
+    ),
+  },
+  {
+    key: "ip",
+    header: "IP address",
+    cell: (entry) => (
+      <>
+        {entry.ip ?? "-"}
+        {entry.ip && <div className="sessions-subdued"><GeoCell location={entry.country} /></div>}
+      </>
+    ),
+  },
+];
 }
 
 /** Audit's LogCards top/meta slots - mirrors Security's own render*Card* functions below, plus
@@ -707,7 +707,7 @@ function renderAuditCardTop(entry: AuditLogEntryDto): ReactNode {
     <>
       <Badge variant={actionTone(entry.action_type)}>{actionLabel(entry.action_type)}</Badge>
       <div className="audit-log-time audit-log-card__time">
-        {formatAuditPrimaryTime(entry.created_at)} UTC
+        <div>{formatAuditPrimaryTime(entry.created_at)} UTC</div>
         <UserLocalTimeLine entry={entry} />
       </div>
     </>
@@ -811,7 +811,7 @@ const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
     className: "audit-log-time",
     cell: (entry) => (
       <>
-        {formatAuditPrimaryTime(entry.created_at)} UTC
+        <div>{formatAuditPrimaryTime(entry.created_at)} UTC</div>
         <ViewerLocalTimeLine iso={entry.created_at} />
       </>
     ),
@@ -852,7 +852,7 @@ function renderSecurityCardTop(entry: SecurityAuditLogEntryDto): ReactNode {
     <>
       <Badge variant={securityEventTone(entry.event_type)}>{securityEventLabel(entry.event_type)}</Badge>
       <div className="audit-log-time audit-log-card__time">
-        {formatAuditPrimaryTime(entry.created_at)} UTC
+        <div>{formatAuditPrimaryTime(entry.created_at)} UTC</div>
         <ViewerLocalTimeLine iso={entry.created_at} />
       </div>
     </>
