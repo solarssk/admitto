@@ -211,12 +211,12 @@ export function GeneralSettingsPanel() {
     );
   }
 
-  if (loadError || !settings) {
+  if (loadError) {
     return (
       <Card title="Instance URL">
         <EmptyState
           title="Could not load organisation settings"
-          description={loadError ?? undefined}
+          description={loadError}
           action={
             <Button type="button" variant="secondary" onClick={() => void load()}>
               Retry
@@ -226,6 +226,10 @@ export function GeneralSettingsPanel() {
       </Card>
     );
   }
+
+  // Successful load always populates settings; failures always set loadError above.
+  /* v8 ignore if */
+  if (!settings) return null;
 
   return (
     <>

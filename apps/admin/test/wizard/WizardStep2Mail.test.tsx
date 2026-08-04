@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
+import { createRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   MailPlainFieldDto,
@@ -30,7 +31,7 @@ import {
   saveMailSettings,
   sendMailTransportTest,
 } from "../../src/api/client.js";
-import { WizardStep2Mail } from "../../src/pages/wizard/WizardStep2Mail.js";
+import { WizardStep2Mail, type WizardStep2MailHandle } from "../../src/pages/wizard/WizardStep2Mail.js";
 
 const mockFetch = vi.mocked(fetchMailSettings);
 const mockSave = vi.mocked(saveMailSettings);
@@ -105,6 +106,30 @@ describe("WizardStep2Mail delayed loading", () => {
       vi.advanceTimersByTime(200);
     });
     expect(screen.getByText("Loading mail settings…")).toBeTruthy();
+  });
+});
+
+describe("WizardStep2Mail validation Notice", () => {
+  it("shows validation errors in a Notice when save is blocked", async () => {
+    const response = smtpResponse();
+    mockFetch.mockResolvedValueOnce(response);
+    const ref = createRef<WizardStep2MailHandle>();
+    renderWithToast(
+      <WizardProvider>
+        <WizardStep2Mail ref={ref} />
+      </WizardProvider>,
+    );
+
+    fireEvent.change(await screen.findByLabelText("From address"), { target: { value: "" } });
+    let saved = true;
+    await act(async () => {
+      saved = await ref.current!.saveAndContinue();
+    });
+    expect(saved).toBe(false);
+    const notice = screen.getByRole("alert");
+    expect(notice.className).toContain("at-notice--error");
+    expect(notice.textContent).toMatch(/From address/i);
+    expect(mockSave).not.toHaveBeenCalled();
   });
 });
 

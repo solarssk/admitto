@@ -700,12 +700,12 @@ export function BrandingSettingsPanel() {
     ) : null;
   }
 
-  if (loadError || !loadedOk) {
+  if (loadError) {
     return (
       <Card title="Organisation branding">
         <EmptyState
           title="Could not load branding settings"
-          description={loadError ?? "Failed to load branding settings."}
+          description={loadError}
           action={
             <Button type="button" variant="secondary" onClick={() => void load()}>
               Retry
@@ -715,6 +715,10 @@ export function BrandingSettingsPanel() {
       </Card>
     );
   }
+
+  // Successful load always populates loadedOk; failures always set loadError above.
+  /* v8 ignore if */
+  if (!loadedOk) return null;
 
   const formDisabled = saving;
 

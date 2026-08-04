@@ -196,12 +196,12 @@ export function MailTransportPanel() {
     );
   }
 
-  if (loadError || !apiData) {
+  if (loadError) {
     return (
       <Card title="Mail transport">
         <EmptyState
           title="Could not load mail settings"
-          description={loadError ?? "Failed to load mail settings."}
+          description={loadError}
           action={
             <Button type="button" variant="secondary" onClick={() => void loadSettings()}>
               Retry
@@ -211,6 +211,10 @@ export function MailTransportPanel() {
       </Card>
     );
   }
+
+  // Successful load always populates apiData; failures always set loadError above.
+  /* v8 ignore if */
+  if (!apiData) return null;
 
   const handleSelectProvider = (value: typeof provider) => {
     if (value === "smtp" && draft.provider !== "smtp") {

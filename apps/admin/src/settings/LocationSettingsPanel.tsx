@@ -355,12 +355,12 @@ export function LocationSettingsPanel({
     );
   }
 
-  if (loadError || !apiData || !tileConfig) {
+  if (loadError) {
     return (
       <Card title="Address">
         <EmptyState
           title="Could not load location settings"
-          description={loadError ?? "Failed to load location settings."}
+          description={loadError}
           action={
             <Button
               type="button"
@@ -376,6 +376,10 @@ export function LocationSettingsPanel({
       </Card>
     );
   }
+
+  // Successful load always populates both; failures always set loadError above.
+  /* v8 ignore if */
+  if (!apiData || !tileConfig) return null;
 
   const { latitude, longitude } = draft;
   const disabled = isArchived || saving;

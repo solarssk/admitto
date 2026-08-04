@@ -356,12 +356,12 @@ export const EventMailSettingsCard = forwardRef<
     );
   }
 
-  if (loadError || !apiData) {
+  if (loadError) {
     return (
       <Card title="Mail transport">
         <EmptyState
           title="Could not load mail settings"
-          description={loadError ?? "Failed to load mail settings."}
+          description={loadError}
           action={
             <Button
               type="button"
@@ -377,6 +377,10 @@ export const EventMailSettingsCard = forwardRef<
       </Card>
     );
   }
+
+  // Successful load always populates apiData; failures always set loadError above.
+  /* v8 ignore if */
+  if (!apiData) return null;
 
   const showExportOnly =
     !apiData.isProduction || (fieldLocked("provider") && draft.provider === "export_only");

@@ -214,12 +214,12 @@ export function AccountPage() {
       </Card>
     );
   }
-  if (error || !account) {
+  if (error) {
     return (
       <Card title="Profile">
         <EmptyState
           title="Could not load account"
-          description={error ?? "Failed to load account."}
+          description={error}
           action={
             <Button type="button" variant="secondary" onClick={() => void loadAccount()}>
               Retry
@@ -229,6 +229,10 @@ export function AccountPage() {
       </Card>
     );
   }
+
+  // account is set after a successful load; failures always set error above.
+  /* v8 ignore if */
+  if (!account) return null;
 
   const totpEnrolled = isTotpEnrolled(account);
   const otherSessions = sessions.filter((s) => !s.isCurrent);
