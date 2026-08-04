@@ -268,9 +268,9 @@ function scopeLabel(entry: AuditLogEntryDto, eventTitleById: Map<string, string>
 
 const SCOPE_HINT = "Which event this action affected, or “Instance” for account/organization-wide changes not tied to one event.";
 const TIME_HINT =
-  "Top: when this happened, in UTC (same instant for every viewer). Below (user icon): wall-clock time in the staff member's browser timezone when the action was recorded. Missing when the write had no known client timezone (older rows, CLI).";
+  "UTC on top. Below (user icon): the user's local time when they did it. Missing for older rows or CLI.";
 const SECURITY_TIME_HINT =
-  "Top: when this happened, in UTC (same instant for every viewer). Below (desktop icon): the same moment in your browser timezone. Security events often have no signed-in user (failed login), and this log does not store a user timezone - unlike Audit, which shows the user's local time when known.";
+  "UTC on top. Below (desktop icon): the same moment in your browser timezone.";
 
 /** camelCase or snake_case metadata key -> "Title case" label (e.g. "event_id"/"eventId" -> "Event id"). */
 function humanizeMetadataKey(key: string): string {
