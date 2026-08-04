@@ -1,6 +1,9 @@
 import type { PrismaClient } from "@admitto/db";
 import type { StorageAdapter } from "../types.js";
-import { collectReferencedUploadKeys } from "./collectReferencedUploadKeys.js";
+import {
+  collectReferencedUploadKeys,
+  isReferencedUploadKey,
+} from "./collectReferencedUploadKeys.js";
 
 const DEFAULT_GRACE_HOURS = 48;
 
@@ -55,6 +58,11 @@ export async function sweepOrphanedUploads(
     }
     if (nowMs - entry.mtimeMs < graceMs) {
       tooNew += 1;
+      continue;
+    }
+    // Fail-closed: a save may have referenced this key after the snapshot above.
+    if (await isReferencedUploadKey(db, entry.key)) {
+      referenced += 1;
       continue;
     }
     if (!dryRun) {

@@ -60,3 +60,48 @@ export async function collectReferencedUploadKeys(db: PrismaClient): Promise<Set
 
   return keys;
 }
+
+/**
+ * Fail-closed single-key check used immediately before GC delete (and dry-run count).
+ * Catches a branding save that landed after the initial reference snapshot.
+ */
+export async function isReferencedUploadKey(db: PrismaClient, key: string): Promise<boolean> {
+  const url = `/uploads/${key}`;
+
+  const asset = await db.eventImageAsset.findFirst({
+    where: { url },
+    select: { id: true },
+  });
+  if (asset) return true;
+
+  const orgHit = await db.organization.findFirst({
+    where: {
+      OR: [{ logo_url: url }, { logo_original_url: url }, { header_image_url: url }],
+    },
+    select: { id: true },
+  });
+  if (orgHit) return true;
+
+  const eventHit = await db.event.findFirst({
+    where: {
+      OR: [{ logo_url: url }, { logo_original_url: url }, { header_image_url: url }],
+    },
+    select: { id: true },
+  });
+  if (eventHit) return true;
+
+  const theme = await getBrandingTheme(db);
+  for (const family of theme.custom_font_families ?? []) {
+    for (const variant of family.variants) {
+      if (variant.url === url) return true;
+    }
+  }
+
+  const templateHit = await db.mailTemplate.findFirst({
+    where: {
+      OR: [{ subject_template: { contains: url } }, { body_template: { contains: url } }],
+    },
+    select: { id: true },
+  });
+  return templateHit !== null;
+}

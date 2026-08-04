@@ -4,6 +4,7 @@ export {
   LocalStorageAdapter,
   absolutePathUnderUploadRoot,
   resolveUploadDir,
+  safeStatManagedFile,
 } from "./adapters/local.js";
 export { createStorage, getDefaultStorage, resetDefaultStorageForTests } from "./factory.js";
 export {
@@ -11,7 +12,7 @@ export {
   isManagedUploadKey,
   tryParseUploadKey,
 } from "./keys.js";
-export { collectReferencedUploadKeys } from "./gc/collectReferencedUploadKeys.js";
+export { collectReferencedUploadKeys, isReferencedUploadKey } from "./gc/collectReferencedUploadKeys.js";
 export {
   sweepOrphanedUploads,
   type SweepOrphanedUploadsOptions,
