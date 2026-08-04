@@ -37,7 +37,7 @@ import { ScrollFadeTabs } from "../components/ScrollFadeTabs.js";
 import { TimezoneSelect } from "../components/TimezoneSelect.js";
 import { DatePicker } from "../components/DatePicker.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
-import { formatUtcDateTime } from "../utils/event-dates.js";
+import { formatEventDateTime, formatUtcDateTime } from "../utils/event-dates.js";
 import {
   EVENT_SETTINGS_TABS,
   inPageTabFromSearch,
@@ -868,7 +868,11 @@ export function EventSettingsPage() {
               </p>
               <p className="field-hint">
                 {isArchived && event.archived_at
-                  ? `Archived on ${formatUtcDateTime(event.archived_at)}.`
+                  ? `Archived on ${
+                      event.archived_by_timezone
+                        ? formatEventDateTime(event.archived_at, event.archived_by_timezone)
+                        : formatUtcDateTime(event.archived_at)
+                    }.`
                   : "Active events accept check-ins and allow attendee edits."}
               </p>
             </div>
@@ -880,7 +884,14 @@ export function EventSettingsPage() {
             </div>
             <div className="settings-field-group">
               <p>
-                Created: <strong>{formatUtcDateTime(event.created_at)}</strong>
+                Created:{" "}
+                <strong>
+                  {event.created_at
+                    ? event.created_by_timezone
+                      ? formatEventDateTime(event.created_at, event.created_by_timezone)
+                      : formatUtcDateTime(event.created_at)
+                    : "-"}
+                </strong>
               </p>
               <p className="field-hint">When this event was first set up.</p>
             </div>

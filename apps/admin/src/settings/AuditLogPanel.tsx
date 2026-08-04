@@ -201,20 +201,22 @@ function hourMinuteFormat(timeZone: string): Intl.DateTimeFormat {
  * header) - null for rows predating the column or written from a non-browser path (CLI), which
  * have no timezone to show. Shares `zonedTimeLabel` (event-dates.ts) with every other zoned
  * timestamp in the app - one "(IANA, UTC±offset)" convention, not a separate abbreviation +
- * city/country lookup just for this panel. */
+ * city/country lookup just for this panel. Prefixed "Actor ·" so the cell is not confused with
+ * Security's viewer-local secondary line. */
 function actorLocalTime(entry: AuditLogEntryDto): string | null {
   if (!entry.actor_timezone) return null;
   const hhmm = hourMinuteFormat(entry.actor_timezone).format(new Date(entry.created_at));
-  return `${hhmm} ${zonedTimeLabel(entry.created_at, entry.actor_timezone)}`;
+  return `Actor · ${hhmm} ${zonedTimeLabel(entry.created_at, entry.actor_timezone)}`;
 }
 
 /** The instant, converted to whoever is currently reading the log's own browser timezone - unlike
  * actorLocalTime above, this is never null: Security rows (e.g. a failed login) don't always have
- * a known actor to show a local time *for*, but the superadmin viewing the table always has one. */
+ * a known actor to show a local time *for*, but the superadmin viewing the table always has one.
+ * Prefixed "Your time ·" so it is not mistaken for Audit's actor-local secondary line. */
 function viewerLocalTime(iso: string): string {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const hhmm = hourMinuteFormat(timeZone).format(new Date(iso));
-  return `${hhmm} ${zonedTimeLabel(iso, timeZone)}`;
+  return `Your time · ${hhmm} ${zonedTimeLabel(iso, timeZone)}`;
 }
 
 /** Primary actor label; deleted users show a readable fallback (id in cell title). */
@@ -249,9 +251,10 @@ function scopeLabel(entry: AuditLogEntryDto, eventTitleById: Map<string, string>
 }
 
 const SCOPE_HINT = "Which event this action affected, or “Instance” for account/organization-wide changes not tied to one event.";
-const TIME_HINT = "Top: when this happened, in UTC. Below: the same moment in the actor's own local time, when known.";
+const TIME_HINT =
+  "Top: when this happened, in UTC (same instant for every viewer). Below: Actor · wall-clock time in the staff member's browser timezone when the action was recorded - use this to answer \"what time did they do it?\". Missing when the write had no known client timezone (older rows, CLI).";
 const SECURITY_TIME_HINT =
-  "Top: when this happened, in UTC. Below: the same moment in your own local time (not the actor's - Audit's Time column shows that instead, but a security event doesn't always have a known actor).";
+  "Top: when this happened, in UTC (same instant for every viewer). Below: Your time · the same moment in your browser timezone. Security events often have no signed-in actor (failed login), and this log does not store an actor timezone - unlike Audit, which shows Actor · when known.";
 
 /** camelCase or snake_case metadata key -> "Title case" label (e.g. "event_id"/"eventId" -> "Event id"). */
 function humanizeMetadataKey(key: string): string {
@@ -638,12 +641,15 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
       key: "time",
       header: <HintLabel hint={TIME_HINT}>Time</HintLabel>,
       className: "audit-log-time",
-      cell: (entry) => (
-        <>
-          {formatAuditPrimaryTime(entry.created_at)} UTC
-          {actorLocalTime(entry) && <div className="sessions-subdued">{actorLocalTime(entry)}</div>}
-        </>
-      ),
+      cell: (entry) => {
+        const local = actorLocalTime(entry);
+        return (
+          <>
+            {formatAuditPrimaryTime(entry.created_at)} UTC
+            {local && <div className="sessions-subdued">{local}</div>}
+          </>
+        );
+      },
     },
     {
       key: "action",
@@ -684,12 +690,13 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
 /** Audit's LogCards top/meta slots - mirrors Security's own render*Card* functions below, plus
  * the Scope meta item Security has no equivalent of. */
 function renderAuditCardTop(entry: AuditLogEntryDto): ReactNode {
+  const local = actorLocalTime(entry);
   return (
     <>
       <Badge variant={actionTone(entry.action_type)}>{actionLabel(entry.action_type)}</Badge>
       <div className="audit-log-time audit-log-card__time">
         {formatAuditPrimaryTime(entry.created_at)} UTC
-        {actorLocalTime(entry) && <div className="sessions-subdued">{actorLocalTime(entry)}</div>}
+        {local && <div className="sessions-subdued">{local}</div>}
       </div>
     </>
   );

@@ -521,6 +521,9 @@ describe("MailTransportPanel — test result panel (#411)", () => {
     expect(panel?.textContent).toContain("smtp.example.com:587");
     expect(panel?.textContent).toContain("queue-123");
     expect(panel?.textContent).toContain("Sent at");
+    // Browser-local wall clock (not bare "… UTC") - same Category-1 pattern as Delivery history.
+    expect(panel?.textContent).toMatch(/UTC[+-]/);
+    expect(panel?.textContent).not.toMatch(/Sent at[\s\S]* UTC(?!\+)/);
   });
 
   it("labels the timestamp 'Attempted at' (not 'Sent at') on a failed send", async () => {

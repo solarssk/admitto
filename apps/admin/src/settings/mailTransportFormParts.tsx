@@ -18,7 +18,7 @@ import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { emptyMailDraft, emptySecretEdits, type MailDraft, type SecretEdits } from "./mailSettingsValidation.js";
 import { buildMailProviderOptions, MAIL_PROVIDER_LABELS } from "./mailProviderOptions.js";
-import { formatUtcDateTime } from "../utils/event-dates.js";
+import { formatEventDateTime } from "../utils/event-dates.js";
 
 /** Every field here (SMTP username/password, Graph/Power Automate secrets, and every
  * email-typed field below) is something the operator types once and reuses — never
@@ -833,7 +833,12 @@ export function TestResultPreview({ testResult }: Readonly<{ testResult: TestRes
         )}
         <div>
           <span>{testResult.kind === "ok" ? "Sent at" : "Attempted at"}</span>
-          <b>{formatUtcDateTime(testResult.timestamp)}</b>
+          <b>
+            {formatEventDateTime(
+              testResult.timestamp,
+              Intl.DateTimeFormat().resolvedOptions().timeZone,
+            )}
+          </b>
         </div>
         {testResult.providerMessageId && (
           <div>

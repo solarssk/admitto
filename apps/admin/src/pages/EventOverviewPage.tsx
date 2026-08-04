@@ -1678,8 +1678,11 @@ export function EventOverviewPage() {
 
       {event.archived_at && (
         <p className="overview-archived-note">
-          Archived on {formatUtcDateTime(event.archived_at)}. Restore from event settings if you
-          need to edit again.
+          Archived on{" "}
+          {event.archived_by_timezone
+            ? formatEventDateTime(event.archived_at, event.archived_by_timezone)
+            : formatUtcDateTime(event.archived_at)}
+          . Restore from event settings if you need to edit again.
         </p>
       )}
 
