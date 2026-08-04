@@ -57,9 +57,13 @@ function sampleReport(overrides?: Partial<HealthReportDto>): HealthReportDto {
           {
             id: "file_storage",
             label: "File storage",
-            status: "planned",
-            summary: "Coming later",
-            details: [{ key: "availability", value: "later_release" }],
+            status: "ok",
+            summary: "Connected",
+            details: [
+              { key: "status", value: "ok" },
+              { key: "provider", value: "local" },
+              { key: "writable", value: "yes" },
+            ],
           },
         ],
       },

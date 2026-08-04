@@ -5,6 +5,10 @@
  */
 
 import type { Context } from "hono";
+import { execSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { access, constants, unlink, writeFile, stat } from "node:fs/promises";
+import { join } from "node:path";
 import { Prisma, type PrismaClient } from "@admitto/db";
 import {
   canManageInstance,
@@ -17,6 +21,7 @@ import {
 import { describeMailConfigForOrg, resolveMailConfigForOrg } from "@admitto/mailer-config";
 import { probeMailTransport, type MailProbeResult } from "@admitto/mailer";
 import { isLocationMapsEnabled, type GeocodingProvider } from "@admitto/location";
+import { resolveUploadDir } from "@admitto/storage";
 import type { HealthOverallStatus, HealthRowStatus } from "@admitto/shared";
 import { collectSetupChecks, type SetupCheckResult } from "./setup-checks-routes.js";
 import { collectGauges, checkMailer, checkDatabase } from "../ops/readyz.js";
@@ -78,10 +83,31 @@ export type CollectAdminHealthDeps = {
   resolveOrgMailConfig?: typeof resolveMailConfigForOrg;
 };
 
-/** Short commit for dumps. Docker sets GIT_COMMIT; local/dev may be unknown. */
+/** Short commit for dumps. Docker sets GIT_COMMIT; local/dev prefers live git HEAD (same as admin SPA). */
 export function resolveHealthCommit(env: NodeJS.ProcessEnv = process.env): string {
   const raw = env.GIT_COMMIT?.trim();
-  return raw ? raw.slice(0, 7) : "unknown";
+
+  const fromGit = (): string | null => {
+    try {
+      // Trusted build/runtime tooling; same pattern as apps/admin/build-meta.ts (Sonar S4036).
+      // Bare "git" resolves via PATH like the rest of the monorepo toolchain - not untrusted input.
+      const sha = execSync("git rev-parse HEAD", { cwd: process.cwd(), encoding: "utf8" }).trim(); // NOSONAR - see comment above
+      return sha || null;
+    } catch {
+      return null;
+    }
+  };
+
+  // Local `npm run dev` loads apps/web/.env; a stale GIT_COMMIT there used to diverge from the
+  // sidebar (Vite build-meta always falls back to git). Prefer HEAD whenever NODE_ENV=development.
+  if (env.NODE_ENV === "development") {
+    const sha = fromGit();
+    if (sha) return sha.slice(0, 7);
+  }
+
+  if (raw) return raw.slice(0, 7);
+  const sha = fromGit();
+  return sha ? sha.slice(0, 7) : "unknown";
 }
 
 /** Worst-of among statuses that affect overall health (ADR 0037). */
@@ -950,6 +976,149 @@ function plannedRow(id: string, label: string, summary: string): HealthCheckRow 
   };
 }
 
+/**
+ * Local branding upload volume (`UPLOAD_DIR` / `@admitto/storage`).
+ * Passive: path must be an existing directory that is readable, writable, and searchable
+ * (`R_OK|W_OK|X_OK`). Missing root is degraded (adapter `mkdir` on first put), not an outage.
+ * Live: write+unlink a tiny probe file under that root.
+ */
+export async function fileStorageRow(
+  env: NodeJS.ProcessEnv,
+  checkedAt: string,
+  live: boolean,
+): Promise<HealthCheckRow> {
+  const label = "File storage";
+  const providerRaw = (env.STORAGE_PROVIDER ?? "local").trim().toLowerCase() || "local";
+
+  if (providerRaw === "s3") {
+    return {
+      id: "file_storage",
+      label,
+      status: "degraded",
+      summary: "S3 not implemented",
+      details: detailsFromEntries([
+        ["status", "degraded"],
+        ["provider", "s3"],
+        ["reason", "not_implemented"],
+        ["last_checked", checkedAt],
+      ]),
+    };
+  }
+
+  if (providerRaw !== "local") {
+    return {
+      id: "file_storage",
+      label,
+      status: "degraded",
+      summary: `Unknown provider (${providerRaw})`,
+      details: detailsFromEntries([
+        ["status", "degraded"],
+        ["provider", providerRaw],
+        ["reason", "unknown_provider"],
+        ["last_checked", checkedAt],
+      ]),
+    };
+  }
+
+  const uploadPath = resolveUploadDir(env);
+  try {
+    // Path from env / cwd only (operator-controlled), not request input.
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    const st = await stat(uploadPath);
+    if (!st.isDirectory()) {
+      return {
+        id: "file_storage",
+        label,
+        status: "down",
+        summary: "Not a directory",
+        details: detailsFromEntries([
+          ["status", "down"],
+          ["provider", "local"],
+          ["path", uploadPath],
+          ["writable", "no"],
+          ["reason", "not_a_directory"],
+          ["last_checked", checkedAt],
+        ]),
+      };
+    }
+    // X_OK: directory must be searchable so children can be created (Unix).
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    await access(uploadPath, constants.R_OK | constants.W_OK | constants.X_OK);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") {
+      // LocalStorageAdapter.put mkdir(recursive) on first branding save - not an outage.
+      return {
+        id: "file_storage",
+        label,
+        status: "degraded",
+        summary: "Missing directory · created on first upload",
+        details: detailsFromEntries([
+          ["status", "degraded"],
+          ["provider", "local"],
+          ["path", uploadPath],
+          ["writable", "unknown"],
+          ["reason", "missing_directory"],
+          ["last_checked", checkedAt],
+        ]),
+      };
+    }
+    return {
+      id: "file_storage",
+      label,
+      status: "down",
+      summary: "Not writable",
+      details: detailsFromEntries([
+        ["status", "down"],
+        ["provider", "local"],
+        ["path", uploadPath],
+        ["writable", "no"],
+        ["reason", "not_writable"],
+        ["last_checked", checkedAt],
+      ]),
+    };
+  }
+
+  if (live) {
+    const probePath = join(uploadPath, `.admitto-health-probe-${randomUUID()}`);
+    try {
+      // eslint-disable-next-line security/detect-non-literal-fs-filename
+      await writeFile(probePath, "ok");
+      // eslint-disable-next-line security/detect-non-literal-fs-filename
+      await unlink(probePath);
+    } catch {
+      return {
+        id: "file_storage",
+        label,
+        status: "degraded",
+        summary: "Write probe failed",
+        details: detailsFromEntries([
+          ["status", "degraded"],
+          ["provider", "local"],
+          ["path", uploadPath],
+          ["writable", "uncertain"],
+          ["reason", "write_probe_failed"],
+          ["last_checked", checkedAt],
+        ]),
+      };
+    }
+  }
+
+  return {
+    id: "file_storage",
+    label,
+    status: "ok",
+    summary: "Connected",
+    details: detailsFromEntries([
+      ["status", "ok"],
+      ["provider", "local"],
+      ["path", uploadPath],
+      ["writable", "yes"],
+      ["last_checked", checkedAt],
+    ]),
+  };
+}
+
 function buildGroup(
   id: HealthGroupId,
   label: string,
@@ -1021,18 +1190,20 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
     ]),
   };
 
-  const [setup, gauges, email, idpRows, cfAccess, address, dbProbe, engine] = await Promise.all([
-    collectSetupChecks(deps.db, deps.rateLimitStore, deps.injectedBaseUrl).catch(
-      () => setupFallback,
-    ),
-    collectGauges(deps.db).catch(() => gaugesFallback),
-    emailSendingRow(deps.db, env, checkedAt, live, probeMail, resolveOrgMailConfig),
-    identityProviderRows(deps.db, live, checkedAt).catch(() => idpFallback),
-    cloudflareAccessRow(deps.db, live, checkedAt).catch(() => cfFallback),
-    addressLookupRow(deps.geocodingProvider, live, env, checkedAt).catch(() => addressFallback),
-    checkDatabase(deps.db).catch(() => ({ status: "down" as const, latency_ms: 0 })),
-    readPostgresEngine(deps.db),
-  ]);
+  const [setup, gauges, email, idpRows, cfAccess, address, dbProbe, engine, fileStorage] =
+    await Promise.all([
+      collectSetupChecks(deps.db, deps.rateLimitStore, deps.injectedBaseUrl).catch(
+        () => setupFallback,
+      ),
+      collectGauges(deps.db).catch(() => gaugesFallback),
+      emailSendingRow(deps.db, env, checkedAt, live, probeMail, resolveOrgMailConfig),
+      identityProviderRows(deps.db, live, checkedAt).catch(() => idpFallback),
+      cloudflareAccessRow(deps.db, live, checkedAt).catch(() => cfFallback),
+      addressLookupRow(deps.geocodingProvider, live, env, checkedAt).catch(() => addressFallback),
+      checkDatabase(deps.db).catch(() => ({ status: "down" as const, latency_ms: 0 })),
+      readPostgresEngine(deps.db),
+      fileStorageRow(env, checkedAt, live),
+    ]);
 
   const coreChecks: HealthCheckRow[] = [
     setupToDatabaseRow(setup.database, checkedAt, {
@@ -1043,11 +1214,7 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
     setupToEncryptionRow(setup.encryption, checkedAt),
     mailQueueRow(gauges.email_deliveries_queued, gauges.email_deliveries_failed_retryable, checkedAt),
     setupToInstanceUrlRow(setup.base_url, checkedAt),
-    plannedRow(
-      "file_storage",
-      "File storage",
-      "Coming later · disk probe after StorageAdapter",
-    ),
+    fileStorage,
   ];
 
   const externalChecks: HealthCheckRow[] = [

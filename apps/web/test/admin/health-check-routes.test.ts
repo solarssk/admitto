@@ -1,5 +1,35 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { PrismaClient } from "@admitto/db";
+
+const { writeFileMock, setRealWriteFile, restoreWriteFile } = vi.hoisted(() => {
+  const writeFileMock = vi.fn();
+  let realWriteFile: (...args: unknown[]) => Promise<unknown> = async () => {
+    throw new Error("writeFile mock not initialized");
+  };
+  return {
+    writeFileMock,
+    setRealWriteFile(fn: (...args: unknown[]) => Promise<unknown>) {
+      realWriteFile = fn;
+      writeFileMock.mockImplementation((...args: unknown[]) => realWriteFile(...args));
+    },
+    restoreWriteFile() {
+      writeFileMock.mockReset();
+      writeFileMock.mockImplementation((...args: unknown[]) => realWriteFile(...args));
+    },
+  };
+});
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  setRealWriteFile(actual.writeFile.bind(actual) as (...args: unknown[]) => Promise<unknown>);
+  return {
+    ...actual,
+    writeFile: (...args: Parameters<typeof actual.writeFile>) => writeFileMock(...args),
+  };
+});
 
 const {
   collectSetupChecks,
@@ -68,6 +98,7 @@ import { canManageInstance } from "@admitto/auth";
 import type { Context } from "hono";
 import {
   collectAdminHealth,
+  fileStorageRow,
   handleGetAdminHealth,
   handlePostAdminHealthLive,
   MAIL_QUEUE_DEGRADED_THRESHOLD,
@@ -76,6 +107,25 @@ import {
   mapTilesServiceLabel,
   worstHealthStatus,
 } from "../../src/admin/health-check-routes.js";
+
+/** Writable upload root so File storage does not flip overall to down in CI (uploads/ is gitignored). */
+const uploadFixture = { dir: "" };
+
+function envWithUpload(partial: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  return { UPLOAD_DIR: uploadFixture.dir, ...partial };
+}
+
+beforeAll(async () => {
+  uploadFixture.dir = await mkdtemp(join(tmpdir(), "admitto-health-upload-"));
+  process.env.UPLOAD_DIR = uploadFixture.dir;
+});
+
+afterAll(async () => {
+  delete process.env.UPLOAD_DIR;
+  if (uploadFixture.dir) {
+    await rm(uploadFixture.dir, { recursive: true, force: true });
+  }
+});
 
 const okSetup = {
   database: { ok: true, detail: "PostgreSQL connected · migrations current" },
@@ -110,6 +160,7 @@ function fakeHealthContext(): Context {
 
 afterEach(() => {
   vi.clearAllMocks();
+  restoreWriteFile();
   checkDatabase.mockResolvedValue({ status: "ok", latency_ms: 2 });
   resolveProductVersion.mockReturnValue("0.4.13");
   isLocationMapsEnabled.mockReturnValue(true);
@@ -131,8 +182,87 @@ describe("resolveHealthCommit", () => {
     expect(resolveHealthCommit({ GIT_COMMIT: "abcdef0123456789" })).toBe("abcdef0");
   });
 
-  it("returns unknown when unset", () => {
-    expect(resolveHealthCommit({})).toBe("unknown");
+  it("falls back to git HEAD when GIT_COMMIT is unset", () => {
+    const sha = resolveHealthCommit({});
+    expect(sha).toMatch(/^[0-9a-f]{7}$/);
+    expect(sha).not.toBe("unknown");
+  });
+
+  it("prefers git HEAD over a stale GIT_COMMIT in development", () => {
+    const sha = resolveHealthCommit({
+      NODE_ENV: "development",
+      GIT_COMMIT: "deadbeefdeadbeef",
+    });
+    expect(sha).toMatch(/^[0-9a-f]{7}$/);
+    expect(sha).not.toBe("deadbee");
+  });
+});
+
+describe("fileStorageRow", () => {
+  const checkedAt = "2026-08-04T12:00:00.000Z";
+
+  it("reports ok for a writable local upload dir", async () => {
+    const row = await fileStorageRow({ UPLOAD_DIR: uploadFixture.dir }, checkedAt, false);
+    expect(row.status).toBe("ok");
+    expect(row.summary).toBe("Connected");
+    expect(row.details.find((d) => d.key === "provider")?.value).toBe("local");
+    expect(row.details.find((d) => d.key === "writable")?.value).toBe("yes");
+  });
+
+  it("runs a live write+unlink probe", async () => {
+    const row = await fileStorageRow({ UPLOAD_DIR: uploadFixture.dir }, checkedAt, true);
+    expect(row.status).toBe("ok");
+  });
+
+  it("reports degraded when the directory is missing (adapter creates it on first put)", async () => {
+    const row = await fileStorageRow(
+      { UPLOAD_DIR: join(uploadFixture.dir, "does-not-exist") },
+      checkedAt,
+      false,
+    );
+    expect(row.status).toBe("degraded");
+    expect(row.summary).toBe("Missing directory · created on first upload");
+    expect(row.details.find((d) => d.key === "reason")?.value).toBe("missing_directory");
+  });
+
+  it("reports down when UPLOAD_DIR is a regular file", async () => {
+    const fileAsUploadRoot = join(uploadFixture.dir, "not-a-directory");
+    await writeFile(fileAsUploadRoot, "x");
+    const row = await fileStorageRow({ UPLOAD_DIR: fileAsUploadRoot }, checkedAt, false);
+    expect(row.status).toBe("down");
+    expect(row.summary).toBe("Not a directory");
+    expect(row.details.find((d) => d.key === "reason")?.value).toBe("not_a_directory");
+  });
+
+  it("reports down when the directory is not writable", async () => {
+    const locked = await mkdtemp(join(tmpdir(), "admitto-health-locked-"));
+    try {
+      await chmod(locked, 0o555);
+      const row = await fileStorageRow({ UPLOAD_DIR: locked }, checkedAt, false);
+      expect(row.status).toBe("down");
+      expect(row.summary).toBe("Not writable");
+      expect(row.details.find((d) => d.key === "reason")?.value).toBe("not_writable");
+    } finally {
+      await chmod(locked, 0o755);
+      await rm(locked, { recursive: true, force: true });
+    }
+  });
+
+  it("reports degraded for s3 and unknown providers", async () => {
+    await expect(fileStorageRow({ STORAGE_PROVIDER: "s3" }, checkedAt, false)).resolves.toMatchObject(
+      { status: "degraded", summary: "S3 not implemented" },
+    );
+    await expect(
+      fileStorageRow({ STORAGE_PROVIDER: "azure", UPLOAD_DIR: uploadFixture.dir }, checkedAt, false),
+    ).resolves.toMatchObject({ status: "degraded", summary: "Unknown provider (azure)" });
+  });
+
+  it("reports degraded when the live write probe fails", async () => {
+    writeFileMock.mockRejectedValueOnce(new Error("ENOSPC"));
+    const row = await fileStorageRow({ UPLOAD_DIR: uploadFixture.dir }, checkedAt, true);
+    expect(row.status).toBe("degraded");
+    expect(row.summary).toBe("Write probe failed");
+    expect(row.details.find((d) => d.key === "reason")?.value).toBe("write_probe_failed");
   });
 });
 
@@ -188,7 +318,7 @@ describe("collectAdminHealth", () => {
     const report = await collectAdminHealth({
       db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
       rateLimitStore: {} as never,
-      env: { GIT_COMMIT: "deadbeef" },
+      env: envWithUpload({ GIT_COMMIT: "deadbeef" }),
       now: () => new Date("2026-08-03T12:00:00.000Z"),
     });
 
@@ -202,6 +332,8 @@ describe("collectAdminHealth", () => {
     expect(core.find((c) => c.id === "rate_limit_storage")?.label).toBe("Rate-limit storage");
     expect(core.find((c) => c.id === "mail_delivery_queue")?.label).toBe("Mail delivery queue");
     expect(core.find((c) => c.id === "file_storage")?.label).toBe("File storage");
+    expect(core.find((c) => c.id === "file_storage")?.status).toBe("ok");
+    expect(core.find((c) => c.id === "file_storage")?.summary).toBe("Connected");
 
     const external = report.groups[1]!.checks;
     expect(external.find((c) => c.id === "email_sending")?.label).toBe("Email sending, SMTP");
@@ -1006,9 +1138,9 @@ describe("collectAdminHealth", () => {
     const carto = await collectAdminHealth({
       db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
       rateLimitStore: {} as never,
-      env: {
+      env: envWithUpload({
         MAP_TILE_URL: "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-      },
+      }),
     });
     expect(carto.groups[1]!.checks.find((c) => c.id === "map_tiles")?.label).toBe(
       "Map tiles, CARTO",
@@ -1017,7 +1149,7 @@ describe("collectAdminHealth", () => {
     const custom = await collectAdminHealth({
       db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
       rateLimitStore: {} as never,
-      env: { MAP_TILE_URL: "https://tiles.example.com/{z}/{x}/{y}.png" },
+      env: envWithUpload({ MAP_TILE_URL: "https://tiles.example.com/{z}/{x}/{y}.png" }),
     });
     expect(custom.groups[1]!.checks.find((c) => c.id === "map_tiles")?.label).toBe(
       "Map tiles, tiles.example.com",
@@ -1068,10 +1200,10 @@ describe("collectAdminHealth", () => {
       } as unknown as PrismaClient,
       rateLimitStore: {} as never,
       live: true,
-      env: {
+      env: envWithUpload({
         MAP_TILE_URL: "https://tiles.example.com/{z}/{x}/{y}.png",
         MAP_TILE_ATTRIBUTION: "© Example Tiles",
-      },
+      }),
     });
     expect(report.groups[0]!.checks.find((c) => c.id === "rate_limit_storage")?.summary).toBe(
       "Connected (in-memory)",
@@ -1100,10 +1232,10 @@ describe("collectAdminHealth", () => {
         $queryRaw: vi.fn().mockResolvedValue([{ version: "   " }]),
       } as unknown as PrismaClient,
       rateLimitStore: {} as never,
-      env: {
+      env: envWithUpload({
         MAP_TILE_URL: "https://tiles.example.com/{z}/{x}/{y}.png",
         MAP_TILE_ATTRIBUTION: "",
-      },
+      }),
     });
     expect(
       emptyEngine.groups[0]!.checks
