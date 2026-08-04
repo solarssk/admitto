@@ -195,10 +195,27 @@ async function authorizeDeleteUpload(
   return null;
 }
 
+/** Persisted library assets must use DELETE …/image-assets/:id (superadmin + in-use checks). */
+async function rejectIfPersistedEventImageAsset(
+  c: Context,
+  db: PrismaClient,
+  eventId: string,
+  url: string,
+): Promise<Response | null> {
+  const persisted = await db.eventImageAsset.findFirst({
+    where: { event_id: eventId, url },
+    select: { id: true },
+  });
+  if (!persisted) return null;
+  return c.json({ error: "persisted_image_asset" }, 409);
+}
+
 /**
- * DELETE /api/admin/uploads — remove a managed `/uploads/…` file by URL.
+ * DELETE /api/admin/uploads: remove a managed `/uploads/…` file by URL.
  * Org/theme paths: superadmin. Event paths: event manage access matching the URL's eventId.
  * Single-tenant: org segment must be `default` (same as POST upload writers).
+ * Persisted event image assets must go through DELETE …/image-assets/:id (superadmin +
+ * template-reference checks); this route only cleans abandoned crop/pre-save uploads.
  */
 export async function handleDeleteUpload(c: Context, db: PrismaClient): Promise<Response> {
   let body: unknown;
@@ -223,6 +240,16 @@ export async function handleDeleteUpload(c: Context, db: PrismaClient): Promise<
 
   const forbidden = await authorizeDeleteUpload(c, db, parsed);
   if (forbidden) return forbidden;
+
+  if (parsed.kind === "event") {
+    const persistedAssetResponse = await rejectIfPersistedEventImageAsset(
+      c,
+      db,
+      parsed.eventId!,
+      urlOrErr.url,
+    );
+    if (persistedAssetResponse) return persistedAssetResponse;
+  }
 
   try {
     await deleteBrandingUploadByUrl(urlOrErr.url, {

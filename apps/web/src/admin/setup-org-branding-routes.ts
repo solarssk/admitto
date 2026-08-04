@@ -160,6 +160,7 @@ export async function handlePatchSetupOrgBranding(c: Context, db: PrismaClient):
   await bestEffortDeleteReplacedUploadUrls(
     [previous.logo_url, previous.logo_original_url],
     [next.logo_url, next.logo_original_url],
+    { expectedOrgId: "default", expectedKind: "org" },
   );
 
   emitSystemLog("admin", "info", "org_branding_updated", {

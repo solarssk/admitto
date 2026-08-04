@@ -71,6 +71,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
   const [pendingCrop, setPendingCrop] = useState<PendingCrop | null>(null);
   /** Pre-crop upload URL kept until Add asset succeeds or the operator cancels/replaces. */
   const preCropUrlRef = useRef<string | null>(null);
+  const aliveRef = useRef(true);
 
   const [dragging, setDragging] = useState(false);
 
@@ -79,6 +80,20 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const loadAbortRef = useRef<AbortController | null>(null);
+
+  const discardPreCropUpload = () => {
+    const url = preCropUrlRef.current;
+    preCropUrlRef.current = null;
+    if (url) void deleteUploadedFile(url);
+  };
+
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+      discardPreCropUpload();
+    };
+  }, []);
 
   const load = useCallback(() => {
     loadAbortRef.current?.abort();
@@ -121,12 +136,6 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
     if (fileRef.current) fileRef.current.value = "";
   };
 
-  const discardPreCropUpload = () => {
-    const url = preCropUrlRef.current;
-    preCropUrlRef.current = null;
-    if (url) void deleteUploadedFile(url);
-  };
-
   const closePendingCrop = () => {
     setPendingCrop(null);
   };
@@ -156,6 +165,10 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
       const fd = new FormData();
       fd.append("file", picked);
       const { url } = await uploadEventBrandingFile(eventId, fd);
+      if (!aliveRef.current) {
+        void deleteUploadedFile(url);
+        return;
+      }
       preCropUrlRef.current = url;
       setPendingCrop({
         imageSrc: url,

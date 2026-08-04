@@ -373,6 +373,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     await bestEffortDeleteReplacedUploadUrls(
       [existing.logo_url, existing.logo_original_url, existing.header_image_url],
       [updated.logo_url, updated.logo_original_url, updated.header_image_url],
+      { expectedOrgId: "default", expectedKind: "event", expectedEventId: eventId },
     );
 
     const deletability = await loadDeletability(db, eventId, updated);

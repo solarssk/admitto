@@ -64,6 +64,9 @@ export async function handlePutStaffTheme(c: Context, db: PrismaClient): Promise
 
   const theme = await getBrandingTheme(db);
   // Interim orphan cleanup (ADR 0008): drop font files no longer referenced by the theme.
-  await bestEffortDeleteReplacedUploadUrls(customFontUrls(previous), customFontUrls(theme));
+  await bestEffortDeleteReplacedUploadUrls(customFontUrls(previous), customFontUrls(theme), {
+    expectedOrgId: "default",
+    expectedKind: "theme",
+  });
   return c.json({ theme, vars: resolveThemeVars(theme) });
 }

@@ -362,6 +362,8 @@ describe("deleteBrandingUploadByUrl", () => {
 });
 
 describe("bestEffortDeleteUploadUrl / bestEffortDeleteReplacedUploadUrls", () => {
+  const orgTrust = { expectedOrgId: "default", expectedKind: "org" as const };
+
   it("deletes only replaced managed URLs and ignores external URLs", async () => {
     const kept = await saveBrandingUpload(pngFile(), "default");
     const gone = await saveBrandingUpload(pngFile(), "default");
@@ -371,11 +373,32 @@ describe("bestEffortDeleteUploadUrl / bestEffortDeleteReplacedUploadUrls", () =>
     await bestEffortDeleteReplacedUploadUrls(
       [gone.url, kept.url, "https://cdn.example.com/x.png"],
       [kept.url],
+      orgTrust,
     );
     expect(existsSync(goneAbs)).toBe(false);
     expect(existsSync(keptAbs)).toBe(true);
 
-    await bestEffortDeleteUploadUrl("not-an-upload");
-    await bestEffortDeleteUploadUrl(`/uploads/default/${UUID_PNG}`);
+    await bestEffortDeleteUploadUrl("not-an-upload", orgTrust);
+    await bestEffortDeleteUploadUrl(`/uploads/default/${UUID_PNG}`, orgTrust);
+  });
+
+  it("refuses to delete another event's managed upload (trusted owner)", async () => {
+    const other = await saveEventUpload(pngFile(), "default", "evt-other");
+    const otherAbs = join(uploadDir, other.url.slice("/uploads/".length));
+    expect(existsSync(otherAbs)).toBe(true);
+
+    await bestEffortDeleteReplacedUploadUrls(
+      [other.url],
+      [null],
+      { expectedOrgId: "default", expectedKind: "event", expectedEventId: "evt-mine" },
+    );
+    expect(existsSync(otherAbs)).toBe(true);
+
+    await bestEffortDeleteReplacedUploadUrls(
+      [other.url],
+      [null],
+      { expectedOrgId: "default", expectedKind: "event", expectedEventId: "evt-other" },
+    );
+    expect(existsSync(otherAbs)).toBe(false);
   });
 });

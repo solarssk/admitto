@@ -486,4 +486,34 @@ describe("DELETE /api/admin/uploads", () => {
       expect(del.status).toBe(400);
     }
   });
+
+  it("rejects DELETE of a persisted event image asset URL (use image-assets delete)", async () => {
+    const createRes = await app.request(`/api/admin/events/${EVENT_OWN}/image-assets`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: (() => {
+        const fd = new FormData();
+        fd.append("file", new Blob([VALID_PNG], { type: "image/png" }), "asset.png");
+        fd.append("token", "cleanup_guard");
+        return fd;
+      })(),
+    });
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as { id: string; url: string };
+
+    const del = await app.request("/api/admin/uploads", {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ url: created.url }),
+    });
+    expect(del.status).toBe(409);
+    expect(await del.json()).toEqual({ error: "persisted_image_asset" });
+    expect((await app.request(created.url)).status).toBe(200);
+
+    // Cleanup via the proper asset delete path.
+    await app.request(`/api/admin/events/${EVENT_OWN}/image-assets/${created.id}`, {
+      method: "DELETE",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+  });
 });

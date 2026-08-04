@@ -218,6 +218,25 @@ export function LogoUploadZone({
   const [zoneError, setZoneError] = useState<string | null>(null);
   const [cropSession, setCropSession] = useState<CropSession | null>(null);
   const [sourceOriginal, setSourceOriginal] = useState<SourceOriginal | null>(null);
+  const cropSessionRef = useRef<CropSession | null>(null);
+  const originalUrlRef = useRef(originalUrl);
+  cropSessionRef.current = cropSession;
+  originalUrlRef.current = originalUrl;
+
+  useEffect(() => {
+    return () => {
+      uploadSeqRef.current += 1;
+      const abandoned = cropSessionRef.current?.uploadedOriginalUrl;
+      const persisted = originalUrlRef.current;
+      if (
+        abandoned &&
+        abandoned.startsWith("/uploads/") &&
+        abandoned !== persisted
+      ) {
+        void deleteUploadedFile(abandoned);
+      }
+    };
+  }, []);
 
   const isUploadedFile = value.startsWith("/uploads/");
   const previewSrc = useMemo(() => brandingLogoImgSrc(value), [value]);
@@ -300,6 +319,10 @@ export function LogoUploadZone({
       }
 
       const crop = toLogoCropMeta(applyMeta);
+      // Only session (unsaved) display URLs may be deleted client-side; persisted logos are
+      // cleaned by the server after a successful branding PATCH.
+      const previousWasUnsavedSession =
+        previousDisplay.startsWith("/uploads/") && previousDisplay === lastUploadedUrlRef.current;
       lastUploadedUrlRef.current = croppedUrl;
       if (originalFile) {
         setSourceOriginal({
@@ -320,7 +343,7 @@ export function LogoUploadZone({
       onDirty?.();
       closeCropSession();
       if (
-        previousDisplay.startsWith("/uploads/") &&
+        previousWasUnsavedSession &&
         previousDisplay !== croppedUrl &&
         previousDisplay !== originalUploadedUrl
       ) {
@@ -329,8 +352,7 @@ export function LogoUploadZone({
     } catch (err) {
       if (seq !== uploadSeqRef.current) return;
       setZoneError(operatorApiErrorMessage(err, "Upload failed."));
-      // Keep the pre-crop upload so the operator can retry Apply without re-picking.
-      closeCropSession();
+      // Keep cropSession so the operator can retry Apply or Cancel (and cleanup can run).
     } finally {
       if (seq === uploadSeqRef.current) setUploading(false);
     }

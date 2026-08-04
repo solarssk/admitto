@@ -190,8 +190,26 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
   const [rows, setRows] = useState<FontRow[]>([]);
   const [dragOver, setDragOver] = useState(false);
 
+  const discardSessionUploads = () => {
+    for (const url of sessionUploadsRef.current) {
+      void deleteUploadedFile(url);
+    }
+    sessionUploadsRef.current.clear();
+  };
+
+  const cleanupPreviewFaces = () => {
+    for (const face of facesRef.current.values()) document.fonts.delete(face);
+    facesRef.current.clear();
+  };
+
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      discardSessionUploads();
+      for (const [id, gen] of rowGenerationRef.current) {
+        rowGenerationRef.current.set(id, gen + 1);
+      }
+      return;
+    }
     sessionUploadsRef.current.clear();
     if (!initialFamily) {
       setFamilyName("");
@@ -238,18 +256,7 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const cleanupPreviewFaces = () => {
-    for (const face of facesRef.current.values()) document.fonts.delete(face);
-    facesRef.current.clear();
-  };
   useEffect(() => cleanupPreviewFaces, []);
-
-  const discardSessionUploads = () => {
-    for (const url of sessionUploadsRef.current) {
-      void deleteUploadedFile(url);
-    }
-    sessionUploadsRef.current.clear();
-  };
 
   const handleClose = () => {
     discardSessionUploads();
@@ -266,6 +273,7 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
   }
 
   function removeRow(id: number) {
+    rowGenerationRef.current.set(id, (rowGenerationRef.current.get(id) ?? 0) + 1);
     const face = facesRef.current.get(id);
     if (face) {
       document.fonts.delete(face);
@@ -413,12 +421,15 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
 
   function save() {
     cleanupPreviewFaces();
-    // Persisted into the theme draft - do not delete these on close.
-    // loadedRows already requires a truthy url.
-    for (const r of loadedRows) {
-      sessionUploadsRef.current.delete(r.url!);
+    // Keep uploaded variant URLs for the parent draft; only discard abandoned session files.
+    // Parent (BrandingSettingsPanel) owns cleanup until outer theme Save / Reset.
+    const kept = new Set(
+      loadedRows.map((r) => r.url).filter((u): u is string => typeof u === "string"),
+    );
+    for (const url of sessionUploadsRef.current) {
+      if (!kept.has(url)) void deleteUploadedFile(url);
     }
-    discardSessionUploads();
+    sessionUploadsRef.current.clear();
     onSaved({
       familyName: familyName.trim(),
       variants: loadedRows.map((r) => ({ weight: r.weight, style: r.style, url: r.url! })),

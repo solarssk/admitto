@@ -340,15 +340,26 @@ export async function deleteBrandingUploadByUrl(
   }
 }
 
+/** Trusted owner context for best-effort disk cleanup (never derive solely from the URL). */
+export type UploadDeleteTrust = {
+  expectedOrgId: string;
+  expectedKind: ParsedUploadsUrl["kind"];
+  expectedEventId?: string;
+};
+
 /** Best-effort disk delete for a single managed upload URL (never throws). */
-export async function bestEffortDeleteUploadUrl(url: string | null | undefined): Promise<void> {
+export async function bestEffortDeleteUploadUrl(
+  url: string | null | undefined,
+  trust: UploadDeleteTrust,
+): Promise<void> {
   if (typeof url !== "string" || !url.startsWith("/uploads/")) return;
   try {
-    // Single-tenant upload writers always use orgId "default".
     const parsed = parseUploadsUrl(url);
+    if (parsed.orgId !== trust.expectedOrgId || parsed.kind !== trust.expectedKind) return;
+    if (trust.expectedKind === "event" && parsed.eventId !== trust.expectedEventId) return;
     await deleteBrandingUploadByUrl(url, {
-      expectedOrgId: parsed.orgId,
-      expectedEventId: parsed.kind === "event" ? parsed.eventId : undefined,
+      expectedOrgId: trust.expectedOrgId,
+      expectedEventId: trust.expectedKind === "event" ? trust.expectedEventId : undefined,
     });
   } catch {
     // Cancel/replace must not fail the operator action if disk cleanup races or fails.
@@ -359,12 +370,13 @@ export async function bestEffortDeleteUploadUrl(url: string | null | undefined):
 export async function bestEffortDeleteReplacedUploadUrls(
   previous: Array<string | null | undefined>,
   next: Array<string | null | undefined>,
+  trust: UploadDeleteTrust,
 ): Promise<void> {
   const kept = new Set(next.filter((u): u is string => typeof u === "string" && u.startsWith("/uploads/")));
   for (const url of previous) {
     if (typeof url !== "string" || !url.startsWith("/uploads/")) continue;
     if (kept.has(url)) continue;
-    await bestEffortDeleteUploadUrl(url);
+    await bestEffortDeleteUploadUrl(url, trust);
   }
 }
 

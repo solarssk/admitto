@@ -10,7 +10,7 @@ import {
   Select,
   useToast,
 } from "@admitto/ui";
-import { fetchOrgBranding, fetchStaffTheme, patchOrgBranding, saveStaffTheme } from "../api/client.js";
+import { fetchOrgBranding, fetchStaffTheme, patchOrgBranding, saveStaffTheme, deleteUploadedFile } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { BrandingCustomFontFamilyDto, BrandingThemeDto, SetupOrgBrandingDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
@@ -33,6 +33,17 @@ const EMPTY_ORG_DRAFT: SetupOrgBrandingDto = {
   logo_crop: null,
 };
 const EMPTY_THEME_DRAFT: BrandingThemeDto = {};
+
+/** Collect `/uploads/…` font file URLs from a theme draft. */
+function themeFontUploadUrls(theme: BrandingThemeDto): Set<string> {
+  const urls = new Set<string>();
+  for (const fam of theme.custom_font_families ?? []) {
+    for (const v of fam.variants ?? []) {
+      if (typeof v.url === "string" && v.url.startsWith("/uploads/")) urls.add(v.url);
+    }
+  }
+  return urls;
+}
 
 const ORG_BRANDING_HINT =
   "A single event can override the logo under Event settings → Images.";
@@ -316,6 +327,23 @@ export function BrandingSettingsPanel() {
   const [themeDraft, setThemeDraft] = useState<BrandingThemeDto>(EMPTY_THEME_DRAFT);
   const orgSavedRef = useRef<SetupOrgBrandingDto>(EMPTY_ORG_DRAFT);
   const themeSavedRef = useRef<BrandingThemeDto>(EMPTY_THEME_DRAFT);
+  /** Font `/uploads/…` URLs added via FontFamilyModal but not yet committed by outer theme Save. */
+  const provisionalFontUrlsRef = useRef(new Set<string>());
+
+  const releaseProvisionalFontsKeeping = (keep: Set<string>) => {
+    for (const url of provisionalFontUrlsRef.current) {
+      if (!keep.has(url)) void deleteUploadedFile(url);
+    }
+    provisionalFontUrlsRef.current = new Set(
+      [...provisionalFontUrlsRef.current].filter((u) => keep.has(u)),
+    );
+  };
+
+  useEffect(() => {
+    return () => {
+      releaseProvisionalFontsKeeping(themeFontUploadUrls(themeSavedRef.current));
+    };
+  }, []);
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -489,6 +517,11 @@ export function BrandingSettingsPanel() {
    * page (the common case, since ticket falls back to admin by default), renaming it keeps that
    * in sync too, not just Admin panel's. */
   const handleFamilySaved = ({ familyName, variants }: { familyName: string; variants: BrandingCustomFontFamilyDto["variants"] }) => {
+    for (const v of variants) {
+      if (typeof v.url === "string" && v.url.startsWith("/uploads/")) {
+        provisionalFontUrlsRef.current.add(v.url);
+      }
+    }
     setThemeDraft((prev) => {
       const isNewFamily = editingFamilyName === null;
       const wasAdminActive = !isNewFamily && prev.font_family_name === editingFamilyName;
@@ -496,6 +529,25 @@ export function BrandingSettingsPanel() {
       const withoutOldEntry = (prev.custom_font_families ?? []).filter(
         (f) => f.name !== familyName && f.name !== editingFamilyName,
       );
+      const replaced = (prev.custom_font_families ?? []).find(
+        (f) => f.name === editingFamilyName || f.name === familyName,
+      );
+      if (replaced) {
+        const kept = new Set(
+          variants.map((v) => v.url).filter((u): u is string => typeof u === "string"),
+        );
+        for (const v of replaced.variants) {
+          if (
+            typeof v.url === "string" &&
+            v.url.startsWith("/uploads/") &&
+            !kept.has(v.url) &&
+            provisionalFontUrlsRef.current.has(v.url)
+          ) {
+            provisionalFontUrlsRef.current.delete(v.url);
+            void deleteUploadedFile(v.url);
+          }
+        }
+      }
       return {
         ...prev,
         font_family_name: isNewFamily || wasAdminActive ? familyName : prev.font_family_name,
@@ -513,6 +565,19 @@ export function BrandingSettingsPanel() {
    * that's merely saved (not active anywhere) can be removed with no other effect. */
   const handleDeleteCustomFamily = (name: string) => {
     setThemeDraft((prev) => {
+      const removed = (prev.custom_font_families ?? []).find((f) => f.name === name);
+      if (removed) {
+        for (const v of removed.variants) {
+          if (
+            typeof v.url === "string" &&
+            v.url.startsWith("/uploads/") &&
+            provisionalFontUrlsRef.current.has(v.url)
+          ) {
+            provisionalFontUrlsRef.current.delete(v.url);
+            void deleteUploadedFile(v.url);
+          }
+        }
+      }
       const remaining = (prev.custom_font_families ?? []).filter((f) => f.name !== name);
       const wasAdminActive = prev.font_family_name === name;
       const wasTicketActive = prev.ticket_font_family_name === name;
@@ -545,6 +610,7 @@ export function BrandingSettingsPanel() {
 
   const handleReset = () => {
     if (!loadedOk) return;
+    releaseProvisionalFontsKeeping(themeFontUploadUrls(themeSavedRef.current));
     setOrgDraft(orgSavedRef.current);
     setThemeDraft(themeSavedRef.current);
     syncColorUiState(themeSavedRef.current);
@@ -591,6 +657,8 @@ export function BrandingSettingsPanel() {
         themeSavedRef.current = themeResult.value.theme;
         setThemeDraft(themeResult.value.theme);
         syncColorUiState(themeResult.value.theme);
+        // Server GC owns replaced fonts; drop provisional tracking for now-saved URLs.
+        provisionalFontUrlsRef.current.clear();
       }
 
       if (orgResult.status === "fulfilled" && themeResult.status === "fulfilled") {

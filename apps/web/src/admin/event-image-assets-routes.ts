@@ -272,7 +272,7 @@ async function loadImageAssetInEvent(db: PrismaClient, eventId: string, assetId:
 }
 
 /**
- * DELETE /api/admin/events/:eventId/image-assets/:assetId — deletes the DB row and best-effort
+ * DELETE /api/admin/events/:eventId/image-assets/:assetId: deletes the DB row and best-effort
  * removes the managed `/uploads/…` file (interim orphan cleanup; full StorageAdapter GC is ADR 0008).
  * If the token is still referenced by a saved event template's {{token}}, the delete is rejected
  * (409 asset_in_use) - the batch send path renders saved templates without whitelist re-validation
@@ -339,6 +339,10 @@ export async function handleDeleteEventImageAsset(c: Context, db: PrismaClient):
     throw err;
   }
 
-  await bestEffortDeleteUploadUrl(existing.url);
+  await bestEffortDeleteUploadUrl(existing.url, {
+    expectedOrgId: "default",
+    expectedKind: "event",
+    expectedEventId: eventId,
+  });
   return c.json({ ok: true });
 }
