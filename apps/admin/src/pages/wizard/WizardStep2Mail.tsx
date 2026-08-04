@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Button, Input, Select, Switch, useToast } from "@admitto/ui";
+import { Button, Input, Notice, Select, Switch, useToast } from "@admitto/ui";
 import {
   fetchMailSettings,
   saveMailSettings,
@@ -196,11 +196,13 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
         {!loading && apiData && (
           <>
             {validationErrors.length > 0 && (
-              <ul className="setup-wizard__errors" role="alert">
-                {validationErrors.map((e) => (
-                  <li key={e}>{e}</li>
-                ))}
-              </ul>
+              <Notice variant="error" role="alert">
+                <ul className="setup-wizard__error-list">
+                  {validationErrors.map((e) => (
+                    <li key={e}>{e}</li>
+                  ))}
+                </ul>
+              </Notice>
             )}
 
             <div className="setup-wizard__mail-form">

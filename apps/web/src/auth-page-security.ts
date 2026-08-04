@@ -13,7 +13,9 @@ export function getAuthPageInlineScriptHeaders(scriptNonce: string): Record<stri
     "Content-Security-Policy": [
       "default-src 'none'",
       AUTH_PAGE_ICON_CSP,
-      "style-src 'unsafe-inline'",
+      // 'self' for Tabler icons webfont CSS (/vendor/tabler-icons/*); unsafe-inline for AUTH_PAGE_CSS.
+      "style-src 'self' 'unsafe-inline'",
+      "font-src 'self'",
       `script-src 'nonce-${scriptNonce}'`,
       "form-action 'self'",
       "frame-ancestors 'none'",

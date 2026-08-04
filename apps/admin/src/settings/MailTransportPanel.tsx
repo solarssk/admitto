@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Card, useToast } from "@admitto/ui";
+import { Card, Button, EmptyState, useToast } from "@admitto/ui";
 import { fetchMailSettings, saveMailSettings, sendMailTransportTest } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { MailSettingsResponse } from "../api/types.js";
@@ -199,12 +199,15 @@ export function MailTransportPanel() {
   if (loadError || !apiData) {
     return (
       <Card title="Mail transport">
-        <p role="alert" className="text-error">
-          {loadError ?? "Failed to load mail settings."}{" "}
-          <button type="button" className="settings-retry-link" onClick={() => void loadSettings()}>
-            Retry
-          </button>
-        </p>
+        <EmptyState
+          title="Could not load mail settings"
+          description={loadError ?? "Failed to load mail settings."}
+          action={
+            <Button type="button" variant="secondary" onClick={() => void loadSettings()}>
+              Retry
+            </Button>
+          }
+        />
       </Card>
     );
   }

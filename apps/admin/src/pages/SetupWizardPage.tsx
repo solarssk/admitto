@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import { Button } from "@admitto/ui";
+import { Button, Notice } from "@admitto/ui";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { BrandMark } from "../layouts/BrandMark.js";
 import {
@@ -345,10 +345,10 @@ function SetupWizardContent({ onComplete }: Readonly<SetupWizardPageProps>) {
 
         <div className={`setup-wizard__body${step === TOTAL_STEPS ? " setup-wizard__body--done" : ""}`}>
           {unsavedRefreshNotice && (
-            <output className="setup-wizard__refresh-notice">
+            <Notice variant="info" as="output" className="setup-wizard__refresh-notice">
               Unsaved form changes were lost after refresh. Settings you already saved (mail, branding)
               are still kept. Continue from here.
-            </output>
+            </Notice>
           )}
 
           {step === 1 && <WizardStep1Checks onChecksOk={setChecksOk} />}

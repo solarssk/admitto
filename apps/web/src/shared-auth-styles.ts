@@ -1,6 +1,7 @@
 /** Product name for auth HTML (browser tab, password managers, TOTP issuer). */
 import { AUTH_PASSWORD_STRENGTH_CSS } from "@admitto/auth/password-strength-script";
 import { renderAdmittoFaviconLink } from "./favicon.js";
+import { TABLER_ICONS_CSS_PATH } from "./vendor-assets.js";
 
 export const AUTH_PRODUCT_NAME = "Admitto";
 
@@ -31,8 +32,28 @@ export const AUTH_PAGE_CSS = `
   --at-yellow-700: #9a6400;
   --at-yellow-050: #fdf3e1;
   --at-green: #2fb344;
+  --at-green-050: #eaf7ec;
   --at-green-600: #279a39;
+  --at-gray-50: #f8fafc;
   --at-gray-400: #94a3b8;
+  --at-azure: #4299e1;
+  --at-azure-050: #e9f3fb;
+  /* Status tokens shared with @admitto/ui Notice (packages/ui colors.css). */
+  --border: var(--at-gray-200);
+  --surface-sunken: var(--at-gray-50);
+  --text-muted: var(--at-gray-500);
+  --status-ok: var(--at-green);
+  --status-ok-tint: var(--at-green-050);
+  --status-ok-fg: #1f7a2e;
+  --status-warn: var(--at-yellow);
+  --status-warn-tint: var(--at-yellow-050);
+  --status-warn-fg: #9a6400;
+  --status-error: var(--at-red);
+  --status-error-tint: var(--at-red-050);
+  --status-error-fg: #b32525;
+  --status-info: var(--at-azure);
+  --status-info-tint: var(--at-azure-050);
+  --status-info-fg: #2b6cb0;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -104,13 +125,46 @@ body {
   margin: 0 0 1.375rem;
   text-wrap: pretty;
 }
-.auth-error {
-  background: var(--at-red-050);
-  color: var(--at-red);
+/* Notice subset — same classes/structure as packages/ui Notice (SSR auth cannot import React).
+   margin-bottom replaces the SPA parent flex-gap that normally spaces Notice from siblings. */
+.at-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 0 1rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid transparent;
   border-radius: 6px;
-  padding: 0.625rem 0.75rem;
-  font-size: 0.875rem;
-  margin-bottom: 1rem;
+  font-size: 0.8125rem;
+}
+.at-notice__icon { margin-top: 3px; flex: none; }
+.at-notice__body { flex: 1; }
+.at-notice--info {
+  border-color: var(--border);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+}
+.at-notice--highlight {
+  border-color: var(--status-info);
+  background: var(--status-info-tint);
+  color: var(--status-info-fg);
+}
+.at-notice--success {
+  border-color: var(--status-ok);
+  background: var(--status-ok-tint);
+  color: var(--status-ok-fg);
+}
+.at-notice--warning {
+  border-color: var(--status-warn);
+  background: var(--status-warn-tint);
+  color: var(--status-warn-fg);
+}
+.at-notice--error {
+  border-color: var(--status-error);
+  background: var(--status-error-tint);
+  color: var(--status-error-fg);
 }
 .auth-label {
   display: block;
@@ -260,15 +314,6 @@ body {
   margin-top: 1.25rem;
   line-height: 1.5;
 }
-.auth-sso-fallback {
-  background: #fffbeb;
-  border: 1px solid #f59f00;
-  border-radius: 6px;
-  padding: 0.625rem 0.75rem;
-  font-size: 0.875rem;
-  color: #92400e;
-  margin-bottom: 1rem;
-}
 .auth-check-label {
   display: flex;
   align-items: center;
@@ -391,6 +436,7 @@ export function renderAuthDocument(options: AuthDocumentOptions): string {
   <meta property="og:site_name" content="${esc(AUTH_PRODUCT_NAME)}">
   <meta name="description" content="${esc(description)}">
   ${renderAdmittoFaviconLink()}
+  <link rel="stylesheet" href="${TABLER_ICONS_CSS_PATH}">
   <title>${esc(AUTH_PRODUCT_NAME)}${step ? ` - ${esc(step)}` : ""}</title>
   <style>${css}</style>
 </head>

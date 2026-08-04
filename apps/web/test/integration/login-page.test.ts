@@ -132,7 +132,7 @@ describe("GET /login", () => {
     const res = await app.request("/login?error=oidc_failed");
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain("auth-sso-fallback");
+    expect(html).toContain("at-notice--warning");
     expect(html).toContain("SSO unavailable");
     expect(html).not.toContain("Corporate sign-in failed");
     expect(html).not.toContain("oidc_failed");
@@ -142,7 +142,7 @@ describe("GET /login", () => {
     const res = await app.request("/login?error=invalid_credentials");
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain("auth-error");
+    expect(html).toContain("at-notice--error");
     expect(html).toContain("Invalid email or password");
   });
 

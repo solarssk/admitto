@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   DEFAULT_BRANDING_FONT_FAMILY_NAME,
+  EmptyState,
   HintLabel,
   IconButton,
   Input,
@@ -702,12 +703,15 @@ export function BrandingSettingsPanel() {
   if (loadError || !loadedOk) {
     return (
       <Card title="Organisation branding">
-        <p className="text-error" role="alert">
-          {loadError ?? "Failed to load branding settings."}{" "}
-          <button type="button" className="settings-retry-link" onClick={() => void load()}>
-            Retry
-          </button>
-        </p>
+        <EmptyState
+          title="Could not load branding settings"
+          description={loadError ?? "Failed to load branding settings."}
+          action={
+            <Button type="button" variant="secondary" onClick={() => void load()}>
+              Retry
+            </Button>
+          }
+        />
       </Card>
     );
   }

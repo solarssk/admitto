@@ -6,7 +6,7 @@ import {
   resolveAppleMapsUrl,
   resolveGoogleMapsUrl,
 } from "@admitto/location";
-import { Badge, Button, Card, HintLabel, Notice, useToast } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, HintLabel, Notice, useToast } from "@admitto/ui";
 import {
   fetchEventLocation,
   fetchMapTileConfig,
@@ -358,18 +358,21 @@ export function LocationSettingsPanel({
   if (loadError || !apiData || !tileConfig) {
     return (
       <Card title="Address">
-        <p role="alert" className="text-error">
-          Failed to load location settings.{" "}
-          <button
-            type="button"
-            className="settings-retry-link"
-            onClick={() => {
-              loadSettings().catch(() => {});
-            }}
-          >
-            Retry
-          </button>
-        </p>
+        <EmptyState
+          title="Could not load location settings"
+          description={loadError ?? "Failed to load location settings."}
+          action={
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                loadSettings().catch(() => {});
+              }}
+            >
+              Retry
+            </Button>
+          }
+        />
       </Card>
     );
   }

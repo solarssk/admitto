@@ -5,6 +5,7 @@ import {
   renderAuthDocument,
   renderAuthPage,
 } from "./shared-auth-styles.js";
+import { renderNoticeHtml } from "./auth-notice.js";
 import { getAuthPageInlineScriptHeaders } from "./auth-page-security.js";
 
 /** Security headers for MFA verify (nonce-gated inline script for OTP digit widget). */
@@ -57,7 +58,9 @@ function renderAuthOtpCodeField(options: AuthOtpCodeFieldOptions): string {
 
 /** Render MFA verification form HTML (`/mfa/verify`). */
 export function renderMfaVerifyForm(scriptNonce: string, error?: string, next?: string): string {
-  const err = error ? `<div class="auth-error" role="alert">${escapeHtml(error)}</div>` : "";
+  const err = error
+    ? renderNoticeHtml({ variant: "error", role: "alert", message: error })
+    : "";
   const nextField = next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : "";
   const card = `${renderAuthBrand()}
     <h2 class="auth-page-action">Two-factor authentication</h2>
@@ -95,7 +98,9 @@ export interface MfaEnrollQrPageOptions {
 /** Step 2: QR + setup key + TOTP confirmation (no backup codes yet). */
 export function renderMfaEnrollQrPage(options: MfaEnrollQrPageOptions): string {
   const { scriptNonce, otpauthUri, setupKey, qrDataUri, error, next } = options;
-  const err = error ? `<div class="auth-error" role="alert">${escapeHtml(error)}</div>` : "";
+  const err = error
+    ? renderNoticeHtml({ variant: "error", role: "alert", message: error })
+    : "";
   const nextField = next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : "";
 
   const setupSection =
@@ -155,7 +160,9 @@ export interface MfaEnrollBackupCodesPageOptions {
 /** Step 3: one-time backup recovery codes before app access. */
 export function renderMfaEnrollBackupCodesPage(options: MfaEnrollBackupCodesPageOptions): string {
   const { scriptNonce, backupCodes, codesUnavailable, error, next } = options;
-  const err = error ? `<div class="auth-error" role="alert">${escapeHtml(error)}</div>` : "";
+  const err = error
+    ? renderNoticeHtml({ variant: "error", role: "alert", message: error })
+    : "";
   const nextField = next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : "";
 
   const downloadForm =

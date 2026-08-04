@@ -5,6 +5,7 @@ import {
   renderAuthPasswordStrengthMeterHtml,
 } from "@admitto/auth/password-strength-script";
 import { getAuthPageInlineScriptHeaders } from "./auth-page-security.js";
+import { renderNoticeHtml } from "./auth-notice.js";
 import {
   authFormSubmitScript,
   AUTH_PAGE_CSS,
@@ -48,7 +49,9 @@ function errorMessage(error?: string): string | undefined {
 /** Server-rendered forced password change form. */
 export function renderChangePasswordForm(scriptNonce: string, error?: string): string {
   const message = errorMessage(error);
-  const errorBlock = message ? `<div class="auth-error" role="alert">${esc(message)}</div>` : "";
+  const errorBlock = message
+    ? renderNoticeHtml({ variant: "error", role: "alert", message })
+    : "";
   const passwordRules = esc(`minlength: ${PASSWORD_MIN_LENGTH};`);
   const card = `${renderAuthBrand()}
     <h2 class="auth-page-action">Change password</h2>

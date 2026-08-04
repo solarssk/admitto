@@ -5,6 +5,7 @@ import {
   renderAuthPasswordStrengthMeterHtml,
 } from "@admitto/auth/password-strength-script";
 import { getAuthPageInlineScriptHeaders } from "./auth-page-security.js";
+import { renderNoticeHtml } from "./auth-notice.js";
 import {
   authFormSubmitScript,
   AUTH_PAGE_CSS,
@@ -70,7 +71,9 @@ export function renderSetupPage(
   values: SetupFormValues = {},
 ): string {
   const message = setupErrorMessage(error);
-  const errorBlock = message ? `<div class="auth-error" role="alert">${esc(message)}</div>` : "";
+  const errorBlock = message
+    ? renderNoticeHtml({ variant: "error", role: "alert", message })
+    : "";
   const emailValue = values.email ? ` value="${esc(values.email)}"` : "";
   const displayNameValue = values.display_name ? ` value="${esc(values.display_name)}"` : "";
   const passwordRules = esc(setupPasswordRulesAttribute());

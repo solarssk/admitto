@@ -5,6 +5,7 @@ import {
   userRequiresMfaStepUp,
   verifyOidcLinkStepUp,
 } from "@admitto/auth";
+import { createAuthPageScriptNonce } from "../auth-page-security.js";
 import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
 import { beginOidcAuthorizationRedirect } from "./oidc-flow.js";
 import { getOidcLinkPageSecurityHeaders, renderOidcLinkForm } from "./oidc-link-page.js";
@@ -14,8 +15,8 @@ import type { RateLimitStore } from "../rate-limit/types.js";
 
 const LINK_ERROR = "Invalid password or code. Try again.";
 
-function htmlResponse(c: Context, html: string, status: 200 | 401 = 200): Response {
-  for (const [name, value] of Object.entries(getOidcLinkPageSecurityHeaders())) {
+function htmlResponse(c: Context, html: string, scriptNonce: string, status: 200 | 401 = 200): Response {
+  for (const [name, value] of Object.entries(getOidcLinkPageSecurityHeaders(scriptNonce))) {
     c.header(name, value);
   }
   return c.html(html, status);
@@ -39,6 +40,7 @@ async function requiresTotpForUser(db: PrismaClient, userId: string): Promise<bo
 }
 
 function renderLinkForm(
+  scriptNonce: string,
   providerId: string,
   providerName: string,
   requiresTotp: boolean,
@@ -46,6 +48,7 @@ function renderLinkForm(
   error?: string,
 ): string {
   return renderOidcLinkForm({
+    scriptNonce,
     providerId,
     providerName,
     requiresTotp,
@@ -59,6 +62,7 @@ export async function handleGetOidcLink(c: Context, db: PrismaClient): Promise<R
   const providerId = c.req.param("providerId") ?? "";
   const auth = c.get("auth");
   const next = resolveOptionalSafeRedirectPath(c.req.query("next"));
+  const scriptNonce = createAuthPageScriptNonce();
 
   const provider = await findOidcProviderById(db, providerId);
   if (!provider?.enabled) {
@@ -68,7 +72,8 @@ export async function handleGetOidcLink(c: Context, db: PrismaClient): Promise<R
   const requiresTotp = await requiresTotpForUser(db, auth.userId);
   return htmlResponse(
     c,
-    renderLinkForm(providerId, provider.display_name, requiresTotp, next),
+    renderLinkForm(scriptNonce, providerId, provider.display_name, requiresTotp, next),
+    scriptNonce,
   );
 }
 
@@ -88,6 +93,7 @@ export async function handlePostOidcLink(
   const password = form["password"] ?? "";
   const code = form["code"]?.trim();
   const next = resolveOptionalSafeRedirectPath(form["next"] ?? c.req.query("next"));
+  const scriptNonce = createAuthPageScriptNonce();
 
   const provider = await findOidcProviderById(db, providerId);
   if (!provider?.enabled) {
@@ -99,7 +105,8 @@ export async function handlePostOidcLink(
   if (!password) {
     return htmlResponse(
       c,
-      renderLinkForm(providerId, provider.display_name, requiresTotp, next, LINK_ERROR),
+      renderLinkForm(scriptNonce, providerId, provider.display_name, requiresTotp, next, LINK_ERROR),
+      scriptNonce,
       401,
     );
   }
@@ -128,7 +135,8 @@ export async function handlePostOidcLink(
         : LINK_ERROR;
     return htmlResponse(
       c,
-      renderLinkForm(providerId, provider.display_name, requiresTotp, next, message),
+      renderLinkForm(scriptNonce, providerId, provider.display_name, requiresTotp, next, message),
+      scriptNonce,
       401,
     );
   }

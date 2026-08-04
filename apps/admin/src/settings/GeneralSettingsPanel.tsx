@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, Card, HintLabel, Input, Notice, useToast, type ToastVariant } from "@admitto/ui";
+import { Button, Card, EmptyState, HintLabel, Input, Notice, useToast, type ToastVariant } from "@admitto/ui";
 import {
   fetchSecuritySettings,
   fetchSupportContact,
@@ -111,11 +111,10 @@ export function GeneralSettingsPanel() {
     } catch (err) {
       const message = operatorApiErrorMessage(err, "Failed to load organisation settings.");
       setLoadError(message);
-      addToast(message, "error");
     } finally {
       setLoading(false);
     }
-  }, [addToast]);
+  }, []);
 
   useEffect(() => {
     void load();
@@ -215,12 +214,15 @@ export function GeneralSettingsPanel() {
   if (loadError || !settings) {
     return (
       <Card title="Instance URL">
-        <div className="sessions-status">
-          <p>{loadError}</p>
-          <Button type="button" variant="secondary" onClick={() => void load()}>
-            Retry
-          </Button>
-        </div>
+        <EmptyState
+          title="Could not load organisation settings"
+          description={loadError ?? undefined}
+          action={
+            <Button type="button" variant="secondary" onClick={() => void load()}>
+              Retry
+            </Button>
+          }
+        />
       </Card>
     );
   }

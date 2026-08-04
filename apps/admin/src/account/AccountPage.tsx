@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Badge, Button, Card, Checkbox, HintLabel, Input, Notice, PasswordStrengthMeter, Select, Spinner, useToast } from "@admitto/ui";
+import { Badge, Button, Card, Checkbox, EmptyState, HintLabel, Input, Notice, PasswordStrengthMeter, Select, Spinner, useToast } from "@admitto/ui";
 import {
   ApiError,
   cancelMfaEnroll,
@@ -217,8 +217,15 @@ export function AccountPage() {
   if (error || !account) {
     return (
       <Card title="Profile">
-        <p role="alert">{error ?? "Failed to load account."}</p>
-        <Button type="button" variant="secondary" onClick={() => void loadAccount()}>Retry</Button>
+        <EmptyState
+          title="Could not load account"
+          description={error ?? "Failed to load account."}
+          action={
+            <Button type="button" variant="secondary" onClick={() => void loadAccount()}>
+              Retry
+            </Button>
+          }
+        />
       </Card>
     );
   }

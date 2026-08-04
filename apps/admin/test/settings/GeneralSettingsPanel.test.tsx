@@ -73,9 +73,10 @@ describe("GeneralSettingsPanel", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     });
-    const panel = document.querySelector(".sessions-status p");
-    expect(panel?.textContent).toMatch(/Failed to load organisation settings/);
+    expect(screen.getByText("Could not load organisation settings")).toBeTruthy();
+    expect(screen.getByText(/Failed to load organisation settings/)).toBeTruthy();
     expect(screen.queryByText("secret_internal")).toBeNull();
+    expect(screen.queryByTestId("at-toast")).toBeNull();
   });
 
   it("reloads after clicking Retry from the load-error state", async () => {
