@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { deliveryHistoryIcon, formatDeliveryHistoryTime, rowTimestamp } from "../../src/communication/delivery-format.js";
+import {
+  countDeliveryOutcomes,
+  deliveryHistoryIcon,
+  formatDeliveryHistoryTime,
+  rowTimestamp,
+} from "../../src/communication/delivery-format.js";
 import { formatEventDateTime } from "../../src/utils/event-dates.js";
 
 describe("rowTimestamp", () => {
@@ -53,5 +58,31 @@ describe("deliveryHistoryIcon", () => {
     expect(deliveryHistoryIcon("initial")).toBe("ticket");
     expect(deliveryHistoryIcon("resend")).toBe("mail-forward");
     expect(deliveryHistoryIcon("anything-else")).toBe("ticket");
+  });
+
+  it("uses mail-exclamation for bounced, failed, and rejected regardless of purpose", () => {
+    expect(deliveryHistoryIcon("initial", "bounced")).toBe("mail-exclamation");
+    expect(deliveryHistoryIcon("resend", "failed")).toBe("mail-exclamation");
+    expect(deliveryHistoryIcon("resend", "rejected")).toBe("mail-exclamation");
+    expect(deliveryHistoryIcon("resend", "sent")).toBe("mail-forward");
+  });
+});
+
+describe("countDeliveryOutcomes", () => {
+  it("counts accepted/sent/delivered as sent and bounced separately", () => {
+    expect(
+      countDeliveryOutcomes([
+        { status: "sent" },
+        { status: "accepted" },
+        { status: "delivered" },
+        { status: "bounced" },
+        { status: "failed" },
+        { status: "queued" },
+      ]),
+    ).toEqual({ sent: 3, bounced: 1 });
+  });
+
+  it("returns zeros for an empty list", () => {
+    expect(countDeliveryOutcomes([])).toEqual({ sent: 0, bounced: 0 });
   });
 });

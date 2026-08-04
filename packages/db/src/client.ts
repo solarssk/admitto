@@ -12,6 +12,8 @@ export {
   PrismaClient,
   Prisma,
   type Attendee,
+  type BounceIngestSettings,
+  type EmailDelivery,
   type IdentityProvider,
   type MailSettings,
   type Session,

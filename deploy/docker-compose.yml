@@ -162,6 +162,27 @@ services:
     networks:
       - internal
 
+  # IMAP bounce / NDR ingest — same Admitto image as app; entrypoint overridden (do not
+  # add a third branch to docker-entrypoint.sh). Interval via BOUNCE_INGEST_INTERVAL_SECONDS
+  # (DB poll_interval_minutes is informational only in v1).
+  bounce-ingest:
+    image: ${ADMITTO_IMAGE:-ghcr.io/solarssk/admitto:local}
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/scripts/bounce-ingest-loop.sh"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    volumes:
+      - ./scripts/bounce-ingest-loop.sh:/scripts/bounce-ingest-loop.sh:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+
 networks:
   # Fixed subnet (Compose otherwise auto-assigns one) so TRUSTED_PROXY_CIDRS in .env can name it —
   # the app trusts X-Forwarded-* only from a peer inside this range (see deploy/README.md).

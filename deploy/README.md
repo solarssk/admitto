@@ -162,6 +162,7 @@ Per-container stdout, by design (SECURITY-CONTROLS: logs are operational — no 
 | `proxy` | Nginx access/error log (image default) — includes client IPs; rotate/limit via Docker logging options if kept long-term |
 | `retention` | `[retention] …` prefixed lines per nightly run |
 | `db-backup` | `[db-backup] …` prefixed lines per nightly dump |
+| `bounce-ingest` | `[bounce-ingest] …` prefixed lines per IMAP bounce poll |
 | `db` / `redis` | Image defaults (Postgres startup/checkpoints, Redis notices) |
 
 **Decision (issue #237):** the `app` access log is the supported way to see request activity in Portainer/`docker logs`. It deliberately excludes IPs, user agents, cookies, and query strings; ticket/QR paths are logged as `/t/[redacted]` and `/q/[redacted]` so QR tokens never reach stdout. Successful `/healthz`/`/readyz` probes are skipped (Docker healthcheck fires every 10s); failing probes are logged. Request-level *attribution* (who did what) stays in the DB audit log; client IPs stay at the proxy layer. Disable with `LOG_HTTP_REQUESTS=0` in `deploy/.env`.
@@ -312,6 +313,12 @@ docker compose logs db-backup
 docker compose exec db-backup sh -c 'ls -la /backups/nightly-*.sql.gz'
 docker compose exec db-backup sh -c 'gzip -t /backups/nightly-*.sql.gz'
 ```
+
+**Bounce ingest:** the `bounce-ingest` sidecar uses the same Admitto image as `app` and runs
+`node packages/mail-delivery/dist/cli.js ingest-bounces` on a loop
+(`BOUNCE_INGEST_INTERVAL_SECONDS`, default 300). Configure IMAP per event under Event settings →
+Mail → Bounce detection. The DB field `poll_interval_minutes` is informational in v1; the sidecar
+interval comes only from the env var.
 
 Nightly dumps on the host volume are **not** a full disaster-recovery strategy — copy offsite per
 ADR 0023 (S3, rsync, or your backup tool). TODO: document operator-specific offsite copy.

@@ -23,3 +23,8 @@ services:
       - .env.smoke
     profiles:
       - migration-smoke-skip
+  bounce-ingest:
+    env_file: !override
+      - .env.smoke
+    profiles:
+      - migration-smoke-skip

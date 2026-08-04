@@ -4062,7 +4062,9 @@ output.mail-field-hint {
 .mail-transport-section > .mail-tuning__toggles,
 .mail-transport-section > .mail-tuning__limits,
 .mail-transport-section > .mail-tuning__timeouts,
-.mail-transport-section > .security-settings-rows {
+.mail-transport-section > .security-settings-rows,
+.mail-transport-section > .smtp-connection-tls-pair,
+.mail-transport-section > .smtp-connection-probe__result {
   grid-column: 1 / -1;
 }
 
@@ -4434,19 +4436,68 @@ output.mail-field-hint {
   color: var(--text-muted);
 }
 
-/* Recipient + button always share one row, at any width — a grid column pair (like
- * SMTP host/Port) forces a stacked 1-column layout on mobile, which splits this into
- * two rows; flex without wrap keeps them together and just shrinks the input instead. */
+/* Recipient + Send test: same width as one .mail-transport-section column
+ * (e.g. Username). Button's right edge lines up with Username's right edge.
+ * Event bounce toggle sits beside that group and only takes the width it needs. */
 .mail-test-send__row {
   display: flex;
-  align-items: end;
-  gap: var(--space-3) var(--space-4);
+  align-items: flex-end;
+  gap: var(--space-3);
+  width: 100%;
 }
 
-.mail-test-send__row .at-field {
-  flex: 1 1 260px;
-  max-width: 420px;
+.mail-test-send__controls {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  flex: 0 1 auto;
+  width: 100%;
+  max-width: calc((100% - var(--space-4)) / 2);
   min-width: 0;
+}
+
+.mail-test-send__controls .at-field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Pin to the input control height so the button lines up with the field, not the label. */
+.mail-test-send__send-control {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  height: var(--control-h);
+}
+
+.mail-test-send__bounce {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  height: var(--control-h);
+}
+
+.mail-test-send__bounce-label {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .mail-test-send__controls {
+    max-width: none;
+  }
+
+  .mail-test-send__row--with-bounce {
+    flex-wrap: wrap;
+  }
+
+  .mail-test-send__bounce {
+    width: 100%;
+    height: auto;
+    min-height: var(--control-h);
+    justify-content: space-between;
+  }
 }
 
 .text-success {
@@ -4478,57 +4529,116 @@ output.mail-field-hint {
   border-color: var(--status-ok);
 }
 
+.mail-preview--warn {
+  border-color: var(--status-warn);
+}
+
 .mail-preview--error {
   border-color: var(--status-error);
 }
 
 .mail-preview__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
   border-bottom: 1px solid var(--border);
   padding-bottom: var(--space-2);
   margin-bottom: var(--space-3);
 }
 
-.mail-preview__head b {
+.mail-preview__head-main {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.mail-preview__head-icon {
+  flex: none;
+  margin-top: 0.15em;
+  font-size: 1.1em;
+  line-height: 1;
+  color: var(--status-ok);
+}
+
+.mail-preview__head-icon--error {
+  color: var(--status-error);
+}
+
+.mail-preview__head-icon--warn {
+  color: var(--status-warn);
+}
+
+.mail-preview__head-text {
+  min-width: 0;
+}
+
+.mail-preview__head-text b {
   display: block;
   font-size: var(--fs-body);
   color: var(--text-primary);
+  line-height: 1.35;
 }
 
-.mail-preview__head span {
+.mail-preview__head-text span {
+  display: block;
+  margin-top: var(--space-1);
   font-size: var(--fs-xs);
   color: var(--text-muted);
 }
 
+.mail-preview__provider-badge {
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--status-ok);
+  background: var(--status-ok-tint);
+  white-space: nowrap;
+}
+
+.mail-preview__provider-badge--error {
+  color: var(--status-error);
+  background: var(--status-error-tint);
+}
+
+.mail-preview__provider-badge--warn {
+  color: var(--status-warn);
+  background: var(--status-warn-tint);
+}
+
 .test-mail-hero {
   display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
+  align-items: center;
+  gap: var(--space-2);
   padding: var(--space-2) 0;
 }
 
 .test-mail-hero__icon {
-  width: 38px;
-  height: 38px;
+  width: 1.375rem;
+  height: 1.375rem;
   border-radius: 50%;
   flex: none;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--fs-h3);
-  background: var(--status-ok-tint);
-  color: var(--status-ok);
-}
-
-.mail-preview--error .test-mail-hero__icon {
+  font-size: 0.85rem;
+  line-height: 1;
   background: var(--status-error-tint);
   color: var(--status-error);
 }
 
 .test-mail-hero p {
-  margin: var(--space-1) 0 0;
+  margin: 0;
   font-size: var(--fs-sm);
   color: var(--text-secondary);
-  line-height: 1.55;
+  line-height: 1.4;
 }
 
 .test-mail-summary {
@@ -4538,7 +4648,7 @@ output.mail-field-hint {
   background: var(--surface-sunken);
   border-radius: var(--radius-sm, 4px);
   padding: var(--space-3) var(--space-3);
-  margin-bottom: var(--space-3);
+  margin-bottom: 0;
 }
 
 .test-mail-summary > div {
@@ -4562,11 +4672,20 @@ output.mail-field-hint {
   font-size: 0.9em;
 }
 
-.test-mail-footnote {
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
-  margin: 0;
-  text-align: center;
+/* "What this means" is a full sentence, not a short value like the other rows,
+   so it stacks below its label instead of being squeezed to the right. */
+.test-mail-summary__full {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.test-mail-summary__full b {
+  font-weight: 400;
+}
+
+.mail-preview__bounce-notice {
+  margin-top: var(--space-3);
 }
 
 /* mail-transport-footer — shared footer row for Security panel */
@@ -4738,6 +4857,98 @@ output.mail-field-hint {
   .org-mail-summary > .at-btn {
     flex: 1 0 100%;
     margin-top: var(--space-1);
+  }
+}
+
+/* Bounce detection panel under Event settings → Mail.
+   Vertical space to Send test email comes from .event-settings-tabpanel gap only. */
+.event-bounce-ingest {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Reuse toggle spans the full 2-column mail-transport-section row (same as TLS toggles).
+   Center the switch against the label+description block (same idea as .font-surface-rows). */
+.mail-transport-section > .event-bounce-ingest__reuse-row {
+  grid-column: 1 / -1;
+  align-items: center;
+}
+
+/* Check every + Test connection share the right grid cell; select flexes, button hugs content. */
+.event-bounce-ingest__poll-and-test {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.event-bounce-ingest__poll-and-test > .at-field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Legacy global `.at-select { max-width: 24rem }` caps selects at 384px. */
+.event-bounce-ingest .event-bounce-ingest__poll-select {
+  max-width: none;
+}
+
+.event-bounce-ingest__test-control {
+  flex: 0 0 auto;
+}
+
+/* Password + Test connection share the Username|Password grid cell (same idea as
+   bounce Check every + Test connection). */
+.smtp-connection-password-and-test {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.smtp-connection-password-and-test > .mail-secret-field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.smtp-connection-probe__control {
+  flex: 0 0 auto;
+}
+
+/* TLS toggles side by side so each switch sits next to its label (less empty
+   horizontal space than a full-width settings-row). Center like bounce reuse. */
+.smtp-connection-tls-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3) var(--space-4);
+  align-items: stretch;
+}
+
+.smtp-connection-tls-row {
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-2) 0;
+  border-bottom: 0;
+}
+
+.smtp-connection-tls-row:first-child,
+.smtp-connection-tls-row:last-child {
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-2);
+}
+
+@media (max-width: 720px) {
+  .smtp-connection-tls-pair {
+    grid-template-columns: 1fr;
+  }
+
+  .smtp-connection-password-and-test {
+    flex-wrap: wrap;
+  }
+
+  .smtp-connection-probe__control {
+    width: 100%;
   }
 }
 

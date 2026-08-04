@@ -1,9 +1,11 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type RefObject } from "react";
 import { useNavigate } from "react-router";
 import { Card, HintLabel, Button, EmptyState, useToast } from "@admitto/ui";
 import {
   clearEventMailSettings,
+  fetchEventBounceIngestSettings,
   fetchEventMailSettings,
+  probeEventMailSmtpConnection,
   saveEventMailSettings,
   sendEventMailTransportTest,
 } from "../api/client.js";
@@ -96,9 +98,9 @@ function OrgMailSummary({
   );
 }
 
-/** Imperative save()/reset(), kept for tests that drive the form directly — the real
- * Save/Reset buttons end users click sit in this card's own bottom SettingsFooter,
- * matching the instance-level Mail transport panel's layout. */
+/** Imperative save()/reset(), kept for tests that drive the form directly. On the event
+ * Mail tab the real Save/Reset pair lives in a shared tab footer (transport + bounce).
+ * Standalone renders (unit tests) still embed SettingsFooter when `embeddedFooter` is true. */
 export type EventMailSettingsCardHandle = {
   save: () => Promise<void>;
   reset: () => void;
@@ -120,8 +122,29 @@ export const EventMailSettingsCard = forwardRef<
      * hoisted Save button can disable itself and show "Saving…" the same way this card's
      * own button used to. */
     onSavingChange?: (saving: boolean) => void;
+    /** When false, omit the card footer so the host can render one shared Save/Reset for the
+     * whole Mail tab (bounce panel included). Defaults to true for standalone/unit use. */
+    embeddedFooter?: boolean;
+    /** Forwarded when the host owns the footer and needs to show this card's validation list. */
+    onValidationErrorsChange?: (errors: string[]) => void;
+    /** Host-owned list element for scroll-into-view when `embeddedFooter` is false. */
+    validationErrorsListRef?: RefObject<HTMLUListElement | null>;
+    /** Rendered above Send test email (e.g. Bounce detection on the Event Mailing tab). */
+    children?: ReactNode;
   }>
->(function EventMailSettingsCard({ eventId, isArchived, onDirtyChange, onSavingChange }, ref) {
+>(function EventMailSettingsCard(
+  {
+    eventId,
+    isArchived,
+    onDirtyChange,
+    onSavingChange,
+    embeddedFooter = true,
+    onValidationErrorsChange,
+    validationErrorsListRef,
+    children,
+  },
+  ref,
+) {
   const { addToast } = useToast();
   const { assignments } = useAuth();
   const isSa = isSuperadmin(assignments);
@@ -160,6 +183,10 @@ export const EventMailSettingsCard = forwardRef<
     updateDraft,
     updateSecrets,
   } = useMailSettingsFormState();
+  const [probeTesting, setProbeTesting] = useState(false);
+  const [probeResult, setProbeResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [bounceVerify, setBounceVerify] = useState(false);
+  const [bounceIngestReady, setBounceIngestReady] = useState(false);
   // First switch into "dedicated" (no saved override yet) starts the draft blank rather
   // than prefilled with the organization's values — prefilled-but-unedited would silently
   // save as a full duplicate of the org's config the moment Save is clicked. Only the
@@ -170,9 +197,12 @@ export const EventMailSettingsCard = forwardRef<
 
   useEffect(() => {
     if (validationErrors.length > 0) {
-      validationErrorsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      (validationErrorsListRef ?? validationErrorsRef).current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
     }
-  }, [validationErrors, validationErrorsRef]);
+  }, [validationErrors, validationErrorsListRef, validationErrorsRef]);
 
   const applyResponse = useCallback(
     (data: EventMailSettingsResponse) => {
@@ -185,6 +215,7 @@ export const EventMailSettingsCard = forwardRef<
       setSavedDraft(nextDraft);
       setSecrets(emptySecretEdits());
       setValidationErrors([]);
+      setProbeResult(null);
       dedicatedDraftSeededRef.current = false;
     },
     [setDraft, setSavedDraft, setSecrets, setValidationErrors],
@@ -213,6 +244,25 @@ export const EventMailSettingsCard = forwardRef<
     loadSettings().catch(() => {});
     return () => loadAbortRef.current?.abort();
   }, [loadSettings, loadAbortRef]);
+
+  useEffect(() => {
+    const ac = new AbortController();
+    void (async () => {
+      try {
+        const bounce = await fetchEventBounceIngestSettings(eventId, ac.signal);
+        if (ac.signal.aborted) return;
+        setBounceIngestReady(bounce.configured && bounce.enabled);
+      } catch {
+        if (ac.signal.aborted) return;
+        setBounceIngestReady(false);
+      }
+    })();
+    return () => ac.abort();
+  }, [eventId]);
+
+  useEffect(() => {
+    if (!bounceIngestReady && bounceVerify) setBounceVerify(false);
+  }, [bounceIngestReady, bounceVerify]);
 
   const handleModeChange = (next: Mode) => {
     testGenerationRef.current += 1;
@@ -256,6 +306,13 @@ export const EventMailSettingsCard = forwardRef<
       } finally {
         setSaving(false);
       }
+      return;
+    }
+
+    // Organization selected: only clear a dedicated override when one is actually pending /
+    // saved. Already-inherited org with nothing dirty must be a no-op (shared Mail-tab Save
+    // also persists bounce settings and must not open Revert for that).
+    if (savedMode === "org" && !apiData.hasEventOverride) {
       return;
     }
 
@@ -303,6 +360,10 @@ export const EventMailSettingsCard = forwardRef<
     onSavingChange?.(saving);
   }, [saving, onSavingChange]);
 
+  useEffect(() => {
+    onValidationErrorsChange?.(validationErrors);
+  }, [validationErrors, onValidationErrorsChange]);
+
   // Org mode always tests the saved organization transport, never leftover edits from a
   // dedicated draft the admin switched away from (CodeRabbit review) — inherited -> dedicated
   // edits -> back to organization must not disable/mislabel the test using stale draft state.
@@ -331,20 +392,57 @@ export const EventMailSettingsCard = forwardRef<
       "Verifies whichever transport actually resolves for this event (dedicated or inherited).";
   }
 
+  let bounceVerifyBlockedReason: string | undefined;
+  if (isArchived) {
+    bounceVerifyBlockedReason = "This event is archived.";
+  } else if (!bounceIngestReady) {
+    bounceVerifyBlockedReason =
+      "Enable and configure bounce detection for this event first.";
+  } else if (hasUnsavedChanges) {
+    bounceVerifyBlockedReason = "Save your changes before verifying bounce.";
+  } else if (!transportConfigured) {
+    bounceVerifyBlockedReason = "Select and save a transport first.";
+  }
+
   const handleTestSend = async () => {
     if (testSendReason) {
       addToast(testSendReason, "warning");
       return;
     }
+    const verifyBounce = bounceVerify && !bounceVerifyBlockedReason;
     await runTestSend({
       testEmail,
       draft: testDraft,
-      send: (to) => sendEventMailTransportTest(eventId, to),
+      send: (to) => sendEventMailTransportTest(eventId, to, { verifyBounce }),
       testGenerationRef,
       setTestSending,
       setTestResult,
       addToast,
     });
+  };
+
+  const handleTestConnection = async () => {
+    if (isArchived || hasUnsavedChanges || mode !== "dedicated" || draft.provider !== "smtp") {
+      return;
+    }
+    setProbeTesting(true);
+    setProbeResult(null);
+    try {
+      const res = await probeEventMailSmtpConnection(eventId);
+      setProbeResult({
+        ok: res.ok,
+        message: res.ok
+          ? (res.message ?? "Connected.")
+          : (res.error ?? "Could not connect."),
+      });
+    } catch (err) {
+      setProbeResult({
+        ok: false,
+        message: operatorApiErrorMessage(err, "Could not test the SMTP connection."),
+      });
+    } finally {
+      setProbeTesting(false);
+    }
   };
 
   if (loading) {
@@ -481,6 +579,17 @@ export const EventMailSettingsCard = forwardRef<
               smtpPasswordEdit={secrets.smtpPassword}
               updateSecrets={updateSecrets}
               disabled={isArchived}
+              onTestConnection={() => void handleTestConnection()}
+              testing={probeTesting}
+              testBlocked={hasUnsavedChanges || isArchived}
+              testBlockedReason={
+                isArchived
+                  ? "This event is archived."
+                  : hasUnsavedChanges
+                    ? "Save your changes first."
+                    : undefined
+              }
+              testResult={probeResult}
             />
           )}
 
@@ -509,6 +618,8 @@ export const EventMailSettingsCard = forwardRef<
         </>
       )}
 
+      {children}
+
       <SendTestEmailCard
         idPrefix="event-mail-test-send"
         testEmail={testEmail}
@@ -518,6 +629,9 @@ export const EventMailSettingsCard = forwardRef<
         testSending={testSending}
         onTestSend={() => void handleTestSend()}
         testResult={testResult}
+        bounceVerify={bounceVerify}
+        onBounceVerifyChange={setBounceVerify}
+        bounceVerifyBlockedReason={bounceVerifyBlockedReason}
       />
 
       {isArchived ? (
@@ -525,14 +639,16 @@ export const EventMailSettingsCard = forwardRef<
           This event is archived - mail settings cannot be changed.
         </p>
       ) : (
-        <SettingsFooter
-          validationErrors={validationErrors}
-          validationErrorsRef={validationErrorsRef}
-          hasUnsavedChanges={hasUnsavedChanges}
-          saving={saving}
-          onReset={handleReset}
-          onSave={() => void handleSave()}
-        />
+        embeddedFooter && (
+          <SettingsFooter
+            validationErrors={validationErrors}
+            validationErrorsRef={validationErrorsRef}
+            hasUnsavedChanges={hasUnsavedChanges}
+            saving={saving}
+            onReset={handleReset}
+            onSave={() => void handleSave()}
+          />
+        )
       )}
 
       <ConfirmDialog

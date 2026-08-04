@@ -5,7 +5,7 @@
  * are identical between the two scopes; only what fetches/saves/tests differs.
  */
 import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
-import { Badge, Button, Card, HintLabel, Input, Switch, Tooltip } from "@admitto/ui";
+import { Badge, Button, Card, HintLabel, Input, Notice, Switch, Tooltip } from "@admitto/ui";
 import type {
   MailPlainFieldDto,
   MailProvider,
@@ -19,6 +19,7 @@ import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-er
 import { emptyMailDraft, emptySecretEdits, type MailDraft, type SecretEdits } from "./mailSettingsValidation.js";
 import { buildMailProviderOptions, MAIL_PROVIDER_LABELS } from "./mailProviderOptions.js";
 import { formatEventDateTime, getBrowserTimeZone } from "../utils/event-dates.js";
+import { describeSmtpBounceCode } from "../utils/smtpBounceCodes.js";
 
 /** Every field here (SMTP username/password, Graph/Power Automate secrets, and every
  * email-typed field below) is something the operator types once and reuses — never
@@ -47,6 +48,11 @@ export interface TestResult {
   host?: string;
   port?: string;
   mailbox?: string;
+  bounceProbe?: {
+    status: "ok" | "timeout" | "failed";
+    message: string;
+    smtpCode?: string | null;
+  };
 }
 
 export type FieldLocked = (key: keyof MailSettingsFieldsDto) => boolean;
@@ -146,7 +152,7 @@ const SENDER_INTRO = "From, reply-to, and bounce addresses used on every email t
 // Shared by MailTransportPanel (organization-wide) and EventMailSettingsCard (per-event) - both
 // render their own "Send test email" card against the same underlying test-send flow.
 export const SEND_TEST_EMAIL_HINT =
-  "Sends a trivial message to confirm delivery — not an event ticket or reminder template.";
+  "Sends a simple message to confirm delivery. It is not an event ticket or reminder template.";
 
 export const PROVIDER_GUIDE: Record<MailProvider | "", string> = {
   "": "No mail will be sent yet.",
@@ -476,6 +482,11 @@ export function SmtpConnectionCard({
   smtpPasswordEdit,
   updateSecrets,
   disabled = false,
+  onTestConnection,
+  testing = false,
+  testBlocked = false,
+  testBlockedReason,
+  testResult = null,
 }: Readonly<{
   draft: MailDraft;
   fieldLocked: FieldLocked;
@@ -485,8 +496,17 @@ export function SmtpConnectionCard({
   updateSecrets: (updater: (prev: SecretEdits) => SecretEdits) => void;
   /** Read-only override independent of `fieldLocked` (env-managed) — e.g. an archived event. */
   disabled?: boolean;
+  /** When set, shows Test connection (SMTP verify, no send). */
+  onTestConnection?: () => void;
+  testing?: boolean;
+  testBlocked?: boolean;
+  /** Operator-facing reason when the button is blocked (e.g. unsaved changes). */
+  testBlockedReason?: string;
+  testResult?: { ok: boolean; message: string } | null;
 }>) {
   const isDisabled: FieldLocked = (key) => fieldLocked(key) || disabled;
+  const probeDisabled = disabled || testing || testBlocked || !onTestConnection;
+  const probeReasonId = "smtp-connection-probe-reason";
   return (
     <Card
       title={<HintLabel hint={SMTP_CARD_HINT}>SMTP connection</HintLabel>}
@@ -518,36 +538,84 @@ export function SmtpConnectionCard({
             onChange={(e) => updateDraft({ user: e.target.value })}
             {...NO_AUTOFILL_PROPS}
           />
-          <SecretFieldRow
-            label="Password"
-            field={smtpPasswordField}
-            edit={smtpPasswordEdit}
-            disabled={disabled}
-            {...makeSecretHandlers("smtpPassword", updateSecrets)}
-          />
-          <div className="settings-row">
-            <div className="settings-row__text">
-              <strong>Use TLS (secure)</strong>
-              <p>Implicit TLS on connect, typically port 465.</p>
-            </div>
-            <Switch
-              aria-label="Use TLS (secure)"
-              checked={draft.secure}
-              disabled={isDisabled("secure")}
-              onChange={(e) => updateDraft({ secure: e.target.checked })}
+          <div className="smtp-connection-password-and-test">
+            <SecretFieldRow
+              label="Password"
+              field={smtpPasswordField}
+              edit={smtpPasswordEdit}
+              disabled={disabled}
+              {...makeSecretHandlers("smtpPassword", updateSecrets)}
             />
+            {onTestConnection && (
+              <div className="smtp-connection-probe__control">
+                <Tooltip content={testBlockedReason}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={probeDisabled}
+                    aria-describedby={testBlockedReason ? probeReasonId : undefined}
+                    onClick={onTestConnection}
+                    icon={<i className="ti ti-plug" aria-hidden="true" />}
+                  >
+                    {testing ? "Testing…" : "Test connection"}
+                  </Button>
+                </Tooltip>
+                {testBlockedReason && (
+                  <span id={probeReasonId} className="sr-only">
+                    {testBlockedReason}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
-          <div className="settings-row">
-            <div className="settings-row__text">
-              <strong>Require STARTTLS</strong>
-              <p>Upgrade a plaintext connection, typically port 587.</p>
+          {onTestConnection && testResult && (
+            <Notice
+              className="smtp-connection-probe__result"
+              variant={testResult.ok ? "success" : "error"}
+              role="status"
+            >
+              {testResult.message}
+            </Notice>
+          )}
+          <div className="smtp-connection-tls-pair">
+            <div className="settings-row smtp-connection-tls-row">
+              <div className="settings-row__text">
+                <strong>Use TLS (secure)</strong>
+                <p>Implicit TLS on connect, typically port 465.</p>
+              </div>
+              <Switch
+                aria-label="Use TLS (secure)"
+                checked={draft.secure}
+                disabled={isDisabled("secure")}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  updateDraft(
+                    on
+                      ? { secure: true, requireTls: false }
+                      : { secure: false },
+                  );
+                }}
+              />
             </div>
-            <Switch
-              aria-label="Require STARTTLS"
-              checked={draft.requireTls}
-              disabled={isDisabled("requireTls")}
-              onChange={(e) => updateDraft({ requireTls: e.target.checked })}
-            />
+            <div className="settings-row smtp-connection-tls-row">
+              <div className="settings-row__text">
+                <strong>Require STARTTLS</strong>
+                <p>Upgrade a plaintext connection, typically port 587.</p>
+              </div>
+              <Switch
+                aria-label="Require STARTTLS"
+                checked={draft.requireTls}
+                disabled={isDisabled("requireTls")}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  updateDraft(
+                    on
+                      ? { requireTls: true, secure: false }
+                      : { requireTls: false },
+                  );
+                }}
+              />
+            </div>
           </div>
         </div>
 
@@ -785,26 +853,62 @@ export function PowerAutomateCard({
 export function TestResultPreview({ testResult }: Readonly<{ testResult: TestResult }>) {
   const transportLabel = testResult.provider
     ? MAIL_PROVIDER_LABELS[testResult.provider]
-    : "the configured transport";
-  const heroText =
-    testResult.kind === "ok" ? `Sent successfully via ${transportLabel}.` : testResult.message;
+    : undefined;
+  const isOk = testResult.kind === "ok";
+  const bounceStatus = testResult.bounceProbe?.status;
+  const bounceOk = bounceStatus === "ok";
+  const bounceUnverified = bounceStatus === "timeout" || bounceStatus === "failed";
+
+  let previewKind: "ok" | "error" | "warn" = isOk ? "ok" : "error";
+  let headTitle: string;
+  let headIcon: string;
+  if (!isOk) {
+    headTitle = testResult.message || "Send failed.";
+    headIcon = "ti-circle-x";
+  } else if (bounceOk) {
+    headTitle = "Transport and bounce detection are working";
+    headIcon = "ti-circle-check";
+  } else if (bounceUnverified) {
+    previewKind = "warn";
+    headTitle = "Mail transport works, but bounce was not verified";
+    headIcon = "ti-alert-triangle";
+  } else {
+    headTitle = "Your Admitto mail configuration is working";
+    headIcon = "ti-circle-check";
+  }
 
   return (
-    <output className={`mail-preview mail-preview--${testResult.kind}`}>
-      {testResult.kind === "ok" && (
-        <div className="mail-preview__head">
-          <b>✅ Your Admitto mail configuration is working</b>
-          <span>to {testResult.recipient}</span>
-        </div>
-      )}
-      <div className="test-mail-hero">
-        <span className="test-mail-hero__icon">
+    <output className={`mail-preview mail-preview--${previewKind}`}>
+      <div className="mail-preview__head">
+        <div className="mail-preview__head-main">
           <i
-            className={`ti ${testResult.kind === "ok" ? "ti-circle-check" : "ti-circle-x"}`}
+            className={`ti ${headIcon} mail-preview__head-icon${
+              previewKind === "error"
+                ? " mail-preview__head-icon--error"
+                : previewKind === "warn"
+                  ? " mail-preview__head-icon--warn"
+                  : ""
+            }`}
             aria-hidden="true"
           />
-        </span>
-        <p>{heroText}</p>
+          <div className="mail-preview__head-text">
+            <b>{headTitle}</b>
+            <span>to {testResult.recipient}</span>
+          </div>
+        </div>
+        {transportLabel && (
+          <span
+            className={`mail-preview__provider-badge${
+              previewKind === "error"
+                ? " mail-preview__provider-badge--error"
+                : previewKind === "warn"
+                  ? " mail-preview__provider-badge--warn"
+                  : ""
+            }`}
+          >
+            {transportLabel}
+          </span>
+        )}
       </div>
       <div className="test-mail-summary">
         <div>
@@ -832,10 +936,8 @@ export function TestResultPreview({ testResult }: Readonly<{ testResult: TestRes
           </div>
         )}
         <div>
-          <span>{testResult.kind === "ok" ? "Sent at" : "Attempted at"}</span>
-          <b>
-            {formatEventDateTime(testResult.timestamp, getBrowserTimeZone())}
-          </b>
+          <span>{isOk ? "Sent at" : "Attempted at"}</span>
+          <b>{formatEventDateTime(testResult.timestamp, getBrowserTimeZone())}</b>
         </div>
         {testResult.providerMessageId && (
           <div>
@@ -849,12 +951,59 @@ export function TestResultPreview({ testResult }: Readonly<{ testResult: TestRes
             <b>{testResult.retryable ? "Yes" : "No"}</b>
           </div>
         )}
+        {testResult.bounceProbe?.smtpCode && (
+          <div>
+            <span>Bounce SMTP code</span>
+            <b className="test-mail-summary__mono">{testResult.bounceProbe.smtpCode}</b>
+          </div>
+        )}
+        {testResult.bounceProbe?.smtpCode &&
+          describeSmtpBounceCode(testResult.bounceProbe.smtpCode) && (
+            <div className="test-mail-summary__full">
+              <span>What this means</span>
+              <b>{describeSmtpBounceCode(testResult.bounceProbe.smtpCode)}</b>
+            </div>
+          )}
       </div>
-      {testResult.kind === "ok" && (
-        <p className="test-mail-footnote">Automated message from Admitto. No reply needed.</p>
+      {testResult.bounceProbe && (
+        <Notice
+          variant={
+            testResult.bounceProbe.status === "ok"
+              ? "success"
+              : testResult.bounceProbe.status === "timeout"
+                ? "warning"
+                : "error"
+          }
+          role="status"
+          className="mail-preview__bounce-notice"
+        >
+          {testResult.bounceProbe.message}
+        </Notice>
       )}
     </output>
   );
+}
+
+/** Matches server `BOUNCE_PROBE_TIMEOUT_MS` (90s) for the Also verify bounce wait UI. */
+export const BOUNCE_VERIFY_WAIT_SECONDS = 90;
+
+/** Counts down once per second while `active`; resets when waiting starts. */
+function useBounceWaitCountdown(active: boolean, totalSeconds = BOUNCE_VERIFY_WAIT_SECONDS): number | null {
+  const [remaining, setRemaining] = useState(totalSeconds);
+
+  useEffect(() => {
+    if (!active) {
+      setRemaining(totalSeconds);
+      return;
+    }
+    setRemaining(totalSeconds);
+    const id = window.setInterval(() => {
+      setRemaining((seconds) => (seconds <= 0 ? 0 : seconds - 1));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [active, totalSeconds]);
+
+  return active ? remaining : null;
 }
 
 /** Shared by MailTransportPanel (organization-wide) and EventMailSettingsCard (per-event) -
@@ -869,6 +1018,9 @@ export function SendTestEmailCard({
   testSending,
   onTestSend,
   testResult,
+  bounceVerify,
+  onBounceVerifyChange,
+  bounceVerifyBlockedReason,
 }: Readonly<{
   idPrefix: string;
   testEmail: string;
@@ -878,40 +1030,94 @@ export function SendTestEmailCard({
   testSending: boolean;
   onTestSend: () => void;
   testResult: TestResult | null;
+  /** When provided, shows the Also verify bounce switch (event Mailing only). */
+  bounceVerify?: boolean;
+  onBounceVerifyChange?: (value: boolean) => void;
+  bounceVerifyBlockedReason?: string;
 }>) {
   const reasonId = `${idPrefix}-reason`;
+  const bounceReasonId = `${idPrefix}-bounce-reason`;
+  const bounceToggleVisible = onBounceVerifyChange !== undefined;
+  const bounceBlocked = Boolean(bounceVerifyBlockedReason);
+  const waitingForBounce = Boolean(testSending && bounceVerify);
+  const bounceSecondsLeft = useBounceWaitCountdown(waitingForBounce);
+  const sendingLabel = waitingForBounce
+    ? "Waiting for bounce…"
+    : testSending
+      ? "Sending…"
+      : "Send test";
+
   return (
     <Card title={<HintLabel hint={SEND_TEST_EMAIL_HINT}>Send test email</HintLabel>}>
       <div className="settings-card-stack">
-        <p className="mail-test-send__hint settings-card-intro">{testSendHint}</p>
-        <div className="mail-test-send__row">
-          <Input
-            label="Recipient"
-            type="text"
-            inputMode="email"
-            value={testEmail}
-            onChange={(e) => onTestEmailChange(e.target.value)}
-            placeholder="you@example.com"
-            disabled={!!testSendReason}
-            {...NO_AUTOFILL_PROPS}
-          />
-          <Tooltip content={testSendReason}>
-            {testSendReason && (
-              <span id={reasonId} className="sr-only">
-                {testSendReason}
+        <p className="mail-test-send__hint settings-card-intro">
+          {bounceToggleVisible && bounceVerify
+            ? `Enter an email address that will fail (for example, one that does not exist). Admitto sends a test message to it, then waits up to ${BOUNCE_VERIFY_WAIT_SECONDS} seconds to check that it can detect the failure automatically.`
+            : testSendHint}
+        </p>
+        <div
+          className={
+            bounceToggleVisible ? "mail-test-send__row mail-test-send__row--with-bounce" : "mail-test-send__row"
+          }
+        >
+          <div className="mail-test-send__controls">
+            <Input
+              label="Recipient"
+              type="text"
+              inputMode="email"
+              value={testEmail}
+              onChange={(e) => onTestEmailChange(e.target.value)}
+              placeholder="you@example.com"
+              disabled={!!testSendReason || testSending}
+              {...NO_AUTOFILL_PROPS}
+            />
+            <div className="mail-test-send__send-control">
+              <Tooltip content={testSendReason}>
+                {testSendReason && (
+                  <span id={reasonId} className="sr-only">
+                    {testSendReason}
+                  </span>
+                )}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={testSending || !!testSendReason}
+                  aria-describedby={testSendReason ? reasonId : undefined}
+                  onClick={onTestSend}
+                  icon={<i className="ti ti-mail" aria-hidden="true" />}
+                >
+                  {sendingLabel}
+                </Button>
+              </Tooltip>
+            </div>
+          </div>
+          {bounceToggleVisible && onBounceVerifyChange && (
+            <div className="mail-test-send__bounce">
+              <span className="mail-test-send__bounce-label" id={`${idPrefix}-bounce-label`}>
+                Also verify bounce
               </span>
-            )}
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={testSending || !!testSendReason}
-              aria-describedby={testSendReason ? reasonId : undefined}
-              onClick={onTestSend}
-            >
-              {testSending ? "Sending…" : "Send test"}
-            </Button>
-          </Tooltip>
+              <Tooltip content={bounceVerifyBlockedReason}>
+                {bounceVerifyBlockedReason && (
+                  <span id={bounceReasonId} className="sr-only">
+                    {bounceVerifyBlockedReason}
+                  </span>
+                )}
+                <Switch
+                  aria-labelledby={`${idPrefix}-bounce-label`}
+                  aria-describedby={bounceVerifyBlockedReason ? bounceReasonId : undefined}
+                  checked={Boolean(bounceVerify) && !bounceBlocked}
+                  disabled={bounceBlocked || testSending || !!testSendReason}
+                  onChange={(e) => onBounceVerifyChange(e.target.checked)}
+                />
+              </Tooltip>
+            </div>
+          )}
         </div>
+        {waitingForBounce && bounceSecondsLeft != null && (
+          <Notice variant="highlight" role="status" aria-live="polite">
+            Waiting for bounce… {bounceSecondsLeft}s remaining.
+          </Notice>
+        )}
         {testResult && <TestResultPreview testResult={testResult} />}
       </div>
     </Card>
@@ -1073,6 +1279,7 @@ export function buildTestResult(
       provider: result.provider,
       providerMessageId: result.providerMessageId,
       timestamp,
+      bounceProbe: result.bounceProbe,
       ...snapshot,
     };
   }
@@ -1083,13 +1290,15 @@ export function buildTestResult(
     provider: result.provider,
     retryable: result.retryable,
     timestamp,
+    bounceProbe: result.bounceProbe,
     ...snapshot,
   };
 }
 
 export function testSendErrorMessage(err: unknown): string {
   if (err instanceof ApiError && err.status === 400 && hasApiErrorCode(err, "validation_failed")) {
-    return "Enter a valid email address.";
+    // Prefer server detail when present (bad recipient vs other schema failures).
+    return operatorApiErrorMessage(err, "Enter a valid email address.");
   }
   return operatorApiErrorMessage(err, "Send failed.");
 }
@@ -1207,7 +1416,17 @@ export async function runTestSend(params: {
     if (testGenerationRef.current !== requestGeneration) return;
     const nextResult = buildTestResult(result, to, snapshotInputs);
     setTestResult(nextResult);
-    addToast(nextResult.message, nextResult.kind === "ok" ? "success" : "error");
+    if (nextResult.bounceProbe) {
+      const variant =
+        nextResult.bounceProbe.status === "ok"
+          ? "success"
+          : nextResult.bounceProbe.status === "timeout"
+            ? "warning"
+            : "error";
+      addToast(nextResult.bounceProbe.message, variant);
+    } else {
+      addToast(nextResult.message, nextResult.kind === "ok" ? "success" : "error");
+    }
   } catch (err) {
     if (testGenerationRef.current !== requestGeneration) return;
     const message = testSendErrorMessage(err);

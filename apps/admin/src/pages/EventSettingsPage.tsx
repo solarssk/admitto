@@ -24,7 +24,11 @@ import {
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventSettingsDto, LogoCropMeta, TicketTypeDto } from "../api/types.js";
 import { TicketTypesCard } from "../settings/TicketTypesCard.js";
-import { EventMailSettingsCard } from "../settings/EventMailSettingsCard.js";
+import { EventMailSettingsCard, type EventMailSettingsCardHandle } from "../settings/EventMailSettingsCard.js";
+import {
+  EventBounceIngestPanel,
+  type EventBounceIngestPanelHandle,
+} from "../settings/EventBounceIngestPanel.js";
 import { LocationSettingsPanel } from "../settings/LocationSettingsPanel.js";
 import { SettingsFooter, NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import { useAuth } from "../auth/AuthProvider.js";
@@ -577,6 +581,12 @@ export function EventSettingsPage() {
   const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
   const [mailDirty, setMailDirty] = useState(false);
   const [mailSaving, setMailSaving] = useState(false);
+  const [bounceDirty, setBounceDirty] = useState(false);
+  const [bounceSaving, setBounceSaving] = useState(false);
+  const [mailValidationErrors, setMailValidationErrors] = useState<string[]>([]);
+  const mailCardRef = useRef<EventMailSettingsCardHandle>(null);
+  const bouncePanelRef = useRef<EventBounceIngestPanelHandle>(null);
+  const mailTabValidationErrorsRef = useRef<HTMLUListElement>(null);
   // Archiving and the bulk Danger Zone actions below reload `event` but never touch
   // EventMailSettingsCard's own internal draft/secrets state, so a pending mail edit would
   // otherwise survive them despite the confirm dialogs promising unsaved changes are lost
@@ -619,10 +629,12 @@ export function EventSettingsPage() {
   // away or running a page action that reloads state (archive, revoke) would otherwise silently
   // discard unsaved mail transport edits, pending secret replacements, or a pending pin move
   // (CodeRabbit review).
-  const pageDirty = dirty || mailDirty || locationDirty;
+  const mailTabDirty = mailDirty || bounceDirty;
+  const mailTabSaving = mailSaving || bounceSaving;
+  const pageDirty = dirty || mailTabDirty || locationDirty;
   // Same combination for "a save request is in flight" - a Danger Zone action firing while the
   // Mail or Location tab's own save is still in flight would race against it on the same event record.
-  const pageBusy = saving || mailSaving || locationSaving;
+  const pageBusy = saving || mailTabSaving || locationSaving;
   // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
   // these "Loading…" placeholders on and off faster than they can register as loading —
   // show them only once the fetch has genuinely taken a moment.
@@ -1084,11 +1096,45 @@ export function EventSettingsPage() {
         <EventSettingsTabPanel tab="mail" activeTab={tab} visited={visitedTabs} label="Mail">
           <EventMailSettingsCard
             key={mailCardResetKey}
+            ref={mailCardRef}
             eventId={eventId}
             isArchived={isArchived}
+            embeddedFooter={false}
             onDirtyChange={setMailDirty}
             onSavingChange={setMailSaving}
-          />
+            onValidationErrorsChange={setMailValidationErrors}
+            validationErrorsListRef={mailTabValidationErrorsRef}
+          >
+            <EventBounceIngestPanel
+              key={`bounce-${mailCardResetKey}`}
+              ref={bouncePanelRef}
+              eventId={eventId}
+              isArchived={isArchived}
+              onDirtyChange={setBounceDirty}
+              onSavingChange={setBounceSaving}
+            />
+          </EventMailSettingsCard>
+          {!isArchived && (
+            <SettingsFooter
+              validationErrors={mailValidationErrors}
+              validationErrorsRef={mailTabValidationErrorsRef}
+              hasUnsavedChanges={mailTabDirty}
+              saving={mailTabSaving}
+              onReset={() => {
+                mailCardRef.current?.reset();
+                bouncePanelRef.current?.reset();
+              }}
+              onSave={() => {
+                void (async () => {
+                  // Persist only what is dirty. Do not call mail save as a no-op fallback:
+                  // org-mode save used to open "Revert to organization mail" even when the
+                  // event already inherits org transport and the admin only edited bounce.
+                  if (mailDirty) await mailCardRef.current?.save();
+                  if (bounceDirty) await bouncePanelRef.current?.save();
+                })();
+              }}
+            />
+          )}
         </EventSettingsTabPanel>
       )}
 

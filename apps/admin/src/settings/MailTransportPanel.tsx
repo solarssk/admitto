@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Card, Button, EmptyState, useToast } from "@admitto/ui";
-import { fetchMailSettings, saveMailSettings, sendMailTransportTest } from "../api/client.js";
+import { fetchMailSettings, saveMailSettings, sendMailTransportTest, probeMailSmtpConnection } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { MailSettingsResponse } from "../api/types.js";
 import {
@@ -57,6 +57,8 @@ export function MailTransportPanel() {
     updateDraft,
     updateSecrets,
   } = useMailSettingsFormState();
+  const [probeTesting, setProbeTesting] = useState(false);
+  const [probeResult, setProbeResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   useEffect(() => {
     if (validationErrors.length > 0) {
@@ -72,6 +74,7 @@ export function MailTransportPanel() {
       setSavedDraft(nextDraft);
       setSecrets(emptySecretEdits());
       setValidationErrors([]);
+      setProbeResult(null);
     },
     [setDraft, setSavedDraft, setSecrets, setValidationErrors],
   );
@@ -139,6 +142,7 @@ export function MailTransportPanel() {
     setDraft(savedDraft);
     setSecrets(emptySecretEdits());
     setValidationErrors([]);
+    setProbeResult(null);
   };
 
   const hasUnsavedChanges = isMailSettingsDirty(draft, savedDraft, secrets);
@@ -179,6 +183,31 @@ export function MailTransportPanel() {
       setTestResult,
       addToast,
     });
+  };
+
+  const handleTestConnection = async () => {
+    if (hasUnsavedChanges) {
+      addToast("Save your changes before testing the connection.", "warning");
+      return;
+    }
+    setProbeTesting(true);
+    setProbeResult(null);
+    try {
+      const res = await probeMailSmtpConnection();
+      setProbeResult({
+        ok: res.ok,
+        message: res.ok
+          ? (res.message ?? "Connected.")
+          : (res.error ?? "Could not connect."),
+      });
+    } catch (err) {
+      setProbeResult({
+        ok: false,
+        message: operatorApiErrorMessage(err, "Could not test the SMTP connection."),
+      });
+    } finally {
+      setProbeTesting(false);
+    }
   };
 
   const showExportOnly =
@@ -245,6 +274,11 @@ export function MailTransportPanel() {
           smtpPasswordField={apiData.fields.smtpPassword}
           smtpPasswordEdit={secrets.smtpPassword}
           updateSecrets={updateSecrets}
+          onTestConnection={() => void handleTestConnection()}
+          testing={probeTesting}
+          testBlocked={hasUnsavedChanges}
+          testBlockedReason={hasUnsavedChanges ? "Save your changes first." : undefined}
+          testResult={probeResult}
         />
       )}
 

@@ -7,9 +7,22 @@
 import { z } from "zod";
 import type { Context } from "hono";
 import type { ConfigDescriptor, FieldDescriptor, FieldSource, MailSettingsInput } from "@admitto/mailer-config";
-import { isSendSuccess, MailDestinationError, type MailerProvider, type SendResult } from "@admitto/mailer";
+import {
+  isSendSuccess,
+  MailDestinationError,
+  probeMailTransport,
+  type MailerConfig,
+  type MailerProvider,
+  type MailProbeResult,
+  type SendResult,
+} from "@admitto/mailer";
 import { transportTestErrorForAdmin } from "@admitto/mail-delivery";
 import { emitSystemLog } from "@admitto/shared/system-log";
+
+/** Injectable probe for org/event POST /mail-settings/probe (tests). */
+export type MailSmtpProbeDeps = {
+  probeMail?: (config: unknown) => Promise<MailProbeResult>;
+};
 
 /** Max JSON body for mail-settings PUT routes (includes secret fields). */
 export const MAX_MAIL_SETTINGS_BODY_BYTES = 65_536;
@@ -67,8 +80,23 @@ export const testMailTransportBodySchema = z
       .email()
       .max(254)
       .refine((v) => !/[\r\n]/.test(v), "invalid email"),
+    /** Event Send test only: after send, wait for bounce ingest to mark a probe delivery. */
+    verifyBounce: z.boolean().optional(),
   })
   .strict();
+
+/** Parse Send-test body; distinguish bad recipient from other schema failures (e.g. unknown keys). */
+export function parseTestMailTransportBody(json: unknown):
+  | { ok: true; data: z.infer<typeof testMailTransportBodySchema> }
+  | { ok: false; detail: string } {
+  const parsed = testMailTransportBodySchema.safeParse(json);
+  if (parsed.success) return { ok: true, data: parsed.data };
+  const toIssue = parsed.error.issues.some((issue) => issue.path[0] === "to");
+  return {
+    ok: false,
+    detail: toIssue ? "Enter a valid email address." : "Invalid test request.",
+  };
+}
 
 export const SECRET_KEYS = [
   "smtpPassword",
@@ -208,6 +236,12 @@ export interface TransportTestOutcome {
   resultProvider?: MailerProvider;
   resultProviderMessageId?: string;
   resultRetryable?: boolean;
+  /** Present when event Send test ran with verifyBounce. */
+  bounceProbe?: {
+    status: "ok" | "timeout" | "failed";
+    message: string;
+    smtpCode?: string | null;
+  };
 }
 
 /** Runs one transport test-send: calls `send()`, maps a thrown/returned error to
@@ -270,7 +304,14 @@ export async function runTransportTest(
 /** Shapes a TransportTestOutcome into the POST /test JSON response. Shared by org and
  * event routes — the response shape never depends on which scope was tested. */
 export function transportTestResponse(c: Context, outcome: TransportTestOutcome): Response {
-  const { resultStatus, resultProvider, resultProviderMessageId, errorMessage, resultRetryable } = outcome;
+  const {
+    resultStatus,
+    resultProvider,
+    resultProviderMessageId,
+    errorMessage,
+    resultRetryable,
+    bounceProbe,
+  } = outcome;
 
   if (resultStatus === "sent") {
     // resultProvider is always set alongside resultStatus = "sent".
@@ -278,7 +319,8 @@ export function transportTestResponse(c: Context, outcome: TransportTestOutcome)
       status: "sent",
       provider: resultProvider!,
       ...(resultProviderMessageId ? { providerMessageId: resultProviderMessageId } : {}),
-    } satisfies { status: "sent"; provider: MailerProvider; providerMessageId?: string });
+      ...(bounceProbe ? { bounceProbe } : {}),
+    });
   }
 
   return c.json({
@@ -286,5 +328,48 @@ export function transportTestResponse(c: Context, outcome: TransportTestOutcome)
     error: errorMessage ?? "send failed",
     ...(resultProvider ? { provider: resultProvider } : {}),
     ...(resultRetryable !== undefined ? { retryable: resultRetryable } : {}),
-  } satisfies { status: "failed"; error: string; provider?: MailerProvider; retryable?: boolean });
+    ...(bounceProbe ? { bounceProbe } : {}),
+  });
+}
+
+export const SMTP_PROBE_SUCCESS_MESSAGE = "Connected. SMTP account verified.";
+export const SMTP_PROBE_NOT_SMTP_MESSAGE =
+  "SMTP connection test is only available when the saved transport is SMTP.";
+
+/** Probes a resolved SMTP config without sending mail. Caller must already gate on provider. */
+export async function runSmtpConnectionProbe(
+  config: MailerConfig,
+  logPrefix: string,
+  deps: MailSmtpProbeDeps = {},
+): Promise<{ ok: true; message: string } | { ok: false; error: string }> {
+  const probe = deps.probeMail ?? probeMailTransport;
+  let result: MailProbeResult;
+  try {
+    result = await probe(config);
+  } catch (err) {
+    const errorMessage = transportTestErrorForAdmin(
+      err instanceof Error ? err.message : undefined,
+    );
+    console.error(`${logPrefix} failed`);
+    emitSystemLog("mail", "error", "mail_smtp_probe_failed", {
+      context: logPrefix,
+      error: errorMessage,
+    });
+    return { ok: false, error: errorMessage };
+  }
+
+  if (result.ok && !result.skipped) {
+    emitSystemLog("mail", "info", "mail_smtp_probe_ok", { context: logPrefix });
+    return { ok: true, message: SMTP_PROBE_SUCCESS_MESSAGE };
+  }
+
+  const errorMessage = result.ok
+    ? "SMTP connection could not be verified."
+    : transportTestErrorForAdmin(result.error);
+  console.error(`${logPrefix} failed`);
+  emitSystemLog("mail", "error", "mail_smtp_probe_failed", {
+    context: logPrefix,
+    error: errorMessage,
+  });
+  return { ok: false, error: errorMessage };
 }

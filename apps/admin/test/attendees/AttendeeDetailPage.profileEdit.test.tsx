@@ -665,6 +665,10 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     expect(screen.getByText("Delivery history")).toBeTruthy();
     expect(screen.getByText("Your ticket")).toBeTruthy();
     expect(screen.queryByText("No delivery attempts yet")).toBeNull();
+    expect(document.querySelector(".attendee-deliveries-scroll")).toBeTruthy();
+    expect(
+      screen.getByLabelText("Delivery summary: 1 sent, 0 bounced"),
+    ).toBeTruthy();
     // Always show the snapshot recipient, even when it matches the current profile email.
     expect(document.querySelector(".attendee-delivery__to")?.textContent).toMatch(
       /→\s*anna@example.com/,
@@ -674,6 +678,8 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     expect(deliveryCard.textContent).toMatch(/UTC\+1/);
     expect(deliveryCard.textContent).not.toMatch(/ UTC(?!\+)/);
     expect(deliveryCard.querySelector(".ti-ticket")).toBeTruthy();
+    expect(deliveryCard.querySelector(".at-badge")).toBeNull();
+    expect(within(deliveryCard).getByLabelText("Sent")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Actions for Anna's message" }));
     const menu = screen.getByRole("menu");
@@ -684,7 +690,7 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     ]);
   });
 
-  it("shows a delivery error code and omits the recipient arrow when no snapshot email was stored", async () => {
+  it("omits the recipient arrow when no snapshot email was stored, and leaves the error code out of the compact row (it breaks the row layout; see Delivery details)", async () => {
     mockLoad(
       baseDetail({
         deliveries: [
@@ -708,9 +714,11 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
 
-    expect(screen.getByText("smtp_connect")).toBeTruthy();
+    expect(screen.queryByText("smtp_connect")).toBeNull();
     expect(document.querySelector(".attendee-delivery__to")).toBeNull();
     expect(document.querySelector(".attendee-delivery__icon--error")).toBeTruthy();
+    expect(document.querySelector(".ti-mail-exclamation")).toBeTruthy();
+    expect(document.querySelector(".attendee-delivery .at-badge")).toBeNull();
   });
 
   it("shows the send-to address for both matching and alternate recipients, and a generic placeholder for an unset subject", async () => {

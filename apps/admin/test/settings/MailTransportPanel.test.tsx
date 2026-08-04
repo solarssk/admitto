@@ -12,6 +12,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchMailSettings: vi.fn(),
     saveMailSettings: vi.fn(),
     sendMailTransportTest: vi.fn(),
+    probeMailSmtpConnection: vi.fn(),
   };
 });
 
@@ -30,11 +31,13 @@ import {
   fetchMailSettings,
   saveMailSettings,
   sendMailTransportTest,
+  probeMailSmtpConnection,
 } from "../../src/api/client.js";
 
 const mockFetch = vi.mocked(fetchMailSettings);
 const mockSave = vi.mocked(saveMailSettings);
 const mockTest = vi.mocked(sendMailTransportTest);
+const mockProbe = vi.mocked(probeMailSmtpConnection);
 
 function plain<T>(value: T, opts: { source?: "env" | "db" | "default"; locked?: boolean } = {}) {
   return { value, source: opts.source ?? "db", locked: opts.locked ?? false };
@@ -500,6 +503,64 @@ describe("MailTransportPanel — test send gating (#410)", () => {
   });
 });
 
+describe("MailTransportPanel — SMTP Test connection", () => {
+  it("enables Test connection for a saved SMTP transport", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
+    renderWithToast(<MailTransportPanel />);
+    await waitFor(() => {
+      expect(isDisabled(screen.getByRole("button", { name: "Test connection" }))).toBe(false);
+    });
+  });
+
+  it("disables Test connection when the draft is dirty (footer already shows unsaved)", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
+    renderWithToast(<MailTransportPanel />);
+    await waitFor(() => {
+      expect(isDisabled(screen.getByRole("button", { name: "Test connection" }))).toBe(false);
+    });
+    fireEvent.change(screen.getByLabelText("SMTP host"), {
+      target: { value: "smtp.dirty.example.com" },
+    });
+    await waitFor(() => {
+      expect(isDisabled(screen.getByRole("button", { name: "Test connection" }))).toBe(true);
+    });
+    expect(document.querySelector(".smtp-connection-probe__hint")).toBeNull();
+  });
+
+  it("shows a success notice when the probe succeeds", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
+    mockProbe.mockResolvedValueOnce({
+      ok: true,
+      message: "Connected. SMTP account verified.",
+    });
+    renderWithToast(<MailTransportPanel />);
+    await waitFor(() => {
+      expect(isDisabled(screen.getByRole("button", { name: "Test connection" }))).toBe(false);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    await waitFor(() => {
+      expect(screen.getByText("Connected. SMTP account verified.")).toBeTruthy();
+    });
+    expect(mockProbe).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a sanitized error notice when the probe fails", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
+    mockProbe.mockResolvedValueOnce({
+      ok: false,
+      error: "Authentication failed. Check the username and password.",
+    });
+    renderWithToast(<MailTransportPanel />);
+    await waitFor(() => {
+      expect(isDisabled(screen.getByRole("button", { name: "Test connection" }))).toBe(false);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    await waitFor(() => {
+      expect(screen.getByText("Authentication failed. Check the username and password.")).toBeTruthy();
+    });
+  });
+});
+
 describe("MailTransportPanel — test result panel (#411)", () => {
   async function renderReadySmtp() {
     mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
@@ -615,7 +676,7 @@ describe("MailTransportPanel — test result panel (#411)", () => {
       expect(document.querySelector(".mail-preview--error")).toBeTruthy();
     });
     expect(document.querySelector(".mail-preview--error")?.textContent).toContain(
-      "Enter a valid email address.",
+      "Check the form and try again.",
     );
   });
 
@@ -791,6 +852,49 @@ describe("MailTransportPanel — footer save-state", () => {
   });
 });
 
+describe("MailTransportPanel — TLS / STARTTLS mutual exclusion", () => {
+  it("turns off STARTTLS when Use TLS (secure) is enabled", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
+    renderWithToast(<MailTransportPanel />);
+    await waitFor(() => {
+      expect(screen.getByRole("switch", { name: "Require STARTTLS" })).toBeTruthy();
+    });
+    expect(
+      (screen.getByRole("switch", { name: "Require STARTTLS" }) as HTMLInputElement).checked,
+    ).toBe(true);
+
+    fireEvent.click(screen.getByRole("switch", { name: "Use TLS (secure)" }));
+
+    expect(
+      (screen.getByRole("switch", { name: "Use TLS (secure)" }) as HTMLInputElement).checked,
+    ).toBe(true);
+    expect(
+      (screen.getByRole("switch", { name: "Require STARTTLS" }) as HTMLInputElement).checked,
+    ).toBe(false);
+  });
+
+  it("turns off Use TLS when Require STARTTLS is enabled", async () => {
+    mockFetch.mockResolvedValueOnce(
+      makeResponse(smtpFields({ secure: plain(true), requireTls: plain(false) })),
+    );
+    renderWithToast(<MailTransportPanel />);
+    await waitFor(() => {
+      expect(
+        (screen.getByRole("switch", { name: "Use TLS (secure)" }) as HTMLInputElement).checked,
+      ).toBe(true);
+    });
+
+    fireEvent.click(screen.getByRole("switch", { name: "Require STARTTLS" }));
+
+    expect(
+      (screen.getByRole("switch", { name: "Require STARTTLS" }) as HTMLInputElement).checked,
+    ).toBe(true);
+    expect(
+      (screen.getByRole("switch", { name: "Use TLS (secure)" }) as HTMLInputElement).checked,
+    ).toBe(false);
+  });
+});
+
 describe("MailTransportPanel — field wiring (save payload)", () => {
   it("wires every Sender, SMTP connection, and Advanced tuning field to the save payload", async () => {
     mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
@@ -809,8 +913,8 @@ describe("MailTransportPanel — field wiring (save payload)", () => {
     });
     fireEvent.change(screen.getByLabelText("Port"), { target: { value: "465" } });
     fireEvent.change(screen.getByLabelText("Username"), { target: { value: "new-user" } });
+    // Starts as STARTTLS on; flipping secure clears requireTls (mutually exclusive).
     fireEvent.click(screen.getByRole("switch", { name: "Use TLS (secure)" }));
-    fireEvent.click(screen.getByRole("switch", { name: "Require STARTTLS" }));
     fireEvent.click(screen.getByRole("switch", { name: "Connection pool" }));
     fireEvent.click(screen.getByRole("switch", { name: "Verify TLS certificate" }));
     fireEvent.change(screen.getByLabelText("HELO/EHLO name"), {

@@ -1,0 +1,295 @@
+import { ImapFlow } from "imapflow";
+import { assertSafeMailDestination } from "@admitto/mailer";
+import type { InboundMailProvider, InboundMessage, ImapConnectConfig } from "./types.js";
+
+/** Cap body text so one oversized message cannot stall the run. */
+export const MAX_BODY_BYTES = 64 * 1024;
+
+function sourceToText(source: Buffer | Uint8Array | string | undefined): string {
+  if (!source) return "";
+  const buf = typeof source === "string" ? Buffer.from(source, "utf8") : Buffer.from(source);
+  return buf.subarray(0, MAX_BODY_BYTES).toString("utf8");
+}
+
+/** Undo RFC 2045 quoted-printable: soft line breaks (`=\r\n`) and `=XX` hex escapes.
+ * Real NDRs are QP-encoded; without this, a diagnostic line that happens to wrap
+ * (`host x.example.com (1.2.3.4) =\nsaid: 550 …`) leaves a stray `=` where a
+ * bounce-line regex expects whitespace, silently breaking the match. */
+function decodeQuotedPrintable(input: string): string {
+  const joined = input.replace(/=\r?\n/g, "");
+  const bytes: number[] = [];
+  for (let i = 0; i < joined.length; i++) {
+    const hex = joined.slice(i + 1, i + 3);
+    if (joined[i] === "=" && /^[0-9A-Fa-f]{2}$/.test(hex)) {
+      bytes.push(parseInt(hex, 16));
+      i += 2;
+    } else {
+      bytes.push(joined.charCodeAt(i) & 0xff);
+    }
+  }
+  return Buffer.from(bytes).toString("utf8");
+}
+
+function decodeBase64(input: string): string {
+  try {
+    return Buffer.from(input.replace(/\s+/g, ""), "base64").toString("utf8");
+  } catch {
+    return input;
+  }
+}
+
+function decodeBodyByEncoding(raw: string, encoding: string | undefined): string {
+  const enc = (encoding ?? "7bit").trim().toLowerCase();
+  if (enc === "quoted-printable") return decodeQuotedPrintable(raw);
+  if (enc === "base64") return decodeBase64(raw);
+  return raw;
+}
+
+const NAMED_HTML_ENTITIES: Record<string, string> = {
+  nbsp: " ",
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+};
+
+/** Decodes `&#347;` / `&#x159;` numeric references and the handful of named entities MTAs
+ * actually emit. Left undecoded otherwise (never throws) - bounce NDRs are diagnostic text,
+ * not attacker-controlled markup, so a best-effort decode is enough. */
+function decodeHtmlEntities(text: string): string {
+  return text.replace(/&(#\d+|#x[0-9a-fA-F]+|[a-zA-Z]+);/g, (match, ref: string) => {
+    if (ref.startsWith("#x") || ref.startsWith("#X")) {
+      const code = parseInt(ref.slice(2), 16);
+      return Number.isFinite(code) ? String.fromCodePoint(code) : match;
+    }
+    if (ref.startsWith("#")) {
+      const code = parseInt(ref.slice(1), 10);
+      return Number.isFinite(code) ? String.fromCodePoint(code) : match;
+    }
+    return NAMED_HTML_ENTITIES[ref.toLowerCase()] ?? match;
+  });
+}
+
+/** Strips genuine HTML tags (name starts with a letter) while preserving line breaks from
+ * block-level tags, and decodes HTML entities. A literal `<user@example.com>` (some MTAs emit
+ * this unescaped in an NDR's HTML part) does not start with a letter followed by tag syntax, so
+ * it survives and stays visible to the bounce-line regexes.
+ *
+ * Collapsing all whitespace (including real line breaks) to single spaces here previously let
+ * an unrelated paragraph (e.g. a confidentiality disclaimer after the diagnostic line) merge
+ * onto the same "line" as the bounce reason, so `parseBounceLine`'s `$`-anchored reason capture
+ * had nothing to stop at and swallowed the whole paragraph into the stored bounce reason. */
+function stripHtmlTagsSafely(html: string): string {
+  const withLineBreaks = html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li|tr|h[1-6])>/gi, "\n");
+  const withoutTags = withLineBreaks.replace(/<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^<>]*)?\/?>/g, " ");
+  return decodeHtmlEntities(withoutTags)
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+/g, " ").trim())
+    .filter((line) => line.length > 0)
+    .join("\n");
+}
+
+function parseContentTypeHeader(value: string): { type: string; params: Map<string, string> } {
+  const parts = value.split(";").map((s) => s.trim());
+  const type = (parts[0] ?? "").toLowerCase();
+  const params = new Map<string, string>();
+  for (const p of parts.slice(1)) {
+    const eq = p.indexOf("=");
+    if (eq === -1) continue;
+    const key = p.slice(0, eq).trim().toLowerCase();
+    let val = p.slice(eq + 1).trim();
+    if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1);
+    params.set(key, val);
+  }
+  return { type, params };
+}
+
+function parseHeaders(headerBlock: string): Map<string, string> {
+  const headers = new Map<string, string>();
+  const unfolded = headerBlock.replace(/\r?\n[ \t]+/g, " ");
+  for (const line of unfolded.split(/\r?\n/)) {
+    const idx = line.indexOf(":");
+    if (idx === -1) continue;
+    headers.set(line.slice(0, idx).trim().toLowerCase(), line.slice(idx + 1).trim());
+  }
+  return headers;
+}
+
+interface MimeLeaf {
+  contentType: string;
+  text: string;
+}
+
+/** Best-effort recursive MIME walker: enough to reach `message/delivery-status`,
+ * `text/plain`, and `text/html` leaves inside `multipart/report|alternative|mixed`,
+ * with each leaf's Content-Transfer-Encoding decoded. Not a full RFC 2045 parser. */
+function splitMimeMessage(raw: string, depth = 0): MimeLeaf[] {
+  if (depth > 5) return [];
+  const headerEnd = raw.search(/\r?\n\r?\n/);
+  const headerBlock = headerEnd === -1 ? raw : raw.slice(0, headerEnd);
+  const body = headerEnd === -1 ? "" : raw.slice(headerEnd).replace(/^\r?\n\r?\n/, "");
+  const headers = parseHeaders(headerBlock);
+  const { type, params } = parseContentTypeHeader(headers.get("content-type") ?? "text/plain");
+  const boundary = params.get("boundary");
+
+  if (type.startsWith("multipart/") && boundary) {
+    const delimiter = `--${boundary}`;
+    const segments = body.split(delimiter);
+    const leaves: MimeLeaf[] = [];
+    for (let i = 1; i < segments.length; i++) {
+      const seg = segments[i] ?? "";
+      if (seg.startsWith("--")) break;
+      const trimmed = seg.replace(/^\r?\n/, "").replace(/\r?\n$/, "");
+      if (!trimmed.trim()) continue;
+      leaves.push(...splitMimeMessage(trimmed, depth + 1));
+    }
+    return leaves;
+  }
+
+  return [{ contentType: type, text: decodeBodyByEncoding(body, headers.get("content-transfer-encoding")) }];
+}
+
+/**
+ * Extract text used for bounce parsing from a raw RFC822 source.
+ *
+ * Decodes MIME structure and quoted-printable/base64 encoding, then combines
+ * every `message/delivery-status` (RFC 3464, machine-readable), `text/plain`,
+ * and `text/html` (tag-stripped, brackets preserved) leaf found. Some MTAs put
+ * the recipient address only in the HTML part while the plain-text part omits
+ * it entirely, so both are kept rather than picking one.
+ */
+export function extractPlainTextFromSource(source: Buffer | Uint8Array | string | undefined): string {
+  const raw = sourceToText(source);
+  if (!raw) return "";
+
+  let leaves: MimeLeaf[];
+  try {
+    leaves = splitMimeMessage(raw);
+  } catch {
+    leaves = [];
+  }
+
+  const chunks: string[] = [];
+  for (const leaf of leaves) {
+    if (leaf.contentType === "message/delivery-status" && leaf.text.trim()) {
+      chunks.push(leaf.text.trim());
+    }
+  }
+  for (const leaf of leaves) {
+    if (leaf.contentType === "text/plain" && leaf.text.trim()) {
+      chunks.push(leaf.text.trim());
+    }
+  }
+  for (const leaf of leaves) {
+    if (leaf.contentType === "text/html" && leaf.text.trim()) {
+      chunks.push(stripHtmlTagsSafely(leaf.text));
+    }
+  }
+
+  if (chunks.length === 0) {
+    const headerEnd = raw.search(/\r?\n\r?\n/);
+    const body = headerEnd === -1 ? raw : raw.slice(headerEnd).replace(/^\r?\n/, "");
+    chunks.push(
+      /<html[\s>]/i.test(body) || /<body[\s>]/i.test(body) ? stripHtmlTagsSafely(body) : body,
+    );
+  }
+
+  return chunks.join("\n\n").slice(0, MAX_BODY_BYTES);
+}
+
+export class ImapInboundProvider implements InboundMailProvider {
+  private client: ImapFlow | null = null;
+
+  constructor(private readonly config: ImapConnectConfig) {}
+
+  /** Same SSRF guard SMTP uses (@admitto/mailer) - IMAP host is event-scoped admin config, so an
+   * unvalidated destination would let a saved host reach internal/loopback/metadata addresses
+   * from the server. Rechecked here (not just at save-time) to also close the DNS-rebinding gap. */
+  async connect(): Promise<void> {
+    await assertSafeMailDestination(this.config.host);
+    const client = new ImapFlow({
+      host: this.config.host,
+      port: this.config.port,
+      secure: true,
+      auth: {
+        user: this.config.user,
+        pass: this.config.password,
+      },
+      logger: false,
+    });
+    await client.connect();
+    this.client = client;
+  }
+
+  async fetchCandidateMessages(folder: string, since: Date): Promise<InboundMessage[]> {
+    const client = this.requireClient();
+    const lock = await client.getMailboxLock(folder);
+    try {
+      const uids = await client.search({ since }, { uid: true });
+      if (!uids || uids.length === 0) return [];
+
+      const messages: InboundMessage[] = [];
+      for await (const msg of client.fetch(
+        uids,
+        { uid: true, envelope: true, source: true, internalDate: true },
+        { uid: true },
+      )) {
+        const uid = String(msg.uid);
+        const subject = msg.envelope?.subject ?? "";
+        const receivedAt =
+          msg.internalDate instanceof Date
+            ? msg.internalDate
+            : msg.envelope?.date instanceof Date
+              ? msg.envelope.date
+              : new Date();
+        messages.push({
+          uid,
+          receivedAt,
+          subject: typeof subject === "string" ? subject : String(subject),
+          bodyText: extractPlainTextFromSource(msg.source as Buffer | undefined),
+        });
+      }
+      return messages;
+    } finally {
+      lock.release();
+    }
+  }
+
+  async markSeen(folder: string, uid: string): Promise<void> {
+    const client = this.requireClient();
+    const lock = await client.getMailboxLock(folder);
+    try {
+      await client.messageFlagsAdd(uid, ["\\Seen"], { uid: true });
+    } finally {
+      lock.release();
+    }
+  }
+
+  /** Verify the mailbox exists (STATUS / open) without fetching messages. */
+  async probeFolder(folder: string): Promise<void> {
+    const client = this.requireClient();
+    const lock = await client.getMailboxLock(folder);
+    lock.release();
+  }
+
+  async close(): Promise<void> {
+    if (!this.client) return;
+    try {
+      await this.client.logout();
+    } catch {
+      this.client.close();
+    } finally {
+      this.client = null;
+    }
+  }
+
+  private requireClient(): ImapFlow {
+    if (!this.client) {
+      throw new Error("IMAP client is not connected");
+    }
+    return this.client;
+  }
+}

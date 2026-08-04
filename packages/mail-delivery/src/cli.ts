@@ -5,6 +5,7 @@
  *   npm run cli -w @admitto/mail-delivery -- config-describe --event <id>
  *   npm run cli -w @admitto/mail-delivery -- deliveries --event <id> [--status accepted]
  *   npm run cli -w @admitto/mail-delivery -- nullify-delivery-snapshots [--dry-run]
+ *   npm run cli -w @admitto/mail-delivery -- ingest-bounces [--event-id <id>]
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,7 +29,7 @@ import {
   nullifyDeliverySnapshots,
   resolveDeliverySnapshotRetentionDays,
 } from "./retention.js";
-
+import { ingestBounces } from "./bounceIngest/index.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** Load DATABASE_URL and other vars from monorepo, db, and package .env files. */
@@ -73,7 +74,8 @@ function usage(): never {
   test-send --to <addr> --event <id>
   config-describe --event <id>
   deliveries --event <id> [--status <status>] [--purpose initial|resend] [--attendee <id>]
-  nullify-delivery-snapshots [--dry-run]`);
+  nullify-delivery-snapshots [--dry-run]
+  ingest-bounces [--event-id <id>]`);
   process.exit(1);
 }
 
@@ -122,6 +124,43 @@ async function cmdNullifyDeliverySnapshots(prisma: PrismaClient): Promise<number
     `${verb} ${result.deliveries} terminal email deliveries older than ${retentionDays} days.`,
   );
   return 0;
+}
+
+/** Run `ingest-bounces [--event-id <id>]`. Exit 1 only when an IMAP connect failed. */
+async function cmdIngestBounces(prisma: PrismaClient): Promise<number> {
+  const eventId = arg("event-id");
+  const summary = await ingestBounces(prisma, { eventId });
+
+  if (summary.noopReason === "not_configured") {
+    console.log("not configured");
+    return 0;
+  }
+  if (summary.noopReason === "disabled") {
+    console.log("disabled");
+    return 0;
+  }
+  if (summary.noopReason === "none_enabled") {
+    console.log("none enabled");
+    return 0;
+  }
+
+  console.log(
+    JSON.stringify(
+      {
+        eventsProcessed: summary.eventsProcessed,
+        messagesSeen: summary.messagesSeen,
+        bouncesApplied: summary.bouncesApplied,
+        softBouncesLogged: summary.softBouncesLogged,
+        unparsed: summary.unparsed,
+        noMatchingDelivery: summary.noMatchingDelivery,
+        errors: summary.errors,
+        connectFailed: summary.connectFailed,
+      },
+      null,
+      2,
+    ),
+  );
+  return summary.connectFailed ? 1 : 0;
 }
 
 /** Run `deliveries --event <id>` with optional status/purpose/attendee filters. */
@@ -190,6 +229,9 @@ async function main() {
         break;
       case "nullify-delivery-snapshots":
         exitCode = await cmdNullifyDeliverySnapshots(prisma);
+        break;
+      case "ingest-bounces":
+        exitCode = await cmdIngestBounces(prisma);
         break;
       default:
         usage();

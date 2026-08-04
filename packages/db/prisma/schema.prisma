@@ -73,8 +73,10 @@ model Event {
   resources            EventResource[]
   image_assets         EventImageAsset[]
   custom_fields        EventCustomField[]
-  ticket_types         TicketType[]
-  location_details     EventLocation?
+  ticket_types                   TicketType[]
+  location_details               EventLocation?
+  bounce_ingest_settings         BounceIngestSettings?
+  bounce_ingest_processed_uids   BounceIngestProcessedUid[]
 
   @@index([organization_id])
   @@index([organization_id, archived_at])
@@ -527,6 +529,36 @@ model MailSettings {
   updated_at DateTime @updatedAt
 
   @@unique([scope_type, scope_id])
+}
+
+// Event-scoped IMAP bounce / NDR ingest (ADR 0039; event-only correlation).
+model BounceIngestSettings {
+  id                     String   @id @default(cuid())
+  event_id               String   @unique
+  event                  Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  imap_host              String?
+  imap_port              Int?
+  imap_username          String?
+  imap_password_enc      String? // used when reuse_smtp_credentials = false
+  reuse_smtp_credentials Boolean  @default(false)
+  folders                Json? // string[], e.g. ["INBOX", "Junk Email"]
+  poll_interval_minutes  Int?     @default(5)
+  enabled                Boolean  @default(false)
+  created_at             DateTime @default(now())
+  updated_at             DateTime @updatedAt
+}
+
+// Dedup marker for processed IMAP messages (source of truth — not IMAP \Seen).
+model BounceIngestProcessedUid {
+  id           String   @id @default(cuid())
+  event_id     String
+  event        Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  folder       String
+  uid          String
+  processed_at DateTime @default(now())
+
+  @@unique([event_id, folder, uid])
+  @@index([event_id, folder])
 }
 
 // Per-scope mail template storage (plain text — not encrypted).
