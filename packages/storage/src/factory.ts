@@ -24,9 +24,7 @@ let defaultStorage: StorageAdapter | undefined;
 
 /** Process-wide adapter (lazy). Reads `process.env` on first use. */
 export function getDefaultStorage(): StorageAdapter {
-  if (!defaultStorage) {
-    defaultStorage = createStorage(process.env);
-  }
+  defaultStorage ??= createStorage(process.env);
   return defaultStorage;
 }
 

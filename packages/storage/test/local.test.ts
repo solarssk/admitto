@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -7,6 +7,8 @@ import {
   StoragePathError,
   absolutePathUnderUploadRoot,
   createStorage,
+  getDefaultStorage,
+  resetDefaultStorageForTests,
   resolveUploadDir,
 } from "../src/index.js";
 
@@ -25,12 +27,32 @@ describe("createStorage", () => {
     expect(createStorage({}).provider).toBe("local");
   });
 
+  it("treats blank STORAGE_PROVIDER as local", () => {
+    expect(createStorage({ STORAGE_PROVIDER: "  " }).provider).toBe("local");
+  });
+
   it("throws a clear error for s3 (not implemented)", () => {
     expect(() => createStorage({ STORAGE_PROVIDER: "s3" })).toThrow(/not implemented/i);
   });
 
   it("throws for an unknown provider", () => {
     expect(() => createStorage({ STORAGE_PROVIDER: "gcs" })).toThrow(/Unknown STORAGE_PROVIDER/);
+  });
+});
+
+describe("getDefaultStorage", () => {
+  afterEach(() => {
+    resetDefaultStorageForTests();
+  });
+
+  it("returns a cached local adapter and reset drops the cache", () => {
+    resetDefaultStorageForTests();
+    const first = getDefaultStorage();
+    const second = getDefaultStorage();
+    expect(first).toBe(second);
+    expect(first.provider).toBe("local");
+    resetDefaultStorageForTests();
+    expect(getDefaultStorage()).not.toBe(first);
   });
 });
 
@@ -73,6 +95,25 @@ describe("LocalStorageAdapter", () => {
     expect(event.key).toMatch(/^default\/events\/evt-1\/[0-9a-f-]{36}\.jpg$/);
   });
 
+  it("put rejects invalid extension, missing eventId, and unsafe eventId", async () => {
+    await expect(
+      storage.put(Buffer.from("x"), { orgId: "default", scope: "org", ext: "png" }),
+    ).rejects.toBeInstanceOf(StoragePathError);
+
+    await expect(
+      storage.put(Buffer.from("x"), { orgId: "default", scope: "event", ext: ".png" }),
+    ).rejects.toBeInstanceOf(StoragePathError);
+
+    await expect(
+      storage.put(Buffer.from("x"), {
+        orgId: "default",
+        eventId: "../bad",
+        scope: "event",
+        ext: ".png",
+      }),
+    ).rejects.toBeInstanceOf(StoragePathError);
+  });
+
   it("delete is idempotent on a missing key", async () => {
     const key = "default/00000000-0000-0000-0000-000000000001.png";
     expect(await storage.delete(key)).toEqual({ deleted: false });
@@ -87,6 +128,18 @@ describe("LocalStorageAdapter", () => {
     expect(await storage.delete(key)).toEqual({ deleted: true });
     expect(existsSync(join(uploadDir, key))).toBe(false);
     expect(await storage.delete(key)).toEqual({ deleted: false });
+  });
+
+  it("delete rethrows non-ENOENT unlink failures", async () => {
+    const key = "default/00000000-0000-0000-0000-000000000099.png";
+    const abs = join(uploadDir, key);
+    mkdirSync(join(uploadDir, "default"), { recursive: true });
+    // Directory at the file path makes unlink fail with EISDIR (not ENOENT).
+    mkdirSync(abs);
+    await expect(storage.delete(key)).rejects.toMatchObject({
+      code: expect.not.stringMatching(/^ENOENT$/),
+    });
+    rmSync(abs, { recursive: true, force: true });
   });
 
   it("exists reports presence", async () => {
