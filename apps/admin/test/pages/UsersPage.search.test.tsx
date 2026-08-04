@@ -19,13 +19,20 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   return {
     ...actual,
     fetchAdminUsers: vi.fn(),
+    fetchUserStats: vi.fn(),
     fetchRoleAssignments: vi.fn(),
     fetchSessions: vi.fn(),
     fetchAdminEvents: vi.fn(),
   };
 });
 
-import { fetchAdminEvents, fetchAdminUsers, fetchRoleAssignments, fetchSessions } from "../../src/api/client.js";
+import {
+  fetchAdminEvents,
+  fetchAdminUsers,
+  fetchUserStats,
+  fetchRoleAssignments,
+  fetchSessions,
+} from "../../src/api/client.js";
 
 function makeUser(id: string, displayName: string): UserListItemDto {
   return {
@@ -46,6 +53,14 @@ beforeEach(() => {
   vi.mocked(fetchRoleAssignments).mockResolvedValue({ assignments: [], total: 0, page: 1, pageSize: 25 });
   vi.mocked(fetchSessions).mockResolvedValue({ sessions: [] });
   vi.mocked(fetchAdminEvents).mockResolvedValue([]);
+  vi.mocked(fetchUserStats).mockResolvedValue({
+    total: 0,
+    active: 0,
+    mfa: 0,
+    sso: 0,
+    active_sessions: 0,
+    active_sessions_users: 0,
+  });
   // ScrollFadeTabs scrolls the active tab into view on mount/change - jsdom has no real impl.
   Element.prototype.scrollIntoView = vi.fn();
   // ActiveSessionsTab is always mounted (hidden, not unmounted) regardless of which tab is

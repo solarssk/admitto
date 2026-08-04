@@ -15,6 +15,7 @@ import { fetchAdminUsers, fetchUserStats, revokeUserSessions } from "../api/clie
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { UserListItemDto, UserStatsDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { PaginationFooter } from "../components/PaginationFooter.js";
 import { ScrollFadeTabs } from "../components/ScrollFadeTabs.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { InviteUserModal } from "./users/InviteUserModal.js";
@@ -25,7 +26,7 @@ import { StaffUserCard, StaffUserTableRow } from "./users/StaffUserListItem.js";
 import "./users-page.css";
 
 const SEARCH_DEBOUNCE_MS = 300;
-const PAGE_SIZE = 25;
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 const SKELETON_ROWS = 5;
 
 type UsersTab = "staff" | "roles" | "sessions";
@@ -88,6 +89,7 @@ export function UsersPage() {
   const [users, setUsers] = useState<UserListItemDto[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState("");
@@ -142,7 +144,7 @@ export function UsersPage() {
           {
             q: searchQuery || undefined,
             page,
-            pageSize: PAGE_SIZE,
+            pageSize,
             role: roleFilter,
             status: statusFilter,
           },
@@ -160,7 +162,7 @@ export function UsersPage() {
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [superadmin, searchQuery, page, roleFilter, statusFilter]);
+  }, [superadmin, searchQuery, page, pageSize, roleFilter, statusFilter]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -168,7 +170,7 @@ export function UsersPage() {
     return () => controller.abort();
   }, [load]);
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const filtersActive =
     searchQuery.length > 0 || roleFilter !== "all" || statusFilter !== "all";
   const showInitialEmpty = !loading && !error && total === 0 && !filtersActive;
@@ -213,10 +215,11 @@ export function UsersPage() {
           superadmin && (
             <Button
               type="button"
-              variant="secondary"
-              onClick={() => navigate("/admin/settings?tab=logs")}
+              variant="primary"
+              icon={<i className="ti ti-user-plus" aria-hidden="true" />}
+              onClick={() => setInviteOpen(true)}
             >
-              Audit history
+              Invite user
             </Button>
           )
         }
@@ -331,9 +334,6 @@ export function UsersPage() {
                 <option value="disabled">Disabled</option>
               </select>
             </div>
-            <Button type="button" variant="primary" className="users-page__invite-btn" onClick={() => setInviteOpen(true)}>
-              Invite user
-            </Button>
           </div>
 
           {loading && showLoadingSkeleton && <StaffUsersSkeleton />}
@@ -420,32 +420,20 @@ export function UsersPage() {
                 ))}
               </div>
 
-              <div className="users-page__foot">
-                <span>
-                  Showing {users.length} on this page · {total} total
-                </span>
-                <div className="users-page__actions">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={page <= 1}
-                    onClick={() => setPage((p) => p - 1)}
-                  >
-                    Previous
-                  </Button>
-                  <span>
-                    Page {page} of {totalPages}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={page >= totalPages}
-                    onClick={() => setPage((p) => p + 1)}
-                  >
-                    Next
-                  </Button>
-                </div>
-              </div>
+              <PaginationFooter
+                idPrefix="staff-users"
+                page={page}
+                pageSize={pageSize}
+                totalPages={totalPages}
+                totalRows={total}
+                pageSizeOptions={PAGE_SIZE_OPTIONS}
+                onPageSizeChange={(size) => {
+                  setPageSize(size);
+                  setPage(1);
+                }}
+                onPrevious={() => setPage((p) => Math.max(1, p - 1))}
+                onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+              />
             </>
           )}
         </Card>

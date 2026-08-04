@@ -19,11 +19,11 @@ afterEach(() => {
 });
 
 describe("InviteUserModal", () => {
-  it("keeps invite email disabled and gives the administrator the manual next step", () => {
+  it("has no send-invite-email switch and shows a password length hint", () => {
     render(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
 
-    expect(screen.getByLabelText("Send invite email")).toHaveProperty("disabled", true);
-    expect(screen.getByText("Coming soon. Share the password manually for now.")).toBeTruthy();
+    expect(screen.queryByLabelText("Send invite email")).toBeNull();
+    expect(screen.getByText("At least 8 characters.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
   });
 

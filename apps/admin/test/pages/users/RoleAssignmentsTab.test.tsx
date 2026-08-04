@@ -75,7 +75,7 @@ describe("RoleAssignmentsTab", () => {
     renderWithToast(<RoleAssignmentsTab />);
 
     await screen.findAllByText("staff@example.com");
-    fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
+    fireEvent.click(screen.getByRole("button", { name: "Revoke Administrator for staff@example.com" }));
 
     const dialog = await screen.findByRole("dialog");
     expect(dialog.textContent).toContain("Remove Administrator access for staff@example.com");

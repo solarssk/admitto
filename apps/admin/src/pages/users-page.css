@@ -95,10 +95,6 @@
   margin-bottom: var(--space-4);
 }
 
-.users-page__invite-btn {
-  flex-shrink: 0;
-}
-
 .users-page__search {
   flex: 1 1 220px;
   min-width: 0;
@@ -317,16 +313,6 @@
   color: var(--at-gray-700);
 }
 
-.users-page__foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-top: var(--space-3);
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
-}
-
 .users-page__status {
   margin: var(--space-4) 0;
 }
@@ -347,8 +333,7 @@
   }
 
   .users-page__search,
-  .users-page__filters,
-  .users-page__invite-btn {
+  .users-page__filters {
     width: 100%;
   }
 
@@ -366,15 +351,6 @@
 
   .users-page__cards--mobile {
     display: flex;
-  }
-
-  .users-page__foot {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .users-page__foot .users-page__actions {
-    justify-content: space-between;
   }
 
   .users-page__action-btn {

@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, EmptyState, Skeleton, useToast } from "@admitto/ui";
+import { Badge, Button, EmptyState, IconButton, Skeleton, useToast } from "@admitto/ui";
 import { useDelayedLoading } from "../../hooks/useDelayedLoading.js";
 import { fetchRoleAssignments, revokeUserRole } from "../../api/client.js";
 import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import type { RoleAssignmentListItemDto } from "../../api/types.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
+import { PaginationFooter } from "../../components/PaginationFooter.js";
 import { useAuth } from "../../auth/AuthProvider.js";
 import { isSuperadmin } from "../../auth/capabilities.js";
 import { roleBadgeVariant, roleLabel } from "../../auth/role-labels.js";
 import { formatUtcDateTime } from "../../utils/event-dates.js";
 
 const SKELETON_ROWS = 4;
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 
 function scopeLabel(row: RoleAssignmentListItemDto): string {
   if (row.scope_type === "event" && row.event) return row.event.title;
@@ -43,9 +45,12 @@ function AssignmentTableRow({ row, canRevoke, onRevoke }: Readonly<AssignmentRow
       <td>{formatUtcDateTime(row.granted_at)}</td>
       <td>
         {canRevoke ? (
-          <Button type="button" variant="danger" onClick={() => onRevoke(row)}>
-            Revoke
-          </Button>
+          <IconButton
+            icon={<i className="ti ti-trash" aria-hidden="true" />}
+            label={`Revoke ${roleLabel(row.role)} for ${row.user_display_name ?? row.user_email}`}
+            size="sm"
+            onClick={() => onRevoke(row)}
+          />
         ) : (
           <span className="form-hint">-</span>
         )}
@@ -109,7 +114,7 @@ export function RoleAssignmentsTab({ onAssignmentsChanged }: Readonly<RoleAssign
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const pageSize = 25;
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
   const [confirmTarget, setConfirmTarget] = useState<RoleAssignmentListItemDto | null>(null);
   const [revoking, setRevoking] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
@@ -128,7 +133,7 @@ export function RoleAssignmentsTab({ onAssignmentsChanged }: Readonly<RoleAssign
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [page]);
+  }, [page, pageSize]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -257,24 +262,20 @@ export function RoleAssignmentsTab({ onAssignmentsChanged }: Readonly<RoleAssign
             ))}
           </div>
 
-          <div className="users-page__foot">
-            <span>
-              Page {page} of {totalPages} · {total} assignment{total === 1 ? "" : "s"}
-            </span>
-            <div className="users-page__actions">
-              <Button type="button" variant="secondary" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-                Previous
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
+          <PaginationFooter
+            idPrefix="role-assignments"
+            page={page}
+            pageSize={pageSize}
+            totalPages={totalPages}
+            totalRows={total}
+            pageSizeOptions={PAGE_SIZE_OPTIONS}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setPage(1);
+            }}
+            onPrevious={() => setPage((p) => Math.max(1, p - 1))}
+            onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+          />
         </>
       )}
 

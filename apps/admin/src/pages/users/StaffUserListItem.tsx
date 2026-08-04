@@ -2,6 +2,7 @@ import {
   Avatar,
   Badge,
   Button,
+  IconButton,
   StatusBadge,
 } from "@admitto/ui";
 import type { UserListItemDto } from "../../api/types.js";
@@ -88,7 +89,30 @@ function UserSessionsBadge({ count }: Readonly<{ count: number }>) {
   );
 }
 
-function UserActions({ user, onEdit, onRevokeSessions }: Readonly<StaffUserListItemProps>) {
+/** Compact icon-only actions for the desktop table row. */
+function UserActionsRow({ user, onEdit, onRevokeSessions }: Readonly<StaffUserListItemProps>) {
+  const label = user.display_name?.trim() || user.email;
+  return (
+    <div className="users-page__actions">
+      <IconButton
+        icon={<i className="ti ti-pencil" aria-hidden="true" />}
+        label={`Edit profile for ${label}`}
+        size="sm"
+        onClick={() => onEdit(user)}
+      />
+      <IconButton
+        icon={<i className="ti ti-refresh" aria-hidden="true" />}
+        label={`Reset sessions for ${label}`}
+        size="sm"
+        onClick={() => onRevokeSessions(user)}
+      />
+    </div>
+  );
+}
+
+/** Full-width labeled actions for the mobile card - touch targets stay easy to hit and legible
+ * without a table row's horizontal space constraints. */
+function UserActionsCard({ user, onEdit, onRevokeSessions }: Readonly<StaffUserListItemProps>) {
   const label = user.display_name?.trim() || user.email;
   return (
     <div className="users-page__actions">
@@ -143,7 +167,7 @@ export function StaffUserTableRow({ user, onEdit, onRevokeSessions }: Readonly<S
         <UserStatusBadge active={user.is_active} />
       </td>
       <td>
-        <UserActions user={user} onEdit={onEdit} onRevokeSessions={onRevokeSessions} />
+        <UserActionsRow user={user} onEdit={onEdit} onRevokeSessions={onRevokeSessions} />
       </td>
     </tr>
   );
@@ -187,7 +211,7 @@ export function StaffUserCard({ user, onEdit, onRevokeSessions }: Readonly<Staff
           </dd>
         </div>
       </dl>
-      <UserActions user={user} onEdit={onEdit} onRevokeSessions={onRevokeSessions} />
+      <UserActionsCard user={user} onEdit={onEdit} onRevokeSessions={onRevokeSessions} />
     </article>
   );
 }
