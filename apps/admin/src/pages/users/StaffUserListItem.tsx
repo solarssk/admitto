@@ -52,6 +52,18 @@ function UserRoles({ user }: Readonly<{ user: UserListItemDto }>) {
   );
 }
 
+function UserAuthMethod({ hasSso }: Readonly<{ hasSso: boolean }>) {
+  return hasSso ? (
+    <span className="users-page__auth">
+      <i className="ti ti-cloud-lock" aria-hidden="true" /> SSO
+    </span>
+  ) : (
+    <span className="users-page__auth">
+      <i className="ti ti-key" aria-hidden="true" /> Local
+    </span>
+  );
+}
+
 function UserMfa({ hasMfa }: Readonly<{ hasMfa: boolean }>) {
   return (
     <span className="users-page__mfa">
@@ -160,6 +172,9 @@ export function StaffUserTableRow({ user, onEdit, onRevokeSessions }: Readonly<S
         <UserRoles user={user} />
       </td>
       <td>
+        <UserAuthMethod hasSso={user.has_sso} />
+      </td>
+      <td>
         <UserMfa hasMfa={user.has_mfa} />
       </td>
       <td>{formatRelativeTime(user.last_login_at)}</td>
@@ -195,6 +210,12 @@ export function StaffUserCard({ user, onEdit, onRevokeSessions }: Readonly<Staff
           <dt>Roles</dt>
           <dd>
             <UserRoles user={user} />
+          </dd>
+        </div>
+        <div>
+          <dt>Sign-in</dt>
+          <dd>
+            <UserAuthMethod hasSso={user.has_sso} />
           </dd>
         </div>
         <div>

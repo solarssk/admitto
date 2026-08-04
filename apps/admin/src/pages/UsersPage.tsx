@@ -51,6 +51,7 @@ function StaffUsersSkeleton() {
             <tr>
               <th>User</th>
               <th>Roles</th>
+              <th>Sign-in</th>
               <th>MFA</th>
               <th>Last login</th>
               <th>Sessions</th>
@@ -61,7 +62,7 @@ function StaffUsersSkeleton() {
           <tbody>
             {Array.from({ length: SKELETON_ROWS }, (_, i) => (
               <tr key={i}>
-                <td colSpan={7}>
+                <td colSpan={8}>
                   <Skeleton variant="rect" height={52} />
                 </td>
               </tr>
@@ -389,6 +390,7 @@ export function UsersPage() {
                     <tr>
                       <th>User</th>
                       <th>Roles</th>
+                      <th>Sign-in</th>
                       <th>MFA</th>
                       <th>Last login</th>
                       <th>Sessions</th>
