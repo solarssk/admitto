@@ -2,7 +2,7 @@
   "name": "@admitto/storage",
   "version": "0.0.1",
   "private": true,
-  "description": "Admitto branding file storage adapters (ADR 0038) - local filesystem first; S3 later",
+  "description": "Admitto branding file storage adapters (ADR 0008 / local GC) - local filesystem first; S3 later",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -18,6 +18,10 @@
     "prepare": "tsc -p tsconfig.json",
     "test": "vitest run",
     "coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@admitto/auth": "*",
+    "@admitto/db": "*"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

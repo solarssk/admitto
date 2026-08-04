@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -151,6 +151,118 @@ describe("LocalStorageAdapter", () => {
     expect(await storage.exists(key)).toBe(true);
     await storage.delete(key);
     expect(await storage.exists(key)).toBe(false);
+  });
+
+  it("list yields managed files with mtime and size, skipping junk", async () => {
+    const org = await storage.put(Buffer.from("logo"), {
+      orgId: "default",
+      scope: "org",
+      ext: ".png",
+    });
+    mkdirSync(join(uploadDir, "default"), { recursive: true });
+    // Non-managed filename must not appear in list().
+    const { writeFileSync, symlinkSync } = await import("node:fs");
+    writeFileSync(join(uploadDir, "default", "readme.txt"), "nope");
+    try {
+      symlinkSync(join(uploadDir, "default", "readme.txt"), join(uploadDir, "default", "link.txt"));
+    } catch {
+      // Symlinks may be unavailable on some CI filesystems; junk-file skip still covered.
+    }
+
+    const listed: { key: string; sizeBytes: number }[] = [];
+    for await (const entry of storage.list()) {
+      listed.push({ key: entry.key, sizeBytes: entry.sizeBytes });
+      expect(entry.mtimeMs).toBeGreaterThan(0);
+    }
+    expect(listed).toEqual([{ key: org.key, sizeBytes: 4 }]);
+  });
+
+  it("list returns nothing when the upload root is missing", async () => {
+    rmSync(uploadDir, { recursive: true, force: true });
+    const listed: string[] = [];
+    for await (const entry of storage.list()) {
+      listed.push(entry.key);
+    }
+    expect(listed).toEqual([]);
+  });
+
+  it("list skips a managed path when safeStat returns null (vanished between readdir and stat)", async () => {
+    const { listManagedFilesForTests } = await import("../src/adapters/local.js");
+    const key = "default/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.png";
+    const abs = join(uploadDir, key);
+    mkdirSync(join(uploadDir, "default"), { recursive: true });
+    writeFileSync(abs, "x");
+
+    const listed: string[] = [];
+    for await (const item of listManagedFilesForTests(uploadDir, {
+      readdir: async (dir) => {
+        if (String(dir) === uploadDir) {
+          return [
+            {
+              name: "default",
+              isDirectory: () => true,
+              isFile: () => false,
+            } as unknown as import("node:fs").Dirent,
+          ];
+        }
+        return [
+          {
+            name: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.png",
+            isDirectory: () => false,
+            isFile: () => true,
+          } as unknown as import("node:fs").Dirent,
+        ];
+      },
+      safeStat: async () => null,
+    })) {
+      listed.push(item.key);
+    }
+    expect(listed).toEqual([]);
+  });
+
+  it("safeStatManagedFile returns null when the path is missing and rethrows other errors", async () => {
+    const { safeStatManagedFile } = await import("../src/index.js");
+    expect(await safeStatManagedFile(join(uploadDir, "missing-file.png"))).toBeNull();
+    const { key } = await storage.put(Buffer.from("ok"), {
+      orgId: "default",
+      scope: "org",
+      ext: ".png",
+    });
+    const st = await safeStatManagedFile(join(uploadDir, key));
+    expect(st?.size).toBe(2);
+    await expect(safeStatManagedFile("\0")).rejects.toBeTruthy();
+  });
+
+  it("list skips non-file dirents such as FIFOs", async () => {
+    const fifoName = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.png";
+    const fifoPath = join(uploadDir, "default", fifoName);
+    mkdirSync(join(uploadDir, "default"), { recursive: true });
+    try {
+      const { execFileSync } = await import("node:child_process");
+      execFileSync("mkfifo", [fifoPath]);
+    } catch {
+      // Environments without mkfifo still exercise the happy path elsewhere.
+      return;
+    }
+    const listed: string[] = [];
+    for await (const entry of storage.list()) {
+      listed.push(entry.key);
+    }
+    expect(listed).toEqual([]);
+  });
+
+  it("list rethrows when the upload root is not readable", async () => {
+    const { chmodSync } = await import("node:fs");
+    chmodSync(uploadDir, 0);
+    try {
+      await expect(async () => {
+        for await (const _entry of storage.list()) {
+          // drain
+        }
+      }).rejects.toMatchObject({ code: expect.stringMatching(/^(?:EACCES|EPERM)$/) });
+    } finally {
+      chmodSync(uploadDir, 0o755);
+    }
   });
 
   it("rejects a key that escapes the upload root", () => {

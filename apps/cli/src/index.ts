@@ -14,6 +14,7 @@ import {
 } from "./commands/auth.js";
 import { runSessionsPurgeAll, runSessionsRevokeUser } from "./commands/sessions.js";
 import { runRetention } from "./commands/retention.js";
+import { runStorageGc } from "./commands/storage.js";
 
 function wantsHelp(argv: string[]): boolean {
   return argv.includes("--help") || argv.includes("-h");
@@ -44,6 +45,7 @@ function resolveCommandHandler(
     "auth:generate-emergency-recovery": () => runAuthGenerateEmergencyRecovery(prisma),
     "sessions:revoke": () => runSessionsRevokeUser(prisma),
     "retention:run": () => runRetention(prisma),
+    "storage:gc": () => runStorageGc(prisma),
   };
 
   return handlers[`${namespace}:${command}`];

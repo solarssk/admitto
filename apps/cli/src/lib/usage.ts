@@ -11,6 +11,7 @@ Namespaces:
   auth         Superadmin bootstrap / MFA break-glass (bootstrap-superadmin, reset-mfa, generate-emergency-recovery)
   sessions     Emergency session purge (revoke --user, purge --all)
   retention    Manual retention run (auth sessions + mail snapshot cleanup)
+  storage      Branding upload orphan GC (storage gc)
 
 Options:
   --format     Command output: table (default) or json (checkin, sessions purge)
@@ -28,5 +29,6 @@ Examples:
   admitto auth reset-mfa --email admin@example.com
   admitto sessions revoke --user admin@example.com --operator-email super@example.com
   admitto sessions purge --all --yes --operator-email super@example.com
-  admitto retention run --operator-email super@example.com [--dry-run]`);
+  admitto retention run --operator-email super@example.com [--dry-run]
+  admitto storage gc --operator-email super@example.com [--dry-run]`);
 }

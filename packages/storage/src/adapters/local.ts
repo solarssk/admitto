@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, stat, unlink, writeFile } from "node:fs/promises";
-import { join, resolve, sep } from "node:path";
+import * as fsp from "node:fs/promises";
+import { join, relative, resolve, sep } from "node:path";
 import { StoragePathError } from "../errors.js";
-import type { StorageAdapter, StoragePutOptions } from "../types.js";
+import { isManagedUploadKey } from "../keys.js";
+import type { StorageAdapter, StorageListEntry, StoragePutOptions } from "../types.js";
 
 const ORG_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const EVENT_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,127}$/;
@@ -73,10 +74,10 @@ export class LocalStorageAdapter implements StorageAdapter {
     const dir = join(abs, "..");
     // Path confined by buildKey + resolve-under-root check above.
     // eslint-disable-next-line security/detect-non-literal-fs-filename
-    await mkdir(dir, { recursive: true });
+    await fsp.mkdir(dir, { recursive: true });
     // Same trusted join as mkdir above.
     // eslint-disable-next-line security/detect-non-literal-fs-filename
-    await writeFile(abs, bytes);
+    await fsp.writeFile(abs, bytes);
     return { url: `/uploads/${key}`, key };
   }
 
@@ -85,7 +86,7 @@ export class LocalStorageAdapter implements StorageAdapter {
     try {
       // Path confined by absolutePathUnderUploadRoot.
       // eslint-disable-next-line security/detect-non-literal-fs-filename
-      await unlink(abs);
+      await fsp.unlink(abs);
       return { deleted: true };
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
@@ -99,10 +100,85 @@ export class LocalStorageAdapter implements StorageAdapter {
     try {
       // Path confined by absolutePathUnderUploadRoot.
       // eslint-disable-next-line security/detect-non-literal-fs-filename
-      await stat(abs);
+      await fsp.stat(abs);
       return true;
     } catch {
       return false;
     }
   }
+
+  async *list(): AsyncIterable<StorageListEntry> {
+    const root = resolve(resolveUploadDir(this.env));
+    yield* walkManagedFiles(root, root);
+  }
+}
+
+type WalkDeps = {
+  readdir: typeof fsp.readdir;
+  safeStat: typeof safeStatManagedFile;
+};
+
+/** Recursively yield managed upload keys under `dir` (paths relative to `root`). */
+async function* walkManagedFiles(
+  root: string,
+  dir: string,
+  deps?: WalkDeps,
+): AsyncGenerator<StorageListEntry> {
+  // Resolve once per walk (not as a default param object - Sonar S7737).
+  const resolved: WalkDeps = deps ?? {
+    readdir: fsp.readdir,
+    safeStat: safeStatManagedFile,
+  };
+  let entries;
+  try {
+    // dir is always under root (starts at root, descends via readdir join).
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    entries = await resolved.readdir(dir, { withFileTypes: true });
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return;
+    throw err;
+  }
+
+  for (const entry of entries) {
+    const abs = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      yield* walkManagedFiles(root, abs, resolved);
+      continue;
+    }
+    if (!entry.isFile()) continue;
+
+    const key = relative(root, abs).split(sep).join("/");
+    if (!isManagedUploadKey(key)) continue;
+
+    const st = await resolved.safeStat(abs);
+    if (!st) continue;
+    yield { key, mtimeMs: st.mtimeMs, sizeBytes: st.size };
+  }
+}
+
+/**
+ * Stat a managed upload path; `null` when the file vanished between readdir and stat
+ * (concurrent cancel/replace cleanup). Other errors propagate.
+ */
+export async function safeStatManagedFile(
+  abs: string,
+): Promise<{ mtimeMs: number; size: number } | null> {
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    const st = await fsp.stat(abs);
+    return { mtimeMs: st.mtimeMs, size: st.size };
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return null;
+    throw err;
+  }
+}
+
+/** @internal Test helper: walk with injectable fs deps (ENOENT-between-readdir-and-stat). */
+export function listManagedFilesForTests(
+  root: string,
+  deps: WalkDeps,
+): AsyncGenerator<StorageListEntry> {
+  return walkManagedFiles(root, root, deps);
 }
