@@ -503,27 +503,35 @@ describe("MailTransportPanel — test result panel (#411)", () => {
   }
 
   it("renders recipient, provider, host, and message ID on a successful send", async () => {
-    await renderReadySmtp();
-    mockTest.mockResolvedValueOnce({
-      status: "sent",
-      provider: "smtp",
-      providerMessageId: "queue-123",
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Send test" }));
-    await waitFor(() => {
-      expect(document.querySelector(".mail-preview--ok")).toBeTruthy();
-    });
-    const panel = document.querySelector(".mail-preview--ok");
-    expect(panel).toBeTruthy();
-    expect(panel?.tagName.toLowerCase()).toBe("output");
-    expect(panel?.textContent).toContain("ops@example.com");
-    expect(panel?.textContent).toContain("SMTP");
-    expect(panel?.textContent).toContain("smtp.example.com:587");
-    expect(panel?.textContent).toContain("queue-123");
-    expect(panel?.textContent).toContain("Sent at");
-    // Browser-local wall clock (not bare "… UTC") - same Category-1 pattern as Delivery history.
-    expect(panel?.textContent).toMatch(/UTC[+-]/);
-    expect(panel?.textContent).not.toMatch(/Sent at[\s\S]* UTC(?!\+)/);
+    // CI runners often resolve to UTC; mock a non-UTC zone so Category-1 offset (UTC±N) is asserted.
+    const resolvedOptionsSpy = vi
+      .spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions")
+      .mockReturnValue({ timeZone: "Europe/Warsaw" } as Intl.ResolvedDateTimeFormatOptions);
+    try {
+      await renderReadySmtp();
+      mockTest.mockResolvedValueOnce({
+        status: "sent",
+        provider: "smtp",
+        providerMessageId: "queue-123",
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send test" }));
+      await waitFor(() => {
+        expect(document.querySelector(".mail-preview--ok")).toBeTruthy();
+      });
+      const panel = document.querySelector(".mail-preview--ok");
+      expect(panel).toBeTruthy();
+      expect(panel?.tagName.toLowerCase()).toBe("output");
+      expect(panel?.textContent).toContain("ops@example.com");
+      expect(panel?.textContent).toContain("SMTP");
+      expect(panel?.textContent).toContain("smtp.example.com:587");
+      expect(panel?.textContent).toContain("queue-123");
+      expect(panel?.textContent).toContain("Sent at");
+      // Browser-local wall clock (not bare "… UTC") - same Category-1 pattern as Delivery history.
+      expect(panel?.textContent).toMatch(/UTC[+-]/);
+      expect(panel?.textContent).not.toMatch(/Sent at[\s\S]* UTC(?!\+)/);
+    } finally {
+      resolvedOptionsSpy.mockRestore();
+    }
   });
 
   it("labels the timestamp 'Attempted at' (not 'Sent at') on a failed send", async () => {

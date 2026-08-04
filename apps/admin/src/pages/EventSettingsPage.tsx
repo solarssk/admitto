@@ -47,6 +47,11 @@ import {
 } from "../settings/eventSettingsTabs.js";
 import "./event-settings-page.css";
 
+/** Created/Archived stamp in the acting admin's timezone when known; UTC fallback for legacy rows. */
+function formatActorStamp(iso: string, timezone: string | null | undefined): string {
+  return timezone ? formatEventDateTime(iso, timezone) : formatUtcDateTime(iso);
+}
+
 type SettingsForm = {
   title: string;
   date: string;
@@ -868,11 +873,7 @@ export function EventSettingsPage() {
               </p>
               <p className="field-hint">
                 {isArchived && event.archived_at
-                  ? `Archived on ${
-                      event.archived_by_timezone
-                        ? formatEventDateTime(event.archived_at, event.archived_by_timezone)
-                        : formatUtcDateTime(event.archived_at)
-                    }.`
+                  ? `Archived on ${formatActorStamp(event.archived_at, event.archived_by_timezone)}.`
                   : "Active events accept check-ins and allow attendee edits."}
               </p>
             </div>
@@ -887,9 +888,7 @@ export function EventSettingsPage() {
                 Created:{" "}
                 <strong>
                   {event.created_at
-                    ? event.created_by_timezone
-                      ? formatEventDateTime(event.created_at, event.created_by_timezone)
-                      : formatUtcDateTime(event.created_at)
+                    ? formatActorStamp(event.created_at, event.created_by_timezone)
                     : "-"}
                 </strong>
               </p>
