@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, stat, unlink, writeFile } from "node:fs/promises";
-import { join, resolve, sep } from "node:path";
+import { mkdir, readdir, stat, unlink, writeFile } from "node:fs/promises";
+import { join, relative, resolve, sep } from "node:path";
 import { StoragePathError } from "../errors.js";
-import type { StorageAdapter, StoragePutOptions } from "../types.js";
+import { isManagedUploadKey } from "../keys.js";
+import type { StorageAdapter, StorageListEntry, StoragePutOptions } from "../types.js";
 
 const ORG_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const EVENT_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,127}$/;
@@ -104,5 +105,41 @@ export class LocalStorageAdapter implements StorageAdapter {
     } catch {
       return false;
     }
+  }
+
+  async *list(): AsyncIterable<StorageListEntry> {
+    const root = resolve(resolveUploadDir(this.env));
+    yield* walkManagedFiles(root, root);
+  }
+}
+
+/** Recursively yield managed upload keys under `dir` (paths relative to `root`). */
+async function* walkManagedFiles(root: string, dir: string): AsyncGenerator<StorageListEntry> {
+  let entries;
+  try {
+    // dir is always under root (starts at root, descends via readdir join).
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return;
+    throw err;
+  }
+
+  for (const entry of entries) {
+    const abs = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      yield* walkManagedFiles(root, abs);
+      continue;
+    }
+    if (!entry.isFile()) continue;
+
+    const key = relative(root, abs).split(sep).join("/");
+    if (!isManagedUploadKey(key)) continue;
+
+    // Path confined: under root and matched managed layout.
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    const st = await stat(abs);
+    yield { key, mtimeMs: st.mtimeMs, sizeBytes: st.size };
   }
 }

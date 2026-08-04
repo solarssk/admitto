@@ -153,6 +153,25 @@ describe("LocalStorageAdapter", () => {
     expect(await storage.exists(key)).toBe(false);
   });
 
+  it("list yields managed files with mtime and size, skipping junk", async () => {
+    const org = await storage.put(Buffer.from("logo"), {
+      orgId: "default",
+      scope: "org",
+      ext: ".png",
+    });
+    mkdirSync(join(uploadDir, "default"), { recursive: true });
+    // Non-managed filename must not appear in list().
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(join(uploadDir, "default", "readme.txt"), "nope");
+
+    const listed: { key: string; sizeBytes: number }[] = [];
+    for await (const entry of storage.list()) {
+      listed.push({ key: entry.key, sizeBytes: entry.sizeBytes });
+      expect(entry.mtimeMs).toBeGreaterThan(0);
+    }
+    expect(listed).toEqual([{ key: org.key, sizeBytes: 4 }]);
+  });
+
   it("rejects a key that escapes the upload root", () => {
     expect(() => absolutePathUnderUploadRoot("../outside.png", { UPLOAD_DIR: uploadDir })).toThrow(
       StoragePathError,
