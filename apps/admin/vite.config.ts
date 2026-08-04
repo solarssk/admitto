@@ -1,9 +1,21 @@
+import type { Plugin } from "vite";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import { resolveAppVersion, resolveCommitSha } from "./build-meta.ts";
+import { resolveAppVersion, resolveCommitSha, writeBuildMetaJson } from "./build-meta.ts";
+
+/** Emit `dist/build-meta.json` so `/api/admin/health` can report the same build as the sidebar. */
+function emitBuildMeta(): Plugin {
+  return {
+    name: "admitto-emit-build-meta",
+    writeBundle(outputOptions) {
+      const outDir = outputOptions.dir;
+      if (outDir) writeBuildMetaJson(outDir);
+    },
+  };
+}
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), emitBuildMeta()],
   base: "/",
   define: {
     __APP_VERSION__: JSON.stringify(resolveAppVersion()),

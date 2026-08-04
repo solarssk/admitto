@@ -64,6 +64,21 @@ function downloadTextFile(filename: string, content: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
+/** Same build identity as the sidebar footer (`InstanceSidebarFoot`). */
+function runningBuildMeta(): { version: string; commit: string } {
+  return { version: __APP_VERSION__, commit: __APP_COMMIT__ };
+}
+
+function stampRunningBuild(report: HealthReportDto): HealthReportDto {
+  const { version, commit } = runningBuildMeta();
+  return { ...report, version, commit };
+}
+
+function runningBuildLabel(): string {
+  const { version, commit } = runningBuildMeta();
+  return commit !== "unknown" ? ` · v${version} · ${commit}` : ` · v${version}`;
+}
+
 const ROW_STATUS_TEXT: Record<HealthRowStatus, string> = {
   ok: "Healthy",
   degraded: "Degraded",
@@ -314,7 +329,7 @@ export function HealthCheckPanel() {
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(formatHealthCheckMarkdown(report));
+      await navigator.clipboard.writeText(formatHealthCheckMarkdown(stampRunningBuild(report)));
       addToast("Health snapshot copied to clipboard", "success");
     } catch {
       addToast("Could not copy. Clipboard access was blocked.", "error");
@@ -323,7 +338,10 @@ export function HealthCheckPanel() {
 
   const handleExport = () => {
     const stamp = report.generated_at.replaceAll(":", "-").slice(0, 19);
-    downloadTextFile(`admitto-health-${stamp}.md`, formatHealthCheckMarkdown(report));
+    downloadTextFile(
+      `admitto-health-${stamp}.md`,
+      formatHealthCheckMarkdown(stampRunningBuild(report)),
+    );
     addToast("Health snapshot downloaded", "success");
   };
 
@@ -368,9 +386,7 @@ export function HealthCheckPanel() {
             <i className="ti ti-clock" aria-hidden="true" />
             <span>
               Generated {formatEventDateTime(report.generated_at, getBrowserTimeZone())}
-              {report.commit !== "unknown"
-                ? ` · v${report.version} · ${report.commit}`
-                : ` · v${report.version}`}
+              {runningBuildLabel()}
             </span>
           </p>
         </div>

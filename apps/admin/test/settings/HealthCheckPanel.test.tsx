@@ -189,16 +189,20 @@ describe("HealthCheckPanel", () => {
     expect(screen.getByText("External integrations")).toBeTruthy();
     expect(screen.getByText("Database")).toBeTruthy();
     expect(screen.getByText(/Generated/)).toBeTruthy();
-    expect(screen.getByText(/v0\.4\.13 · a955ac9/)).toBeTruthy();
+    expect(
+      screen.getByText(new RegExp(`v${__APP_VERSION__} · ${__APP_COMMIT__}`)),
+    ).toBeTruthy();
     expect(screen.getByRole("button", { name: /Run live checks/ })).toBeTruthy();
   });
 
-  it("omits commit from meta when commit is unknown", async () => {
-    mockFetch.mockResolvedValueOnce(sampleReport({ commit: "unknown" }));
+  it("uses the SPA build identity even when the API reports a different commit", async () => {
+    mockFetch.mockResolvedValueOnce(sampleReport({ commit: "unknown", version: "9.9.9" }));
     renderWithToast(<HealthCheckPanel />);
     await screen.findByText("Core infrastructure");
-    expect(screen.getByText(/v0\.4\.13$/)).toBeTruthy();
-    expect(screen.queryByText(/a955ac9/)).toBeNull();
+    expect(
+      screen.getByText(new RegExp(`v${__APP_VERSION__} · ${__APP_COMMIT__}`)),
+    ).toBeTruthy();
+    expect(screen.queryByText(/v9\.9\.9/)).toBeNull();
   });
 
   it("shows EmptyState with Retry when the passive load fails", async () => {
@@ -325,6 +329,9 @@ describe("HealthCheckPanel", () => {
       );
     });
     expect(String(writeText.mock.calls[0]![0])).toContain("### Admitto health snapshot");
+    expect(String(writeText.mock.calls[0]![0])).toContain(
+      `Version: v${__APP_VERSION__} (${__APP_COMMIT__})`,
+    );
   });
 
   it("toasts when clipboard copy is blocked", async () => {
