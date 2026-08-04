@@ -29,6 +29,13 @@ export interface LogoUploadZoneProps {
   readonly originalUrl?: string | null;
   /** Last crop framing stored with the logo. */
   readonly cropMeta?: LogoCropMeta | null;
+  /**
+   * Last successfully persisted display URL (parent's saved state). Provisional Apply uploads
+   * matching this are released to server GC ownership and must not be client-deleted.
+   */
+  readonly committedValue?: string | null;
+  /** Last successfully persisted original upload URL (parent's saved state). */
+  readonly committedOriginalUrl?: string | null;
   readonly onChange: (url: string) => void;
   /** Fired whenever original/crop change (Apply, clear, external link). */
   readonly onSourceChange?: (source: LogoSourceChange) => void;
@@ -196,6 +203,8 @@ export function LogoUploadZone({
   value,
   originalUrl = null,
   cropMeta = null,
+  committedValue = null,
+  committedOriginalUrl = null,
   onChange,
   onSourceChange,
   onDirty,
@@ -212,6 +221,8 @@ export function LogoUploadZone({
   const uploadSeqRef = useRef(0);
   /** Display URL we last wrote via Apply - keeps session original across parent re-renders. */
   const lastUploadedUrlRef = useRef<string | null>(null);
+  /** Applied `/uploads/…` URLs not yet acknowledged by parent Save (draft-only ownership). */
+  const provisionalUrlsRef = useRef(new Set<string>());
   const [uploading, setUploading] = useState(false);
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -219,18 +230,38 @@ export function LogoUploadZone({
   const [cropSession, setCropSession] = useState<CropSession | null>(null);
   const [sourceOriginal, setSourceOriginal] = useState<SourceOriginal | null>(null);
   const cropSessionRef = useRef<CropSession | null>(null);
-  const originalUrlRef = useRef(originalUrl);
+  const committedValueRef = useRef(committedValue);
+  const committedOriginalRef = useRef(committedOriginalUrl);
   cropSessionRef.current = cropSession;
-  originalUrlRef.current = originalUrl;
+  committedValueRef.current = committedValue;
+  committedOriginalRef.current = committedOriginalUrl;
+
+  const isCommittedUrl = (url: string) =>
+    url === committedValueRef.current || url === committedOriginalRef.current;
+
+  const trackProvisional = (url: string | null | undefined) => {
+    if (typeof url === "string" && url.startsWith("/uploads/") && !isCommittedUrl(url)) {
+      provisionalUrlsRef.current.add(url);
+    }
+  };
+
+  const deleteProvisional = (url: string) => {
+    if (!provisionalUrlsRef.current.has(url) || isCommittedUrl(url)) return;
+    provisionalUrlsRef.current.delete(url);
+    void deleteUploadedFile(url);
+  };
 
   useEffect(() => {
     return () => {
       uploadSeqRef.current += 1;
       const abandoned = cropSessionRef.current?.uploadedOriginalUrl;
-      const persisted = originalUrlRef.current;
-      if (abandoned?.startsWith("/uploads/") && abandoned !== persisted) {
+      if (abandoned?.startsWith("/uploads/") && !isCommittedUrl(abandoned)) {
         void deleteUploadedFile(abandoned);
       }
+      for (const url of provisionalUrlsRef.current) {
+        if (!isCommittedUrl(url)) void deleteUploadedFile(url);
+      }
+      provisionalUrlsRef.current.clear();
     };
   }, []);
 
@@ -255,6 +286,35 @@ export function LogoUploadZone({
     }
   }, [value]);
 
+  // Parent Save acknowledged these URLs: transfer ownership to server-side replacement GC.
+  useEffect(() => {
+    const committed = new Set(
+      [committedValue, committedOriginalUrl].filter(
+        (u): u is string => typeof u === "string" && u.startsWith("/uploads/"),
+      ),
+    );
+    for (const url of committed) {
+      provisionalUrlsRef.current.delete(url);
+    }
+    if (lastUploadedUrlRef.current && committed.has(lastUploadedUrlRef.current)) {
+      lastUploadedUrlRef.current = null;
+    }
+  }, [committedValue, committedOriginalUrl]);
+
+  // Draft discarded (Reset / clear / external replace): delete Applied uploads that left the draft.
+  useEffect(() => {
+    const live = new Set(
+      [value, originalUrl ?? ""].filter((u): u is string => typeof u === "string" && u.startsWith("/uploads/")),
+    );
+    for (const url of [...provisionalUrlsRef.current]) {
+      if (live.has(url) || isCommittedUrl(url)) {
+        if (isCommittedUrl(url)) provisionalUrlsRef.current.delete(url);
+        continue;
+      }
+      deleteProvisional(url);
+    }
+  }, [value, originalUrl]);
+
   const closeCropSession = () => {
     setCropSession(null);
   };
@@ -266,7 +326,7 @@ export function LogoUploadZone({
     const isPersistedOriginal =
       Boolean(abandoned) && abandoned === originalUrl && abandoned?.startsWith("/uploads/");
     setCropSession(null);
-    if (abandoned && !isPersistedOriginal && abandoned.startsWith("/uploads/")) {
+    if (abandoned && !isPersistedOriginal && abandoned.startsWith("/uploads/") && !isCommittedUrl(abandoned)) {
       void deleteUploadedFile(abandoned);
     }
   };
@@ -315,11 +375,13 @@ export function LogoUploadZone({
       }
 
       const crop = toLogoCropMeta(applyMeta);
-      // Only session (unsaved) display URLs may be deleted client-side; persisted logos are
+      // Only provisional (unsaved) display URLs may be deleted client-side; persisted logos are
       // cleaned by the server after a successful branding PATCH.
       const previousWasUnsavedSession =
-        previousDisplay.startsWith("/uploads/") && previousDisplay === lastUploadedUrlRef.current;
+        previousDisplay.startsWith("/uploads/") && provisionalUrlsRef.current.has(previousDisplay);
       lastUploadedUrlRef.current = croppedUrl;
+      trackProvisional(croppedUrl);
+      trackProvisional(originalUploadedUrl);
       if (originalFile) {
         setSourceOriginal({
           file: originalFile,
@@ -343,7 +405,7 @@ export function LogoUploadZone({
         previousDisplay !== croppedUrl &&
         previousDisplay !== originalUploadedUrl
       ) {
-        void deleteUploadedFile(previousDisplay);
+        deleteProvisional(previousDisplay);
       }
     } catch (err) {
       if (seq !== uploadSeqRef.current) return;

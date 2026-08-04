@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@admitto/db";
-import { canManageInstance } from "@admitto/auth";
+import { canManageInstance, getBrandingTheme } from "@admitto/auth";
 import { writeAdminAuditLogBestEffort } from "@admitto/tickets";
 import {
   BrandingUploadError,
@@ -195,27 +195,62 @@ async function authorizeDeleteUpload(
   return null;
 }
 
-/** Persisted library assets must use DELETE …/image-assets/:id (superadmin + in-use checks). */
-async function rejectIfPersistedEventImageAsset(
+/**
+ * Block DELETE when the URL is still referenced by persisted branding (logo/header/theme font)
+ * or by an event image-asset library row. Those must be cleared via their own PATCH/DELETE
+ * paths so tickets and emails never lose a live file.
+ */
+async function rejectIfPersistedBrandingReference(
   c: Context,
   db: PrismaClient,
-  eventId: string,
+  parsed: ParsedUploadsUrl,
   url: string,
 ): Promise<Response | null> {
-  const persisted = await db.eventImageAsset.findFirst({
-    where: { event_id: eventId, url },
-    select: { id: true },
-  });
-  if (!persisted) return null;
-  return c.json({ error: "persisted_image_asset" }, 409);
+  if (parsed.kind === "event") {
+    const asset = await db.eventImageAsset.findFirst({
+      where: { event_id: parsed.eventId!, url },
+      select: { id: true },
+    });
+    if (asset) return c.json({ error: "persisted_image_asset" }, 409);
+
+    const eventHit = await db.event.findFirst({
+      where: {
+        id: parsed.eventId!,
+        OR: [{ logo_url: url }, { logo_original_url: url }, { header_image_url: url }],
+      },
+      select: { id: true },
+    });
+    if (eventHit) return c.json({ error: "persisted_branding_url" }, 409);
+    return null;
+  }
+
+  if (parsed.kind === "org") {
+    const orgHit = await db.organization.findFirst({
+      where: {
+        OR: [{ logo_url: url }, { logo_original_url: url }, { header_image_url: url }],
+      },
+      select: { id: true },
+    });
+    if (orgHit) return c.json({ error: "persisted_branding_url" }, 409);
+    return null;
+  }
+
+  // theme
+  const theme = await getBrandingTheme(db);
+  for (const family of theme?.custom_font_families ?? []) {
+    for (const variant of family.variants ?? []) {
+      if (variant.url === url) return c.json({ error: "persisted_branding_url" }, 409);
+    }
+  }
+  return null;
 }
 
 /**
  * DELETE /api/admin/uploads: remove a managed `/uploads/…` file by URL.
  * Org/theme paths: superadmin. Event paths: event manage access matching the URL's eventId.
  * Single-tenant: org segment must be `default` (same as POST upload writers).
- * Persisted event image assets must go through DELETE …/image-assets/:id (superadmin +
- * template-reference checks); this route only cleans abandoned crop/pre-save uploads.
+ * Persisted branding URLs and event image assets must be cleared via their own routes; this
+ * endpoint only cleans abandoned crop/pre-save uploads.
  */
 export async function handleDeleteUpload(c: Context, db: PrismaClient): Promise<Response> {
   let body: unknown;
@@ -241,15 +276,8 @@ export async function handleDeleteUpload(c: Context, db: PrismaClient): Promise<
   const forbidden = await authorizeDeleteUpload(c, db, parsed);
   if (forbidden) return forbidden;
 
-  if (parsed.kind === "event") {
-    const persistedAssetResponse = await rejectIfPersistedEventImageAsset(
-      c,
-      db,
-      parsed.eventId!,
-      urlOrErr.url,
-    );
-    if (persistedAssetResponse) return persistedAssetResponse;
-  }
+  const persisted = await rejectIfPersistedBrandingReference(c, db, parsed, urlOrErr.url);
+  if (persisted) return persisted;
 
   try {
     await deleteBrandingUploadByUrl(urlOrErr.url, {

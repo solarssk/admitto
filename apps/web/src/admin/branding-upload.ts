@@ -371,11 +371,19 @@ export async function bestEffortDeleteReplacedUploadUrls(
   previous: Array<string | null | undefined>,
   next: Array<string | null | undefined>,
   trust: UploadDeleteTrust,
+  opts?: {
+    /**
+     * Re-check immediately before unlink. Concurrent saves can restore a URL after this
+     * caller's snapshot of `next` was taken; skip delete when the URL is live again.
+     */
+    isStillReferenced?: (url: string) => Promise<boolean>;
+  },
 ): Promise<void> {
   const kept = new Set(next.filter((u): u is string => typeof u === "string" && u.startsWith("/uploads/")));
   for (const url of previous) {
     if (typeof url !== "string" || !url.startsWith("/uploads/")) continue;
     if (kept.has(url)) continue;
+    if (opts?.isStillReferenced && (await opts.isStillReferenced(url))) continue;
     await bestEffortDeleteUploadUrl(url, trust);
   }
 }

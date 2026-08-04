@@ -374,6 +374,23 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
       [existing.logo_url, existing.logo_original_url, existing.header_image_url],
       [updated.logo_url, updated.logo_original_url, updated.header_image_url],
       { expectedOrgId: "default", expectedKind: "event", expectedEventId: eventId },
+      {
+        isStillReferenced: async (url) => {
+          const hit = await db.event.findFirst({
+            where: {
+              id: eventId,
+              OR: [{ logo_url: url }, { logo_original_url: url }, { header_image_url: url }],
+            },
+            select: { id: true },
+          });
+          if (hit) return true;
+          const asset = await db.eventImageAsset.findFirst({
+            where: { event_id: eventId, url },
+            select: { id: true },
+          });
+          return asset !== null;
+        },
+      },
     );
 
     const deletability = await loadDeletability(db, eventId, updated);

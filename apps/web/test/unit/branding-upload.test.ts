@@ -401,4 +401,19 @@ describe("bestEffortDeleteUploadUrl / bestEffortDeleteReplacedUploadUrls", () =>
     );
     expect(existsSync(otherAbs)).toBe(false);
   });
+
+  it("skips unlink when isStillReferenced reports the URL is live again", async () => {
+    const gone = await saveBrandingUpload(pngFile(), "default");
+    const goneAbs = join(uploadDir, gone.url.slice("/uploads/".length));
+
+    await bestEffortDeleteReplacedUploadUrls([gone.url], [null], orgTrust, {
+      isStillReferenced: async () => true,
+    });
+    expect(existsSync(goneAbs)).toBe(true);
+
+    await bestEffortDeleteReplacedUploadUrls([gone.url], [null], orgTrust, {
+      isStillReferenced: async () => false,
+    });
+    expect(existsSync(goneAbs)).toBe(false);
+  });
 });

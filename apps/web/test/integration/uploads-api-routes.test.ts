@@ -516,4 +516,37 @@ describe("DELETE /api/admin/uploads", () => {
       headers: { Cookie: superCookie, ...sameOrigin },
     });
   });
+
+  it("rejects DELETE when the URL is still stored on Event branding fields", async () => {
+    const up = await app.request(`/api/admin/events/${EVENT_OWN}/branding-upload`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: uploadForm(new Blob([VALID_PNG], { type: "image/png" }), "logo.png"),
+    });
+    expect(up.status).toBe(201);
+    const { url } = (await up.json()) as { url: string };
+
+    const patch = await app.request(`/api/admin/events/${EVENT_OWN}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ logo_url: url }),
+    });
+    expect(patch.status).toBe(200);
+
+    const del = await app.request("/api/admin/uploads", {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    expect(del.status).toBe(409);
+    expect(await del.json()).toEqual({ error: "persisted_branding_url" });
+    expect((await app.request(url)).status).toBe(200);
+
+    // Clear via event settings so the file can be GC'd by replacement cleanup.
+    await app.request(`/api/admin/events/${EVENT_OWN}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ logo_url: null, logo_original_url: null, logo_crop: null }),
+    });
+  });
 });

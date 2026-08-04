@@ -67,6 +67,16 @@ export async function handlePutStaffTheme(c: Context, db: PrismaClient): Promise
   await bestEffortDeleteReplacedUploadUrls(customFontUrls(previous), customFontUrls(theme), {
     expectedOrgId: "default",
     expectedKind: "theme",
+  }, {
+    isStillReferenced: async (url) => {
+      const live = await getBrandingTheme(db);
+      for (const family of live?.custom_font_families ?? []) {
+        for (const variant of family.variants ?? []) {
+          if (variant.url === url) return true;
+        }
+      }
+      return false;
+    },
   });
   return c.json({ theme, vars: resolveThemeVars(theme) });
 }

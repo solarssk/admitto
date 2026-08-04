@@ -161,6 +161,17 @@ export async function handlePatchSetupOrgBranding(c: Context, db: PrismaClient):
     [previous.logo_url, previous.logo_original_url],
     [next.logo_url, next.logo_original_url],
     { expectedOrgId: "default", expectedKind: "org" },
+    {
+      isStillReferenced: async (url) => {
+        const hit = await db.organization.findFirst({
+          where: {
+            OR: [{ logo_url: url }, { logo_original_url: url }, { header_image_url: url }],
+          },
+          select: { id: true },
+        });
+        return hit !== null;
+      },
+    },
   );
 
   emitSystemLog("admin", "info", "org_branding_updated", {

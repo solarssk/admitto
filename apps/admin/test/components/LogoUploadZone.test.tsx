@@ -627,4 +627,112 @@ describe("LogoUploadZone", () => {
     unmount();
     expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/abandoned-orig.png");
   });
+
+  it("after parent commits the display URL, a later Apply does not delete that saved logo", async () => {
+    mockUploadFile
+      .mockResolvedValueOnce({ url: "/uploads/default/orig-a.png" })
+      .mockResolvedValueOnce({ url: "/uploads/default/cropped-a.png" })
+      .mockResolvedValueOnce({ url: "/uploads/default/cropped-b.png" });
+    function Harness() {
+      const [value, setValue] = useState("");
+      const [originalUrl, setOriginalUrl] = useState<string | null>(null);
+      const [committedValue, setCommittedValue] = useState<string | null>(null);
+      const [committedOriginalUrl, setCommittedOriginalUrl] = useState<string | null>(null);
+      return (
+        <>
+          <LogoUploadZone
+            value={value}
+            originalUrl={originalUrl}
+            committedValue={committedValue}
+            committedOriginalUrl={committedOriginalUrl}
+            onChange={setValue}
+            onSourceChange={(s) => setOriginalUrl(s.originalUrl)}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              setCommittedValue(value);
+              setCommittedOriginalUrl(originalUrl);
+            }}
+          >
+            commit-save
+          </button>
+        </>
+      );
+    }
+    renderWithToast(<Harness />);
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { files: [new File(["a"], "a.png", { type: "image/png" })] },
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: "Adjust image" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Edit image" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "commit-save" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit image" }));
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: "Adjust image" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    await waitFor(() => {
+      expect(mockUploadFile).toHaveBeenCalledTimes(3);
+    });
+    expect(mockDeleteUploadedFile).not.toHaveBeenCalledWith("/uploads/default/cropped-a.png");
+  });
+
+  it("discards provisional Apply uploads when the draft resets to the committed logo", async () => {
+    mockUploadFile
+      .mockResolvedValueOnce({ url: "/uploads/default/orig-new.png" })
+      .mockResolvedValueOnce({ url: "/uploads/default/cropped-new.png" });
+    function Harness() {
+      const [value, setValue] = useState("/uploads/default/saved.png");
+      const [originalUrl, setOriginalUrl] = useState<string | null>("/uploads/default/saved-orig.png");
+      return (
+        <>
+          <LogoUploadZone
+            value={value}
+            originalUrl={originalUrl}
+            committedValue="/uploads/default/saved.png"
+            committedOriginalUrl="/uploads/default/saved-orig.png"
+            onChange={setValue}
+            onSourceChange={(s) => setOriginalUrl(s.originalUrl)}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              setValue("/uploads/default/saved.png");
+              setOriginalUrl("/uploads/default/saved-orig.png");
+            }}
+          >
+            reset-draft
+          </button>
+        </>
+      );
+    }
+    renderWithToast(<Harness />);
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { files: [new File(["n"], "n.png", { type: "image/png" })] },
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: "Adjust image" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Edit image" })).toBeTruthy();
+    });
+    mockDeleteUploadedFile.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "reset-draft" }));
+    await waitFor(() => {
+      expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/cropped-new.png");
+      expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/orig-new.png");
+    });
+    expect(mockDeleteUploadedFile).not.toHaveBeenCalledWith("/uploads/default/saved.png");
+    expect(mockDeleteUploadedFile).not.toHaveBeenCalledWith("/uploads/default/saved-orig.png");
+  });
 });

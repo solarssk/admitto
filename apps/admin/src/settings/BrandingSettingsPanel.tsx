@@ -325,6 +325,7 @@ export function BrandingSettingsPanel() {
 
   const [orgDraft, setOrgDraft] = useState<SetupOrgBrandingDto>(EMPTY_ORG_DRAFT);
   const [themeDraft, setThemeDraft] = useState<BrandingThemeDto>(EMPTY_THEME_DRAFT);
+  const [orgCommitted, setOrgCommitted] = useState<SetupOrgBrandingDto>(EMPTY_ORG_DRAFT);
   const orgSavedRef = useRef<SetupOrgBrandingDto>(EMPTY_ORG_DRAFT);
   const themeSavedRef = useRef<BrandingThemeDto>(EMPTY_THEME_DRAFT);
   /** Font `/uploads/…` URLs added via FontFamilyModal but not yet committed by outer theme Save. */
@@ -409,6 +410,7 @@ export function BrandingSettingsPanel() {
         logo_crop: org.logo_crop ?? null,
       };
       orgSavedRef.current = normalizedOrg;
+      setOrgCommitted(normalizedOrg);
       themeSavedRef.current = theme;
       setOrgDraft(normalizedOrg);
       setThemeDraft(theme);
@@ -651,6 +653,7 @@ export function BrandingSettingsPanel() {
 
       if (orgResult.status === "fulfilled") {
         orgSavedRef.current = orgResult.value;
+        setOrgCommitted(orgResult.value);
         setOrgDraft(orgResult.value);
       }
       if (themeResult.status === "fulfilled") {
@@ -733,6 +736,8 @@ export function BrandingSettingsPanel() {
             value={orgDraft.logo_url ?? ""}
             originalUrl={orgDraft.logo_original_url}
             cropMeta={orgDraft.logo_crop}
+            committedValue={orgCommitted.logo_url}
+            committedOriginalUrl={orgCommitted.logo_original_url}
             disabled={formDisabled}
             onChange={(url) => setOrgDraft((prev) => ({ ...prev, logo_url: url }))}
             onSourceChange={(source) =>
