@@ -7,7 +7,7 @@
 import type { Context } from "hono";
 import { execSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { access, constants, unlink, writeFile } from "node:fs/promises";
+import { access, constants, unlink, writeFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { Prisma, type PrismaClient } from "@admitto/db";
 import {
@@ -978,7 +978,9 @@ function plannedRow(id: string, label: string, summary: string): HealthCheckRow 
 
 /**
  * Local branding upload volume (`UPLOAD_DIR` / `@admitto/storage`).
- * Passive: directory exists and is readable+writable. Live: write+unlink a tiny probe file.
+ * Passive: path must be an existing directory that is readable, writable, and searchable
+ * (`R_OK|W_OK|X_OK`). Missing root is degraded (adapter `mkdir` on first put), not an outage.
+ * Live: write+unlink a tiny probe file under that root.
  */
 export async function fileStorageRow(
   env: NodeJS.ProcessEnv,
@@ -1022,21 +1024,56 @@ export async function fileStorageRow(
   try {
     // Path from env / cwd only (operator-controlled), not request input.
     // eslint-disable-next-line security/detect-non-literal-fs-filename
-    await access(uploadPath, constants.R_OK | constants.W_OK);
+    const st = await stat(uploadPath);
+    if (!st.isDirectory()) {
+      return {
+        id: "file_storage",
+        label,
+        status: "down",
+        summary: "Not a directory",
+        details: detailsFromEntries([
+          ["status", "down"],
+          ["provider", "local"],
+          ["path", uploadPath],
+          ["writable", "no"],
+          ["reason", "not_a_directory"],
+          ["last_checked", checkedAt],
+        ]),
+      };
+    }
+    // X_OK: directory must be searchable so children can be created (Unix).
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    await access(uploadPath, constants.R_OK | constants.W_OK | constants.X_OK);
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
-    const missing = code === "ENOENT";
+    if (code === "ENOENT") {
+      // LocalStorageAdapter.put mkdir(recursive) on first branding save - not an outage.
+      return {
+        id: "file_storage",
+        label,
+        status: "degraded",
+        summary: "Missing directory · created on first upload",
+        details: detailsFromEntries([
+          ["status", "degraded"],
+          ["provider", "local"],
+          ["path", uploadPath],
+          ["writable", "unknown"],
+          ["reason", "missing_directory"],
+          ["last_checked", checkedAt],
+        ]),
+      };
+    }
     return {
       id: "file_storage",
       label,
       status: "down",
-      summary: missing ? "Missing directory" : "Not writable",
+      summary: "Not writable",
       details: detailsFromEntries([
         ["status", "down"],
         ["provider", "local"],
         ["path", uploadPath],
         ["writable", "no"],
-        ["reason", missing ? "missing_directory" : "not_writable"],
+        ["reason", "not_writable"],
         ["last_checked", checkedAt],
       ]),
     };

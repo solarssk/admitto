@@ -1,8 +1,35 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PrismaClient } from "@admitto/db";
+
+const { writeFileMock, setRealWriteFile, restoreWriteFile } = vi.hoisted(() => {
+  const writeFileMock = vi.fn();
+  let realWriteFile: (...args: unknown[]) => Promise<unknown> = async () => {
+    throw new Error("writeFile mock not initialized");
+  };
+  return {
+    writeFileMock,
+    setRealWriteFile(fn: (...args: unknown[]) => Promise<unknown>) {
+      realWriteFile = fn;
+      writeFileMock.mockImplementation((...args: unknown[]) => realWriteFile(...args));
+    },
+    restoreWriteFile() {
+      writeFileMock.mockReset();
+      writeFileMock.mockImplementation((...args: unknown[]) => realWriteFile(...args));
+    },
+  };
+});
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  setRealWriteFile(actual.writeFile.bind(actual) as (...args: unknown[]) => Promise<unknown>);
+  return {
+    ...actual,
+    writeFile: (...args: Parameters<typeof actual.writeFile>) => writeFileMock(...args),
+  };
+});
 
 const {
   collectSetupChecks,
@@ -133,6 +160,7 @@ function fakeHealthContext(): Context {
 
 afterEach(() => {
   vi.clearAllMocks();
+  restoreWriteFile();
   checkDatabase.mockResolvedValue({ status: "ok", latency_ms: 2 });
   resolveProductVersion.mockReturnValue("0.4.13");
   isLocationMapsEnabled.mockReturnValue(true);
@@ -186,14 +214,38 @@ describe("fileStorageRow", () => {
     expect(row.status).toBe("ok");
   });
 
-  it("reports down when the directory is missing", async () => {
+  it("reports degraded when the directory is missing (adapter creates it on first put)", async () => {
     const row = await fileStorageRow(
       { UPLOAD_DIR: join(uploadFixture.dir, "does-not-exist") },
       checkedAt,
       false,
     );
+    expect(row.status).toBe("degraded");
+    expect(row.summary).toBe("Missing directory · created on first upload");
+    expect(row.details.find((d) => d.key === "reason")?.value).toBe("missing_directory");
+  });
+
+  it("reports down when UPLOAD_DIR is a regular file", async () => {
+    const fileAsUploadRoot = join(uploadFixture.dir, "not-a-directory");
+    await writeFile(fileAsUploadRoot, "x");
+    const row = await fileStorageRow({ UPLOAD_DIR: fileAsUploadRoot }, checkedAt, false);
     expect(row.status).toBe("down");
-    expect(row.summary).toBe("Missing directory");
+    expect(row.summary).toBe("Not a directory");
+    expect(row.details.find((d) => d.key === "reason")?.value).toBe("not_a_directory");
+  });
+
+  it("reports down when the directory is not writable", async () => {
+    const locked = await mkdtemp(join(tmpdir(), "admitto-health-locked-"));
+    try {
+      await chmod(locked, 0o555);
+      const row = await fileStorageRow({ UPLOAD_DIR: locked }, checkedAt, false);
+      expect(row.status).toBe("down");
+      expect(row.summary).toBe("Not writable");
+      expect(row.details.find((d) => d.key === "reason")?.value).toBe("not_writable");
+    } finally {
+      await chmod(locked, 0o755);
+      await rm(locked, { recursive: true, force: true });
+    }
   });
 
   it("reports degraded for s3 and unknown providers", async () => {
@@ -206,10 +258,8 @@ describe("fileStorageRow", () => {
   });
 
   it("reports degraded when the live write probe fails", async () => {
-    // Pass access(R_OK|W_OK) on a file path, then write into a child path fails (ENOTDIR).
-    const fileAsUploadRoot = join(uploadFixture.dir, "not-a-directory");
-    await writeFile(fileAsUploadRoot, "x");
-    const row = await fileStorageRow({ UPLOAD_DIR: fileAsUploadRoot }, checkedAt, true);
+    writeFileMock.mockRejectedValueOnce(new Error("ENOSPC"));
+    const row = await fileStorageRow({ UPLOAD_DIR: uploadFixture.dir }, checkedAt, true);
     expect(row.status).toBe("degraded");
     expect(row.summary).toBe("Write probe failed");
     expect(row.details.find((d) => d.key === "reason")?.value).toBe("write_probe_failed");
