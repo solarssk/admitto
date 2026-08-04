@@ -31,7 +31,7 @@ function dbStub(overrides: {
 }
 
 beforeEach(() => {
-  vi.mocked(getBrandingTheme).mockResolvedValue(null);
+  vi.mocked(getBrandingTheme).mockResolvedValue({});
 });
 
 describe("findManagedUploadReference", () => {

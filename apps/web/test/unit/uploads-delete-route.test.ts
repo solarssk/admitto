@@ -7,7 +7,7 @@ vi.mock("@admitto/auth", async (importOriginal) => {
   return {
     ...actual,
     canManageInstance: vi.fn(),
-    getBrandingTheme: vi.fn().mockResolvedValue(null),
+    getBrandingTheme: vi.fn().mockResolvedValue({}),
   };
 });
 
