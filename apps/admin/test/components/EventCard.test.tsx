@@ -274,7 +274,7 @@ describe("EventCard", () => {
       },
     );
     expect(screen.getByLabelText("Forecast 22°C")).toBeTruthy();
-    expect(screen.getByText("22°")).toBeTruthy();
+    expect(screen.getByText("22°C")).toBeTruthy();
   });
 
   it("falls back to Weather data when ok forecast has blank attribution", () => {
@@ -309,7 +309,7 @@ describe("EventCard", () => {
       },
     );
     expect(screen.getByLabelText("Forecast 64°F")).toBeTruthy();
-    expect(screen.getByText("64°")).toBeTruthy();
+    expect(screen.getByText("64°F")).toBeTruthy();
     const chip = screen.getByLabelText("Forecast 64°F");
     expect(getTooltipText(chip)).toMatch(/54° to 64°F/);
   });
@@ -375,7 +375,7 @@ describe("EventCard", () => {
     const chip = screen.getByLabelText("Forecast 18°C");
     expect(getTooltipText(chip)).toMatch(/18°C/);
     expect(getTooltipText(chip)).not.toMatch(/to 18/);
-    expect(screen.getByText("18°")).toBeTruthy();
+    expect(screen.getByText("18°C")).toBeTruthy();
   });
 
   it("shows soft too_far copy without horizon or opens-in countdown", () => {

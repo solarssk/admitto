@@ -1,7 +1,6 @@
 import { Link } from "react-router";
 import { Badge, Card, Tooltip } from "@admitto/ui";
 import {
-  formatTempChip,
   formatTempForUnit,
   formatTempRangeForUnit,
   tempUnitFromTimeZone,
@@ -46,7 +45,7 @@ function weatherChipOk(w: NonNullable<EventDto["weather"]>, unit: TempUnit): Wea
     label: `Forecast ${primary}`,
     tooltip: `${condition}, ${range}.\n${credit}.`,
     icon: weatherIconClass(w.weather_code),
-    text: formatTempChip(w.temp_c!, unit),
+    text: primary,
   };
 }
 
