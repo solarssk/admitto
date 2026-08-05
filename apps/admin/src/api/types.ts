@@ -1117,6 +1117,7 @@ export interface CreateAdminUserBody {
 export interface PatchAdminUserBody {
   is_active?: boolean;
   display_name?: string | null;
+  email?: string;
 }
 
 export interface GrantUserRoleBody {

@@ -374,34 +374,43 @@ export async function handlePostUser(c: Context, db: PrismaClient): Promise<Resp
   return c.json({ user: await serializeUser(db, user) }, 201);
 }
 
+type PatchUserConflict = "self_deactivate" | "invalid_email";
+
 /** Builds the Prisma update payload for PATCH /users/:id from the request body. */
 function buildPatchUserData(
   body: Record<string, unknown> | null,
   id: string,
   actorId: string,
-): { data: Prisma.UserUpdateInput } | { conflict: true } {
+): { data: Prisma.UserUpdateInput } | { conflict: PatchUserConflict } {
   const data: Prisma.UserUpdateInput = {};
   if (typeof body?.display_name === "string") {
     data.display_name = body.display_name.trim() || null;
   }
   if (typeof body?.is_active === "boolean") {
     if (body.is_active === false && id === actorId) {
-      return { conflict: true };
+      return { conflict: "self_deactivate" };
     }
     data.is_active = body.is_active;
+  }
+  if (typeof body?.email === "string") {
+    const email = normalizeEmail(body.email);
+    if (!email) return { conflict: "invalid_email" };
+    data.email = email;
   }
   return { data };
 }
 
-/** Picks the audit action type for a user PATCH based on the active-flag transition. */
+/** Picks the audit action type for a user PATCH: the active-flag transition takes priority
+ * (it's the more consequential change), then an email change, then a plain profile edit. */
 function patchUserActionType(
   data: Prisma.UserUpdateInput,
-  before: { is_active: boolean },
+  before: { is_active: boolean; email: string },
 ): string {
-  if (typeof data.is_active !== "boolean" || data.is_active === before.is_active) {
-    return "user_profile_updated";
+  if (typeof data.is_active === "boolean" && data.is_active !== before.is_active) {
+    return data.is_active ? "user_reactivated" : "user_deactivated";
   }
-  return data.is_active ? "user_reactivated" : "user_deactivated";
+  if (typeof data.email === "string" && data.email !== before.email) return "user_email_changed";
+  return "user_profile_updated";
 }
 
 /** Applies the user update inside the PATCH transaction; returns prior `is_active`, or null if gone. */
@@ -436,6 +445,43 @@ async function applyUserPatch(
   return current.is_active;
 }
 
+/** Maps a PATCH transaction failure to its response body, or null when `err` isn't one of
+ * the two conflict types this route recognizes (the caller rethrows anything else). */
+function patchUserConflictResponse(err: unknown): { code: string; error?: string } | null {
+  if (err instanceof LastSuperadminError) {
+    return { code: "last_superadmin" };
+  }
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+    return { code: "email_conflict", error: "email_taken" };
+  }
+  return null;
+}
+
+/** Logs an activate/deactivate transition (deactivate/reactivate only - a plain profile or
+ * email edit isn't a security-relevant status change) and loads the fresh row for the response. */
+async function finalizePatchUserResponse(
+  c: Context,
+  db: PrismaClient,
+  id: string,
+  actionType: string,
+  beforeEmail: string,
+  actorId: string,
+): Promise<Response> {
+  const isStatusChange = actionType === "user_deactivated" || actionType === "user_reactivated";
+  if (isStatusChange) {
+    emitSystemLog("security", "info", actionType, {
+      targetUserId: id,
+      targetEmail: beforeEmail,
+      actorUserId: actorId,
+      actorEmail: await resolveActorEmailForLog(db, actorId),
+    });
+  }
+
+  const user = await loadUser(db, id);
+  if (!user) return c.json({ error: "not_found" }, 404);
+  return c.json({ user: await serializeUser(db, user) });
+}
+
 /** PATCH /api/admin/users/:id — update profile / active flag (superadmin only). */
 export async function handlePatchUser(c: Context, db: PrismaClient): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
@@ -448,7 +494,10 @@ export async function handlePatchUser(c: Context, db: PrismaClient): Promise<Res
   const actorId = c.get("auth").userId;
 
   const parsed = buildPatchUserData(body, id, actorId);
-  if ("conflict" in parsed) return c.json({ code: "cannot_deactivate_self" }, 409);
+  if ("conflict" in parsed) {
+    if (parsed.conflict === "invalid_email") return c.json({ error: "invalid_request" }, 400);
+    return c.json({ code: "cannot_deactivate_self" }, 409);
+  }
   const { data } = parsed;
 
   if (Object.keys(data).length === 0) return c.json({ error: "invalid_request" }, 400);
@@ -476,25 +525,66 @@ export async function handlePatchUser(c: Context, db: PrismaClient): Promise<Res
       await revokeUserAuthState(db, id);
     }
   } catch (err) {
+    const conflict = patchUserConflictResponse(err);
+    if (conflict) return c.json(conflict, 409);
+    throw err;
+  }
+
+  return finalizePatchUserResponse(c, db, id, actionType, before.email, actorId);
+}
+
+/** DELETE /api/admin/users/:id — hard delete (superadmin only). Sessions, role assignments,
+ * MFA methods, trusted devices, and external identities cascade at the DB level (schema.prisma);
+ * AdminAuditLog.actor_user_id is a plain string column, not an FK, so past audit entries this
+ * user authored are preserved with a dangling reference rather than deleted or blocking. */
+export async function handleDeleteUser(c: Context, db: PrismaClient): Promise<Response> {
+  const denied = await requireSuperadmin(c, db);
+  if (denied) return denied;
+
+  const id = c.req.param("id") ?? "";
+  if (!id) return c.json({ error: "user id required" }, 400);
+
+  const actorId = c.get("auth").userId;
+  if (id === actorId) return c.json({ code: "cannot_delete_self" }, 409);
+
+  const before = await db.user.findUnique({ where: { id }, select: { email: true } });
+  if (!before) return c.json({ error: "not_found" }, 404);
+
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
+
+  try {
+    await db.$transaction(
+      async (tx) => {
+        await assertLastSuperadminDeactivationAllowed(tx, id);
+        await tx.user.delete({ where: { id } });
+        await writeAdminAuditLog(tx, {
+          organizationId: orgId,
+          actorUserId: actorId,
+          sessionId: audit.sessionId,
+          ip: audit.ip,
+          timezone: audit.timezone,
+          actionType: "user_deleted",
+          metadata: { userId: id, email: before.email },
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+  } catch (err) {
     if (err instanceof LastSuperadminError) {
       return c.json({ code: "last_superadmin" }, 409);
     }
     throw err;
   }
 
-  if (actionType === "user_deactivated" || actionType === "user_reactivated") {
-    emitSystemLog("security", "info", actionType, {
-      targetUserId: id,
-      targetEmail: before.email,
-      actorUserId: actorId,
-      actorEmail: await resolveActorEmailForLog(db, actorId),
-    });
-  }
+  emitSystemLog("security", "info", "user_deleted", {
+    targetUserId: id,
+    targetEmail: before.email,
+    actorUserId: actorId,
+    actorEmail: await resolveActorEmailForLog(db, actorId),
+  });
 
-  const user = await loadUser(db, id);
-  if (!user) return c.json({ error: "not_found" }, 404);
-
-  return c.json({ user: await serializeUser(db, user) });
+  return c.json({ ok: true });
 }
 
 /** POST /api/admin/users/:id/roles — grant role assignment. */

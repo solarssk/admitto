@@ -288,6 +288,7 @@ import {
   handleGetUserStats,
   handlePostUser,
   handlePatchUser,
+  handleDeleteUser,
   handlePostUserRole,
   handleDeleteUserRole,
   handlePostResetUserMfa,
@@ -1233,6 +1234,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/api/admin/users/stats", staffAdminGate, (c) => handleGetUserStats(c, db));
   app.post("/api/admin/users", jsonPostCsrf, staffAdminGate, (c) => handlePostUser(c, db));
   app.patch("/api/admin/users/:id", jsonPostCsrf, staffAdminGate, (c) => handlePatchUser(c, db));
+  app.delete("/api/admin/users/:id", jsonPostCsrf, staffAdminGate, (c) => handleDeleteUser(c, db));
   app.post("/api/admin/users/:id/roles", jsonPostCsrf, staffAdminGate, (c) =>
     handlePostUserRole(c, db),
   );

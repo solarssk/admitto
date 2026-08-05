@@ -485,6 +485,11 @@ export function UsersPage() {
           addToast(message ?? `${user.display_name ?? user.email} updated`, "success");
           void load();
         }}
+        onDeleted={(user) => {
+          setEditUser(null);
+          addToast(`${user.display_name ?? user.email} deleted`, "success");
+          void load();
+        }}
       />
 
       <ConfirmDialog

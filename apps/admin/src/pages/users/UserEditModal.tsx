@@ -2,6 +2,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Badge, Button, ModalBackdrop, Notice, Switch } from "@admitto/ui";
 import { PASSWORD_MIN_LENGTH } from "@admitto/auth/constants";
 import {
+  ApiError,
+  deleteAdminUser,
   fetchAdminEvents,
   fetchAdminOrganizations,
   grantUserRole,
@@ -10,26 +12,30 @@ import {
   resetUserPassword,
   revokeUserRole,
 } from "../../api/client.js";
-import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
+import { hasApiErrorCode, operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import type { EventDto, UserListItemDto } from "../../api/types.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
 import { useModalFocusTrap } from "../../components/useModalFocusTrap.js";
 import { roleBadgeVariant, roleLabel } from "../../auth/role-labels.js";
+import { useAuth } from "../../auth/AuthProvider.js";
 
 type UserEditModalProps = {
   open: boolean;
   user: UserListItemDto | null;
   onClose: () => void;
   onUpdated: (user: UserListItemDto, message?: string) => void;
+  onDeleted: (user: UserListItemDto) => void;
 };
 
 type AssignRole = "" | "superadmin" | "admin" | "operator";
 
-export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserEditModalProps>) {
+export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Readonly<UserEditModalProps>) {
+  const { user: currentUser } = useAuth();
   const titleId = useId();
   const resetPasswordTitleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,10 +51,14 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
   const [newPassword, setNewPassword] = useState("");
   const [resetPasswordBusy, setResetPasswordBusy] = useState(false);
   const [deactivateConfirm, setDeactivateConfirm] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
     setDisplayName(user.display_name ?? "");
+    setEmail(user.email);
     setIsActive(user.is_active);
     setError(null);
     setNewRole("");
@@ -58,6 +68,8 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
     setResetPasswordOpen(false);
     setNewPassword("");
     setDeactivateConfirm(false);
+    setDeleteConfirm(false);
+    setDeleteError(null);
   }, [user]);
 
   useEffect(() => {
@@ -66,6 +78,8 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
     setResetPasswordOpen(false);
     setNewPassword("");
     setDeactivateConfirm(false);
+    setDeleteConfirm(false);
+    setDeleteError(null);
   }, [open]);
 
   useEffect(() => {
@@ -91,11 +105,13 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
   }, [open]);
 
   const handleClose = () => {
-    if (submitting || resetMfaBusy || resetPasswordBusy || roleBusy) return;
+    if (submitting || resetMfaBusy || resetPasswordBusy || roleBusy || deleteBusy) return;
     setResetMfaOpen(false);
     setResetPasswordOpen(false);
     setNewPassword("");
     setDeactivateConfirm(false);
+    setDeleteConfirm(false);
+    setDeleteError(null);
     onClose();
   };
 
@@ -117,15 +133,36 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
     try {
       const { user: updated } = await patchAdminUser(user.id, {
         display_name: displayName.trim() || null,
+        email: email.trim(),
         is_active: active,
       });
       onUpdated(updated, "Profile updated");
       onClose();
     } catch (err) {
-      setError(operatorApiErrorMessage(err, "Failed to save changes."));
+      if (err instanceof ApiError && (hasApiErrorCode(err, "email_taken") || hasApiErrorCode(err, "email_conflict"))) {
+        setError("A user with this email already exists.");
+      } else {
+        setError(operatorApiErrorMessage(err, "Failed to save changes."));
+      }
     } finally {
       setSubmitting(false);
       setDeactivateConfirm(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!user || deleteBusy) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      await deleteAdminUser(user.id);
+      setDeleteConfirm(false);
+      onDeleted(user);
+      onClose();
+    } catch (err) {
+      setDeleteError(operatorApiErrorMessage(err, "Failed to delete user."));
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -210,6 +247,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
   if (!open || !user) return null;
 
   const displayTitle = user.display_name?.trim() || user.email;
+  const isSelf = user.id === currentUser.id;
 
   const adminOrAddRoleControl =
     newRole === "admin" ? (
@@ -279,6 +317,18 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
               value={displayName}
               disabled={submitting}
               onChange={(e) => setDisplayName(e.target.value)}
+            />
+          </div>
+          <div className="users-modal__field">
+            <label htmlFor="edit-email">Email address</label>
+            <input
+              id="edit-email"
+              className="users-modal__input"
+              type="email"
+              value={email}
+              required
+              disabled={submitting}
+              onChange={(e) => setEmail(e.target.value)}
             />
           </div>
           <div className="users-modal__switch-row">
@@ -397,16 +447,46 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
             </section>
           )}
 
+          <p className="users-modal__section-title">Danger zone</p>
+          <div className="users-modal__actions" style={{ justifyContent: "flex-start" }}>
+            <Button
+              type="button"
+              variant="danger"
+              disabled={submitting || isSelf}
+              title={isSelf ? "You cannot delete your own account." : undefined}
+              onClick={() => setDeleteConfirm(true)}
+            >
+              Delete account
+            </Button>
+          </div>
+
           <div className="users-modal__actions">
             <Button type="button" variant="secondary" disabled={submitting} onClick={handleClose}>
               Cancel
             </Button>
-            <Button type="button" variant="primary" disabled={submitting} onClick={() => void handleSave()}>
+            <Button type="button" variant="primary" disabled={submitting || !email.trim()} onClick={() => void handleSave()}>
               {submitting ? "Saving…" : "Save"}
             </Button>
           </div>
         </div>
       </dialog>
+
+      <ConfirmDialog
+        open={deleteConfirm}
+        title="Delete account"
+        message={`Permanently delete ${displayTitle}? This removes their account, sessions, roles, and 2FA. This cannot be undone.`}
+        errorMessage={deleteError}
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        loading={deleteBusy}
+        onConfirm={() => void handleDelete()}
+        onCancel={() => {
+          if (!deleteBusy) {
+            setDeleteConfirm(false);
+            setDeleteError(null);
+          }
+        }}
+      />
 
       <ConfirmDialog
         open={deactivateConfirm}
