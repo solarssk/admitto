@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, EmptyState, Skeleton, useToast } from "@admitto/ui";
+import { Badge, Button, EmptyState, IconButton, Skeleton, Tooltip, useToast } from "@admitto/ui";
 import { useDelayedLoading } from "../../hooks/useDelayedLoading.js";
 import { fetchRoleAssignments, revokeUserRole } from "../../api/client.js";
 import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import type { RoleAssignmentListItemDto } from "../../api/types.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
+import { paginationHandlers, PaginationFooter } from "../../components/PaginationFooter.js";
 import { useAuth } from "../../auth/AuthProvider.js";
 import { isSuperadmin } from "../../auth/capabilities.js";
 import { roleBadgeVariant, roleLabel } from "../../auth/role-labels.js";
 import { formatUtcDateTime } from "../../utils/event-dates.js";
 
 const SKELETON_ROWS = 4;
+// GET /api/admin/role-assignments caps pageSize at 50 server-side - options here must not
+// exceed that, or a larger picked size silently returns a partial page with unreachable rows.
+const PAGE_SIZE_OPTIONS = [25, 50] as const;
 
 function scopeLabel(row: RoleAssignmentListItemDto): string {
   if (row.scope_type === "event" && row.event) return row.event.title;
@@ -43,9 +47,15 @@ function AssignmentTableRow({ row, canRevoke, onRevoke }: Readonly<AssignmentRow
       <td>{formatUtcDateTime(row.granted_at)}</td>
       <td>
         {canRevoke ? (
-          <Button type="button" variant="danger" onClick={() => onRevoke(row)}>
-            Revoke
-          </Button>
+          <Tooltip content="Revoke assignment">
+            <IconButton
+              icon={<i className="ti ti-trash" aria-hidden="true" />}
+              label={`Revoke ${roleLabel(row.role)} for ${row.user_display_name ?? row.user_email}`}
+              size="sm"
+              className="users-page__icon-danger"
+              onClick={() => onRevoke(row)}
+            />
+          </Tooltip>
         ) : (
           <span className="form-hint">-</span>
         )}
@@ -93,8 +103,14 @@ function AssignmentCard({ row, canRevoke, onRevoke }: Readonly<AssignmentRowProp
   );
 }
 
+type RoleAssignmentsTabProps = {
+  /** Called after a successful revoke so the parent's Staff users list (and any open Edit
+   * modal, which renders from that same list) picks up the change without a full page reload. */
+  onAssignmentsChanged?: () => void;
+};
+
 /** Role assignments tab — per-event/org grants with revoke action. */
-export function RoleAssignmentsTab() {
+export function RoleAssignmentsTab({ onAssignmentsChanged }: Readonly<RoleAssignmentsTabProps>) {
   const { assignments } = useAuth();
   const { addToast } = useToast();
   const canRevokeAll = isSuperadmin(assignments);
@@ -103,7 +119,7 @@ export function RoleAssignmentsTab() {
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const pageSize = 25;
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
   const [confirmTarget, setConfirmTarget] = useState<RoleAssignmentListItemDto | null>(null);
   const [revoking, setRevoking] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
@@ -122,7 +138,7 @@ export function RoleAssignmentsTab() {
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [page]);
+  }, [page, pageSize]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -146,6 +162,7 @@ export function RoleAssignmentsTab() {
       setConfirmTarget(null);
       addToast(`Role revoked for ${label}`, "success");
       await load();
+      onAssignmentsChanged?.();
     } catch (err) {
       const message =
         operatorApiErrorMessage(err, "Failed to revoke role.");
@@ -174,7 +191,7 @@ export function RoleAssignmentsTab() {
                   <th>User</th>
                   <th>Role</th>
                   <th>Granted</th>
-                  <th>Actions</th>
+                  <th><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -223,7 +240,7 @@ export function RoleAssignmentsTab() {
                   <th>User</th>
                   <th>Role</th>
                   <th>Granted</th>
-                  <th>Actions</th>
+                  <th><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -250,24 +267,15 @@ export function RoleAssignmentsTab() {
             ))}
           </div>
 
-          <div className="users-page__foot">
-            <span>
-              Page {page} of {totalPages} · {total} assignment{total === 1 ? "" : "s"}
-            </span>
-            <div className="users-page__actions">
-              <Button type="button" variant="secondary" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-                Previous
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
+          <PaginationFooter
+            idPrefix="role-assignments"
+            page={page}
+            pageSize={pageSize}
+            totalPages={totalPages}
+            totalRows={total}
+            pageSizeOptions={PAGE_SIZE_OPTIONS}
+            {...paginationHandlers(setPage, setPageSize, totalPages)}
+          />
         </>
       )}
 

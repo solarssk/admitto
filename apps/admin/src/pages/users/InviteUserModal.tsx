@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, ModalBackdrop, Notice, Switch } from "@admitto/ui";
+import { Button, Input, ModalBackdrop, Notice, Select, Switch } from "@admitto/ui";
+import { PASSWORD_MIN_LENGTH } from "@admitto/auth/constants";
 import {
   ApiError,
   createAdminUser,
@@ -11,6 +12,8 @@ import { hasApiErrorCode, operatorApiErrorMessage } from "../../api/operator-api
 import type { EventDto, UserListItemDto } from "../../api/types.js";
 import { useModalFocusTrap } from "../../components/useModalFocusTrap.js";
 import { roleLabel } from "../../auth/role-labels.js";
+import { NO_AUTOFILL_PROPS } from "../../settings/mailTransportFormParts.js";
+import "../../attendees/add-attendee-modal.css";
 
 export type InviteUserCreatedResult = {
   user: UserListItemDto;
@@ -97,7 +100,7 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
   };
 
   const handleSubmit = async () => {
-    if (submitting || !email.trim() || !password || password.length < 8) return;
+    if (submitting || !email.trim() || !password || password.length < PASSWORD_MIN_LENGTH) return;
     if (initialRole === "operator" && !eventId) {
       setError("Select an event for the operator role.");
       return;
@@ -136,8 +139,10 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
     } catch (err) {
       if (err instanceof ApiError && (hasApiErrorCode(err, "email_taken") || hasApiErrorCode(err, "email_conflict"))) {
         setError("A user with this email already exists.");
+      } else if (err instanceof ApiError && hasApiErrorCode(err, "invalid_request")) {
+        setError(`Check the email address and the temporary password (at least ${PASSWORD_MIN_LENGTH} characters).`);
       } else {
-        setError(operatorApiErrorMessage(err, "Failed to invite user."));
+        setError(operatorApiErrorMessage(err, "Failed to invite user. Check the email address and password."));
       }
     } finally {
       setSubmitting(false);
@@ -147,43 +152,40 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
   if (!open) return null;
 
   return (
-    <dialog className="users-modal" aria-modal="true" aria-labelledby={titleId} open>
+    <dialog className="add-attendee-modal" aria-modal="true" aria-labelledby={titleId} open>
       <ModalBackdrop onClose={handleClose} />
-      <div ref={panelRef} className="users-modal__panel">
-        <h2 className="users-modal__title" id={titleId}>
-          Invite a new team member
+      <div ref={panelRef} className="add-attendee-modal__panel">
+        <h2 className="add-attendee-modal__title" id={titleId}>
+          <i className="ti ti-user-plus" aria-hidden="true" /> Invite a new team member
         </h2>
         {error && (
           <Notice variant="error" role="alert">{error}</Notice>
         )}
-        <div className="users-modal__field">
-          <label htmlFor="invite-email">Email address</label>
-          <input
+        <div className="add-attendee-modal__fields">
+          <Input
             id="invite-email"
-            className="users-modal__input"
-            type="email"
+            label="Email address"
+            icon={<i className="ti ti-mail" aria-hidden="true" />}
+            type="text"
+            inputMode="email"
             value={email}
             required
             disabled={submitting}
             onChange={(e) => setEmail(e.target.value)}
+            {...NO_AUTOFILL_PROPS}
           />
-        </div>
-        <div className="users-modal__field">
-          <label htmlFor="invite-name">Display name</label>
-          <input
+          <Input
             id="invite-name"
-            className="users-modal__input"
+            label="Display name"
+            icon={<i className="ti ti-user" aria-hidden="true" />}
             type="text"
             value={displayName}
             disabled={submitting}
             onChange={(e) => setDisplayName(e.target.value)}
           />
-        </div>
-        <div className="users-modal__field">
-          <label htmlFor="invite-role">Initial role</label>
-          <select
+          <Select
             id="invite-role"
-            className="users-modal__select"
+            label="Initial role"
             value={initialRole}
             disabled={submitting}
             onChange={(e) => setInitialRole(e.target.value as InitialRole)}
@@ -192,14 +194,11 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
             <option value="superadmin">{roleLabel("superadmin")}</option>
             <option value="admin">{roleLabel("admin")}</option>
             <option value="operator">{roleLabel("operator")}</option>
-          </select>
-        </div>
-        {initialRole === "admin" && (
-          <div className="users-modal__field">
-            <label htmlFor="invite-org">Organization scope</label>
-            <select
+          </Select>
+          {initialRole === "admin" && (
+            <Select
               id="invite-org"
-              className="users-modal__select"
+              label="Organization scope"
               value={orgId}
               disabled={submitting || organizations.length === 0}
               onChange={(e) => setOrgId(e.target.value)}
@@ -213,15 +212,12 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
                   </option>
                 ))
               )}
-            </select>
-          </div>
-        )}
-        {initialRole === "operator" && (
-          <div className="users-modal__field">
-            <label htmlFor="invite-event">Event scope</label>
-            <select
+            </Select>
+          )}
+          {initialRole === "operator" && (
+            <Select
               id="invite-event"
-              className="users-modal__select"
+              label="Event scope"
               value={eventId}
               disabled={submitting}
               onChange={(e) => setEventId(e.target.value)}
@@ -232,23 +228,21 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
                   {e.title}
                 </option>
               ))}
-            </select>
-          </div>
-        )}
-        <div className="users-modal__field">
-          <label htmlFor="invite-password">Temporary password</label>
-          <input
+            </Select>
+          )}
+          <Input
             id="invite-password"
-            className="users-modal__input"
+            label="Temporary password"
+            icon={<i className="ti ti-key" aria-hidden="true" />}
             type="password"
-            minLength={8}
+            minLength={PASSWORD_MIN_LENGTH}
+            hint={`At least ${PASSWORD_MIN_LENGTH} characters.`}
             value={password}
             required
             disabled={submitting}
             onChange={(e) => setPassword(e.target.value)}
+            {...NO_AUTOFILL_PROPS}
           />
-        </div>
-        <div className="users-modal__switch-row">
           <Switch
             label="Require password change on first login"
             checked={mustChange}
@@ -256,24 +250,20 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
             onChange={(e) => setMustChange(e.target.checked)}
           />
         </div>
-        <div className="users-modal__switch-row users-modal__disabled-switch">
-          <div>
-            <Switch label="Send invite email" checked={false} disabled />
-            <span className="form-hint">Coming soon. Share the password manually for now.</span>
+        <div className="add-attendee-modal__actions" style={{ justifyContent: "flex-end" }}>
+          <div className="add-attendee-modal__actions-buttons">
+            <Button type="button" variant="secondary" disabled={submitting} onClick={handleClose}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              disabled={submitting || !email.trim() || password.length < PASSWORD_MIN_LENGTH}
+              onClick={() => void handleSubmit()}
+            >
+              {submitting ? "Sending…" : "Send"}
+            </Button>
           </div>
-        </div>
-        <div className="users-modal__actions">
-          <Button type="button" variant="secondary" disabled={submitting} onClick={handleClose}>
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            variant="primary"
-            disabled={submitting || !email.trim() || password.length < 8}
-            onClick={() => void handleSubmit()}
-          >
-            {submitting ? "Sending…" : "Send"}
-          </Button>
         </div>
       </div>
     </dialog>

@@ -197,7 +197,7 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
                       </th>
                       <th>Last active</th>
                       <th className="sessions-col-tablet-hide">Sign-in</th>
-                      <th className="sessions-action-col">Action</th>
+                      <th className="sessions-action-col"><span className="sr-only">Action</span></th>
                     </tr>
                   </thead>
                   <tbody>

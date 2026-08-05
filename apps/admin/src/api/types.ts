@@ -1086,6 +1086,7 @@ export interface UserListItemDto {
   last_login_at: string | null;
   active_sessions_count: number;
   has_mfa: boolean;
+  has_sso: boolean;
   roles: RoleAssignmentDto[];
 }
 
@@ -1094,6 +1095,16 @@ export interface UserListResponse {
   total: number;
   page: number;
   pageSize: number;
+}
+
+/** Instance-wide counts for the Users & roles KPI tiles (GET /api/admin/users/stats). */
+export interface UserStatsDto {
+  total: number;
+  active: number;
+  mfa: number;
+  sso: number;
+  active_sessions: number;
+  active_sessions_users: number;
 }
 
 export interface CreateAdminUserBody {

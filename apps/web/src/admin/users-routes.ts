@@ -63,6 +63,7 @@ type UserWithRoles = Prisma.UserGetPayload<{
   include: {
     role_assignments: { include: { oidc_role_grants: { select: { id: true } } } };
     mfa_methods: { select: { id: true; confirmed_at: true } };
+    external_identities: { select: { id: true }; take: 1 };
   };
 }>;
 
@@ -122,6 +123,7 @@ function serializeUserRow(user: UserWithRoles, sessionStats: SessionStats) {
     last_login_at: sessionStats.last_login_at,
     active_sessions_count: sessionStats.active_sessions_count,
     has_mfa: user.mfa_methods.some((m) => m.confirmed_at != null),
+    has_sso: user.external_identities.length > 0,
     roles: user.role_assignments.map((a) => ({
       id: a.id,
       role: a.role,
@@ -141,6 +143,7 @@ async function serializeUser(db: PrismaClient, user: UserWithRoles) {
 const userInclude = {
   role_assignments: { include: { oidc_role_grants: { select: { id: true } } } },
   mfa_methods: { select: { id: true, confirmed_at: true } },
+  external_identities: { select: { id: true }, take: 1 },
 } as const;
 
 async function loadUser(db: PrismaClient, id: string): Promise<UserWithRoles | null> {
@@ -268,6 +271,37 @@ export async function handleGetUsers(c: Context, db: PrismaClient): Promise<Resp
     serializeUserRow(row, statsMap.get(row.id) ?? { last_login_at: null, active_sessions_count: 0 }),
   );
   return c.json({ users, total, page, pageSize });
+}
+
+/** GET /api/admin/users/stats — instance-wide counts for the Users & roles KPI tiles
+ * (superadmin only). Deliberately separate from the paginated list above, whose `pageSize` is
+ * capped at 50 — computing these totals from a page of results would be wrong past that many
+ * users, or whenever a search/role/status filter narrows the list. */
+export async function handleGetUserStats(c: Context, db: PrismaClient): Promise<Response> {
+  const denied = await requireSuperadmin(c, db);
+  if (denied) return denied;
+
+  const [total, active, mfaConfirmed, sso, activeSessionUsers] = await Promise.all([
+    db.user.count(),
+    db.user.count({ where: { is_active: true } }),
+    db.user.count({ where: { mfa_methods: { some: { confirmed_at: { not: null } } } } }),
+    db.user.count({ where: { external_identities: { some: {} } } }),
+    db.session.groupBy({
+      by: ["user_id"],
+      where: { revoked_at: null, expires_at: { gt: new Date() } },
+      _count: { _all: true },
+    }),
+  ]);
+  const activeSessions = activeSessionUsers.reduce((sum, row) => sum + row._count._all, 0);
+
+  return c.json({
+    total,
+    active,
+    mfa: mfaConfirmed,
+    sso,
+    active_sessions: activeSessions,
+    active_sessions_users: activeSessionUsers.length,
+  });
 }
 
 /** POST /api/admin/users — create account (superadmin only). */

@@ -285,6 +285,7 @@ import { handleGetSystemLogs } from "./admin/system-log-routes.js";
 import {
   handleGetOrganizations,
   handleGetUsers,
+  handleGetUserStats,
   handlePostUser,
   handlePatchUser,
   handlePostUserRole,
@@ -1229,6 +1230,7 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.get("/api/admin/organizations", staffAdminGate, (c) => handleGetOrganizations(c, db));
   app.get("/api/admin/users", staffAdminGate, (c) => handleGetUsers(c, db));
+  app.get("/api/admin/users/stats", staffAdminGate, (c) => handleGetUserStats(c, db));
   app.post("/api/admin/users", jsonPostCsrf, staffAdminGate, (c) => handlePostUser(c, db));
   app.patch("/api/admin/users/:id", jsonPostCsrf, staffAdminGate, (c) => handlePatchUser(c, db));
   app.post("/api/admin/users/:id/roles", jsonPostCsrf, staffAdminGate, (c) =>
