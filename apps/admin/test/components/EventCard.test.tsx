@@ -6,6 +6,7 @@ import { EventCard, eventGridClassName } from "../../src/components/EventCard.js
 import type { EventCardProps } from "../../src/components/EventCard.js";
 import type { EventDto } from "../../src/api/types.js";
 import { eventCardDateParts, eventCardStatus } from "../../src/utils/event-card-status.js";
+import { getTooltipText } from "../test-utils.js";
 
 afterEach(() => {
   cleanup();
@@ -248,9 +249,149 @@ describe("EventCard", () => {
     expect(document.querySelector(".event-card__map-attribution")).toBeNull();
   });
 
-  it("includes a weather coming-soon placeholder on the map", () => {
-    renderCard();
-    expect(screen.getByLabelText("Weather forecast coming soon")).toBeTruthy();
+  it("hides the weather chip when weather is omitted and there is no pin", () => {
+    renderCard({}, { ...baseEvent, has_coordinates: false, map_preview_path: null });
+    expect(document.querySelector(".event-card__weather")).toBeNull();
+  });
+
+  it("shows a no-weather chip with a tooltip when a pin exists but weather is omitted", () => {
+    renderCard({}, { ...baseEvent, has_coordinates: true, weather: undefined });
+    expect(screen.getByLabelText("No weather")).toBeTruthy();
+  });
+
+  it("shows forecast temperature when weather status is ok", () => {
+    renderCard(
+      {},
+      {
+        ...baseEvent,
+        weather: {
+          status: "ok",
+          temp_c: 22,
+          temp_min_c: 14,
+          weather_code: 0,
+          attribution: "Weather data by MET Norway",
+        },
+      },
+    );
+    expect(screen.getByLabelText("Forecast 22°C")).toBeTruthy();
+    expect(screen.getByText("22°")).toBeTruthy();
+  });
+
+  it("falls back to Weather data when ok forecast has blank attribution", () => {
+    renderCard(
+      {},
+      {
+        ...baseEvent,
+        weather: {
+          status: "ok",
+          temp_c: 20,
+          weather_code: 0,
+          attribution: "   ",
+        },
+      },
+    );
+    const chip = screen.getByLabelText("Forecast 20°C");
+    expect(getTooltipText(chip)).toMatch(/Weather data/);
+  });
+
+  it("uses singular day wording for too_far horizon and opens-in of 1", () => {
+    renderCard(
+      {},
+      {
+        ...baseEvent,
+        weather: { status: "too_far", horizon_days: 1, opens_in_days: 1 },
+      },
+    );
+    const chip = screen.getByLabelText("Forecast available 1 day before the event");
+    expect(getTooltipText(chip)).toMatch(/Shows in about 1 day\./);
+    expect(getTooltipText(chip)).not.toMatch(/1 days/);
+  });
+
+  it("falls back to default map attribution when blank", () => {
+    renderCard({}, { ...baseEvent, map_attribution: "   " });
+    expect(document.querySelector(".event-card__map-attribution")?.textContent).toBe(
+      "© OpenStreetMap",
+    );
+  });
+
+  it("shows a soft chip when forecast is too far out", () => {
+    renderCard(
+      {},
+      {
+        ...baseEvent,
+        weather: { status: "too_far", opens_in_days: 5, horizon_days: 9 },
+      },
+    );
+    expect(
+      screen.getByLabelText("Forecast available 9 days before the event"),
+    ).toBeTruthy();
+  });
+
+  it("shows unavailable weather chip when the provider fails", () => {
+    renderCard(
+      {},
+      {
+        ...baseEvent,
+        weather: { status: "unavailable", attribution: "Weather data by MET Norway" },
+      },
+    );
+    expect(screen.getByLabelText("Weather unavailable")).toBeTruthy();
+    expect(screen.getByText("-°")).toBeTruthy();
+  });
+
+  it("shows a single °C when ok forecast omits temp_min_c", () => {
+    renderCard(
+      {},
+      {
+        ...baseEvent,
+        weather: {
+          status: "ok",
+          temp_c: 18,
+          weather_code: 2,
+          attribution: "Weather data by Open-Meteo.com",
+        },
+      },
+    );
+    const chip = screen.getByLabelText("Forecast 18°C");
+    expect(getTooltipText(chip)).toMatch(/18°C/);
+    expect(getTooltipText(chip)).not.toMatch(/to 18/);
+    expect(screen.getByText("18°")).toBeTruthy();
+  });
+
+  it("shows soft too_far copy without horizon or opens-in countdown", () => {
+    renderCard(
+      {},
+      {
+        ...baseEvent,
+        weather: { status: "too_far" },
+      },
+    );
+    expect(screen.getByLabelText("Forecast not available yet")).toBeTruthy();
+  });
+
+  it("hides weather chip for unknown weather status", () => {
+    renderCard(
+      {},
+      {
+        ...baseEvent,
+        weather: { status: "weird" as "unavailable" },
+      },
+    );
+    expect(document.querySelector(".event-card__weather")).toBeNull();
+  });
+
+  it("treats whitespace-only map preview and location as empty", () => {
+    renderCard(
+      {},
+      {
+        ...baseEvent,
+        has_coordinates: false,
+        map_preview_path: "   ",
+        location: "   ",
+      },
+    );
+    expect(screen.getByText("No location")).toBeTruthy();
+    expect(document.querySelector("img.event-card__map")).toBeNull();
   });
 
   it("does not render Archive or Unarchive actions", () => {

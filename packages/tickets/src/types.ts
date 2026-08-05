@@ -176,6 +176,8 @@ export type ResolvedTicket = {
     id: string;
     title: string;
     date: Date;
+    /** IANA timezone for the event calendar day (weather / display). */
+    timezone: string;
     /** Short venue display name (`EventLocation.venue_name`). */
     location: string | null;
     logoUrl: string | null;

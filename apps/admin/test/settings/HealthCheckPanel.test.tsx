@@ -89,8 +89,8 @@ function sampleReport(overrides?: Partial<HealthReportDto>): HealthReportDto {
           {
             id: "weather",
             label: "Weather, Open-Meteo",
-            status: "not_configured",
-            summary: "Coming in a later release",
+            status: "ok",
+            summary: "Provider available",
             details: [],
           },
           {

@@ -7,6 +7,7 @@ import { EventArchivingPanel } from "../settings/EventArchivingPanel.js";
 import { SecurityPanel } from "../settings/SecurityPanel.js";
 import { AuditLogPanel } from "../settings/AuditLogPanel.js";
 import { HealthCheckPanel } from "../settings/HealthCheckPanel.js";
+import { ExternalServicesPanel } from "../settings/ExternalServicesPanel.js";
 import { inPageTabFromSearch, type SettingsTab } from "../settings/settingsTabs.js";
 
 interface SettingsTabPanelProps {
@@ -84,6 +85,15 @@ export function SettingsTabContent() {
         className="settings-sections"
       >
         <MailTransportPanel />
+      </SettingsTabPanel>
+      <SettingsTabPanel
+        tab="external"
+        activeTab={tab}
+        visited={visitedTabs}
+        label="External services"
+        className="settings-sections"
+      >
+        <ExternalServicesPanel />
       </SettingsTabPanel>
       <SettingsTabPanel
         tab="security"

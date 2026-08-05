@@ -1,7 +1,21 @@
-import { describe, expect, it } from "vitest";
-import { resolveGeocodingConfig, resolveMapTileConfig } from "../../src/maps/config.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  isMapsConfigCacheStale,
+  mapsConfigCacheTtlMs,
+  markMapsConfigCacheStale,
+  resolveGeocodingConfig,
+  resolveMapTileConfig,
+  setMapsConfigCache,
+  getMapsConfigCache,
+  defaultGeocodingConfig,
+  defaultMapTileConfig,
+} from "../../src/maps/config.js";
 
 const OSM_DEFAULT_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+
+afterEach(() => {
+  setMapsConfigCache(null);
+});
 
 describe("resolveMapTileConfig", () => {
   it("defaults to OpenStreetMap tiles, enabled", () => {
@@ -99,5 +113,49 @@ describe("resolveGeocodingConfig", () => {
 
   it("falls back to the default timeout on a non-numeric override", () => {
     expect(resolveGeocodingConfig({ GEOCODING_TIMEOUT_MS: "abc" }).timeoutMs).toBe(5_000);
+  });
+});
+
+describe("maps config cache TTL", () => {
+  it("defaults TTL to 30s and rejects non-positive overrides", () => {
+    expect(mapsConfigCacheTtlMs({})).toBe(30_000);
+    expect(mapsConfigCacheTtlMs({ MAPS_CONFIG_CACHE_TTL_MS: "15000" })).toBe(15_000);
+    expect(mapsConfigCacheTtlMs({ MAPS_CONFIG_CACHE_TTL_MS: "0" })).toBe(30_000);
+    expect(mapsConfigCacheTtlMs({ MAPS_CONFIG_CACHE_TTL_MS: "nope" })).toBe(30_000);
+  });
+
+  it("treats a missing cache as stale and a fresh load as not stale", () => {
+    expect(isMapsConfigCacheStale({})).toBe(true);
+    setMapsConfigCache({
+      tiles: defaultMapTileConfig(),
+      geocoding: defaultGeocodingConfig(),
+    });
+    expect(isMapsConfigCacheStale({ MAPS_CONFIG_CACHE_TTL_MS: "60000" }, Date.now())).toBe(false);
+  });
+
+  it("marks the cache stale without clearing last-known config", () => {
+    setMapsConfigCache({
+      tiles: { ...defaultMapTileConfig(), enabled: false },
+      geocoding: defaultGeocodingConfig(),
+    });
+    markMapsConfigCacheStale();
+    expect(getMapsConfigCache()?.tiles.enabled).toBe(false);
+    expect(isMapsConfigCacheStale({ MAPS_CONFIG_CACHE_TTL_MS: "60000" })).toBe(true);
+  });
+
+  it("expires after the configured TTL", () => {
+    const loadedAt = 1_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(loadedAt);
+    setMapsConfigCache({
+      tiles: defaultMapTileConfig(),
+      geocoding: defaultGeocodingConfig(),
+    });
+    expect(isMapsConfigCacheStale({ MAPS_CONFIG_CACHE_TTL_MS: "1000" }, loadedAt + 999)).toBe(
+      false,
+    );
+    expect(isMapsConfigCacheStale({ MAPS_CONFIG_CACHE_TTL_MS: "1000" }, loadedAt + 1000)).toBe(
+      true,
+    );
+    vi.restoreAllMocks();
   });
 });

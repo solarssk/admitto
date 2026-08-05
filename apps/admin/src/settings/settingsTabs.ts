@@ -3,6 +3,7 @@ export type SettingsTab =
   | "general"
   | "branding"
   | "mail"
+  | "external"
   | "security"
   | "archiving"
   | "identity"
@@ -13,6 +14,7 @@ export const SETTINGS_TABS = [
   { id: "general", label: "General" },
   { id: "branding", label: "Branding" },
   { id: "mail", label: "Mail" },
+  { id: "external", label: "External services" },
   { id: "security", label: "Security" },
   { id: "archiving", label: "Archiving" },
   { id: "identity", label: "Identity" },

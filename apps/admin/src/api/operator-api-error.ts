@@ -4,6 +4,13 @@ const MACHINE_CODE = /^[a-z][a-z0-9_]*$/;
 
 /** Known API error codes and operator-safe literals mapped to UI copy. */
 const CODE_MESSAGES: Record<string, string> = {
+  api_key_required:
+    "API key is required for the Open-Meteo customer API (customer-api.open-meteo.com).",
+  invalid_base_url: "Weather base URL must be a valid public http(s) URL.",
+  invalid_geocoding_base_url: "Geocoding base URL must be a valid public http(s) URL.",
+  url_host_blocked:
+    "That URL must not point at a private or local network address.",
+  url_host_unresolved: "Could not resolve that hostname. Check the URL and try again.",
   already_assigned: "This role assignment already exists.",
   already_enrolled: "Two-factor authentication is already enabled.",
   authentication_required: "Your session has expired. Sign in again.",
