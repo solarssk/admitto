@@ -40,7 +40,7 @@ function isUniqueViolation(err: unknown): boolean {
 }
 
 /** Prisma Serializable transaction conflict (concurrent superadmin floor-guard revokes). */
-function isSerializationFailure(err: unknown): boolean {
+export function isSerializationFailure(err: unknown): boolean {
   if (typeof err !== "object" || err === null || !("code" in err)) return false;
   if ((err as { code: string }).code === "P2034") return true;
   const cause = (err as {

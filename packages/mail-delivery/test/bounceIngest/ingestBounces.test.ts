@@ -570,6 +570,78 @@ describe("ingestBounces", () => {
     expect(summary.bouncesApplied).toBe(0);
   });
 
+  it("stringifies non-Error applyBounceResult failures", async () => {
+    const row = settings();
+    const log = vi.fn();
+    const db = eventScopedDb(row, {
+      emailDelivery: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "del_1",
+            status: "sent",
+            recipient_email: "user@example.com",
+            event_id: "evt_1",
+          },
+        ]),
+        updateMany: vi.fn().mockRejectedValue("update blew up"),
+      },
+    }) as never;
+
+    const summary = await ingestBounces(db, {
+      eventId: "evt_1",
+      createProvider: async () =>
+        mockProvider([
+          {
+            uid: "603",
+            receivedAt: new Date(),
+            subject: "undeliverable",
+            bodyText: HARD_BODY,
+          },
+        ]),
+      log,
+    });
+
+    expect(summary.errors).toBe(1);
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/apply failed.*update blew up/));
+  });
+
+  it("leaves already-terminal deliveries counted as neither hard nor soft", async () => {
+    const row = settings();
+    const updateMany = vi.fn().mockResolvedValue({ count: 0 });
+    const db = eventScopedDb(row, {
+      emailDelivery: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "del_1",
+            status: "sent",
+            recipient_email: "user@example.com",
+            event_id: "evt_1",
+          },
+        ]),
+        updateMany,
+      },
+    }) as never;
+
+    const summary = await ingestBounces(db, {
+      eventId: "evt_1",
+      createProvider: async () =>
+        mockProvider([
+          {
+            uid: "604",
+            receivedAt: new Date(),
+            subject: "undeliverable",
+            bodyText: HARD_BODY,
+          },
+        ]),
+      log: () => undefined,
+    });
+
+    expect(summary.bouncesApplied).toBe(0);
+    expect(summary.softBouncesLogged).toBe(0);
+    expect(summary.errors).toBe(0);
+    expect(updateMany).toHaveBeenCalled();
+  });
+
   it("swallows markSeen failures on unparsed messages", async () => {
     const row = settings();
     const markSeen = vi.fn().mockRejectedValue(new Error("flags failed"));
