@@ -6,7 +6,7 @@ import {
 } from "../../src/bounceIngest/correlate.js";
 
 describe("findDeliveriesForBounceBatch", () => {
-  it("loads newest non-terminal row per recipient in one findMany", async () => {
+  it("loads all non-terminal rows per recipient newest-first in one findMany", async () => {
     const findMany = vi.fn().mockResolvedValue([
       { id: "newer_a", recipient_email: "a@example.com", queued_at: new Date("2026-08-02") },
       { id: "older_a", recipient_email: "a@example.com", queued_at: new Date("2026-08-01") },
@@ -28,8 +28,8 @@ describe("findDeliveriesForBounceBatch", () => {
       },
       orderBy: { queued_at: "desc" },
     });
-    expect(map.get("a@example.com")?.id).toBe("newer_a");
-    expect(map.get("b@example.com")?.id).toBe("b1");
+    expect(map.get("a@example.com")?.map((r) => r.id)).toEqual(["newer_a", "older_a"]);
+    expect(map.get("b@example.com")?.map((r) => r.id)).toEqual(["b1"]);
     expect(map.size).toBe(2);
   });
 
@@ -46,7 +46,7 @@ describe("findDeliveriesForBounceBatch", () => {
     });
 
     expect(map.size).toBe(1);
-    expect(map.get("ok@example.com")?.id).toBe("ok");
+    expect(map.get("ok@example.com")?.map((r) => r.id)).toEqual(["ok"]);
   });
 
   it("returns an empty map when there are no emails", async () => {

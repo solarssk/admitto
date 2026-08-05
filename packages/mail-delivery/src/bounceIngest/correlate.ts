@@ -10,18 +10,19 @@ export function normalizeBounceRecipientEmail(recipientEmail: string): string {
 }
 
 /**
- * Newest non-terminal EmailDelivery per recipient for one event.
+ * Non-terminal EmailDelivery rows per recipient for one event (newest `queued_at` first).
  *
  * One `findMany` per call (folder/poll batch). Emails are normalized to lowercase;
  * writes already store lowercase (`claim.ts`), so `in` is exact.
  *
- * Known v1 limitation (ADR 0039): if the same recipient has two in-flight rows
- * for the same event, we take the most recent by queued_at - no per-delivery VERP.
+ * Callers apply lines newest-first; after a hard bounce they should drop that row so a
+ * later NDR line in the same poll can still mark an older in-flight resend/send.
+ * Without VERP (ADR 0039), a single NDR still cannot target a specific delivery id.
  */
 export async function findDeliveriesForBounceBatch(
   db: PrismaClient,
   params: { eventId: string; recipientEmails: readonly string[] },
-): Promise<Map<string, EmailDelivery>> {
+): Promise<Map<string, EmailDelivery[]>> {
   const emails = [
     ...new Set(
       params.recipientEmails
@@ -40,12 +41,14 @@ export async function findDeliveriesForBounceBatch(
     orderBy: { queued_at: "desc" },
   });
 
-  const byRecipient = new Map<string, EmailDelivery>();
+  const byRecipient = new Map<string, EmailDelivery[]>();
   for (const row of rows) {
     if (!row.recipient_email) continue;
     const key = normalizeBounceRecipientEmail(row.recipient_email);
-    if (!key || byRecipient.has(key)) continue;
-    byRecipient.set(key, row);
+    if (!key) continue;
+    const list = byRecipient.get(key);
+    if (list) list.push(row);
+    else byRecipient.set(key, [row]);
   }
   return byRecipient;
 }
@@ -65,7 +68,7 @@ export async function findDeliveryForBounce(
     eventId: params.eventId,
     recipientEmails: [email],
   });
-  return map.get(email) ?? null;
+  return map.get(email)?.[0] ?? null;
 }
 
 /** Redact an email for log lines (no full local-part; also bound length). */

@@ -79,7 +79,7 @@ type FolderProcessCtx = {
   settings: BounceIngestSettings;
   summary: IngestSummary;
   log: (msg: string) => void;
-  deliveryByRecipient: Map<string, EmailDelivery>;
+  deliveryByRecipient: Map<string, EmailDelivery[]>;
 };
 
 async function applyParsedLine(
@@ -90,8 +90,9 @@ async function applyParsedLine(
   const { db, settings, summary, log, deliveryByRecipient } = ctx;
   try {
     const key = normalizeBounceRecipientEmail(line.recipientEmail);
-    const delivery = deliveryByRecipient.get(key) ?? null;
-    if (!delivery) {
+    const queue = deliveryByRecipient.get(key);
+    const delivery = queue?.[0];
+    if (!delivery || !queue) {
       summary.noMatchingDelivery += 1;
       log(
         `[bounce-ingest] no_matching_delivery event=${settings.event_id} uid=${message.uid} recipient=${truncateEmailForLog(line.recipientEmail)}`,
@@ -99,8 +100,12 @@ async function applyParsedLine(
       return;
     }
     const outcome = await applyBounceResult(db, delivery, line, log);
-    if (outcome === "hard_bounced") summary.bouncesApplied += 1;
-    else if (outcome === "soft_logged") summary.softBouncesLogged += 1;
+    if (outcome === "hard_bounced") {
+      summary.bouncesApplied += 1;
+      queue.shift();
+    } else if (outcome === "soft_logged") {
+      summary.softBouncesLogged += 1;
+    }
   } catch (err) {
     summary.errors += 1;
     log(
@@ -181,7 +186,7 @@ async function processFolder(
     lines: parseBounceLines(message.bodyText),
   }));
   const recipientEmails = parsed.flatMap(({ lines }) => lines.map((l) => l.recipientEmail));
-  let deliveryByRecipient: Map<string, EmailDelivery>;
+  let deliveryByRecipient: Map<string, EmailDelivery[]>;
   try {
     deliveryByRecipient = await findDeliveriesForBounceBatch(db, {
       eventId: settings.event_id,

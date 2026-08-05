@@ -154,6 +154,57 @@ describe("ingestBounces", () => {
     expect(upsert).toHaveBeenCalledTimes(2);
   });
 
+  it("hard-bounces older in-flight delivery when a second NDR hits the same recipient", async () => {
+    const row = settings();
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const db = eventScopedDb(row, {
+      emailDelivery: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "del_newer",
+            status: "sent",
+            recipient_email: "user@example.com",
+            event_id: "evt_1",
+            queued_at: new Date("2026-08-02"),
+          },
+          {
+            id: "del_older",
+            status: "queued",
+            recipient_email: "user@example.com",
+            event_id: "evt_1",
+            queued_at: new Date("2026-08-01"),
+          },
+        ]),
+        updateMany,
+      },
+    }) as never;
+
+    const provider = mockProvider([
+      {
+        uid: "201",
+        receivedAt: new Date(),
+        subject: "Undeliverable 1",
+        bodyText: HARD_BODY,
+      },
+      {
+        uid: "202",
+        receivedAt: new Date(),
+        subject: "Undeliverable 2",
+        bodyText: HARD_BODY,
+      },
+    ]);
+
+    const summary = await ingestBounces(db, {
+      eventId: "evt_1",
+      createProvider: async () => provider,
+      log: () => undefined,
+    });
+
+    expect(summary.bouncesApplied).toBe(2);
+    expect(updateMany).toHaveBeenCalledTimes(2);
+    expect(updateMany.mock.calls.map((c) => c[0].where.id)).toEqual(["del_newer", "del_older"]);
+  });
+
   it("sets connectFailed when provider.connect throws", async () => {
     const row = settings();
     const db = eventScopedDb(row) as never;
