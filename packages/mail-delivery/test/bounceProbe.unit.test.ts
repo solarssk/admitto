@@ -194,6 +194,7 @@ describe("runEventBounceProbe (unit)", () => {
         bodyText: HARD_BODY,
       },
     ];
+    const markSeen = vi.fn().mockRejectedValue(new Error("flags failed"));
 
     const result = await runEventBounceProbe(
       {
@@ -206,7 +207,12 @@ describe("runEventBounceProbe (unit)", () => {
           return tick * 10;
         },
         sleep: async () => undefined,
-        ingestOptions: { createProvider: async () => mockProvider(messages) },
+        ingestOptions: {
+          createProvider: async () => ({
+            ...mockProvider(messages),
+            markSeen,
+          }),
+        },
       },
       baseDb() as never,
     );
@@ -214,6 +220,7 @@ describe("runEventBounceProbe (unit)", () => {
     expect(result.status).toBe("ok");
     expect(result.smtpCode).toMatch(/^550/);
     expect(result.message).toMatch(/Bounce received/i);
+    expect(markSeen).toHaveBeenCalled();
   });
 
   it("does not skip sidecar-processed UIDs (probe vs sidecar race)", async () => {
@@ -330,6 +337,50 @@ describe("runEventBounceProbe (unit)", () => {
     expect(result.status).toBe("failed");
     expect(result.message).toMatch(/open the bounce mailbox|IMAP settings/i);
     expect(result.message).not.toMatch(/decrypt/i);
+  });
+
+  it("reconnects after a mid-poll IMAP failure and still finds the bounce", async () => {
+    let tick = 0;
+    let poll = 0;
+    const messages: InboundMessage[] = [
+      {
+        uid: "fresh",
+        receivedAt: new Date(),
+        subject: "Undeliverable",
+        bodyText: HARD_BODY,
+      },
+    ];
+    const connect = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined);
+    const close = vi.fn().mockResolvedValue(undefined);
+    const fetch = vi.fn().mockImplementation(async () => {
+      poll += 1;
+      if (poll === 1) throw new Error("connection reset");
+      return messages;
+    });
+    const provider: InboundMailProvider = { connect, close, fetchCandidateMessages: fetch };
+
+    const result = await runEventBounceProbe(
+      {
+        eventId: "evt_1",
+        toAddress: "nobody@example.com",
+        timeoutMs: 80,
+        pollMs: 1,
+        now: () => {
+          tick += 1;
+          return tick * 10;
+        },
+        sleep: async () => undefined,
+        ingestOptions: { createProvider: async () => provider },
+      },
+      baseDb() as never,
+    );
+
+    expect(result.status).toBe("ok");
+    expect(connect).toHaveBeenCalledTimes(2);
+    expect(close).toHaveBeenCalled();
   });
 
   it("ignores a stale same-recipient hard bounce from before this probe", async () => {

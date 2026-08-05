@@ -346,4 +346,26 @@ describe("EventBounceIngestPanel", () => {
     expect(mockSave.mock.calls[0][1]).toMatchObject({ reuse_smtp_credentials: true });
     expect(mockSave.mock.calls[0][1]).not.toHaveProperty("imap_password");
   });
+
+  it("refresh() re-fetches settings so smtp_reuse_available updates", async () => {
+    mockFetch
+      .mockResolvedValueOnce(bounceResponse({ smtp_reuse_available: false }))
+      .mockResolvedValueOnce(bounceResponse({ smtp_reuse_available: true }));
+    const { ref } = renderPanel();
+    await screen.findByLabelText("IMAP host");
+    expect(isDisabled(screen.getByRole("switch", { name: "Use SMTP username and password" }))).toBe(
+      true,
+    );
+
+    await act(async () => {
+      ref.current?.refresh();
+    });
+
+    await waitFor(() =>
+      expect(isDisabled(screen.getByRole("switch", { name: "Use SMTP username and password" }))).toBe(
+        false,
+      ),
+    );
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
 });

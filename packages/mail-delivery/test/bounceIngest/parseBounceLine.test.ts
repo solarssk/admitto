@@ -162,6 +162,18 @@ describe("parseBounceLines", () => {
     expect(lines[0]!.reason.toLowerCase()).toContain("user unknown");
   });
 
+  it("parses Final-Recipient values wrapped in angle brackets", () => {
+    const body = [
+      "Final-Recipient: rfc822; <Bracketed@Example.com>",
+      "Action: failed",
+      "Status: 5.1.1",
+      "Diagnostic-Code: smtp; 550 5.1.1 User unknown",
+    ].join("\n");
+    const lines = parseRfc3464DsnBlocks(body);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.recipientEmail).toBe("bracketed@example.com");
+  });
+
   it("unfolds RFC 5322 folded Diagnostic-Code lines", () => {
     const body = [
       "Final-Recipient: rfc822; nobody@example.org",

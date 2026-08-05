@@ -6,6 +6,7 @@ import type { ExportPayload, MailerConfig } from "@admitto/mailer";
 import { resetDb } from "./resetDb.js";
 import {
   absolutizeTransportTestLogo,
+  buildEventTransportTestMessage,
   buildTransportTestMessage,
   resolveTransportTestHeaderLogo,
   sendEventTransportTestEmail,
@@ -260,6 +261,43 @@ describe("sendEventTransportTestEmail (event-scoped)", () => {
     expect(exported).toHaveLength(1);
     expect(exported[0]?.sender.fromAddress).toBe("event-transport@example.com");
     expect(exported[0]?.message.html).toContain("https://cdn.example.com/event-logo.png");
+  });
+});
+
+describe("buildEventTransportTestMessage", () => {
+  it("builds an event-scoped branded message with org title and mail config fields", async () => {
+    const fixed = new Date("2026-08-04T20:09:47.000Z");
+    const msg = await buildEventTransportTestMessage(
+      EVENT_OVERRIDE_ID,
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      {
+        now: fixed,
+        toAddress: "operator@example.com",
+        mailConfig: {
+          provider: "export_only",
+          fromAddress: "event-transport@example.com",
+        } as never,
+      },
+    );
+
+    expect(msg.subject).toMatch(/^Admitto mail transport test \(2026-08-04 20:09:47 UTC - /);
+    expect(msg.html).toContain("Event: Transport Test Event Override");
+    expect(msg.html).toContain("Transport Test Org");
+    expect(msg.html).toContain("operator@example.com");
+    expect(msg.html).toContain("https://cdn.example.com/event-logo.png");
+    expect(msg.nonce).toMatch(/^[a-f0-9]{8}$/);
+  });
+
+  it("includes only toAddress when mailConfig is omitted", async () => {
+    const msg = await buildEventTransportTestMessage(
+      EVENT_ID,
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { toAddress: "  tester@example.com  " },
+    );
+    expect(msg.html).toContain("tester@example.com");
+    expect(msg.html).toContain("Event: Transport Test Event");
   });
 });
 

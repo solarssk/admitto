@@ -373,6 +373,35 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
     );
   });
 
+  it("calls onSaved after a successful dedicated save", async () => {
+    const onSaved = vi.fn();
+    mockFetch.mockResolvedValue(inheritedResponse());
+    mockSave.mockResolvedValue(dedicatedResponse());
+    const ref = createRef<EventMailSettingsCardHandle>();
+    renderWithToast(
+      <MemoryRouter>
+        <EventMailSettingsCard ref={ref} eventId="evt-1" isArchived={false} onSaved={onSaved} />
+      </MemoryRouter>,
+    );
+    await screen.findByText(SMTP_SUMMARY_TEXT);
+
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated" }));
+    fireEvent.click(screen.getByRole("radio", { name: "SMTP (recommended)" }));
+    fireEvent.change(screen.getByLabelText("From address"), {
+      target: { value: "dedicated@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("SMTP host"), {
+      target: { value: "smtp.dedicated.example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Port"), { target: { value: "587" } });
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "dedicated-user" } });
+    await act(async () => {
+      await ref.current?.save();
+    });
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+  });
+
   it("Reset reverts the toggle and discards the draft", async () => {
     mockFetch.mockResolvedValue(inheritedResponse());
     const { ref } = renderCard();

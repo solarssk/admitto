@@ -248,6 +248,28 @@ describe("extractPlainTextFromSource", () => {
     expect(text).not.toContain("&amp;");
   });
 
+  it("keeps invalid numeric HTML entities without throwing", async () => {
+    const { extractPlainTextFromSource } = await import("../../src/bounceIngest/imapProvider.js");
+    const mime = [
+      "Content-Type: text/html; charset=utf-8",
+      "",
+      "<p>550 5.1.1 bo&#99999999;te inconnue</p>",
+    ].join("\r\n");
+    expect(extractPlainTextFromSource(mime)).toContain("&#99999999;");
+  });
+
+  it("decodes quoted-printable non-ASCII diagnostic text", async () => {
+    const { extractPlainTextFromSource } = await import("../../src/bounceIngest/imapProvider.js");
+    const source = [
+      "Content-Type: text/plain; charset=utf-8",
+      "Content-Transfer-Encoding: quoted-printable",
+      "",
+      "user@example.com failed: host mx.example.com said: 550 5.1.1 bo=C3=AEte inconnue",
+    ].join("\r\n");
+    const text = extractPlainTextFromSource(source);
+    expect(text).toContain("boîte");
+  });
+
   it("stops walking MIME parts deeper than 5 levels", async () => {
     const { extractPlainTextFromSource } = await import("../../src/bounceIngest/imapProvider.js");
     // Nest multipart wrappers past the depth cap so the leaf is never reached.

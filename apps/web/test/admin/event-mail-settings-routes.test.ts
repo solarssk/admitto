@@ -3,7 +3,7 @@ import type { Context } from "hono";
 import { handlePostEventMailSettingsTest } from "../../src/admin/event-mail-settings-routes.js";
 import { requireSuperadmin } from "../../src/admin/admin-helpers.js";
 import { writeAdminAuditLog } from "@admitto/tickets";
-import { runEventBounceProbe, BounceProbeSetupError } from "@admitto/mail-delivery";
+import { runEventBounceProbe, BounceProbeSetupError, sendEventTransportTestEmail } from "@admitto/mail-delivery";
 
 vi.mock("../../src/admin/admin-helpers.js", () => ({
   requireEventId: (c: Context) => c.req.param("eventId") ?? new Response("bad", { status: 400 }),
@@ -60,6 +60,95 @@ describe("handlePostEventMailSettingsTest verifyBounce path", () => {
     vi.mocked(requireSuperadmin).mockResolvedValue(null);
     vi.mocked(writeAdminAuditLog).mockClear();
     vi.mocked(runEventBounceProbe).mockReset();
+    vi.mocked(sendEventTransportTestEmail).mockReset();
+  });
+
+  it("runs a plain transport test when verifyBounce is false", async () => {
+    vi.mocked(sendEventTransportTestEmail).mockResolvedValueOnce({
+      status: "sent",
+      provider: "smtp",
+      providerMessageId: "<mid@example.com>",
+    });
+    const db = baseDb();
+
+    const res = await handlePostEventMailSettingsTest(
+      mockContext({
+        eventId: "evt_1",
+        json: { to: "operator@example.com", verifyBounce: false },
+      }),
+      db as never,
+    );
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { status: string; provider: string };
+    expect(json.status).toBe("sent");
+    expect(json.provider).toBe("smtp");
+    expect(sendEventTransportTestEmail).toHaveBeenCalled();
+    expect(runEventBounceProbe).not.toHaveBeenCalled();
+    expect(writeAdminAuditLog).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ actionType: "event_mail_transport_tested" }),
+    );
+  });
+
+  it("still returns sent when the plain transport audit log write fails", async () => {
+    vi.mocked(sendEventTransportTestEmail).mockResolvedValueOnce({
+      status: "sent",
+      provider: "smtp",
+    });
+    vi.mocked(writeAdminAuditLog).mockRejectedValueOnce(new Error("audit db down"));
+    const db = baseDb();
+
+    const res = await handlePostEventMailSettingsTest(
+      mockContext({
+        eventId: "evt_1",
+        json: { to: "operator@example.com", verifyBounce: false },
+      }),
+      db as never,
+    );
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { status: string };
+    expect(json.status).toBe("sent");
+  });
+
+  it("returns 403 when superadmin check fails", async () => {
+    vi.mocked(requireSuperadmin).mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "forbidden" }), { status: 403 }),
+    );
+
+    const res = await handlePostEventMailSettingsTest(
+      mockContext({
+        eventId: "evt_1",
+        json: { to: "nobody@example.com", verifyBounce: true },
+      }),
+      baseDb() as never,
+    );
+
+    expect(res.status).toBe(403);
+    expect(runEventBounceProbe).not.toHaveBeenCalled();
+  });
+
+  it("still returns bounce probe result when audit log write fails", async () => {
+    vi.mocked(runEventBounceProbe).mockResolvedValueOnce({
+      status: "timeout",
+      message: "No bounce in time.",
+      sendResult: { status: "sent", provider: "smtp" },
+    });
+    vi.mocked(writeAdminAuditLog).mockRejectedValueOnce(new Error("audit db down"));
+    const db = baseDb();
+
+    const res = await handlePostEventMailSettingsTest(
+      mockContext({
+        eventId: "evt_1",
+        json: { to: "nobody@example.com", verifyBounce: true },
+      }),
+      db as never,
+    );
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { bounceProbe?: { status: string } };
+    expect(json.bounceProbe?.status).toBe("timeout");
   });
 
   it("runs runEventBounceProbe and returns sent with bounceProbe metadata", async () => {

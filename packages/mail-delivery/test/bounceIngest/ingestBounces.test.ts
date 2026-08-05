@@ -357,6 +357,65 @@ describe("ingestBounces", () => {
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
+  it("counts errors when listProcessedUids fails", async () => {
+    const row = settings();
+    const db = eventScopedDb(row, {
+      bounceIngestProcessedUid: {
+        findMany: vi.fn().mockRejectedValue(new Error("db timeout")),
+        findUnique: vi.fn(),
+        upsert: vi.fn(),
+        deleteMany: vi.fn(),
+      },
+    }) as never;
+
+    const summary = await ingestBounces(db, {
+      eventId: "evt_1",
+      createProvider: async () => mockProvider([]),
+      log: () => undefined,
+    });
+
+    expect(summary.errors).toBe(1);
+    expect(summary.messagesSeen).toBe(0);
+  });
+
+  it("counts errors when markUidProcessed fails after parsing", async () => {
+    const row = settings();
+    const db = eventScopedDb(row, {
+      bounceIngestProcessedUid: {
+        findMany: vi.fn().mockResolvedValue([]),
+        findUnique: vi.fn().mockResolvedValue(null),
+        upsert: vi.fn().mockRejectedValue(new Error("uid write failed")),
+        deleteMany: vi.fn(),
+      },
+      emailDelivery: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "del_1",
+          status: "sent",
+          recipient_email: "user@example.com",
+          event_id: "evt_1",
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    }) as never;
+
+    const summary = await ingestBounces(db, {
+      eventId: "evt_1",
+      createProvider: async () =>
+        mockProvider([
+          {
+            uid: "801",
+            receivedAt: new Date(),
+            subject: "undeliverable",
+            bodyText: HARD_BODY,
+          },
+        ]),
+      log: () => undefined,
+    });
+
+    expect(summary.errors).toBe(1);
+    expect(summary.bouncesApplied).toBe(1);
+  });
+
   it("counts errors when applyBounceResult throws", async () => {
     const row = settings();
     const db = eventScopedDb(row, {
