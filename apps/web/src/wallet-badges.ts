@@ -6,6 +6,7 @@ import type { Context } from "hono";
 /** Exact public ticket assets: keep the allowlist tight so these routes never shadow SPA `/assets/*`. */
 const ASSET_NAMES = new Set([
   "admitto-mark.svg",
+  "admitto-logo.svg",
   "apple-wallet-badge.svg",
   "google-wallet-badge.svg",
 ]);
@@ -52,10 +53,14 @@ function serveTicketAsset(c: Context, name: string): Response | Promise<Response
   return c.body(new Uint8Array(body));
 }
 
-/** GET handlers for Admitto mark + Wallet badges on the public ticket page.
+/** GET handlers for Admitto mark/logo + Wallet badges on the public ticket page.
  * Registered as exact paths so they do not shadow the staff SPA's `/assets/*` bundle. */
 export function handleGetAdmittoMark(c: Context): Response | Promise<Response> {
   return serveTicketAsset(c, "admitto-mark.svg");
+}
+
+export function handleGetAdmittoLogo(c: Context): Response | Promise<Response> {
+  return serveTicketAsset(c, "admitto-logo.svg");
 }
 
 export function handleGetAppleWalletBadge(c: Context): Response | Promise<Response> {

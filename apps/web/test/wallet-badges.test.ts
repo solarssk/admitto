@@ -9,10 +9,11 @@ describe("wallet / ticket mark assets", () => {
     expect(readTicketAssetForTest("../etc/passwd")).toBeNull();
   });
 
-  it("serves Admitto mark and official wallet badge SVGs", async () => {
+  it("serves Admitto mark/logo and official wallet badge SVGs", async () => {
     const app = createApp();
     const cases = [
       "/assets/admitto-mark.svg",
+      "/assets/admitto-logo.svg",
       "/assets/apple-wallet-badge.svg",
       "/assets/google-wallet-badge.svg",
     ];

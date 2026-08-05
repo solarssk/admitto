@@ -78,15 +78,23 @@ html:has(.shell), body:has(.shell) {
   text-decoration: none;
 }
 
-/* "Admitto" has no descenders (g/y/p/q/j), so its ink sits slightly higher than the
-   solid, edge-to-edge brand mark next to it even though both boxes are centered — a
-   1px nudge corrects that optical bias. Shared by BrandLink so the sidebar and topbar
-   wordmarks stay pixel-consistent (#454). */
-.brand-link__label {
-  /* Always the app's own typeface, never the org theme's --font-sans - this is Admitto's own
-     wordmark, not customer-branded content, so a staff org's custom font pick must not reach it. */
-  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  transform: translateY(1px);
+/* Full product wordmark (mark + Admitto in one SVG). The separate .brand-link__mark is
+   for the collapsed rail only — see the (max-width) block below. Height matches the
+   previous 28px mark so the brand row still aligns with the topbar (#454). */
+.brand-link__logo {
+  display: block;
+  height: 28px;
+  width: auto;
+  flex-shrink: 0;
+}
+
+.brand-link__mark {
+  display: none;
+  flex-shrink: 0;
+}
+
+.topbar__brand .brand-link__logo {
+  height: 24px;
 }
 
 .sidebar__close-btn {
@@ -764,14 +772,17 @@ html:has(.shell), body:has(.shell) {
     font-size: 20px;
   }
 
-  /* Visually hide label text (nav items + brand wordmark + Administration group label)
-     while keeping it in the accessibility tree, so the rail's links keep the same
-     accessible name as the full sidebar — only sighted users see icon-only, and only while
-     collapsed. Same clip-rect technique as .sr-only (staff.css), scoped here since it must
-     also reach the brand link's label and the section label's text span, neither of which
-     otherwise uses that class. */
+  /* Collapsed sidebar rail: mark only. Do not apply to .topbar__brand — that link is
+     shown while the drawer is closed on mobile/tablet and should keep the full wordmark. */
+  .shell:not(.shell--nav-open) .sidebar__brand .brand-link__logo {
+    display: none;
+  }
+
+  .shell:not(.shell--nav-open) .sidebar__brand .brand-link__mark {
+    display: block;
+  }
+
   .shell:not(.shell--nav-open) .nav-item span,
-  .shell:not(.shell--nav-open) .brand-link__label,
   .shell:not(.shell--nav-open) .sidebar__section-label-text {
     position: absolute;
     width: 1px;

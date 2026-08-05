@@ -13,8 +13,8 @@ import type { MailDeliveryDeps } from "./send.js";
 import { sanitizeDeliveryError } from "./sanitizeError.js";
 
 const TRANSPORT_TEST_SUBJECT_PREFIX = "Admitto mail transport test";
-/** Public product mark served by apps/web (same path as the ticket page). */
-const ADMITTO_MARK_PATH = "/assets/admitto-mark.svg";
+/** Public product wordmark served by apps/web (same allowlist as the ticket mark). */
+const ADMITTO_LOGO_PATH = "/assets/admitto-logo.svg";
 
 const PROVIDER_LABELS: Record<MailerProvider, string> = {
   smtp: "SMTP",
@@ -29,7 +29,7 @@ export type TransportTestMessageContext = {
   scope: "organization" | "event";
   /** Already absolutized logo URL, or null/omit for text header. */
   logoUrl?: string | null;
-  /** branding = org/event logo; admitto = product mark (+ wordmark). */
+  /** branding = org/event logo; admitto = product wordmark SVG. */
   logoKind?: TransportTestLogoKind;
   provider?: MailerProvider;
   eventTitle?: string;
@@ -118,7 +118,7 @@ export function absolutizeTransportTestLogo(
 }
 
 /**
- * Org/event branding logo when set; otherwise the Admitto mark under BASE_URL.
+ * Org/event branding logo when set; otherwise the Admitto wordmark under BASE_URL.
  * Shared by organisation Send test, event Send test, and bounce probe.
  */
 export function resolveTransportTestHeaderLogo(
@@ -131,7 +131,7 @@ export function resolveTransportTestHeaderLogo(
   try {
     const base = resolvePublicBaseUrl(env).replace(/\/$/, "");
     if (!base) return null;
-    return { url: `${base}${ADMITTO_MARK_PATH}`, kind: "admitto" };
+    return { url: `${base}${ADMITTO_LOGO_PATH}`, kind: "admitto" };
   } catch {
     return null;
   }
@@ -143,23 +143,14 @@ function buildTransportTestHeaderInner(ctx: TransportTestMessageContext): string
     return `<span style="font-size:20px;font-weight:700;color:#1f2937;letter-spacing:-0.02em;">Admitto</span>`;
   }
 
-  if (ctx.logoKind === "admitto") {
-    return (
-      `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>` +
-      `<td style="vertical-align:middle;padding:0;">` +
-      `<img src="${escapeHtmlAttribute(logoUrl)}" alt="" width="32" height="32" ` +
-      `style="display:block;border:0;outline:none;text-decoration:none;" />` +
-      `</td>` +
-      `<td style="vertical-align:middle;padding:0 0 0 10px;font-family:Arial,Helvetica,sans-serif;` +
-      `font-size:20px;font-weight:700;color:#1f2937;letter-spacing:-0.02em;">Admitto</td>` +
-      `</tr></table>`
-    );
-  }
-
-  const alt = ctx.organizationName?.trim() || ctx.eventTitle?.trim() || "Admitto";
+  const alt =
+    ctx.logoKind === "admitto"
+      ? "Admitto"
+      : ctx.organizationName?.trim() || ctx.eventTitle?.trim() || "Admitto";
+  const width = ctx.logoKind === "admitto" ? 118 : 140;
   return (
-    `<img src="${escapeHtmlAttribute(logoUrl)}" alt="${escapeHtmlAttribute(alt)}" width="140" ` +
-    `style="display:block;border:0;outline:none;text-decoration:none;max-width:140px;height:auto;" />`
+    `<img src="${escapeHtmlAttribute(logoUrl)}" alt="${escapeHtmlAttribute(alt)}" width="${width}" ` +
+    `style="display:block;border:0;outline:none;text-decoration:none;max-width:${width}px;height:auto;" />`
   );
 }
 
