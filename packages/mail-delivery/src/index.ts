@@ -72,6 +72,10 @@ export {
   LOOKBACK_DAYS,
   resolveImapConnectConfig,
   ImapInboundProvider,
+  persistBounceIngestLastRun,
+  serializeBounceIngestLastRun,
+  evaluateBounceIngestHealth,
+  BOUNCE_INGEST_STALE_MS,
 } from "./bounceIngest/index.js";
 export type {
   InboundMessage,
@@ -80,4 +84,8 @@ export type {
   IngestSummary,
   ImapConnectConfig,
   IngestBouncesOptions,
+  BounceIngestLastRunDto,
+  BounceIngestLastRunSummary,
+  BounceIngestHealthInput,
+  BounceIngestHealthResult,
 } from "./bounceIngest/index.js";

@@ -314,11 +314,12 @@ docker compose exec db-backup sh -c 'ls -la /backups/nightly-*.sql.gz'
 docker compose exec db-backup sh -c 'gzip -t /backups/nightly-*.sql.gz'
 ```
 
-**Bounce ingest:** the `bounce-ingest` sidecar uses the same Admitto image as `app` and runs
+**Bounce ingest:** the `bounce-ingest` service uses the same Admitto image as `app` and runs
 `node packages/mail-delivery/dist/cli.js ingest-bounces` on a loop
 (`BOUNCE_INGEST_INTERVAL_SECONDS`, default 300). Configure IMAP per event under Event settings →
-Mail → Bounce detection. The DB field `poll_interval_minutes` is informational in v1; the sidecar
-interval comes only from the env var.
+Mail → Bounce detection. Each successful or failed event run writes `last_run_*` for the Event
+settings card and the soft Settings → Health row. The DB field `poll_interval_minutes` is
+informational in this version; the process interval comes only from the env var.
 
 Nightly dumps on the host volume are **not** a full disaster-recovery strategy — copy offsite per
 ADR 0023 (S3, rsync, or your backup tool). TODO: document operator-specific offsite copy.

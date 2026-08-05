@@ -158,6 +158,56 @@ describe("event bounce ingest settings routes", () => {
     });
     expect(JSON.stringify(json)).not.toContain("encrypted-blob");
     expect(describeMailConfig).toHaveBeenCalledTimes(1);
+    expect(json.lastRun).toBeNull();
+  });
+
+  it("GET serializes lastRun from stored last_run_* columns", async () => {
+    const ranAt = new Date("2026-08-06T09:30:00.000Z");
+    const db = baseDb({
+      bounceIngestSettings: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "bis_1",
+          event_id: "evt_1",
+          imap_host: "imap.example.com",
+          imap_port: 993,
+          imap_username: "bounce@example.com",
+          imap_password_enc: "encrypted-blob",
+          reuse_smtp_credentials: false,
+          folders: ["INBOX"],
+          poll_interval_minutes: 5,
+          enabled: true,
+          last_run_at: ranAt,
+          last_run_ok: true,
+          last_run_summary: {
+            messagesSeen: 2,
+            bouncesApplied: 1,
+            softBouncesLogged: 0,
+            unparsed: 0,
+            noMatchingDelivery: 0,
+            errors: 0,
+            connectFailed: false,
+          },
+        }),
+      },
+    });
+
+    const res = await handleGetEventBounceIngestSettings(
+      mockContext({ eventId: "evt_1" }),
+      db as never,
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { lastRun: Record<string, unknown> };
+    expect(json.lastRun).toEqual({
+      at: "2026-08-06T09:30:00.000Z",
+      ok: true,
+      messagesSeen: 2,
+      bouncesApplied: 1,
+      softBouncesLogged: 0,
+      unparsed: 0,
+      noMatchingDelivery: 0,
+      errors: 0,
+      connectFailed: false,
+    });
   });
 
   it("GET returns 404 when the event is missing", async () => {

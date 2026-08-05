@@ -533,19 +533,23 @@ model MailSettings {
 
 // Event-scoped IMAP bounce / NDR ingest (ADR 0039; event-only correlation).
 model BounceIngestSettings {
-  id                     String   @id @default(cuid())
-  event_id               String   @unique
-  event                  Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  id                     String    @id @default(cuid())
+  event_id               String    @unique
+  event                  Event     @relation(fields: [event_id], references: [id], onDelete: Cascade)
   imap_host              String?
   imap_port              Int?
   imap_username          String?
   imap_password_enc      String? // used when reuse_smtp_credentials = false
-  reuse_smtp_credentials Boolean  @default(false)
+  reuse_smtp_credentials Boolean   @default(false)
   folders                Json? // string[], e.g. ["INBOX", "Junk Email"]
-  poll_interval_minutes  Int?     @default(5)
-  enabled                Boolean  @default(false)
-  created_at             DateTime @default(now())
-  updated_at             DateTime @updatedAt
+  poll_interval_minutes  Int?      @default(5)
+  enabled                Boolean   @default(false)
+  // Written by bounce-ingest (ingestBounces), not by Test connection / admin PUT.
+  last_run_at            DateTime?
+  last_run_ok            Boolean?
+  last_run_summary       Json? // compact IngestSummary snapshot for this event
+  created_at             DateTime  @default(now())
+  updated_at             DateTime  @updatedAt
 }
 
 // Dedup marker for processed IMAP messages (source of truth — not IMAP \Seen).

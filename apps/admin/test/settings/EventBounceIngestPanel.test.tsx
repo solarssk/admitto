@@ -50,6 +50,7 @@ function bounceResponse(
     smtp_reuse_available: false,
     folders: ["INBOX", "Junk Email"],
     poll_interval_minutes: 5,
+    lastRun: null,
     ...overrides,
   };
 }
@@ -367,5 +368,64 @@ describe("EventBounceIngestPanel", () => {
       ),
     );
     expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows Waiting for first automatic check when enabled and lastRun is null", async () => {
+    mockFetch.mockResolvedValueOnce(bounceResponse({ enabled: true, lastRun: null }));
+    renderPanel();
+    expect(await screen.findByText("Waiting for first automatic check")).toBeTruthy();
+  });
+
+  it("shows Off when bounce detection is disabled and lastRun is null", async () => {
+    mockFetch.mockResolvedValueOnce(bounceResponse({ enabled: false, lastRun: null }));
+    renderPanel();
+    expect(
+      await screen.findByText(
+        /Turn bounce detection on and save\. Automatic checks will appear here/,
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows last automatic check OK status and counts", async () => {
+    mockFetch.mockResolvedValueOnce(
+      bounceResponse({
+        lastRun: {
+          at: "2026-08-06T10:00:00.000Z",
+          ok: true,
+          messagesSeen: 3,
+          bouncesApplied: 1,
+          softBouncesLogged: 0,
+          unparsed: 0,
+          noMatchingDelivery: 0,
+          errors: 0,
+          connectFailed: false,
+        },
+      }),
+    );
+    renderPanel();
+    expect(await screen.findByText("OK")).toBeTruthy();
+    expect(screen.getByText(/3 seen/)).toBeTruthy();
+    expect(screen.getByText(/1 bounced/)).toBeTruthy();
+  });
+
+  it("shows Failed when lastRun.ok is false", async () => {
+    mockFetch.mockResolvedValueOnce(
+      bounceResponse({
+        lastRun: {
+          at: "2026-08-06T10:00:00.000Z",
+          ok: false,
+          messagesSeen: 0,
+          bouncesApplied: 0,
+          softBouncesLogged: 0,
+          unparsed: 0,
+          noMatchingDelivery: 0,
+          errors: 1,
+          connectFailed: true,
+        },
+      }),
+    );
+    renderPanel();
+    expect(await screen.findByText("Failed")).toBeTruthy();
+    expect(screen.getByText(/connect failed/)).toBeTruthy();
   });
 });

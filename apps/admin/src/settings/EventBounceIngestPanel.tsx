@@ -33,6 +33,8 @@ import { useConnectionTest } from "../hooks/useConnectionTest.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { emptySecretEdits, type SecretEdits } from "./mailSettingsValidation.js";
 import { NO_AUTOFILL_PROPS, SecretFieldRow } from "./mailTransportFormParts.js";
+import { formatEventDateTime, getBrowserTimeZone } from "../utils/event-dates.js";
+import type { EventBounceIngestLastRunDto } from "../api/types.js";
 
 const POLL_OPTIONS = [
   { value: 5, label: "5 minutes" },
@@ -55,6 +57,21 @@ const BOUNCE_REUSE_HINT_AVAILABLE =
 const BOUNCE_REUSE_HINT_UNAVAILABLE =
   "Available when this event's mail transport is SMTP.";
 
+const CHECK_EVERY_HINT =
+  "Shown for planning. The deploy bounce-ingest interval still controls how often automatic checks run in this version.";
+
+const LAST_RUN_HINT =
+  "Updated by the bounce-ingest automatic check, not by Test connection.";
+
+function lastRunCountsLine(run: EventBounceIngestLastRunDto): string {
+  const parts = [
+    `${run.messagesSeen} seen`,
+    `${run.bouncesApplied} bounced`,
+    `${run.errors} errors`,
+  ];
+  if (run.connectFailed) parts.push("connect failed");
+  return parts.join(" · ");
+}
 type Draft = {
   enabled: boolean;
   imapHost: string;
@@ -424,6 +441,7 @@ export const EventBounceIngestPanel = forwardRef<
               <div className="event-bounce-ingest__poll-and-test">
                 <Select
                   label="Check every"
+                  hint={CHECK_EVERY_HINT}
                   className="event-bounce-ingest__poll-select"
                   value={String(draft.pollIntervalMinutes)}
                   disabled={isArchived}
@@ -479,18 +497,37 @@ export const EventBounceIngestPanel = forwardRef<
         </div>
       </Card>
 
-      <Card
-        title={
-          <HintLabel hint="Updated by the bounce-ingest sidecar, not by Test connection.">
-            Last automatic check
-          </HintLabel>
-        }
-      >
-        <EmptyState
-          icon={<i className="ti ti-clock" aria-hidden="true" />}
-          title="Not tracked yet"
-          description="Last-run status is not available in this version."
-        />
+      <Card title={<HintLabel hint={LAST_RUN_HINT}>Last automatic check</HintLabel>}>
+        {!apiData?.lastRun && !draft.enabled ? (
+          <EmptyState
+            icon={<i className="ti ti-player-pause" aria-hidden="true" />}
+            title="Off"
+            description="Turn bounce detection on and save. Automatic checks will appear here after bounce-ingest runs."
+          />
+        ) : !apiData?.lastRun ? (
+          <EmptyState
+            icon={<i className="ti ti-clock" aria-hidden="true" />}
+            title="Waiting for first automatic check"
+            description="Status appears after bounce-ingest runs for this event. Test connection does not update this card."
+          />
+        ) : (
+          <div className="event-bounce-ingest__last-run" role="status">
+            <p className="event-bounce-ingest__last-run-status">
+              <i
+                className={`ti ${apiData.lastRun.ok ? "ti-circle-check" : "ti-alert-circle"}`}
+                aria-hidden="true"
+              />{" "}
+              <strong>{apiData.lastRun.ok ? "OK" : "Failed"}</strong>
+              <span className="text-secondary">
+                {" "}
+                · {formatEventDateTime(apiData.lastRun.at, getBrowserTimeZone())}
+              </span>
+            </p>
+            <p className="text-secondary event-bounce-ingest__last-run-counts">
+              {lastRunCountsLine(apiData.lastRun)}
+            </p>
+          </div>
+        )}
       </Card>
     </div>
   );

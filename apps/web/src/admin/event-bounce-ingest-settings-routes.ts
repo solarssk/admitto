@@ -15,6 +15,7 @@ import {
   DEFAULT_BOUNCE_FOLDERS,
   imapTestErrorForAdmin,
   parseFolders,
+  serializeBounceIngestLastRun,
   testBounceImapConnection,
 } from "@admitto/mail-delivery";
 import { emitSystemLog } from "@admitto/shared/system-log";
@@ -123,6 +124,11 @@ function serializeSettings(
     smtp_reuse_available: smtpReuseAvailable,
     folders: row ? parseFolders(row.folders) : [...DEFAULT_BOUNCE_FOLDERS],
     poll_interval_minutes: row?.poll_interval_minutes ?? 5,
+    lastRun: serializeBounceIngestLastRun(
+      row?.last_run_at,
+      row?.last_run_ok,
+      row?.last_run_summary,
+    ),
   };
 }
 

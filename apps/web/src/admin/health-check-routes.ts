@@ -20,6 +20,7 @@ import {
 } from "@admitto/auth";
 import { describeMailConfigForOrg, resolveMailConfigForOrg } from "@admitto/mailer-config";
 import { probeMailTransport, type MailProbeResult } from "@admitto/mailer";
+import { evaluateBounceIngestHealth } from "@admitto/mail-delivery";
 import type { GeocodingProvider } from "@admitto/location";
 import { resolveUploadDir } from "@admitto/storage";
 import type { HealthOverallStatus, HealthRowStatus } from "@admitto/shared";
@@ -1299,6 +1300,26 @@ function buildGroup(
   };
 }
 
+/** Soft external check: per-event bounce-ingest last runs (does not affect /healthz). */
+async function bounceIngestRow(db: PrismaClient, checkedAt: string): Promise<HealthCheckRow> {
+  const rows = await db.bounceIngestSettings.findMany({
+    select: { enabled: true, last_run_at: true, last_run_ok: true },
+  });
+  const evaled = evaluateBounceIngestHealth(rows);
+  return {
+    id: "bounce_ingest",
+    label: "Bounce detection",
+    status: evaled.status,
+    summary: evaled.summary,
+    details: detailsFromEntries([
+      ["status", evaled.status],
+      ["enabled_events", String(evaled.enabledCount)],
+      ["problem_events", String(evaled.problemCount)],
+      ["last_checked", checkedAt],
+    ]),
+  };
+}
+
 /** Build the Settings Health report (passive by default; live probes when `live`). */
 export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<HealthReport> {
   const env = deps.env ?? process.env;
@@ -1357,13 +1378,37 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
     ]),
   };
 
-  const [setup, gauges, email, idpRows, cfAccess, address, weather, dbProbe, engine, fileStorage] =
-    await Promise.all([
+  const bounceIngestFallback: HealthCheckRow = {
+    id: "bounce_ingest",
+    label: "Bounce detection",
+    status: "degraded",
+    summary: "Could not evaluate bounce detection",
+    details: detailsFromEntries([
+      ["status", "degraded"],
+      ["reason", "lookup_failed"],
+      ["last_checked", checkedAt],
+    ]),
+  };
+
+  const [
+    setup,
+    gauges,
+    email,
+    bounceIngest,
+    idpRows,
+    cfAccess,
+    address,
+    weather,
+    dbProbe,
+    engine,
+    fileStorage,
+  ] = await Promise.all([
       collectSetupChecks(deps.db, deps.rateLimitStore, deps.injectedBaseUrl).catch(
         () => setupFallback,
       ),
       collectGauges(deps.db).catch(() => gaugesFallback),
       emailSendingRow(deps.db, env, checkedAt, live, probeMail, resolveOrgMailConfig),
+      bounceIngestRow(deps.db, checkedAt).catch(() => bounceIngestFallback),
       identityProviderRows(deps.db, live, checkedAt).catch(() => idpFallback),
       cloudflareAccessRow(deps.db, live, checkedAt).catch(() => cfFallback),
       addressLookupRow(deps.geocodingProvider, live, env, checkedAt).catch(() => addressFallback),
@@ -1397,6 +1442,7 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
 
   const externalChecks: HealthCheckRow[] = [
     email,
+    bounceIngest,
     plannedRow(
       "wallet_passes",
       "Wallet passes, PassCreator",

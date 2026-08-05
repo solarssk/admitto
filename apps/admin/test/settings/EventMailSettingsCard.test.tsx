@@ -193,6 +193,7 @@ function configuredBounceResponse(
     smtp_reuse_available: true,
     folders: ["INBOX"],
     poll_interval_minutes: 5,
+    lastRun: null,
     ...overrides,
   };
 }

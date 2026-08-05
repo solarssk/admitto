@@ -26,6 +26,7 @@ describe("bounce ingest API client helpers", () => {
       smtp_reuse_available: true,
       folders: ["INBOX"],
       poll_interval_minutes: 5,
+      lastRun: null,
     };
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => body });
     vi.stubGlobal("fetch", fetchMock);
