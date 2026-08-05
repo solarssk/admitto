@@ -110,6 +110,8 @@ Do **not** pass `ApiError.message` straight into toasts or inline error strings.
 
 When an agent repeats a mistake, add a precise rule here (or in a scoped `.cursor/rules/*.mdc` file). One line per gotcha; cut rules that no longer prevent real errors.
 
+**No production installs of unreleased feature work.** Admitto has no customer/staging deploy of WIP branches or unreleased milestone features until a tagged stable release ships. Do **not** invent “legacy cleanup”, migration backfills, or compatibility shims for code that only ever existed on a PR branch. If a review says delete dead “older builds” cleanup, delete it.
+
 **Before push / claiming CI will pass:** run the tests for what you changed **and** the same
 gate CI uses for those packages (`npm run build` / typecheck when `.ts`/`.tsx` or tests included
 in `tsc` changed). Vitest alone is not enough if `apps/web` builds with `tsc -p tsconfig.json`

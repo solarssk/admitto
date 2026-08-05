@@ -28,6 +28,9 @@ const PASSWORD = "mail-settings-pass-123";
 
 const exported: ExportPayload[] = [];
 let failExport = false;
+let probeImpl: (config: unknown) => Promise<{ ok: true } | { ok: false; error: string }> = async () => ({
+  ok: true,
+});
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
@@ -105,6 +108,9 @@ beforeAll(async () => {
         exported.push(payload);
       },
     },
+    mailProbeDeps: {
+      probeMail: (config) => probeImpl(config),
+    },
   });
 
   const superSession = await createSession(prisma, { userId: superId, stage: SESSION_STAGE.FULL });
@@ -118,6 +124,8 @@ afterEach(async () => {
   await prisma.mailSettings.deleteMany({ where: { scope_id: ORG_MAIL } });
   exported.length = 0;
   failExport = false;
+  probeImpl = async () => ({ ok: true });
+  rateLimitStore.reset();
   resetSystemLogBufferForTest();
   if (prevNodeEnv !== undefined) process.env.NODE_ENV = prevNodeEnv;
   else delete process.env.NODE_ENV;
@@ -750,6 +758,154 @@ describe("POST /api/admin/mail-settings/test", () => {
 
     const securityLogs = querySystemLogs({ source: "security" });
     expect(securityLogs.some((entry) => entry.message === "auth.rate_limit.exceeded")).toBe(true);
+  });
+});
+
+describe("POST /api/admin/mail-settings/probe", () => {
+  it("verifies SMTP without sending mail", async () => {
+    await setMailSettings(
+      { scopeType: "organization", scopeId: ORG_MAIL },
+      {
+        provider: "smtp",
+        host: "smtp.probe.example.com",
+        port: 587,
+        user: "probe@example.com",
+        fromAddress: "probe@example.com",
+        smtpPassword: "probe-secret",
+      },
+      prisma,
+    );
+
+    const before = await prisma.emailDelivery.count();
+    const res = await app.request("/api/admin/mail-settings/probe", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; message?: string };
+    expect(body).toEqual({ ok: true, message: "Connected. SMTP account verified." });
+    expect(await prisma.emailDelivery.count()).toBe(before);
+    expect(exported).toHaveLength(0);
+
+    const log = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_MAIL, action_type: "mail_smtp_probed" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log).not.toBeNull();
+    expect((log!.metadata as { result?: string }).result).toBe("ok");
+
+    const logs = querySystemLogs({ source: "mail" });
+    expect(logs.some((entry) => entry.message === "mail_smtp_probe_ok")).toBe(true);
+  });
+
+  it("returns a sanitized error when SMTP auth fails", async () => {
+    await setMailSettings(
+      { scopeType: "organization", scopeId: ORG_MAIL },
+      {
+        provider: "smtp",
+        host: "smtp.probe.example.com",
+        port: 587,
+        user: "probe@example.com",
+        fromAddress: "probe@example.com",
+        smtpPassword: "probe-secret",
+      },
+      prisma,
+    );
+
+    probeImpl = async () => ({
+      ok: false,
+      error: "Invalid login: 535 Authentication failed for probe@example.com",
+    });
+
+    const res = await app.request("/api/admin/mail-settings/probe", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; error?: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toBeTruthy();
+    expect(body.error).not.toContain("probe@example.com");
+    expect(body.error).not.toContain("535");
+
+    const log = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_MAIL, action_type: "mail_smtp_probed" },
+      orderBy: { created_at: "desc" },
+    });
+    expect((log!.metadata as { result?: string }).result).toBe("failed");
+
+    const logs = querySystemLogs({ source: "mail" });
+    expect(
+      logs.some((entry) => entry.message === "mail_smtp_probe_failed" && entry.fields?.error === body.error),
+    ).toBe(true);
+  });
+
+  it("rejects non-SMTP providers with 400", async () => {
+    await prisma.mailSettings.create({
+      data: {
+        scope_type: "organization",
+        scope_id: ORG_MAIL,
+        provider: "export_only",
+        from_address: "transport@example.com",
+      },
+    });
+
+    const res = await app.request("/api/admin/mail-settings/probe", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { ok: boolean; error?: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toMatch(/SMTP/i);
+  });
+
+  it("rejects org admin", async () => {
+    const res = await app.request("/api/admin/mail-settings/probe", {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("still returns the probe result when audit logging fails", async () => {
+    await setMailSettings(
+      { scopeType: "organization", scopeId: ORG_MAIL },
+      {
+        provider: "smtp",
+        host: "smtp.probe.example.com",
+        port: 587,
+        user: "probe@example.com",
+        fromAddress: "probe@example.com",
+        smtpPassword: "probe-secret",
+      },
+      prisma,
+    );
+
+    const auditSpy = vi
+      .spyOn(tickets, "writeAdminAuditLog")
+      .mockRejectedValueOnce(new Error("audit db down"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const res = await app.request("/api/admin/mail-settings/probe", {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, message: "Connected. SMTP account verified." });
+      expect(errSpy).toHaveBeenCalledWith(
+        "[audit] mail_smtp_probed log failed",
+        expect.any(Error),
+      );
+    } finally {
+      auditSpy.mockRestore();
+      errSpy.mockRestore();
+    }
   });
 });
 

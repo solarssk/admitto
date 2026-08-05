@@ -86,6 +86,28 @@ describe("event mail settings API client (#511, client.ts had zero direct covera
     expect(result).toEqual(body);
   });
 
+  it("sendEventMailTransportTest includes verifyBounce when requested", async () => {
+    const body = {
+      status: "sent",
+      provider: "smtp",
+      bounceProbe: { status: "ok", message: "Bounce received." },
+    };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => body });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await sendEventMailTransportTest("evt-1", "nobody@example.com", {
+      verifyBounce: true,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/events/evt-1/mail-settings/test",
+      expect.objectContaining({
+        body: JSON.stringify({ to: "nobody@example.com", verifyBounce: true }),
+      }),
+    );
+    expect(result).toEqual(body);
+  });
+
   it("propagates API errors (e.g. 400 incomplete_transport)", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,

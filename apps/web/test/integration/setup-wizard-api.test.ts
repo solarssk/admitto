@@ -707,24 +707,28 @@ describe("setup org-branding", () => {
 });
 
 describe("GET/POST /api/admin/health", () => {
-  it("returns the passive report and runs live checks for superadmin", async () => {
-    const getRes = await app.request("/api/admin/health", {
-      headers: { Cookie: superCookie },
-    });
-    expect(getRes.status).toBe(200);
-    const getBody = (await getRes.json()) as { groups: unknown[]; overall: string };
-    expect(getBody.groups).toHaveLength(2);
-    expect(getBody.overall).toBeTruthy();
+  // Live probes can hit external endpoints (OIDC discovery, Nominatim, …); 5s flakes under CI load.
+  it(
+    "returns the passive report and runs live checks for superadmin",
+    async () => {
+      const getRes = await app.request("/api/admin/health", {
+        headers: { Cookie: superCookie },
+      });
+      expect(getRes.status).toBe(200);
+      const getBody = (await getRes.json()) as { groups: unknown[]; overall: string };
+      expect(getBody.groups).toHaveLength(2);
+      expect(getBody.overall).toBeTruthy();
 
-    const liveRes = await app.request("/api/admin/health/live", {
-      method: "POST",
-      headers: { Cookie: superCookie, ...sameOrigin },
-    });
-    expect(liveRes.status).toBe(200);
-    const liveBody = (await liveRes.json()) as { groups: unknown[] };
-    expect(liveBody.groups).toHaveLength(2);
-  });
-
+      const liveRes = await app.request("/api/admin/health/live", {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin },
+      });
+      expect(liveRes.status).toBe(200);
+      const liveBody = (await liveRes.json()) as { groups: unknown[] };
+      expect(liveBody.groups).toHaveLength(2);
+    },
+    20_000,
+  );
   it("returns 403 for non-superadmin on both routes", async () => {
     expect(
       (

@@ -19,6 +19,7 @@ The following must **never** appear in this repository or its history:
 
 - Microsoft Graph client secret
 - SMTP password
+- IMAP password (bounce detection mailbox)
 - Power Automate webhook URL or API key
 - TLS certificates or private keys
 - Database credentials or connection strings

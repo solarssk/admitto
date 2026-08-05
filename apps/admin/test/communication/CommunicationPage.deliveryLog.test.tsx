@@ -589,7 +589,7 @@ describe("CommunicationPage delivery log - sent message preview modal", () => {
 });
 
 describe("CommunicationPage delivery log - delivery details modal", () => {
-  it("renders overview fields, the delivery timeline, and raw fields", async () => {
+  it("renders overview fields, a readable error notice, and raw fields (no timeline)", async () => {
     fetchEventDeliveries.mockResolvedValue({ items: [failedResendRow], total: 1 });
     fetchEventDelivery.mockResolvedValue(detailFixture());
 
@@ -603,33 +603,35 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
     await within(dialog).findByText("Overview");
 
     expect(within(dialog).getByText("Admin User")).toBeTruthy();
-    expect(within(dialog).getByText("Connection timed out")).toBeTruthy();
-    expect(within(dialog).getByText("smtp_connect")).toBeTruthy();
+    // Notice shows code + short transport error (not a Bounce NDR dump). Raw fields also list the code.
+    expect(within(dialog).getByRole("alert").textContent).toMatch(/smtp_connect/);
+    expect(within(dialog).getByRole("alert").textContent).toMatch(/Connection timed out/);
+    expect(within(dialog).getAllByText("smtp_connect").length).toBeGreaterThanOrEqual(1);
     expect(within(dialog).getByText("batch-9")).toBeTruthy();
     expect(within(dialog).getByText("sess-9")).toBeTruthy();
     expect(within(dialog).getByText("Europe/Warsaw")).toBeTruthy();
 
-    expect(within(dialog).getByText("Initial send")).toBeTruthy();
-    expect(within(dialog).getByText("Resend 1")).toBeTruthy();
+    // Sibling attempts live on Delivery history / the log, not in this modal.
+    expect(within(dialog).queryByText("Delivery timeline")).toBeNull();
+    expect(within(dialog).queryByText("Initial send")).toBeNull();
+    expect(within(dialog).queryByText("Resend 1")).toBeNull();
 
-    // Overview + timeline use actor/event zone (Warsaw), not bare UTC.
-    const timeline = within(dialog).getByText("Delivery timeline").closest("div");
-    expect(timeline?.textContent).toMatch(/UTC\+/);
-    expect(timeline?.textContent).not.toMatch(/ UTC(?!\+)/);
+    // Overview timestamps use actor/event zone (Warsaw), not bare UTC.
+    const overview = within(dialog).getByText("Overview").closest("div");
+    expect(overview?.textContent).toMatch(/UTC\+/);
+    expect(overview?.textContent).not.toMatch(/ UTC(?!\+)/);
 
     expect(fetchEventDelivery).toHaveBeenCalledWith("evt-1", "dlv-2", expect.any(AbortSignal));
   });
 
-  it("labels each timeline step from its own recorded purpose, not its position", async () => {
+  it("shows an SMTP bounce code with a plain-English notice and never the raw Bounce dump", async () => {
     fetchEventDeliveries.mockResolvedValue({ items: [failedResendRow], total: 1 });
-    // A named custom template sent first is recorded with purpose "resend" (see
-    // resolveNoDeliveryScopeAndPurpose in bulk-send-routes.ts) - the oldest row in the timeline
-    // isn't reliably "initial". A later row can likewise genuinely be purpose "initial".
-    const namedTemplateFirstSend: DeliveryDto = { ...acceptedRow, id: "dlv-purpose-1", purpose: "resend" };
-    const laterActualInitial: DeliveryDto = { ...failedRow, id: "dlv-purpose-2", purpose: "initial" };
     fetchEventDelivery.mockResolvedValue({
       ...detailFixture(),
-      timeline: [namedTemplateFirstSend, laterActualInitial],
+      status: "bounced",
+      error_code: "550/5.7.1",
+      error:
+        "Bounce 550/5.7.1: exceeded unknown recipient count limit -------------- UWAGA: Niniejsza wiadomo&#347;&#263;",
     });
 
     renderPage();
@@ -641,8 +643,40 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
     const dialog = await screen.findByRole("dialog", { name: "Delivery details" });
     await within(dialog).findByText("Overview");
 
-    expect(within(dialog).getByText("Resend 1")).toBeTruthy();
-    expect(within(dialog).getByText("Initial send")).toBeTruthy();
+    const notice = within(dialog).getByRole("alert");
+    expect(notice.textContent).toMatch(/550\/5\.7\.1/);
+    expect(notice.textContent).toMatch(/policy reason/i);
+    expect(notice.textContent).not.toMatch(/Bounce 550/);
+    expect(notice.textContent).not.toMatch(/wiadomo/);
+    expect(notice.textContent).not.toMatch(/&#347;/);
+    // Raw fields still lists the bare code (also appears in the notice).
+    expect(within(dialog).getAllByText("550/5.7.1").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("shows a green success notice when the provider accepted the message", async () => {
+    fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 1 });
+    fetchEventDelivery.mockResolvedValue({
+      ...acceptedRow,
+      batch_id: null,
+      actor_user_id: null,
+      actor_display: null,
+      session_id: null,
+      timeline: [acceptedRow],
+    });
+
+    renderPage();
+    await goToDeliveryLogTab();
+    await screen.findByText("Guest One");
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Delivery details" });
+    await within(dialog).findByText("Overview");
+
+    const notice = within(dialog).getByRole("status");
+    expect(notice.textContent).toMatch(/accepted this message for delivery/i);
+    expect(notice.className).toMatch(/success/);
+    expect(within(dialog).queryByRole("alert")).toBeNull();
   });
 
   it("falls back to placeholders for every unset optional field", async () => {

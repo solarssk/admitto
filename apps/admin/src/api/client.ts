@@ -46,6 +46,10 @@ import type {
   MailTransportTestSendResponse,
   MailSettingsResponse,
   EventMailSettingsResponse,
+  EventBounceIngestSettingsResponse,
+  SaveEventBounceIngestSettingsBody,
+  BounceIngestTestResponse,
+  MailSmtpProbeResponse,
   SaveMailSettingsBody,
   EventDeliveriesListParams,
   EventDeliveriesListResponse,
@@ -1485,6 +1489,12 @@ export async function sendMailTransportTest(to: string): Promise<MailTransportTe
   return parseJson<MailTransportTestSendResponse>(res);
 }
 
+/** Probe saved org SMTP credentials without sending mail (superadmin). */
+export async function probeMailSmtpConnection(): Promise<MailSmtpProbeResponse> {
+  const res = await fetch("/api/admin/mail-settings/probe", jsonPostInit({}));
+  return parseJson<MailSmtpProbeResponse>(res);
+}
+
 /** Load an event's dedicated mail transport override, or its inherited (effective) org
  * values plus hasEventOverride:false when it has none. */
 export async function fetchEventMailSettings(
@@ -1520,16 +1530,61 @@ export async function clearEventMailSettings(eventId: string): Promise<EventMail
 }
 
 /** Send a transport-level test email using whatever transport actually resolves for this
- * event (dedicated override or inherited org transport). */
+ * event (dedicated override or inherited org transport). Optional verifyBounce waits for
+ * bounce ingest to mark a probe delivery (up to ~90s). */
 export async function sendEventMailTransportTest(
   eventId: string,
   to: string,
+  opts?: { verifyBounce?: boolean },
 ): Promise<MailTransportTestSendResponse> {
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/mail-settings/test`,
-    jsonPostInit({ to }),
+    jsonPostInit({ to, ...(opts?.verifyBounce ? { verifyBounce: true } : {}) }),
   );
   return parseJson<MailTransportTestSendResponse>(res);
+}
+
+/** Probe saved dedicated-event SMTP credentials without sending mail (superadmin). */
+export async function probeEventMailSmtpConnection(
+  eventId: string,
+): Promise<MailSmtpProbeResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/mail-settings/probe`,
+    jsonPostInit({}),
+  );
+  return parseJson<MailSmtpProbeResponse>(res);
+}
+
+export async function fetchEventBounceIngestSettings(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<EventBounceIngestSettingsResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/bounce-ingest-settings`,
+    { credentials: "same-origin", signal },
+  );
+  return parseJson<EventBounceIngestSettingsResponse>(res);
+}
+
+export async function saveEventBounceIngestSettings(
+  eventId: string,
+  body: SaveEventBounceIngestSettingsBody,
+): Promise<EventBounceIngestSettingsResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/bounce-ingest-settings`,
+    jsonPutInit(body),
+  );
+  return parseJson<EventBounceIngestSettingsResponse>(res);
+}
+
+export async function testEventBounceIngestConnection(
+  eventId: string,
+): Promise<BounceIngestTestResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/bounce-ingest-settings/test`,
+    jsonPostInit({}),
+  );
+  return parseJson<BounceIngestTestResponse>(res);
 }
 
 /** Load an event's Location tab data, or the stable empty DTO when nothing has been saved yet. */

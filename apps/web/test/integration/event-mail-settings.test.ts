@@ -7,6 +7,7 @@ import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import type { ExportPayload } from "@admitto/mailer";
 import { setMailSettings } from "@admitto/mailer-config";
+import * as tickets from "@admitto/tickets";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 
@@ -27,6 +28,9 @@ const PASSWORD = "event-mail-settings-pass-123";
 
 const exported: ExportPayload[] = [];
 let failExport = false;
+let probeImpl: (config: unknown) => Promise<{ ok: true } | { ok: false; error: string }> = async () => ({
+  ok: true,
+});
 const originalNodeEnv = process.env.NODE_ENV;
 
 let prisma: PrismaClient;
@@ -41,6 +45,9 @@ let opCookie = "";
 
 async function seed(client: PrismaClient) {
   await client.adminAuditLog.deleteMany({ where: { organization_id: { in: [ORG_A, ORG_B] } } });
+  await client.bounceIngestSettings.deleteMany({
+    where: { event_id: { in: [EVENT, EVENT_ARCHIVED, EVENT_B] } },
+  });
   await client.mailSettings.deleteMany({
     where: { scope_id: { in: [ORG_A, ORG_B, EVENT, EVENT_ARCHIVED, EVENT_B] } },
   });
@@ -137,6 +144,9 @@ beforeAll(async () => {
         exported.push(payload);
       },
     },
+    mailProbeDeps: {
+      probeMail: (config) => probeImpl(config),
+    },
   });
 
   const superSession = await createSession(prisma, { userId: superId, stage: SESSION_STAGE.FULL });
@@ -149,11 +159,13 @@ beforeAll(async () => {
 
 afterEach(async () => {
   await prisma.adminAuditLog.deleteMany({ where: { organization_id: { in: [ORG_A, ORG_B] } } });
+  await prisma.bounceIngestSettings.deleteMany({ where: { event_id: EVENT } });
   await prisma.mailSettings.deleteMany({
     where: { scope_id: { in: [ORG_A, ORG_B, EVENT, EVENT_ARCHIVED, EVENT_B] } },
   });
   exported.length = 0;
   failExport = false;
+  probeImpl = async () => ({ ok: true });
   rateLimitStore.reset();
   if (originalNodeEnv === undefined) {
     delete process.env.NODE_ENV;
@@ -966,5 +978,194 @@ describe("POST /api/admin/events/:eventId/mail-settings/test", () => {
       body: JSON.stringify({ to: "tester@example.com" }),
     });
     expect(res.status).toBe(404);
+  });
+
+  it("rejects verifyBounce when bounce detection is not configured", async () => {
+    await prisma.mailSettings.create({
+      data: {
+        scope_type: "event",
+        scope_id: EVENT,
+        provider: "export_only",
+        from_address: "dedicated@example.com",
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT}/mail-settings/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ to: "nobody@example.com", verifyBounce: true }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string; detail?: string };
+    expect(body.error).toBe("bounce_probe_unavailable");
+    expect(body.detail).toMatch(/bounce detection/i);
+  });
+
+  it("rejects verifyBounce when bounce detection is configured but Off", async () => {
+    await prisma.mailSettings.create({
+      data: {
+        scope_type: "event",
+        scope_id: EVENT,
+        provider: "export_only",
+        from_address: "dedicated@example.com",
+      },
+    });
+    await prisma.bounceIngestSettings.create({
+      data: {
+        event_id: EVENT,
+        enabled: false,
+        imap_host: "imap.example.com",
+        imap_port: 993,
+        folders: ["INBOX"],
+        poll_interval_minutes: 5,
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT}/mail-settings/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ to: "nobody@example.com", verifyBounce: true }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string; detail?: string };
+    expect(body.error).toBe("bounce_probe_unavailable");
+    expect(body.detail).toMatch(/On/i);
+  });
+});
+
+describe("POST /api/admin/events/:eventId/mail-settings/probe", () => {
+  it("verifies dedicated SMTP without sending mail", async () => {
+    await setMailSettings(
+      { scopeType: "event", scopeId: EVENT },
+      {
+        provider: "smtp",
+        host: "smtp.event-probe.example.com",
+        port: 587,
+        user: "event-probe@example.com",
+        fromAddress: "event-probe@example.com",
+        smtpPassword: "event-probe-secret",
+      },
+      prisma,
+    );
+
+    const res = await app.request(`/api/admin/events/${EVENT}/mail-settings/probe`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; message?: string };
+    expect(body).toEqual({ ok: true, message: "Connected. SMTP account verified." });
+    expect(exported).toHaveLength(0);
+
+    const log = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_A, action_type: "event_mail_smtp_probed" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log).not.toBeNull();
+    expect((log!.metadata as { result?: string; eventId?: string }).result).toBe("ok");
+    expect((log!.metadata as { eventId?: string }).eventId).toBe(EVENT);
+  });
+
+  it("returns sanitized error on SMTP auth failure", async () => {
+    await setMailSettings(
+      { scopeType: "event", scopeId: EVENT },
+      {
+        provider: "smtp",
+        host: "smtp.event-probe.example.com",
+        port: 587,
+        user: "event-probe@example.com",
+        fromAddress: "event-probe@example.com",
+        smtpPassword: "event-probe-secret",
+      },
+      prisma,
+    );
+
+    probeImpl = async () => ({
+      ok: false,
+      error: "Invalid login: 535 Authentication failed for event-probe@example.com",
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT}/mail-settings/probe`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; error?: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toBeTruthy();
+    expect(body.error).not.toContain("event-probe@example.com");
+  });
+
+  it("rejects when the event has no dedicated override", async () => {
+    await createOrgSmtp();
+
+    const res = await app.request(`/api/admin/events/${EVENT}/mail-settings/probe`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { ok: boolean; error?: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toMatch(/dedicated SMTP/i);
+  });
+
+  it("rejects dedicated non-SMTP with 400", async () => {
+    await prisma.mailSettings.create({
+      data: {
+        scope_type: "event",
+        scope_id: EVENT,
+        provider: "export_only",
+        from_address: "dedicated@example.com",
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT}/mail-settings/probe`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { ok: boolean; error?: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toMatch(/SMTP/i);
+  });
+
+  it("still returns the probe result when audit logging fails", async () => {
+    await setMailSettings(
+      { scopeType: "event", scopeId: EVENT },
+      {
+        provider: "smtp",
+        host: "smtp.event-probe.example.com",
+        port: 587,
+        user: "event-probe@example.com",
+        fromAddress: "event-probe@example.com",
+        smtpPassword: "event-probe-secret",
+      },
+      prisma,
+    );
+
+    const auditSpy = vi
+      .spyOn(tickets, "writeAdminAuditLog")
+      .mockRejectedValueOnce(new Error("audit db down"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT}/mail-settings/probe`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, message: "Connected. SMTP account verified." });
+      expect(errSpy).toHaveBeenCalledWith(
+        "[audit] event_mail_smtp_probed log failed",
+        expect.any(Error),
+      );
+    } finally {
+      auditSpy.mockRestore();
+      errSpy.mockRestore();
+    }
   });
 });

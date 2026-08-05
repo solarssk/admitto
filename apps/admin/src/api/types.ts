@@ -604,9 +604,26 @@ export type TemplateTestSendResponse =
 
 /** Instance Settings -> Mail transport test-send — mail-settings-routes.ts always
  * includes the provider on success (see the route's own `satisfies` clause). */
+export type MailBounceProbeDto = {
+  status: "ok" | "timeout" | "failed";
+  message: string;
+  smtpCode?: string | null;
+};
+
 export type MailTransportTestSendResponse =
-  | { status: "sent"; provider: MailProvider; providerMessageId?: string }
-  | { status: "failed"; error: string; provider?: MailProvider; retryable?: boolean };
+  | {
+      status: "sent";
+      provider: MailProvider;
+      providerMessageId?: string;
+      bounceProbe?: MailBounceProbeDto;
+    }
+  | {
+      status: "failed";
+      error: string;
+      provider?: MailProvider;
+      retryable?: boolean;
+      bounceProbe?: MailBounceProbeDto;
+    };
 
 /** Multi-template list item from GET .../templates. */
 export interface MailTemplateListItem {
@@ -730,6 +747,47 @@ export interface EventMailSettingsResponse {
   failedDeliveries: number;
   fields: MailSettingsFieldsDto;
 }
+
+/** Event-scoped IMAP bounce / NDR ingest settings (ADR 0039). */
+export interface EventBounceIngestSettingsResponse {
+  eventId: string;
+  organizationId: string;
+  configured: boolean;
+  enabled: boolean;
+  imap_host: string | null;
+  imap_port: number | null;
+  imap_username: string | null;
+  imap_password: {
+    set: boolean;
+    masked: "••••" | null;
+    from_smtp?: boolean;
+  };
+  reuse_smtp_credentials: boolean;
+  smtp_reuse_available: boolean;
+  folders: string[];
+  poll_interval_minutes: number;
+}
+
+export interface SaveEventBounceIngestSettingsBody {
+  imap_host?: string;
+  imap_port?: number | null;
+  imap_username?: string;
+  imap_password?: string;
+  clear_imap_password?: boolean;
+  reuse_smtp_credentials?: boolean;
+  folders?: string[];
+  poll_interval_minutes?: number | null;
+  enabled?: boolean;
+}
+
+export interface BounceIngestTestResponse {
+  ok: boolean;
+  message?: string;
+  error?: string;
+}
+
+/** SMTP connection probe (nodemailer verify, no send) — org or event dedicated SMTP. */
+export type MailSmtpProbeResponse = BounceIngestTestResponse;
 
 export interface SaveMailSettingsBody {
   /** Omit = unchanged; `""` clears stored provider (Not configured). */

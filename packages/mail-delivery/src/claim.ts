@@ -58,7 +58,7 @@ function deliveryCreateData(input: ClaimInitialInput, purpose: "initial" | "rese
     provider: input.provider,
     status: "queued" as const,
     attempts: 1,
-    recipient_email: input.recipientEmail,
+    recipient_email: input.recipientEmail.toLowerCase(),
     rendered_subject: input.renderedSubject,
     rendered_html: input.renderedHtml,
     queued_at: now,
