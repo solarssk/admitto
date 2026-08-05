@@ -115,7 +115,9 @@ When an agent repeats a mistake, add a precise rule here (or in a scoped `.curso
 **Before push / claiming CI will pass:** run the tests for what you changed **and** the same
 gate CI uses for those packages (`npm run build` / typecheck when `.ts`/`.tsx` or tests included
 in `tsc` changed). Vitest alone is not enough if `apps/web` builds with `tsc -p tsconfig.json`
-(tests are typechecked). Do not push on red.
+(tests are typechecked). Do not push on red. For fetch mocks in web tests, type the first
+argument (`input: string | URL`); bare `vi.fn(async () => …)` makes `mock.calls[0][0]` a
+`TS2493` under `tsc` even when Vitest is green.
 
 **New runtime workspace package:** the Dockerfile production stage is an explicit allowlist.
 Copy both `packages/<name>/package.json` and `--from=builder …/packages/<name>/dist` (same

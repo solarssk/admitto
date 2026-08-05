@@ -207,7 +207,7 @@ describe("MetNoClient", () => {
   });
 
   it("probe hits the Oslo pin for today", async () => {
-    const fetchFn = vi.fn(async () =>
+    const fetchFn = vi.fn(async (_input: string | URL) =>
       new Response(
         JSON.stringify({
           properties: {
@@ -254,7 +254,7 @@ describe("OpenMeteoClient extra branches", () => {
       }).fetchDayForecast(52.5, 13.4, "2026-08-10"),
     ).rejects.toMatchObject({ kind: "unavailable" });
 
-    const fetchFn = vi.fn(async () =>
+    const fetchFn = vi.fn(async (_input: string | URL) =>
       new Response(
         JSON.stringify({
           daily: {
