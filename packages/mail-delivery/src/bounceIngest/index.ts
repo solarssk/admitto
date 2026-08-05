@@ -1,6 +1,10 @@
-import type { PrismaClient, BounceIngestSettings } from "@admitto/db";
+import type { PrismaClient, BounceIngestSettings, EmailDelivery } from "@admitto/db";
 import { applyBounceResult } from "./applyBounceResult.js";
-import { findDeliveryForBounce, truncateEmailForLog } from "./correlate.js";
+import {
+  findDeliveriesForBounceBatch,
+  normalizeBounceRecipientEmail,
+  truncateEmailForLog,
+} from "./correlate.js";
 import { ImapInboundProvider } from "./imapProvider.js";
 import { parseBounceLines } from "./parseBounceLine.js";
 import { listProcessedUids, markUidProcessed, pruneProcessedUidsOlderThan } from "./processedUid.js";
@@ -76,12 +80,11 @@ async function applyParsedLine(
   message: InboundMessage,
   line: ParsedBounceLine,
   log: (msg: string) => void,
+  deliveryByRecipient: Map<string, EmailDelivery>,
 ): Promise<void> {
   try {
-    const delivery = await findDeliveryForBounce(db, {
-      eventId: settings.event_id,
-      recipientEmail: line.recipientEmail,
-    });
+    const key = normalizeBounceRecipientEmail(line.recipientEmail);
+    const delivery = deliveryByRecipient.get(key) ?? null;
     if (!delivery) {
       summary.noMatchingDelivery += 1;
       log(
@@ -107,11 +110,12 @@ async function processMessage(
   summary: IngestSummary,
   folder: string,
   message: InboundMessage,
+  lines: ParsedBounceLine[],
   log: (msg: string) => void,
   markedSeenUids: string[],
+  deliveryByRecipient: Map<string, EmailDelivery>,
 ): Promise<void> {
   summary.messagesSeen += 1;
-  const lines = parseBounceLines(message.bodyText);
 
   if (lines.length === 0) {
     summary.unparsed += 1;
@@ -124,7 +128,7 @@ async function processMessage(
   }
 
   for (const line of lines) {
-    await applyParsedLine(db, settings, summary, message, line, log);
+    await applyParsedLine(db, settings, summary, message, line, log, deliveryByRecipient);
   }
 
   await markUidProcessed(db, settings.event_id, folder, message.uid);
@@ -169,10 +173,39 @@ async function processFolder(
     messages = messages.filter((m) => !skipUids.has(m.uid));
   }
 
+  const parsed = messages.map((message) => ({
+    message,
+    lines: parseBounceLines(message.bodyText),
+  }));
+  const recipientEmails = parsed.flatMap(({ lines }) => lines.map((l) => l.recipientEmail));
+  let deliveryByRecipient: Map<string, EmailDelivery>;
+  try {
+    deliveryByRecipient = await findDeliveriesForBounceBatch(db, {
+      eventId: settings.event_id,
+      recipientEmails,
+    });
+  } catch (err) {
+    summary.errors += 1;
+    log(
+      `[bounce-ingest] event=${settings.event_id} folder=${folder} batch delivery lookup failed: ${errMsg(err)}`,
+    );
+    return;
+  }
+
   const markedSeenUids: string[] = [];
-  for (const message of messages) {
+  for (const { message, lines } of parsed) {
     try {
-      await processMessage(db, settings, summary, folder, message, log, markedSeenUids);
+      await processMessage(
+        db,
+        settings,
+        summary,
+        folder,
+        message,
+        lines,
+        log,
+        markedSeenUids,
+        deliveryByRecipient,
+      );
     } catch (err) {
       summary.errors += 1;
       log(
@@ -336,7 +369,12 @@ export type {
   FetchCandidateOptions,
 } from "./types.js";
 export { parseBounceLines, parseRfc3464DsnBlocks } from "./parseBounceLine.js";
-export { findDeliveryForBounce, truncateEmailForLog, NON_TERMINAL } from "./correlate.js";
+export {
+  findDeliveryForBounce,
+  findDeliveriesForBounceBatch,
+  truncateEmailForLog,
+  NON_TERMINAL,
+} from "./correlate.js";
 export { applyBounceResult, buildErrorCode } from "./applyBounceResult.js";
 export type { ApplyBounceOutcome } from "./applyBounceResult.js";
 export { ImapInboundProvider, extractPlainTextFromSource, MAX_BODY_BYTES } from "./imapProvider.js";

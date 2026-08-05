@@ -67,7 +67,7 @@ function eventScopedDb(
       ...extras.bounceIngestProcessedUid,
     },
     emailDelivery: {
-      findFirst: vi.fn().mockResolvedValue(null),
+      findMany: vi.fn().mockResolvedValue([]),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       ...extras.emailDelivery,
     },
@@ -124,17 +124,19 @@ describe("ingestBounces", () => {
 
     const upsert = vi.fn().mockResolvedValue({});
     const findUniqueUid = vi.fn().mockResolvedValue(null);
-    const findFirstDelivery = vi.fn().mockResolvedValue({
-      id: "del_1",
-      status: "sent",
-      recipient_email: "user@example.com",
-      event_id: "evt_1",
-    });
+    const findManyDelivery = vi.fn().mockResolvedValue([
+      {
+        id: "del_1",
+        status: "sent",
+        recipient_email: "user@example.com",
+        event_id: "evt_1",
+      },
+    ]);
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
 
     const db = eventScopedDb(row, {
       bounceIngestProcessedUid: { findUnique: findUniqueUid, upsert },
-      emailDelivery: { findFirst: findFirstDelivery, updateMany },
+      emailDelivery: { findMany: findManyDelivery, updateMany },
     }) as never;
 
     const provider = mockProvider(messages);
@@ -187,20 +189,28 @@ describe("ingestBounces", () => {
       },
     ];
 
-    let findCalls = 0;
+    let updates = 0;
     const db = eventScopedDb(row, {
       emailDelivery: {
-        findFirst: vi.fn().mockImplementation(async () => {
-          findCalls += 1;
-          if (findCalls === 1) throw new Error("db blip");
-          return {
-            id: "del_x",
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "del_1",
+            status: "sent",
+            recipient_email: "user@example.com",
+            event_id: "evt_1",
+          },
+          {
+            id: "del_2",
             status: "sent",
             recipient_email: "other@example.com",
             event_id: "evt_1",
-          };
+          },
+        ]),
+        updateMany: vi.fn().mockImplementation(async () => {
+          updates += 1;
+          if (updates === 1) throw new Error("db blip");
+          return { count: 1 };
         }),
-        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
     }) as never;
 
@@ -242,7 +252,7 @@ describe("ingestBounces", () => {
         upsert: vi.fn(),
       },
       emailDelivery: {
-        findFirst: vi.fn(),
+        findMany: vi.fn(),
         updateMany: vi.fn(),
       },
     }) as never;
@@ -255,7 +265,7 @@ describe("ingestBounces", () => {
 
     expect(summary.messagesSeen).toBe(0);
     expect(summary.bouncesApplied).toBe(0);
-    expect(db.emailDelivery.findFirst).not.toHaveBeenCalled();
+    expect(db.emailDelivery.findMany).not.toHaveBeenCalled();
   });
 
   it("counts noMatchingDelivery when no EmailDelivery row exists", async () => {
@@ -286,12 +296,12 @@ describe("ingestBounces", () => {
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
     const db = eventScopedDb(row, {
       emailDelivery: {
-        findFirst: vi.fn().mockResolvedValue({
+        findMany: vi.fn().mockResolvedValue([{
           id: "del_soft",
           status: "sent",
           recipient_email: "user@example.com",
           event_id: "evt_1",
-        }),
+    }]),
         updateMany,
       },
     }) as never;
@@ -336,12 +346,12 @@ describe("ingestBounces", () => {
     };
     const db = eventScopedDb(row, {
       emailDelivery: {
-        findFirst: vi.fn().mockResolvedValue({
+        findMany: vi.fn().mockResolvedValue([{
           id: "del_1",
           status: "sent",
           recipient_email: "user@example.com",
           event_id: "evt_1",
-        }),
+    }]),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
     }) as never;
@@ -388,12 +398,12 @@ describe("ingestBounces", () => {
         deleteMany: vi.fn(),
       },
       emailDelivery: {
-        findFirst: vi.fn().mockResolvedValue({
+        findMany: vi.fn().mockResolvedValue([{
           id: "del_1",
           status: "sent",
           recipient_email: "user@example.com",
           event_id: "evt_1",
-        }),
+    }]),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
     }) as never;
@@ -420,12 +430,12 @@ describe("ingestBounces", () => {
     const row = settings();
     const db = eventScopedDb(row, {
       emailDelivery: {
-        findFirst: vi.fn().mockResolvedValue({
+        findMany: vi.fn().mockResolvedValue([{
           id: "del_1",
           status: "sent",
           recipient_email: "user@example.com",
           event_id: "evt_1",
-        }),
+    }]),
         updateMany: vi.fn().mockRejectedValue(new Error("update failed")),
       },
     }) as never;
@@ -504,7 +514,7 @@ describe("ingestBounces", () => {
         deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
       emailDelivery: {
-        findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockResolvedValue([]),
         updateMany: vi.fn(),
       },
     } as never;
@@ -552,12 +562,12 @@ describe("ingestBounces", () => {
     const markSeen = vi.fn().mockRejectedValue(new Error("flags failed"));
     const db = eventScopedDb(row, {
       emailDelivery: {
-        findFirst: vi.fn().mockResolvedValue({
+        findMany: vi.fn().mockResolvedValue([{
           id: "del_1",
           status: "sent",
           recipient_email: "user@example.com",
           event_id: "evt_1",
-        }),
+    }]),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
     }) as never;
