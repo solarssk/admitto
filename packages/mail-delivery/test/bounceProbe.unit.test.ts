@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BounceIngestSettings } from "@admitto/db";
-import { closeMailer, createMailer } from "@admitto/mailer";
 import { resolveMailConfig } from "@admitto/mailer-config";
 import {
   BounceProbeSetupError,
@@ -8,26 +7,15 @@ import {
   cleanupLegacyBounceProbeAttendee,
   runEventBounceProbe,
 } from "../src/bounceProbe.js";
+import { sendEventTransportTestEmail } from "../src/transportTest.js";
 import type { InboundMailProvider, InboundMessage } from "../src/bounceIngest/types.js";
 
 vi.mock("@admitto/mailer-config", () => ({
   resolveMailConfig: vi.fn(),
 }));
 
-vi.mock("@admitto/mailer", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@admitto/mailer")>();
-  return {
-    ...actual,
-    createMailer: vi.fn(),
-    closeMailer: vi.fn(),
-  };
-});
-
 vi.mock("../src/transportTest.js", () => ({
-  buildEventTransportTestMessage: vi.fn().mockResolvedValue({
-    subject: "Admitto mail transport test",
-    html: "<p>test</p>",
-  }),
+  sendEventTransportTestEmail: vi.fn(),
 }));
 
 const HARD_BODY =
@@ -67,6 +55,7 @@ function baseDb(overrides: {
   bounceIngestSettings?: { findUnique?: ReturnType<typeof vi.fn> };
   bounceIngestProcessedUid?: {
     findUnique?: ReturnType<typeof vi.fn>;
+    findMany?: ReturnType<typeof vi.fn>;
     upsert?: ReturnType<typeof vi.fn>;
   };
   attendee?: {
@@ -86,6 +75,7 @@ function baseDb(overrides: {
     },
     bounceIngestProcessedUid: {
       findUnique: overrides.bounceIngestProcessedUid?.findUnique ?? vi.fn().mockResolvedValue(null),
+      findMany: overrides.bounceIngestProcessedUid?.findMany ?? vi.fn().mockResolvedValue([]),
       upsert: overrides.bounceIngestProcessedUid?.upsert ?? vi.fn().mockResolvedValue({}),
     },
     attendee: {
@@ -105,14 +95,11 @@ describe("runEventBounceProbe (unit)", () => {
       provider: "export_only",
       fromAddress: "org@example.com",
     } as never);
-    vi.mocked(createMailer).mockResolvedValue({
-      send: vi.fn().mockResolvedValue({
-        status: "sent",
-        provider: "export_only",
-        providerMessageId: "<mid@example.com>",
-      }),
-    } as never);
-    vi.mocked(closeMailer).mockResolvedValue(undefined);
+    vi.mocked(sendEventTransportTestEmail).mockResolvedValue({
+      status: "sent",
+      provider: "export_only",
+      providerMessageId: "<mid@example.com>",
+    });
   });
 
   it("throws BounceProbeSetupError when bounce settings are missing", async () => {
@@ -138,13 +125,11 @@ describe("runEventBounceProbe (unit)", () => {
   });
 
   it("returns failed when the transport send fails", async () => {
-    vi.mocked(createMailer).mockResolvedValueOnce({
-      send: vi.fn().mockResolvedValue({
-        status: "failed",
-        provider: "smtp",
-        error: "SMTP rejected recipient",
-      }),
-    } as never);
+    vi.mocked(sendEventTransportTestEmail).mockResolvedValueOnce({
+      status: "failed",
+      provider: "smtp",
+      error: "SMTP rejected recipient",
+    });
 
     const result = await runEventBounceProbe(
       {
@@ -160,9 +145,13 @@ describe("runEventBounceProbe (unit)", () => {
   });
 
   it("returns failed with operator-safe copy when mailer setup throws", async () => {
-    vi.mocked(createMailer).mockRejectedValueOnce(
+    vi.mocked(sendEventTransportTestEmail).mockRejectedValueOnce(
       new Error("destination is a private, loopback, or link-local address"),
     );
+    vi.mocked(resolveMailConfig).mockResolvedValueOnce({
+      provider: "smtp",
+      fromAddress: "org@example.com",
+    } as never);
 
     const result = await runEventBounceProbe(
       {
@@ -177,6 +166,24 @@ describe("runEventBounceProbe (unit)", () => {
     expect(result.message).toMatch(/ALLOW_PRIVATE_MAIL_DESTINATIONS|private address/i);
     expect(result.message).not.toMatch(/getaddrinfo|ECONNREFUSED/i);
     expect(result.sendResult.status).toBe("rejected");
+    expect(result.sendResult.provider).toBe("smtp");
+  });
+
+  it("uses export_only provider when setup fails before mail config resolves", async () => {
+    vi.mocked(sendEventTransportTestEmail).mockRejectedValueOnce(new Error("mail transport not configured"));
+    vi.mocked(resolveMailConfig).mockRejectedValueOnce(new Error("Cannot resolve mail provider"));
+
+    const result = await runEventBounceProbe(
+      {
+        eventId: "evt_1",
+        toAddress: "nobody@example.com",
+        ingestOptions: { createProvider: async () => mockProvider([]) },
+      },
+      baseDb() as never,
+    );
+
+    expect(result.status).toBe("failed");
+    expect(result.sendResult.provider).toBe("export_only");
   });
 
   it("reports ok when IMAP yields a hard bounce for the recipient", async () => {
@@ -211,6 +218,47 @@ describe("runEventBounceProbe (unit)", () => {
     expect(result.message).toMatch(/Bounce received/i);
   });
 
+  it("does not skip sidecar-processed UIDs (probe vs sidecar race)", async () => {
+    const db = baseDb({
+      bounceIngestProcessedUid: {
+        findUnique: vi.fn().mockResolvedValue({ id: "seen" }),
+        findMany: vi.fn().mockResolvedValue([{ uid: "seen" }]),
+        upsert: vi.fn().mockResolvedValue({}),
+      },
+    });
+    let tick = 0;
+
+    const result = await runEventBounceProbe(
+      {
+        eventId: "evt_1",
+        toAddress: "nobody@example.com",
+        timeoutMs: 50,
+        pollMs: 1,
+        now: () => {
+          tick += 1;
+          return tick * 10;
+        },
+        sleep: async () => undefined,
+        ingestOptions: {
+          createProvider: async () =>
+            mockProvider([
+              {
+                uid: "seen",
+                receivedAt: new Date(),
+                subject: "Undeliverable",
+                bodyText: HARD_BODY,
+              },
+            ]),
+        },
+      },
+      db as never,
+    );
+
+    expect(result.status).toBe("ok");
+    expect(result.smtpCode).toMatch(/^550/);
+    expect(db.bounceIngestProcessedUid.upsert).toHaveBeenCalled();
+  });
+
   it("reports timeout when no hard bounce arrives", async () => {
     let t = 0;
     const result = await runEventBounceProbe(
@@ -232,6 +280,36 @@ describe("runEventBounceProbe (unit)", () => {
 
     expect(result.status).toBe("timeout");
     expect(result.message).toMatch(/within 1 seconds|IMAP/i);
+  });
+
+  it("returns failed (not 500) when IMAP never connects", async () => {
+    let t = 0;
+    const provider: InboundMailProvider = {
+      connect: vi.fn().mockRejectedValue(new Error("ECONNREFUSED")),
+      close: vi.fn().mockResolvedValue(undefined),
+      fetchCandidateMessages: vi.fn(),
+    };
+
+    const result = await runEventBounceProbe(
+      {
+        eventId: "evt_1",
+        toAddress: "nobody@example.com",
+        timeoutMs: 30,
+        pollMs: 5,
+        now: () => {
+          const v = t;
+          t += 20;
+          return v;
+        },
+        sleep: async () => undefined,
+        ingestOptions: { createProvider: async () => provider },
+      },
+      baseDb() as never,
+    );
+
+    expect(result.status).toBe("failed");
+    expect(result.message).toMatch(/connect|IMAP|refused/i);
+    expect(result.message).not.toMatch(/ECONNREFUSED/);
   });
 
   it("ignores soft bounces and keeps polling until timeout", async () => {
@@ -263,45 +341,6 @@ describe("runEventBounceProbe (unit)", () => {
     );
 
     expect(result.status).toBe("timeout");
-  });
-
-  it("skips already-processed UIDs when scanning IMAP", async () => {
-    const db = baseDb({
-      bounceIngestProcessedUid: {
-        findUnique: vi.fn().mockResolvedValue({ id: "seen" }),
-        upsert: vi.fn(),
-      },
-    });
-    let tick = 0;
-
-    const result = await runEventBounceProbe(
-      {
-        eventId: "evt_1",
-        toAddress: "nobody@example.com",
-        timeoutMs: 20,
-        pollMs: 5,
-        now: () => {
-          tick += 1;
-          return tick * 10;
-        },
-        sleep: async () => undefined,
-        ingestOptions: {
-          createProvider: async () =>
-            mockProvider([
-              {
-                uid: "seen",
-                receivedAt: new Date(),
-                subject: "Undeliverable",
-                bodyText: HARD_BODY,
-              },
-            ]),
-        },
-      },
-      db as never,
-    );
-
-    expect(result.status).toBe("timeout");
-    expect(db.bounceIngestProcessedUid.upsert).not.toHaveBeenCalled();
   });
 
   it("swallows markSeen failures while still returning ok", async () => {

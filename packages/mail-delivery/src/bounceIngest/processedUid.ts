@@ -32,6 +32,19 @@ export async function isUidProcessed(
   return row !== null;
 }
 
+/** All processed UIDs for an event+folder (one query for skip-before-fetch). */
+export async function listProcessedUids(
+  db: PrismaClient,
+  eventId: string,
+  folder: string,
+): Promise<Set<string>> {
+  const rows = await db.bounceIngestProcessedUid.findMany({
+    where: { event_id: eventId, folder },
+    select: { uid: true },
+  });
+  return new Set(rows.map((r) => r.uid));
+}
+
 /** Delete BounceIngestProcessedUid rows older than the IMAP lookback window. */
 export async function pruneProcessedUidsOlderThan(
   db: PrismaClient,

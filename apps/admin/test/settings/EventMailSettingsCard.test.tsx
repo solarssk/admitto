@@ -476,12 +476,14 @@ describe("EventMailSettingsCard — reverting to organization", () => {
     await screen.findByText(DEDICATED_HINT);
 
     fireEvent.click(screen.getByRole("radio", { name: "Organization" }));
+    let saveResult: string | undefined;
     await act(async () => {
-      await ref.current?.save();
+      saveResult = await ref.current?.save();
     });
+    expect(saveResult).toBe("confirm_pending");
 
     // Reverting to org mail is destructive (deletes the event's dedicated transport and
-    // secrets) — it goes through a ConfirmDialog rather than saving immediately.
+    // secrets) - it goes through a ConfirmDialog rather than saving immediately.
     expect(mockClear).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole("button", { name: "Revert" }));
 

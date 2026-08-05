@@ -112,6 +112,8 @@ export type EventBounceIngestPanelHandle = {
   /** Persist settings. Resolves `true` on success, `false` on validation/API failure. */
   save: () => Promise<boolean>;
   reset: () => void;
+  /** Re-fetch settings (e.g. after mail transport save changes smtp_reuse_available). */
+  refresh: () => void;
 };
 
 /** Event-scoped IMAP bounce ingest. Save/Reset live on the Mail tab's shared footer. */
@@ -262,6 +264,9 @@ export const EventBounceIngestPanel = forwardRef<
   useImperativeHandle(ref, () => ({
     save: handleSave,
     reset: handleReset,
+    refresh: () => {
+      void load();
+    },
   }));
 
   const handleTest = async () => {

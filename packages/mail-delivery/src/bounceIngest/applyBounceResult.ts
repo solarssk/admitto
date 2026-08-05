@@ -5,7 +5,8 @@ import type { ParsedBounceLine } from "./types.js";
 
 export type ApplyBounceOutcome = "hard_bounced" | "soft_logged" | "skipped";
 
-function buildErrorCode(line: ParsedBounceLine): string {
+/** SMTP reply (+ enhanced status when present), shared by ingest apply and bounce probe. */
+export function buildErrorCode(line: ParsedBounceLine): string {
   return line.enhancedCode ? `${line.smtpCode}/${line.enhancedCode}` : line.smtpCode;
 }
 

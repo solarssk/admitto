@@ -940,6 +940,25 @@ describe("EventSettingsPage Mail tab — one shared Save/Reset for transport + b
     expect(screen.queryByText(/Revert to organization mail/)).toBeNull();
   });
 
+  it("still saves bounce when mail Save opens Revert confirm", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchEventMailSettings).mockResolvedValue(dedicatedMailSettingsResponse());
+    renderSettings();
+    await openMailTab();
+    await screen.findByText("Bounce detection");
+
+    fireEvent.click(screen.getByRole("radio", { name: "Organization" }));
+    fireEvent.change(screen.getByLabelText("IMAP host"), {
+      target: { value: "imap.example.com" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(screen.getByText(/Revert to organization mail/)).toBeTruthy();
+    await waitFor(() => expect(saveEventBounceIngestSettings).toHaveBeenCalled());
+  });
+
   it("does not open Revert when Save is clicked with nothing dirty on organization mail", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();

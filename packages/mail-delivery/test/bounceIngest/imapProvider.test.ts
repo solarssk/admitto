@@ -142,6 +142,30 @@ describe("ImapInboundProvider.connect", () => {
     await provider.markSeen("INBOX", "10");
     expect(messageFlagsAdd).toHaveBeenCalledWith("10", ["\\Seen"], { uid: true });
 
+    await provider.markSeen("INBOX", ["10", "11"]);
+    expect(messageFlagsAdd).toHaveBeenCalledWith("10,11", ["\\Seen"], { uid: true });
+
+    search.mockResolvedValueOnce([10, 11, 12]);
+    fetch.mockReturnValueOnce(
+      (async function* () {
+        yield {
+          uid: 12,
+          envelope: { subject: "New" },
+          source: Buffer.from("fresh"),
+        };
+      })(),
+    );
+    const filtered = await provider.fetchCandidateMessages("INBOX", new Date(), {
+      skipUids: new Set(["10", "11"]),
+    });
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]?.uid).toBe("12");
+    expect(fetch).toHaveBeenCalledWith(
+      [12],
+      expect.any(Object),
+      expect.objectContaining({ uid: true }),
+    );
+
     await provider.probeFolder("Junk Email");
     expect(getMailboxLock).toHaveBeenCalledWith("Junk Email");
 

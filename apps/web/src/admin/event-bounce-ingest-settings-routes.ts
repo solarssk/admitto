@@ -13,6 +13,7 @@ import {
   parseFolders,
   testBounceImapConnection,
 } from "@admitto/mail-delivery";
+import { emitSystemLog } from "@admitto/shared/system-log";
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { z } from "zod";
 import {
@@ -371,6 +372,19 @@ export async function handlePostEventBounceIngestSettingsTest(
   }
 
   const result = await testBounceImapConnection(db, row);
+  const logPrefix = "[admin] event bounce IMAP test";
+  const sanitizedError = result.ok ? undefined : imapTestErrorForAdmin(result.error);
+
+  if (result.ok) {
+    emitSystemLog("mail", "info", "mail_bounce_imap_probe_ok", { context: logPrefix, eventId });
+  } else {
+    console.error(`${logPrefix} failed`);
+    emitSystemLog("mail", "error", "mail_bounce_imap_probe_failed", {
+      context: logPrefix,
+      eventId,
+      error: sanitizedError,
+    });
+  }
 
   const audit = adminAuditFromContext(c);
   try {
@@ -391,7 +405,7 @@ export async function handlePostEventBounceIngestSettingsTest(
   }
 
   if (!result.ok) {
-    return c.json({ ok: false, error: imapTestErrorForAdmin(result.error) });
+    return c.json({ ok: false, error: sanitizedError });
   }
 
   return c.json({

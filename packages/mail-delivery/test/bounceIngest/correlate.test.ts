@@ -15,7 +15,7 @@ describe("findDeliveryForBounce", () => {
     expect(findFirst).toHaveBeenCalledWith({
       where: {
         event_id: "evt_1",
-        recipient_email: "user@example.com",
+        recipient_email: { equals: "user@example.com", mode: "insensitive" },
         status: { in: ["queued", "accepted", "sent"] },
       },
       orderBy: { queued_at: "desc" },

@@ -24,7 +24,7 @@ export async function findDeliveryForBounce(
   return db.emailDelivery.findFirst({
     where: {
       event_id: params.eventId,
-      recipient_email: email,
+      recipient_email: { equals: email, mode: "insensitive" },
       status: { in: [...NON_TERMINAL] },
     },
     orderBy: { queued_at: "desc" },

@@ -123,7 +123,8 @@ describe("handlePostEventMailSettingsTest verifyBounce path", () => {
       sendResult: {
         status: "failed",
         provider: "smtp",
-        error: "SMTP rejected recipient",
+        // Raw provider text must be remapped via transportTestErrorForAdmin, not echoed.
+        error: "AADSTS700016: Application with identifier 'secret-client' was not found",
       },
     });
     const db = baseDb();
@@ -139,8 +140,31 @@ describe("handlePostEventMailSettingsTest verifyBounce path", () => {
     expect(res.status).toBe(200);
     const json = (await res.json()) as { status: string; error?: string; bounceProbe?: { status: string } };
     expect(json.status).toBe("failed");
-    expect(json.error).toBe("SMTP rejected recipient");
+    expect(json.error).toMatch(/Microsoft Graph authentication failed/i);
+    expect(json.error).not.toMatch(/AADSTS|secret-client/i);
     expect(json.bounceProbe?.status).toBe("failed");
+  });
+
+  it("returns 400 validation_failed for malformed JSON", async () => {
+    const ctx = {
+      req: {
+        param: (name: string) => (name === "eventId" ? "evt_1" : undefined),
+        json: async () => {
+          throw new SyntaxError("Unexpected token");
+        },
+      },
+      json: (data: unknown, status?: number) =>
+        new Response(JSON.stringify(data), {
+          status: status ?? 200,
+          headers: { "content-type": "application/json" },
+        }),
+      get: () => ({ userId: "user_1", sessionId: "sess_1" }),
+    } as unknown as Context;
+
+    const res = await handlePostEventMailSettingsTest(ctx, baseDb() as never);
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as { error: string };
+    expect(json.error).toBe("validation_failed");
   });
 
   it("returns 400 bounce_probe_unavailable when setup fails", async () => {

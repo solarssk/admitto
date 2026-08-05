@@ -7,16 +7,29 @@ export interface InboundMessage {
   bodyText: string;
 }
 
+export interface FetchCandidateOptions {
+  /** Skip these provider-native UIDs before fetching source (already processed in DB). */
+  skipUids?: ReadonlySet<string>;
+}
+
 /**
  * Narrow inbound boundary: fetch bounce-shaped messages from a folder.
  * Not a general inbound-mail framework (ADR 0039).
  */
 export interface InboundMailProvider {
   connect(): Promise<void>;
-  /** Candidate messages in the folder (caller filters already-processed UIDs). */
-  fetchCandidateMessages(folder: string, since: Date): Promise<InboundMessage[]>;
+  /**
+   * Candidate messages in the folder since `since`.
+   * When `options.skipUids` is set, implementations should omit those UIDs from the
+   * IMAP FETCH (search still runs; body download is skipped).
+   */
+  fetchCandidateMessages(
+    folder: string,
+    since: Date,
+    options?: FetchCandidateOptions,
+  ): Promise<InboundMessage[]>;
   /** Optional IMAP nicety after DB UID mark; must not be the sole dedup signal. */
-  markSeen?(folder: string, uid: string): Promise<void>;
+  markSeen?(folder: string, uid: string | string[]): Promise<void>;
   close(): Promise<void>;
 }
 

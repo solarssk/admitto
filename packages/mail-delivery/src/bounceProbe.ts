@@ -1,23 +1,19 @@
 import type { PrismaClient, BounceIngestSettings } from "@admitto/db";
-import {
-  closeMailer,
-  createMailer,
-  isSendSuccess,
-  type SendResult,
-} from "@admitto/mailer";
+import { isSendSuccess, type MailerProvider, type SendResult } from "@admitto/mailer";
 import { resolveMailConfig } from "@admitto/mailer-config";
+import { buildErrorCode } from "./bounceIngest/applyBounceResult.js";
 import { parseBounceLines } from "./bounceIngest/parseBounceLine.js";
 import { ImapInboundProvider } from "./bounceIngest/imapProvider.js";
-import { isUidProcessed, markUidProcessed } from "./bounceIngest/processedUid.js";
+import { markUidProcessed } from "./bounceIngest/processedUid.js";
 import {
   lookbackSince,
   parseFolders,
   resolveImapConnectConfig,
 } from "./bounceIngest/resolveAuth.js";
 import type { InboundMailProvider, ParsedBounceLine } from "./bounceIngest/types.js";
-import { sanitizeDeliveryError, transportTestErrorForAdmin } from "./sanitizeError.js";
+import { imapTestErrorForAdmin, transportTestErrorForAdmin } from "./sanitizeError.js";
 import type { MailDeliveryDeps } from "./send.js";
-import { buildEventTransportTestMessage } from "./transportTest.js";
+import { sendEventTransportTestEmail } from "./transportTest.js";
 
 export const BOUNCE_PROBE_TIMEOUT_MS = 90_000;
 export const BOUNCE_PROBE_POLL_MS = 5_000;
@@ -56,10 +52,6 @@ export interface RunEventBounceProbeParams {
 
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function buildErrorCode(line: ParsedBounceLine): string {
-  return line.enhancedCode ? `${line.smtpCode}/${line.enhancedCode}` : line.smtpCode;
 }
 
 function isHardBounce(line: ParsedBounceLine): boolean {
@@ -106,6 +98,11 @@ async function openProbeProvider(
  * One IMAP pass: look for a hard (5xx) bounce whose recipient matches `recipientEmail`.
  * Uses the same parseBounceLines path as production ingest, but does not create or update
  * EmailDelivery / Attendee rows (plain Send test also leaves no delivery trail).
+ *
+ * Probe path deliberately does NOT skip via BounceIngestProcessedUid: the sidecar can mark
+ * the probe's NDR before this poll sees it, which would yield a false timeout. Session-local
+ * `examinedUids` avoids re-parsing the same UID within this probe; a hard-bounce hit still
+ * calls markUidProcessed so the sidecar does not keep counting noMatchingDelivery.
  */
 async function scanFoldersForHardBounce(
   db: PrismaClient,
@@ -115,6 +112,7 @@ async function scanFoldersForHardBounce(
     since: Date;
     want: string;
     provider: InboundMailProvider;
+    examinedUids: Set<string>;
   },
 ): Promise<{ smtpCode: string; reason: string } | null> {
   for (const folder of args.folders) {
@@ -124,6 +122,7 @@ async function scanFoldersForHardBounce(
       since: args.since,
       want: args.want,
       provider: args.provider,
+      examinedUids: args.examinedUids,
     });
     if (hit) return hit;
   }
@@ -138,11 +137,17 @@ async function scanFolderForHardBounce(
     since: Date;
     want: string;
     provider: InboundMailProvider;
+    examinedUids: Set<string>;
   },
 ): Promise<{ smtpCode: string; reason: string } | null> {
+  // Do not pass skipUids from BounceIngestProcessedUid (sidecar race). Fetch all candidates;
+  // filter only with the in-session examined set.
   const messages = await args.provider.fetchCandidateMessages(args.folder, args.since);
+
   for (const message of messages) {
-    if (await isUidProcessed(db, args.eventId, args.folder, message.uid)) continue;
+    const examKey = `${args.folder}\0${message.uid}`;
+    if (args.examinedUids.has(examKey)) continue;
+    args.examinedUids.add(examKey);
 
     const hit = parseBounceLines(message.bodyText).find(
       (line) => line.recipientEmail.trim().toLowerCase() === args.want && isHardBounce(line),
@@ -197,38 +202,25 @@ export async function runEventBounceProbe(
 
   let sendResult: SendResult;
   try {
-    const mailConfig = await resolveMailConfig(eventId, db, env);
-    const { subject, html } = await buildEventTransportTestMessage(eventId, db, env, {
-      provider: mailConfig.provider,
-      toAddress,
-      mailConfig,
-    });
-
-    const mailer = await createMailer(mailConfig, { exportSink: deps.exportSink });
-    try {
-      sendResult = await mailer.send({
-        to: toAddress,
-        subject,
-        html,
-      });
-      if (sendResult.error) {
-        sendResult = { ...sendResult, error: sanitizeDeliveryError(sendResult.error) };
-      }
-    } finally {
-      await closeMailer(mailer);
-    }
+    sendResult = await sendEventTransportTestEmail({ eventId, toAddress }, db, env, deps);
   } catch (err) {
     // Same operator-safe mapping as plain Send test (`runTransportTest`): setup failures
     // (no provider, export_only without sink, blocked/unresolvable SMTP host) must not
     // bubble as 500 from the admin route.
     const raw = err instanceof Error ? err.message : undefined;
     const message = transportTestErrorForAdmin(raw);
+    let provider: MailerProvider = "export_only";
+    try {
+      provider = (await resolveMailConfig(eventId, db, env)).provider;
+    } catch {
+      /* pre-config failure — keep neutral export_only */
+    }
     return {
       status: "failed",
       message,
       sendResult: {
         status: "rejected",
-        provider: "smtp",
+        provider,
         error: message,
         retryable: false,
       },
@@ -251,25 +243,53 @@ export async function runEventBounceProbe(
     env: ingestOptions.env ?? env,
   });
 
+  const examinedUids = new Set<string>();
+  let everConnected = false;
+  let reconnectUsed = false;
+  let lastImapError: string | undefined;
+  const waitSeconds = Math.max(1, Math.round(timeoutMs / 1000));
+
   try {
-    await provider.connect();
     const deadline = now() + timeoutMs;
     while (now() < deadline) {
-      const hit = await scanFoldersForHardBounce(db, {
-        eventId,
-        folders,
-        since,
-        want: recipient,
-        provider,
-      });
-      if (hit) {
-        return {
-          status: "ok",
-          message: `Bounce received (${hit.smtpCode}). Detection can read delivery failures from the bounce mailbox.`,
-          smtpCode: hit.smtpCode,
-          sendResult,
-        };
+      try {
+        if (!everConnected) {
+          await provider.connect();
+          everConnected = true;
+        }
+
+        const hit = await scanFoldersForHardBounce(db, {
+          eventId,
+          folders,
+          since,
+          want: recipient,
+          provider,
+          examinedUids,
+        });
+        if (hit) {
+          return {
+            status: "ok",
+            message: `Bounce received (${hit.smtpCode}). Detection can read delivery failures from the bounce mailbox.`,
+            smtpCode: hit.smtpCode,
+            sendResult,
+          };
+        }
+      } catch (err) {
+        lastImapError = err instanceof Error ? err.message : String(err);
+        console.error(`[bounce-probe] IMAP poll failed: ${lastImapError}`);
+
+        // Mid-loop disconnect: allow one reconnect attempt for the remainder of the wait.
+        if (everConnected && !reconnectUsed) {
+          reconnectUsed = true;
+          everConnected = false;
+          try {
+            await provider.close();
+          } catch {
+            /* ignore */
+          }
+        }
       }
+
       const remaining = deadline - now();
       if (remaining <= 0) break;
       await sleep(Math.min(pollMs, remaining));
@@ -282,7 +302,14 @@ export async function runEventBounceProbe(
     }
   }
 
-  const waitSeconds = Math.max(1, Math.round(timeoutMs / 1000));
+  if (!everConnected) {
+    return {
+      status: "failed",
+      message: imapTestErrorForAdmin(lastImapError),
+      sendResult,
+    };
+  }
+
   return {
     status: "timeout",
     message: `Mail was accepted by the transport, but no matching bounce appeared in IMAP within ${waitSeconds} seconds. Check the bounce folder, forward rule, and try again.`,

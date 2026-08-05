@@ -1,6 +1,11 @@
 import { ImapFlow } from "imapflow";
 import { resolveSafeMailDestination } from "@admitto/mailer";
-import type { InboundMailProvider, InboundMessage, ImapConnectConfig } from "./types.js";
+import type {
+  FetchCandidateOptions,
+  InboundMailProvider,
+  InboundMessage,
+  ImapConnectConfig,
+} from "./types.js";
 
 /** Cap body text so one oversized message cannot stall the run. */
 export const MAX_BODY_BYTES = 64 * 1024;
@@ -14,18 +19,24 @@ function sourceToText(source: Buffer | Uint8Array | string | undefined): string 
 /** Undo RFC 2045 quoted-printable: soft line breaks (`=\r\n`) and `=XX` hex escapes.
  * Real NDRs are QP-encoded; without this, a diagnostic line that happens to wrap
  * (`host x.example.com (1.2.3.4) =\nsaid: 550 …`) leaves a stray `=` where a
- * bounce-line regex expects whitespace, silently breaking the match. */
+ * bounce-line regex expects whitespace, silently breaking the match.
+ *
+ * Non-escaped characters are re-encoded as UTF-8 bytes (not masked with `& 0xff`),
+ * so unescaped non-ASCII diagnostic text (e.g. French "boîte") survives intact. */
 function decodeQuotedPrintable(input: string): string {
   const joined = input.replace(/=\r?\n/g, "");
   const bytes: number[] = [];
-  for (let i = 0; i < joined.length; i++) {
+  for (let i = 0; i < joined.length; ) {
     const hex = joined.slice(i + 1, i + 3);
     if (joined[i] === "=" && /^[0-9A-Fa-f]{2}$/.test(hex)) {
       bytes.push(Number.parseInt(hex, 16));
-      i += 2;
-    } else {
-      bytes.push((joined.codePointAt(i) ?? 0) & 0xff);
+      i += 3;
+      continue;
     }
+    const cp = joined.codePointAt(i) ?? 0;
+    const encoded = Buffer.from(String.fromCodePoint(cp), "utf8");
+    for (const b of encoded) bytes.push(b);
+    i += cp > 0xffff ? 2 : 1;
   }
   return Buffer.from(bytes).toString("utf8");
 }
@@ -251,27 +262,45 @@ export class ImapInboundProvider implements InboundMailProvider {
     this.client = client;
   }
 
-  async fetchCandidateMessages(folder: string, since: Date): Promise<InboundMessage[]> {
+  async fetchCandidateMessages(
+    folder: string,
+    since: Date,
+    options?: FetchCandidateOptions,
+  ): Promise<InboundMessage[]> {
     const client = this.requireClient();
     const lock = await client.getMailboxLock(folder);
     try {
       const uids = await client.search({ since }, { uid: true });
       if (!uids || uids.length === 0) return [];
 
+      const skipUids = options?.skipUids;
+      const toFetch =
+        skipUids && skipUids.size > 0
+          ? uids.filter((uid) => !skipUids.has(String(uid)))
+          : uids;
+      if (toFetch.length === 0) return [];
+
       const messages: InboundMessage[] = [];
       for await (const msg of client.fetch(
-        uids,
+        toFetch,
         { uid: true, envelope: true, source: true, internalDate: true },
         { uid: true },
       )) {
         const uid = String(msg.uid);
-        const subject = msg.envelope?.subject ?? "";
-        messages.push({
-          uid,
-          receivedAt: messageReceivedAt(msg),
-          subject: typeof subject === "string" ? subject : String(subject),
-          bodyText: extractPlainTextFromSource(msg.source as Buffer | undefined),
-        });
+        try {
+          const subject = msg.envelope?.subject ?? "";
+          messages.push({
+            uid,
+            receivedAt: messageReceivedAt(msg),
+            subject: typeof subject === "string" ? subject : String(subject),
+            bodyText: extractPlainTextFromSource(msg.source as Buffer | undefined),
+          });
+        } catch (err) {
+          // One poison MIME/HTML entity must not abort the whole folder fetch.
+          console.error(
+            `[bounce-ingest] skip uid=${uid}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
       }
       return messages;
     } finally {
@@ -279,11 +308,16 @@ export class ImapInboundProvider implements InboundMailProvider {
     }
   }
 
-  async markSeen(folder: string, uid: string): Promise<void> {
+  async markSeen(folder: string, uid: string | string[]): Promise<void> {
+    const uids = (Array.isArray(uid) ? uid : [uid]).filter((u) => u.length > 0);
+    if (uids.length === 0) return;
+
     const client = this.requireClient();
     const lock = await client.getMailboxLock(folder);
     try {
-      await client.messageFlagsAdd(uid, [String.raw`\Seen`], { uid: true });
+      // ImapFlow accepts a SequenceString ("1,2,3") or a single UID string.
+      const range = uids.length === 1 ? uids[0]! : uids.join(",");
+      await client.messageFlagsAdd(range, [String.raw`\Seen`], { uid: true });
     } finally {
       lock.release();
     }

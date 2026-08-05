@@ -139,9 +139,16 @@ export async function handlePostMailSettingsTest(
   const forbidden = await requireSuperadmin(c, db);
   if (forbidden) return forbidden;
 
+  let rawBody: unknown;
+  try {
+    rawBody = await c.req.json();
+  } catch {
+    return c.json({ error: "validation_failed" }, 400);
+  }
+
   let body: z.infer<typeof testMailTransportBodySchema>;
   {
-    const parsed = parseTestMailTransportBody(await c.req.json());
+    const parsed = parseTestMailTransportBody(rawBody);
     if (!parsed.ok) {
       return c.json({ error: "validation_failed", detail: parsed.detail }, 400);
     }

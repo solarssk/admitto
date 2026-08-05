@@ -30,9 +30,11 @@ import {
   sendEventTransportTestEmail,
   runEventBounceProbe,
   BounceProbeSetupError,
+  transportTestErrorForAdmin,
   type MailDeliveryDeps,
 } from "@admitto/mail-delivery";
 import { isSendSuccess } from "@admitto/mailer";
+import { emitSystemLog } from "@admitto/shared/system-log";
 import { writeAdminAuditLog } from "@admitto/tickets";
 import {
   adminAuditFromContext,
@@ -279,9 +281,16 @@ export async function handlePostEventMailSettingsTest(
   const org = await loadEventOrg(db, eventId);
   if (!org) return c.json({ error: "not_found" }, 404);
 
+  let rawBody: unknown;
+  try {
+    rawBody = await c.req.json();
+  } catch {
+    return c.json({ error: "validation_failed" }, 400);
+  }
+
   let body: z.infer<typeof testMailTransportBodySchema>;
   {
-    const parsed = parseTestMailTransportBody(await c.req.json());
+    const parsed = parseTestMailTransportBody(rawBody);
     if (!parsed.ok) {
       return c.json({ error: "validation_failed", detail: parsed.detail }, 400);
     }
@@ -334,7 +343,9 @@ export async function handlePostEventMailSettingsTest(
     const sendOk = isSendSuccess(probe.sendResult.status) && !probe.sendResult.error;
     outcome = {
       resultStatus: sendOk ? "sent" : "failed",
-      errorMessage: sendOk ? undefined : (probe.sendResult.error ?? "send failed"),
+      errorMessage: sendOk
+        ? undefined
+        : transportTestErrorForAdmin(probe.sendResult.error),
       resultProvider: probe.sendResult.provider,
       resultProviderMessageId: probe.sendResult.providerMessageId,
       resultRetryable: probe.sendResult.retryable,
@@ -351,6 +362,21 @@ export async function handlePostEventMailSettingsTest(
     throw err;
   }
 
+  const bounceStatus = outcome.bounceProbe?.status ?? "failed";
+  if (bounceStatus === "ok") {
+    emitSystemLog("mail", "info", "mail_bounce_probe_ok", {
+      context: "[admin] event mail bounce probe",
+      eventId,
+    });
+  } else {
+    emitSystemLog("mail", "error", "mail_bounce_probe_failed", {
+      context: "[admin] event mail bounce probe",
+      eventId,
+      status: bounceStatus,
+      error: outcome.bounceProbe?.message ?? outcome.errorMessage,
+    });
+  }
+
   try {
     await writeAdminAuditLog(db, {
       organizationId: org.organizationId,
@@ -361,7 +387,7 @@ export async function handlePostEventMailSettingsTest(
       actionType: "event_mail_bounce_probed",
       metadata: {
         eventId,
-        result: outcome.bounceProbe?.status ?? "failed",
+        result: bounceStatus,
         send: outcome.resultStatus,
       },
     });

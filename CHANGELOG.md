@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Bounce detection matches NDR recipients without caring about email letter case**, so a manually added attendee like `John.Doe@Example.com` still gets marked bounced when the MTA reports `john.doe@example.com`.
+- **Also verify bounce no longer reports a false timeout** when the bounce-ingest sidecar has already seen the same mailbox UID; the probe examines messages in its own session instead of sharing “already processed” credit with the sidecar.
+- **Also verify bounce treats a brief IMAP disconnect as a retry**, instead of turning a transient mailbox error into a generic 500 for the admin.
+- **Event Mail tab Save no longer skips a pending bounce-settings save** when the mail card only opens the “Revert to organization” confirmation dialog.
+- **Bounce detection panel refreshes after you save the Mail card**, so switching to Dedicated SMTP unlocks “Use SMTP username & password” without a full page reload.
 - **Also verify bounce keeps one IMAP login for the whole wait**, instead of reconnecting every few seconds (hosted providers often throttle that rate and the probe then times out).
 - **Bounce detection “Last automatic check” no longer pretends there were zero runs.** The card says last-run status is not available in this version (sidecar history is not exposed in the UI yet).
 - **Bounce-ingest sidecar rejects a bad `BOUNCE_INGEST_INTERVAL_SECONDS`** (empty, zero, or non-integer) at startup instead of spinning or exiting from `sleep`.

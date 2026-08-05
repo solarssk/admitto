@@ -1102,6 +1102,7 @@ export function EventSettingsPage() {
             embeddedFooter={false}
             onDirtyChange={setMailDirty}
             onSavingChange={setMailSaving}
+            onSaved={() => bouncePanelRef.current?.refresh()}
             onValidationErrorsChange={setMailValidationErrors}
             validationErrorsListRef={mailTabValidationErrorsRef}
           >
@@ -1130,11 +1131,14 @@ export function EventSettingsPage() {
                   // Persist only what is dirty. Do not call mail save as a no-op fallback:
                   // org-mode save used to open "Revert to organization mail" even when the
                   // event already inherits org transport and the admin only edited bounce.
-                  // If mail validation fails or opens a confirm dialog, stop before bounce
-                  // so the operator does not see a bounce-save success toast alongside errors.
+                  // Abort bounce only when mail validation/API fails (`blocked`). Opening
+                  // the revert confirm (`confirm_pending`) still allows bounce to save.
                   if (mailDirty) {
-                    const mailOk = await mailCardRef.current?.save();
-                    if (mailOk === false) return;
+                    const mailResult = await mailCardRef.current?.save();
+                    if (mailResult === "blocked") return;
+                    if (mailResult === "saved") {
+                      bouncePanelRef.current?.refresh();
+                    }
                   }
                   if (bounceDirty) await bouncePanelRef.current?.save();
                 })();

@@ -60,6 +60,7 @@ function eventScopedDb(
       findUnique: vi.fn().mockResolvedValue(row),
     },
     bounceIngestProcessedUid: {
+      findMany: vi.fn().mockResolvedValue([]),
       findUnique: vi.fn().mockResolvedValue(null),
       upsert: vi.fn().mockResolvedValue({}),
       deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -237,7 +238,7 @@ describe("ingestBounces", () => {
     ];
     const db = eventScopedDb(row, {
       bounceIngestProcessedUid: {
-        findUnique: vi.fn().mockResolvedValue({ id: "processed_1" }),
+        findMany: vi.fn().mockResolvedValue([{ uid: "already" }]),
         upsert: vi.fn(),
       },
       emailDelivery: {
@@ -412,7 +413,7 @@ describe("ingestBounces", () => {
     });
 
     expect(summary.unparsed).toBe(1);
-    expect(markSeen).toHaveBeenCalled();
+    expect(markSeen).toHaveBeenCalledWith("INBOX", ["701"]);
     expect(summary.errors).toBe(0);
   });
 
@@ -438,6 +439,7 @@ describe("ingestBounces", () => {
         findMany: vi.fn().mockResolvedValue([row1, row2]),
       },
       bounceIngestProcessedUid: {
+        findMany: vi.fn().mockResolvedValue([]),
         findUnique: vi.fn().mockResolvedValue(null),
         upsert: vi.fn().mockResolvedValue({}),
         deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -520,7 +522,7 @@ describe("ingestBounces", () => {
     });
 
     expect(summary.bouncesApplied).toBe(1);
-    expect(markSeen).toHaveBeenCalled();
+    expect(markSeen).toHaveBeenCalledWith("INBOX", ["501"]);
   });
 });
 

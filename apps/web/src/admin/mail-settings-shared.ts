@@ -320,6 +320,11 @@ export function transportTestResponse(c: Context, outcome: TransportTestOutcome)
       provider: resultProvider!,
       ...(resultProviderMessageId ? { providerMessageId: resultProviderMessageId } : {}),
       ...(bounceProbe ? { bounceProbe } : {}),
+    } satisfies {
+      status: "sent";
+      provider: MailerProvider;
+      providerMessageId?: string;
+      bounceProbe?: TransportTestOutcome["bounceProbe"];
     });
   }
 
@@ -329,6 +334,12 @@ export function transportTestResponse(c: Context, outcome: TransportTestOutcome)
     ...(resultProvider ? { provider: resultProvider } : {}),
     ...(resultRetryable !== undefined ? { retryable: resultRetryable } : {}),
     ...(bounceProbe ? { bounceProbe } : {}),
+  } satisfies {
+    status: "failed";
+    error: string;
+    provider?: MailerProvider;
+    retryable?: boolean;
+    bounceProbe?: TransportTestOutcome["bounceProbe"];
   });
 }
 

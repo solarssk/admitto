@@ -50,6 +50,24 @@ describe("parseBounceLines", () => {
     expect(lines[0]!.reason.toLowerCase()).toContain("user unknown");
   });
 
+  it("prefers DSN over Postfix when both are present (single line)", () => {
+    const body = [
+      "Final-Recipient: rfc822; nobody@example.org",
+      "Action: failed",
+      "Status: 5.1.1",
+      "Diagnostic-Code: smtp; 550 5.1.1 User unknown",
+      "",
+      "nobody@example.org failed: host mx.example.com (203.0.113.1) said: 550 5.1.1 nobody@example.org: User unknown (in reply to RCPT TO command)",
+    ].join("\n");
+    const lines = parseBounceLines(body);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      recipientEmail: "nobody@example.org",
+      smtpCode: "550",
+      enhancedCode: "5.1.1",
+    });
+  });
+
   it("parses without an enhanced status code", () => {
     const body =
       "a@example.com failed: host mx.example.com (198.51.100.1) said: 550 a@example.com: mailbox unavailable (in reply to RCPT TO command)";
@@ -87,10 +105,13 @@ describe("parseBounceLines", () => {
       "failed: host mx.example.org (203.0.113.10) said: 550 5.1.1 : Recipient address rejected: User unknown in local recipient table (in reply to RCPT command)",
     ].join("\n");
     const lines = parseBounceLines(body);
-    expect(lines.length).toBeGreaterThanOrEqual(1);
-    expect(lines.some((l) => l.recipientEmail === "nobody@example.org" && l.smtpCode === "550")).toBe(
-      true,
-    );
+    // DSN block wins when present (Postfix prose is not dual-parsed).
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      recipientEmail: "nobody@example.org",
+      smtpCode: "500",
+      enhancedCode: "5.1.1",
+    });
   });
 
   it("parses Postfix angle-bracket diagnostic", () => {

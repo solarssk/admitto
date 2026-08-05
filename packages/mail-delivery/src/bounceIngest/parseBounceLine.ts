@@ -249,7 +249,9 @@ export function parseBounceLines(bodyText: string): ParsedBounceLine[] {
   const out: ParsedBounceLine[] = [];
   const seen = new Set<string>();
 
-  // Prefer machine-readable DSN (RFC 3464) over human prose.
+  // Prefer machine-readable DSN (RFC 3464). Only fall back to free-text Postfix
+  // dialects when DSN produced nothing - otherwise one NDR yields two lines with
+  // different reasons and can mismark a legitimate resend as bounced.
   const dsnLines = parseRfc3464DsnBlocks(normalized);
   for (const line of dsnLines) {
     const key = lineKey(line);
@@ -258,7 +260,9 @@ export function parseBounceLines(bodyText: string): ParsedBounceLine[] {
     out.push(line);
   }
 
-  parsePostfixFallback(normalized, out, seen, dsnLines);
+  if (out.length === 0) {
+    parsePostfixFallback(normalized, out, seen, dsnLines);
+  }
 
   return out;
 }

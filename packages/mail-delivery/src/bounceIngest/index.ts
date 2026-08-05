@@ -3,7 +3,7 @@ import { applyBounceResult } from "./applyBounceResult.js";
 import { findDeliveryForBounce, truncateEmailForLog } from "./correlate.js";
 import { ImapInboundProvider } from "./imapProvider.js";
 import { parseBounceLines } from "./parseBounceLine.js";
-import { isUidProcessed, markUidProcessed, pruneProcessedUidsOlderThan } from "./processedUid.js";
+import { listProcessedUids, markUidProcessed, pruneProcessedUidsOlderThan } from "./processedUid.js";
 import { lookbackSince, parseFolders, resolveImapConnectConfig } from "./resolveAuth.js";
 import type { InboundMailProvider, InboundMessage, IngestSummary, ParsedBounceLine } from "./types.js";
 
@@ -15,6 +15,9 @@ export interface IngestBouncesOptions {
   log?: (msg: string) => void;
   env?: NodeJS.ProcessEnv;
 }
+
+/** Cap concurrent event IMAP sessions so one slow host does not serialize the whole run. */
+const INGEST_EVENT_CONCURRENCY = 3;
 
 function emptySummary(partial?: Partial<IngestSummary>): IngestSummary {
   return {
@@ -28,6 +31,17 @@ function emptySummary(partial?: Partial<IngestSummary>): IngestSummary {
     connectFailed: false,
     ...partial,
   };
+}
+
+function mergeSummaries(into: IngestSummary, from: IngestSummary): void {
+  into.eventsProcessed += from.eventsProcessed;
+  into.messagesSeen += from.messagesSeen;
+  into.bouncesApplied += from.bouncesApplied;
+  into.softBouncesLogged += from.softBouncesLogged;
+  into.unparsed += from.unparsed;
+  into.noMatchingDelivery += from.noMatchingDelivery;
+  into.errors += from.errors;
+  into.connectFailed = into.connectFailed || from.connectFailed;
 }
 
 async function openProvider(
@@ -45,11 +59,11 @@ async function openProvider(
 async function maybeMarkSeen(
   provider: InboundMailProvider,
   folder: string,
-  uid: string,
+  uids: string[],
 ): Promise<void> {
-  if (!provider.markSeen) return;
+  if (!provider.markSeen || uids.length === 0) return;
   try {
-    await provider.markSeen(folder, uid);
+    await provider.markSeen(folder, uids);
   } catch {
     /* optional nicety */
   }
@@ -86,17 +100,16 @@ async function applyParsedLine(
   }
 }
 
+/** Process one fetched message. Caller already skipped processed UIDs before FETCH. */
 async function processMessage(
   db: PrismaClient,
   settings: BounceIngestSettings,
   summary: IngestSummary,
-  provider: InboundMailProvider,
   folder: string,
   message: InboundMessage,
   log: (msg: string) => void,
+  markedSeenUids: string[],
 ): Promise<void> {
-  if (await isUidProcessed(db, settings.event_id, folder, message.uid)) return;
-
   summary.messagesSeen += 1;
   const lines = parseBounceLines(message.bodyText);
 
@@ -106,7 +119,7 @@ async function processMessage(
       `[bounce-ingest] unparsed_bounce event=${settings.event_id} folder=${folder} uid=${message.uid}`,
     );
     await markUidProcessed(db, settings.event_id, folder, message.uid);
-    await maybeMarkSeen(provider, folder, message.uid);
+    markedSeenUids.push(message.uid);
     return;
   }
 
@@ -115,7 +128,7 @@ async function processMessage(
   }
 
   await markUidProcessed(db, settings.event_id, folder, message.uid);
-  await maybeMarkSeen(provider, folder, message.uid);
+  markedSeenUids.push(message.uid);
 }
 
 function errMsg(err: unknown): string {
@@ -131,18 +144,35 @@ async function processFolder(
   since: Date,
   log: (msg: string) => void,
 ): Promise<void> {
+  let skipUids: Set<string>;
+  try {
+    skipUids = await listProcessedUids(db, settings.event_id, folder);
+  } catch (err) {
+    summary.errors += 1;
+    log(
+      `[bounce-ingest] event=${settings.event_id} folder=${folder} list processed UIDs failed: ${errMsg(err)}`,
+    );
+    return;
+  }
+
   let messages: InboundMessage[];
   try {
-    messages = await provider.fetchCandidateMessages(folder, since);
+    messages = await provider.fetchCandidateMessages(folder, since, { skipUids });
   } catch (err) {
     summary.errors += 1;
     log(`[bounce-ingest] event=${settings.event_id} folder=${folder} fetch failed: ${errMsg(err)}`);
     return;
   }
 
+  // Defense for test doubles / providers that ignore skipUids.
+  if (skipUids.size > 0) {
+    messages = messages.filter((m) => !skipUids.has(m.uid));
+  }
+
+  const markedSeenUids: string[] = [];
   for (const message of messages) {
     try {
-      await processMessage(db, settings, summary, provider, folder, message, log);
+      await processMessage(db, settings, summary, folder, message, log, markedSeenUids);
     } catch (err) {
       summary.errors += 1;
       log(
@@ -150,14 +180,16 @@ async function processFolder(
       );
     }
   }
+
+  await maybeMarkSeen(provider, folder, markedSeenUids);
 }
 
 async function ingestEvent(
   db: PrismaClient,
   settings: BounceIngestSettings,
-  summary: IngestSummary,
   options: IngestBouncesOptions,
-): Promise<void> {
+): Promise<IngestSummary> {
+  const summary = emptySummary();
   const log = options.log ?? console.error;
 
   let provider: InboundMailProvider;
@@ -168,7 +200,7 @@ async function ingestEvent(
     summary.connectFailed = true;
     summary.errors += 1;
     log(`[bounce-ingest] event=${settings.event_id} connect failed: ${errMsg(err)}`);
-    return;
+    return summary;
   }
 
   summary.eventsProcessed += 1;
@@ -185,6 +217,8 @@ async function ingestEvent(
       /* ignore */
     }
   }
+
+  return summary;
 }
 
 async function resolveRowsToProcess(
@@ -207,6 +241,27 @@ async function resolveRowsToProcess(
   return { rows };
 }
 
+/** Run `fn` over items with at most `concurrency` in flight; wait for each chunk via allSettled. */
+async function mapSettledInChunks<T>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<IngestSummary>,
+): Promise<IngestSummary[]> {
+  const results: IngestSummary[] = [];
+  for (let i = 0; i < items.length; i += concurrency) {
+    const chunk = items.slice(i, i + concurrency);
+    const settled = await Promise.allSettled(chunk.map((item) => fn(item)));
+    for (const outcome of settled) {
+      if (outcome.status === "fulfilled") {
+        results.push(outcome.value);
+      } else {
+        results.push(emptySummary({ errors: 1 }));
+      }
+    }
+  }
+  return results;
+}
+
 /**
  * Ingest bounce/NDR messages for all enabled event settings (or one event).
  * No-op when nothing is configured / enabled - not an error.
@@ -218,9 +273,13 @@ export async function ingestBounces(
   const resolved = await resolveRowsToProcess(db, options);
   if ("noop" in resolved) return resolved.noop;
 
+  const perEvent = await mapSettledInChunks(resolved.rows, INGEST_EVENT_CONCURRENCY, (settings) =>
+    ingestEvent(db, settings, options),
+  );
+
   const summary = emptySummary();
-  for (const settings of resolved.rows) {
-    await ingestEvent(db, settings, summary, options);
+  for (const part of perEvent) {
+    mergeSummaries(summary, part);
   }
 
   // Drop UID markers older than the IMAP lookback window (best-effort; do not
@@ -274,10 +333,11 @@ export type {
   ParsedBounceLine,
   IngestSummary,
   ImapConnectConfig,
+  FetchCandidateOptions,
 } from "./types.js";
 export { parseBounceLines, parseRfc3464DsnBlocks } from "./parseBounceLine.js";
 export { findDeliveryForBounce, truncateEmailForLog, NON_TERMINAL } from "./correlate.js";
-export { applyBounceResult } from "./applyBounceResult.js";
+export { applyBounceResult, buildErrorCode } from "./applyBounceResult.js";
 export type { ApplyBounceOutcome } from "./applyBounceResult.js";
 export { ImapInboundProvider, extractPlainTextFromSource, MAX_BODY_BYTES } from "./imapProvider.js";
 export {

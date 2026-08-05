@@ -149,10 +149,14 @@ function OrgMailSummary({
 /** Imperative save()/reset(), kept for tests that drive the form directly. On the event
  * Mail tab the real Save/Reset pair lives in a shared tab footer (transport + bounce).
  * Standalone renders (unit tests) still embed SettingsFooter when `embeddedFooter` is true. */
+export type EventMailSettingsSaveResult = "saved" | "noop" | "blocked" | "confirm_pending";
+
 export type EventMailSettingsCardHandle = {
-  /** Persist dedicated override, or open revert confirm. Resolves `true` when the caller may
-   * continue (saved / already-org noop), `false` when validation failed or revert is pending. */
-  save: () => Promise<boolean>;
+  /** Persist dedicated override, or open revert confirm.
+   * - `saved` / `noop`: caller may continue (and should refresh bounce smtp_reuse when saved)
+   * - `blocked`: validation or API failure — abort bounce save
+   * - `confirm_pending`: revert dialog open - bounce save may still proceed */
+  save: () => Promise<EventMailSettingsSaveResult>;
   reset: () => void;
   /** Re-fetch bounce-ingest readiness (Also verify bounce) after the bounce panel saves. */
   refreshBounceReady: () => void;
@@ -174,6 +178,9 @@ export const EventMailSettingsCard = forwardRef<
      * hoisted Save button can disable itself and show "Saving…" the same way this card's
      * own button used to. */
     onSavingChange?: (saving: boolean) => void;
+    /** After a successful dedicated save or revert-to-org, so the host can refresh bounce
+     * smtp_reuse_available. */
+    onSaved?: () => void;
     /** When false, omit the card footer so the host can render one shared Save/Reset for the
      * whole Mail tab (bounce panel included). Defaults to true for standalone/unit use. */
     embeddedFooter?: boolean;
@@ -190,6 +197,7 @@ export const EventMailSettingsCard = forwardRef<
     isArchived,
     onDirtyChange,
     onSavingChange,
+    onSaved,
     embeddedFooter = true,
     onValidationErrorsChange,
     validationErrorsListRef,
@@ -335,13 +343,13 @@ export const EventMailSettingsCard = forwardRef<
     return Boolean(fd && "locked" in fd && fd.locked);
   };
 
-  const handleSave = async (): Promise<boolean> => {
-    if (!apiData) return false;
+  const handleSave = async (): Promise<EventMailSettingsSaveResult> => {
+    if (!apiData) return "blocked";
     if (mode === "dedicated") {
       const validation = validateMailDraft(draft);
       if (!validation.valid) {
         setValidationErrors(validation.errors);
-        return false;
+        return "blocked";
       }
       setValidationErrors([]);
       setSaving(true);
@@ -355,10 +363,11 @@ export const EventMailSettingsCard = forwardRef<
         const data = await saveEventMailSettings(eventId, body);
         applyResponse(data);
         addToast("Event mail settings saved.", "success");
-        return true;
+        onSaved?.();
+        return "saved";
       } catch (err) {
         addToast(operatorApiErrorMessage(err, "Failed to save mail settings."), "error");
-        return false;
+        return "blocked";
       } finally {
         setSaving(false);
       }
@@ -368,13 +377,13 @@ export const EventMailSettingsCard = forwardRef<
     // saved. Already-inherited org with nothing dirty must be a no-op (shared Mail-tab Save
     // also persists bounce settings and must not open Revert for that).
     if (savedMode === "org" && !apiData.hasEventOverride) {
-      return true;
+      return "noop";
     }
 
     setValidationErrors([]);
     setRevertError(null);
     setConfirmRevertOpen(true);
-    return false;
+    return "confirm_pending";
   };
 
   const handleConfirmRevert = async () => {
@@ -385,6 +394,7 @@ export const EventMailSettingsCard = forwardRef<
       applyResponse(data);
       setConfirmRevertOpen(false);
       addToast("Reverted to the organization's mail settings.", "success");
+      onSaved?.();
     } catch (err) {
       setRevertError(operatorApiErrorMessage(err, "Failed to revert mail settings."));
     } finally {
