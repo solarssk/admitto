@@ -1,13 +1,98 @@
+/* KPI tile row — sizing copied 1:1 from EventOverviewPage's .overview-kpi / ReportsPage's
+ * .reports-stat (staff.css / reports-page.css), which were themselves already tuned to match
+ * each other. Reusing the exact same recipe here (76px tile height, 44px icon square, 26px
+ * value) instead of inventing a third variant keeps all KPI tiles across the admin app reading
+ * as one consistent system. */
+.users-page__stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+@media (max-width: 1024px) {
+  .users-page__stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Grid's default align-items: stretch sizes each .at-card to the row's tallest sibling, but
+ * .at-card__body only ever takes its own content's height — same fix as .overview-kpi-card. */
+.users-page__stat-card > .at-card__body {
+  height: 100%;
+}
+
+.users-page__stat {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  height: 76px;
+  overflow: hidden;
+}
+
+.users-page__stat-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  font-size: 20px;
+}
+
+.users-page__stat-icon--neutral { background: var(--at-gray-100); color: var(--text-secondary); }
+.users-page__stat-icon--info    { background: var(--status-info-tint); color: var(--status-info-fg); }
+.users-page__stat-icon--ok      { background: var(--status-ok-tint); color: var(--status-ok-fg); }
+.users-page__stat-icon--warn    { background: var(--status-warn-tint); color: var(--status-warn-fg); }
+
+.users-page__stat-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.users-page__stat-value {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.users-page__stat-label {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.users-page__stat-sub {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+@media (max-width: 640px) {
+  .users-page__stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .users-page__stat-value {
+    font-size: 22px;
+  }
+}
+
 .users-page__toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
   margin-bottom: var(--space-4);
-}
-
-.users-page__invite-btn {
-  flex-shrink: 0;
 }
 
 .users-page__search {
@@ -45,14 +130,20 @@
   outline: none;
 }
 
+/* nowrap: the two selects must stay side by side above the mobile breakpoint below — otherwise
+ * .users-page__search's flex-grow leaves this group too little room and it wraps itself into two
+ * rows well before .users-page__toolbar itself would ever need to (#398). If the toolbar as a
+ * whole runs out of room, that outer flex-wrap is what should push this whole group onto its own
+ * line, not this group wrapping its own two selects internally. */
 .users-page__filters {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
   gap: var(--space-2);
 }
 
 .users-page__filters .at-select {
-  min-width: 0;
+  min-width: 140px;
 }
 
 .users-page__table-wrap {
@@ -181,42 +272,31 @@
   font-size: var(--fs-sm);
 }
 
-.users-page__sessions-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.5rem;
-  height: 1.5rem;
-  padding: 0 var(--space-2);
-  border-radius: 999px;
-  font-size: var(--fs-xs);
-  font-weight: 600;
-}
-
-.users-page__sessions-badge--active {
-  background: var(--primary);
-  color: #fff;
-}
-
-.users-page__sessions-badge--empty {
-  background: var(--surface-muted);
-  color: var(--text-muted);
-}
-
 .users-page__actions {
   display: flex;
   flex-wrap: wrap;
+  /* Without this, the plain "Page X of Y" text span (no intrinsic height) stretches to match
+   * its Button siblings' full height (flex default align-items: stretch) but stays top-aligned
+   * within that box instead of centering — reads as misaligned next to Previous/Next (#398). */
+  align-items: center;
   gap: var(--space-2);
 }
 
-.users-page__foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-top: var(--space-3);
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
+/* Same red-on-hover treatment as the Active sessions tab's own revoke icon
+ * (.sessions-row-actions__revoke, staff.css) - reused here for Role assignments' revoke action so
+ * both tables give the same visual cue for an irreversible action. */
+.users-page__icon-danger:hover:not(:disabled) {
+  background: var(--status-error-tint);
+  color: var(--status-error-fg);
+}
+
+/* Neutral badge tokens (--at-gray-100 bg / text-secondary fg) pass AA contrast on their own but
+ * read as too close to the table's own background to scan at a glance next to an "Active" row —
+ * darken both a step, scoped to this page only (the shared neutral token is reused for several
+ * unrelated domain statuses elsewhere, e.g. voided/expired, so it isn't safe to change globally). */
+.users-page__status-disabled {
+  background: var(--at-gray-200);
+  color: var(--at-gray-700);
 }
 
 .users-page__status {
@@ -239,8 +319,7 @@
   }
 
   .users-page__search,
-  .users-page__filters,
-  .users-page__invite-btn {
+  .users-page__filters {
     width: 100%;
   }
 
@@ -258,15 +337,6 @@
 
   .users-page__cards--mobile {
     display: flex;
-  }
-
-  .users-page__foot {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .users-page__foot .users-page__actions {
-    justify-content: space-between;
   }
 
   .users-page__action-btn {
@@ -408,10 +478,3 @@
   letter-spacing: 0.04em;
 }
 
-.users-modal__disabled-switch {
-  opacity: 0.55;
-}
-
-.users-modal__disabled-switch .form-hint {
-  color: var(--text-muted);
-}

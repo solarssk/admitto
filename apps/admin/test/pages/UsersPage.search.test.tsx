@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 import { ToastProvider } from "@admitto/ui";
@@ -19,13 +19,22 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   return {
     ...actual,
     fetchAdminUsers: vi.fn(),
+    fetchUserStats: vi.fn(),
     fetchRoleAssignments: vi.fn(),
     fetchSessions: vi.fn(),
     fetchAdminEvents: vi.fn(),
+    revokeUserRole: vi.fn(),
   };
 });
 
-import { fetchAdminEvents, fetchAdminUsers, fetchRoleAssignments, fetchSessions } from "../../src/api/client.js";
+import {
+  fetchAdminEvents,
+  fetchAdminUsers,
+  fetchUserStats,
+  fetchRoleAssignments,
+  fetchSessions,
+  revokeUserRole,
+} from "../../src/api/client.js";
 
 function makeUser(id: string, displayName: string): UserListItemDto {
   return {
@@ -38,6 +47,7 @@ function makeUser(id: string, displayName: string): UserListItemDto {
     last_login_at: null,
     active_sessions_count: 0,
     has_mfa: false,
+    has_sso: false,
     roles: [],
   };
 }
@@ -46,6 +56,14 @@ beforeEach(() => {
   vi.mocked(fetchRoleAssignments).mockResolvedValue({ assignments: [], total: 0, page: 1, pageSize: 25 });
   vi.mocked(fetchSessions).mockResolvedValue({ sessions: [] });
   vi.mocked(fetchAdminEvents).mockResolvedValue([]);
+  vi.mocked(fetchUserStats).mockResolvedValue({
+    total: 0,
+    active: 0,
+    mfa: 0,
+    sso: 0,
+    active_sessions: 0,
+    active_sessions_users: 0,
+  });
   // ScrollFadeTabs scrolls the active tab into view on mount/change - jsdom has no real impl.
   Element.prototype.scrollIntoView = vi.fn();
   // ActiveSessionsTab is always mounted (hidden, not unmounted) regardless of which tab is
@@ -68,6 +86,77 @@ function renderAt(path: string) {
     </MemoryRouter>,
   );
 }
+
+describe("UsersPage header", () => {
+  it("opens the Invite user modal from the header button", async () => {
+    vi.mocked(fetchAdminUsers).mockResolvedValue({ users: [], total: 0, page: 1, pageSize: 25 });
+
+    renderAt("/admin/users");
+    await screen.findByText("No users yet");
+
+    // "Invite user" also appears as the empty state's own call-to-action button - both wire to
+    // the same setInviteOpen(true), this exercises the page header's own copy specifically.
+    fireEvent.click(screen.getAllByRole("button", { name: "Invite user" })[0]!);
+
+    expect(await screen.findByRole("heading", { name: /Invite a new team member/ })).toBeTruthy();
+  });
+
+  it("shows the MFA coverage tile in its ok (green) state at full coverage", async () => {
+    vi.mocked(fetchAdminUsers).mockResolvedValue({ users: [], total: 0, page: 1, pageSize: 25 });
+    vi.mocked(fetchUserStats).mockResolvedValue({
+      total: 4,
+      active: 4,
+      mfa: 4,
+      sso: 0,
+      active_sessions: 0,
+      active_sessions_users: 0,
+    });
+
+    renderAt("/admin/users");
+
+    expect(await screen.findByText("100%")).toBeTruthy();
+    const icon = document.querySelector(".users-page__stat-icon--ok .ti-shield-check");
+    expect(icon).toBeTruthy();
+  });
+});
+
+describe("UsersPage Role assignments tab", () => {
+  it("refreshes the Staff users list after a role is revoked from the Role assignments tab", async () => {
+    vi.mocked(fetchAdminUsers).mockResolvedValue({ users: [], total: 0, page: 1, pageSize: 25 });
+    vi.mocked(fetchRoleAssignments).mockResolvedValue({
+      assignments: [{
+        id: "role-1",
+        user_id: "user-1",
+        user_email: "staff@example.com",
+        user_display_name: null,
+        role: "operator",
+        scope_type: "event",
+        scope_id: "evt-1",
+        is_oidc: false,
+        granted_at: "2026-01-01T00:00:00.000Z",
+        event: { id: "evt-1", title: "Summer Summit" },
+        organization: null,
+      }],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+    vi.mocked(revokeUserRole).mockResolvedValue(undefined);
+
+    renderAt("/admin/users?tab=roles");
+
+    await screen.findAllByText("staff@example.com");
+    expect(fetchAdminUsers).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Revoke Operator for staff@example.com" })[0]!);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
+
+    await waitFor(() => {
+      expect(fetchAdminUsers).toHaveBeenCalledTimes(2);
+    });
+  });
+});
 
 describe("UsersPage search debounce", () => {
   it("debounces the search box before refetching with the trimmed term", async () => {

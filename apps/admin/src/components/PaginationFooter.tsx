@@ -1,3 +1,4 @@
+import type { Dispatch, SetStateAction } from "react";
 import { Button } from "@admitto/ui";
 
 export type PaginationFooterProps = {
@@ -11,6 +12,25 @@ export type PaginationFooterProps = {
   onPrevious: () => void;
   onNext: () => void;
 };
+
+/** The three PaginationFooter handlers - reset to page 1 on a page-size change, clamp Previous/
+ * Next to [1, totalPages] - are identical wiring wherever a caller keeps page/pageSize as plain
+ * useState, so two or more call sites hand-rolling the same three closures inline reads as
+ * copy-paste (SonarCloud duplication, Users & roles' Staff users and Role assignments tabs). */
+export function paginationHandlers(
+  setPage: Dispatch<SetStateAction<number>>,
+  setPageSize: Dispatch<SetStateAction<number>>,
+  totalPages: number,
+): Pick<PaginationFooterProps, "onPageSizeChange" | "onPrevious" | "onNext"> {
+  return {
+    onPageSizeChange: (size) => {
+      setPageSize(size);
+      setPage(1);
+    },
+    onPrevious: () => setPage((p) => Math.max(1, p - 1)),
+    onNext: () => setPage((p) => Math.min(totalPages, p + 1)),
+  };
+}
 
 /** Shared "Showing X–Y of Z" + rows-per-page + Previous/Page N of M/Next footer, used by every
  * paginated table/card list in the admin SPA (Logs & Audit, Event archiving). */

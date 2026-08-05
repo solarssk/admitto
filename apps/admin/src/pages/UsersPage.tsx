@@ -11,10 +11,11 @@ import {
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { roleLabel } from "../auth/role-labels.js";
-import { fetchAdminUsers, revokeUserSessions } from "../api/client.js";
+import { fetchAdminUsers, fetchUserStats, revokeUserSessions } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { UserListItemDto } from "../api/types.js";
+import type { UserListItemDto, UserStatsDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { paginationHandlers, PaginationFooter } from "../components/PaginationFooter.js";
 import { ScrollFadeTabs } from "../components/ScrollFadeTabs.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { InviteUserModal } from "./users/InviteUserModal.js";
@@ -25,7 +26,9 @@ import { StaffUserCard, StaffUserTableRow } from "./users/StaffUserListItem.js";
 import "./users-page.css";
 
 const SEARCH_DEBOUNCE_MS = 300;
-const PAGE_SIZE = 25;
+// GET /api/admin/users caps pageSize at 50 server-side - options here must not exceed that,
+// or a larger picked size silently returns a partial page with unreachable rows past it.
+const PAGE_SIZE_OPTIONS = [25, 50] as const;
 const SKELETON_ROWS = 5;
 
 type UsersTab = "staff" | "roles" | "sessions";
@@ -50,17 +53,18 @@ function StaffUsersSkeleton() {
             <tr>
               <th>User</th>
               <th>Roles</th>
+              <th>Sign-in</th>
               <th>MFA</th>
               <th>Last login</th>
               <th>Sessions</th>
               <th>Status</th>
-              <th>Actions</th>
+              <th><span className="sr-only">Actions</span></th>
             </tr>
           </thead>
           <tbody>
             {Array.from({ length: SKELETON_ROWS }, (_, i) => (
               <tr key={i}>
-                <td colSpan={7}>
+                <td colSpan={8}>
                   <Skeleton variant="rect" height={52} />
                 </td>
               </tr>
@@ -87,6 +91,7 @@ export function UsersPage() {
   const [users, setUsers] = useState<UserListItemDto[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState("");
@@ -99,6 +104,7 @@ export function UsersPage() {
   const [revoking, setRevoking] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
   const [sessionsCount, setSessionsCount] = useState<number | undefined>(undefined);
+  const [stats, setStats] = useState<UserStatsDto | null>(null);
 
   // The URL is the source of truth for the active tab (e.g. the Security tab's
   // "Manage individual sessions" link deep-links here with ?tab=sessions). Realign on
@@ -135,26 +141,30 @@ export function UsersPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchAdminUsers(
-        {
-          q: searchQuery || undefined,
-          page,
-          pageSize: PAGE_SIZE,
-          role: roleFilter,
-          status: statusFilter,
-        },
-        signal,
-      );
+      const [data, statsData] = await Promise.all([
+        fetchAdminUsers(
+          {
+            q: searchQuery || undefined,
+            page,
+            pageSize,
+            role: roleFilter,
+            status: statusFilter,
+          },
+          signal,
+        ),
+        fetchUserStats(signal),
+      ]);
       if (signal?.aborted) return;
       setUsers(data.users);
       setTotal(data.total);
+      setStats(statsData);
     } catch (err) {
       if (signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
       setError(operatorApiErrorMessage(err, "Failed to load users."));
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [superadmin, searchQuery, page, roleFilter, statusFilter]);
+  }, [superadmin, searchQuery, page, pageSize, roleFilter, statusFilter]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -162,7 +172,7 @@ export function UsersPage() {
     return () => controller.abort();
   }, [load]);
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const filtersActive =
     searchQuery.length > 0 || roleFilter !== "all" || statusFilter !== "all";
   const showInitialEmpty = !loading && !error && total === 0 && !filtersActive;
@@ -196,9 +206,81 @@ export function UsersPage() {
     ...(superadmin ? [{ id: "sessions" as const, label: "Active sessions", count: sessionsCount }] : []),
   ];
 
+  const mfaPct = stats && stats.total > 0 ? Math.round((stats.mfa / stats.total) * 100) : 0;
+
   return (
     <div className="screen">
-      <PageHeader title="Users & roles" subtitle="Manage staff accounts, roles, and access" />
+      <PageHeader
+        title="Users & roles"
+        subtitle="Manage staff accounts, roles, and access"
+        actions={
+          superadmin && (
+            <Button
+              type="button"
+              variant="primary"
+              icon={<i className="ti ti-user-plus" aria-hidden="true" />}
+              onClick={() => setInviteOpen(true)}
+            >
+              Invite user
+            </Button>
+          )
+        }
+      />
+
+      {superadmin && stats && (
+        <div className="users-page__stats">
+          <Card className="users-page__stat-card">
+            <div className="users-page__stat">
+              <div className="users-page__stat-icon users-page__stat-icon--neutral">
+                <i className="ti ti-users" aria-hidden="true" />
+              </div>
+              <div className="users-page__stat-body">
+                <span className="users-page__stat-value">{stats.total}</span>
+                <span className="users-page__stat-label">Staff users</span>
+                <span className="users-page__stat-sub">{stats.active} active</span>
+              </div>
+            </div>
+          </Card>
+          <Card className="users-page__stat-card">
+            <div className="users-page__stat">
+              <div className="users-page__stat-icon users-page__stat-icon--info">
+                <i className="ti ti-cloud-lock" aria-hidden="true" />
+              </div>
+              <div className="users-page__stat-body">
+                <span className="users-page__stat-value">{stats.sso}</span>
+                <span className="users-page__stat-label">Via SSO</span>
+                <span className="users-page__stat-sub">of {stats.total} total</span>
+              </div>
+            </div>
+          </Card>
+          <Card className="users-page__stat-card">
+            <div className="users-page__stat">
+              <div
+                className={`users-page__stat-icon users-page__stat-icon--${mfaPct === 100 ? "ok" : "warn"}`}
+              >
+                <i className="ti ti-shield-check" aria-hidden="true" />
+              </div>
+              <div className="users-page__stat-body">
+                <span className="users-page__stat-value">{mfaPct}%</span>
+                <span className="users-page__stat-label">MFA coverage</span>
+                <span className="users-page__stat-sub">{stats.mfa} of {stats.total} enrolled</span>
+              </div>
+            </div>
+          </Card>
+          <Card className="users-page__stat-card">
+            <div className="users-page__stat">
+              <div className="users-page__stat-icon users-page__stat-icon--ok">
+                <i className="ti ti-plug-connected" aria-hidden="true" />
+              </div>
+              <div className="users-page__stat-body">
+                <span className="users-page__stat-value">{stats.active_sessions}</span>
+                <span className="users-page__stat-label">Active sessions</span>
+                <span className="users-page__stat-sub">across {stats.active_sessions_users} users</span>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
 
       <ScrollFadeTabs
         tabs={tabs}
@@ -207,7 +289,7 @@ export function UsersPage() {
       />
 
       {tab === "staff" && superadmin && (
-        <Card>
+        <Card title="Staff users">
           <div className="users-page__toolbar">
             <label className="users-page__search">
               <i className="ti ti-search" aria-hidden="true" />
@@ -254,9 +336,6 @@ export function UsersPage() {
                 <option value="disabled">Disabled</option>
               </select>
             </div>
-            <Button type="button" variant="primary" className="users-page__invite-btn" onClick={() => setInviteOpen(true)}>
-              Invite user
-            </Button>
           </div>
 
           {loading && showLoadingSkeleton && <StaffUsersSkeleton />}
@@ -312,11 +391,12 @@ export function UsersPage() {
                     <tr>
                       <th>User</th>
                       <th>Roles</th>
+                      <th>Sign-in</th>
                       <th>MFA</th>
                       <th>Last login</th>
                       <th>Sessions</th>
                       <th>Status</th>
-                      <th>Actions</th>
+                      <th><span className="sr-only">Actions</span></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -343,32 +423,15 @@ export function UsersPage() {
                 ))}
               </div>
 
-              <div className="users-page__foot">
-                <span>
-                  Showing {users.length} on this page · {total} total
-                </span>
-                <div className="users-page__actions">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={page <= 1}
-                    onClick={() => setPage((p) => p - 1)}
-                  >
-                    Previous
-                  </Button>
-                  <span>
-                    Page {page} of {totalPages}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={page >= totalPages}
-                    onClick={() => setPage((p) => p + 1)}
-                  >
-                    Next
-                  </Button>
-                </div>
-              </div>
+              <PaginationFooter
+                idPrefix="staff-users"
+                page={page}
+                pageSize={pageSize}
+                totalPages={totalPages}
+                totalRows={total}
+                pageSizeOptions={PAGE_SIZE_OPTIONS}
+                {...paginationHandlers(setPage, setPageSize, totalPages)}
+              />
             </>
           )}
         </Card>
@@ -382,8 +445,8 @@ export function UsersPage() {
       )}
 
       {tab === "roles" && (
-        <Card>
-          <RoleAssignmentsTab />
+        <Card title="Role assignments">
+          <RoleAssignmentsTab onAssignmentsChanged={() => void load()} />
         </Card>
       )}
 

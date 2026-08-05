@@ -2,17 +2,23 @@ import {
   Avatar,
   Badge,
   Button,
+  IconButton,
   StatusBadge,
+  Tooltip,
 } from "@admitto/ui";
 import type { UserListItemDto } from "../../api/types.js";
-import { roleBadgeVariant } from "../../auth/role-labels.js";
+import { roleBadgeVariant, roleLabel } from "../../auth/role-labels.js";
 import { formatRelativeTime as formatRelativeTimeShared } from "../../utils/event-dates.js";
 
-function roleShort(role: string): string {
-  if (role === "superadmin") return "SA";
-  if (role === "admin") return "AD";
-  if (role === "operator") return "OP";
-  return role.slice(0, 2).toUpperCase();
+const SCOPE_TYPE_LABELS: Record<string, string> = {
+  instance: "Instance-wide",
+  organization: "Organization scope",
+  event: "Event scope",
+};
+
+function roleScopeTitle(role: UserListItemDto["roles"][number]): string {
+  const scope = SCOPE_TYPE_LABELS[role.scope_type] ?? role.scope_type;
+  return role.is_oidc ? `${scope} · managed by identity provider` : scope;
 }
 
 /** Thin null handling wrapper ("Never" for a user who hasn't logged in) around the shared
@@ -36,13 +42,25 @@ function UserRoles({ user }: Readonly<{ user: UserListItemDto }>) {
         <Badge
           key={role.id}
           variant={roleBadgeVariant(role.role)}
-          title={role.is_oidc ? "Managed by identity provider" : undefined}
+          title={roleScopeTitle(role)}
         >
           {role.is_oidc && <i className="ti ti-cloud" aria-hidden="true" />}{" "}
-          {roleShort(role.role)}
+          {roleLabel(role.role)}
         </Badge>
       ))}
     </div>
+  );
+}
+
+function UserAuthMethod({ hasSso }: Readonly<{ hasSso: boolean }>) {
+  return hasSso ? (
+    <span className="users-page__auth">
+      <i className="ti ti-cloud-lock" aria-hidden="true" /> SSO
+    </span>
+  ) : (
+    <span className="users-page__auth">
+      <i className="ti ti-key" aria-hidden="true" /> Local
+    </span>
   );
 }
 
@@ -64,19 +82,52 @@ function UserMfa({ hasMfa }: Readonly<{ hasMfa: boolean }>) {
   );
 }
 
-function UserSessionsBadge({ count }: Readonly<{ count: number }>) {
-  return (
-    <span
-      className={`users-page__sessions-badge ${
-        count > 0 ? "users-page__sessions-badge--active" : "users-page__sessions-badge--empty"
-      }`}
-    >
-      {count}
-    </span>
+function UserStatusBadge({ active }: Readonly<{ active: boolean }>) {
+  return active ? (
+    <StatusBadge status="ok" label="Active" />
+  ) : (
+    <StatusBadge status="neutral" label="Disabled" className="users-page__status-disabled" />
   );
 }
 
-function UserActions({ user, onEdit, onRevokeSessions }: Readonly<StaffUserListItemProps>) {
+function UserSessionsBadge({ count }: Readonly<{ count: number }>) {
+  return count > 0 ? (
+    <Badge variant="info">{count}</Badge>
+  ) : (
+    <span style={{ color: "var(--text-disabled)" }}>—</span>
+  );
+}
+
+/** Compact icon-only actions for the desktop table row - a bare icon (especially the reset/
+ * refresh glyph, easy to mistake for "revoke all sessions") doesn't self-explain, so each gets
+ * the app's standard hover/focus Tooltip in addition to its aria-label. */
+function UserActionsRow({ user, onEdit, onRevokeSessions }: Readonly<StaffUserListItemProps>) {
+  const label = user.display_name?.trim() || user.email;
+  return (
+    <div className="users-page__actions">
+      <Tooltip content="Edit profile">
+        <IconButton
+          icon={<i className="ti ti-pencil" aria-hidden="true" />}
+          label={`Edit profile for ${label}`}
+          size="sm"
+          onClick={() => onEdit(user)}
+        />
+      </Tooltip>
+      <Tooltip content="Reset sessions">
+        <IconButton
+          icon={<i className="ti ti-refresh" aria-hidden="true" />}
+          label={`Reset sessions for ${label}`}
+          size="sm"
+          onClick={() => onRevokeSessions(user)}
+        />
+      </Tooltip>
+    </div>
+  );
+}
+
+/** Full-width labeled actions for the mobile card - touch targets stay easy to hit and legible
+ * without a table row's horizontal space constraints. */
+function UserActionsCard({ user, onEdit, onRevokeSessions }: Readonly<StaffUserListItemProps>) {
   const label = user.display_name?.trim() || user.email;
   return (
     <div className="users-page__actions">
@@ -121,6 +172,9 @@ export function StaffUserTableRow({ user, onEdit, onRevokeSessions }: Readonly<S
         <UserRoles user={user} />
       </td>
       <td>
+        <UserAuthMethod hasSso={user.has_sso} />
+      </td>
+      <td>
         <UserMfa hasMfa={user.has_mfa} />
       </td>
       <td>{formatRelativeTime(user.last_login_at)}</td>
@@ -128,14 +182,10 @@ export function StaffUserTableRow({ user, onEdit, onRevokeSessions }: Readonly<S
         <UserSessionsBadge count={user.active_sessions_count} />
       </td>
       <td>
-        {user.is_active ? (
-          <StatusBadge status="ok" label="Active" />
-        ) : (
-          <StatusBadge status="neutral" label="Disabled" />
-        )}
+        <UserStatusBadge active={user.is_active} />
       </td>
       <td>
-        <UserActions user={user} onEdit={onEdit} onRevokeSessions={onRevokeSessions} />
+        <UserActionsRow user={user} onEdit={onEdit} onRevokeSessions={onRevokeSessions} />
       </td>
     </tr>
   );
@@ -153,17 +203,19 @@ export function StaffUserCard({ user, onEdit, onRevokeSessions }: Readonly<Staff
             <div className="users-page__user-email">{user.email}</div>
           </div>
         </div>
-        {user.is_active ? (
-          <StatusBadge status="ok" label="Active" />
-        ) : (
-          <StatusBadge status="neutral" label="Disabled" />
-        )}
+        <UserStatusBadge active={user.is_active} />
       </div>
       <dl className="users-page__card-meta">
         <div>
           <dt>Roles</dt>
           <dd>
             <UserRoles user={user} />
+          </dd>
+        </div>
+        <div>
+          <dt>Sign-in</dt>
+          <dd>
+            <UserAuthMethod hasSso={user.has_sso} />
           </dd>
         </div>
         <div>
@@ -183,7 +235,7 @@ export function StaffUserCard({ user, onEdit, onRevokeSessions }: Readonly<Staff
           </dd>
         </div>
       </dl>
-      <UserActions user={user} onEdit={onEdit} onRevokeSessions={onRevokeSessions} />
+      <UserActionsCard user={user} onEdit={onEdit} onRevokeSessions={onRevokeSessions} />
     </article>
   );
 }
