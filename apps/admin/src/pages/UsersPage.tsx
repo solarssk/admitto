@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 import {
   Button,
   Card,
@@ -83,7 +83,6 @@ function StaffUsersSkeleton() {
 export function UsersPage() {
   const { assignments } = useAuth();
   const { addToast } = useToast();
-  const navigate = useNavigate();
   const superadmin = isSuperadmin(assignments);
   const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState<UsersTab>(() => usersTabFromSearch(searchParams, superadmin));
