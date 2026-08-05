@@ -1,6 +1,10 @@
-import type { PrismaClient, BounceIngestSettings } from "@admitto/db";
+import type { PrismaClient, BounceIngestSettings, EmailDelivery } from "@admitto/db";
 import { applyBounceResult } from "./applyBounceResult.js";
-import { findDeliveryForBounce, truncateEmailForLog } from "./correlate.js";
+import {
+  findDeliveriesForBounceBatch,
+  normalizeBounceRecipientEmail,
+  truncateEmailForLog,
+} from "./correlate.js";
 import { ImapInboundProvider } from "./imapProvider.js";
 import { parseBounceLines } from "./parseBounceLine.js";
 import { listProcessedUids, markUidProcessed, pruneProcessedUidsOlderThan } from "./processedUid.js";
@@ -69,20 +73,26 @@ async function maybeMarkSeen(
   }
 }
 
+/** Shared folder-poll state so helpers stay under Sonar’s parameter-count limit. */
+type FolderProcessCtx = {
+  db: PrismaClient;
+  settings: BounceIngestSettings;
+  summary: IngestSummary;
+  log: (msg: string) => void;
+  deliveryByRecipient: Map<string, EmailDelivery[]>;
+};
+
 async function applyParsedLine(
-  db: PrismaClient,
-  settings: BounceIngestSettings,
-  summary: IngestSummary,
+  ctx: FolderProcessCtx,
   message: InboundMessage,
   line: ParsedBounceLine,
-  log: (msg: string) => void,
 ): Promise<void> {
+  const { db, settings, summary, log, deliveryByRecipient } = ctx;
   try {
-    const delivery = await findDeliveryForBounce(db, {
-      eventId: settings.event_id,
-      recipientEmail: line.recipientEmail,
-    });
-    if (!delivery) {
+    const key = normalizeBounceRecipientEmail(line.recipientEmail);
+    const queue = deliveryByRecipient.get(key);
+    const delivery = queue?.[0];
+    if (!delivery || !queue) {
       summary.noMatchingDelivery += 1;
       log(
         `[bounce-ingest] no_matching_delivery event=${settings.event_id} uid=${message.uid} recipient=${truncateEmailForLog(line.recipientEmail)}`,
@@ -90,8 +100,12 @@ async function applyParsedLine(
       return;
     }
     const outcome = await applyBounceResult(db, delivery, line, log);
-    if (outcome === "hard_bounced") summary.bouncesApplied += 1;
-    else if (outcome === "soft_logged") summary.softBouncesLogged += 1;
+    if (outcome === "hard_bounced") {
+      summary.bouncesApplied += 1;
+      queue.shift();
+    } else if (outcome === "soft_logged") {
+      summary.softBouncesLogged += 1;
+    }
   } catch (err) {
     summary.errors += 1;
     log(
@@ -102,16 +116,14 @@ async function applyParsedLine(
 
 /** Process one fetched message. Caller already skipped processed UIDs before FETCH. */
 async function processMessage(
-  db: PrismaClient,
-  settings: BounceIngestSettings,
-  summary: IngestSummary,
+  ctx: FolderProcessCtx,
   folder: string,
   message: InboundMessage,
-  log: (msg: string) => void,
+  lines: ParsedBounceLine[],
   markedSeenUids: string[],
 ): Promise<void> {
+  const { db, settings, summary, log } = ctx;
   summary.messagesSeen += 1;
-  const lines = parseBounceLines(message.bodyText);
 
   if (lines.length === 0) {
     summary.unparsed += 1;
@@ -124,7 +136,7 @@ async function processMessage(
   }
 
   for (const line of lines) {
-    await applyParsedLine(db, settings, summary, message, line, log);
+    await applyParsedLine(ctx, message, line);
   }
 
   await markUidProcessed(db, settings.event_id, folder, message.uid);
@@ -169,10 +181,30 @@ async function processFolder(
     messages = messages.filter((m) => !skipUids.has(m.uid));
   }
 
+  const parsed = messages.map((message) => ({
+    message,
+    lines: parseBounceLines(message.bodyText),
+  }));
+  const recipientEmails = parsed.flatMap(({ lines }) => lines.map((l) => l.recipientEmail));
+  let deliveryByRecipient: Map<string, EmailDelivery[]>;
+  try {
+    deliveryByRecipient = await findDeliveriesForBounceBatch(db, {
+      eventId: settings.event_id,
+      recipientEmails,
+    });
+  } catch (err) {
+    summary.errors += 1;
+    log(
+      `[bounce-ingest] event=${settings.event_id} folder=${folder} batch delivery lookup failed: ${errMsg(err)}`,
+    );
+    return;
+  }
+
   const markedSeenUids: string[] = [];
-  for (const message of messages) {
+  const ctx: FolderProcessCtx = { db, settings, summary, log, deliveryByRecipient };
+  for (const { message, lines } of parsed) {
     try {
-      await processMessage(db, settings, summary, folder, message, log, markedSeenUids);
+      await processMessage(ctx, folder, message, lines, markedSeenUids);
     } catch (err) {
       summary.errors += 1;
       log(
@@ -336,7 +368,12 @@ export type {
   FetchCandidateOptions,
 } from "./types.js";
 export { parseBounceLines, parseRfc3464DsnBlocks } from "./parseBounceLine.js";
-export { findDeliveryForBounce, truncateEmailForLog, NON_TERMINAL } from "./correlate.js";
+export {
+  findDeliveryForBounce,
+  findDeliveriesForBounceBatch,
+  truncateEmailForLog,
+  NON_TERMINAL,
+} from "./correlate.js";
 export { applyBounceResult, buildErrorCode } from "./applyBounceResult.js";
 export type { ApplyBounceOutcome } from "./applyBounceResult.js";
 export { ImapInboundProvider, extractPlainTextFromSource, MAX_BODY_BYTES } from "./imapProvider.js";
