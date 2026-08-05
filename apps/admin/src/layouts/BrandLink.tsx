@@ -1,6 +1,6 @@
 import { NavLink } from "react-router";
 import { BrandMark } from "./BrandMark.js";
-import admittoLogoUrl from "../assets/admitto-logo.svg";
+import admittoWordmarkUrl from "../assets/admitto-wordmark.svg";
 
 type BrandLinkProps = Readonly<{
   to: string;
@@ -9,17 +9,18 @@ type BrandLinkProps = Readonly<{
   markClassName?: string;
 }>;
 
-/** Admitto product brand link. Expanded chrome shows the full wordmark SVG; the collapsed
- * rail and icon-only contexts keep the mark alone (CSS toggles which child is visible). */
+/** Admitto brand link: fixed-size mark always, plus text-only wordmark when the chrome
+ * has room (desktop sidebar / mobile topbar). Tablet rail hides the wordmark via CSS so
+ * the mark never changes size when collapsing. */
 export function BrandLink({ to, end, className, markClassName }: BrandLinkProps) {
   const markClass = ["brand-link__mark", markClassName].filter(Boolean).join(" ");
   return (
     <NavLink to={to} className={className} end={end} aria-label="Admitto">
       <BrandMark className={markClass} />
       <img
-        className="brand-link__logo"
-        src={admittoLogoUrl}
-        width={118}
+        className="brand-link__wordmark"
+        src={admittoWordmarkUrl}
+        width={78}
         height={36}
         alt=""
         decoding="async"
