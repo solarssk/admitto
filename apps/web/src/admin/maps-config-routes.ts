@@ -8,10 +8,12 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@admitto/db";
 import { resolveMapTileConfig } from "../maps/config.js";
+import { refreshMapsConfigCache } from "../maps/maps-org-settings.js";
 import { isGeocodingContactConfigured } from "../maps/user-agent.js";
 
 /** GET /api/admin/maps/config */
 export async function handleGetMapsConfig(c: Context, db: PrismaClient): Promise<Response> {
+  await refreshMapsConfigCache(db);
   const config = resolveMapTileConfig();
   const contactConfigured = await isGeocodingContactConfigured(db);
   return c.json({

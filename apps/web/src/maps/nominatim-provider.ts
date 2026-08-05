@@ -29,8 +29,9 @@ export class GeocodingProviderError extends Error {
 }
 
 export interface NominatimProviderOptions {
-  baseUrl: string;
-  timeoutMs: number;
+  /** Static URL, or a getter so Organisation Settings changes apply without restart. */
+  baseUrl: string | (() => string);
+  timeoutMs: number | (() => number);
   /** Resolved per-call (not cached in the constructor) so a Support contact change in
    * Instance Settings takes effect on the next search without a server restart. */
   buildUserAgent: () => Promise<string>;
@@ -300,6 +301,16 @@ export class NominatimProvider implements GeocodingProvider {
     this.minIntervalMs = options.minIntervalMs ?? DEFAULT_MIN_INTERVAL_MS;
   }
 
+  private resolveBaseUrl(): string {
+    const v = this.options.baseUrl;
+    return typeof v === "function" ? v() : v;
+  }
+
+  private resolveTimeoutMs(): number {
+    const v = this.options.timeoutMs;
+    return typeof v === "function" ? v() : v;
+  }
+
   /**
    * Queue upstream work so concurrent search/reverse cannot burst past Nominatim's
    * 1 req/s policy. Cache hits in `GeocodingService` never enter this queue.
@@ -338,11 +349,11 @@ export class NominatimProvider implements GeocodingProvider {
   async search(query: string): Promise<GeocodingResult[]> {
     return this.withProviderSlot(async () => {
       const fetchImpl = this.options.fetchFn ?? fetch;
-      const signal = AbortSignal.timeout(this.options.timeoutMs);
+      const signal = AbortSignal.timeout(this.resolveTimeoutMs());
       try {
         const userAgent = await this.resolveUserAgent(signal);
 
-        const url = new URL("/search", this.options.baseUrl);
+        const url = new URL("/search", this.resolveBaseUrl());
         url.searchParams.set("q", query);
         url.searchParams.set("format", "geocodejson");
         url.searchParams.set("addressdetails", "1");
@@ -367,11 +378,11 @@ export class NominatimProvider implements GeocodingProvider {
   async reverse(latitude: number, longitude: number): Promise<GeocodingResult | null> {
     return this.withProviderSlot(async () => {
       const fetchImpl = this.options.fetchFn ?? fetch;
-      const signal = AbortSignal.timeout(this.options.timeoutMs);
+      const signal = AbortSignal.timeout(this.resolveTimeoutMs());
       try {
         const userAgent = await this.resolveUserAgent(signal);
 
-        const url = new URL("/reverse", this.options.baseUrl);
+        const url = new URL("/reverse", this.resolveBaseUrl());
         url.searchParams.set("lat", String(latitude));
         url.searchParams.set("lon", String(longitude));
         url.searchParams.set("format", "geocodejson");

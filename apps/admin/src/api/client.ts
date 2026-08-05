@@ -59,6 +59,12 @@ import type {
   GeocodingReverseResponse,
   GeocodingTimezoneResponse,
   MapTileConfigDto,
+  ExternalServicesResponse,
+  WeatherConnectionTestBody,
+  MapsConnectionTestBody,
+  ExternalServicesConnectionTestResponse,
+  SaveWeatherSettingsBody,
+  SaveMapsSettingsBody,
   DeliveryDetailDto,
   RenderedDeliveryDto,
   SessionsResponse,
@@ -1645,6 +1651,48 @@ export async function fetchTimezoneForCoordinates(
 export async function fetchMapTileConfig(signal?: AbortSignal): Promise<MapTileConfigDto> {
   const res = await fetch("/api/admin/maps/config", { credentials: "same-origin", signal });
   return parseJson<MapTileConfigDto>(res);
+}
+
+export async function fetchExternalServices(
+  signal?: AbortSignal,
+): Promise<ExternalServicesResponse> {
+  const res = await fetch("/api/admin/external-services", {
+    credentials: "same-origin",
+    signal,
+  });
+  return parseJson<ExternalServicesResponse>(res);
+}
+
+export async function saveWeatherSettings(
+  body: SaveWeatherSettingsBody,
+): Promise<ExternalServicesResponse["weather"]> {
+  const res = await fetch("/api/admin/external-services/weather", jsonPutInit(body));
+  const data = await parseJson<{ weather: ExternalServicesResponse["weather"] }>(res);
+  return data.weather;
+}
+
+export async function saveMapsSettings(
+  body: SaveMapsSettingsBody,
+): Promise<ExternalServicesResponse["maps"]> {
+  const res = await fetch("/api/admin/external-services/maps", jsonPutInit(body));
+  const data = await parseJson<{ maps: ExternalServicesResponse["maps"] }>(res);
+  return data.maps;
+}
+
+/** Probe weather provider from a draft (no persist). */
+export async function testWeatherConnection(
+  body: WeatherConnectionTestBody,
+): Promise<ExternalServicesConnectionTestResponse> {
+  const res = await fetch("/api/admin/external-services/weather/test", jsonPostInit(body));
+  return parseJson<ExternalServicesConnectionTestResponse>(res);
+}
+
+/** Probe Nominatim from a draft geocoding base URL (no persist). */
+export async function testMapsConnection(
+  body: MapsConnectionTestBody,
+): Promise<ExternalServicesConnectionTestResponse> {
+  const res = await fetch("/api/admin/external-services/maps/test", jsonPostInit(body));
+  return parseJson<ExternalServicesConnectionTestResponse>(res);
 }
 
 export async function fetchSessions(

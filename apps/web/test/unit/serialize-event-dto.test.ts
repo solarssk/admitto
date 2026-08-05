@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { eventListMapPreviewPath, serializeEventDto } from "../../src/admin/admin-api-routes.js";
+import {
+  defaultGeocodingConfig,
+  defaultMapTileConfig,
+  setMapsConfigCache,
+} from "../../src/maps/config.js";
 
 const baseRow = {
   id: "evt-1",
@@ -17,9 +22,15 @@ const baseRow = {
   archived_by_timezone: null,
 };
 
+function setMaps(tiles: Partial<ReturnType<typeof defaultMapTileConfig>> = {}) {
+  setMapsConfigCache({
+    tiles: { ...defaultMapTileConfig(), ...tiles },
+    geocoding: defaultGeocodingConfig(),
+  });
+}
+
 afterEach(() => {
-  delete process.env["LOCATION_MAPS_ENABLED"];
-  delete process.env["MAP_TILE_ATTRIBUTION"];
+  setMapsConfigCache(null);
 });
 
 describe("serializeEventDto — has_coordinates / map_preview_path", () => {
@@ -36,7 +47,7 @@ describe("serializeEventDto — has_coordinates / map_preview_path", () => {
   });
 
   it("builds a cache-busting list preview path when maps are enabled and a pin exists", () => {
-    process.env["LOCATION_MAPS_ENABLED"] = "true";
+    setMaps({ enabled: true });
     const dto = serializeEventDto({
       ...baseRow,
       has_coordinates: true,
@@ -50,8 +61,8 @@ describe("serializeEventDto — has_coordinates / map_preview_path", () => {
     expect(dto.map_attribution).toMatch(/OpenStreetMap/);
   });
 
-  it("omits map_preview_path when LOCATION_MAPS_ENABLED=false despite a pin", () => {
-    process.env["LOCATION_MAPS_ENABLED"] = "false";
+  it("omits map_preview_path when maps are disabled despite a pin", () => {
+    setMaps({ enabled: false });
     const dto = serializeEventDto({
       ...baseRow,
       has_coordinates: true,
@@ -64,10 +75,12 @@ describe("serializeEventDto — has_coordinates / map_preview_path", () => {
     expect(dto.map_attribution).toBeNull();
   });
 
-  it("uses MAP_TILE_ATTRIBUTION plain text on list cards when maps are enabled", () => {
-    process.env["LOCATION_MAPS_ENABLED"] = "true";
-    process.env["MAP_TILE_ATTRIBUTION"] =
-      '&copy; <a href="https://carto.com/attributions">CARTO</a> &copy; OpenStreetMap';
+  it("uses configured attribution plain text on list cards when maps are enabled", () => {
+    setMaps({
+      enabled: true,
+      attribution:
+        '&copy; <a href="https://carto.com/attributions">CARTO</a> &copy; OpenStreetMap',
+    });
     const dto = serializeEventDto({
       ...baseRow,
       has_coordinates: true,
@@ -79,9 +92,11 @@ describe("serializeEventDto — has_coordinates / map_preview_path", () => {
   });
 
   it("returns null map_attribution when plain attribution text is empty", () => {
-    process.env["LOCATION_MAPS_ENABLED"] = "true";
-    // resolveMapTileConfig keeps a non-empty raw string; plainMapAttribution strips tags to "".
-    process.env["MAP_TILE_ATTRIBUTION"] = "<span></span>";
+    setMaps({
+      enabled: true,
+      // resolveMapTileConfig keeps a non-empty raw string; plainMapAttribution strips tags to "".
+      attribution: "<span></span>",
+    });
     const dto = serializeEventDto({
       ...baseRow,
       has_coordinates: true,
@@ -100,6 +115,7 @@ describe("eventListMapPreviewPath", () => {
   });
 
   it("includes pin and zoom in the cache buster with context=list", () => {
+    setMaps({ enabled: true });
     expect(
       eventListMapPreviewPath({
         id: "evt-1",

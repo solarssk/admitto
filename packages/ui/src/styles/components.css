@@ -80,7 +80,7 @@
   line-height: 1.3;
   padding: 4px 8px;
   border-radius: 4px;
-  white-space: normal;
+  white-space: pre-line;
   width: max-content;
   max-width: 220px;
   text-align: left;
@@ -104,7 +104,8 @@
 /* ---------------- Input / Select / Textarea ---------------- */
 .at-field { display: flex; flex-direction: column; gap: var(--space-1); }
 .at-label { font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--text-secondary); }
-.at-hint { font-size: var(--fs-xs); color: var(--text-muted); }
+/* Reset global `p` bottom margin so hints don't stack with parent gaps (settings grids). */
+.at-hint { margin: 0; font-size: var(--fs-xs); color: var(--text-muted); }
 .at-hint--error { color: var(--status-error); }
 
 .at-input, .at-select, .at-textarea {
@@ -358,11 +359,21 @@
 }
 .at-notice__action {
   flex: none;
+  display: flex;
+  align-items: center;
 }
-/* The action button is taller than a text line, so centering the row (instead of the
+/* Keep notice height close to the text line: default sm buttons (28px) inflate a
+   one-line warning. Prefer auto height so padding + label set the size. */
+.at-notice__action .at-btn {
+  height: auto;
+  min-height: 24px;
+  padding-block: 0.125rem;
+  line-height: 1.25;
+}
+/* The action control is taller than a text line, so centering the row (instead of the
    default top-alignment tuned for icon-to-first-line-of-text) keeps icon, text, and button
    visually balanced against the button's own height rather than hugging the row's top.
-   Drop the first-line optical nudge — with center alignment it would push the icon low. */
+   Drop the first-line optical nudge - with center alignment it would push the icon low. */
 .at-notice--has-action {
   align-items: center;
 }

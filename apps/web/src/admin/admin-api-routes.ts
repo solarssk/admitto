@@ -5,9 +5,13 @@ import { z } from "zod";
 import { canManageInstance, listAdminEvents } from "@admitto/auth";
 import { ensureBadgeEventItem, ensureStandardTicketType, writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
-import { assertCoordinatePairing, buildEventStaticMapPath, isLocationMapsEnabled, LOCATION_LIMITS, LocationValidationError } from "@admitto/location";
-import { resolveMapTileConfig } from "../maps/config.js";
+import { assertCoordinatePairing, buildEventStaticMapPath, LOCATION_LIMITS, LocationValidationError } from "@admitto/location";
+import { createWeatherServiceFromDb } from "../weather/weather-org-settings.js";
+import { summarizeMany } from "../weather/weather-service.js";
+import type { WeatherSummaryDto } from "../weather/types.js";
 import { plainMapAttribution } from "../maps/static-map.js";
+import { refreshMapsConfigCacheIfStale } from "../maps/maps-org-settings.js";
+import { resolveMapTileConfig } from "../maps/config.js";
 import {
   adminAuditFromContext,
   countAttendeesByEvent,
@@ -77,7 +81,7 @@ export function eventListMapPreviewPath(event: {
   map_longitude?: number | null;
   map_zoom?: number | null;
 }): string | null {
-  if (!isLocationMapsEnabled(process.env)) return null;
+  if (!resolveMapTileConfig().enabled) return null;
   const lat = event.map_latitude;
   const lng = event.map_longitude;
   if (lat == null || lng == null) return null;
@@ -125,6 +129,35 @@ export function serializeEventDto(
   };
 }
 
+export type EventDtoJson = ReturnType<typeof serializeEventDto> & {
+  weather?: WeatherSummaryDto | null;
+};
+
+/** Attach Open-Meteo day summaries (null omitted when weather disabled / no pin). */
+export async function attachWeatherToEventDtos(
+  db: PrismaClient,
+  events: EventJsonRow[],
+  dtos: EventDtoJson[],
+): Promise<EventDtoJson[]> {
+  if (events.length === 0) return dtos;
+  const weather = await createWeatherServiceFromDb(db);
+  if (!weather.enabled) return dtos;
+  const summaries = await summarizeMany(
+    events.map((e) => ({
+      latitude: e.map_latitude,
+      longitude: e.map_longitude,
+      date: e.date,
+      timezone: e.timezone,
+    })),
+    weather,
+  );
+  return dtos.map((dto, i) => {
+    const summary = summaries[i];
+    if (summary == null) return dto;
+    return { ...dto, weather: summary };
+  });
+}
+
 async function resolveCreateEventOrgId(
   db: PrismaClient,
   userId: string,
@@ -162,14 +195,15 @@ async function resolveCreateEventOrgId(
 export async function handleGetAdminEvents(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");
   const includeArchived = c.req.query("includeArchived") === "true";
+  await refreshMapsConfigCacheIfStale(db);
   const events = await listAdminEvents(db, auth.userId, { includeArchived });
   const countByEvent = await countAttendeesByEvent(db, events.map((e) => e.id));
   const actorIds = events.flatMap((e) => [e.created_by_user_id, e.archived_by_user_id].filter((id): id is string => !!id));
   const userDisplayMap = await resolveUserDisplayMap(db, actorIds);
 
-  return c.json({
-    events: events.map((e) => serializeEventDto(e, countByEvent.get(e.id) ?? 0, userDisplayMap)),
-  });
+  const dtos = events.map((e) => serializeEventDto(e, countByEvent.get(e.id) ?? 0, userDisplayMap));
+  const withWeather = await attachWeatherToEventDtos(db, events, dtos);
+  return c.json({ events: withWeather });
 }
 
 /** POST /api/admin/events — create event (superadmin or org admin). */

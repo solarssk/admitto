@@ -52,11 +52,11 @@ describe("GeocodingService.search", () => {
 
     expect(results).toEqual(SAMPLE_RESULTS);
     expect(provider.search).toHaveBeenCalledTimes(1);
-    expect(cache.set).toHaveBeenCalledWith("nominatim:v2:warsaw", SAMPLE_RESULTS);
+    expect(cache.set).toHaveBeenCalledWith("nominatim:v2:_:warsaw", SAMPLE_RESULTS);
   });
 
   it("returns the cached value without calling the provider on a hit", async () => {
-    const cache = fakeCache({ "nominatim:v2:warsaw": SAMPLE_RESULTS });
+    const cache = fakeCache({ "nominatim:v2:_:warsaw": SAMPLE_RESULTS });
     const provider = fakeProvider();
     const service = new GeocodingService(provider, cache);
 
@@ -72,7 +72,7 @@ describe("GeocodingService.search", () => {
     await service.search("  Warsaw  ");
     expect(provider.search).toHaveBeenCalledWith("warsaw");
     await service.search("WARSAW");
-    expect(cache.get).toHaveBeenLastCalledWith("nominatim:v2:warsaw");
+    expect(cache.get).toHaveBeenLastCalledWith("nominatim:v2:_:warsaw");
   });
 
   it("scopes the cache key by provider name", async () => {
@@ -85,7 +85,7 @@ describe("GeocodingService.search", () => {
     const service = new GeocodingService(provider, cache);
 
     await service.search("Warsaw");
-    expect(cache.get).toHaveBeenCalledWith("custom-provider:v2:warsaw");
+    expect(cache.get).toHaveBeenCalledWith("custom-provider:v2:_:warsaw");
   });
 
   it("caches an empty result array (negative cache)", async () => {
@@ -94,7 +94,7 @@ describe("GeocodingService.search", () => {
     const service = new GeocodingService(provider, cache);
 
     expect(await service.search("nowhere")).toEqual([]);
-    expect(cache.set).toHaveBeenCalledWith("nominatim:v2:nowhere", []);
+    expect(cache.set).toHaveBeenCalledWith("nominatim:v2:_:nowhere", []);
   });
 });
 
@@ -108,11 +108,11 @@ describe("GeocodingService.reverse", () => {
 
     expect(result).toEqual(SAMPLE_REVERSE);
     expect(provider.reverse).toHaveBeenCalledWith(52.3, 21.05);
-    expect(cache.set).toHaveBeenCalledWith("nominatim:v2:rev:52.300000,21.050000", [SAMPLE_REVERSE]);
+    expect(cache.set).toHaveBeenCalledWith("nominatim:v2:_:rev:52.300000,21.050000", [SAMPLE_REVERSE]);
   });
 
   it("returns the cached reverse hit without calling the provider", async () => {
-    const cache = fakeCache({ "nominatim:v2:rev:52.300000,21.050000": [SAMPLE_REVERSE] });
+    const cache = fakeCache({ "nominatim:v2:_:rev:52.300000,21.050000": [SAMPLE_REVERSE] });
     const provider = fakeProvider();
     const service = new GeocodingService(provider, cache);
 
@@ -121,7 +121,7 @@ describe("GeocodingService.reverse", () => {
   });
 
   it("returns null for a cached empty reverse result without calling the provider", async () => {
-    const cache = fakeCache({ "nominatim:v2:rev:0.000000,0.000000": [] });
+    const cache = fakeCache({ "nominatim:v2:_:rev:0.000000,0.000000": [] });
     const provider = fakeProvider();
     const service = new GeocodingService(provider, cache);
 
@@ -135,6 +135,6 @@ describe("GeocodingService.reverse", () => {
     const service = new GeocodingService(provider, cache);
 
     expect(await service.reverse(0, 0)).toBeNull();
-    expect(cache.set).toHaveBeenCalledWith("nominatim:v2:rev:0.000000,0.000000", []);
+    expect(cache.set).toHaveBeenCalledWith("nominatim:v2:_:rev:0.000000,0.000000", []);
   });
 });
