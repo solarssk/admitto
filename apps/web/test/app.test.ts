@@ -119,8 +119,18 @@ describe("createApp", () => {
     });
 
     expect(nominatimCtor).toHaveBeenCalled();
-    const options = nominatimCtor.mock.calls[0]?.[0] as { buildUserAgent: () => Promise<string> };
+    const options = nominatimCtor.mock.calls[0]?.[0] as {
+      buildUserAgent: () => Promise<string>;
+      baseUrl: string | (() => string);
+      timeoutMs: number | (() => number);
+    };
     await expect(options.buildUserAgent()).resolves.toEqual(expect.any(String));
+    // createApp passes live resolvers so UI maps settings can change base URL / timeout.
+    const baseUrl = typeof options.baseUrl === "function" ? options.baseUrl() : options.baseUrl;
+    const timeoutMs =
+      typeof options.timeoutMs === "function" ? options.timeoutMs() : options.timeoutMs;
+    expect(baseUrl).toContain("nominatim");
+    expect(timeoutMs).toBeGreaterThan(0);
   });
 
   it("falls back to built-in maps config when cache refresh fails", async () => {

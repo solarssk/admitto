@@ -70,6 +70,16 @@ describe("resolveWeatherEnvConfig", () => {
     expect(resolveWeatherEnvConfig({ WEATHER_ENABLED: "false" }).enabled).toBe(false);
   });
 
+  it("parses WEATHER_ENABLED truthy/falsy aliases and unknown values", () => {
+    expect(resolveWeatherEnvConfig({ WEATHER_ENABLED: "on" }).enabled).toBe(true);
+    expect(resolveWeatherEnvConfig({ WEATHER_ENABLED: "1" }).enabled).toBe(true);
+    expect(resolveWeatherEnvConfig({ WEATHER_ENABLED: "off" }).enabled).toBe(false);
+    expect(resolveWeatherEnvConfig({ WEATHER_ENABLED: "0" }).enabled).toBe(false);
+    expect(resolveWeatherEnvConfig({ WEATHER_ENABLED: "no" }).enabled).toBe(false);
+    expect(resolveWeatherEnvConfig({ WEATHER_ENABLED: "maybe" }).enabled).toBe(true);
+    expect(resolveWeatherEnvConfig({ WEATHER_ENABLED: "   " }).enabled).toBe(true);
+  });
+
   it("normalises trailing slash, empty key, bad provider, and TTL parsing", () => {
     const cfg = resolveWeatherEnvConfig({
       WEATHER_PROVIDER: "nope",

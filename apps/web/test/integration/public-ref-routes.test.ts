@@ -8,6 +8,7 @@ import * as tickets from "@admitto/tickets";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
+import * as weatherOrgSettings from "../../src/weather/weather-org-settings.js";
 
 const ORG_ID = "org-pubref";
 const EVENT_ID = "evt-pubref";
@@ -97,6 +98,50 @@ describe("Mode B public routes — public_ref", () => {
     const html = await res.text();
     expect(html).toContain("Agency Guest");
     expect(html).toContain("Summer Gala");
+  });
+
+  it("renders event-day weather when summarize succeeds", async () => {
+    const summarize = vi.fn(async () => ({
+      status: "ok" as const,
+      temp_c: 18,
+      temp_min_c: 12,
+      weather_code: 1,
+      attribution: "Weather data by MET Norway",
+      attribution_url: "https://www.met.no/en",
+    }));
+    vi.spyOn(weatherOrgSettings, "createWeatherServiceFromDb").mockResolvedValue({
+      summarize,
+    } as never);
+
+    const res = await app.request(`/t/${EVENT_SLUG}/a/${PUBLIC_REF}`);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Weather on the day");
+    expect(html).toContain("12-18°C");
+    expect(summarize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        timezone: "UTC",
+      }),
+    );
+  });
+
+  it("fail-opens the ticket page when weather summarize throws", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(weatherOrgSettings, "createWeatherServiceFromDb").mockResolvedValue({
+      summarize: vi.fn(async () => {
+        throw new Error("provider down");
+      }),
+    } as never);
+
+    const res = await app.request(`/t/${EVENT_SLUG}/a/${PUBLIC_REF}`);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Agency Guest");
+    expect(html).not.toContain("Weather on the day");
+    expect(errSpy).toHaveBeenCalledWith(
+      "weather summarize failed for ticket page:",
+      expect.any(Error),
+    );
   });
 
   it("renders the catalog label, not the raw key, for ticket_type (Codex review, batch 04 / #351)", async () => {

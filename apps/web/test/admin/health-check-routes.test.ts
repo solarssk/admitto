@@ -506,6 +506,32 @@ describe("collectAdminHealth", () => {
     expect(weather?.details.some((d) => d.key === "api_key" && d.value === "none")).toBe(true);
   });
 
+  it("labels Open-Meteo api_key as configured when a key is present", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+    });
+    stubHappyPathMailAndIdp();
+    resolveEffectiveWeatherConfig.mockResolvedValue({
+      enabled: true,
+      provider: "openmeteo",
+      baseUrl: "https://customer-api.open-meteo.com",
+      apiKey: "org-key",
+      timeoutMs: 5000,
+      cacheTtlMs: 21600000,
+    });
+
+    const report = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+    });
+    const weather = report.groups[1]!.checks.find((c) => c.id === "weather");
+    expect(weather?.details.some((d) => d.key === "api_key" && d.value === "configured")).toBe(
+      true,
+    );
+  });
+
   it("live weather probe reports ok, degraded, and down", async () => {
     collectSetupChecks.mockResolvedValue(okSetup);
     collectGauges.mockResolvedValue({
@@ -549,6 +575,22 @@ describe("collectAdminHealth", () => {
     const weather = report.groups[1]!.checks.find((c) => c.id === "weather");
     expect(weather?.status).toBe("down");
     expect(weather?.summary).toBe("Support contact required");
+
+    createWeatherServiceFromDb.mockResolvedValue({
+      probeLive: vi.fn(async () => ({
+        ok: false,
+        latencyMs: 8,
+        error: "timeout",
+      })),
+    });
+    report = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+      live: true,
+    });
+    const unreachable = report.groups[1]!.checks.find((c) => c.id === "weather");
+    expect(unreachable?.status).toBe("down");
+    expect(unreachable?.summary).toBe("Unreachable");
   });
 
   it("emits one Identity provider row per configured IDP", async () => {

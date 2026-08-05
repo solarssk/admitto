@@ -582,6 +582,53 @@ describe("ExternalServicesPanel", () => {
     expect(screen.queryByText("some_unknown_code")).toBeNull();
   });
 
+  it("maps unknown weather machine probe codes to the generic weather fallback", async () => {
+    mockTestWeather.mockResolvedValueOnce({ ok: false, error: "wx_mystery_code" });
+    await renderLoaded();
+    fireEvent.click(screen.getAllByRole("button", { name: "Test connection" })[0]!);
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(
+        /Could not test the weather connection/,
+      );
+    });
+    expect(screen.queryByText("wx_mystery_code")).toBeNull();
+  });
+
+  it("maps weather url_host_unresolved to operator-safe toast copy", async () => {
+    mockTestWeather.mockResolvedValueOnce({ ok: false, error: "url_host_unresolved" });
+    await renderLoaded();
+    fireEvent.click(screen.getAllByRole("button", { name: "Test connection" })[0]!);
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not resolve the weather/i);
+    });
+  });
+
+  it("passes through human weather probe errors that are not machine codes", async () => {
+    mockTestWeather.mockResolvedValueOnce({
+      ok: false,
+      error: "Upstream timed out after 5 seconds.",
+    });
+    await renderLoaded();
+    fireEvent.click(screen.getAllByRole("button", { name: "Test connection" })[0]!);
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toContain(
+        "Upstream timed out after 5 seconds.",
+      );
+    });
+  });
+
+  it("normalises unknown weather and maps provider values from the API", async () => {
+    mockFetch.mockResolvedValueOnce(
+      sampleResponse({
+        weather: { provider: "legacy-provider" as never },
+        maps: { geocoding_provider: "google" as never },
+      }),
+    );
+    await renderLoaded();
+    expect(el<HTMLSelectElement>("external-weather-provider").value).toBe("metno");
+    expect(el<HTMLSelectElement>("external-maps-provider").value).toBe("nominatim");
+  });
+
   it("tests Open-Meteo with clearApiKey and no typed key", async () => {
     mockFetch.mockResolvedValueOnce(
       sampleResponse({

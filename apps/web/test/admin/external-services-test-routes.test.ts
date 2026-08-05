@@ -207,6 +207,27 @@ describe("external-services connection tests", () => {
     expect(nominatimSearch).toHaveBeenCalledWith("Warsaw");
   });
 
+  it("strips a trailing slash from the draft geocoding URL before probing", async () => {
+    const res = await handlePostMapsTest(
+      mockContext({ geocodingBaseUrl: "https://nominatim.openstreetmap.org/" }),
+      db,
+    );
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { ok: boolean }).ok).toBe(true);
+    expect(nominatimSearch).toHaveBeenCalledWith("Warsaw");
+  });
+
+  it("rejects private maps geocoding hosts before probing", async () => {
+    const res = await handlePostMapsTest(
+      mockContext({ geocodingBaseUrl: "http://169.254.169.254/" }),
+      db,
+    );
+    const json = (await res.json()) as { ok: boolean; error?: string };
+    expect(json.ok).toBe(false);
+    expect(json.error).toMatch(/private or local network/i);
+    expect(nominatimSearch).not.toHaveBeenCalled();
+  });
+
   it("rejects maps test without Support contact", async () => {
     isGeocodingContactConfigured.mockResolvedValueOnce(false);
     const res = await handlePostMapsTest(

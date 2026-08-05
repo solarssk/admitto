@@ -81,4 +81,13 @@ describe("assertEditableServiceUrl", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(["invalid_url", "url_host_blocked"]).toContain(result.code);
   });
+
+  it("treats unexpected DNS errors as unresolved", async () => {
+    const { resolveSafeHostname } = await import("@admitto/shared/ssrf-guard");
+    vi.mocked(resolveSafeHostname).mockRejectedValueOnce(new Error("ECONNREFUSED"));
+    await expect(assertEditableServiceUrl("https://api.open-meteo.com")).resolves.toEqual({
+      ok: false,
+      code: "url_host_unresolved",
+    });
+  });
 });

@@ -182,6 +182,24 @@ describe("resolveEffectiveMapsConfig / describeMapsSettings", () => {
     expect(described.attribution).toContain("OpenStreetMap");
   });
 
+  it("treats explicit null attribution and provider as defaults", async () => {
+    const db = fakeDb(
+      JSON.stringify({
+        attribution: null,
+        geocodingProvider: null,
+        geocodingBaseUrl: null,
+        maxZoom: null,
+        tileUrl: "   ",
+      }),
+    );
+    const effective = await resolveEffectiveMapsConfig(db);
+    expect(effective.tiles.attribution).toContain("OpenStreetMap");
+    expect(effective.geocoding.provider).toBe(defaultGeocodingConfig().provider);
+    expect(effective.geocoding.baseUrl).toBe(defaultGeocodingConfig().baseUrl);
+    expect(effective.tiles.maxZoom).toBe(defaultMapTileConfig().maxZoom);
+    expect(effective.tiles.tileUrl).toContain("openstreetmap.org");
+  });
+
   it("rejects incompatible stored tile URLs", async () => {
     const db = fakeDb(
       JSON.stringify({
