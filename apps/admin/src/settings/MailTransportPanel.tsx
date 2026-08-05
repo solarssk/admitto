@@ -3,6 +3,7 @@ import { Card, Button, EmptyState, useToast } from "@admitto/ui";
 import { fetchMailSettings, saveMailSettings, sendMailTransportTest, probeMailSmtpConnection } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { MailSettingsResponse } from "../api/types.js";
+import { useConnectionTest } from "../hooks/useConnectionTest.js";
 import {
   buildSaveMailSettingsBody,
   emptySecretEdits,
@@ -57,8 +58,12 @@ export function MailTransportPanel() {
     updateDraft,
     updateSecrets,
   } = useMailSettingsFormState();
-  const [probeTesting, setProbeTesting] = useState(false);
-  const [probeResult, setProbeResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const {
+    testing: probeTesting,
+    result: probeResult,
+    run: runConnectionTest,
+    clearResult: clearProbeResult,
+  } = useConnectionTest("Could not test the SMTP connection.");
 
   useEffect(() => {
     if (validationErrors.length > 0) {
@@ -74,9 +79,9 @@ export function MailTransportPanel() {
       setSavedDraft(nextDraft);
       setSecrets(emptySecretEdits());
       setValidationErrors([]);
-      setProbeResult(null);
+      clearProbeResult();
     },
-    [setDraft, setSavedDraft, setSecrets, setValidationErrors],
+    [clearProbeResult, setDraft, setSavedDraft, setSecrets, setValidationErrors],
   );
 
   const loadSettings = useCallback(async () => {
@@ -142,7 +147,7 @@ export function MailTransportPanel() {
     setDraft(savedDraft);
     setSecrets(emptySecretEdits());
     setValidationErrors([]);
-    setProbeResult(null);
+    clearProbeResult();
   };
 
   const hasUnsavedChanges = isMailSettingsDirty(draft, savedDraft, secrets);
@@ -190,24 +195,7 @@ export function MailTransportPanel() {
       addToast("Save your changes before testing the connection.", "warning");
       return;
     }
-    setProbeTesting(true);
-    setProbeResult(null);
-    try {
-      const res = await probeMailSmtpConnection();
-      setProbeResult({
-        ok: res.ok,
-        message: res.ok
-          ? (res.message ?? "Connected.")
-          : (res.error ?? "Could not connect."),
-      });
-    } catch (err) {
-      setProbeResult({
-        ok: false,
-        message: operatorApiErrorMessage(err, "Could not test the SMTP connection."),
-      });
-    } finally {
-      setProbeTesting(false);
-    }
+    await runConnectionTest(probeMailSmtpConnection);
   };
 
   const showExportOnly =

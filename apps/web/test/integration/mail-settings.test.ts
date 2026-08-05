@@ -871,6 +871,42 @@ describe("POST /api/admin/mail-settings/probe", () => {
     });
     expect(res.status).toBe(403);
   });
+
+  it("still returns the probe result when audit logging fails", async () => {
+    await setMailSettings(
+      { scopeType: "organization", scopeId: ORG_MAIL },
+      {
+        provider: "smtp",
+        host: "smtp.probe.example.com",
+        port: 587,
+        user: "probe@example.com",
+        fromAddress: "probe@example.com",
+        smtpPassword: "probe-secret",
+      },
+      prisma,
+    );
+
+    const auditSpy = vi
+      .spyOn(tickets, "writeAdminAuditLog")
+      .mockRejectedValueOnce(new Error("audit db down"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const res = await app.request("/api/admin/mail-settings/probe", {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, message: "Connected. SMTP account verified." });
+      expect(errSpy).toHaveBeenCalledWith(
+        "[audit] mail_smtp_probed log failed",
+        expect.any(Error),
+      );
+    } finally {
+      auditSpy.mockRestore();
+      errSpy.mockRestore();
+    }
+  });
 });
 
 describe("admin audit atomicity (BE-001)", () => {

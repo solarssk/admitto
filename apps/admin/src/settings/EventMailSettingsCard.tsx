@@ -15,6 +15,7 @@ import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { Segmented } from "../components/Segmented.js";
+import { useConnectionTest } from "../hooks/useConnectionTest.js";
 import { whenShown } from "../hooks/useDelayedLoading.js";
 import {
   buildSaveMailSettingsBody,
@@ -243,8 +244,12 @@ export const EventMailSettingsCard = forwardRef<
     updateDraft,
     updateSecrets,
   } = useMailSettingsFormState();
-  const [probeTesting, setProbeTesting] = useState(false);
-  const [probeResult, setProbeResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const {
+    testing: probeTesting,
+    result: probeResult,
+    run: runConnectionTest,
+    clearResult: clearProbeResult,
+  } = useConnectionTest("Could not test the SMTP connection.");
   const [bounceVerify, setBounceVerify] = useState(false);
   const [bounceIngestReady, setBounceIngestReady] = useState(false);
   const [bounceReadyKey, setBounceReadyKey] = useState(0);
@@ -277,10 +282,10 @@ export const EventMailSettingsCard = forwardRef<
       setSavedDraft(nextDraft);
       setSecrets(emptySecretEdits());
       setValidationErrors([]);
-      setProbeResult(null);
+      clearProbeResult();
       dedicatedDraftSeededRef.current = false;
     },
-    [setDraft, setSavedDraft, setSecrets, setValidationErrors],
+    [clearProbeResult, setDraft, setSavedDraft, setSecrets, setValidationErrors],
   );
 
   const loadSettings = useCallback(async () => {
@@ -474,24 +479,7 @@ export const EventMailSettingsCard = forwardRef<
     if (isArchived || hasUnsavedChanges || mode !== "dedicated" || draft.provider !== "smtp") {
       return;
     }
-    setProbeTesting(true);
-    setProbeResult(null);
-    try {
-      const res = await probeEventMailSmtpConnection(eventId);
-      setProbeResult({
-        ok: res.ok,
-        message: res.ok
-          ? (res.message ?? "Connected.")
-          : (res.error ?? "Could not connect."),
-      });
-    } catch (err) {
-      setProbeResult({
-        ok: false,
-        message: operatorApiErrorMessage(err, "Could not test the SMTP connection."),
-      });
-    } finally {
-      setProbeTesting(false);
-    }
+    await runConnectionTest(() => probeEventMailSmtpConnection(eventId));
   };
 
   if (loading) {

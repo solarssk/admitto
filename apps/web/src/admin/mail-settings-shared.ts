@@ -384,3 +384,40 @@ export async function runSmtpConnectionProbe(
   });
   return { ok: false, error: errorMessage };
 }
+
+/** Shared org/event SMTP probe flow. Scope-specific routes retain access checks,
+ * prerequisite checks, and audit details through `onProbed`. */
+export async function handleSmtpConnectionProbe(
+  c: Context,
+  args: {
+    resolveConfig: () => Promise<MailerConfig>;
+    logPrefix: string;
+    probeDeps?: MailSmtpProbeDeps;
+    onProbed: (
+      outcome: { ok: true; message: string } | { ok: false; error: string },
+    ) => Promise<void>;
+  },
+): Promise<Response> {
+  let config: MailerConfig;
+  try {
+    config = await args.resolveConfig();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : undefined;
+    if (message?.includes(MAIL_PROVIDER_UNCONFIGURED)) {
+      return c.json({ ok: false, error: "mail transport not configured" }, 400);
+    }
+    throw err;
+  }
+
+  if (config.provider !== "smtp") {
+    return c.json({ ok: false, error: SMTP_PROBE_NOT_SMTP_MESSAGE }, 400);
+  }
+
+  const outcome = await runSmtpConnectionProbe(config, args.logPrefix, args.probeDeps);
+  await args.onProbed(outcome);
+
+  if (outcome.ok) {
+    return c.json({ ok: true, message: outcome.message });
+  }
+  return c.json({ ok: false, error: outcome.error });
+}
