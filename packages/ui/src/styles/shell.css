@@ -61,9 +61,11 @@ html:has(.shell), body:has(.shell) {
   letter-spacing: -0.3px;
   color: var(--text-primary);
   /* 0 + 32 (brand mark) + 10, plus .sidebar's own 14px top padding, totals var(--topbar-h)
-     (56px) so this row's outer box lines up with .topbar's height (#454) — mark vertical
-     center stays near the topbar menu button center when the drawer is open over the topbar. */
+     (56px) so this row's outer box lines up with .topbar's height (#454). margin-top:-2px
+     keeps the 32px mark's vertical center on the same 28px line as .topbar__menu (2.25rem
+     button centered in the 56px topbar) — without it the larger mark sat 2px low. */
   padding: 0 6px 10px;
+  margin-top: -2px;
   /* .sidebar's flex `gap: 6px` (shared with every other sidebar row spacing) would push
      .sidebar__event's border-top 6px below the 56px mark above, so it no longer lines up
      with .topbar's border-bottom despite the row itself totaling exactly 56px. Cancel just
