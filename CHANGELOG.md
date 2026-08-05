@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Event Settings → Images typography.** Event logo and Upload images now share the same intro / dropzone title / format-hint sizes (and the upload dropzone no longer inherits browser button font quirks).
 
 ### Changed
+- **Mail connection tests now share one admin and API flow**, keeping SMTP and IMAP test state, response handling, and scoped SMTP probing consistent.
 - **Also verify bounce says what to test in plain language**, and the result explains bounce SMTP codes for non-technical readers: "Enter an email address that will fail (for example, one that does not exist). Admitto sends a test message to it, then waits up to 90 seconds to check that it can detect the failure automatically." When a bounce arrives, a new **What this means** row under **Bounce SMTP code** translates the code (e.g. `550/5.7.1`) into a plain-English sentence.
 - **Send test email looks like Admitto mail.** Organisation and Event transport tests (and bounce-probe sends) use a simple branded HTML card with the organisation/event logo when configured, otherwise the Admitto mark, a centered green Transport OK mark, richer Diagnostics (recipient, from, host/mailbox when known), and a centered footer. Still not a ticket template.
 

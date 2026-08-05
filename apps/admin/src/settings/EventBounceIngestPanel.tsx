@@ -29,6 +29,7 @@ import type {
   MailSecretFieldDto,
   SaveEventBounceIngestSettingsBody,
 } from "../api/types.js";
+import { useConnectionTest } from "../hooks/useConnectionTest.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { emptySecretEdits, type SecretEdits } from "./mailSettingsValidation.js";
 import { NO_AUTOFILL_PROPS, SecretFieldRow } from "./mailTransportFormParts.js";
@@ -146,8 +147,12 @@ export const EventBounceIngestPanel = forwardRef<
     locked: false,
   });
   const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const {
+    testing,
+    result: testResult,
+    run: runConnectionTest,
+    clearResult: clearTestResult,
+  } = useConnectionTest("Could not test the IMAP connection.");
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -162,7 +167,7 @@ export const EventBounceIngestPanel = forwardRef<
         setBaseline(d);
         setPasswordField(secretFieldFromApi(data));
         setSecrets(emptySecretEdits());
-        setTestResult(null);
+        clearTestResult();
       } catch (err) {
         if (signal?.aborted) return;
         setLoadError(operatorApiErrorMessage(err, "Failed to load bounce detection settings."));
@@ -170,7 +175,7 @@ export const EventBounceIngestPanel = forwardRef<
         if (!signal?.aborted) setLoading(false);
       }
     },
-    [eventId],
+    [clearTestResult, eventId],
   );
 
   useEffect(() => {
@@ -209,8 +214,8 @@ export const EventBounceIngestPanel = forwardRef<
   const handleReset = useCallback(() => {
     setDraft(baseline);
     setSecrets(emptySecretEdits());
-    setTestResult(null);
-  }, [baseline]);
+    clearTestResult();
+  }, [baseline, clearTestResult]);
 
   const handleSave = useCallback(async (): Promise<boolean> => {
     const port = Number.parseInt(draft.imapPort, 10);
@@ -249,7 +254,7 @@ export const EventBounceIngestPanel = forwardRef<
       setBaseline(d);
       setPasswordField(secretFieldFromApi(data));
       setSecrets(emptySecretEdits());
-      setTestResult(null);
+      clearTestResult();
       addToast("Bounce detection settings saved.", "success");
       onSaved?.();
       return true;
@@ -259,7 +264,15 @@ export const EventBounceIngestPanel = forwardRef<
     } finally {
       setSaving(false);
     }
-  }, [addToast, apiData?.smtp_reuse_available, draft, eventId, onSaved, secrets.smtpPassword]);
+  }, [
+    addToast,
+    apiData?.smtp_reuse_available,
+    clearTestResult,
+    draft,
+    eventId,
+    onSaved,
+    secrets.smtpPassword,
+  ]);
 
   useImperativeHandle(ref, () => ({
     save: handleSave,
@@ -270,24 +283,7 @@ export const EventBounceIngestPanel = forwardRef<
   }));
 
   const handleTest = async () => {
-    setTesting(true);
-    setTestResult(null);
-    try {
-      const res = await testEventBounceIngestConnection(eventId);
-      setTestResult({
-        ok: res.ok,
-        message: res.ok
-          ? (res.message ?? "Connected.")
-          : (res.error ?? "Could not connect."),
-      });
-    } catch (err) {
-      setTestResult({
-        ok: false,
-        message: operatorApiErrorMessage(err, "Could not test the IMAP connection."),
-      });
-    } finally {
-      setTesting(false);
-    }
+    await runConnectionTest(() => testEventBounceIngestConnection(eventId));
   };
 
   if (loading) {

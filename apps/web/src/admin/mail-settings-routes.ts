@@ -25,9 +25,7 @@ import {
   classifyMailSettingsFields,
   runTransportTest,
   transportTestResponse,
-  runSmtpConnectionProbe,
-  SMTP_PROBE_NOT_SMTP_MESSAGE,
-  MAIL_PROVIDER_UNCONFIGURED,
+  handleSmtpConnectionProbe,
   type MailSmtpProbeDeps,
 } from "./mail-settings-shared.js";
 
@@ -194,39 +192,24 @@ export async function handlePostMailSettingsProbe(
   const audit = adminAuditFromContext(c);
   const mailEnv = (await isFirstRunWizard(db)) ? ({} as NodeJS.ProcessEnv) : process.env;
 
-  let config;
-  try {
-    config = await resolveMailConfigForOrg(orgId, db, mailEnv);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : undefined;
-    if (message?.includes(MAIL_PROVIDER_UNCONFIGURED)) {
-      return c.json({ ok: false, error: "mail transport not configured" }, 400);
-    }
-    throw err;
-  }
-
-  if (config.provider !== "smtp") {
-    return c.json({ ok: false, error: SMTP_PROBE_NOT_SMTP_MESSAGE }, 400);
-  }
-
-  const outcome = await runSmtpConnectionProbe(config, "[admin] mail smtp probe", probeDeps);
-
-  try {
-    await writeAdminAuditLog(db, {
-      organizationId: orgId,
-      actorUserId: audit.operator!,
-      sessionId: audit.sessionId,
-      ip: audit.ip,
-      timezone: audit.timezone,
-      actionType: "mail_smtp_probed",
-      metadata: { result: outcome.ok ? "ok" : "failed" },
-    });
-  } catch (auditErr) {
-    console.error("[audit] mail_smtp_probed log failed", auditErr);
-  }
-
-  if (outcome.ok) {
-    return c.json({ ok: true, message: outcome.message });
-  }
-  return c.json({ ok: false, error: outcome.error });
+  return handleSmtpConnectionProbe(c, {
+    resolveConfig: () => resolveMailConfigForOrg(orgId, db, mailEnv),
+    logPrefix: "[admin] mail smtp probe",
+    probeDeps,
+    onProbed: async (outcome) => {
+      try {
+        await writeAdminAuditLog(db, {
+          organizationId: orgId,
+          actorUserId: audit.operator!,
+          sessionId: audit.sessionId,
+          ip: audit.ip,
+          timezone: audit.timezone,
+          actionType: "mail_smtp_probed",
+          metadata: { result: outcome.ok ? "ok" : "failed" },
+        });
+      } catch (auditErr) {
+        console.error("[audit] mail_smtp_probed log failed", auditErr);
+      }
+    },
+  });
 }
