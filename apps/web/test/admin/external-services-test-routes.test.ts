@@ -8,6 +8,7 @@ const {
   isGeocodingContactConfigured,
   buildGeocodingUserAgent,
   weatherProbeLive,
+  weatherServiceCtor,
   nominatimSearch,
 } = vi.hoisted(() => ({
   canManageInstance: vi.fn(async () => true),
@@ -15,6 +16,7 @@ const {
   isGeocodingContactConfigured: vi.fn(async () => true),
   buildGeocodingUserAgent: vi.fn(async () => "Admitto/test (test@example.com)"),
   weatherProbeLive: vi.fn(),
+  weatherServiceCtor: vi.fn(),
   nominatimSearch: vi.fn(),
 }));
 
@@ -37,6 +39,9 @@ vi.mock("../../src/maps/user-agent.js", () => ({
 
 vi.mock("../../src/weather/weather-service.js", () => ({
   WeatherService: class {
+    constructor(options: unknown) {
+      weatherServiceCtor(options);
+    }
     probeLive = weatherProbeLive;
   },
 }));
@@ -75,7 +80,7 @@ describe("external-services connection tests", () => {
       enabled: true,
       provider: "metno",
       baseUrl: "https://api.open-meteo.com",
-      apiKey: null,
+      apiKey: "stored-key",
       timeoutMs: 5000,
       cacheTtlMs: 1000,
     });
@@ -85,7 +90,10 @@ describe("external-services connection tests", () => {
 
   it("probes weather from draft and returns latency", async () => {
     const res = await handlePostWeatherTest(
-      mockContext({ provider: "metno" }),
+      mockContext({
+        provider: "openmeteo",
+        baseUrl: "https://self.example.com",
+      }),
       db,
     );
     expect(res.status).toBe(200);
@@ -93,6 +101,15 @@ describe("external-services connection tests", () => {
     expect(json.ok).toBe(true);
     expect(json.message).toContain("42 ms");
     expect(weatherProbeLive).toHaveBeenCalled();
+    expect(weatherServiceCtor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({
+          provider: "openmeteo",
+          baseUrl: "https://self.example.com",
+          apiKey: "stored-key",
+        }),
+      }),
+    );
   });
 
   it("returns support-contact error when MET Norway probe reports it", async () => {
@@ -108,6 +125,43 @@ describe("external-services connection tests", () => {
     const json = (await res.json()) as { ok: boolean; error?: string };
     expect(json.ok).toBe(false);
     expect(json.error).toMatch(/Support contact/i);
+  });
+
+  it("rejects openmeteo customer host draft without an API key", async () => {
+    resolveEffectiveWeatherConfig.mockResolvedValue({
+      enabled: true,
+      provider: "openmeteo",
+      baseUrl: "https://customer-api.open-meteo.com",
+      apiKey: null,
+      timeoutMs: 5000,
+      cacheTtlMs: 1000,
+    });
+    const res = await handlePostWeatherTest(
+      mockContext({
+        provider: "openmeteo",
+        baseUrl: "https://customer-api.open-meteo.com",
+        clearApiKey: true,
+      }),
+      db,
+    );
+    const json = (await res.json()) as { ok: boolean; error?: string };
+    expect(json.ok).toBe(false);
+    expect(json.error).toMatch(/API key/i);
+    expect(weatherProbeLive).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid weather base URL", async () => {
+    const res = await handlePostWeatherTest(
+      mockContext({
+        provider: "openmeteo",
+        baseUrl: "not-a-url",
+      }),
+      db,
+    );
+    const json = (await res.json()) as { ok: boolean; error?: string };
+    expect(json.ok).toBe(false);
+    expect(json.error).toBe("invalid_base_url");
+    expect(weatherProbeLive).not.toHaveBeenCalled();
   });
 
   it("probes Nominatim from draft geocoding URL", async () => {
@@ -134,6 +188,18 @@ describe("external-services connection tests", () => {
     expect(nominatimSearch).not.toHaveBeenCalled();
   });
 
+  it("returns maps probe failure with latency when Nominatim search rejects", async () => {
+    nominatimSearch.mockRejectedValueOnce(new Error("upstream down"));
+    const res = await handlePostMapsTest(
+      mockContext({ geocodingBaseUrl: "https://nominatim.openstreetmap.org" }),
+      db,
+    );
+    const json = (await res.json()) as { ok: boolean; error?: string; latency_ms?: number };
+    expect(json.ok).toBe(false);
+    expect(json.error).toMatch(/Could not reach Nominatim/i);
+    expect(typeof json.latency_ms).toBe("number");
+  });
+
   it("forbids weather test without instance manage access", async () => {
     canManageInstance.mockResolvedValueOnce(false);
     const res = await handlePostWeatherTest(
@@ -141,5 +207,15 @@ describe("external-services connection tests", () => {
       db,
     );
     expect(res.status).toBe(403);
+  });
+
+  it("forbids maps test without instance manage access", async () => {
+    canManageInstance.mockResolvedValueOnce(false);
+    const res = await handlePostMapsTest(
+      mockContext({ geocodingBaseUrl: "https://nominatim.openstreetmap.org" }),
+      db,
+    );
+    expect(res.status).toBe(403);
+    expect(nominatimSearch).not.toHaveBeenCalled();
   });
 });
