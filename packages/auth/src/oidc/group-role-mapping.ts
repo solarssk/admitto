@@ -40,15 +40,27 @@ function isUniqueViolation(err: unknown): boolean {
 
 /** Prisma Serializable transaction conflict (concurrent superadmin floor-guard revokes). */
 function isSerializationFailure(err: unknown): boolean {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    "code" in err &&
-    (err as { code: string }).code === "P2034"
-  );
+  if (typeof err !== "object" || err === null || !("code" in err)) return false;
+  if ((err as { code: string }).code === "P2034") return true;
+  const cause = (err as {
+    meta?: { driverAdapterError?: { cause?: { originalCode?: string; kind?: string } } };
+  }).meta?.driverAdapterError?.cause;
+  return cause?.originalCode === "40001" || cause?.kind === "TransactionWriteConflict";
 }
 
-const SERIALIZATION_RETRY_ATTEMPTS = 3;
+/** Enough attempts for two concurrent Serializable revokes under CI load. */
+const SERIALIZATION_RETRY_ATTEMPTS = 8;
+
+function serializationRetryDelayMs(attempt: number): number {
+  const base = Math.min(200, 25 * 2 ** attempt);
+  return base + Math.floor(Math.random() * 25);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 
 /** Natural key for an OIDC-owned grant row. */
 function grantWhere(
@@ -181,6 +193,7 @@ async function revokeOidcRoleGrant(
       );
     } catch (err) {
       if (isSerializationFailure(err) && attempt < SERIALIZATION_RETRY_ATTEMPTS - 1) {
+        await sleep(serializationRetryDelayMs(attempt));
         continue;
       }
       throw err;

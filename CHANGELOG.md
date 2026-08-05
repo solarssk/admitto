@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Bounce ingest looks up matching deliveries in one query per folder poll**, instead of one database round-trip per parsed NDR recipient line.
 
 ### Fixed
+- **OIDC group sync retries Serializable conflicts more patiently** when two instance superadmins lose the mapped group at the same time (jittered backoff, up to 8 attempts), so concurrent logins no longer fail with a transaction write conflict after three immediate retries.
 - **Also verify bounce only counts NDRs that arrived for this check**, not an older hard bounce for the same test address still sitting in the 14-day IMAP window (which previously could report success while forwarding was broken).
 - **Also verify bounce returns a failed probe result when the bounce mailbox cannot be opened** (bad credentials / unreachable host after the test send), instead of a generic server error.
 - **Bounce detection matches NDR recipients without caring about email letter case**, so a manually added attendee like `John.Doe@Example.com` still gets marked bounced when the MTA reports `john.doe@example.com`.
