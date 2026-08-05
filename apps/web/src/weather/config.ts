@@ -174,8 +174,8 @@ export function mergeWeatherConfig(
       : base.apiKey;
   return {
     ...base,
-    enabled: overrides.enabled !== undefined ? overrides.enabled : base.enabled,
-    provider: overrides.provider !== undefined ? overrides.provider : base.provider,
+    enabled: overrides.enabled ?? base.enabled,
+    provider: overrides.provider ?? base.provider,
     baseUrl,
     apiKey,
   };

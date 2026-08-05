@@ -9,10 +9,10 @@ import {
   defaultMapTileConfig,
   isStaffSpaCompatibleTileUrl,
   setMapsConfigCache,
-  type GeocodingConfig,
-  type MapTileConfig,
   type MapsRuntimeConfig,
 } from "./config.js";
+
+export type { GeocodingConfig, MapTileConfig } from "./config.js";
 
 export const MAPS_SETTINGS_KEY = "maps_settings";
 
@@ -113,7 +113,7 @@ function mergeStored(
 
   return {
     tiles: {
-      enabled: stored.enabled !== undefined ? stored.enabled : defaults.tiles.enabled,
+      enabled: stored.enabled ?? defaults.tiles.enabled,
       tileUrl,
       attribution,
       maxZoom,
@@ -195,5 +195,3 @@ export async function patchMapsSettings(
   await refreshMapsConfigCache(db);
   return describeMapsSettings(db);
 }
-
-export type { MapTileConfig, GeocodingConfig };

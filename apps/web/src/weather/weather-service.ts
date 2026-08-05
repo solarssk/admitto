@@ -41,6 +41,12 @@ export interface WeatherServiceOptions {
   contactConfigured?: boolean;
 }
 
+function probeErrorMessage(err: unknown): string {
+  if (err instanceof WeatherProviderError) return err.kind;
+  if (err instanceof Error) return err.message;
+  return "unavailable";
+}
+
 /** Calendar YYYY-MM-DD in the event timezone (falls back to UTC). */
 export function eventDateYmd(date: Date | string, timezone: string): string {
   const d = typeof date === "string" ? new Date(date) : date;
@@ -213,12 +219,7 @@ export class WeatherService {
       }
       return { ok: true, latencyMs: Date.now() - started };
     } catch (err) {
-      const message =
-        err instanceof WeatherProviderError
-          ? err.kind
-          : err instanceof Error
-            ? err.message
-            : "unavailable";
+      const message = probeErrorMessage(err);
       return { ok: false, latencyMs: Date.now() - started, error: message };
     }
   }

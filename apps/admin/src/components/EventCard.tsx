@@ -21,6 +21,39 @@ export function eventGridClassName(count: number): string {
 
 type WeatherChip = { label: string; tooltip: string; icon: string; text: string };
 
+function formatDayCount(n: number): string {
+  return `${n} day${n === 1 ? "" : "s"}`;
+}
+
+function weatherChipOk(w: NonNullable<EventDto["weather"]>): WeatherChip {
+  const condition = weatherConditionLabel(w.weather_code);
+  const range =
+    w.temp_min_c != null ? `${w.temp_min_c}° to ${w.temp_c}°C` : `${w.temp_c}°C`;
+  const credit = w.attribution?.trim() || "Weather data";
+  return {
+    label: `Forecast ${w.temp_c}°C`,
+    tooltip: `${condition}, ${range}.\n${credit}.`,
+    icon: weatherIconClass(w.weather_code),
+    text: `${w.temp_c}°`,
+  };
+}
+
+function weatherChipTooFar(w: NonNullable<EventDto["weather"]>): WeatherChip {
+  const horizon = w.horizon_days ?? 0;
+  const opensIn = w.opens_in_days ?? 0;
+  const when =
+    horizon > 0
+      ? `Forecast available ${formatDayCount(horizon)} before the event`
+      : "Forecast not available yet";
+  const countdown = opensIn > 0 ? ` Shows in about ${formatDayCount(opensIn)}.` : "";
+  return {
+    label: when,
+    tooltip: `${when}.${countdown}`,
+    icon: "ti ti-cloud-question",
+    text: "-°",
+  };
+}
+
 function weatherChip(event: EventDto): WeatherChip | null {
   const w = event.weather;
   if (!w) {
@@ -35,36 +68,8 @@ function weatherChip(event: EventDto): WeatherChip | null {
     }
     return null;
   }
-  if (w.status === "ok" && w.temp_c != null) {
-    const condition = weatherConditionLabel(w.weather_code);
-    const range =
-      w.temp_min_c != null ? `${w.temp_min_c}° to ${w.temp_c}°C` : `${w.temp_c}°C`;
-    const credit = w.attribution?.trim() || "Weather data";
-    return {
-      label: `Forecast ${w.temp_c}°C`,
-      tooltip: `${condition}, ${range}.\n${credit}.`,
-      icon: weatherIconClass(w.weather_code),
-      text: `${w.temp_c}°`,
-    };
-  }
-  if (w.status === "too_far") {
-    const horizon = w.horizon_days ?? 0;
-    const opensIn = w.opens_in_days ?? 0;
-    const when =
-      horizon > 0
-        ? `Forecast available ${horizon} day${horizon === 1 ? "" : "s"} before the event`
-        : "Forecast not available yet";
-    const countdown =
-      opensIn > 0
-        ? ` Shows in about ${opensIn} day${opensIn === 1 ? "" : "s"}.`
-        : "";
-    return {
-      label: when,
-      tooltip: `${when}.${countdown}`,
-      icon: "ti ti-cloud-question",
-      text: "-°",
-    };
-  }
+  if (w.status === "ok" && w.temp_c != null) return weatherChipOk(w);
+  if (w.status === "too_far") return weatherChipTooFar(w);
   if (w.status === "unavailable") {
     return {
       label: "Weather unavailable",

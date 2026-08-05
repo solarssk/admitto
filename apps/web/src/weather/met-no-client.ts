@@ -89,6 +89,50 @@ function readSymbol(point: MetNoTimeseriesPoint): string | null {
   return null;
 }
 
+function localHour(isoTime: string, timezone: string): number | null {
+  try {
+    return Number(
+      new Intl.DateTimeFormat("en-GB", {
+        timeZone: timezone || "UTC",
+        hour: "numeric",
+        hour12: false,
+      }).format(new Date(isoTime)),
+    );
+  } catch {
+    return null;
+  }
+}
+
+type DailyAccum = {
+  tempMin: number;
+  tempMax: number;
+  symbols: string[];
+  middaySymbol: string | null;
+};
+
+function accumulateMetNoPoint(
+  point: MetNoTimeseriesPoint,
+  dateYmd: string,
+  timezone: string,
+  acc: DailyAccum,
+): void {
+  if (typeof point.time !== "string") return;
+  if (ymdInTimezone(point.time, timezone) !== dateYmd) return;
+
+  const temp = readTemp(point);
+  if (temp != null) {
+    acc.tempMin = Math.min(acc.tempMin, temp);
+    acc.tempMax = Math.max(acc.tempMax, temp);
+  }
+
+  const symbol = readSymbol(point);
+  if (!symbol) return;
+  acc.symbols.push(symbol);
+  // Prefer a midday-ish sample (11:00-14:00 local) for the icon.
+  const hour = localHour(point.time, timezone);
+  if (hour != null && hour >= 11 && hour <= 14) acc.middaySymbol = symbol;
+}
+
 /** Aggregate hourly compact points into a daily min/max + representative symbol. */
 export function pickMetNoDailyForecast(
   body: MetNoCompactJson,
@@ -98,46 +142,23 @@ export function pickMetNoDailyForecast(
   const series = asTimeseries(body.properties?.timeseries);
   if (!series || series.length === 0) return null;
 
-  let tempMin = Number.POSITIVE_INFINITY;
-  let tempMax = Number.NEGATIVE_INFINITY;
-  const symbols: string[] = [];
-  let middaySymbol: string | null = null;
-
+  const acc: DailyAccum = {
+    tempMin: Number.POSITIVE_INFINITY,
+    tempMax: Number.NEGATIVE_INFINITY,
+    symbols: [],
+    middaySymbol: null,
+  };
   for (const point of series) {
-    if (typeof point.time !== "string") continue;
-    const pointYmd = ymdInTimezone(point.time, timezone);
-    if (pointYmd !== dateYmd) continue;
-    const temp = readTemp(point);
-    if (temp != null) {
-      tempMin = Math.min(tempMin, temp);
-      tempMax = Math.max(tempMax, temp);
-    }
-    const symbol = readSymbol(point);
-    if (symbol) {
-      symbols.push(symbol);
-      // Prefer a midday-ish sample (11:00-14:00 local) for the icon.
-      try {
-        const hour = Number(
-          new Intl.DateTimeFormat("en-GB", {
-            timeZone: timezone || "UTC",
-            hour: "numeric",
-            hour12: false,
-          }).format(new Date(point.time)),
-        );
-        if (hour >= 11 && hour <= 14) middaySymbol = symbol;
-      } catch {
-        // ignore bad timezone
-      }
-    }
+    accumulateMetNoPoint(point, dateYmd, timezone, acc);
   }
 
-  if (!Number.isFinite(tempMin) || !Number.isFinite(tempMax)) return null;
-  const symbol = middaySymbol ?? symbols[Math.floor(symbols.length / 2)] ?? "cloudy";
+  if (!Number.isFinite(acc.tempMin) || !Number.isFinite(acc.tempMax)) return null;
+  const symbol = acc.middaySymbol ?? acc.symbols[Math.floor(acc.symbols.length / 2)] ?? "cloudy";
   return {
     date: dateYmd,
     weather_code: metNoSymbolToWeatherCode(symbol),
-    temp_max_c: tempMax,
-    temp_min_c: tempMin,
+    temp_max_c: acc.tempMax,
+    temp_min_c: acc.tempMin,
   };
 }
 

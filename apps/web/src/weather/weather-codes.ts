@@ -9,21 +9,33 @@ export interface WeatherCodeInfo {
   label: string;
 }
 
+const DEFAULT_INFO: WeatherCodeInfo = { icon: "ti-cloud", label: "Weather" };
+
+/** Inclusive code ranges → icon + label (first match wins). */
+const WEATHER_CODE_ROWS: ReadonlyArray<{
+  min: number;
+  max: number;
+  icon: string;
+  label: string;
+}> = [
+  { min: 0, max: 0, icon: "ti-sun", label: "Clear" },
+  { min: 1, max: 1, icon: "ti-sun", label: "Mainly clear" },
+  { min: 2, max: 2, icon: "ti-cloud", label: "Partly cloudy" },
+  { min: 3, max: 3, icon: "ti-cloud", label: "Overcast" },
+  { min: 45, max: 48, icon: "ti-mist", label: "Fog" },
+  { min: 51, max: 57, icon: "ti-cloud-drizzle", label: "Drizzle" },
+  { min: 61, max: 67, icon: "ti-cloud-rain", label: "Rain" },
+  { min: 71, max: 77, icon: "ti-snowflake", label: "Snow" },
+  { min: 80, max: 82, icon: "ti-cloud-rain", label: "Rain showers" },
+  { min: 85, max: 86, icon: "ti-snowflake", label: "Snow showers" },
+  { min: 95, max: 99, icon: "ti-cloud-storm", label: "Thunderstorm" },
+];
+
 export function weatherCodeInfo(code: number | null | undefined): WeatherCodeInfo {
-  if (code == null || !Number.isFinite(code)) {
-    return { icon: "ti-cloud", label: "Weather" };
-  }
+  if (code == null || !Number.isFinite(code)) return DEFAULT_INFO;
   const c = Math.trunc(code);
-  if (c === 0) return { icon: "ti-sun", label: "Clear" };
-  if (c === 1) return { icon: "ti-sun", label: "Mainly clear" };
-  if (c === 2) return { icon: "ti-cloud", label: "Partly cloudy" };
-  if (c === 3) return { icon: "ti-cloud", label: "Overcast" };
-  if (c === 45 || c === 48) return { icon: "ti-mist", label: "Fog" };
-  if (c >= 51 && c <= 57) return { icon: "ti-cloud-drizzle", label: "Drizzle" };
-  if (c >= 61 && c <= 67) return { icon: "ti-cloud-rain", label: "Rain" };
-  if (c >= 71 && c <= 77) return { icon: "ti-snowflake", label: "Snow" };
-  if (c >= 80 && c <= 82) return { icon: "ti-cloud-rain", label: "Rain showers" };
-  if (c === 85 || c === 86) return { icon: "ti-snowflake", label: "Snow showers" };
-  if (c >= 95 && c <= 99) return { icon: "ti-cloud-storm", label: "Thunderstorm" };
-  return { icon: "ti-cloud", label: "Weather" };
+  for (const row of WEATHER_CODE_ROWS) {
+    if (c >= row.min && c <= row.max) return { icon: row.icon, label: row.label };
+  }
+  return DEFAULT_INFO;
 }

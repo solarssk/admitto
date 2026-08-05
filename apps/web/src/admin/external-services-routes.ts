@@ -105,6 +105,41 @@ function validateHttpsOrHttpUrl(raw: string): boolean {
   }
 }
 
+type WeatherTestDraft = z.infer<typeof weatherTestSchema>;
+
+async function weatherConfigFromTestDraft(
+  db: PrismaClient,
+  draft: WeatherTestDraft,
+): Promise<{ config: ReturnType<typeof mergeWeatherConfig>; error?: string }> {
+  if (draft.baseUrl != null && draft.baseUrl.trim() !== "") {
+    if (!validateHttpsOrHttpUrl(draft.baseUrl)) {
+      return {
+        config: await resolveEffectiveWeatherConfig(db),
+        error: "invalid_base_url",
+      };
+    }
+  }
+
+  const effective = await resolveEffectiveWeatherConfig(db);
+  let apiKeyOverride: string | null | undefined;
+  if (draft.clearApiKey) {
+    apiKeyOverride = null;
+  } else if (draft.apiKey !== undefined && draft.apiKey.trim() !== "") {
+    apiKeyOverride = draft.apiKey.trim();
+  }
+
+  const config = mergeWeatherConfig(effective, {
+    provider: draft.provider,
+    ...(draft.baseUrl !== undefined ? { baseUrl: draft.baseUrl.trim() || null } : {}),
+    ...(apiKeyOverride !== undefined ? { apiKey: apiKeyOverride } : {}),
+  });
+
+  if (weatherApiKeyRequired(config.provider, config.baseUrl, true) && !config.apiKey) {
+    return { config, error: WEATHER_PROBE_API_KEY };
+  }
+  return { config };
+}
+
 /** GET /api/admin/external-services — weather + maps for External services tab. */
 export async function handleGetExternalServices(
   c: Context,
@@ -281,29 +316,12 @@ export async function handlePostWeatherTest(
     return c.json({ error: "validation_failed", details: parsed.error.flatten() }, 400);
   }
 
-  const draft = parsed.data;
-  if (draft.baseUrl != null && draft.baseUrl.trim() !== "") {
-    if (!validateHttpsOrHttpUrl(draft.baseUrl)) {
-      return c.json({ ok: false, error: "invalid_base_url" });
-    }
+  const { config, error: configError } = await weatherConfigFromTestDraft(db, parsed.data);
+  if (configError === "invalid_base_url") {
+    return c.json({ ok: false, error: "invalid_base_url" });
   }
-
-  const effective = await resolveEffectiveWeatherConfig(db);
-  let apiKeyOverride: string | null | undefined;
-  if (draft.clearApiKey) {
-    apiKeyOverride = null;
-  } else if (draft.apiKey !== undefined && draft.apiKey.trim() !== "") {
-    apiKeyOverride = draft.apiKey.trim();
-  }
-
-  const config = mergeWeatherConfig(effective, {
-    provider: draft.provider,
-    ...(draft.baseUrl !== undefined ? { baseUrl: draft.baseUrl.trim() || null } : {}),
-    ...(apiKeyOverride !== undefined ? { apiKey: apiKeyOverride } : {}),
-  });
-
-  if (weatherApiKeyRequired(config.provider, config.baseUrl, true) && !config.apiKey) {
-    return c.json({ ok: false, error: WEATHER_PROBE_API_KEY });
+  if (configError) {
+    return c.json({ ok: false, error: configError });
   }
 
   const contactConfigured = await isGeocodingContactConfigured(db);

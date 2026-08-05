@@ -130,6 +130,104 @@ function mapsDirty(draft: MapsDraft, saved: MapsDraft): boolean {
   );
 }
 
+function apiKeyPlaceholder(required: boolean, configured: boolean): string {
+  if (configured) return "••••••••";
+  return required ? "Required" : "Optional";
+}
+
+function collectSaveValidationErrors(opts: {
+  apiKeyMissing: boolean;
+  saveMaps: boolean;
+  mapsDraft: MapsDraft;
+}): string[] {
+  const errors: string[] = [];
+  if (opts.apiKeyMissing) errors.push(WEATHER_API_KEY_REQUIRED_MSG);
+  if (!opts.saveMaps) return errors;
+  const maxZoom = Number.parseInt(opts.mapsDraft.maxZoom, 10);
+  if (!Number.isFinite(maxZoom) || maxZoom < 1 || maxZoom > 22) {
+    errors.push("Max zoom must be a number between 1 and 22.");
+  }
+  if (opts.mapsDraft.tileUrl.trim() && !opts.mapsDraft.tileUrl.includes("{z}")) {
+    errors.push("Tile URL should include {z}/{x}/{y} placeholders.");
+  }
+  return errors;
+}
+
+function buildWeatherSaveBody(draft: WeatherDraft): {
+  enabled: boolean;
+  provider: WeatherProviderId;
+  baseUrl?: string;
+  apiKey?: string | null;
+} {
+  const body: {
+    enabled: boolean;
+    provider: WeatherProviderId;
+    baseUrl?: string;
+    apiKey?: string | null;
+  } = {
+    enabled: draft.enabled,
+    provider: draft.provider,
+  };
+  if (draft.provider !== "openmeteo") return body;
+  body.baseUrl = draft.baseUrl.trim();
+  if (draft.clearApiKey) body.apiKey = "";
+  else if (draft.apiKey.trim() !== "") body.apiKey = draft.apiKey.trim();
+  return body;
+}
+
+type SettledSave = PromiseSettledResult<ExternalServicesResponse["weather"] | null>;
+type SettledMapsSave = PromiseSettledResult<ExternalServicesResponse["maps"] | null>;
+
+function toastExternalServicesSaveResult(
+  addToast: (message: string, variant: "success" | "error" | "info") => void,
+  opts: {
+    saveWeather: boolean;
+    saveMaps: boolean;
+    weatherResult: SettledSave;
+    mapsResult: SettledMapsSave;
+  },
+): void {
+  const weatherFailed = opts.saveWeather && opts.weatherResult.status === "rejected";
+  const mapsFailed = opts.saveMaps && opts.mapsResult.status === "rejected";
+  if (!weatherFailed && !mapsFailed) {
+    addToast("External services saved.", "success");
+    return;
+  }
+  if (!weatherFailed && mapsFailed && opts.mapsResult.status === "rejected") {
+    addToast(
+      operatorApiErrorMessage(
+        opts.mapsResult.reason,
+        "Weather saved, but maps settings could not be saved.",
+      ),
+      "error",
+    );
+    return;
+  }
+  if (!mapsFailed && weatherFailed && opts.weatherResult.status === "rejected") {
+    addToast(
+      operatorApiErrorMessage(
+        opts.weatherResult.reason,
+        "Maps saved, but weather settings could not be saved.",
+      ),
+      "error",
+    );
+    return;
+  }
+  if (weatherFailed && opts.weatherResult.status === "rejected") {
+    addToast(
+      operatorApiErrorMessage(opts.weatherResult.reason, "Could not save weather settings."),
+      "error",
+    );
+    return;
+  }
+  if (mapsFailed && opts.mapsResult.status === "rejected") {
+    addToast(
+      operatorApiErrorMessage(opts.mapsResult.reason, "Could not save maps settings."),
+      "error",
+    );
+  }
+}
+
 /**
  * Organisation Settings → External services (ADR 0040).
  * Weather and Maps are editable; distinct from Event Settings → Integrations.
@@ -193,8 +291,7 @@ export function ExternalServicesPanel() {
 
   const showOpenMeteoFields = weatherDraft?.provider === "openmeteo";
   const apiKeyRequired = Boolean(
-    weatherDraft &&
-      weatherDraft.enabled &&
+    weatherDraft?.enabled &&
       weatherDraft.provider === "openmeteo" &&
       isOpenMeteoCommercialHost(weatherDraft.baseUrl),
   );
@@ -271,22 +368,13 @@ export function ExternalServicesPanel() {
     if (!weatherDraft || !mapsDraft || !data) return;
     if (!weatherSavedRef.current || !mapsSavedRef.current) return;
 
-    const errors: string[] = [];
-    if (apiKeyMissing) {
-      errors.push(WEATHER_API_KEY_REQUIRED_MSG);
-    }
-
     const saveWeather = weatherDirty(weatherDraft, weatherSavedRef.current);
     const saveMaps = mapsDirty(mapsDraft, mapsSavedRef.current);
-
-    const maxZoom = Number.parseInt(mapsDraft.maxZoom, 10);
-    if (saveMaps && (!Number.isFinite(maxZoom) || maxZoom < 1 || maxZoom > 22)) {
-      errors.push("Max zoom must be a number between 1 and 22.");
-    }
-    if (saveMaps && mapsDraft.tileUrl.trim() && !mapsDraft.tileUrl.includes("{z}")) {
-      errors.push("Tile URL should include {z}/{x}/{y} placeholders.");
-    }
-
+    const errors = collectSaveValidationErrors({
+      apiKeyMissing,
+      saveMaps,
+      mapsDraft,
+    });
     if (errors.length > 0) {
       setValidationErrors(errors);
       return;
@@ -299,21 +387,8 @@ export function ExternalServicesPanel() {
     setValidationErrors([]);
     setSaving(true);
     try {
-      const weatherBody: {
-        enabled: boolean;
-        provider: WeatherProviderId;
-        baseUrl?: string;
-        apiKey?: string | null;
-      } = {
-        enabled: weatherDraft.enabled,
-        provider: weatherDraft.provider,
-      };
-      if (weatherDraft.provider === "openmeteo") {
-        weatherBody.baseUrl = weatherDraft.baseUrl.trim();
-        if (weatherDraft.clearApiKey) weatherBody.apiKey = "";
-        else if (weatherDraft.apiKey.trim() !== "") weatherBody.apiKey = weatherDraft.apiKey.trim();
-      }
-
+      const maxZoom = Number.parseInt(mapsDraft.maxZoom, 10);
+      const weatherBody = buildWeatherSaveBody(weatherDraft);
       const mapsBody = {
         enabled: mapsDraft.enabled,
         tileUrl: mapsDraft.tileUrl.trim(),
@@ -323,14 +398,9 @@ export function ExternalServicesPanel() {
         geocodingBaseUrl: mapsDraft.geocodingBaseUrl.trim(),
       };
 
-      const weatherPromise = saveWeather
-        ? saveWeatherSettings(weatherBody)
-        : Promise.resolve(null);
-      const mapsPromise = saveMaps ? saveMapsSettings(mapsBody) : Promise.resolve(null);
-
       const [weatherResult, mapsResult] = await Promise.allSettled([
-        weatherPromise,
-        mapsPromise,
+        saveWeather ? saveWeatherSettings(weatherBody) : Promise.resolve(null),
+        saveMaps ? saveMapsSettings(mapsBody) : Promise.resolve(null),
       ]);
 
       if (weatherResult.status === "fulfilled" && weatherResult.value) {
@@ -346,40 +416,12 @@ export function ExternalServicesPanel() {
         mapsSavedRef.current = m;
       }
 
-      const weatherFailed = saveWeather && weatherResult.status === "rejected";
-      const mapsFailed = saveMaps && mapsResult.status === "rejected";
-      const weatherOk = !weatherFailed;
-      const mapsOk = !mapsFailed;
-
-      if (weatherOk && mapsOk) {
-        addToast("External services saved.", "success");
-      } else if (!weatherFailed && mapsFailed && mapsResult.status === "rejected") {
-        addToast(
-          operatorApiErrorMessage(
-            mapsResult.reason,
-            "Weather saved, but maps settings could not be saved.",
-          ),
-          "error",
-        );
-      } else if (!mapsFailed && weatherFailed && weatherResult.status === "rejected") {
-        addToast(
-          operatorApiErrorMessage(
-            weatherResult.reason,
-            "Maps saved, but weather settings could not be saved.",
-          ),
-          "error",
-        );
-      } else if (weatherFailed && weatherResult.status === "rejected") {
-        addToast(
-          operatorApiErrorMessage(weatherResult.reason, "Could not save weather settings."),
-          "error",
-        );
-      } else if (mapsFailed && mapsResult.status === "rejected") {
-        addToast(
-          operatorApiErrorMessage(mapsResult.reason, "Could not save maps settings."),
-          "error",
-        );
-      }
+      toastExternalServicesSaveResult(addToast, {
+        saveWeather,
+        saveMaps,
+        weatherResult,
+        mapsResult,
+      });
     } finally {
       setSaving(false);
     }
@@ -516,15 +558,10 @@ export function ExternalServicesPanel() {
                     disabled={saving || weatherDraft.clearApiKey}
                     invalid={apiKeyMissing}
                     error={apiKeyMissing ? WEATHER_API_KEY_REQUIRED_MSG : undefined}
-                    placeholder={
-                      apiKeyRequired
-                        ? data.weather.api_key.configured
-                          ? "••••••••"
-                          : "Required"
-                        : data.weather.api_key.configured
-                          ? "••••••••"
-                          : "Optional"
-                    }
+                    placeholder={apiKeyPlaceholder(
+                      apiKeyRequired,
+                      data.weather.api_key.configured,
+                    )}
                     {...NO_AUTOFILL_PROPS}
                     onChange={(e) =>
                       setWeatherDraft((d) =>

@@ -10,7 +10,10 @@ import {
 import { buildTicketPageStyles } from "./ticket-inline-styles.js";
 import { weatherCodeInfo } from "./weather/weather-codes.js";
 import type { WeatherSummaryDto } from "./weather/types.js";
-import { WEATHER_ATTRIBUTION_TEXT, WEATHER_ATTRIBUTION_URL } from "./weather/config.js";
+import {
+  OPENMETEO_ATTRIBUTION_TEXT,
+  OPENMETEO_ATTRIBUTION_URL,
+} from "./weather/config.js";
 
 function esc(s: string): string {
   return s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
@@ -168,14 +171,18 @@ function renderDirectionsAddressHtml(event: ResolvedTicket["event"]): string {
     : "";
 }
 
+function formatForecastDayCount(n: number): string {
+  return `${n} day${n === 1 ? "" : "s"}`;
+}
+
 /**
  * Event-day weather after map buttons: section label (like Getting there), condition
  * icon + copy, attribution bottom-right.
  */
 function renderTicketWeatherHtml(weather: WeatherSummaryDto | null | undefined): string {
   if (!weather) return "";
-  const attrUrl = esc(weather.attribution_url || WEATHER_ATTRIBUTION_URL);
-  const attrText = esc(weather.attribution || WEATHER_ATTRIBUTION_TEXT);
+  const attrUrl = esc(weather.attribution_url || OPENMETEO_ATTRIBUTION_URL);
+  const attrText = esc(weather.attribution || OPENMETEO_ATTRIBUTION_TEXT);
   const credit = `<a class="ticket__weather-credit" href="${attrUrl}" rel="noopener noreferrer">${attrText}</a>`;
   const heading = `<h2 class="ticket__weather-heading" id="weather-heading">Weather on the day</h2>`;
 
@@ -202,7 +209,7 @@ function renderTicketWeatherHtml(weather: WeatherSummaryDto | null | undefined):
     const horizon = weather.horizon_days ?? weather.opens_in_days ?? 0;
     const line1 =
       horizon > 0
-        ? `Forecast available ${horizon} day${horizon === 1 ? "" : "s"}`
+        ? `Forecast available ${formatForecastDayCount(horizon)}`
         : "Forecast available soon";
     return `<div class="ticket__weather-block" aria-labelledby="weather-heading">
       ${heading}
@@ -217,6 +224,41 @@ function renderTicketWeatherHtml(weather: WeatherSummaryDto | null | undefined):
     </div>`;
   }
 
+  return "";
+}
+
+function renderGettingThereSection(parts: {
+  hasGettingThere: boolean;
+  weatherHtml: string;
+  addressHtml: string;
+  staticMapHtml: string;
+  mapsLinks: string;
+  directionsHtml: string;
+  accessibilityHtml: string;
+}): string {
+  const {
+    hasGettingThere,
+    weatherHtml,
+    addressHtml,
+    staticMapHtml,
+    mapsLinks,
+    directionsHtml,
+    accessibilityHtml,
+  } = parts;
+  if (hasGettingThere) {
+    return `<section class="ticket__getting-there" aria-labelledby="getting-there-heading">
+      <h2 id="getting-there-heading">Getting there</h2>
+      ${addressHtml}
+      ${staticMapHtml}
+      ${mapsLinks}
+      ${weatherHtml}
+      ${directionsHtml}
+      ${accessibilityHtml}
+    </section>`;
+  }
+  if (weatherHtml) {
+    return `<section class="ticket__getting-there" aria-label="Weather on the day">${weatherHtml}</section>`;
+  }
   return "";
 }
 
@@ -268,19 +310,15 @@ export function renderTicket(
     : "";
   const weatherHtml = renderTicketWeatherHtml(options.weather);
   // Order: map → map buttons → weather (then directions / accessibility).
-  const gettingThereHtml = hasGettingThere
-    ? `<section class="ticket__getting-there" aria-labelledby="getting-there-heading">
-      <h2 id="getting-there-heading">Getting there</h2>
-      ${addressHtml}
-      ${staticMapHtml}
-      ${mapsLinks}
-      ${weatherHtml}
-      ${directionsHtml}
-      ${accessibilityHtml}
-    </section>`
-    : weatherHtml
-      ? `<section class="ticket__getting-there" aria-label="Weather on the day">${weatherHtml}</section>`
-      : "";
+  const gettingThereHtml = renderGettingThereSection({
+    hasGettingThere,
+    weatherHtml,
+    addressHtml,
+    staticMapHtml,
+    mapsLinks,
+    directionsHtml,
+    accessibilityHtml,
+  });
 
   return `<!DOCTYPE html>
 <html lang="en">
