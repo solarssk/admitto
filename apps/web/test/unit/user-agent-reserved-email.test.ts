@@ -19,4 +19,14 @@ describe("isReservedDocumentationEmail", () => {
     expect(isReservedDocumentationEmail("Ops Team")).toBe(false);
     expect(isReservedDocumentationEmail("")).toBe(false);
   });
+
+  it("rejects empty or trailing-dot-only domains after @", () => {
+    expect(isReservedDocumentationEmail("user@")).toBe(false);
+    expect(isReservedDocumentationEmail("@")).toBe(false);
+    expect(isReservedDocumentationEmail("user@.")).toBe(false);
+  });
+
+  it("strips a trailing dot on the domain before matching", () => {
+    expect(isReservedDocumentationEmail("ops@example.com.")).toBe(true);
+  });
 });

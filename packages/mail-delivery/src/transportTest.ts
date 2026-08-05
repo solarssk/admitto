@@ -129,8 +129,8 @@ export function resolveTransportTestHeaderLogo(
   if (branded) return { url: branded, kind: "branding" };
 
   try {
+    // resolvePublicBaseUrl always returns a non-empty URL or throws — no empty-string guard.
     const base = resolvePublicBaseUrl(env).replace(/\/$/, "");
-    if (!base) return null;
     return { url: `${base}${ADMITTO_LOGO_PATH}`, kind: "admitto" };
   } catch {
     return null;
