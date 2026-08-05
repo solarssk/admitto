@@ -120,11 +120,9 @@ export function EventCard({
   const attendeeCount = event.attendee_count;
   const mapPlaceholderLabel = hasPin && !mapSrc ? "Maps unavailable" : "No location";
   const mapAttribution = event.map_attribution?.trim() || "© OpenStreetMap";
+  // Prop is test-only; production always uses the browser IANA zone.
   const timeZone =
-    operatorTimeZone?.trim() ||
-    (typeof Intl !== "undefined"
-      ? Intl.DateTimeFormat().resolvedOptions().timeZone
-      : undefined);
+    operatorTimeZone?.trim() || Intl.DateTimeFormat().resolvedOptions().timeZone;
   const weather = weatherChip(event, tempUnitFromTimeZone(timeZone));
 
   return (

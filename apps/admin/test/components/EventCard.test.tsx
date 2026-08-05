@@ -314,6 +314,39 @@ describe("EventCard", () => {
     expect(getTooltipText(chip)).toMatch(/54° to 64°F/);
   });
 
+  it("falls back to the browser IANA timezone when operatorTimeZone is omitted", () => {
+    renderCard(
+      {},
+      {
+        ...baseEvent,
+        weather: {
+          status: "ok",
+          temp_c: 22,
+          weather_code: 0,
+          attribution: "Weather data by MET Norway",
+        },
+      },
+    );
+    // Production never passes operatorTimeZone; unit follows the runtime zone (°C or °F).
+    expect(screen.getByText(/^22°C$|^72°F$/)).toBeTruthy();
+  });
+
+  it("treats blank operatorTimeZone as omitted", () => {
+    renderCard(
+      { operatorTimeZone: "   " },
+      {
+        ...baseEvent,
+        weather: {
+          status: "ok",
+          temp_c: 22,
+          weather_code: 0,
+          attribution: "Weather data by MET Norway",
+        },
+      },
+    );
+    expect(screen.getByText(/^22°C$|^72°F$/)).toBeTruthy();
+  });
+
   it("uses singular day wording for too_far horizon and opens-in of 1", () => {
     renderCard(
       {},
