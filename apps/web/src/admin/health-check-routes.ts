@@ -31,6 +31,7 @@ import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { resolveGeocodingConfig, resolveMapTileConfig } from "../maps/config.js";
 import { refreshMapsConfigCacheIfStale } from "../maps/maps-org-settings.js";
 import { isGeocodingContactConfigured } from "../maps/user-agent.js";
+import type { WeatherConfig } from "../weather/config.js";
 import {
   createWeatherServiceFromDb,
   resolveEffectiveWeatherConfig,
@@ -992,6 +993,116 @@ function mapTilesRow(env: NodeJS.ProcessEnv, checkedAt: string): HealthCheckRow 
 
 const WEATHER_DEGRADED_MS = 1_500;
 
+function weatherServiceLabel(provider: WeatherConfig["provider"]): string {
+  return provider === "metno" ? "Weather, MET Norway" : "Weather, Open-Meteo";
+}
+
+function weatherEndpointDisplay(config: WeatherConfig): string {
+  return (
+    (config.provider === "metno"
+      ? safeEndpointDisplay("https://api.met.no/weatherapi/locationforecast/2.0/compact")
+      : safeEndpointDisplay(`${config.baseUrl}/v1/forecast`)) ?? "unknown"
+  );
+}
+
+function weatherDisabledRow(
+  label: string,
+  config: WeatherConfig,
+  endpoint: string,
+  checkedAt: string,
+): HealthCheckRow {
+  return {
+    id: "weather",
+    label,
+    status: "not_configured",
+    summary: "Weather disabled",
+    details: detailsFromEntries([
+      ["status", "not_configured"],
+      ["provider", config.provider],
+      ["endpoint", endpoint],
+      ["last_checked", checkedAt],
+    ]),
+  };
+}
+
+async function weatherPassiveRow(
+  db: PrismaClient,
+  env: NodeJS.ProcessEnv,
+  label: string,
+  config: WeatherConfig,
+  endpoint: string,
+  checkedAt: string,
+): Promise<HealthCheckRow> {
+  const contactConfigured =
+    config.provider === "metno" ? await isGeocodingContactConfigured(db, env) : true;
+  const details: Array<[string, string]> = [
+    ["status", contactConfigured ? "ok" : "degraded"],
+    ["provider", config.provider],
+    ["endpoint", endpoint],
+    ["last_checked", checkedAt],
+  ];
+  if (config.provider === "openmeteo") {
+    details.splice(3, 0, ["api_key", config.apiKey ? "configured" : "none"]);
+  }
+  return {
+    id: "weather",
+    label,
+    status: contactConfigured ? "ok" : "degraded",
+    summary: contactConfigured ? "Provider available" : "Support contact required",
+    details: detailsFromEntries(details),
+  };
+}
+
+function weatherLiveFailedRow(
+  label: string,
+  config: WeatherConfig,
+  endpoint: string,
+  probe: { latencyMs: number; error?: string },
+  checkedAt: string,
+): HealthCheckRow {
+  return {
+    id: "weather",
+    label,
+    status: "down",
+    summary:
+      probe.error === "support_contact_required"
+        ? "Support contact required"
+        : "Unreachable",
+    details: detailsFromEntries([
+      ["status", "down"],
+      ["provider", config.provider],
+      ["endpoint", endpoint],
+      ["live_check", probe.error ?? "failed"],
+      ["latency_ms", String(probe.latencyMs)],
+      ["last_checked", checkedAt],
+    ]),
+  };
+}
+
+function weatherLiveOkRow(
+  label: string,
+  config: WeatherConfig,
+  endpoint: string,
+  latencyMs: number,
+  checkedAt: string,
+): HealthCheckRow {
+  const degraded = latencyMs >= WEATHER_DEGRADED_MS;
+  return {
+    id: "weather",
+    label,
+    status: degraded ? "degraded" : "ok",
+    summary: degraded ? `Slow to respond · ${latencyMs} ms` : "Reachable",
+    details: detailsFromEntries([
+      ["status", degraded ? "degraded" : "ok"],
+      ["provider", config.provider],
+      ["endpoint", endpoint],
+      ["latency_ms", String(latencyMs)],
+      ["live_check", "ok"],
+      ["last_checked", checkedAt],
+    ]),
+  };
+}
+
 async function weatherRow(
   db: PrismaClient,
   live: boolean,
@@ -999,84 +1110,22 @@ async function weatherRow(
   checkedAt: string,
 ): Promise<HealthCheckRow> {
   const config = await resolveEffectiveWeatherConfig(db, env);
-  const label = config.provider === "metno" ? "Weather, MET Norway" : "Weather, Open-Meteo";
-  const endpoint =
-    (config.provider === "metno"
-      ? safeEndpointDisplay("https://api.met.no/weatherapi/locationforecast/2.0/compact")
-      : safeEndpointDisplay(`${config.baseUrl}/v1/forecast`)) ?? "unknown";
+  const label = weatherServiceLabel(config.provider);
+  const endpoint = weatherEndpointDisplay(config);
 
   if (!config.enabled) {
-    return {
-      id: "weather",
-      label,
-      status: "not_configured",
-      summary: "Weather disabled",
-      details: detailsFromEntries([
-        ["status", "not_configured"],
-        ["provider", config.provider],
-        ["endpoint", endpoint],
-        ["last_checked", checkedAt],
-      ]),
-    };
+    return weatherDisabledRow(label, config, endpoint, checkedAt);
   }
-
   if (!live) {
-    const contactConfigured =
-      config.provider === "metno" ? await isGeocodingContactConfigured(db, env) : true;
-    const details: Array<[string, string]> = [
-      ["status", contactConfigured ? "ok" : "degraded"],
-      ["provider", config.provider],
-      ["endpoint", endpoint],
-      ["last_checked", checkedAt],
-    ];
-    if (config.provider === "openmeteo") {
-      details.splice(3, 0, ["api_key", config.apiKey ? "configured" : "none"]);
-    }
-    return {
-      id: "weather",
-      label,
-      status: contactConfigured ? "ok" : "degraded",
-      summary: contactConfigured ? "Provider available" : "Support contact required",
-      details: detailsFromEntries(details),
-    };
+    return weatherPassiveRow(db, env, label, config, endpoint, checkedAt);
   }
 
   const service = await createWeatherServiceFromDb(db, env);
   const probe = await service.probeLive();
   if (!probe.ok) {
-    return {
-      id: "weather",
-      label,
-      status: "down",
-      summary:
-        probe.error === "support_contact_required"
-          ? "Support contact required"
-          : "Unreachable",
-      details: detailsFromEntries([
-        ["status", "down"],
-        ["provider", config.provider],
-        ["endpoint", endpoint],
-        ["live_check", probe.error ?? "failed"],
-        ["latency_ms", String(probe.latencyMs)],
-        ["last_checked", checkedAt],
-      ]),
-    };
+    return weatherLiveFailedRow(label, config, endpoint, probe, checkedAt);
   }
-  const degraded = probe.latencyMs >= WEATHER_DEGRADED_MS;
-  return {
-    id: "weather",
-    label,
-    status: degraded ? "degraded" : "ok",
-    summary: degraded ? `Slow to respond · ${probe.latencyMs} ms` : "Reachable",
-    details: detailsFromEntries([
-      ["status", degraded ? "degraded" : "ok"],
-      ["provider", config.provider],
-      ["endpoint", endpoint],
-      ["latency_ms", String(probe.latencyMs)],
-      ["live_check", "ok"],
-      ["last_checked", checkedAt],
-    ]),
-  };
+  return weatherLiveOkRow(label, config, endpoint, probe.latencyMs, checkedAt);
 }
 
 function plannedRow(id: string, label: string, summary: string): HealthCheckRow {
