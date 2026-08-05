@@ -14,6 +14,7 @@ import {
   resolveWeatherEnvConfig,
   weatherApiKeyRequired,
   weatherCacheKey,
+  weatherConfigCacheScope,
   weatherCodeInfo,
 } from "../../src/weather/index.js";
 
@@ -354,10 +355,33 @@ describe("helpers", () => {
     expect(eventDateYmd("2026-08-10T12:00:00.000Z", "UTC")).toBe("2026-08-10");
   });
 
-  it("builds stable cache keys", () => {
-    expect(weatherCacheKey(52.2297, 21.0122, "2026-08-10")).toBe("52.23:21.01:2026-08-10:openmeteo:c");
+  it("builds stable cache keys scoped by provider host and credentials", () => {
     expect(weatherCacheKey(52.2297, 21.0122, "2026-08-10", "metno")).toBe(
       "52.23:21.01:2026-08-10:metno:c",
     );
+    expect(
+      weatherCacheKey(
+        52.2297,
+        21.0122,
+        "2026-08-10",
+        weatherConfigCacheScope({
+          provider: "openmeteo",
+          baseUrl: "https://api.open-meteo.com",
+          apiKey: null,
+        }),
+      ),
+    ).toBe("52.23:21.01:2026-08-10:om:https://api.open-meteo.com:n:c");
+    const withKey = weatherConfigCacheScope({
+      provider: "openmeteo",
+      baseUrl: "https://customer-api.open-meteo.com/",
+      apiKey: "secret",
+    });
+    const withoutKey = weatherConfigCacheScope({
+      provider: "openmeteo",
+      baseUrl: "https://customer-api.open-meteo.com",
+      apiKey: null,
+    });
+    expect(withKey).not.toBe(withoutKey);
+    expect(withKey).toMatch(/^om:https:\/\/customer-api\.open-meteo\.com:k[a-f0-9]{12}$/);
   });
 });

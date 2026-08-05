@@ -20,7 +20,7 @@ import {
 } from "@admitto/auth";
 import { describeMailConfigForOrg, resolveMailConfigForOrg } from "@admitto/mailer-config";
 import { probeMailTransport, type MailProbeResult } from "@admitto/mailer";
-import { isLocationMapsEnabled, type GeocodingProvider } from "@admitto/location";
+import type { GeocodingProvider } from "@admitto/location";
 import { resolveUploadDir } from "@admitto/storage";
 import type { HealthOverallStatus, HealthRowStatus } from "@admitto/shared";
 import { collectSetupChecks, type SetupCheckResult } from "./setup-checks-routes.js";
@@ -888,7 +888,7 @@ async function addressLookupRow(
   const endpoint = safeEndpointDisplay(geo.baseUrl);
   const label = "Address lookup, Nominatim";
 
-  if (!isLocationMapsEnabled(env)) {
+  if (!resolveMapTileConfig(env).enabled) {
     return {
       id: "address_lookup",
       label,

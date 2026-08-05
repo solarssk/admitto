@@ -6,11 +6,12 @@ import { canManageInstance, listAdminEvents } from "@admitto/auth";
 import { ensureBadgeEventItem, ensureStandardTicketType, writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { assertCoordinatePairing, buildEventStaticMapPath, LOCATION_LIMITS, LocationValidationError } from "@admitto/location";
-import { resolveMapTileConfig } from "../maps/config.js";
-import { refreshMapsConfigCacheIfStale } from "../maps/maps-org-settings.js";
-import { plainMapAttribution } from "../maps/static-map.js";
 import { createWeatherServiceFromDb } from "../weather/weather-org-settings.js";
+import { summarizeMany } from "../weather/weather-service.js";
 import type { WeatherSummaryDto } from "../weather/types.js";
+import { plainMapAttribution } from "../maps/static-map.js";
+import { refreshMapsConfigCacheIfStale } from "../maps/maps-org-settings.js";
+import { resolveMapTileConfig } from "../maps/config.js";
 import {
   adminAuditFromContext,
   countAttendeesByEvent,
@@ -141,15 +142,14 @@ export async function attachWeatherToEventDtos(
   if (events.length === 0) return dtos;
   const weather = await createWeatherServiceFromDb(db);
   if (!weather.enabled) return dtos;
-  const summaries = await Promise.all(
-    events.map((e) =>
-      weather.summarize({
-        latitude: e.map_latitude,
-        longitude: e.map_longitude,
-        date: e.date,
-        timezone: e.timezone,
-      }),
-    ),
+  const summaries = await summarizeMany(
+    events.map((e) => ({
+      latitude: e.map_latitude,
+      longitude: e.map_longitude,
+      date: e.date,
+      timezone: e.timezone,
+    })),
+    weather,
   );
   return dtos.map((dto, i) => {
     const summary = summaries[i];

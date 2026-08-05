@@ -91,6 +91,7 @@ export class OpenMeteoClient {
     latitude: number,
     longitude: number,
     dateYmd: string,
+    timezone = "UTC",
   ): Promise<DayForecast> {
     const url = new URL(`${this.config.baseUrl}/v1/forecast`);
     url.searchParams.set("latitude", String(latitude));
@@ -99,7 +100,8 @@ export class OpenMeteoClient {
       "daily",
       "weather_code,temperature_2m_max,temperature_2m_min",
     );
-    url.searchParams.set("timezone", "auto");
+    // Match WeatherService.eventDateYmd: daily buckets in the event IANA zone, not geo-auto.
+    url.searchParams.set("timezone", timezone.trim() || "UTC");
     url.searchParams.set("forecast_days", String(FORECAST_HORIZON_DAYS_OPENMETEO));
     url.searchParams.set("temperature_unit", "celsius");
     if (this.config.apiKey) {
@@ -137,6 +139,6 @@ export class OpenMeteoClient {
   /** Lightweight health probe (today's forecast for a fixed pin). */
   async probe(): Promise<void> {
     const today = new Date().toISOString().slice(0, 10);
-    await this.fetchDayForecast(52.52, 13.41, today);
+    await this.fetchDayForecast(52.52, 13.41, today, "UTC");
   }
 }

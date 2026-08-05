@@ -14,8 +14,12 @@ import type { WeatherSummaryDto } from "./types.js";
 import {
   getSharedWeatherCache,
   weatherCacheKey,
+  weatherConfigCacheScope,
   type WeatherCache,
 } from "./weather-cache.js";
+
+/** Max parallel provider fetches when attaching weather to an event list. */
+const WEATHER_LIST_CONCURRENCY = 6;
 
 export interface EventWeatherInput {
   latitude: number | null | undefined;
@@ -173,7 +177,12 @@ export class WeatherService {
       return { status: "unavailable", ...this.attributionFields() };
     }
 
-    const key = weatherCacheKey(lat, lon, eventYmd, this.config.provider);
+    const key = weatherCacheKey(
+      lat,
+      lon,
+      eventYmd,
+      weatherConfigCacheScope(this.config),
+    );
     const cached = await this.cache.get(key);
     if (cached) {
       return {
@@ -189,7 +198,7 @@ export class WeatherService {
       const day =
         this.config.provider === "metno"
           ? await this.metNoClient().fetchDayForecast(lat, lon, eventYmd, tz)
-          : await this.openMeteo.fetchDayForecast(lat, lon, eventYmd);
+          : await this.openMeteo.fetchDayForecast(lat, lon, eventYmd, tz);
       await this.cache.set(key, day, this.config.cacheTtlMs);
       return {
         status: "ok",
@@ -242,6 +251,20 @@ export function resetWeatherServiceForTests(): void {
 export async function summarizeMany(
   inputs: EventWeatherInput[],
   service: WeatherService = getWeatherService(),
+  concurrency: number = WEATHER_LIST_CONCURRENCY,
 ): Promise<Array<WeatherSummaryDto | null>> {
-  return Promise.all(inputs.map((input) => service.summarize(input)));
+  if (inputs.length === 0) return [];
+  const limit = Math.min(Math.max(1, concurrency), inputs.length);
+  const results = new Array<WeatherSummaryDto | null>(inputs.length);
+  let next = 0;
+  async function worker(): Promise<void> {
+    while (true) {
+      const i = next;
+      next += 1;
+      if (i >= inputs.length) return;
+      results[i] = await service.summarize(inputs[i]!);
+    }
+  }
+  await Promise.all(Array.from({ length: limit }, () => worker()));
+  return results;
 }

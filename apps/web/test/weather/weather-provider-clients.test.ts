@@ -46,6 +46,7 @@ describe("OpenMeteoClient", () => {
     const fetchFn = vi.fn(async (input: string | URL) => {
       const url = String(input);
       expect(url).toContain("apikey=secret");
+      expect(url).toContain("timezone=Europe%2FWarsaw");
       return new Response(
         JSON.stringify({
           daily: {
@@ -62,7 +63,9 @@ describe("OpenMeteoClient", () => {
       config: { ...defaultWeatherConfig(), provider: "openmeteo", apiKey: "secret" },
       fetchFn: fetchFn as unknown as typeof fetch,
     });
-    await expect(client.fetchDayForecast(52.5, 13.4, "2026-08-10")).resolves.toMatchObject({
+    await expect(
+      client.fetchDayForecast(52.5, 13.4, "2026-08-10", "Europe/Warsaw"),
+    ).resolves.toMatchObject({
       weather_code: 2,
       temp_max_c: 21.5,
     });

@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import type { PrismaClient } from "@admitto/db";
 import { listCheckInEvents } from "@admitto/auth";
 import { attachWeatherToEventDtos, serializeEventDto } from "./admin-api-routes.js";
+import { refreshMapsConfigCacheIfStale } from "../maps/maps-org-settings.js";
 import {
   checkInScan,
   admitAttendee,
@@ -37,6 +38,7 @@ import {
 export async function handleGetCheckinEvents(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");
   const includeAttendeeCount = c.req.query("includeAttendeeCount") === "true";
+  await refreshMapsConfigCacheIfStale(db);
   const events = await listCheckInEvents(db, auth.userId);
 
   if (!includeAttendeeCount) {

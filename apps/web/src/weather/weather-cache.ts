@@ -1,6 +1,7 @@
 /**
  * Redis→in-memory fail-open cache for daily forecast summaries (same shape as geocoding).
  */
+import { createHash } from "node:crypto";
 import {
   InMemoryTtlStringCache,
   RedisTtlStringCache,
@@ -88,15 +89,30 @@ export async function resetSharedWeatherCacheForTests(): Promise<void> {
   await previous?.disconnect();
 }
 
-/** Round coords so nearby events share a cache entry (~1 km). Include provider so
- * switching Open-Meteo ↔ MET Norway does not reuse the other provider's day row. */
+/**
+ * Scope forecasts by provider + Open-Meteo host/credentials so a settings change cannot
+ * reuse another host's day row. API key is hashed (never stored cleartext in Redis keys).
+ */
+export function weatherConfigCacheScope(config: {
+  provider: string;
+  baseUrl: string;
+  apiKey: string | null;
+}): string {
+  if (config.provider === "metno") return "metno";
+  const base = config.baseUrl.replace(/\/$/, "").toLowerCase();
+  if (!config.apiKey) return `om:${base}:n`;
+  const digest = createHash("sha256").update(config.apiKey).digest("hex").slice(0, 12);
+  return `om:${base}:k${digest}`;
+}
+
+/** Round coords so nearby events share a cache entry (~1 km). */
 export function weatherCacheKey(
   latitude: number,
   longitude: number,
   dateYmd: string,
-  provider: string = "openmeteo",
+  configScope: string,
 ): string {
   const lat = latitude.toFixed(2);
   const lon = longitude.toFixed(2);
-  return `${lat}:${lon}:${dateYmd}:${provider}:c`;
+  return `${lat}:${lon}:${dateYmd}:${configScope}:c`;
 }

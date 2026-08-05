@@ -45,7 +45,6 @@ const {
   getCfAccessConfig,
   testCfAccessConnection,
   resolveProductVersion,
-  isLocationMapsEnabled,
   resolveEffectiveWeatherConfig,
   createWeatherServiceFromDb,
   isGeocodingContactConfigured,
@@ -63,7 +62,6 @@ const {
   getCfAccessConfig: vi.fn(),
   testCfAccessConnection: vi.fn(),
   resolveProductVersion: vi.fn(() => "0.4.13"),
-  isLocationMapsEnabled: vi.fn(() => true),
   resolveEffectiveWeatherConfig: vi.fn(),
   createWeatherServiceFromDb: vi.fn(),
   isGeocodingContactConfigured: vi.fn(async () => true),
@@ -87,10 +85,6 @@ vi.mock("@admitto/mailer-config", () => ({
   describeMailConfigForOrg,
   resolveMailConfigForOrg,
 }));
-vi.mock("@admitto/location", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@admitto/location")>();
-  return { ...actual, isLocationMapsEnabled };
-});
 vi.mock("../../src/weather/weather-org-settings.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/weather/weather-org-settings.js")>();
   return {
@@ -130,8 +124,20 @@ import {
   mapTilesServiceLabel,
   worstHealthStatus,
 } from "../../src/admin/health-check-routes.js";
+import {
+  defaultGeocodingConfig,
+  defaultMapTileConfig,
+  setMapsConfigCache,
+} from "../../src/maps/config.js";
 
 const readAdminBuildMetaMock = vi.mocked(readAdminBuildMeta);
+
+function setMapsEnabled(enabled: boolean) {
+  setMapsConfigCache({
+    tiles: { ...defaultMapTileConfig(), enabled },
+    geocoding: defaultGeocodingConfig(),
+  });
+}
 
 /** Writable upload root so File storage does not flip overall to down in CI (uploads/ is gitignored). */
 const uploadFixture = { dir: "" };
@@ -198,7 +204,7 @@ afterEach(() => {
   checkDatabase.mockResolvedValue({ status: "ok", latency_ms: 2 });
   resolveProductVersion.mockReturnValue("0.4.13");
   readAdminBuildMetaMock.mockReturnValue(null);
-  isLocationMapsEnabled.mockReturnValue(true);
+  setMapsConfigCache(null);
   vi.mocked(canManageInstance).mockResolvedValue(true);
   resolveEffectiveWeatherConfig.mockResolvedValue({
     enabled: true,
@@ -622,9 +628,6 @@ describe("collectAdminHealth", () => {
     checkMailer.mockReturnValue({ configured: false, provider: null });
     resolveInstanceOrganizationId.mockRejectedValueOnce(new Error("org boom"));
     describeMailConfigForOrg.mockRejectedValueOnce(new Error("mail boom"));
-    isLocationMapsEnabled.mockImplementationOnce(() => {
-      throw new Error("maps boom");
-    });
 
     const report = await collectAdminHealth({
       db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
@@ -638,9 +641,6 @@ describe("collectAdminHealth", () => {
       "degraded",
     );
     expect(report.groups[1]!.checks.find((c) => c.id === "cloudflare_access")?.status).toBe(
-      "degraded",
-    );
-    expect(report.groups[1]!.checks.find((c) => c.id === "address_lookup")?.status).toBe(
       "degraded",
     );
   });
@@ -665,7 +665,7 @@ describe("collectAdminHealth", () => {
       protectedPrefixes: [],
       jwksUri: "",
     });
-    isLocationMapsEnabled.mockReturnValue(true);
+    setMapsEnabled(true);
 
     const search = vi.fn().mockResolvedValue([{ label: "Warsaw" }]);
     const report = await collectAdminHealth({
@@ -688,7 +688,7 @@ describe("collectAdminHealth", () => {
       email_deliveries_failed_retryable: 0,
     });
     stubHappyPathMailAndIdp();
-    isLocationMapsEnabled.mockReturnValue(true);
+    setMapsEnabled(true);
 
     const search = vi.fn().mockRejectedValue(new Error("timeout"));
     const report = await collectAdminHealth({
@@ -710,7 +710,7 @@ describe("collectAdminHealth", () => {
       email_deliveries_failed_retryable: 0,
     });
     stubHappyPathMailAndIdp();
-    isLocationMapsEnabled.mockReturnValue(true);
+    setMapsEnabled(true);
 
     let now = 1_000_000;
     vi.spyOn(Date, "now").mockImplementation(() => {
@@ -740,7 +740,7 @@ describe("collectAdminHealth", () => {
       email_deliveries_failed_retryable: 0,
     });
     stubHappyPathMailAndIdp();
-    isLocationMapsEnabled.mockReturnValue(false);
+    setMapsEnabled(false);
 
     const report = await collectAdminHealth({
       db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
@@ -1224,7 +1224,7 @@ describe("collectAdminHealth", () => {
       email_deliveries_failed_retryable: 0,
     });
     stubHappyPathMailAndIdp();
-    isLocationMapsEnabled.mockReturnValue(true);
+    setMapsEnabled(true);
 
     const carto = await collectAdminHealth({
       db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
@@ -1246,7 +1246,7 @@ describe("collectAdminHealth", () => {
       "Map tiles, tiles.example.com",
     );
 
-    isLocationMapsEnabled.mockReturnValue(false);
+    setMapsEnabled(false);
     const disabled = await collectAdminHealth({
       db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
       rateLimitStore: {} as never,
@@ -1382,7 +1382,7 @@ describe("handleAdminHealth", () => {
     expect(readAdminBuildMetaMock).toHaveBeenCalledWith("/served-admin-dist");
 
     const search = vi.fn().mockResolvedValue([{ label: "Warsaw" }]);
-    isLocationMapsEnabled.mockReturnValue(true);
+    setMapsEnabled(true);
     const postRes = await handleAdminHealth(
       fakeHealthContext(),
       { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,

@@ -39,4 +39,5 @@ export {
   getSharedWeatherCache,
   resetSharedWeatherCacheForTests,
   weatherCacheKey,
+  weatherConfigCacheScope,
 } from "./weather-cache.js";
