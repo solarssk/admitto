@@ -43,7 +43,7 @@ describe("pickDailyForecast", () => {
 
 describe("OpenMeteoClient", () => {
   it("fetches a day and attaches the API key query param", async () => {
-    const fetchFn = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchFn = vi.fn(async (input: string | URL) => {
       const url = String(input);
       expect(url).toContain("apikey=secret");
       return new Response(
@@ -95,7 +95,7 @@ describe("OpenMeteoClient", () => {
 
 describe("MetNoClient", () => {
   it("sends User-Agent and returns a daily aggregate", async () => {
-    const fetchFn = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const fetchFn = vi.fn(async (_input: string | URL, init?: RequestInit) => {
       expect(init?.headers).toMatchObject({ "User-Agent": "Admitto/test" });
       return new Response(
         JSON.stringify({
