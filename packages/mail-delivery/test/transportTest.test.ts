@@ -129,6 +129,47 @@ describe("buildTransportTestMessage", () => {
     expect(msg.html).toContain(">Admitto</td>");
     expect(msg.html).not.toContain('width="140"');
   });
+
+  it("uses default organization scope when ctx is omitted", () => {
+    const msg = buildTransportTestMessage();
+    expect(msg.html).toContain("Organization mail settings");
+    expect(msg.subject).toMatch(/^Admitto mail transport test \(/);
+  });
+
+  it("includes envelopeFrom, mailbox, host-only, and event organization row", () => {
+    const msg = buildTransportTestMessage(new Date("2026-08-04T20:09:47.000Z"), {
+      scope: "event",
+      eventTitle: "Gala Night",
+      organizationName: "Acme Corp",
+      provider: "powerautomate",
+      logoUrl: "https://cdn.example.com/logo.png",
+      logoKind: "branding",
+      envelopeFrom: "mailer-bounce@example.com",
+      mailbox: "shared@example.com",
+      host: "smtp.internal",
+      fromAddress: "from@example.com",
+    });
+    expect(msg.html).toContain("Envelope-From");
+    expect(msg.html).toContain("mailer-bounce@example.com");
+    expect(msg.html).toContain("Mailbox");
+    expect(msg.html).toContain("shared@example.com");
+    expect(msg.html).toContain("smtp.internal");
+    expect(msg.html).not.toContain("smtp.internal:");
+    expect(msg.html).toContain("Power Automate");
+    expect(msg.html).toContain("Organization");
+    expect(msg.html).toContain("Acme Corp");
+    expect(msg.html).toContain('alt="Acme Corp"');
+  });
+
+  it("falls back to event title for branding logo alt text", () => {
+    const msg = buildTransportTestMessage(new Date("2026-08-04T20:09:47.000Z"), {
+      scope: "event",
+      eventTitle: "Demo Night",
+      logoUrl: "https://cdn.example.com/logo.png",
+      logoKind: "branding",
+    });
+    expect(msg.html).toContain('alt="Demo Night"');
+  });
 });
 
 describe("absolutizeTransportTestLogo", () => {
@@ -169,6 +210,10 @@ describe("resolveTransportTestHeaderLogo", () => {
         kind: "admitto",
       },
     );
+  });
+
+  it("returns null when BASE_URL cannot be resolved", () => {
+    expect(resolveTransportTestHeaderLogo(null, {})).toBeNull();
   });
 });
 
@@ -298,6 +343,18 @@ describe("buildEventTransportTestMessage", () => {
     );
     expect(msg.html).toContain("tester@example.com");
     expect(msg.html).toContain("Event: Transport Test Event");
+  });
+
+  it("builds without transport extras when only provider is passed", async () => {
+    const msg = await buildEventTransportTestMessage(
+      EVENT_ID,
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { provider: "export_only" },
+    );
+    expect(msg.html).toContain("Event: Transport Test Event");
+    expect(msg.html).toContain("Export only");
+    expect(msg.html).not.toContain("Recipient");
   });
 });
 

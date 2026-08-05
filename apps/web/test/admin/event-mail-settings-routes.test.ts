@@ -332,4 +332,26 @@ describe("handlePostEventMailSettingsTest verifyBounce path", () => {
     expect(res.status).toBe(404);
     expect(runEventBounceProbe).not.toHaveBeenCalled();
   });
+
+  it("returns failed for a plain transport test when send fails", async () => {
+    vi.mocked(sendEventTransportTestEmail).mockResolvedValueOnce({
+      status: "failed",
+      provider: "smtp",
+      error: "SMTP rejected recipient",
+    });
+    const db = baseDb();
+
+    const res = await handlePostEventMailSettingsTest(
+      mockContext({
+        eventId: "evt_1",
+        json: { to: "operator@example.com", verifyBounce: false },
+      }),
+      db as never,
+    );
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { status: string; error?: string };
+    expect(json.status).toBe("failed");
+    expect(json.error).toMatch(/SMTP rejected recipient|Send failed/i);
+  });
 });

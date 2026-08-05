@@ -650,6 +650,17 @@ describe("EventMailSettingsCard — test send", () => {
     expect(isDisabled(bounceSwitch)).toBe(true);
   });
 
+  it("keeps Also verify bounce disabled when bounce settings fail to load", async () => {
+    mockFetch.mockResolvedValue(inheritedResponse());
+    mockFetchBounce.mockRejectedValueOnce(new Error("network error"));
+    renderCard();
+    await screen.findByText(SMTP_SUMMARY_TEXT);
+
+    const bounceSwitch = await screen.findByRole("switch", { name: "Also verify bounce" });
+    await waitFor(() => expect(isDisabled(bounceSwitch)).toBe(true));
+    expect((bounceSwitch as HTMLInputElement).checked).toBe(false);
+  });
+
   it("turns off Also verify bounce when bounce detection becomes unavailable", async () => {
     mockFetchBounce.mockResolvedValue(configuredBounceResponse());
     mockFetch.mockResolvedValue(inheritedResponse());

@@ -1,6 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BounceIngestSettings } from "@admitto/db";
 import { resolveMailConfig } from "@admitto/mailer-config";
+
+const { imapProviderCtor, resolveImapConnectConfigMock } = vi.hoisted(() => ({
+  imapProviderCtor: vi.fn(),
+  resolveImapConnectConfigMock: vi.fn(),
+}));
+
+vi.mock("../src/bounceIngest/imapProvider.js", () => ({
+  ImapInboundProvider: imapProviderCtor,
+}));
+
+vi.mock("../src/bounceIngest/resolveAuth.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/bounceIngest/resolveAuth.js")>();
+  return {
+    ...actual,
+    resolveImapConnectConfig: resolveImapConnectConfigMock,
+  };
+});
+
 import {
   BounceProbeSetupError,
   runEventBounceProbe,
@@ -89,6 +107,15 @@ function baseDb(overrides: {
 
 describe("runEventBounceProbe (unit)", () => {
   beforeEach(() => {
+    imapProviderCtor.mockImplementation(function MockImapProvider() {
+      return mockProvider([]);
+    });
+    resolveImapConnectConfigMock.mockResolvedValue({
+      host: "imap.example.com",
+      port: 993,
+      user: "bounce@example.com",
+      password: "secret",
+    });
     vi.mocked(resolveMailConfig).mockResolvedValue({
       provider: "export_only",
       fromAddress: "org@example.com",
@@ -221,6 +248,46 @@ describe("runEventBounceProbe (unit)", () => {
     expect(result.smtpCode).toMatch(/^550/);
     expect(result.message).toMatch(/Bounce received/i);
     expect(markSeen).toHaveBeenCalled();
+  });
+
+  it("opens the default IMAP provider when createProvider is not injected", async () => {
+    let tick = 0;
+    const result = await runEventBounceProbe(
+      {
+        eventId: "evt_1",
+        toAddress: "nobody@example.com",
+        timeoutMs: 20,
+        pollMs: 5,
+        now: () => {
+          tick += 1;
+          return tick * 10;
+        },
+        sleep: async () => undefined,
+      },
+      baseDb() as never,
+    );
+
+    expect(resolveImapConnectConfigMock).toHaveBeenCalled();
+    expect(imapProviderCtor).toHaveBeenCalled();
+    expect(result.status).toBe("timeout");
+  });
+
+  it("uses the default sleep between poll iterations", async () => {
+    vi.useFakeTimers();
+    const promise = runEventBounceProbe(
+      {
+        eventId: "evt_1",
+        toAddress: "nobody@example.com",
+        timeoutMs: 100,
+        pollMs: 40,
+        ingestOptions: { createProvider: async () => mockProvider([]) },
+      },
+      baseDb() as never,
+    );
+    await vi.advanceTimersByTimeAsync(150);
+    const result = await promise;
+    expect(result.status).toBe("timeout");
+    vi.useRealTimers();
   });
 
   it("does not skip sidecar-processed UIDs (probe vs sidecar race)", async () => {
