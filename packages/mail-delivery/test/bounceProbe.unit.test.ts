@@ -3,8 +3,6 @@ import type { BounceIngestSettings } from "@admitto/db";
 import { resolveMailConfig } from "@admitto/mailer-config";
 import {
   BounceProbeSetupError,
-  bounceProbeAttendeeEmail,
-  cleanupLegacyBounceProbeAttendee,
   runEventBounceProbe,
 } from "../src/bounceProbe.js";
 import { sendEventTransportTestEmail } from "../src/transportTest.js";
@@ -378,46 +376,5 @@ describe("runEventBounceProbe (unit)", () => {
 
     expect(result.status).toBe("ok");
     expect(markSeen).toHaveBeenCalled();
-  });
-});
-
-describe("cleanupLegacyBounceProbeAttendee (unit)", () => {
-  it("removes legacy attendee and delivery rows when present", async () => {
-    const deleteDeliveries = vi.fn().mockResolvedValue({ count: 1 });
-    const deleteAttendees = vi.fn().mockResolvedValue({ count: 1 });
-    const db = baseDb({
-      attendee: {
-        findUnique: vi.fn().mockResolvedValue({ id: "att_1" }),
-        deleteMany: deleteAttendees,
-      },
-      emailDelivery: { deleteMany: deleteDeliveries },
-    });
-
-    await cleanupLegacyBounceProbeAttendee(db as never, "evt_1");
-
-    expect(deleteDeliveries).toHaveBeenCalledWith({
-      where: { attendee_id: "att_1", event_id: "evt_1" },
-    });
-    expect(deleteAttendees).toHaveBeenCalledWith({
-      where: { id: "att_1", event_id: "evt_1" },
-    });
-  });
-
-  it("swallows database errors", async () => {
-    const db = baseDb({
-      attendee: {
-        findUnique: vi.fn().mockRejectedValue(new Error("db down")),
-      },
-    });
-
-    await expect(
-      cleanupLegacyBounceProbeAttendee(db as never, "evt_1"),
-    ).resolves.toBeUndefined();
-  });
-});
-
-describe("bounceProbeAttendeeEmail", () => {
-  it("falls back to event when the id is empty after sanitization", () => {
-    expect(bounceProbeAttendeeEmail("!!!")).toBe("bounce-probe+event@admitto.invalid");
   });
 });

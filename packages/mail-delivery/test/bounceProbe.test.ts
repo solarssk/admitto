@@ -6,8 +6,6 @@ import { closeMailer, createMailer } from "@admitto/mailer";
 import { setMailSettings } from "@admitto/mailer-config";
 import {
   BounceProbeSetupError,
-  bounceProbeAttendeeEmail,
-  cleanupLegacyBounceProbeAttendee,
   runEventBounceProbe,
 } from "../src/bounceProbe.js";
 import type { InboundMailProvider, InboundMessage } from "../src/bounceIngest/types.js";
@@ -130,42 +128,6 @@ describe("runEventBounceProbe", () => {
     expect(await prisma.emailDelivery.count({ where: { event_id: EVENT_ID } })).toBe(0);
   });
 
-  it("removes a legacy Bounce probe attendee left by older builds", async () => {
-    const email = bounceProbeAttendeeEmail(EVENT_ID);
-    const attendee = await prisma.attendee.create({
-      data: {
-        event_id: EVENT_ID,
-        email,
-        name: "Bounce probe",
-        status: "registered",
-      },
-    });
-    await prisma.emailDelivery.create({
-      data: {
-        organization_id: ORG_ID,
-        event_id: EVENT_ID,
-        attendee_id: attendee.id,
-        purpose: "resend",
-        provider: "export_only",
-        status: "bounced",
-        attempts: 1,
-        recipient_email: "old-probe@example.com",
-        rendered_subject: "legacy",
-        rendered_html: "<p>x</p>",
-        template_label_snapshot: "Bounce probe",
-      },
-    });
-
-    await cleanupLegacyBounceProbeAttendee(prisma, EVENT_ID);
-
-    expect(
-      await prisma.attendee.findUnique({
-        where: { event_id_email: { event_id: EVENT_ID, email } },
-      }),
-    ).toBeNull();
-    expect(await prisma.emailDelivery.count({ where: { event_id: EVENT_ID } })).toBe(0);
-  });
-
   it("reports timeout when no bounce arrives", async () => {
     let t = 0;
     const result = await runEventBounceProbe(
@@ -247,13 +209,5 @@ describe("runEventBounceProbe", () => {
     expect(result.status).toBe("failed");
     expect(result.message).toMatch(/SMTP rejected|Send failed/i);
     expect(result.sendResult.error).toBeTruthy();
-  });
-});
-
-describe("bounceProbeAttendeeEmail", () => {
-  it("sanitizes non-alphanumeric characters from the event id", () => {
-    expect(bounceProbeAttendeeEmail("evt/with spaces!")).toBe(
-      "bounce-probe+evtwithspaces@admitto.invalid",
-    );
   });
 });

@@ -22,8 +22,6 @@ export {
   BounceProbeSetupError,
   BOUNCE_PROBE_TIMEOUT_MS,
   BOUNCE_PROBE_POLL_MS,
-  bounceProbeAttendeeEmail,
-  cleanupLegacyBounceProbeAttendee,
 } from "./bounceProbe.js";
 export type { BounceProbeResult, BounceProbeStatus, RunEventBounceProbeParams } from "./bounceProbe.js";
 export {

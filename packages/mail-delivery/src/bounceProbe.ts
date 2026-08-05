@@ -18,13 +18,6 @@ import { sendEventTransportTestEmail } from "./transportTest.js";
 export const BOUNCE_PROBE_TIMEOUT_MS = 90_000;
 export const BOUNCE_PROBE_POLL_MS = 5_000;
 
-/** Legacy synthetic profile email used by older bounce probes that created a fake Attendee.
- * Kept only so `cleanupLegacyBounceProbeAttendee` can find and remove those rows. */
-export function bounceProbeAttendeeEmail(eventId: string): string {
-  const safe = eventId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48) || "event";
-  return `bounce-probe+${safe}@admitto.invalid`;
-}
-
 export type BounceProbeStatus = "ok" | "timeout" | "failed";
 
 export interface BounceProbeResult {
@@ -56,29 +49,6 @@ function defaultSleep(ms: number): Promise<void> {
 
 function isHardBounce(line: ParsedBounceLine): boolean {
   return line.smtpCode.startsWith("5");
-}
-
-/**
- * Remove the obsolete per-event "Bounce probe" attendee (and its EmailDelivery rows) left by
- * older probe builds that recorded a fake guest. New probes never create one (same as a plain
- * Send test email). Best-effort: failures are swallowed so a stuck cleanup cannot block the probe.
- */
-export async function cleanupLegacyBounceProbeAttendee(
-  db: PrismaClient,
-  eventId: string,
-): Promise<void> {
-  try {
-    const email = bounceProbeAttendeeEmail(eventId);
-    const attendee = await db.attendee.findUnique({
-      where: { event_id_email: { event_id: eventId, email } },
-      select: { id: true },
-    });
-    if (!attendee) return;
-    await db.emailDelivery.deleteMany({ where: { attendee_id: attendee.id, event_id: eventId } });
-    await db.attendee.deleteMany({ where: { id: attendee.id, event_id: eventId } });
-  } catch {
-    /* best-effort */
-  }
 }
 
 async function openProbeProvider(
@@ -197,8 +167,6 @@ export async function runEventBounceProbe(
   if (!bounceSettings.enabled) {
     throw new BounceProbeSetupError("Turn bounce detection On and save before verifying bounce.");
   }
-
-  await cleanupLegacyBounceProbeAttendee(db, eventId);
 
   let sendResult: SendResult;
   try {
