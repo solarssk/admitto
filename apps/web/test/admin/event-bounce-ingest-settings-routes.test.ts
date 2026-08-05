@@ -597,6 +597,273 @@ describe("event bounce ingest settings routes", () => {
     expect(JSON.stringify(json)).not.toContain("secret-internal-detail");
   });
 
+  it("PUT returns 404 when the event is missing", async () => {
+    const db = baseDb({
+      event: { findUnique: vi.fn().mockResolvedValue(null) },
+    });
+
+    const res = await handlePutEventBounceIngestSettings(
+      mockContext({
+        eventId: "evt_missing",
+        json: { imap_host: "imap.example.com" },
+      }),
+      db as never,
+    );
+    expect(res.status).toBe(404);
+    const json = (await res.json()) as { error: string };
+    expect(json.error).toBe("event_not_found");
+  });
+
+  it("PUT switches to SMTP reuse and clears dedicated IMAP credentials", async () => {
+    const upsert = vi.fn().mockResolvedValue({
+      id: "bis_1",
+      event_id: "evt_1",
+      imap_host: "imap.example.com",
+      imap_port: 993,
+      imap_username: null,
+      imap_password_enc: null,
+      reuse_smtp_credentials: true,
+      folders: ["INBOX"],
+      poll_interval_minutes: 5,
+      enabled: false,
+    });
+    const db = baseDb({
+      bounceIngestSettings: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "bis_1",
+          event_id: "evt_1",
+          imap_host: "imap.example.com",
+          imap_port: 993,
+          imap_username: "bounce@example.com",
+          imap_password_enc: "enc:old",
+          reuse_smtp_credentials: false,
+          folders: ["INBOX"],
+          poll_interval_minutes: 5,
+          enabled: false,
+        }),
+        upsert,
+      },
+    });
+
+    const res = await handlePutEventBounceIngestSettings(
+      mockContext({
+        eventId: "evt_1",
+        json: { reuse_smtp_credentials: true },
+      }),
+      db as never,
+    );
+    expect(res.status).toBe(200);
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          reuse_smtp_credentials: true,
+          imap_password_enc: null,
+          imap_username: null,
+        }),
+      }),
+    );
+    expect(writeAdminAuditLog).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        metadata: expect.objectContaining({ secrets_cleared: true }),
+      }),
+    );
+  });
+
+  it("PUT enable=true with SMTP reuse does not require dedicated IMAP credentials", async () => {
+    const upsert = vi.fn().mockResolvedValue({
+      id: "bis_1",
+      event_id: "evt_1",
+      imap_host: "imap.example.com",
+      imap_port: 993,
+      imap_username: null,
+      imap_password_enc: null,
+      reuse_smtp_credentials: true,
+      folders: ["INBOX"],
+      poll_interval_minutes: 5,
+      enabled: true,
+    });
+    const db = baseDb({
+      bounceIngestSettings: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "bis_1",
+          event_id: "evt_1",
+          imap_host: "imap.example.com",
+          imap_port: 993,
+          imap_username: null,
+          imap_password_enc: null,
+          reuse_smtp_credentials: true,
+          folders: ["INBOX"],
+          poll_interval_minutes: 5,
+          enabled: false,
+        }),
+        upsert,
+      },
+    });
+
+    const res = await handlePutEventBounceIngestSettings(
+      mockContext({
+        eventId: "evt_1",
+        json: { enabled: true },
+      }),
+      db as never,
+    );
+    expect(res.status).toBe(200);
+    expect(upsert).toHaveBeenCalled();
+  });
+
+  it("PUT clears imap_username when an empty string is sent", async () => {
+    const upsert = vi.fn().mockResolvedValue({
+      id: "bis_1",
+      event_id: "evt_1",
+      imap_host: "imap.example.com",
+      imap_port: 993,
+      imap_username: null,
+      imap_password_enc: "enc:pw",
+      reuse_smtp_credentials: false,
+      folders: ["INBOX"],
+      poll_interval_minutes: 5,
+      enabled: false,
+    });
+    const db = baseDb({ bounceIngestSettings: { upsert } });
+
+    const res = await handlePutEventBounceIngestSettings(
+      mockContext({
+        eventId: "evt_1",
+        json: { imap_username: "" },
+      }),
+      db as never,
+    );
+    expect(res.status).toBe(200);
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({ imap_username: null }),
+      }),
+    );
+  });
+
+  it("PUT accepts poll_interval_minutes and enabled updates", async () => {
+    const upsert = vi.fn().mockResolvedValue({
+      id: "bis_1",
+      event_id: "evt_1",
+      imap_host: "imap.example.com",
+      imap_port: 993,
+      imap_username: "bounce@example.com",
+      imap_password_enc: "enc:pw",
+      reuse_smtp_credentials: false,
+      folders: ["INBOX"],
+      poll_interval_minutes: 30,
+      enabled: true,
+    });
+    const db = baseDb({
+      bounceIngestSettings: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "bis_1",
+          event_id: "evt_1",
+          imap_host: "imap.example.com",
+          imap_port: 993,
+          imap_username: "bounce@example.com",
+          imap_password_enc: "enc:pw",
+          reuse_smtp_credentials: false,
+          folders: ["INBOX"],
+          poll_interval_minutes: 5,
+          enabled: false,
+        }),
+        upsert,
+      },
+    });
+
+    const res = await handlePutEventBounceIngestSettings(
+      mockContext({
+        eventId: "evt_1",
+        json: { poll_interval_minutes: 30, enabled: true },
+      }),
+      db as never,
+    );
+    expect(res.status).toBe(200);
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({ poll_interval_minutes: 30, enabled: true }),
+      }),
+    );
+  });
+
+  it("GET reports imap_password unset when SMTP reuse is on but SMTP password is missing", async () => {
+    vi.mocked(describeMailConfig).mockResolvedValue({
+      provider: { value: "smtp", source: "organization", locked: false },
+      smtpPassword: { value: null, source: "default", locked: false },
+      user: { value: "smtp-user", source: "organization", locked: false },
+    } as never);
+    const db = baseDb({
+      bounceIngestSettings: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "bis_1",
+          event_id: "evt_1",
+          imap_host: "imap.example.com",
+          imap_port: 993,
+          imap_username: null,
+          imap_password_enc: null,
+          reuse_smtp_credentials: true,
+          folders: ["INBOX"],
+          poll_interval_minutes: 5,
+          enabled: true,
+        }),
+      },
+    });
+
+    const res = await handleGetEventBounceIngestSettings(
+      mockContext({ eventId: "evt_1" }),
+      db as never,
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { imap_password: { set: boolean; from_smtp?: boolean } };
+    expect(json.imap_password.set).toBe(false);
+    expect(json.imap_password.from_smtp).toBe(true);
+  });
+
+  it("POST test returns 404 when the event is missing", async () => {
+    const db = baseDb({
+      event: { findUnique: vi.fn().mockResolvedValue(null) },
+    });
+
+    const res = await handlePostEventBounceIngestSettingsTest(
+      mockContext({ eventId: "evt_missing" }),
+      db as never,
+    );
+    expect(res.status).toBe(404);
+    expect(testBounceImapConnection).not.toHaveBeenCalled();
+  });
+
+  it("POST test ok pluralizes folder count in the message", async () => {
+    const row = {
+      id: "bis_1",
+      event_id: "evt_1",
+      imap_host: "imap.example.com",
+      imap_port: 993,
+      imap_username: "bounce@example.com",
+      imap_password_enc: "enc:pw",
+      reuse_smtp_credentials: false,
+      folders: ["INBOX", "Junk Email"],
+      poll_interval_minutes: 5,
+      enabled: true,
+    };
+    const db = baseDb({
+      bounceIngestSettings: { findUnique: vi.fn().mockResolvedValue(row) },
+    });
+    vi.mocked(testBounceImapConnection).mockResolvedValueOnce({
+      ok: true,
+      foldersChecked: 2,
+    });
+
+    const res = await handlePostEventBounceIngestSettingsTest(
+      mockContext({ eventId: "evt_1" }),
+      db as never,
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { ok: boolean; message?: string };
+    expect(json.message).toMatch(/2 folders/);
+  });
+
   it("returns the requireSuperadmin response when access is denied", async () => {
     const forbidden = new Response(JSON.stringify({ error: "forbidden" }), {
       status: 403,
@@ -613,5 +880,66 @@ describe("event bounce ingest settings routes", () => {
     const json = (await res.json()) as { error: string };
     expect(json.error).toBe("forbidden");
     expect(db.event.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("PUT ignores empty imap_password string without rotating secrets", async () => {
+    const upsert = vi.fn().mockResolvedValue({
+      id: "bis_1",
+      event_id: "evt_1",
+      imap_host: "imap.example.com",
+      imap_port: 993,
+      imap_username: "bounce@example.com",
+      imap_password_enc: "enc:existing",
+      reuse_smtp_credentials: false,
+      folders: ["INBOX"],
+      poll_interval_minutes: 5,
+      enabled: false,
+    });
+    const db = baseDb({ bounceIngestSettings: { upsert } });
+
+    const res = await handlePutEventBounceIngestSettings(
+      mockContext({
+        eventId: "evt_1",
+        json: { imap_password: "" },
+      }),
+      db as never,
+    );
+    expect(res.status).toBe(200);
+    expect(encryptToString).not.toHaveBeenCalled();
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.not.objectContaining({ imap_password_enc: expect.anything() }),
+      }),
+    );
+  });
+
+  it("PUT accepts folders as an array", async () => {
+    const upsert = vi.fn().mockResolvedValue({
+      id: "bis_1",
+      event_id: "evt_1",
+      imap_host: "imap.example.com",
+      imap_port: 993,
+      imap_username: "bounce@example.com",
+      imap_password_enc: "enc:pw",
+      reuse_smtp_credentials: false,
+      folders: ["INBOX", "Spam"],
+      poll_interval_minutes: 5,
+      enabled: false,
+    });
+    const db = baseDb({ bounceIngestSettings: { upsert } });
+
+    const res = await handlePutEventBounceIngestSettings(
+      mockContext({
+        eventId: "evt_1",
+        json: { folders: ["INBOX", "Spam"] },
+      }),
+      db as never,
+    );
+    expect(res.status).toBe(200);
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({ folders: ["INBOX", "Spam"] }),
+      }),
+    );
   });
 });

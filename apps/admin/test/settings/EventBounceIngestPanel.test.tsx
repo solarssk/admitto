@@ -206,4 +206,143 @@ describe("EventBounceIngestPanel", () => {
     });
     expect(screen.queryByText("secret_internal")).toBeNull();
   });
+
+  it("saves clear_imap_password when the password is cleared", async () => {
+    mockSave.mockResolvedValueOnce(
+      bounceResponse({ imap_password: { set: false, masked: null } }),
+    );
+    const { ref } = renderPanel();
+    await screen.findByLabelText("IMAP host");
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    await act(async () => {
+      await ref.current?.save();
+    });
+
+    await waitFor(() => expect(mockSave).toHaveBeenCalledTimes(1));
+    expect(mockSave.mock.calls[0][1]).toMatchObject({ clear_imap_password: true });
+  });
+
+  it("reset via ref reverts unsaved edits", async () => {
+    const { ref } = renderPanel();
+    const hostInput = (await screen.findByLabelText("IMAP host")) as HTMLInputElement;
+
+    fireEvent.change(hostInput, { target: { value: "imap.dirty.example.com" } });
+    expect(hostInput.value).toBe("imap.dirty.example.com");
+
+    act(() => {
+      ref.current?.reset();
+    });
+
+    await waitFor(() => {
+      expect((screen.getByLabelText("IMAP host") as HTMLInputElement).value).toBe(
+        "imap.example.com",
+      );
+    });
+  });
+
+  it("shows an error notice when Test connection fails", async () => {
+    mockTest.mockResolvedValueOnce({
+      ok: false,
+      error: "Authentication failed.",
+    });
+    renderPanel();
+    await screen.findByLabelText("IMAP host");
+
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Authentication failed/)).toBeTruthy();
+    });
+  });
+
+  it("blocks Test connection when poll interval is dirty", async () => {
+    renderPanel();
+    await screen.findByLabelText("IMAP host");
+
+    fireEvent.change(screen.getByLabelText("Check every"), { target: { value: "15" } });
+
+    await waitFor(() => {
+      expect(isDisabled(screen.getByRole("button", { name: "Test connection" }))).toBe(true);
+    });
+    expect(mockTest).not.toHaveBeenCalled();
+  });
+
+  it("toasts success after save", async () => {
+    mockSave.mockResolvedValueOnce(bounceResponse());
+    const { ref } = renderPanel();
+    await screen.findByLabelText("IMAP host");
+
+    fireEvent.change(screen.getByLabelText("Folders to check"), {
+      target: { value: "INBOX, Spam" },
+    });
+    await act(async () => {
+      await ref.current?.save();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Bounce detection settings saved/);
+    });
+  });
+
+  it("blocks Test connection when bounce detection is not configured", async () => {
+    mockFetch.mockResolvedValueOnce(bounceResponse({ configured: false, enabled: false }));
+    renderPanel();
+    await screen.findByLabelText("IMAP host");
+
+    expect(isDisabled(screen.getByRole("button", { name: "Test connection" }))).toBe(true);
+  });
+
+  it("shows unavailable SMTP reuse hint when smtp_reuse_available is false", async () => {
+    mockFetch.mockResolvedValueOnce(
+      bounceResponse({ smtp_reuse_available: false, reuse_smtp_credentials: false }),
+    );
+    renderPanel();
+    await screen.findByLabelText("IMAP host");
+
+    expect(screen.getByText(/Available when this event's mail transport is SMTP/)).toBeTruthy();
+    expect(isDisabled(screen.getByRole("switch", { name: "Use SMTP username and password" }))).toBe(
+      true,
+    );
+  });
+
+  it("shows an error notice when Test connection throws", async () => {
+    mockTest.mockRejectedValueOnce(new Error("network down"));
+    renderPanel();
+    await screen.findByLabelText("IMAP host");
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    });
+
+    expect(await screen.findByText(/Could not test the IMAP connection/)).toBeTruthy();
+  });
+
+  it("saves with SMTP reuse when the switch is on and SMTP reuse is available", async () => {
+    mockFetch.mockResolvedValueOnce(
+      bounceResponse({
+        smtp_reuse_available: true,
+        reuse_smtp_credentials: false,
+      }),
+    );
+    mockSave.mockResolvedValueOnce(
+      bounceResponse({
+        smtp_reuse_available: true,
+        reuse_smtp_credentials: true,
+        imap_username: null,
+        imap_password: { set: true, masked: "••••", from_smtp: true },
+      }),
+    );
+    const { ref } = renderPanel();
+    await screen.findByLabelText("IMAP host");
+
+    fireEvent.click(screen.getByRole("switch", { name: "Use SMTP username and password" }));
+    await act(async () => {
+      await ref.current?.save();
+    });
+
+    await waitFor(() => expect(mockSave).toHaveBeenCalledTimes(1));
+    expect(mockSave.mock.calls[0][1]).toMatchObject({ reuse_smtp_credentials: true });
+    expect(mockSave.mock.calls[0][1]).not.toHaveProperty("imap_password");
+  });
 });

@@ -850,6 +850,29 @@ export function PowerAutomateCard({
   );
 }
 
+function mailPreviewModifierClass(
+  base: string,
+  previewKind: "ok" | "error" | "warn",
+): string {
+  if (previewKind === "error") return `${base} ${base}--error`;
+  if (previewKind === "warn") return `${base} ${base}--warn`;
+  return base;
+}
+
+function bounceProbeNoticeVariant(
+  status: "ok" | "timeout" | "failed",
+): "success" | "warning" | "error" {
+  if (status === "ok") return "success";
+  if (status === "timeout") return "warning";
+  return "error";
+}
+
+function sendTestButtonLabel(waitingForBounce: boolean, testSending: boolean): string {
+  if (waitingForBounce) return "Waiting for bounce…";
+  if (testSending) return "Sending…";
+  return "Send test";
+}
+
 export function TestResultPreview({ testResult }: Readonly<{ testResult: TestResult }>) {
   const transportLabel = testResult.provider
     ? MAIL_PROVIDER_LABELS[testResult.provider]
@@ -882,13 +905,7 @@ export function TestResultPreview({ testResult }: Readonly<{ testResult: TestRes
       <div className="mail-preview__head">
         <div className="mail-preview__head-main">
           <i
-            className={`ti ${headIcon} mail-preview__head-icon${
-              previewKind === "error"
-                ? " mail-preview__head-icon--error"
-                : previewKind === "warn"
-                  ? " mail-preview__head-icon--warn"
-                  : ""
-            }`}
+            className={`ti ${headIcon} ${mailPreviewModifierClass("mail-preview__head-icon", previewKind)}`}
             aria-hidden="true"
           />
           <div className="mail-preview__head-text">
@@ -897,15 +914,7 @@ export function TestResultPreview({ testResult }: Readonly<{ testResult: TestRes
           </div>
         </div>
         {transportLabel && (
-          <span
-            className={`mail-preview__provider-badge${
-              previewKind === "error"
-                ? " mail-preview__provider-badge--error"
-                : previewKind === "warn"
-                  ? " mail-preview__provider-badge--warn"
-                  : ""
-            }`}
-          >
+          <span className={mailPreviewModifierClass("mail-preview__provider-badge", previewKind)}>
             {transportLabel}
           </span>
         )}
@@ -967,13 +976,7 @@ export function TestResultPreview({ testResult }: Readonly<{ testResult: TestRes
       </div>
       {testResult.bounceProbe && (
         <Notice
-          variant={
-            testResult.bounceProbe.status === "ok"
-              ? "success"
-              : testResult.bounceProbe.status === "timeout"
-                ? "warning"
-                : "error"
-          }
+          variant={bounceProbeNoticeVariant(testResult.bounceProbe.status)}
           role="status"
           className="mail-preview__bounce-notice"
         >
@@ -1041,11 +1044,7 @@ export function SendTestEmailCard({
   const bounceBlocked = Boolean(bounceVerifyBlockedReason);
   const waitingForBounce = Boolean(testSending && bounceVerify);
   const bounceSecondsLeft = useBounceWaitCountdown(waitingForBounce);
-  const sendingLabel = waitingForBounce
-    ? "Waiting for bounce…"
-    : testSending
-      ? "Sending…"
-      : "Send test";
+  const sendingLabel = sendTestButtonLabel(waitingForBounce, testSending);
 
   return (
     <Card title={<HintLabel hint={SEND_TEST_EMAIL_HINT}>Send test email</HintLabel>}>
@@ -1417,13 +1416,7 @@ export async function runTestSend(params: {
     const nextResult = buildTestResult(result, to, snapshotInputs);
     setTestResult(nextResult);
     if (nextResult.bounceProbe) {
-      const variant =
-        nextResult.bounceProbe.status === "ok"
-          ? "success"
-          : nextResult.bounceProbe.status === "timeout"
-            ? "warning"
-            : "error";
-      addToast(nextResult.bounceProbe.message, variant);
+      addToast(nextResult.bounceProbe.message, bounceProbeNoticeVariant(nextResult.bounceProbe.status));
     } else {
       addToast(nextResult.message, nextResult.kind === "ok" ? "success" : "error");
     }

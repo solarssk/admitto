@@ -183,20 +183,23 @@ function renderDiagValueHtml(value: string | readonly string[]): string {
     .join("");
 }
 
+function eventScopeLabel(ctx: TransportTestMessageContext): string {
+  const title = ctx.eventTitle?.trim();
+  return title ? `Event: ${title}` : "Event mail settings";
+}
+
+function organizationScopeLabel(ctx: TransportTestMessageContext): string {
+  const name = ctx.organizationName?.trim();
+  return name ? `Organization: ${name}` : "Organization mail settings";
+}
+
 function buildTransportTestDiagRows(
   nonce: string,
   stamp: string,
   ctx: TransportTestMessageContext,
 ): DiagRow[] {
   const providerLabel = ctx.provider ? (PROVIDER_LABELS[ctx.provider] ?? ctx.provider) : null;
-  const scopeLabel =
-    ctx.scope === "event"
-      ? ctx.eventTitle?.trim()
-        ? `Event: ${ctx.eventTitle.trim()}`
-        : "Event mail settings"
-      : ctx.organizationName?.trim()
-        ? `Organization: ${ctx.organizationName.trim()}`
-        : "Organization mail settings";
+  const scopeLabel = ctx.scope === "event" ? eventScopeLabel(ctx) : organizationScopeLabel(ctx);
 
   const rows: DiagRow[] = [
     ["Test id", nonce],
@@ -400,6 +403,19 @@ export async function sendEventTransportTestEmail(
 }
 
 /** Build a branded transport-test message for an event (shared by Send test + bounce probe). */
+function transportTestConfigFields(extras: {
+  provider?: MailerProvider;
+  toAddress?: string;
+  mailConfig?: MailerConfig;
+  now?: Date;
+}): Partial<TransportTestMessageContext> {
+  if (extras.mailConfig && extras.toAddress) {
+    return transportTestFieldsFromConfig(extras.mailConfig, extras.toAddress);
+  }
+  if (extras.toAddress) return { toAddress: extras.toAddress.trim() };
+  return {};
+}
+
 export async function buildEventTransportTestMessage(
   eventId: string,
   prisma: PrismaClient,
@@ -417,12 +433,6 @@ export async function buildEventTransportTestMessage(
   });
   const branding = await resolveBranding(eventId, prisma);
   const headerLogo = resolveTransportTestHeaderLogo(branding.logo_url, env);
-  const configFields =
-    extras.mailConfig && extras.toAddress
-      ? transportTestFieldsFromConfig(extras.mailConfig, extras.toAddress)
-      : extras.toAddress
-        ? { toAddress: extras.toAddress.trim() }
-        : {};
   return buildTransportTestMessage(extras.now ?? new Date(), {
     scope: "event",
     eventTitle: event?.title ?? undefined,
@@ -430,6 +440,6 @@ export async function buildEventTransportTestMessage(
     logoUrl: headerLogo?.url ?? null,
     logoKind: headerLogo?.kind,
     provider: extras.provider ?? extras.mailConfig?.provider,
-    ...configFields,
+    ...transportTestConfigFields(extras),
   });
 }

@@ -13,11 +13,22 @@ import type { ParsedBounceLine } from "./types.js";
 const MAX_EMAIL_LEN = 320;
 const MAX_REASON_LEN = 500;
 
-/** Linear email pattern (no nested quantifiers) so Sonar S8786 does not flag ReDoS on NDR bodies. */
-const EMAIL_RE =
-  "([A-Z0-9](?:[A-Z0-9._%+-]{0,62}[A-Z0-9])?@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+)";
-const HOST_SAID = "host\\s+\\S+(?:\\s+\\([^)]*\\))?\\s+said:\\s+";
-const REPLY_TAIL = "(?:\\s+\\(in reply to\\s+[^)]+\\))?$";
+/** Bounded local + domain (no nested quantifiers) for Sonar S5843 / ReDoS safety. */
+const EMAIL_RE = String.raw`([A-Z0-9][A-Z0-9._%+-]{0,62}@[A-Z0-9][A-Z0-9.-]{0,253}\.[A-Z]{2,63})`;
+const HOST_SAID = String.raw`host\s+\S+(?:\s+\([^)]*\))?\s+said:\s+`;
+const REPLY_TAIL = String.raw`(?:\s+\(in reply to\s+[^)]+\))?$`;
+
+const RE_ANGLE_EMAIL = new RegExp(`<${EMAIL_RE}>`, "i");
+const RE_BARE_EMAIL = new RegExp(`^${EMAIL_RE}$`, "i");
+const RE_ANY_EMAIL = new RegExp(EMAIL_RE, "i");
+const RE_STATUS = /^(\d)\.(\d+)\.(\d+)/;
+const RE_DIAG_SMTP = /\b(\d{3})\b/;
+const RE_DIAG_ENHANCED = /\b(\d\.\d\.\d)\b/;
+const RE_NEAR_ORPHAN = new RegExp(
+  String.raw`${EMAIL_RE}\s*(?:\n[^\n]*){0,6}\nfailed:\s+host\s+`,
+  "i",
+);
+const RE_ANGLE_EMAIL_GI = new RegExp(`<${EMAIL_RE}>`, "gi");
 
 function normalizeReason(raw: string): string {
   return raw.replace(/\s+/g, " ").trim().replace(/^:\s*/, "").slice(0, MAX_REASON_LEN);
@@ -25,6 +36,15 @@ function normalizeReason(raw: string): string {
 
 function lineKey(line: ParsedBounceLine): string {
   return `${line.recipientEmail}|${line.smtpCode}|${line.enhancedCode ?? ""}|${line.reason}`;
+}
+
+/** Addresses that must not be used when inferring a recipient from angle brackets or nearby context. */
+function isDiscardedInferenceEmail(email: string): boolean {
+  const lower = email.trim().toLowerCase();
+  if (!lower || lower.length > MAX_EMAIL_LEN) return true;
+  if (lower.endsWith(".mailhop.org")) return true;
+  if (lower.startsWith("postmaster@")) return true;
+  return false;
 }
 
 function pushLine(
@@ -60,12 +80,79 @@ function parseAddressTypeValue(raw: string | undefined): string | null {
   const afterType = trimmed.includes(";")
     ? trimmed.slice(trimmed.indexOf(";") + 1).trim()
     : trimmed;
-  const angled = afterType.match(new RegExp(`<${EMAIL_RE}>`, "i"));
+  const angled = RE_ANGLE_EMAIL.exec(afterType);
   if (angled?.[1]) return angled[1].toLowerCase();
-  const bare = afterType.match(new RegExp(`^${EMAIL_RE}$`, "i"));
+  const bare = RE_BARE_EMAIL.exec(afterType);
   if (bare?.[1]) return bare[1].toLowerCase();
-  const any = afterType.match(new RegExp(EMAIL_RE, "i"));
+  const any = RE_ANY_EMAIL.exec(afterType);
   return any?.[1]?.toLowerCase() ?? null;
+}
+
+function parseDsnFields(block: string): Map<string, string> {
+  const fields = new Map<string, string>();
+  for (const line of block.split("\n")) {
+    const colon = line.indexOf(":");
+    if (colon <= 0) continue;
+    const name = line.slice(0, colon);
+    if (!/^[A-Za-z0-9-]+$/.test(name)) continue;
+    fields.set(name.toLowerCase(), line.slice(colon + 1).trim());
+  }
+  return fields;
+}
+
+function dsnActionAccepted(action: string, statusMatch: RegExpExecArray | null): boolean {
+  if (action) return action === "failed" || action === "delayed";
+  if (!statusMatch) return false;
+  return statusMatch[1] === "4" || statusMatch[1] === "5";
+}
+
+function resolveDsnSmtpCode(
+  diagnostic: string,
+  statusMatch: RegExpExecArray | null,
+): { smtpCode: string; enhanced: string | undefined } | null {
+  const diagSmtp = RE_DIAG_SMTP.exec(diagnostic);
+  const diagEnhanced = RE_DIAG_ENHANCED.exec(diagnostic);
+  const enhanced = statusMatch
+    ? `${statusMatch[1]}.${statusMatch[2]}.${statusMatch[3]}`
+    : diagEnhanced?.[1];
+  let smtpCode = diagSmtp?.[1];
+  if (!smtpCode && enhanced && (enhanced.startsWith("5") || enhanced.startsWith("4"))) {
+    smtpCode = `${enhanced[0]}00`;
+  }
+  if (!smtpCode) return null;
+  return { smtpCode, enhanced };
+}
+
+function parseOneDsnBlock(block: string, out: ParsedBounceLine[], seen: Set<string>): void {
+  if (!/Final-Recipient:|Original-Recipient:/i.test(block)) return;
+
+  const fields = parseDsnFields(block);
+  const action = (fields.get("action") ?? "").toLowerCase();
+  const status = fields.get("status") ?? "";
+  const statusMatch = RE_STATUS.exec(status);
+  if (!dsnActionAccepted(action, statusMatch)) return;
+
+  const email =
+    parseAddressTypeValue(fields.get("original-recipient")) ??
+    parseAddressTypeValue(fields.get("final-recipient"));
+  if (!email) return;
+
+  const diagnostic = fields.get("diagnostic-code") ?? "";
+  const resolved = resolveDsnSmtpCode(diagnostic, statusMatch);
+  if (!resolved) return;
+
+  // delayed → soft (4xx class) even if Status says 5.x when Action is delayed
+  const codeForClass =
+    action === "delayed" && !resolved.smtpCode.startsWith("4")
+      ? `4${resolved.smtpCode.slice(1)}`
+      : resolved.smtpCode;
+  const reason =
+    diagnostic.replace(/^[^;]*;\s*/, "").trim() ||
+    (resolved.enhanced
+      ? `DSN status ${resolved.enhanced}`
+      : `DSN action ${action || "failed"}`);
+
+  pushLine(out, seen, email, codeForClass, resolved.enhanced, reason);
 }
 
 /**
@@ -81,52 +168,8 @@ export function parseRfc3464DsnBlocks(text: string): ParsedBounceLine[] {
   const seen = new Set<string>();
 
   // Split on blank lines into header-like field groups (RFC 3464 §2).
-  const blocks = normalized.split(/\n(?:[ \t]*\n)+/);
-  for (const block of blocks) {
-    if (!/Final-Recipient:|Original-Recipient:/i.test(block)) continue;
-
-    const fields = new Map<string, string>();
-    for (const line of block.split("\n")) {
-      // Bounded field name + rest-of-line value (no unbounded `(.*)$` backtracking).
-      const colon = line.indexOf(":");
-      if (colon <= 0) continue;
-      const name = line.slice(0, colon);
-      if (!/^[A-Za-z0-9-]+$/.test(name)) continue;
-      fields.set(name.toLowerCase(), line.slice(colon + 1).trim());
-    }
-
-    const action = (fields.get("action") ?? "").toLowerCase();
-    // Missing Action: still accept if Status looks like a failure (some gateways).
-    const status = fields.get("status") ?? "";
-    const statusMatch = status.match(/^(\d)\.(\d+)\.(\d+)/);
-    if (action) {
-      if (action !== "failed" && action !== "delayed") continue;
-    } else if (!statusMatch || (statusMatch[1] !== "4" && statusMatch[1] !== "5")) {
-      continue;
-    }
-
-    const email =
-      parseAddressTypeValue(fields.get("original-recipient")) ??
-      parseAddressTypeValue(fields.get("final-recipient"));
-    if (!email) continue;
-
-    const diagnostic = fields.get("diagnostic-code") ?? "";
-    const diagSmtp = diagnostic.match(/\b(\d{3})\b/);
-    const diagEnhanced = diagnostic.match(/\b(\d\.\d\.\d)\b/);
-    const enhanced = statusMatch ? `${statusMatch[1]}.${statusMatch[2]}.${statusMatch[3]}` : diagEnhanced?.[1];
-    const smtpCode =
-      diagSmtp?.[1] ??
-      (enhanced?.startsWith("5") || enhanced?.startsWith("4") ? `${enhanced[0]}00` : undefined);
-    if (!smtpCode) continue;
-
-    // delayed → soft (4xx class) even if Status says 5.x when Action is delayed
-    const codeForClass =
-      action === "delayed" && !smtpCode.startsWith("4") ? `4${smtpCode.slice(1)}` : smtpCode;
-    const reason =
-      diagnostic.replace(/^[^;]*;\s*/, "").trim() ||
-      (enhanced ? `DSN status ${enhanced}` : `DSN action ${action || "failed"}`);
-
-    pushLine(out, seen, email, codeForClass, enhanced, reason);
+  for (const block of normalized.split(/\n(?:[ \t]*\n)+/)) {
+    parseOneDsnBlock(block, out, seen);
   }
 
   return out;
@@ -136,15 +179,15 @@ function inferRecipientEmail(body: string): string | null {
   const fromDsn = parseRfc3464DsnBlocks(body)[0]?.recipientEmail;
   if (fromDsn) return fromDsn;
 
-  const nearOrphan = body.match(
-    new RegExp(`${EMAIL_RE}\\s*(?:\\n[^\\n]*){0,6}\\nfailed:\\s+host\\s+`, "i"),
-  );
-  if (nearOrphan?.[1]) return nearOrphan[1]!.trim().toLowerCase();
+  const nearOrphan = RE_NEAR_ORPHAN.exec(body);
+  if (nearOrphan?.[1]) {
+    const candidate = nearOrphan[1].trim().toLowerCase();
+    if (!isDiscardedInferenceEmail(candidate)) return candidate;
+  }
 
-  for (const match of body.matchAll(new RegExp(`<${EMAIL_RE}>`, "gi"))) {
+  for (const match of body.matchAll(RE_ANGLE_EMAIL_GI)) {
     const email = match[1]?.trim().toLowerCase();
-    if (!email || email.length > MAX_EMAIL_LEN) continue;
-    if (email.endsWith(".mailhop.org") || email.startsWith("postmaster@")) continue;
+    if (!email || isDiscardedInferenceEmail(email)) continue;
     return email;
   }
 
@@ -155,7 +198,7 @@ function parsePostfixFallback(normalized: string, out: ParsedBounceLine[], seen:
   const inferredEmail = inferRecipientEmail(normalized);
 
   const withEnhanced = new RegExp(
-    `${EMAIL_RE}\\s+failed:\\s+${HOST_SAID}(\\d{3})\\s+(\\d\\.\\d\\.\\d)\\s+\\S+:\\s+(.+?)${REPLY_TAIL}`,
+    String.raw`${EMAIL_RE}\s+failed:\s+${HOST_SAID}(\d{3})\s+(\d\.\d\.\d)\s+\S+:\s+(.+?)${REPLY_TAIL}`,
     "gim",
   );
   for (const match of normalized.matchAll(withEnhanced)) {
@@ -165,7 +208,7 @@ function parsePostfixFallback(normalized: string, out: ParsedBounceLine[], seen:
   // Also matches mailhop/Synology-style "<address>failed: host …" with no
   // colon and no space between the bracketed address and "failed:".
   const withoutStrictEnhanced = new RegExp(
-    `<?${EMAIL_RE}>?\\s*failed:\\s+${HOST_SAID}(\\d{3})\\s+(?:(\\d\\.\\d\\.\\d)\\s+)?(?:\\S+:\\s+)?(.+?)${REPLY_TAIL}`,
+    String.raw`<?${EMAIL_RE}>?\s*failed:\s+${HOST_SAID}(\d{3})\s+(?:(\d\.\d\.\d)\s+)?(?:\S+:\s+)?(.+?)${REPLY_TAIL}`,
     "gim",
   );
   for (const match of normalized.matchAll(withoutStrictEnhanced)) {
@@ -173,7 +216,7 @@ function parsePostfixFallback(normalized: string, out: ParsedBounceLine[], seen:
   }
 
   const angleBracket = new RegExp(
-    `<${EMAIL_RE}>:\\s+${HOST_SAID}(\\d{3})\\s+(?:(\\d\\.\\d\\.\\d)\\s+)?(?:<[^>]+>:\\s+)?(.+?)${REPLY_TAIL}`,
+    String.raw`<${EMAIL_RE}>:\s+${HOST_SAID}(\d{3})\s+(?:(\d\.\d\.\d)\s+)?(?:<[^>]+>:\s+)?(.+?)${REPLY_TAIL}`,
     "gim",
   );
   for (const match of normalized.matchAll(angleBracket)) {
@@ -181,7 +224,7 @@ function parsePostfixFallback(normalized: string, out: ParsedBounceLine[], seen:
   }
 
   const orphanFailed = new RegExp(
-    `(?:^|\\n)failed:\\s+${HOST_SAID}(\\d{3})\\s+(?:(\\d\\.\\d\\.\\d)\\s+)?:?\\s*(.+?)${REPLY_TAIL}`,
+    String.raw`(?:^|\n)failed:\s+${HOST_SAID}(\d{3})\s+(?:(\d\.\d\.\d)\s+)?:?\s*(.+?)${REPLY_TAIL}`,
     "gim",
   );
   for (const match of normalized.matchAll(orphanFailed)) {

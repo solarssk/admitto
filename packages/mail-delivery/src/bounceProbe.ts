@@ -3,6 +3,7 @@ import { closeMailer, createMailer, isSendSuccess, type SendResult } from "@admi
 import { resolveMailConfig } from "@admitto/mailer-config";
 import { parseBounceLines } from "./bounceIngest/parseBounceLine.js";
 import { ImapInboundProvider } from "./bounceIngest/imapProvider.js";
+import { isUidProcessed, markUidProcessed } from "./bounceIngest/processedUid.js";
 import {
   lookbackSince,
   parseFolders,
@@ -57,7 +58,7 @@ function buildErrorCode(line: ParsedBounceLine): string {
 }
 
 function isHardBounce(line: ParsedBounceLine): boolean {
-  return line.smtpCode.charAt(0) === "5";
+  return line.smtpCode.startsWith("5");
 }
 
 /**
@@ -83,34 +84,17 @@ export async function cleanupLegacyBounceProbeAttendee(
   }
 }
 
-async function markUidProcessed(
+async function openProbeProvider(
   db: PrismaClient,
-  eventId: string,
-  folder: string,
-  uid: string,
-): Promise<void> {
-  await db.bounceIngestProcessedUid.upsert({
-    where: {
-      event_id_folder_uid: { event_id: eventId, folder, uid },
-    },
-    create: { event_id: eventId, folder, uid },
-    update: { processed_at: new Date() },
-  });
-}
-
-async function isUidProcessed(
-  db: PrismaClient,
-  eventId: string,
-  folder: string,
-  uid: string,
-): Promise<boolean> {
-  const row = await db.bounceIngestProcessedUid.findUnique({
-    where: {
-      event_id_folder_uid: { event_id: eventId, folder, uid },
-    },
-    select: { id: true },
-  });
-  return row !== null;
+  settings: BounceIngestSettings,
+  params: {
+    createProvider?: (settings: BounceIngestSettings) => Promise<InboundMailProvider>;
+    env?: NodeJS.ProcessEnv;
+  },
+): Promise<InboundMailProvider> {
+  if (params.createProvider) return params.createProvider(settings);
+  const connectCfg = await resolveImapConnectConfig(db, settings, params.env ?? process.env);
+  return new ImapInboundProvider(connectCfg);
 }
 
 /**
@@ -132,42 +116,19 @@ async function findHardBounceForRecipient(
   });
   if (!settings?.imap_host || !settings.enabled) return null;
 
-  const env = params.env ?? process.env;
-  let provider: InboundMailProvider;
-  if (params.createProvider) {
-    provider = await params.createProvider(settings);
-  } else {
-    const connectCfg = await resolveImapConnectConfig(db, settings, env);
-    provider = new ImapInboundProvider(connectCfg);
-  }
-
+  const provider = await openProbeProvider(db, settings, params);
   const want = params.recipientEmail.trim().toLowerCase();
   try {
     await provider.connect();
-    const folders = parseFolders(settings.folders);
-    const since = lookbackSince();
-
-    for (const folder of folders) {
-      const messages = await provider.fetchCandidateMessages(folder, since);
-      for (const message of messages) {
-        if (await isUidProcessed(db, params.eventId, folder, message.uid)) continue;
-
-        const lines = parseBounceLines(message.bodyText);
-        const hit = lines.find(
-          (line) => line.recipientEmail.trim().toLowerCase() === want && isHardBounce(line),
-        );
-        if (!hit) continue;
-
-        await markUidProcessed(db, params.eventId, folder, message.uid);
-        if (provider.markSeen) {
-          try {
-            await provider.markSeen(folder, message.uid);
-          } catch {
-            /* optional */
-          }
-        }
-        return { smtpCode: buildErrorCode(hit), reason: hit.reason };
-      }
+    for (const folder of parseFolders(settings.folders)) {
+      const hit = await scanFolderForHardBounce(db, {
+        eventId: params.eventId,
+        folder,
+        since: lookbackSince(),
+        want,
+        provider,
+      });
+      if (hit) return hit;
     }
   } finally {
     try {
@@ -175,6 +136,38 @@ async function findHardBounceForRecipient(
     } catch {
       /* ignore */
     }
+  }
+  return null;
+}
+
+async function scanFolderForHardBounce(
+  db: PrismaClient,
+  args: {
+    eventId: string;
+    folder: string;
+    since: Date;
+    want: string;
+    provider: InboundMailProvider;
+  },
+): Promise<{ smtpCode: string; reason: string } | null> {
+  const messages = await args.provider.fetchCandidateMessages(args.folder, args.since);
+  for (const message of messages) {
+    if (await isUidProcessed(db, args.eventId, args.folder, message.uid)) continue;
+
+    const hit = parseBounceLines(message.bodyText).find(
+      (line) => line.recipientEmail.trim().toLowerCase() === args.want && isHardBounce(line),
+    );
+    if (!hit) continue;
+
+    await markUidProcessed(db, args.eventId, args.folder, message.uid);
+    if (args.provider.markSeen) {
+      try {
+        await args.provider.markSeen(args.folder, message.uid);
+      } catch {
+        /* optional */
+      }
+    }
+    return { smtpCode: buildErrorCode(hit), reason: hit.reason };
   }
   return null;
 }

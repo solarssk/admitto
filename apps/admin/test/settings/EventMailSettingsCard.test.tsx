@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createRef } from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ToastProvider } from "@admitto/ui";
 import {
   EventMailSettingsCard,
   type EventMailSettingsCardHandle,
@@ -571,6 +572,111 @@ describe("EventMailSettingsCard — test send", () => {
 
     const bounceSwitch = await screen.findByRole("switch", { name: "Also verify bounce" });
     expect(isDisabled(bounceSwitch)).toBe(true);
+  });
+
+  it("disables Also verify bounce when the form has unsaved changes", async () => {
+    mockFetchBounce.mockResolvedValue({
+      eventId: "evt-1",
+      organizationId: "org-1",
+      configured: true,
+      enabled: true,
+      imap_host: "imap.example.com",
+      imap_port: 993,
+      imap_username: "bounce@example.com",
+      imap_password: { set: true, masked: "••••" },
+      reuse_smtp_credentials: false,
+      smtp_reuse_available: true,
+      folders: ["INBOX"],
+      poll_interval_minutes: 5,
+    });
+    mockFetch.mockResolvedValue(inheritedResponse());
+    renderCard();
+    await screen.findByText(SMTP_SUMMARY_TEXT);
+
+    const bounceSwitch = await screen.findByRole("switch", { name: "Also verify bounce" });
+    await waitFor(() => expect(isDisabled(bounceSwitch)).toBe(false));
+
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated" }));
+
+    await waitFor(() => expect(isDisabled(bounceSwitch)).toBe(true));
+  });
+
+  it("disables Also verify bounce when the event is archived", async () => {
+    mockFetchBounce.mockResolvedValue({
+      eventId: "evt-1",
+      organizationId: "org-1",
+      configured: true,
+      enabled: true,
+      imap_host: "imap.example.com",
+      imap_port: 993,
+      imap_username: "bounce@example.com",
+      imap_password: { set: true, masked: "••••" },
+      reuse_smtp_credentials: false,
+      smtp_reuse_available: true,
+      folders: ["INBOX"],
+      poll_interval_minutes: 5,
+    });
+    mockFetch.mockResolvedValue(inheritedResponse());
+    renderCard(true);
+    await screen.findByText(SMTP_SUMMARY_TEXT);
+
+    const bounceSwitch = await screen.findByRole("switch", { name: "Also verify bounce" });
+    expect(isDisabled(bounceSwitch)).toBe(true);
+  });
+
+  it("turns off Also verify bounce when bounce detection becomes unavailable", async () => {
+    mockFetchBounce.mockResolvedValue({
+      eventId: "evt-1",
+      organizationId: "org-1",
+      configured: true,
+      enabled: true,
+      imap_host: "imap.example.com",
+      imap_port: 993,
+      imap_username: "bounce@example.com",
+      imap_password: { set: true, masked: "••••" },
+      reuse_smtp_credentials: false,
+      smtp_reuse_available: true,
+      folders: ["INBOX"],
+      poll_interval_minutes: 5,
+    });
+    mockFetch.mockResolvedValue(inheritedResponse());
+    const { rerender } = render(
+      <EventMailSettingsCard eventId="evt-1" isArchived={false} />,
+      {
+        wrapper: ({ children }) => (
+          <ToastProvider>
+            <MemoryRouter>{children}</MemoryRouter>
+          </ToastProvider>
+        ),
+      },
+    );
+    await screen.findByText(SMTP_SUMMARY_TEXT);
+
+    const bounceSwitch = await screen.findByRole("switch", { name: "Also verify bounce" });
+    await waitFor(() => expect(isDisabled(bounceSwitch)).toBe(false));
+    fireEvent.click(bounceSwitch);
+    await waitFor(() => expect((bounceSwitch as HTMLInputElement).checked).toBe(true));
+
+    mockFetchBounce.mockResolvedValue({
+      eventId: "evt-2",
+      organizationId: "org-1",
+      configured: false,
+      enabled: false,
+      imap_host: null,
+      imap_port: null,
+      imap_username: null,
+      imap_password: { set: false, masked: null },
+      reuse_smtp_credentials: false,
+      smtp_reuse_available: false,
+      folders: ["INBOX"],
+      poll_interval_minutes: 5,
+    });
+    rerender(<EventMailSettingsCard eventId="evt-2" isArchived={false} />);
+    await screen.findByText(SMTP_SUMMARY_TEXT);
+
+    const nextSwitch = await screen.findByRole("switch", { name: "Also verify bounce" });
+    await waitFor(() => expect((nextSwitch as HTMLInputElement).checked).toBe(false));
+    expect(isDisabled(nextSwitch)).toBe(true);
   });
 
   it("sends with verifyBounce when the switch is on and bounce is ready", async () => {

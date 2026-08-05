@@ -50,6 +50,54 @@ function modeFromResponse(data: EventMailSettingsResponse): Mode {
   return data.hasEventOverride ? "dedicated" : "org";
 }
 
+function smtpConnectionBlockedReason(isArchived: boolean, hasUnsavedChanges: boolean): string | undefined {
+  if (isArchived) return "This event is archived.";
+  if (hasUnsavedChanges) return "Save your changes first.";
+  return undefined;
+}
+
+function resolveTestSendCopy(args: {
+  isArchived: boolean;
+  transportConfigured: boolean;
+  hasUnsavedChanges: boolean;
+}): { testSendReason: string | undefined; testSendHint: string } {
+  if (args.isArchived) {
+    const msg = "This event is archived. Mail settings cannot be tested.";
+    return { testSendReason: msg, testSendHint: msg };
+  }
+  if (!args.transportConfigured) {
+    const msg = "Select and save a transport (SMTP, Graph, or Power Automate) first.";
+    return { testSendReason: msg, testSendHint: msg };
+  }
+  if (args.hasUnsavedChanges) {
+    return {
+      testSendReason: "Save your changes before sending a test email.",
+      testSendHint:
+        "Save your changes first. The test uses the saved configuration, not unsaved form values.",
+    };
+  }
+  return {
+    testSendReason: undefined,
+    testSendHint:
+      "Verifies whichever transport actually resolves for this event (dedicated or inherited).",
+  };
+}
+
+function resolveBounceVerifyBlockedReason(args: {
+  isArchived: boolean;
+  bounceIngestReady: boolean;
+  hasUnsavedChanges: boolean;
+  transportConfigured: boolean;
+}): string | undefined {
+  if (args.isArchived) return "This event is archived.";
+  if (!args.bounceIngestReady) {
+    return "Enable and configure bounce detection for this event first.";
+  }
+  if (args.hasUnsavedChanges) return "Save your changes before verifying bounce.";
+  if (!args.transportConfigured) return "Select and save a transport first.";
+  return undefined;
+}
+
 /** One-line summary of a resolved, configured transport ("Microsoft Graph · sends as x@y.com"). */
 function transportSummaryLine(data: EventMailSettingsResponse, provider: NonNullable<EventMailSettingsResponse["fields"]["provider"]["value"]>): string {
   const from = data.fields.fromAddress.value;
@@ -374,35 +422,17 @@ export const EventMailSettingsCard = forwardRef<
     testDraft.provider === "graph" ||
     testDraft.provider === "powerautomate";
 
-  let testSendReason: string | undefined;
-  let testSendHint: string;
-  if (isArchived) {
-    testSendReason = "This event is archived. Mail settings cannot be tested.";
-    testSendHint = testSendReason;
-  } else if (!transportConfigured) {
-    testSendReason = "Select and save a transport (SMTP, Graph, or Power Automate) first.";
-    testSendHint = testSendReason;
-  } else if (hasUnsavedChanges) {
-    testSendReason = "Save your changes before sending a test email.";
-    testSendHint =
-      "Save your changes first. The test uses the saved configuration, not unsaved form values.";
-  } else {
-    testSendReason = undefined;
-    testSendHint =
-      "Verifies whichever transport actually resolves for this event (dedicated or inherited).";
-  }
-
-  let bounceVerifyBlockedReason: string | undefined;
-  if (isArchived) {
-    bounceVerifyBlockedReason = "This event is archived.";
-  } else if (!bounceIngestReady) {
-    bounceVerifyBlockedReason =
-      "Enable and configure bounce detection for this event first.";
-  } else if (hasUnsavedChanges) {
-    bounceVerifyBlockedReason = "Save your changes before verifying bounce.";
-  } else if (!transportConfigured) {
-    bounceVerifyBlockedReason = "Select and save a transport first.";
-  }
+  const { testSendReason, testSendHint } = resolveTestSendCopy({
+    isArchived,
+    transportConfigured,
+    hasUnsavedChanges,
+  });
+  const bounceVerifyBlockedReason = resolveBounceVerifyBlockedReason({
+    isArchived,
+    bounceIngestReady,
+    hasUnsavedChanges,
+    transportConfigured,
+  });
 
   const handleTestSend = async () => {
     if (testSendReason) {
@@ -582,13 +612,7 @@ export const EventMailSettingsCard = forwardRef<
               onTestConnection={() => void handleTestConnection()}
               testing={probeTesting}
               testBlocked={hasUnsavedChanges || isArchived}
-              testBlockedReason={
-                isArchived
-                  ? "This event is archived."
-                  : hasUnsavedChanges
-                    ? "Save your changes first."
-                    : undefined
-              }
+              testBlockedReason={smtpConnectionBlockedReason(isArchived, hasUnsavedChanges)}
               testResult={probeResult}
             />
           )}

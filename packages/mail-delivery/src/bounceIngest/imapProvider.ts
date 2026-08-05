@@ -161,17 +161,7 @@ function splitMimeMessage(raw: string, depth = 0): MimeLeaf[] {
  * the recipient address only in the HTML part while the plain-text part omits
  * it entirely, so both are kept rather than picking one.
  */
-export function extractPlainTextFromSource(source: Buffer | Uint8Array | string | undefined): string {
-  const raw = sourceToText(source);
-  if (!raw) return "";
-
-  let leaves: MimeLeaf[];
-  try {
-    leaves = splitMimeMessage(raw);
-  } catch {
-    leaves = [];
-  }
-
+function collectMimeTextChunks(leaves: MimeLeaf[]): string[] {
   const chunks: string[] = [];
   for (const leaf of leaves) {
     if (leaf.contentType === "message/delivery-status" && leaf.text.trim()) {
@@ -188,16 +178,40 @@ export function extractPlainTextFromSource(source: Buffer | Uint8Array | string 
       chunks.push(stripHtmlTagsSafely(leaf.text));
     }
   }
+  return chunks;
+}
 
-  if (chunks.length === 0) {
-    const headerEnd = raw.search(/\r?\n\r?\n/);
-    const body = headerEnd === -1 ? raw : raw.slice(headerEnd).replace(/^\r?\n/, "");
-    chunks.push(
-      /<html[\s>]/i.test(body) || /<body[\s>]/i.test(body) ? stripHtmlTagsSafely(body) : body,
-    );
+function fallbackBodyText(raw: string): string {
+  const headerEnd = raw.search(/\r?\n\r?\n/);
+  const body = headerEnd === -1 ? raw : raw.slice(headerEnd).replace(/^\r?\n/, "");
+  const looksHtml = /<html[\s>]/i.test(body) || /<body[\s>]/i.test(body);
+  return looksHtml ? stripHtmlTagsSafely(body) : body;
+}
+
+export function extractPlainTextFromSource(source: Buffer | Uint8Array | string | undefined): string {
+  const raw = sourceToText(source);
+  if (!raw) return "";
+
+  let leaves: MimeLeaf[];
+  try {
+    leaves = splitMimeMessage(raw);
+  } catch {
+    leaves = [];
   }
 
+  const chunks = collectMimeTextChunks(leaves);
+  if (chunks.length === 0) chunks.push(fallbackBodyText(raw));
+
   return chunks.join("\n\n").slice(0, MAX_BODY_BYTES);
+}
+
+function messageReceivedAt(msg: {
+  internalDate?: Date | string | null;
+  envelope?: { date?: Date | string | null } | null;
+}): Date {
+  if (msg.internalDate instanceof Date) return msg.internalDate;
+  if (msg.envelope?.date instanceof Date) return msg.envelope.date;
+  return new Date();
 }
 
 export class ImapInboundProvider implements InboundMailProvider {
@@ -239,15 +253,9 @@ export class ImapInboundProvider implements InboundMailProvider {
       )) {
         const uid = String(msg.uid);
         const subject = msg.envelope?.subject ?? "";
-        const receivedAt =
-          msg.internalDate instanceof Date
-            ? msg.internalDate
-            : msg.envelope?.date instanceof Date
-              ? msg.envelope.date
-              : new Date();
         messages.push({
           uid,
-          receivedAt,
+          receivedAt: messageReceivedAt(msg),
           subject: typeof subject === "string" ? subject : String(subject),
           bodyText: extractPlainTextFromSource(msg.source as Buffer | undefined),
         });
@@ -262,7 +270,7 @@ export class ImapInboundProvider implements InboundMailProvider {
     const client = this.requireClient();
     const lock = await client.getMailboxLock(folder);
     try {
-      await client.messageFlagsAdd(uid, ["\\Seen"], { uid: true });
+      await client.messageFlagsAdd(uid, [String.raw`\Seen`], { uid: true });
     } finally {
       lock.release();
     }

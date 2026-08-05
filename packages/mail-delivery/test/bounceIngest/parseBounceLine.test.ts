@@ -161,6 +161,113 @@ describe("parseBounceLines", () => {
     ].join("\n");
     expect(parseRfc3464DsnBlocks(body)).toEqual([]);
   });
+
+  it("treats Action delayed with a 5xx diagnostic as soft (4xx class)", () => {
+    const body = [
+      "Final-Recipient: rfc822; full@example.org",
+      "Action: delayed",
+      "Status: 5.2.2",
+      "Diagnostic-Code: smtp; 552 5.2.2 Mailbox full",
+    ].join("\n");
+    const lines = parseRfc3464DsnBlocks(body);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.smtpCode).toBe("452");
+    expect(lines[0]!.smtpCode.startsWith("4")).toBe(true);
+  });
+
+  it("accepts a 5.x Status when Action is missing", () => {
+    const body = [
+      "Final-Recipient: rfc822; user@example.org",
+      "Status: 5.1.1",
+      "Diagnostic-Code: smtp; 550 5.1.1 User unknown",
+    ].join("\n");
+    const lines = parseRfc3464DsnBlocks(body);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      recipientEmail: "user@example.org",
+      smtpCode: "550",
+      enhancedCode: "5.1.1",
+    });
+  });
+
+  it("parses an angled Final-Recipient address", () => {
+    const body = [
+      "Final-Recipient: rfc822; <angle@example.org>",
+      "Action: failed",
+      "Status: 5.1.1",
+      "Diagnostic-Code: smtp; 550 5.1.1 User unknown",
+    ].join("\n");
+    const lines = parseRfc3464DsnBlocks(body);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.recipientEmail).toBe("angle@example.org");
+  });
+
+  it("deduplicates identical parsed lines", () => {
+    const duplicate = `${ADR_SAMPLE}\n${ADR_SAMPLE}`;
+    expect(parseBounceLines(duplicate)).toHaveLength(1);
+  });
+
+  it("skips postmaster and mailhop.org when inferring a recipient from angle brackets", () => {
+    const body = [
+      "failed: host mx.example.org (203.0.113.10) said: 550 5.1.1 : Recipient address rejected (in reply to RCPT command)",
+      "",
+      "<postmaster@example.org>",
+      "<relay@something.mailhop.org>",
+    ].join("\n");
+    const lines = parseBounceLines(body);
+    expect(lines).toHaveLength(0);
+  });
+
+  it("ignores relayed and expanded DSN actions", () => {
+    const relayed = [
+      "Final-Recipient: rfc822; ok@example.org",
+      "Action: relayed",
+      "Status: 2.0.0",
+    ].join("\n");
+    const expanded = [
+      "Final-Recipient: rfc822; list@example.org",
+      "Action: expanded",
+      "Status: 2.0.0",
+    ].join("\n");
+    expect(parseRfc3464DsnBlocks(relayed)).toEqual([]);
+    expect(parseRfc3464DsnBlocks(expanded)).toEqual([]);
+  });
+
+  it("accepts a 4.x Status when Action is missing", () => {
+    const body = [
+      "Final-Recipient: rfc822; grey@example.org",
+      "Status: 4.2.1",
+      "Diagnostic-Code: smtp; 451 4.2.1 Greylisted",
+    ].join("\n");
+    const lines = parseRfc3464DsnBlocks(body);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      recipientEmail: "grey@example.org",
+      smtpCode: "451",
+      enhancedCode: "4.2.1",
+    });
+  });
+
+  it("derives smtp code from Status when Diagnostic-Code has no 3-digit SMTP code", () => {
+    const body = [
+      "Final-Recipient: rfc822; user@example.org",
+      "Action: failed",
+      "Status: 5.1.1",
+      "Diagnostic-Code: smtp; User unknown",
+    ].join("\n");
+    const lines = parseRfc3464DsnBlocks(body);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      recipientEmail: "user@example.org",
+      smtpCode: "500",
+      enhancedCode: "5.1.1",
+    });
+    expect(lines[0]!.reason).toMatch(/User unknown|DSN status 5\.1\.1/);
+  });
+
+  it("returns empty list for empty DSN input", () => {
+    expect(parseRfc3464DsnBlocks("")).toEqual([]);
+  });
 });
 
 /**
