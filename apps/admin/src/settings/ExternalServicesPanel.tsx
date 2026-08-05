@@ -37,6 +37,21 @@ const WEATHER_API_KEY_REQUIRED_MSG =
 const WEATHER_METNO_CONTACT_MSG =
   "MET Norway requires an identifiable User-Agent. Set Support contact under Organisation settings > General, or forecasts will stay unavailable.";
 
+/** Keep in sync with apps/web weather attributionForProvider (draft follows provider select). */
+const WEATHER_ATTRIBUTION: Record<
+  WeatherProviderId,
+  { text: string; url: string }
+> = {
+  metno: {
+    text: "Weather data by MET Norway",
+    url: "https://www.met.no/en",
+  },
+  openmeteo: {
+    text: "Weather data by Open-Meteo.com",
+    url: "https://open-meteo.com/",
+  },
+};
+
 const MAPS_CARD_INTRO =
   "Static map previews on event cards and tickets, plus address lookup on the Location tab.";
 const MAPS_PROVIDER_DESC = "Only OpenStreetMap tiles with Nominatim geocoding are implemented.";
@@ -137,11 +152,12 @@ function apiKeyPlaceholder(required: boolean, configured: boolean): string {
 
 function collectSaveValidationErrors(opts: {
   apiKeyMissing: boolean;
+  saveWeather: boolean;
   saveMaps: boolean;
   mapsDraft: MapsDraft;
 }): string[] {
   const errors: string[] = [];
-  if (opts.apiKeyMissing) errors.push(WEATHER_API_KEY_REQUIRED_MSG);
+  if (opts.saveWeather && opts.apiKeyMissing) errors.push(WEATHER_API_KEY_REQUIRED_MSG);
   if (!opts.saveMaps) return errors;
   const maxZoom = Number.parseInt(opts.mapsDraft.maxZoom, 10);
   if (!Number.isFinite(maxZoom) || maxZoom < 1 || maxZoom > 22) {
@@ -187,45 +203,22 @@ function toastExternalServicesSaveResult(
     mapsResult: SettledMapsSave;
   },
 ): void {
-  const weatherFailed = opts.saveWeather && opts.weatherResult.status === "rejected";
-  const mapsFailed = opts.saveMaps && opts.mapsResult.status === "rejected";
-  if (!weatherFailed && !mapsFailed) {
+  const failures: string[] = [];
+  if (opts.saveWeather && opts.weatherResult.status === "rejected") {
+    failures.push(
+      operatorApiErrorMessage(opts.weatherResult.reason, "Could not save weather settings."),
+    );
+  }
+  if (opts.saveMaps && opts.mapsResult.status === "rejected") {
+    failures.push(
+      operatorApiErrorMessage(opts.mapsResult.reason, "Could not save maps settings."),
+    );
+  }
+  if (failures.length === 0) {
     addToast("External services saved.", "success");
     return;
   }
-  if (!weatherFailed && mapsFailed && opts.mapsResult.status === "rejected") {
-    addToast(
-      operatorApiErrorMessage(
-        opts.mapsResult.reason,
-        "Weather saved, but maps settings could not be saved.",
-      ),
-      "error",
-    );
-    return;
-  }
-  if (!mapsFailed && weatherFailed && opts.weatherResult.status === "rejected") {
-    addToast(
-      operatorApiErrorMessage(
-        opts.weatherResult.reason,
-        "Maps saved, but weather settings could not be saved.",
-      ),
-      "error",
-    );
-    return;
-  }
-  if (weatherFailed && opts.weatherResult.status === "rejected") {
-    addToast(
-      operatorApiErrorMessage(opts.weatherResult.reason, "Could not save weather settings."),
-      "error",
-    );
-    return;
-  }
-  if (mapsFailed && opts.mapsResult.status === "rejected") {
-    addToast(
-      operatorApiErrorMessage(opts.mapsResult.reason, "Could not save maps settings."),
-      "error",
-    );
-  }
+  addToast(failures.join(" "), "error");
 }
 
 /**
@@ -372,6 +365,7 @@ export function ExternalServicesPanel() {
     const saveMaps = mapsDirty(mapsDraft, mapsSavedRef.current);
     const errors = collectSaveValidationErrors({
       apiKeyMissing,
+      saveWeather,
       saveMaps,
       mapsDraft,
     });
@@ -599,17 +593,11 @@ export function ExternalServicesPanel() {
           <p className="settings-card-intro" style={{ margin: 0 }}>
             Attribution:{" "}
             <a
-              href={
-                weatherDraft.provider === "metno"
-                  ? "https://www.met.no/en"
-                  : "https://open-meteo.com/"
-              }
+              href={WEATHER_ATTRIBUTION[weatherDraft.provider].url}
               rel="noopener noreferrer"
               target="_blank"
             >
-              {weatherDraft.provider === "metno"
-                ? "Weather data by MET Norway"
-                : "Weather data by Open-Meteo.com"}
+              {WEATHER_ATTRIBUTION[weatherDraft.provider].text}
             </a>
           </p>
         </div>

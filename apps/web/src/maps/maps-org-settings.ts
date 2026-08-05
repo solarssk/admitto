@@ -7,6 +7,7 @@ import type { PrismaClient } from "@admitto/db";
 import {
   defaultGeocodingConfig,
   defaultMapTileConfig,
+  getMapsConfigCache,
   isStaffSpaCompatibleTileUrl,
   setMapsConfigCache,
   type MapsRuntimeConfig,
@@ -63,15 +64,12 @@ function parseStored(raw: unknown): MapsSettingsStored | null {
   return out;
 }
 
+/** Throws when the query fails. Returns null only for a missing or corrupt row. */
 async function readStored(db: PrismaClient): Promise<MapsSettingsStored | null> {
+  const row = await db.systemSettings.findUnique({ where: { key: MAPS_SETTINGS_KEY } });
+  if (!row) return null;
   try {
-    const row = await db.systemSettings.findUnique({ where: { key: MAPS_SETTINGS_KEY } });
-    if (!row) return null;
-    try {
-      return parseStored(JSON.parse(row.value_json) as unknown);
-    } catch {
-      return null;
-    }
+    return parseStored(JSON.parse(row.value_json) as unknown);
   } catch {
     return null;
   }
@@ -148,13 +146,18 @@ export async function refreshMapsConfigCache(
   db: PrismaClient,
   env: Record<string, string | undefined> = process.env,
 ): Promise<MapsEffectiveConfig> {
-  const effective = await resolveEffectiveMapsConfig(db, env);
-  setMapsConfigCache(effective);
-  return effective;
+  try {
+    const effective = await resolveEffectiveMapsConfig(db, env);
+    setMapsConfigCache(effective);
+    return effective;
+  } catch (err) {
+    console.error("maps config cache refresh failed:", err);
+    // Keep the previous cache rather than silently downgrading to built-in defaults.
+    return getMapsConfigCache() ?? builtInMapsConfig(env);
+  }
 }
 
-export async function describeMapsSettings(db: PrismaClient): Promise<MapsSettingsPublic> {
-  const effective = await resolveEffectiveMapsConfig(db);
+function publicFromEffective(effective: MapsEffectiveConfig): MapsSettingsPublic {
   return {
     enabled: effective.tiles.enabled,
     tileUrl: effective.tiles.tileUrl,
@@ -163,6 +166,10 @@ export async function describeMapsSettings(db: PrismaClient): Promise<MapsSettin
     geocodingProvider: effective.geocoding.provider,
     geocodingBaseUrl: effective.geocoding.baseUrl,
   };
+}
+
+export async function describeMapsSettings(db: PrismaClient): Promise<MapsSettingsPublic> {
+  return publicFromEffective(await resolveEffectiveMapsConfig(db));
 }
 
 export async function patchMapsSettings(
@@ -192,6 +199,6 @@ export async function patchMapsSettings(
     update: { value_json: JSON.stringify(next) },
   });
 
-  await refreshMapsConfigCache(db);
-  return describeMapsSettings(db);
+  const effective = await refreshMapsConfigCache(db);
+  return publicFromEffective(effective);
 }

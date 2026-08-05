@@ -29,6 +29,7 @@ import { resolveProductVersion } from "../ops/product-version.js";
 import { readAdminBuildMeta } from "./admin-build-meta.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { resolveGeocodingConfig, resolveMapTileConfig } from "../maps/config.js";
+import { isGeocodingContactConfigured } from "../maps/user-agent.js";
 import {
   createWeatherServiceFromDb,
   resolveEffectiveWeatherConfig,
@@ -999,9 +1000,9 @@ async function weatherRow(
   const config = await resolveEffectiveWeatherConfig(db, env);
   const label = config.provider === "metno" ? "Weather, MET Norway" : "Weather, Open-Meteo";
   const endpoint =
-    config.provider === "metno"
+    (config.provider === "metno"
       ? safeEndpointDisplay("https://api.met.no/weatherapi/locationforecast/2.0/compact")
-      : safeEndpointDisplay(`${config.baseUrl}/v1/forecast`);
+      : safeEndpointDisplay(`${config.baseUrl}/v1/forecast`)) ?? "unknown";
 
   if (!config.enabled) {
     return {
@@ -1019,10 +1020,12 @@ async function weatherRow(
   }
 
   if (!live) {
+    const contactConfigured =
+      config.provider === "metno" ? await isGeocodingContactConfigured(db, env) : true;
     const details: Array<[string, string]> = [
-      ["status", "ok"],
+      ["status", contactConfigured ? "ok" : "degraded"],
       ["provider", config.provider],
-      ["endpoint", endpoint ?? "unknown"],
+      ["endpoint", endpoint],
       ["last_checked", checkedAt],
     ];
     if (config.provider === "openmeteo") {
@@ -1031,8 +1034,8 @@ async function weatherRow(
     return {
       id: "weather",
       label,
-      status: "ok",
-      summary: "Provider available",
+      status: contactConfigured ? "ok" : "degraded",
+      summary: contactConfigured ? "Provider available" : "Support contact required",
       details: detailsFromEntries(details),
     };
   }

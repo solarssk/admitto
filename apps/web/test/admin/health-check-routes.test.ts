@@ -46,6 +46,9 @@ const {
   testCfAccessConnection,
   resolveProductVersion,
   isLocationMapsEnabled,
+  resolveEffectiveWeatherConfig,
+  createWeatherServiceFromDb,
+  isGeocodingContactConfigured,
 } = vi.hoisted(() => ({
   collectSetupChecks: vi.fn(),
   collectGauges: vi.fn(),
@@ -61,6 +64,9 @@ const {
   testCfAccessConnection: vi.fn(),
   resolveProductVersion: vi.fn(() => "0.4.13"),
   isLocationMapsEnabled: vi.fn(() => true),
+  resolveEffectiveWeatherConfig: vi.fn(),
+  createWeatherServiceFromDb: vi.fn(),
+  isGeocodingContactConfigured: vi.fn(async () => true),
 }));
 
 vi.mock("../../src/admin/setup-checks-routes.js", async (importOriginal) => {
@@ -84,6 +90,18 @@ vi.mock("@admitto/mailer-config", () => ({
 vi.mock("@admitto/location", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@admitto/location")>();
   return { ...actual, isLocationMapsEnabled };
+});
+vi.mock("../../src/weather/weather-org-settings.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/weather/weather-org-settings.js")>();
+  return {
+    ...actual,
+    resolveEffectiveWeatherConfig,
+    createWeatherServiceFromDb,
+  };
+});
+vi.mock("../../src/maps/user-agent.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/maps/user-agent.js")>();
+  return { ...actual, isGeocodingContactConfigured };
 });
 vi.mock("@admitto/auth", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@admitto/auth")>();
@@ -156,6 +174,15 @@ function stubHappyPathMailAndIdp() {
     protectedPrefixes: [],
     jwksUri: "",
   });
+  resolveEffectiveWeatherConfig.mockResolvedValue({
+    enabled: true,
+    provider: "metno",
+    baseUrl: "https://api.open-meteo.com",
+    apiKey: null,
+    timeoutMs: 5000,
+    cacheTtlMs: 21600000,
+  });
+  isGeocodingContactConfigured.mockResolvedValue(true);
 }
 
 function fakeHealthContext(): Context {
@@ -173,6 +200,15 @@ afterEach(() => {
   readAdminBuildMetaMock.mockReturnValue(null);
   isLocationMapsEnabled.mockReturnValue(true);
   vi.mocked(canManageInstance).mockResolvedValue(true);
+  resolveEffectiveWeatherConfig.mockResolvedValue({
+    enabled: true,
+    provider: "metno",
+    baseUrl: "https://api.open-meteo.com",
+    apiKey: null,
+    timeoutMs: 5000,
+    cacheTtlMs: 21600000,
+  });
+  isGeocodingContactConfigured.mockResolvedValue(true);
 });
 
 describe("worstHealthStatus", () => {
@@ -391,6 +427,27 @@ describe("collectAdminHealth", () => {
         .find((c) => c.id === "database")
         ?.details.some((d) => d.key === "last_checked" && d.value === report.generated_at),
     ).toBe(true);
+  });
+
+  it("marks passive MET Norway weather degraded without Support contact", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+    });
+    stubHappyPathMailAndIdp();
+    isGeocodingContactConfigured.mockResolvedValue(false);
+
+    const report = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+      env: envWithUpload({ GIT_COMMIT: "deadbeef" }),
+      now: () => new Date("2026-08-03T12:00:00.000Z"),
+    });
+
+    const weather = report.groups[1]!.checks.find((c) => c.id === "weather");
+    expect(weather?.status).toBe("degraded");
+    expect(weather?.summary).toBe("Support contact required");
   });
 
   it("emits one Identity provider row per configured IDP", async () => {

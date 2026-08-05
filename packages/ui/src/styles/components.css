@@ -366,7 +366,7 @@
    one-line warning. Prefer auto height so padding + label set the size. */
 .at-notice__action .at-btn {
   height: auto;
-  min-height: 0;
+  min-height: 24px;
   padding-block: 0.125rem;
   line-height: 1.25;
 }

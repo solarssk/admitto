@@ -59,7 +59,8 @@ export interface EventDto {
    */
   map_attribution?: string | null;
   /**
-   * Event-day forecast from Open-Meteo when weather is enabled and the event has a pin.
+   * Event-day forecast when weather is enabled and the event has a pin.
+   * Provider may be MET Norway or Open-Meteo (see attribution fields).
    * Omitted when weather is disabled or there are no coordinates.
    */
   weather?: {

@@ -17,6 +17,7 @@ export interface MetNoClientOptions {
 /** Calendar YYYY-MM-DD in `timezone` (falls back to UTC). Local copy avoids a cycle with WeatherService. */
 function ymdInTimezone(date: Date | string, timezone: string): string {
   const d = typeof date === "string" ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) return "";
   try {
     return new Intl.DateTimeFormat("en-CA", {
       timeZone: timezone || "UTC",
@@ -66,8 +67,8 @@ export function metNoSymbolToWeatherCode(symbol: string): number {
   if (base.includes("thunder")) return 95;
   if (base.includes("sleet")) return 66;
   if (base.includes("snow")) return 71;
-  if (base.includes("rainshower") || base.includes("rainshowers")) return 80;
-  if (base.includes("rain") || base.includes("lightrain") || base.includes("heavyrain")) return 61;
+  if (base.includes("rainshower")) return 80;
+  if (base.includes("rain")) return 61;
   return 3;
 }
 

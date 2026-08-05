@@ -560,20 +560,35 @@ describe("renderTicket weather", () => {
     expect(html).toContain("open-meteo.com");
   });
 
-  it("renders too_far placeholder with section heading", () => {
+  it("renders too_far with horizon_days, not opens_in_days as the horizon", () => {
     const html = renderTicket(base, "data:image/png;base64,xx", null, {
       weather: {
         status: "too_far",
         opens_in_days: 13,
         horizon_days: 9,
         attribution: "Weather data by MET Norway",
+        attribution_url: "https://www.met.no/en",
       },
     });
     expect(html).toContain("Weather on the day");
     expect(html).toContain("Forecast available 9 days");
     expect(html).toContain("before the event");
     expect(html).not.toContain("Forecast available 13 days");
+    expect(html).toContain('href="https://www.met.no/en"');
     expect(html).toContain("ticket__weather-credit-row");
+  });
+
+  it("renders attribution as plain text when URL is missing", () => {
+    const html = renderTicket(base, "data:image/png;base64,xx", null, {
+      weather: {
+        status: "too_far",
+        horizon_days: 9,
+        attribution: "Weather data by MET Norway",
+      },
+    });
+    expect(html).toContain("Weather data by MET Norway");
+    expect(html).toContain("<span class=\"ticket__weather-credit\">");
+    expect(html).not.toContain("ticket__weather-credit\" href=");
   });
 
   it("omits weather when not provided", () => {

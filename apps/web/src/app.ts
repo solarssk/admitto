@@ -425,7 +425,11 @@ export function createApp(options: CreateAppOptions = {}) {
       timeoutMs: () => resolveGeocodingConfig().timeoutMs,
       buildUserAgent: () => buildGeocodingUserAgent(db),
     });
-  const geocodingService = new GeocodingService(geocodingProvider, createGeocodingCache());
+  const geocodingService = new GeocodingService(
+    geocodingProvider,
+    createGeocodingCache(),
+    () => resolveGeocodingConfig().baseUrl,
+  );
   const eventStaticMapService = options.eventStaticMapService ?? new EventStaticMapService();
 
   // UI maps settings into the sync cache used by list cards / static maps / health.

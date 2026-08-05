@@ -19,13 +19,20 @@ export class GeocodingService {
   constructor(
     private readonly provider: GeocodingProvider,
     private readonly cache: GeocodingCache,
+    /** Include endpoint (or other scope) so changing Nominatim base URL cannot reuse stale hits. */
+    private readonly cacheScope: () => string = () => "",
   ) {}
+
+  private scopedKey(rest: string): string {
+    const scope = this.cacheScope().trim() || "_";
+    // v2: results include structured `components` (+ label enrichment). Bump when the
+    // cached payload shape changes so a 30-day positive TTL cannot serve stale rows.
+    return `${this.provider.name}:v2:${scope}:${rest}`;
+  }
 
   async search(rawQuery: string): Promise<GeocodingResult[]> {
     const query = normalizeQuery(rawQuery);
-    // v2: results include structured `components` (+ label enrichment). Bump when the
-    // cached payload shape changes so a 30-day positive TTL cannot serve stale rows.
-    const cacheKey = `${this.provider.name}:v2:${query}`;
+    const cacheKey = this.scopedKey(query);
 
     const cached = await this.cache.get(cacheKey);
     if (cached !== null) return cached;
@@ -36,7 +43,7 @@ export class GeocodingService {
   }
 
   async reverse(latitude: number, longitude: number): Promise<GeocodingResult | null> {
-    const cacheKey = `${this.provider.name}:v2:rev:${roundCoord(latitude)},${roundCoord(longitude)}`;
+    const cacheKey = this.scopedKey(`rev:${roundCoord(latitude)},${roundCoord(longitude)}`);
 
     const cached = await this.cache.get(cacheKey);
     if (cached !== null) return cached[0] ?? null;

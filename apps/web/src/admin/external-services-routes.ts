@@ -15,6 +15,7 @@ import {
   resolveEffectiveWeatherConfig,
 } from "../weather/weather-org-settings.js";
 import {
+  defaultWeatherConfig,
   mergeWeatherConfig,
   weatherApiKeyRequired,
 } from "../weather/config.js";
@@ -70,6 +71,28 @@ const MAPS_PROBE_FAIL = "Could not reach Nominatim.";
 const MAPS_PROBE_CONTACT =
   "Support contact is required for Nominatim (User-Agent).";
 const MAPS_PROBE_INVALID_URL = "Geocoding base URL must be a valid http(s) URL.";
+
+/** Process-wide Nominatim probe throttle (Usage Policy ≤1 req/s). Survives per-request providers. */
+const MAPS_PROBE_MIN_INTERVAL_MS = 1_000;
+let mapsProbeSlotTail: Promise<void> = Promise.resolve();
+let mapsProbeLastAt = 0;
+
+async function withMapsProbeThrottle<T>(fn: () => Promise<T>): Promise<T> {
+  const run = mapsProbeSlotTail.then(async () => {
+    const waitMs = Math.max(0, MAPS_PROBE_MIN_INTERVAL_MS - (Date.now() - mapsProbeLastAt));
+    if (waitMs > 0) await new Promise((r) => setTimeout(r, waitMs));
+    try {
+      return await fn();
+    } finally {
+      mapsProbeLastAt = Date.now();
+    }
+  });
+  mapsProbeSlotTail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
 
 function serializeWeather(weather: Awaited<ReturnType<typeof describeWeatherSettings>>) {
   return {
@@ -190,12 +213,15 @@ export async function handlePutWeatherSettings(
   }
 
   // Resolve what the post-patch config would look like for commercial-host key checks.
+  // Cleared/blank baseUrl persists as null and resolves to the built-in default host
+  // (same as patchWeatherSettings), not the previous stored customer URL.
+  const defaults = defaultWeatherConfig();
   const current = await describeWeatherSettings(db);
   const nextEnabled = parsed.data.enabled ?? current.enabled;
   const nextProvider = parsed.data.provider ?? current.provider;
   const nextBaseUrl =
     parsed.data.baseUrl !== undefined
-      ? (parsed.data.baseUrl?.trim() || current.baseUrl)
+      ? parsed.data.baseUrl?.trim() || defaults.baseUrl
       : current.baseUrl;
   const clearingKey =
     parsed.data.apiKey !== undefined &&
@@ -387,12 +413,11 @@ export async function handlePostMapsTest(
     baseUrl,
     timeoutMs,
     buildUserAgent: () => buildGeocodingUserAgent(db),
-    minIntervalMs: 0,
   });
 
   const started = Date.now();
   try {
-    await provider.search("Warsaw");
+    await withMapsProbeThrottle(() => provider.search("Warsaw"));
     const latencyMs = Date.now() - started;
     return c.json({
       ok: true,

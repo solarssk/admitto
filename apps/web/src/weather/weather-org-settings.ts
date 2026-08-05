@@ -71,15 +71,12 @@ function parseStored(raw: unknown): WeatherSettingsStored | null {
   return out;
 }
 
+/** Throws when the query fails. Returns null only for a missing or corrupt row. */
 async function readStored(db: PrismaClient): Promise<WeatherSettingsStored | null> {
+  const row = await db.systemSettings.findUnique({ where: { key: WEATHER_SETTINGS_KEY } });
+  if (!row) return null;
   try {
-    const row = await db.systemSettings.findUnique({ where: { key: WEATHER_SETTINGS_KEY } });
-    if (!row) return null;
-    try {
-      return parseStored(JSON.parse(row.value_json) as unknown);
-    } catch {
-      return null;
-    }
+    return parseStored(JSON.parse(row.value_json) as unknown);
   } catch {
     return null;
   }

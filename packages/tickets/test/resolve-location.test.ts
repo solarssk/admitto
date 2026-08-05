@@ -83,6 +83,27 @@ describe("toResolved location fields", () => {
     expect(resolved.event.accessibilityText).toBe("Step-free");
     expect(resolved.event.googleMapsUrlOverride).toBeNull();
     expect(resolved.event.appleMapsUrlOverride).toBeNull();
+    expect(resolved.event.timezone).toBe("UTC");
+  });
+
+  it("falls back to UTC when the source timezone is empty", () => {
+    const resolved = toResolved(
+      {
+        ...baseAttendee,
+        event: {
+          id: "e1",
+          title: "Launch",
+          date: new Date("2026-09-01T09:00:00Z"),
+          timezone: "",
+          location_details: null,
+          logo_url: null,
+          header_image_url: null,
+          organization: { logo_url: null, header_image_url: null },
+        },
+      },
+      "internal",
+    );
+    expect(resolved.event.timezone).toBe("UTC");
   });
 
   it("maps Maps URL overrides onto the ResolvedTicket event shape", () => {

@@ -3,7 +3,7 @@
  * Trusted deploy/org base URL — same trust model as GEOCODING_BASE_URL (no SSRF pin).
  */
 
-import type { WeatherConfig } from "./config.js";
+import { FORECAST_HORIZON_DAYS_OPENMETEO, type WeatherConfig } from "./config.js";
 import type { DayForecast } from "./types.js";
 
 export class WeatherProviderError extends Error {
@@ -34,10 +34,14 @@ function isTimeoutError(err: unknown): boolean {
   return err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
 }
 
-function asNumberArray(value: unknown): number[] | null {
+function asNullableNumberArray(value: unknown): Array<number | null> | null {
   if (!Array.isArray(value)) return null;
-  const out: number[] = [];
+  const out: Array<number | null> = [];
   for (const item of value) {
+    if (item == null) {
+      out.push(null);
+      continue;
+    }
     if (typeof item !== "number" || !Number.isFinite(item)) return null;
     out.push(item);
   }
@@ -57,9 +61,9 @@ function asStringArray(value: unknown): string[] | null {
 /** Parse daily arrays and pick the row matching `dateYmd` (YYYY-MM-DD). */
 export function pickDailyForecast(body: ForecastDailyJson, dateYmd: string): DayForecast | null {
   const times = asStringArray(body.daily?.time);
-  const codes = asNumberArray(body.daily?.weather_code);
-  const maxes = asNumberArray(body.daily?.temperature_2m_max);
-  const mins = asNumberArray(body.daily?.temperature_2m_min);
+  const codes = asNullableNumberArray(body.daily?.weather_code);
+  const maxes = asNullableNumberArray(body.daily?.temperature_2m_max);
+  const mins = asNullableNumberArray(body.daily?.temperature_2m_min);
   if (!times || !codes || !maxes || !mins) return null;
   const idx = times.indexOf(dateYmd);
   if (idx < 0) return null;
@@ -96,7 +100,7 @@ export class OpenMeteoClient {
       "weather_code,temperature_2m_max,temperature_2m_min",
     );
     url.searchParams.set("timezone", "auto");
-    url.searchParams.set("forecast_days", "16");
+    url.searchParams.set("forecast_days", String(FORECAST_HORIZON_DAYS_OPENMETEO));
     url.searchParams.set("temperature_unit", "celsius");
     if (this.config.apiKey) {
       url.searchParams.set("apikey", this.config.apiKey);

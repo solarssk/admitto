@@ -12,7 +12,6 @@ import { weatherCodeInfo } from "./weather/weather-codes.js";
 import type { WeatherSummaryDto } from "./weather/types.js";
 import {
   OPENMETEO_ATTRIBUTION_TEXT,
-  OPENMETEO_ATTRIBUTION_URL,
 } from "./weather/config.js";
 
 function esc(s: string): string {
@@ -181,9 +180,11 @@ function formatForecastDayCount(n: number): string {
  */
 function renderTicketWeatherHtml(weather: WeatherSummaryDto | null | undefined): string {
   if (!weather) return "";
-  const attrUrl = esc(weather.attribution_url || OPENMETEO_ATTRIBUTION_URL);
+  const attributionUrl = weather.attribution_url?.trim();
   const attrText = esc(weather.attribution || OPENMETEO_ATTRIBUTION_TEXT);
-  const credit = `<a class="ticket__weather-credit" href="${attrUrl}" rel="noopener noreferrer">${attrText}</a>`;
+  const credit = attributionUrl
+    ? `<a class="ticket__weather-credit" href="${esc(attributionUrl)}" rel="noopener noreferrer">${attrText}</a>`
+    : `<span class="ticket__weather-credit">${attrText}</span>`;
   const heading = `<h2 class="ticket__weather-heading" id="weather-heading">Weather on the day</h2>`;
 
   if (weather.status === "ok" && weather.temp_c != null) {
@@ -206,18 +207,21 @@ function renderTicketWeatherHtml(weather: WeatherSummaryDto | null | undefined):
   }
 
   if (weather.status === "too_far") {
-    const horizon = weather.horizon_days ?? weather.opens_in_days ?? 0;
-    const line1 =
-      horizon > 0
-        ? `Forecast available ${formatForecastDayCount(horizon)}`
-        : "Forecast available soon";
+    let title = "Forecast available soon";
+    let subtitle = "before the event";
+    if (weather.horizon_days != null && weather.horizon_days > 0) {
+      title = `Forecast available ${formatForecastDayCount(weather.horizon_days)}`;
+    } else if (weather.opens_in_days != null && weather.opens_in_days > 0) {
+      title = `Forecast available in ${formatForecastDayCount(weather.opens_in_days)}`;
+      subtitle = "Check back closer to the event";
+    }
     return `<div class="ticket__weather-block" aria-labelledby="weather-heading">
       ${heading}
       <div class="ticket__weather-main">
         <span class="ticket__weather-icon" aria-hidden="true">${WEATHER_QUESTION_ICON}</span>
         <div class="ticket__weather-copy">
-          <p class="ticket__weather-title">${esc(line1)}</p>
-          <p class="ticket__weather-temp">before the event</p>
+          <p class="ticket__weather-title">${esc(title)}</p>
+          <p class="ticket__weather-temp">${esc(subtitle)}</p>
         </div>
       </div>
       <p class="ticket__weather-credit-row">${credit}</p>

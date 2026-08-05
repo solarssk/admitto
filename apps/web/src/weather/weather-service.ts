@@ -50,6 +50,7 @@ function probeErrorMessage(err: unknown): string {
 /** Calendar YYYY-MM-DD in the event timezone (falls back to UTC). */
 export function eventDateYmd(date: Date | string, timezone: string): string {
   const d = typeof date === "string" ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) return "";
   try {
     return new Intl.DateTimeFormat("en-CA", {
       timeZone: timezone || "UTC",
@@ -146,6 +147,9 @@ export class WeatherService {
 
     const tz = input.timezone?.trim() || "UTC";
     const eventYmd = eventDateYmd(input.date, tz);
+    if (!eventYmd) {
+      return { status: "unavailable", ...this.attributionFields() };
+    }
     const todayYmd = localYmd(this.now(), tz);
     const offsetDays = daysBetweenYmd(todayYmd, eventYmd);
     const horizon = forecastHorizonDays(this.config.provider);
@@ -194,10 +198,7 @@ export class WeatherService {
         weather_code: day.weather_code,
         ...this.attributionFields(),
       };
-    } catch (err) {
-      if (err instanceof WeatherProviderError) {
-        return { status: "unavailable", ...this.attributionFields() };
-      }
+    } catch {
       return { status: "unavailable", ...this.attributionFields() };
     }
   }
