@@ -434,6 +434,45 @@ describe("PATCH /api/admin/users/:id email", () => {
     });
     expect(res.status).toBe(400);
   });
+
+  it("returns 409 email_conflict when two concurrent PATCHes race onto the same new email", async () => {
+    const raceTarget = "users-patch-email-race-target@example.com";
+    const [userA, userB] = await Promise.all([
+      prisma.user.create({ data: { email: "users-patch-email-race-a@example.com", password_hash: await hashPassword(PASSWORD) } }),
+      prisma.user.create({ data: { email: "users-patch-email-race-b@example.com", password_hash: await hashPassword(PASSWORD) } }),
+    ]);
+
+    const patchEmail = (id: string) =>
+      app.request(`/api/admin/users/${id}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ email: raceTarget }),
+      });
+
+    const [resA, resB] = await Promise.all([patchEmail(userA.id), patchEmail(userB.id)]);
+    const statuses = [resA.status, resB.status].sort((a, b) => a - b);
+    expect(statuses).toEqual([200, 409]);
+
+    const loser = resA.status === 409 ? resA : resB;
+    const body = (await loser.json()) as { code: string };
+    expect(body.code).toBe("email_conflict");
+
+    await prisma.user.deleteMany({ where: { id: { in: [userA.id, userB.id] } } });
+  });
+
+  it("records user_profile_updated, not user_email_changed, when the PATCH resends the current email unchanged", async () => {
+    const res = await app.request(`/api/admin/users/${patchUserId}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ display_name: "Same Email Edit", email: EMAIL_PATCH_NEW }),
+    });
+    expect(res.status).toBe(200);
+    const entry = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_USERS },
+      orderBy: { created_at: "desc" },
+    });
+    expect(entry).toMatchObject({ action_type: "user_profile_updated", metadata: { userId: patchUserId } });
+  });
 });
 
 describe("DELETE /api/admin/users/:id", () => {
@@ -476,6 +515,14 @@ describe("DELETE /api/admin/users/:id", () => {
     expect(res.status).toBe(403);
   });
 
+  it("returns 403 for an org admin (superadmin-only, not just staff-admin-gated)", async () => {
+    const res = await app.request(`/api/admin/users/${deleteUserId}`, {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(403);
+  });
+
   it("returns 409 cannot_delete_self", async () => {
     const res = await app.request(`/api/admin/users/${superId}`, {
       method: "DELETE",
@@ -513,6 +560,28 @@ describe("DELETE /api/admin/users/:id", () => {
     });
     expect(res.status).toBe(404);
   });
+
+  it("allows deleting an already-inactive superadmin even when only one active superadmin remains", async () => {
+    const inactive = await prisma.user.create({
+      data: {
+        email: "users-delete-inactive-superadmin@example.com",
+        password_hash: await hashPassword(PASSWORD),
+        is_active: false,
+      },
+    });
+    await prisma.roleAssignment.create({
+      data: { user_id: inactive.id, role: "superadmin", scope_type: "instance", scope_id: null },
+    });
+
+    const res = await app.request(`/api/admin/users/${inactive.id}`, {
+      method: "DELETE",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+
+    expect(res.status).toBe(200);
+    expect(await prisma.user.findUnique({ where: { id: inactive.id } })).toBeNull();
+  });
+
 });
 
 describe("DELETE /api/admin/users/:id/roles/:assignmentId anti-lockout", () => {

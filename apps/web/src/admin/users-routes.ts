@@ -404,12 +404,12 @@ function buildPatchUserData(
  * (it's the more consequential change), then an email change, then a plain profile edit. */
 function patchUserActionType(
   data: Prisma.UserUpdateInput,
-  before: { is_active: boolean },
+  before: { is_active: boolean; email: string },
 ): string {
   if (typeof data.is_active === "boolean" && data.is_active !== before.is_active) {
     return data.is_active ? "user_reactivated" : "user_deactivated";
   }
-  if (typeof data.email === "string") return "user_email_changed";
+  if (typeof data.email === "string" && data.email !== before.email) return "user_email_changed";
   return "user_profile_updated";
 }
 

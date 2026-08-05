@@ -8,7 +8,10 @@ import { mockMatchMedia } from "../test-utils.js";
 import type { UserListItemDto } from "../../src/api/types.js";
 
 const SUPERADMIN_ASSIGNMENTS = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
-const useAuthMock = vi.fn(() => ({ assignments: SUPERADMIN_ASSIGNMENTS as Array<{ role: string; scope_type: string; scope_id: string | null }> }));
+const useAuthMock = vi.fn(() => ({
+  assignments: SUPERADMIN_ASSIGNMENTS as Array<{ role: string; scope_type: string; scope_id: string | null }>,
+  user: { id: "current-admin" },
+}));
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({
   useAuth: () => useAuthMock(),
@@ -24,10 +27,12 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchSessions: vi.fn(),
     fetchAdminEvents: vi.fn(),
     revokeUserRole: vi.fn(),
+    deleteAdminUser: vi.fn(),
   };
 });
 
 import {
+  deleteAdminUser,
   fetchAdminEvents,
   fetchAdminUsers,
   fetchUserStats,
@@ -74,7 +79,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
-  useAuthMock.mockReturnValue({ assignments: SUPERADMIN_ASSIGNMENTS });
+  useAuthMock.mockReturnValue({ assignments: SUPERADMIN_ASSIGNMENTS, user: { id: "current-admin" } });
 });
 
 function renderAt(path: string) {
@@ -117,6 +122,33 @@ describe("UsersPage header", () => {
     expect(await screen.findByText("100%")).toBeTruthy();
     const icon = document.querySelector(".users-page__stat-icon--ok .ti-shield-check");
     expect(icon).toBeTruthy();
+  });
+
+  it("shows a toast (falling back to the email when there's no display name) and refreshes the list after deleting a user from the Edit modal", async () => {
+    vi.mocked(fetchAdminUsers).mockResolvedValue({
+      users: [{ ...makeUser("user-1", "Jane Doe"), display_name: null }],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+    vi.mocked(deleteAdminUser).mockResolvedValue(undefined);
+
+    renderAt("/admin/users");
+    await screen.findAllByText("user-1@example.com");
+    expect(fetchAdminUsers).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Edit profile for user-1@example.com" })[0]!);
+    fireEvent.click(await screen.findByRole("button", { name: "Delete account" }));
+    const dialog = await screen.findByRole("dialog", { name: "Delete account" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(deleteAdminUser).toHaveBeenCalledWith("user-1");
+    });
+    expect(await screen.findByText("user-1@example.com deleted")).toBeTruthy();
+    await waitFor(() => {
+      expect(fetchAdminUsers).toHaveBeenCalledTimes(2);
+    });
   });
 });
 

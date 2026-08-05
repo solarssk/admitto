@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "../../src/api/client.js";
 import type { EventDto, UserListItemDto } from "../../src/api/types.js";
 import { UserEditModal } from "../../src/pages/users/UserEditModal.js";
 
@@ -211,6 +212,91 @@ describe("UserEditModal reset actions", () => {
   });
 });
 
+describe("UserEditModal close behavior", () => {
+  it("closes via Cancel when nothing is in flight", async () => {
+    const { onClose } = renderModal();
+    await screen.findByRole("button", { name: "Save" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("keeps the modal open if Cancel is clicked while a delete is still in flight", async () => {
+    mockDeleteAdminUser.mockImplementationOnce(() => new Promise(() => {}));
+    const { onClose, onDeleted } = renderModal();
+    await screen.findByRole("button", { name: "Delete account" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+    const dialog = await screen.findByRole("dialog", { name: "Delete account" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(mockDeleteAdminUser).toHaveBeenCalledOnce());
+
+    // Two "Cancel" buttons are on screen now (the modal's own, and the ConfirmDialog's own -
+    // which IS disabled while deleteBusy). The modal's own Cancel disabled prop only tracks
+    // `submitting`, not deleteBusy - handleClose's own guard is what has to stop this from
+    // closing out from under the in-flight delete.
+    const cancelButtons = screen.getAllByRole("button", { name: "Cancel" });
+    const modalCancel = cancelButtons.find((btn) => !btn.hasAttribute("disabled"))!;
+    fireEvent.click(modalCancel);
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onDeleted).not.toHaveBeenCalled();
+  });
+});
+
+describe("UserEditModal email editing", () => {
+  it("saves a changed email address", async () => {
+    mockPatchAdminUser.mockResolvedValueOnce({ user: { ...user, email: "new@example.com" } });
+    const { onUpdated } = renderModal();
+    await screen.findByRole("button", { name: "Save" });
+
+    fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "new@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockPatchAdminUser).toHaveBeenCalledWith("usr-1", {
+        display_name: "Staff User",
+        email: "new@example.com",
+        is_active: true,
+      });
+    });
+    expect(onUpdated).toHaveBeenCalled();
+  });
+
+  it("shows a taken-email message instead of the generic save error", async () => {
+    mockPatchAdminUser.mockRejectedValueOnce(new ApiError(409, "email_taken", "email_taken"));
+    renderModal();
+    await screen.findByRole("button", { name: "Save" });
+
+    fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "taken@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("A user with this email already exists.")).toBeTruthy();
+  });
+
+  it("shows the same taken-email message for an email_conflict response", async () => {
+    mockPatchAdminUser.mockRejectedValueOnce(new ApiError(409, "email_conflict", "email_conflict"));
+    renderModal();
+    await screen.findByRole("button", { name: "Save" });
+
+    fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "taken@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("A user with this email already exists.")).toBeTruthy();
+  });
+
+  it("falls back to the generic save error for a non-conflict failure", async () => {
+    mockPatchAdminUser.mockRejectedValueOnce(new Error("network down"));
+    renderModal();
+    await screen.findByRole("button", { name: "Save" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("Failed to save changes.")).toBeTruthy();
+  });
+});
+
 describe("UserEditModal save state", () => {
   it("keeps profile controls disabled while the update is in progress", async () => {
     mockPatchAdminUser.mockImplementationOnce(() => new Promise(() => {}));
@@ -238,6 +324,34 @@ describe("UserEditModal delete account", () => {
     await screen.findByRole("button", { name: "Save" });
 
     expect(screen.getByRole("button", { name: "Delete account" })).toHaveProperty("disabled", true);
+  });
+
+  it("closes the delete confirmation without deleting when its own Cancel is clicked", async () => {
+    renderModal();
+    await screen.findByRole("button", { name: "Delete account" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+    const dialog = await screen.findByRole("dialog", { name: "Delete account" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Delete account" })).toBeNull();
+    });
+    expect(mockDeleteAdminUser).not.toHaveBeenCalled();
+  });
+
+  it("shows an inline error and keeps the modal open when the delete request fails", async () => {
+    mockDeleteAdminUser.mockRejectedValueOnce(new Error("network down"));
+    const { onClose, onDeleted } = renderModal();
+    await screen.findByRole("button", { name: "Delete account" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+    const dialog = await screen.findByRole("dialog", { name: "Delete account" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    expect(await within(dialog).findByText("Failed to delete user.")).toBeTruthy();
+    expect(onDeleted).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it("deletes the account after confirmation", async () => {
