@@ -371,6 +371,10 @@ export function ExternalServicesPanel() {
 
   if (!data || !weatherDraft || !mapsDraft) return null;
 
+  // Narrowed locals: nested handlers do not keep the null-check narrowing on state.
+  const weather = weatherDraft;
+  const maps = mapsDraft;
+
   function handleReset() {
     setWeatherDraft({ ...weatherSavedRef.current! });
     setMapsDraft({ ...mapsSavedRef.current! });
@@ -383,11 +387,11 @@ export function ExternalServicesPanel() {
       baseUrl?: string;
       apiKey?: string;
       clearApiKey?: boolean;
-    } = { provider: weatherDraft.provider };
-    if (weatherDraft.provider === "openmeteo") {
-      body.baseUrl = weatherDraft.baseUrl.trim();
-      if (weatherDraft.clearApiKey) body.clearApiKey = true;
-      else if (weatherDraft.apiKey.trim() !== "") body.apiKey = weatherDraft.apiKey.trim();
+    } = { provider: weather.provider };
+    if (weather.provider === "openmeteo") {
+      body.baseUrl = weather.baseUrl.trim();
+      if (weather.clearApiKey) body.clearApiKey = true;
+      else if (weather.apiKey.trim() !== "") body.apiKey = weather.apiKey.trim();
     }
     setWeatherTesting(true);
     try {
@@ -411,7 +415,7 @@ export function ExternalServicesPanel() {
     setMapsTesting(true);
     try {
       const result = await testMapsConnection({
-        geocodingBaseUrl: mapsDraft.geocodingBaseUrl.trim(),
+        geocodingBaseUrl: maps.geocodingBaseUrl.trim(),
       });
       addToast(
         probeResultToastMessage(result, {
@@ -431,13 +435,13 @@ export function ExternalServicesPanel() {
   async function handleSave() {
     const savedWeather = weatherSavedRef.current!;
     const savedMaps = mapsSavedRef.current!;
-    const saveWeather = weatherDirty(weatherDraft, savedWeather);
-    const saveMaps = mapsDirty(mapsDraft, savedMaps);
+    const saveWeather = weatherDirty(weather, savedWeather);
+    const saveMaps = mapsDirty(maps, savedMaps);
     const errors = collectSaveValidationErrors({
       apiKeyMissing,
       saveWeather,
       saveMaps,
-      mapsDraft,
+      mapsDraft: maps,
     });
     if (errors.length > 0) {
       setValidationErrors(errors);
@@ -451,15 +455,15 @@ export function ExternalServicesPanel() {
     setValidationErrors([]);
     setSaving(true);
     try {
-      const maxZoom = Number.parseInt(mapsDraft.maxZoom, 10);
-      const weatherBody = buildWeatherSaveBody(weatherDraft);
+      const maxZoom = Number.parseInt(maps.maxZoom, 10);
+      const weatherBody = buildWeatherSaveBody(weather);
       const mapsBody = {
-        enabled: mapsDraft.enabled,
-        tileUrl: mapsDraft.tileUrl.trim(),
-        attribution: mapsDraft.attribution.trim(),
+        enabled: maps.enabled,
+        tileUrl: maps.tileUrl.trim(),
+        attribution: maps.attribution.trim(),
         maxZoom,
-        geocodingProvider: normalizeMapsProvider(mapsDraft.geocodingProvider),
-        geocodingBaseUrl: mapsDraft.geocodingBaseUrl.trim(),
+        geocodingProvider: normalizeMapsProvider(maps.geocodingProvider),
+        geocodingBaseUrl: maps.geocodingBaseUrl.trim(),
       };
 
       const [weatherResult, mapsResult] = await Promise.allSettled([
