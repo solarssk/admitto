@@ -2,13 +2,10 @@ import type { PrismaClient, BounceIngestSettings } from "@admitto/db";
 import { isSendSuccess, type MailerProvider, type SendResult } from "@admitto/mailer";
 import { resolveMailConfig } from "@admitto/mailer-config";
 import { buildErrorCode } from "./bounceIngest/applyBounceResult.js";
+import { openBounceImapProvider } from "./bounceIngest/openProvider.js";
 import { parseBounceLines } from "./bounceIngest/parseBounceLine.js";
-import { ImapInboundProvider } from "./bounceIngest/imapProvider.js";
 import { markUidProcessed } from "./bounceIngest/processedUid.js";
-import {
-  parseFolders,
-  resolveImapConnectConfig,
-} from "./bounceIngest/resolveAuth.js";
+import { parseFolders } from "./bounceIngest/resolveAuth.js";
 import type { InboundMailProvider, ParsedBounceLine } from "./bounceIngest/types.js";
 import { imapTestErrorForAdmin, transportTestErrorForAdmin } from "./sanitizeError.js";
 import type { MailDeliveryDeps } from "./send.js";
@@ -54,19 +51,6 @@ function isHardBounce(line: ParsedBounceLine): boolean {
 
 function failedProbe(sendResult: SendResult, message: string): BounceProbeResult {
   return { status: "failed", message, sendResult };
-}
-
-async function openProbeProvider(
-  db: PrismaClient,
-  settings: BounceIngestSettings,
-  params: {
-    createProvider?: (settings: BounceIngestSettings) => Promise<InboundMailProvider>;
-    env?: NodeJS.ProcessEnv;
-  },
-): Promise<InboundMailProvider> {
-  if (params.createProvider) return params.createProvider(settings);
-  const connectCfg = await resolveImapConnectConfig(db, settings, params.env ?? process.env);
-  return new ImapInboundProvider(connectCfg);
 }
 
 /**
@@ -333,7 +317,7 @@ export async function runEventBounceProbe(
 
   let provider: InboundMailProvider;
   try {
-    provider = await openProbeProvider(db, bounceSettings, {
+    provider = await openBounceImapProvider(db, bounceSettings, {
       createProvider: ingestOptions.createProvider,
       env: ingestOptions.env ?? env,
     });
