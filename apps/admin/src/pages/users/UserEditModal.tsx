@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Badge, Button, ModalBackdrop, Notice, Switch } from "@admitto/ui";
+import { PASSWORD_MIN_LENGTH } from "@admitto/auth/constants";
 import {
   fetchAdminEvents,
   fetchAdminOrganizations,
@@ -190,7 +191,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
   };
 
   const handleResetPassword = async () => {
-    if (!user || newPassword.length < 8) return;
+    if (!user || newPassword.length < PASSWORD_MIN_LENGTH) return;
     setResetPasswordBusy(true);
     setError(null);
     try {
@@ -364,12 +365,12 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
                   id="reset-password"
                   className="users-modal__input"
                   type="password"
-                  minLength={8}
+                  minLength={PASSWORD_MIN_LENGTH}
                   value={newPassword}
                   disabled={resetPasswordBusy}
                   onChange={(e) => setNewPassword(e.target.value)}
                 />
-                <span className="form-hint">At least 8 characters.</span>
+                <span className="form-hint">At least {PASSWORD_MIN_LENGTH} characters.</span>
               </div>
               <p className="form-hint">User sessions will be revoked. They must log in with the new password.</p>
               <div className="users-modal__actions" style={{ justifyContent: "flex-start" }}>
@@ -387,7 +388,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: Readonly<UserE
                 <Button
                   type="button"
                   variant="danger"
-                  disabled={resetPasswordBusy || newPassword.length < 8}
+                  disabled={resetPasswordBusy || newPassword.length < PASSWORD_MIN_LENGTH}
                   onClick={() => void handleResetPassword()}
                 >
                   {resetPasswordBusy ? "Resetting…" : "Reset password"}

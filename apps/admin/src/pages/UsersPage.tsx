@@ -26,7 +26,9 @@ import { StaffUserCard, StaffUserTableRow } from "./users/StaffUserListItem.js";
 import "./users-page.css";
 
 const SEARCH_DEBOUNCE_MS = 300;
-const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
+// GET /api/admin/users caps pageSize at 50 server-side - options here must not exceed that,
+// or a larger picked size silently returns a partial page with unreachable rows past it.
+const PAGE_SIZE_OPTIONS = [25, 50] as const;
 const SKELETON_ROWS = 5;
 
 type UsersTab = "staff" | "roles" | "sessions";

@@ -12,7 +12,9 @@ import { roleBadgeVariant, roleLabel } from "../../auth/role-labels.js";
 import { formatUtcDateTime } from "../../utils/event-dates.js";
 
 const SKELETON_ROWS = 4;
-const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
+// GET /api/admin/role-assignments caps pageSize at 50 server-side - options here must not
+// exceed that, or a larger picked size silently returns a partial page with unreachable rows.
+const PAGE_SIZE_OPTIONS = [25, 50] as const;
 
 function scopeLabel(row: RoleAssignmentListItemDto): string {
   if (row.scope_type === "event" && row.event) return row.event.title;
