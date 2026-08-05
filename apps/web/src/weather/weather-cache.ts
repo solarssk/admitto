@@ -90,9 +90,9 @@ export async function resetSharedWeatherCacheForTests(): Promise<void> {
 
 /**
  * Scope forecasts by provider + Open-Meteo host so a base-URL change cannot reuse
- * another host's day row. Do not fingerprint the API key here: CodeQL treats SHA-*/MD5
- * of secrets as insufficient password hashing, and forecast payloads for a given host
- * do not depend on which organisation key fetched them.
+ * another host's day row. Do not fingerprint the API key here: CodeQL treats fast
+ * hashes of secrets as insufficient password hashing, and forecast payloads for a
+ * given host do not depend on which organisation key fetched them.
  */
 export function weatherConfigCacheScope(config: {
   provider: string;
