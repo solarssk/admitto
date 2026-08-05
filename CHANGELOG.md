@@ -15,7 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Bounce ingest looks up matching deliveries in one query per folder poll**, instead of one database round-trip per parsed NDR recipient line.
 - **Bounce free-text NDR dialects are a matcher table** in `parseBounceLine` (Postfix / mailhop / Synology / orphan `failed:`), so new MTA formats can be added without growing one inline function. Bounce probe reuses the same IMAP open helper as ingest.
 
+### Security
+- **External services weather base URL and geocoding base URL reject private, loopback, link-local, and cloud-metadata hosts** (including DNS recheck) before save or Test connection, so UI-editable endpoints cannot be used to probe internal networks from the web process.
+
 ### Fixed
+- **Weather / Maps connection-test toasts no longer show raw machine codes** such as `invalid_base_url`; operators get clear URL guidance instead.
 - **OIDC group sync retries Serializable conflicts more patiently** when two instance superadmins lose the mapped group at the same time (jittered backoff, up to 8 attempts), so concurrent logins no longer fail with a transaction write conflict after three immediate retries.
 - **Also verify bounce only counts NDRs that arrived for this check**, not an older hard bounce for the same test address still sitting in the 14-day IMAP window (which previously could report success while forwarding was broken).
 - **Also verify bounce returns a failed probe result when the bounce mailbox cannot be opened** (bad credentials / unreachable host after the test send), instead of a generic server error.

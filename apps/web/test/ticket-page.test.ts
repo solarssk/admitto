@@ -638,4 +638,26 @@ describe("renderTicket weather", () => {
     });
     expect(html).toContain("Forecast available 1 day");
   });
+
+  it("uses Forecast available soon when too_far has no horizon or opens-in", () => {
+    const html = renderTicket(base, "data:image/png;base64,xx", null, {
+      weather: {
+        status: "too_far",
+        attribution: "Weather data by MET Norway",
+      },
+    });
+    expect(html).toContain("Forecast available soon");
+    expect(html).toContain("before the event");
+  });
+
+  it("omits ok block when temp_c is missing", () => {
+    const html = renderTicket(base, "data:image/png;base64,xx", null, {
+      weather: {
+        status: "ok",
+        weather_code: 0,
+        attribution: "Weather data by Open-Meteo.com",
+      },
+    });
+    expect(html).not.toContain("id=\"weather-heading\"");
+  });
 });

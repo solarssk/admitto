@@ -32,6 +32,10 @@ import {
 } from "../maps/user-agent.js";
 import { NominatimProvider } from "../maps/nominatim-provider.js";
 import { adminAuditFromContext } from "./admin-helpers.js";
+import {
+  assertEditableServiceUrl,
+  type EditableServiceUrlError,
+} from "./external-services-url.js";
 
 const weatherPatchSchema = z.object({
   enabled: z.boolean().optional(),
@@ -66,11 +70,46 @@ const WEATHER_PROBE_FAIL = "Could not reach the weather provider.";
 const WEATHER_PROBE_CONTACT =
   "Support contact is required for MET Norway (User-Agent).";
 const WEATHER_PROBE_API_KEY = "API key is required for this Open-Meteo host.";
+const WEATHER_PROBE_INVALID_URL =
+  "Weather base URL must be a valid public http(s) URL.";
+const WEATHER_PROBE_HOST_BLOCKED =
+  "Weather base URL must not point at a private or local network address.";
+const WEATHER_PROBE_HOST_UNRESOLVED =
+  "Could not resolve the weather base URL hostname.";
 const MAPS_PROBE_OK = "Connected. Nominatim reachable";
 const MAPS_PROBE_FAIL = "Could not reach Nominatim.";
 const MAPS_PROBE_CONTACT =
   "Support contact is required for Nominatim (User-Agent).";
-const MAPS_PROBE_INVALID_URL = "Geocoding base URL must be a valid http(s) URL.";
+const MAPS_PROBE_INVALID_URL =
+  "Geocoding base URL must be a valid public http(s) URL.";
+const MAPS_PROBE_HOST_BLOCKED =
+  "Geocoding base URL must not point at a private or local network address.";
+const MAPS_PROBE_HOST_UNRESOLVED =
+  "Could not resolve the geocoding base URL hostname.";
+
+function weatherUrlErrorCode(code: EditableServiceUrlError): string {
+  if (code === "url_host_blocked") return "url_host_blocked";
+  if (code === "url_host_unresolved") return "url_host_unresolved";
+  return "invalid_base_url";
+}
+
+function weatherUrlProbeMessage(code: EditableServiceUrlError): string {
+  if (code === "url_host_blocked") return WEATHER_PROBE_HOST_BLOCKED;
+  if (code === "url_host_unresolved") return WEATHER_PROBE_HOST_UNRESOLVED;
+  return WEATHER_PROBE_INVALID_URL;
+}
+
+function mapsUrlErrorCode(code: EditableServiceUrlError): string {
+  if (code === "url_host_blocked") return "url_host_blocked";
+  if (code === "url_host_unresolved") return "url_host_unresolved";
+  return "invalid_geocoding_base_url";
+}
+
+function mapsUrlProbeMessage(code: EditableServiceUrlError): string {
+  if (code === "url_host_blocked") return MAPS_PROBE_HOST_BLOCKED;
+  if (code === "url_host_unresolved") return MAPS_PROBE_HOST_UNRESOLVED;
+  return MAPS_PROBE_INVALID_URL;
+}
 
 /** Process-wide Nominatim probe throttle (Usage Policy ≤1 req/s). Survives per-request providers. */
 const MAPS_PROBE_MIN_INTERVAL_MS = 1_000;
@@ -119,15 +158,6 @@ function serializeMaps(maps: Awaited<ReturnType<typeof describeMapsSettings>>) {
   };
 }
 
-function validateHttpsOrHttpUrl(raw: string): boolean {
-  try {
-    const u = new URL(raw.trim());
-    return u.protocol === "https:" || u.protocol === "http:";
-  } catch {
-    return false;
-  }
-}
-
 type WeatherTestDraft = z.infer<typeof weatherTestSchema>;
 
 async function weatherConfigFromTestDraft(
@@ -135,10 +165,11 @@ async function weatherConfigFromTestDraft(
   draft: WeatherTestDraft,
 ): Promise<{ config: ReturnType<typeof mergeWeatherConfig>; error?: string }> {
   if (draft.baseUrl != null && draft.baseUrl.trim() !== "") {
-    if (!validateHttpsOrHttpUrl(draft.baseUrl)) {
+    const checked = await assertEditableServiceUrl(draft.baseUrl);
+    if (!checked.ok) {
       return {
         config: await resolveEffectiveWeatherConfig(db),
-        error: "invalid_base_url",
+        error: weatherUrlProbeMessage(checked.code),
       };
     }
   }
@@ -207,8 +238,9 @@ export async function handlePutWeatherSettings(
   }
 
   if (parsed.data.baseUrl != null && parsed.data.baseUrl.trim() !== "") {
-    if (!validateHttpsOrHttpUrl(parsed.data.baseUrl)) {
-      return c.json({ error: "invalid_base_url" }, 400);
+    const checked = await assertEditableServiceUrl(parsed.data.baseUrl);
+    if (!checked.ok) {
+      return c.json({ error: weatherUrlErrorCode(checked.code) }, 400);
     }
   }
 
@@ -287,8 +319,9 @@ export async function handlePutMapsSettings(
     }
   }
   if (parsed.data.geocodingBaseUrl != null && parsed.data.geocodingBaseUrl.trim() !== "") {
-    if (!validateHttpsOrHttpUrl(parsed.data.geocodingBaseUrl)) {
-      return c.json({ error: "invalid_geocoding_base_url" }, 400);
+    const checked = await assertEditableServiceUrl(parsed.data.geocodingBaseUrl);
+    if (!checked.ok) {
+      return c.json({ error: mapsUrlErrorCode(checked.code) }, 400);
     }
   }
 
@@ -343,9 +376,6 @@ export async function handlePostWeatherTest(
   }
 
   const { config, error: configError } = await weatherConfigFromTestDraft(db, parsed.data);
-  if (configError === "invalid_base_url") {
-    return c.json({ ok: false, error: "invalid_base_url" });
-  }
   if (configError) {
     return c.json({ ok: false, error: configError });
   }
@@ -399,8 +429,12 @@ export async function handlePostMapsTest(
   }
 
   const baseUrl = parsed.data.geocodingBaseUrl.trim().replace(/\/$/, "");
-  if (!baseUrl || !validateHttpsOrHttpUrl(baseUrl)) {
+  if (!baseUrl) {
     return c.json({ ok: false, error: MAPS_PROBE_INVALID_URL });
+  }
+  const checked = await assertEditableServiceUrl(baseUrl);
+  if (!checked.ok) {
+    return c.json({ ok: false, error: mapsUrlProbeMessage(checked.code) });
   }
 
   const contactConfigured = await isGeocodingContactConfigured(db);

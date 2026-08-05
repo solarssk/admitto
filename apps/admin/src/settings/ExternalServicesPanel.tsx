@@ -150,6 +150,36 @@ function apiKeyPlaceholder(required: boolean, configured: boolean): string {
   return required ? "Required" : "Optional";
 }
 
+/** Probe endpoints should return human copy; map leftover machine codes just in case. */
+const WEATHER_PROBE_ERROR_COPY: Record<string, string> = {
+  invalid_base_url: "Weather base URL must be a valid public http(s) URL.",
+  url_host_blocked: "Weather base URL must not point at a private or local network address.",
+  url_host_unresolved: "Could not resolve the weather base URL hostname.",
+};
+
+const MAPS_PROBE_ERROR_COPY: Record<string, string> = {
+  invalid_geocoding_base_url: "Geocoding base URL must be a valid public http(s) URL.",
+  url_host_blocked: "Geocoding base URL must not point at a private or local network address.",
+  url_host_unresolved: "Could not resolve the geocoding base URL hostname.",
+};
+
+function probeResultToastMessage(
+  result: { ok: boolean; message?: string; error?: string },
+  opts: {
+    successFallback: string;
+    errorFallback: string;
+    errorCopy: Record<string, string>;
+  },
+): string {
+  if (result.ok) return result.message?.trim() || opts.successFallback;
+  const raw = result.error?.trim() ?? "";
+  if (!raw) return opts.errorFallback;
+  if (opts.errorCopy[raw]) return opts.errorCopy[raw]!;
+  // Machine-looking codes must never land in the toast.
+  if (/^[a-z][a-z0-9_]*$/.test(raw)) return opts.errorFallback;
+  return raw;
+}
+
 function collectSaveValidationErrors(opts: {
   apiKeyMissing: boolean;
   saveWeather: boolean;
@@ -325,9 +355,11 @@ export function ExternalServicesPanel() {
     try {
       const result = await testWeatherConnection(body);
       addToast(
-        result.ok
-          ? (result.message ?? "Connected.")
-          : (result.error ?? "Could not test the weather connection."),
+        probeResultToastMessage(result, {
+          successFallback: "Connected.",
+          errorFallback: "Could not test the weather connection.",
+          errorCopy: WEATHER_PROBE_ERROR_COPY,
+        }),
         result.ok ? "success" : "error",
       );
     } catch (err) {
@@ -345,9 +377,11 @@ export function ExternalServicesPanel() {
         geocodingBaseUrl: mapsDraft.geocodingBaseUrl.trim(),
       });
       addToast(
-        result.ok
-          ? (result.message ?? "Connected.")
-          : (result.error ?? "Could not test the maps connection."),
+        probeResultToastMessage(result, {
+          successFallback: "Connected.",
+          errorFallback: "Could not test the maps connection.",
+          errorCopy: MAPS_PROBE_ERROR_COPY,
+        }),
         result.ok ? "success" : "error",
       );
     } catch (err) {

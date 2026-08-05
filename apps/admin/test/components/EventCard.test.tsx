@@ -6,6 +6,7 @@ import { EventCard, eventGridClassName } from "../../src/components/EventCard.js
 import type { EventCardProps } from "../../src/components/EventCard.js";
 import type { EventDto } from "../../src/api/types.js";
 import { eventCardDateParts, eventCardStatus } from "../../src/utils/event-card-status.js";
+import { getTooltipText } from "../test-utils.js";
 
 afterEach(() => {
   cleanup();
@@ -299,6 +300,61 @@ describe("EventCard", () => {
     );
     expect(screen.getByLabelText("Weather unavailable")).toBeTruthy();
     expect(screen.getByText("-°")).toBeTruthy();
+  });
+
+  it("shows a single °C when ok forecast omits temp_min_c", () => {
+    renderCard(
+      {},
+      {
+        ...baseEvent,
+        weather: {
+          status: "ok",
+          temp_c: 18,
+          weather_code: 2,
+          attribution: "Weather data by Open-Meteo.com",
+        },
+      },
+    );
+    const chip = screen.getByLabelText("Forecast 18°C");
+    expect(getTooltipText(chip)).toMatch(/18°C/);
+    expect(getTooltipText(chip)).not.toMatch(/to 18/);
+    expect(screen.getByText("18°")).toBeTruthy();
+  });
+
+  it("shows soft too_far copy without horizon or opens-in countdown", () => {
+    renderCard(
+      {},
+      {
+        ...baseEvent,
+        weather: { status: "too_far" },
+      },
+    );
+    expect(screen.getByLabelText("Forecast not available yet")).toBeTruthy();
+  });
+
+  it("hides weather chip for unknown weather status", () => {
+    renderCard(
+      {},
+      {
+        ...baseEvent,
+        weather: { status: "weird" as "unavailable" },
+      },
+    );
+    expect(document.querySelector(".event-card__weather")).toBeNull();
+  });
+
+  it("treats whitespace-only map preview and location as empty", () => {
+    renderCard(
+      {},
+      {
+        ...baseEvent,
+        has_coordinates: false,
+        map_preview_path: "   ",
+        location: "   ",
+      },
+    );
+    expect(screen.getByText("No location")).toBeTruthy();
+    expect(document.querySelector("img.event-card__map")).toBeNull();
   });
 
   it("does not render Archive or Unarchive actions", () => {

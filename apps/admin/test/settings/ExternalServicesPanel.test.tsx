@@ -363,6 +363,18 @@ describe("ExternalServicesPanel", () => {
     });
   });
 
+  it("maps machine probe error codes to operator-safe toast copy", async () => {
+    mockTestWeather.mockResolvedValueOnce({ ok: false, error: "invalid_base_url" });
+    await renderLoaded();
+    fireEvent.click(screen.getAllByRole("button", { name: "Test connection" })[0]!);
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(
+        /Weather base URL must be a valid public http\(s\) URL/,
+      );
+    });
+    expect(screen.queryByText("invalid_base_url")).toBeNull();
+  });
+
   it("saves both weather and maps when both dirty", async () => {
     await renderLoaded();
     fireEvent.click(el<HTMLInputElement>("external-weather-enabled"));
@@ -394,6 +406,158 @@ describe("ExternalServicesPanel", () => {
         baseUrl: "https://api.open-meteo.com",
         apiKey: "probe-key",
       });
+    });
+  });
+
+  it("toasts both operator-safe messages when weather and maps saves fail", async () => {
+    mockSaveWeather.mockRejectedValueOnce(new ApiError(500, "wx_secret"));
+    mockSaveMaps.mockRejectedValueOnce(new ApiError(500, "maps_secret"));
+    await renderLoaded();
+    fireEvent.click(el<HTMLInputElement>("external-weather-enabled"));
+    fireEvent.change(el<HTMLInputElement>("external-maps-geocoding-base-url"), {
+      target: { value: "https://nominatim.example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      const toast = screen.getByTestId("at-toast").textContent ?? "";
+      expect(toast).toMatch(/Could not save weather settings/);
+      expect(toast).toMatch(/Could not save maps settings/);
+    });
+    expect(screen.queryByText("wx_secret")).toBeNull();
+    expect(screen.queryByText("maps_secret")).toBeNull();
+  });
+
+  it("uses Connected. fallback when weather test omits message", async () => {
+    mockTestWeather.mockResolvedValueOnce({ ok: true });
+    await renderLoaded();
+    fireEvent.click(screen.getAllByRole("button", { name: "Test connection" })[0]!);
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toContain("Connected.");
+    });
+  });
+
+  it("uses Could not test fallback when weather test omits error", async () => {
+    mockTestWeather.mockResolvedValueOnce({ ok: false });
+    await renderLoaded();
+    fireEvent.click(screen.getAllByRole("button", { name: "Test connection" })[0]!);
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(
+        /Could not test the weather connection/,
+      );
+    });
+  });
+
+  it("uses Connected. fallback when maps test omits message", async () => {
+    mockTestMaps.mockResolvedValueOnce({ ok: true });
+    await renderLoaded();
+    fireEvent.click(screen.getAllByRole("button", { name: "Test connection" })[1]!);
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toContain("Connected.");
+    });
+  });
+
+  it("toasts operator-safe error when maps test throws", async () => {
+    mockTestMaps.mockRejectedValueOnce(new ApiError(502, "maps_probe_secret"));
+    await renderLoaded();
+    fireEvent.click(screen.getAllByRole("button", { name: "Test connection" })[1]!);
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(
+        /Could not test the maps connection/,
+      );
+    });
+    expect(screen.queryByText("maps_probe_secret")).toBeNull();
+  });
+
+  it("blocks commercial Open-Meteo subhosts without an API key", async () => {
+    await renderLoaded();
+    fireEvent.change(el<HTMLSelectElement>("external-weather-provider"), {
+      target: { value: "openmeteo" },
+    });
+    fireEvent.change(el<HTMLInputElement>("external-weather-base-url"), {
+      target: { value: "https://foo.customer-api.open-meteo.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toMatch(/API key/i);
+    });
+    expect(mockSaveWeather).not.toHaveBeenCalled();
+  });
+
+  it("blocks save when max zoom is not a finite number", async () => {
+    await renderLoaded();
+    fireEvent.change(el<HTMLInputElement>("external-maps-max-zoom"), {
+      target: { value: "abc" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toMatch(/Max zoom must be a number/);
+    });
+    expect(mockSaveMaps).not.toHaveBeenCalled();
+  });
+
+  it("blocks save when max zoom is below 1", async () => {
+    await renderLoaded();
+    fireEvent.change(el<HTMLInputElement>("external-maps-max-zoom"), {
+      target: { value: "0" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toMatch(/Max zoom must be a number/);
+    });
+    expect(mockSaveMaps).not.toHaveBeenCalled();
+  });
+
+  it("clears validation errors when Reset is clicked after a failed save", async () => {
+    await renderLoaded();
+    fireEvent.change(el<HTMLInputElement>("external-maps-max-zoom"), {
+      target: { value: "99" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toMatch(/Max zoom/);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+  });
+
+  it("navigates to Support contact from the MET Norway notice", async () => {
+    mockFetch.mockResolvedValueOnce(
+      sampleResponse({ weather: { contact_configured: false } }),
+    );
+    const { MemoryRouter, Route, Routes, useLocation } = await import("react-router");
+    const { render } = await import("@testing-library/react");
+    const { ToastProvider } = await import("@admitto/ui");
+
+    function LocationProbe() {
+      const location = useLocation();
+      return <p data-testid="loc">{`${location.pathname}${location.search}`}</p>;
+    }
+
+    render(
+      <MemoryRouter initialEntries={["/admin/settings?tab=external"]}>
+        <ToastProvider>
+          <Routes>
+            <Route
+              path="/admin/settings"
+              element={
+                <>
+                  <ExternalServicesPanel />
+                  <LocationProbe />
+                </>
+              }
+            />
+          </Routes>
+        </ToastProvider>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Open Support contact" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open Support contact" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("loc").textContent).toBe("/admin/settings?tab=general");
     });
   });
 });

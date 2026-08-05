@@ -108,9 +108,55 @@ describe("refreshMapsConfigCache", () => {
     expect(result.tiles.enabled).toBe(false);
     spy.mockRestore();
   });
+
+  it("falls back to built-in settings when read throws and cache is empty", async () => {
+    setMapsConfigCache(null);
+    const db = {
+      systemSettings: {
+        findUnique: vi.fn(async () => {
+          throw new Error("db down");
+        }),
+      },
+    } as unknown as PrismaClient;
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const result = await refreshMapsConfigCache(db);
+    expect(result.tiles.enabled).toBe(true);
+    expect(result.tiles.tileUrl).toContain("openstreetmap.org");
+    spy.mockRestore();
+  });
 });
 
 describe("resolveEffectiveMapsConfig / describeMapsSettings", () => {
+  it("uses defaults when no SystemSettings row exists", async () => {
+    const db = fakeDb(null);
+    const effective = await resolveEffectiveMapsConfig(db);
+    expect(effective.tiles.enabled).toBe(true);
+    expect(effective.geocoding.baseUrl).toContain("nominatim");
+  });
+
+  it("ignores non-object stored JSON and incompatible field types", async () => {
+    const asArray = await resolveEffectiveMapsConfig(fakeDb(JSON.stringify([1, 2, 3])));
+    expect(asArray.tiles.enabled).toBe(true);
+
+    const asPrimitive = await resolveEffectiveMapsConfig(fakeDb(JSON.stringify("maps")));
+    expect(asPrimitive.tiles.maxZoom).toBe(defaultMapTileConfig().maxZoom);
+
+    const badTypes = await resolveEffectiveMapsConfig(
+      fakeDb(
+        JSON.stringify({
+          enabled: "yes",
+          tileUrl: 12,
+          maxZoom: "high",
+          attribution: false,
+          geocodingProvider: 9,
+          geocodingBaseUrl: true,
+        }),
+      ),
+    );
+    expect(badTypes.tiles.enabled).toBe(true);
+    expect(badTypes.tiles.tileUrl).toContain("openstreetmap.org");
+  });
+
   it("falls back to defaults when the stored JSON is corrupt", async () => {
     const db = fakeDb("not-json{{{");
     const effective = await resolveEffectiveMapsConfig(db);

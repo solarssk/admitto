@@ -39,6 +39,36 @@ describe("pickDailyForecast", () => {
       ),
     ).toBeNull();
   });
+
+  it("returns null when the date is missing or daily arrays are absent", () => {
+    expect(
+      pickDailyForecast(
+        {
+          daily: {
+            time: ["2026-08-10"],
+            weather_code: [1],
+            temperature_2m_max: [20],
+            temperature_2m_min: [10],
+          },
+        },
+        "2026-08-11",
+      ),
+    ).toBeNull();
+    expect(pickDailyForecast({ daily: {} }, "2026-08-10")).toBeNull();
+    expect(
+      pickDailyForecast(
+        {
+          daily: {
+            time: [1 as unknown as string],
+            weather_code: [1],
+            temperature_2m_max: [20],
+            temperature_2m_min: [10],
+          },
+        },
+        "2026-08-10",
+      ),
+    ).toBeNull();
+  });
 });
 
 describe("OpenMeteoClient", () => {
@@ -272,5 +302,69 @@ describe("OpenMeteoClient extra branches", () => {
       fetchFn: fetchFn as unknown as typeof fetch,
     }).probe();
     expect(String(fetchFn.mock.calls[0]![0])).toContain("52.52");
+  });
+
+  it("omits apikey when none is configured", async () => {
+    const fetchFn = vi.fn(async (input: string | URL) => {
+      expect(String(input)).not.toContain("apikey=");
+      return new Response(
+        JSON.stringify({
+          daily: {
+            time: ["2026-08-10"],
+            weather_code: [1],
+            temperature_2m_max: [20],
+            temperature_2m_min: [10],
+          },
+        }),
+        { status: 200 },
+      );
+    });
+    await new OpenMeteoClient({
+      config: { ...defaultWeatherConfig(), provider: "openmeteo", apiKey: null },
+      fetchFn: fetchFn as unknown as typeof fetch,
+    }).fetchDayForecast(52.5, 13.4, "2026-08-10");
+  });
+});
+
+describe("pickMetNoDailyForecast symbol branches", () => {
+  it("uses next_6_hours when next_1_hours is missing and median when no midday", () => {
+    const day = pickMetNoDailyForecast(
+      {
+        properties: {
+          timeseries: [
+            {
+              time: "2026-08-10T03:00:00Z",
+              data: {
+                instant: { details: { air_temperature: 8 } },
+                next_6_hours: { summary: { symbol_code: "rain" } },
+              },
+            },
+            {
+              time: "2026-08-10T06:00:00Z",
+              data: {
+                instant: { details: { air_temperature: 10 } },
+                next_12_hours: { summary: { symbol_code: "cloudy" } },
+              },
+            },
+            { time: 123 as unknown as string, data: { instant: { details: { air_temperature: 99 } } } },
+            {
+              time: "2026-08-10T09:00:00Z",
+              data: {
+                instant: { details: { air_temperature: 12 } },
+                next_1_hours: { summary: { symbol_code: "fair_day" } },
+              },
+            },
+          ],
+        },
+      },
+      "2026-08-10",
+      "UTC",
+    );
+    expect(day).toMatchObject({
+      date: "2026-08-10",
+      temp_min_c: 8,
+      temp_max_c: 12,
+    });
+    expect(day?.weather_code).toEqual(expect.any(Number));
   });
 });

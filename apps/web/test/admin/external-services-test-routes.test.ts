@@ -37,6 +37,23 @@ vi.mock("../../src/maps/user-agent.js", () => ({
   buildGeocodingUserAgent,
 }));
 
+vi.mock("@admitto/shared/ssrf-guard", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@admitto/shared/ssrf-guard")>();
+  return {
+    ...actual,
+    resolveSafeHostname: vi.fn(async (hostname: string) => {
+      const host = actual.unbracketHostname(hostname);
+      if (actual.isLoopbackHost(host) || actual.isBlockedPrivateOrMetadataHost(host)) {
+        throw new actual.SafeHostnameError(
+          "hostname_blocked",
+          "hostname must not resolve to a private or link-local address",
+        );
+      }
+      return [{ address: "203.0.113.10", family: 4 as const }];
+    }),
+  };
+});
+
 vi.mock("../../src/weather/weather-service.js", () => ({
   WeatherService: class {
     constructor(options: unknown) {
@@ -160,7 +177,21 @@ describe("external-services connection tests", () => {
     );
     const json = (await res.json()) as { ok: boolean; error?: string };
     expect(json.ok).toBe(false);
-    expect(json.error).toBe("invalid_base_url");
+    expect(json.error).toMatch(/Weather base URL must be a valid public http\(s\) URL/i);
+    expect(weatherProbeLive).not.toHaveBeenCalled();
+  });
+
+  it("rejects private weather base URL hosts before probing", async () => {
+    const res = await handlePostWeatherTest(
+      mockContext({
+        provider: "openmeteo",
+        baseUrl: "http://169.254.169.254/",
+      }),
+      db,
+    );
+    const json = (await res.json()) as { ok: boolean; error?: string };
+    expect(json.ok).toBe(false);
+    expect(json.error).toMatch(/private or local network/i);
     expect(weatherProbeLive).not.toHaveBeenCalled();
   });
 
@@ -246,7 +277,7 @@ describe("external-services connection tests", () => {
     const res = await handlePostMapsTest(mockContext({ geocodingBaseUrl: "ftp://bad" }), db);
     const json = (await res.json()) as { ok: boolean; error?: string };
     expect(json.ok).toBe(false);
-    expect(json.error).toMatch(/valid http/i);
+    expect(json.error).toMatch(/valid public http/i);
   });
 
   it("returns generic weather probe failure when probeLive fails", async () => {

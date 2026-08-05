@@ -39,6 +39,23 @@ vi.mock("../../src/admin/admin-helpers.js", () => ({
   adminAuditFromContext,
 }));
 
+vi.mock("@admitto/shared/ssrf-guard", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@admitto/shared/ssrf-guard")>();
+  return {
+    ...actual,
+    resolveSafeHostname: vi.fn(async (hostname: string) => {
+      const host = actual.unbracketHostname(hostname);
+      if (actual.isLoopbackHost(host) || actual.isBlockedPrivateOrMetadataHost(host)) {
+        throw new actual.SafeHostnameError(
+          "hostname_blocked",
+          "hostname must not resolve to a private or link-local address",
+        );
+      }
+      return [{ address: "203.0.113.10", family: 4 as const }];
+    }),
+  };
+});
+
 vi.mock("../../src/weather/weather-org-settings.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/weather/weather-org-settings.js")>();
   return {
@@ -145,6 +162,16 @@ describe("external-services GET/PUT routes", () => {
     expect(await res.json()).toEqual({ error: "invalid_base_url" });
   });
 
+  it("rejects private weather base URL hosts", async () => {
+    const res = await handlePutWeatherSettings(
+      mockContext({ provider: "openmeteo", baseUrl: "http://10.0.0.5/v1" }),
+      db,
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "url_host_blocked" });
+    expect(patchWeatherSettings).not.toHaveBeenCalled();
+  });
+
   it("requires API key for commercial Open-Meteo when enabling", async () => {
     const res = await handlePutWeatherSettings(
       mockContext({
@@ -211,6 +238,16 @@ describe("external-services GET/PUT routes", () => {
     );
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "invalid_geocoding_base_url" });
+  });
+
+  it("rejects private geocoding base URL hosts", async () => {
+    const res = await handlePutMapsSettings(
+      mockContext({ geocodingBaseUrl: "http://169.254.169.254/" }),
+      db,
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "url_host_blocked" });
+    expect(patchMapsSettings).not.toHaveBeenCalled();
   });
 
   it("persists maps settings and writes an audit log", async () => {

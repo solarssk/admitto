@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   FORECAST_HORIZON_DAYS_METNO,
   FORECAST_HORIZON_DAYS_OPENMETEO,
@@ -27,6 +27,11 @@ describe("isOpenMeteoCommercialHost", () => {
     expect(isOpenMeteoCommercialHost("https://customer-api.open-meteo.com/v1")).toBe(true);
     expect(isOpenMeteoCommercialHost("https://api.open-meteo.com")).toBe(false);
     expect(isOpenMeteoCommercialHost("https://meteo.example.com")).toBe(false);
+  });
+
+  it("detects commercial subhosts and rejects unparseable URLs", () => {
+    expect(isOpenMeteoCommercialHost("https://foo.customer-api.open-meteo.com")).toBe(true);
+    expect(isOpenMeteoCommercialHost("not a url")).toBe(false);
   });
 
   it("requires an API key only for Open-Meteo commercial host when enabled", () => {
@@ -65,6 +70,23 @@ describe("resolveWeatherEnvConfig", () => {
     expect(resolveWeatherEnvConfig({ WEATHER_ENABLED: "false" }).enabled).toBe(false);
   });
 
+  it("normalises trailing slash, empty key, bad provider, and TTL parsing", () => {
+    const cfg = resolveWeatherEnvConfig({
+      WEATHER_PROVIDER: "nope",
+      OPEN_METEO_BASE_URL: "https://api.open-meteo.com/",
+      OPEN_METEO_API_KEY: "   ",
+      OPEN_METEO_TIMEOUT_MS: "0",
+      WEATHER_CACHE_TTL_MS: "abc",
+      WEATHER_ENABLED: "yes",
+    });
+    expect(cfg.provider).toBe("openmeteo");
+    expect(cfg.baseUrl).toBe("https://api.open-meteo.com");
+    expect(cfg.apiKey).toBeNull();
+    expect(cfg.timeoutMs).toBeGreaterThan(0);
+    expect(cfg.cacheTtlMs).toBeGreaterThan(0);
+    expect(cfg.enabled).toBe(true);
+  });
+
   it("merges UI overrides over env", () => {
     const env = resolveWeatherEnvConfig({
       WEATHER_PROVIDER: "openmeteo",
@@ -80,6 +102,21 @@ describe("resolveWeatherEnvConfig", () => {
     expect(merged.baseUrl).toBe("https://customer-api.open-meteo.com");
     expect(merged.apiKey).toBe("ui-key");
     expect(merged.provider).toBe("openmeteo");
+  });
+
+  it("mergeWeatherConfig falls through null/blank overrides", () => {
+    const base = resolveWeatherEnvConfig({
+      WEATHER_PROVIDER: "openmeteo",
+      OPEN_METEO_BASE_URL: "https://api.open-meteo.com",
+      OPEN_METEO_API_KEY: "keep-me",
+    });
+    expect(mergeWeatherConfig(base, null)).toBe(base);
+    expect(mergeWeatherConfig(base, undefined).apiKey).toBe("keep-me");
+    expect(mergeWeatherConfig(base, { baseUrl: "  ", apiKey: "" }).baseUrl).toBe(
+      "https://api.open-meteo.com",
+    );
+    expect(mergeWeatherConfig(base, { baseUrl: "  ", apiKey: "" }).apiKey).toBeNull();
+    expect(mergeWeatherConfig(base, { enabled: false }).enabled).toBe(false);
   });
 });
 
@@ -449,6 +486,114 @@ describe("WeatherService.summarize", () => {
     expect(results[0]?.status).toBe("ok");
     expect(results[1]).toBeNull();
     expect(results[2]?.status).toBe("too_far");
+  });
+
+  it("returns null for non-finite or one-sided coordinates and blank timezone falls back", async () => {
+    const service = new WeatherService({
+      config: resolveWeatherEnvConfig({ WEATHER_PROVIDER: "openmeteo" }),
+      cache: new InMemoryWeatherCache(),
+      now: () => new Date("2026-08-05T12:00:00.000Z"),
+      fetchFn: async () => {
+        throw new Error("should not fetch");
+      },
+    });
+    expect(
+      await service.summarize({
+        latitude: Number.POSITIVE_INFINITY,
+        longitude: 21,
+        date: "2026-08-08T12:00:00.000Z",
+        timezone: "UTC",
+      }),
+    ).toBeNull();
+    expect(
+      await service.summarize({
+        latitude: 52,
+        longitude: Number.NaN,
+        date: "2026-08-08T12:00:00.000Z",
+        timezone: "UTC",
+      }),
+    ).toBeNull();
+    expect(
+      await service.summarize({
+        latitude: 52,
+        longitude: null,
+        date: "2026-08-08T12:00:00.000Z",
+        timezone: "UTC",
+      }),
+    ).toBeNull();
+
+    const fetchFn = vi.fn(async (_input: string | URL) =>
+      new Response(
+        JSON.stringify({
+          daily: {
+            time: ["2026-08-08"],
+            weather_code: [1],
+            temperature_2m_max: [20],
+            temperature_2m_min: [10],
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    const withBlankTz = new WeatherService({
+      config: resolveWeatherEnvConfig({ WEATHER_PROVIDER: "openmeteo" }),
+      cache: new InMemoryWeatherCache(),
+      now: () => new Date("2026-08-05T12:00:00.000Z"),
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
+    await expect(
+      withBlankTz.summarize({
+        latitude: 52.23,
+        longitude: 21.01,
+        date: "2026-08-08T12:00:00.000Z",
+        timezone: "   ",
+      }),
+    ).resolves.toMatchObject({ status: "ok" });
+    expect(String(fetchFn.mock.calls[0]![0])).toContain("timezone=UTC");
+  });
+
+  it("probeLive returns plain Error messages", async () => {
+    const service = new WeatherService({
+      config: resolveWeatherEnvConfig({ WEATHER_PROVIDER: "openmeteo" }),
+      cache: new InMemoryWeatherCache(),
+    });
+    (
+      service as unknown as { openMeteo: { probe: () => Promise<void> } }
+    ).openMeteo = {
+      probe: async () => {
+        throw new Error("network down");
+      },
+    };
+    await expect(service.probeLive()).resolves.toMatchObject({
+      ok: false,
+      error: "network down",
+    });
+  });
+
+  it("summarizeMany returns [] for empty input and clamps concurrency", async () => {
+    const service = new WeatherService({
+      config: resolveWeatherEnvConfig({ WEATHER_ENABLED: "false" }),
+      cache: new InMemoryWeatherCache(),
+    });
+    expect(await summarizeMany([], service, 4)).toEqual([]);
+    const one = await summarizeMany(
+      [{ latitude: null, longitude: null, date: "2026-08-08T12:00:00.000Z", timezone: "UTC" }],
+      service,
+      0,
+    );
+    expect(one).toHaveLength(1);
+    expect(one[0]).toBeNull();
+  });
+
+  it("eventDateYmd falls back to UTC slice when Intl rejects the zone", () => {
+    const spy = vi.spyOn(Intl, "DateTimeFormat").mockImplementationOnce(() => {
+      throw new RangeError("invalid time zone");
+    });
+    try {
+      expect(eventDateYmd("2026-08-10T12:00:00.000Z", "Bad/Zone")).toBe("2026-08-10");
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("getWeatherService reuses a singleton until reset", () => {
