@@ -7,6 +7,7 @@ import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import type { ExportPayload } from "@admitto/mailer";
 import { setMailSettings } from "@admitto/mailer-config";
+import * as tickets from "@admitto/tickets";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 
@@ -1130,5 +1131,41 @@ describe("POST /api/admin/events/:eventId/mail-settings/probe", () => {
     const body = (await res.json()) as { ok: boolean; error?: string };
     expect(body.ok).toBe(false);
     expect(body.error).toMatch(/SMTP/i);
+  });
+
+  it("still returns the probe result when audit logging fails", async () => {
+    await setMailSettings(
+      { scopeType: "event", scopeId: EVENT },
+      {
+        provider: "smtp",
+        host: "smtp.event-probe.example.com",
+        port: 587,
+        user: "event-probe@example.com",
+        fromAddress: "event-probe@example.com",
+        smtpPassword: "event-probe-secret",
+      },
+      prisma,
+    );
+
+    const auditSpy = vi
+      .spyOn(tickets, "writeAdminAuditLog")
+      .mockRejectedValueOnce(new Error("audit db down"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT}/mail-settings/probe`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, message: "Connected. SMTP account verified." });
+      expect(errSpy).toHaveBeenCalledWith(
+        "[audit] event_mail_smtp_probed log failed",
+        expect.any(Error),
+      );
+    } finally {
+      auditSpy.mockRestore();
+      errSpy.mockRestore();
+    }
   });
 });
